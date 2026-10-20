@@ -63,8 +63,8 @@ footer matches `ra2web-werhd/public/res/locale/zh-CN.json`'s copyright, brand an
 fan-project disclaimer text. Left/right blocks are bottom-aligned with 10px
 margins, at 13px text height using the same CoreText Medium glyph rasterizer as
 the in-game UI; long lines wrap within their own columns. Their
-space is reserved below the complete 4:3 picture so both logos remain clear. The
-loading label stays in the picture's lower-left corner.
+text floats over a translucent bottom scrim inside the full-height 4:3 picture.
+The loading label sits above that overlay; no separate footer shrinks the art.
 
 Format: `VWMV0001`, six little-endian u32 values (width, height, FPS numerator,
 FPS denominator, frame count, key interval), then frame-count-plus-one u64

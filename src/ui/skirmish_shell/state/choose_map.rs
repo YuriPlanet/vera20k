@@ -348,6 +348,23 @@ impl ChooseMapModalState {
         ChooseMapListPress::Missed
     }
 
+    /// Direct list-content manipulation changes the viewport without selecting
+    /// a map or preserving a previous tap as half of a double click.
+    pub fn scroll_contents(&mut self, layout: &ChooseMapModalLayout, mode_list: bool, rows: i32) {
+        self.last_press = None;
+        let geometry = if mode_list {
+            self.mode_geometry(layout)
+        } else {
+            self.map_geometry(layout)
+        };
+        let top = if mode_list {
+            &mut self.mode_top_index
+        } else {
+            &mut self.map_top_index
+        };
+        geometry.scroll_by_rows(top, rows);
+    }
+
     /// Pointer motion: a captured thumb follows it.
     pub fn mouse_move(&mut self, layout: &ChooseMapModalLayout, x: i32, y: i32) {
         let geometry = self.mode_geometry(layout);
@@ -719,6 +736,39 @@ mod tests {
         assert_eq!(modal.map_top_index, 2);
         modal.mouse_up();
         assert_eq!(modal.scroll_deadline(), None);
+    }
+
+    #[test]
+    fn content_swipe_scrolls_without_selection_or_double_click_acceptance() {
+        let modes = stock_skirmish_modes();
+        let layout = compute_choose_map_modal_layout(800, 600);
+        let records: Vec<_> = (0..40)
+            .map(|index| record(&format!("Map {index}")))
+            .collect();
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            modes[0].id,
+            None,
+            &modes,
+            &records,
+            &layout,
+        );
+        let selected = modal.selected_record_index();
+        let geometry = modal.map_geometry(&layout);
+        assert!(geometry.max_top > 0);
+        let row = geometry.row(0);
+        let point = (row.x + 2, row.y + 2);
+        let now = Instant::now();
+        let limits = (Duration::from_millis(500), 7, 7);
+        assert!(!modal.is_double_click(&layout, point, now, limits));
+        modal.scroll_contents(&layout, false, 0);
+        assert!(!modal.is_double_click(&layout, point, now + Duration::from_millis(100), limits,));
+        modal.scroll_contents(&layout, false, i32::MAX);
+        assert_eq!(modal.map_top_index, geometry.max_top);
+        assert_eq!(modal.selected_record_index(), selected);
+        modal.scroll_contents(&layout, false, i32::MIN);
+        assert_eq!(modal.map_top_index, 0);
+        assert_eq!(modal.selected_record_index(), selected);
     }
 
     #[test]

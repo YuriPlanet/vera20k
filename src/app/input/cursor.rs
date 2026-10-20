@@ -14,6 +14,10 @@ use crate::app::types::{
 };
 use crate::sim::combat;
 
+#[cfg(any(target_os = "macos", test))]
+#[path = "macos_cursor.rs"]
+pub(crate) mod macos;
+
 /// WWMouse's display depth, separate from Scenario's authoritative input
 /// lock. Lock684240 hides only at depth0; Unlock684290 unwinds negative
 /// depth only when the previous Scenario byte is1. Software presentation
@@ -1663,6 +1667,9 @@ pub(crate) fn reassert_cursor_confinement(state: &AppState) {
 }
 
 fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
+    #[cfg(target_os = "macos")]
+    macos::apply(state, verbose);
+
     // Windows: clip to the client rectangle with the Win32 ClipCursor API
     // (what the clipping approach actually does). winit's CursorGrabMode::Confined derives
     // the clip rect from the *outer* window rect, which is wrong for frameless
@@ -1764,11 +1771,11 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
             }
         }
     }
-    // Other platforms: use winit's Confined grab. On X11/macOS this confines the
+    // Other platforms: use winit's Confined grab. On X11 this confines the
     // pointer to the window; on pure Wayland cursor confinement is unsupported
     // and set_cursor_grab returns an error, which we log and tolerate so the
     // frame is never blocked.
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         use winit::window::CursorGrabMode;
         let mode = if state.platform.cursor_confined {
@@ -1788,6 +1795,9 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
 /// the pointer instead of leaving it trapped over the game window (
 /// behaviour). Presentation-only.
 pub(crate) fn release_cursor_confinement(state: &AppState) {
+    #[cfg(target_os = "macos")]
+    macos::release(state);
+
     #[cfg(target_os = "windows")]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::ClipCursor;
@@ -1795,7 +1805,7 @@ pub(crate) fn release_cursor_confinement(state: &AppState) {
             ClipCursor(std::ptr::null());
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         // Best-effort: releasing an already-free grab can error on some
         // compositors (pure Wayland), which we tolerate so the per-frame

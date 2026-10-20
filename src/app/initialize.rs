@@ -273,7 +273,8 @@ impl App {
         // which archive wins it.)
         let startup_csf = startup_asset_manager.as_ref().and_then(|assets| {
             startup_asset_or_error(
-                crate::app::loading::init::load_csf(assets),
+                crate::app::loading::init::load_csf(assets)
+                    .map(|csf| crate::app::chinese_ui::project(csf, !capture)),
                 &mut main_menu_shell_error,
             )
         });

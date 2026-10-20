@@ -15,9 +15,10 @@ use self::combos::{handle_combo_mouse_down, set_open_combo_top_index, top_index_
 
 pub use combos::{
     available_color_choices, available_start_choices, combo_dropdown_content_rect,
-    combo_dropdown_needs_scrollbar, combo_dropdown_rect, combo_dropdown_scroll_thumb_rect,
-    combo_dropdown_scrollbar_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
-    combo_rect, country_choices, selected_combo_item, selected_combo_item_index, team_choices,
+    combo_dropdown_needs_scrollbar, combo_dropdown_rect, combo_dropdown_scroll_geometry,
+    combo_dropdown_scroll_thumb_rect, combo_dropdown_scrollbar_rect,
+    combo_dropdown_visible_row_count, combo_enabled, combo_items, combo_rect, country_choices,
+    scroll_open_combo_by_rows, selected_combo_item, selected_combo_item_index, team_choices,
 };
 pub use hit_test::{
     action_for_owner_draw_button, apply_action, hit_test, hit_test_owner_draw_button,

@@ -569,10 +569,41 @@ pub(crate) fn render_fullscreen_movie(
         state.renderer.gpu.config.width as i32,
         state.renderer.gpu.config.height as i32,
     );
-    let draws = [TexturedDraw {
+    let screen = [
+        state.renderer.gpu.config.width,
+        state.renderer.gpu.config.height,
+    ];
+    let mut draws = vec![TexturedDraw {
         texture: movie.surface().batch_texture(),
         instances: vec![instance],
     }];
+    // Every fullscreen caller (campaign briefing/action/victory and movie
+    // list) shares this composition, so subtitles follow the actual frame.
+    let mut text: Vec<_> = movie
+        .subtitle_draw(
+            &state.renderer.bit_font,
+            [
+                state.renderer.gpu.config.width,
+                state.renderer.gpu.config.height,
+            ],
+        )
+        .into_iter()
+        .collect();
+    if let Some((background, label)) = movie.skip_overlay(
+        &state.renderer.bit_font,
+        screen,
+        state.platform.window.scale_factor() as f32,
+    ) {
+        draws.push(TexturedDraw {
+            texture: &state.renderer.status_screen_fill,
+            instances: background,
+        });
+        text.push(label);
+    }
+    let cursor = movie
+        .pointer_skip_visible()
+        .then(|| software_cursor(state, CURSOR_DEPTH))
+        .flatten();
     encode_shell_pass(
         state,
         encoder,
@@ -580,6 +611,8 @@ pub(crate) fn render_fullscreen_movie(
         "Play_Movie",
         ShellComposition {
             draws: &draws,
+            text: &text,
+            cursor,
             ..ShellComposition::default()
         },
     );

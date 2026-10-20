@@ -40,6 +40,9 @@ pub(crate) fn software_cursor(
     state: &AppState,
     depth: f32,
 ) -> Option<(&BatchTexture, SpriteInstance)> {
+    if state.touch_input_mode() {
+        return None;
+    }
     let cursor = state
         .match_state
         .match_presentation

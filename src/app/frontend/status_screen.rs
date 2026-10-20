@@ -33,7 +33,17 @@ impl Action {
             Self::Leave => (Some("GUI:Leave"), "Quit"),
         };
         key.and_then(|key| state.process_assets.csf.as_ref()?.get(key))
-            .map_or(Cow::Borrowed(fallback), Cow::Borrowed)
+            .map_or_else(
+                || {
+                    crate::app::chinese_ui::custom_text(
+                        fallback,
+                        crate::app::chinese_ui::enabled(
+                            state.platform.capture_client_size.is_some(),
+                        ),
+                    )
+                },
+                Cow::Borrowed,
+            )
     }
 
     fn commit(self, state: &mut AppState, event_loop: &ActiveEventLoop) {
@@ -182,6 +192,9 @@ pub(crate) fn render(
     let gpu = &state.renderer.gpu;
     let batch = &state.renderer.batch_renderer;
     let font = &state.renderer.bit_font;
+    let simplified = crate::app::chinese_ui::enabled(state.platform.capture_client_size.is_some());
+    let title = crate::app::chinese_ui::custom_text(title, simplified);
+    let detail = crate::app::chinese_ui::custom_text(detail, simplified);
     let width = gpu.config.width;
     let height = gpu.config.height;
     let pad = (width / 20).clamp(8, 32);
@@ -196,8 +209,8 @@ pub(crate) fn render(
         .first()
         .map_or(height.saturating_sub(pad), |rect| rect.y.max(0) as u32)
         .saturating_sub(16);
-    let mut text = font.build_text(title, left, top, text_scale * 1.4, 0.0, [0.9; 3], [0.0; 2]);
-    let layout = font.wrap_layout(detail, (content_width as f32 / text_scale).max(1.0) as u32);
+    let mut text = font.build_text(&title, left, top, text_scale * 1.4, 0.0, [0.9; 3], [0.0; 2]);
+    let layout = font.wrap_layout(&detail, (content_width as f32 / text_scale).max(1.0) as u32);
     for (index, line) in layout.lines.iter().enumerate() {
         let y = body_top + index as f32 * font.cell_height() * text_scale;
         if y + font.glyph_height() * text_scale > body_bottom as f32 {

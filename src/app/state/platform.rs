@@ -35,6 +35,10 @@ pub(crate) struct PlatformState {
     /// the OS drops the clip on alt-tab. Presentation-only — never serialized or
     /// read by the deterministic simulation.
     pub(crate) cursor_confined: bool,
+    /// Actual macOS relative-mouse grab and native-event deduplication. The
+    /// pointer position remains owned by the existing input state.
+    #[cfg(target_os = "macos")]
+    pub(crate) macos_cursor: crate::app::input::cursor::macos::MacCursorConfinement,
     /// Live message-pump modifiers for focused shell controls. Gameplay keeps
     /// its separate paused-input admission snapshot.
     pub(crate) live_modifiers: winit::keyboard::ModifiersState,
@@ -86,6 +90,8 @@ impl PlatformState {
         Self {
             window,
             cursor_confined: true,
+            #[cfg(target_os = "macos")]
+            macos_cursor: Default::default(),
             live_modifiers: winit::keyboard::ModifiersState::empty(),
             held_modifier_keys: Default::default(),
             window_active: true,

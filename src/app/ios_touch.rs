@@ -9,6 +9,28 @@
 use winit::dpi::PhysicalPosition;
 use winit::event::{DeviceId, ElementState, MouseButton, Touch, TouchPhase, WindowEvent};
 
+#[path = "ios_ui_scroll.rs"]
+pub(super) mod ui_scroll;
+use ui_scroll::{ScrollRegion, ScrollTarget};
+
+#[derive(Default)]
+pub(super) struct TouchTranslation {
+    pub events: Vec<WindowEvent>,
+    pub scroll: Option<(ScrollTarget, i32)>,
+    pub cancel_pointer: bool,
+}
+
+struct ScrollGesture {
+    key: (DeviceId, u64),
+    region: ScrollRegion,
+    start: PhysicalPosition<f64>,
+    last_y: f64,
+    remainder: f64,
+    slop: f64,
+    swiping: bool,
+    aborted: bool,
+}
+
 /// One finger operates the existing left mouse button. Other fingers are
 /// ignored until every contact has lifted; an already-down finger never becomes
 /// a fresh click when the primary one lifts.
@@ -16,9 +38,87 @@ use winit::event::{DeviceId, ElementState, MouseButton, Touch, TouchPhase, Windo
 pub(super) struct IosTouchPointer {
     contacts: Vec<(DeviceId, u64)>,
     primary: Option<(DeviceId, u64)>,
+    scroll: Option<ScrollGesture>,
 }
 
 impl IosTouchPointer {
+    pub(super) fn scroll_target(&self) -> Option<ScrollTarget> {
+        self.scroll.as_ref().map(|gesture| gesture.region.target)
+    }
+
+    /// List contents reserve the gesture before mouse-down can select a row.
+    /// A tap enters the existing mouse owner on release; a swipe changes only
+    /// the captured list's scroll position, even if the finger leaves its rect.
+    pub(super) fn translate_with_scroll(
+        &mut self,
+        touch: Touch,
+        region: Option<ScrollRegion>,
+        target_active: bool,
+        scale_factor: f64,
+    ) -> TouchTranslation {
+        let key = (touch.device_id, touch.id);
+        let first = self.contacts.is_empty();
+        let native = self.translate(touch);
+        if touch.phase == TouchPhase::Started && first && self.primary == Some(key) {
+            if let Some(region) = region {
+                self.scroll = Some(ScrollGesture {
+                    key,
+                    region,
+                    start: touch.location,
+                    last_y: touch.location.y,
+                    remainder: 0.0,
+                    slop: 7.0 * scale_factor.max(1.0),
+                    swiping: false,
+                    aborted: false,
+                });
+                return TouchTranslation::default();
+            }
+        }
+        if let Some(mut gesture) = self.scroll.take() {
+            gesture.aborted |= !target_active;
+            let mut result = TouchTranslation::default();
+            if gesture.key == key {
+                gesture.aborted |= touch.phase == TouchPhase::Cancelled;
+                if !gesture.aborted {
+                    let displacement = (
+                        touch.location.x - gesture.start.x,
+                        touch.location.y - gesture.start.y,
+                    );
+                    let was_swiping = gesture.swiping;
+                    gesture.swiping |=
+                        displacement.0.abs() > gesture.slop || displacement.1.abs() > gesture.slop;
+                    if gesture.swiping {
+                        gesture.remainder +=
+                            (gesture.last_y - touch.location.y) / gesture.region.row_height;
+                        gesture.last_y = touch.location.y;
+                        let rows = gesture.remainder.trunc() as i32;
+                        gesture.remainder -= f64::from(rows);
+                        if rows != 0 || !was_swiping {
+                            result.scroll = Some((gesture.region.target, rows));
+                        }
+                    } else if touch.phase == TouchPhase::Ended {
+                        result.events = vec![
+                            cursor_moved(touch.device_id, touch.location),
+                            left_button(touch.device_id, ElementState::Pressed),
+                            left_button(touch.device_id, ElementState::Released),
+                        ];
+                    }
+                }
+                if matches!(touch.phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+                    return result;
+                }
+            }
+            self.scroll = Some(gesture);
+            return result;
+        }
+        let cancel_pointer = touch.phase == TouchPhase::Cancelled && native[1].is_some();
+        TouchTranslation {
+            events: native.into_iter().flatten().collect(),
+            scroll: None,
+            cancel_pointer,
+        }
+    }
+
     /// Translate into at most a cursor move followed by a button edge. Route
     /// these events through the ordinary `ApplicationHandler::window_event`.
     ///
@@ -71,6 +171,7 @@ impl IosTouchPointer {
     pub(super) fn reset(&mut self) {
         self.contacts.clear();
         self.primary = None;
+        self.scroll = None;
     }
 }
 

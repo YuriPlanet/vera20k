@@ -216,7 +216,9 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.overlay_radar_colors = assets.overlay_radar_colors;
     state.match_state.match_presentation.house_color_map = assets.house_color_map;
     state.match_state.match_presentation.house_roster = map.house_roster;
-    state.process_assets.csf = assets.csf;
+    state.process_assets.csf = assets.csf.map(|csf| {
+        crate::app::chinese_ui::project(csf, state.platform.capture_client_size.is_none())
+    });
     state.match_state.match_presentation.theater_name = map.theater_name;
     state.match_state.match_presentation.theater_ext = map.theater_ext;
 

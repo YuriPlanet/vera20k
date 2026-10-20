@@ -161,11 +161,17 @@ impl AppState {
             .map_or((x, y), |zoom| zoom.source_to_window(x, y))
     }
 
+    /// Ordinary iOS uses direct touch targets, never a visible mouse pointer.
+    pub(crate) fn touch_input_mode(&self) -> bool {
+        cfg!(target_os = "ios") && self.platform.capture_client_size.is_none()
+    }
+
     /// Whether the software cursor (mouse.shp) should be active this frame.
     /// Asset-independent status cards and diagnostic modals use the OS cursor.
     pub(crate) fn use_software_cursor(&self) -> bool {
-        !(self.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && self.frontend.main_menu_shell_error.is_some())
+        !self.touch_input_mode()
+            && !(self.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+                && self.frontend.main_menu_shell_error.is_some())
             && self
                 .match_state
                 .match_presentation

@@ -159,6 +159,12 @@ fn pointer_move(state: &mut AppState, point: [f32; 2]) {
 }
 
 fn pointer_button(state: &mut AppState, edge: ElementState) {
+    if edge == ElementState::Released && state.armed_building_type().is_some() {
+        // A real finger may move and release without any intervening render.
+        // Re-evaluate the shared foundation owner at this touch's actual point:
+        // PLACE still goes through ordinary release admission and command intake.
+        super::match_runtime::sim_tick::update_building_placement_preview(state);
+    }
     super::input::tooltips::on_button_event(state);
     dispatch::handle_mouse_input(state, MouseButton::Left, edge);
 }

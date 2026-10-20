@@ -221,8 +221,8 @@ Yuri low-angle composition and silver 王二火大 crest. The menu preserves the
 original Yuri movie with that crest overlaid. Their sources, hashes and lossless
 frame conversion are documented in `art/branding`. The startup uses the web
 project's Chinese copyright and fan-project disclaimer in separate bottom
-columns. Their footer space is reserved below the complete 4:3 artwork, and the
-loading label stays in its lower-left corner, clear of both logos.
+columns. Copyright floats over a translucent bottom scrim inside the full-height
+artwork; the loading label sits just above that overlay.
 Country-specific loading screens and other full-screen movies
 keep their original sources. Retail captures retain the bitmap font and
 original artwork paths.
@@ -244,3 +244,14 @@ The ordinary macOS client shares the approved startup picture, branded menu
 loop, Medium font, V1.0 label and website menu with iOS. Retail capture mode
 retains its original artwork, font and controls. Touch-only battle controls
 remain on iOS; macOS uses its existing mouse and keyboard controls.
+
+### Direct touch and optional subtitles
+
+Ordinary iOS hides both the software and system mouse cursor. Scrollable lists
+recognize a swipe before selecting a row, and battlefield taps refresh the
+existing building-placement preview before committing the first click.
+
+Both Apple packagers accept `--movie-subtitles /absolute/path/subtitlemd.txt`
+to include optional local Simplified Chinese movie text plus sibling credits
+and source README. The original movies and soundtracks remain unchanged.
+See `art/subtitles/README.md` for source attribution and timing.

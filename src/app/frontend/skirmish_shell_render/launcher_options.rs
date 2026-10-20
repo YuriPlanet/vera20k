@@ -42,10 +42,12 @@ fn text_draw(
     align: ShellAlign,
     rgb: [f32; 3],
     glyph_scale: f32,
+    simplified: bool,
 ) -> ShellTextDraw {
+    let text = crate::app::chinese_ui::custom_text(text, simplified);
     shell_text::draw_in_rect_scaled(
         font,
-        text,
+        &text,
         TextRect {
             x: rect.x,
             y: rect.y,
@@ -130,6 +132,7 @@ fn build_text(
     dialog: &OptionsDialogState,
     title: Option<crate::ui::shell::static_reveal::Kind1RevealWindow>,
     buttons: bool,
+    simplified: bool,
 ) -> Vec<ShellTextDraw> {
     let mut out = Vec::new();
     let scale = layout.scale;
@@ -171,6 +174,7 @@ fn build_text(
                 align,
                 SHELL_LABEL_TEXT_RGB,
                 glyph,
+                simplified,
             ));
         }
     }
@@ -186,6 +190,7 @@ fn build_text(
             ShellAlign::V_CENTER,
             SHELL_LABEL_TEXT_RGB,
             glyph,
+            simplified,
         ));
     }
     for (id, rect) in layout.trackbars {
@@ -204,6 +209,7 @@ fn build_text(
                     SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
                 },
                 glyph,
+                simplified,
             ));
         }
     }
@@ -233,6 +239,7 @@ fn build_text(
             ShellAlign::V_CENTER,
             SHELL_LABEL_TEXT_RGB,
             glyph,
+            simplified,
         ));
     }
     for (id, rect) in layout.buttons.into_iter().filter(|_| buttons) {
@@ -252,6 +259,7 @@ fn build_text(
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             button_label_color(),
             glyph,
+            simplified,
         ));
     }
     out
@@ -301,6 +309,7 @@ pub(crate) fn render_launcher_options(
 ) -> anyhow::Result<()> {
     use crate::app::frontend::shell_transition::ShellSlideKind;
     let now = Instant::now();
+    let simplified = crate::app::chinese_ui::enabled(state.platform.capture_client_size.is_some());
     let layout = crate::app::frontend::shell_layout::launcher_options_layout(state);
     let scale = layout.scale;
     // The teardown slide starts with a full dialog repaint (`0x00622C4F`) and
@@ -338,7 +347,9 @@ pub(crate) fn render_launcher_options(
                 LauncherStatusHelp::Csf(key) => {
                     crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned()
                 }
-                LauncherStatusHelp::Text(text) => text.to_owned(),
+                LauncherStatusHelp::Text(text) => {
+                    crate::app::chinese_ui::custom_text(text, simplified).into_owned()
+                }
             })
             .unwrap_or_default();
         let status = crate::app::frontend::menu_page_render::paint_shell_status_line(
@@ -386,7 +397,14 @@ pub(crate) fn render_launcher_options(
     }
     if !leaving {
         instances.extend(build_controls(atlas, &layout, dialog, !sliding));
-        texts = build_text(&state.renderer.bit_font, &layout, dialog, title, !sliding);
+        texts = build_text(
+            &state.renderer.bit_font,
+            &layout,
+            dialog,
+            title,
+            !sliding,
+            simplified,
+        );
     }
     texts.extend(crate::render::shell_paint::paint_labels_scaled(
         &state.renderer.bit_font,
@@ -435,6 +453,7 @@ pub(crate) fn render_launcher_options(
                 ShellAlign::V_CENTER,
                 SHELL_LABEL_TEXT_RGB,
                 scale.factor(),
+                simplified,
             ));
         }
         push_ownerdraw_two_pixel_bevel_frame_px(

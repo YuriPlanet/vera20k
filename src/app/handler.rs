@@ -187,6 +187,38 @@ fn show_menu_bar_and_dock_after_full_screen() {
 }
 
 impl ApplicationHandler for App {
+    #[cfg(target_os = "macos")]
+    fn device_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        let winit::event::DeviceEvent::MouseMotion { delta } = event else {
+            return;
+        };
+        let Some(state) = self.state.as_ref() else {
+            return;
+        };
+        let Some(position) = crate::app::input::cursor::macos::raw_motion(state, delta) else {
+            return;
+        };
+        let window_id = state.platform.window.id();
+        state.platform.macos_cursor.from_device.set(true);
+        // Reuse every existing splash/capture/modal/drag gate and screen route.
+        self.window_event(
+            event_loop,
+            window_id,
+            WindowEvent::CursorMoved {
+                device_id,
+                position,
+            },
+        );
+        if let Some(state) = self.state.as_ref() {
+            state.platform.macos_cursor.from_device.set(false);
+        }
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         #[cfg(target_os = "ios")]
         {
@@ -288,6 +320,11 @@ impl ApplicationHandler for App {
                     return;
                 }
                 if let Some(state) = self.state.as_mut() {
+                    if Self::fullscreen_movie_touch(state, touch) {
+                        self.ios_touch.reset();
+                        crate::app::ios_controls::reset(state);
+                        return;
+                    }
                     if crate::app::ios_controls::enabled(state) {
                         self.ios_touch.reset();
                         crate::app::ios_controls::handle_touch(state, *touch);
@@ -295,14 +332,29 @@ impl ApplicationHandler for App {
                     }
                     crate::app::ios_controls::reset(state);
                 }
-                let translated = self.ios_touch.translate(*touch);
-                if touch.phase == winit::event::TouchPhase::Cancelled
-                    && translated[1].is_some()
-                    && let Some(state) = self.state.as_mut()
-                {
-                    Self::release_in_game_pointer_state(state);
+                let active_target = self.ios_touch.scroll_target();
+                let (region, active, scale) = {
+                    let state = self.state.as_mut().expect("touch requires app state");
+                    state.sync_cursor_space();
+                    state.set_cursor_from_window(touch.location.x as f32, touch.location.y as f32);
+                    let region = crate::app::ios_touch::ui_scroll::region_at_cursor(state);
+                    let active = active_target.is_none_or(|target| {
+                        crate::app::ios_touch::ui_scroll::is_active(state, target)
+                    });
+                    (region, active, state.platform.window.scale_factor())
+                };
+                let translated = self
+                    .ios_touch
+                    .translate_with_scroll(*touch, region, active, scale);
+                if let Some(state) = self.state.as_mut() {
+                    if translated.cancel_pointer {
+                        Self::release_in_game_pointer_state(state);
+                    }
+                    if let Some((target, rows)) = translated.scroll {
+                        crate::app::ios_touch::ui_scroll::scroll(state, target, rows);
+                    }
                 }
-                for event in translated.into_iter().flatten() {
+                for event in translated.events {
                     self.window_event(event_loop, _id, event);
                 }
                 return;
@@ -312,6 +364,26 @@ impl ApplicationHandler for App {
         let tactical_capture_active = self.tactical_capture.is_some();
         let Some(state) = &mut self.state else { return };
         state.sync_cursor_space();
+        // Normalize Mac pointer delivery before status cards or any other
+        // early owner can consume a native echo of the relative mouse event.
+        #[cfg(target_os = "macos")]
+        let event = match event {
+            WindowEvent::CursorMoved {
+                device_id,
+                position,
+            } => {
+                let Some(position) =
+                    crate::app::input::cursor::macos::absolute_motion(state, position)
+                else {
+                    return;
+                };
+                WindowEvent::CursorMoved {
+                    device_id,
+                    position,
+                }
+            }
+            event => event,
+        };
 
         // winit 0.30.12's X11 Ime::create_context(window, false) sends an
         // Ime::Disabled lifecycle notification even for an unmapped window.
@@ -553,6 +625,7 @@ impl ApplicationHandler for App {
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
                 if !active {
+                    Self::fullscreen_movie_cancel_pointer(state);
                     crate::app::input::cursor::release_cursor_confinement(state);
                     Self::release_in_game_pointer_state(state);
                     if let Some(browser) = state
@@ -951,6 +1024,9 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 state.set_cursor_from_window(position.x as f32, position.y as f32);
+                if Self::fullscreen_movie_pointer_moved(state) {
+                    return;
+                }
                 // Shared tooltip service: every move restarts the show delay
                 // and hides a visible tip (study S1).
                 crate::app::input::tooltips::on_mouse_move(state);
@@ -1049,6 +1125,7 @@ impl ApplicationHandler for App {
                     // Play_Movie reads and ignores mouse buttons; Show_Credits
                     // queues them as ordinary Keyboard entries.
                     if state.frontend.fullscreen_movie.is_some() {
+                        Self::fullscreen_movie_mouse_button(state, button, btn_state.is_pressed());
                         return;
                     }
                     if state.frontend.credits_roll.is_some() {

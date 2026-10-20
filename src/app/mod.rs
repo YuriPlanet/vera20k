@@ -36,6 +36,7 @@ pub(crate) mod campaign_defeat;
 pub(crate) mod campaign_victory;
 pub(crate) mod chrono_screen;
 mod cncnet;
+pub(crate) mod chinese_ui;
 #[cfg(feature = "debug-tools")]
 pub(crate) mod debug_tools;
 pub(crate) mod diagnostics;
@@ -70,6 +71,7 @@ pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
 pub(crate) mod movie_playback;
+pub(crate) mod movie_subtitles;
 pub(crate) mod persistence;
 pub(crate) mod presentation;
 pub(crate) mod process_assets;

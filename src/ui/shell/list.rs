@@ -140,6 +140,15 @@ pub struct ShellListGeometry {
     pub metrics: ListMetrics,
 }
 impl ShellListGeometry {
+    /// Direct manipulation of list contents uses the same range as its native
+    /// scrollbar. Selection, double-click state and scroll capture stay owned
+    /// by the caller; moving the viewport never selects a row.
+    pub fn scroll_by_rows(&self, top: &mut usize, rows: i32) -> bool {
+        let before = *top;
+        *top = top.saturating_add_signed(rows as isize).min(self.max_top);
+        *top != before
+    }
+
     pub fn new(outer: RectPx, count: usize, top: usize, metrics: ListMetrics) -> Self {
         let inner_height = (outer.h - 2).max(0);
         let visible_rows = (inner_height / metrics.row_h) as usize;

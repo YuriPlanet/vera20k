@@ -135,6 +135,21 @@ impl CsfFile {
     pub fn entries(&self) -> impl Iterator<Item = (&str, &str)> {
         self.entries.iter().map(|(k, v)| (k.as_str(), v.as_str()))
     }
+
+    /// Apply an application-owned display translation without changing the
+    /// parsed source metadata or the original archive bytes. Labels retain the
+    /// same case-insensitive lookup semantics as parsed CSF records.
+    pub fn with_display_overrides(
+        mut self,
+        overrides: impl IntoIterator<Item = (String, String)>,
+    ) -> Self {
+        self.entries.extend(
+            overrides
+                .into_iter()
+                .map(|(key, value)| (key.to_ascii_uppercase(), value)),
+        );
+        self
+    }
 }
 
 /// AbstractTypeClass's visible type name (`+0x60`): the constructor leaves

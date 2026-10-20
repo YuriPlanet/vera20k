@@ -284,11 +284,12 @@ def package(args):
     executable = args.executable.resolve(strict=True)
     asset_root = args.asset_root.resolve(strict=True)
     app_icon = args.app_icon.resolve(strict=True)
+    subtitle = args.movie_subtitles.resolve(strict=True) if args.movie_subtitles else None
     output = args.output.resolve()
     if not executable.is_file() or not asset_root.is_dir() or not app_icon.is_file():
         raise PackageError("executable and app-icon must be files and asset-root must be a directory")
     if (contains(output, executable) or contains(output, asset_root) or contains(asset_root, output)
-            or contains(output, app_icon)):
+            or contains(output, app_icon) or (subtitle and contains(output, subtitle))):
         raise PackageError("output must be separate from the executable, icon and asset source tree")
     required = {"ra2.mix", "ra2md.mix", "language.mix", "langmd.mix", "gamemd.exe"}
     present = {path.name.casefold() for path in asset_root.iterdir() if path.is_file()}
@@ -309,6 +310,19 @@ def package(args):
         with (app / "Info.plist").open("wb") as target:
             plistlib.dump({**info_plist(args), **icon_plist}, target, fmt=plistlib.FMT_BINARY)
         (app / "PkgInfo").write_bytes(b"APPL????")
+        subtitle_record = None
+        if subtitle:
+            if not subtitle.is_file():
+                raise PackageError("movie-subtitles must be a regular file")
+            shutil.copyfile(subtitle, app / "subtitlemd.txt")
+            attribution = []
+            for name in ("creditsmd.txt", "README.upstream.md"):
+                source = subtitle.parent / name
+                if source.is_file():
+                    shutil.copyfile(source, app / name)
+                    attribution.append({"path": name, "sha256": sha256(source)})
+            subtitle_record = {"source": str(subtitle), "sha256": sha256(subtitle),
+                               "path": "subtitlemd.txt", "attribution": attribution}
         print("Copying local retail assets into the iOS app...", flush=True)
         # iOS uses a shallow bundle. A top-level directory literally named
         # Resources is reserved by the macOS bundle layout and confuses codesign.
@@ -342,6 +356,7 @@ def package(args):
             "version": args.version,
             "build_number": args.build_number,
             "app_icon": icon_record,
+            "movie_subtitles": subtitle_record,
             "minimum_ios": args.minimum_ios,
             "signed": bool(signing) or args.simulator,
             "signing_mode": signing_mode,
@@ -383,6 +398,8 @@ def main():
                         help="new or empty output directory")
     parser.add_argument("--app-icon", type=absolute_path, default=APP_ICON,
                         help="approved opaque square PNG (defaults to art/branding/wannafire-app-icon.png)")
+    parser.add_argument("--movie-subtitles", type=absolute_path,
+                        help="optional local YR subtitlemd.txt, with sibling credits/source attribution")
     parser.add_argument("--bundle-id", default="org.yuriplanet.vera20k.ios.mini")
     parser.add_argument("--minimum-ios", type=version, default="16.0")
     parser.add_argument("--version", type=version, default="1.0")

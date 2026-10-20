@@ -178,7 +178,7 @@ pub(super) fn set_open_combo_top_index(
     }
 }
 
-pub(super) fn scroll_open_combo_by_rows(
+pub fn scroll_open_combo_by_rows(
     state: &mut SkirmishShellState,
     maps: &[MapMenuEntry],
     id: SkirmishComboId,
@@ -188,13 +188,37 @@ pub(super) fn scroll_open_combo_by_rows(
         return false;
     };
     let max_top = combo_dropdown_max_top_index(state, maps, id);
-    let next = if rows < 0 {
-        open.top_index.saturating_sub((-rows) as usize)
-    } else {
-        (open.top_index + rows as usize).min(max_top)
-    };
+    let next = open
+        .top_index
+        .saturating_add_signed(rows as isize)
+        .min(max_top);
     set_open_combo_top_index(state, maps, id, next);
     next != open.top_index
+}
+
+/// Compose the existing popup/scrollbar metrics for direct touch scrolling.
+/// Mouse-wheel behavior and selection notifications remain unchanged.
+pub fn combo_dropdown_scroll_geometry(
+    state: &SkirmishShellState,
+    layout: &SkirmishShellLayout,
+    maps: &[MapMenuEntry],
+    id: SkirmishComboId,
+) -> Option<crate::ui::shell::list::ShellListGeometry> {
+    let metrics = DropdownMetrics::scaled(layout.scale);
+    Some(crate::ui::shell::list::ShellListGeometry {
+        outer: combo_dropdown_rect(state, layout, maps, id)?,
+        content: combo_dropdown_content_rect(state, layout, maps, id)?,
+        scrollbar: combo_dropdown_scrollbar_rect(state, layout, maps, id),
+        thumb: combo_dropdown_scroll_thumb_rect(state, layout, maps, id),
+        visible_rows: combo_dropdown_visible_row_count(state, maps, id),
+        max_top: combo_dropdown_max_top_index(state, maps, id),
+        metrics: crate::ui::shell::list::ListMetrics {
+            row_h: metrics.row_h,
+            scrollbar_w: metrics.scrollbar_w,
+            arrow_h: metrics.button_h,
+            min_thumb_h: metrics.min_thumb_h,
+        },
+    })
 }
 
 pub(super) fn top_index_from_thumb_y(

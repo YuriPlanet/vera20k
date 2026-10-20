@@ -299,7 +299,9 @@ impl App {
             state.audio.music_player.as_ref().map(|music| music.mixer()),
             voice_volume,
             return_to,
-        );
+        )
+        .with_subtitles(stem, state.platform.capture_client_size.is_none())
+        .with_skip_control(state.platform.capture_client_size.is_none());
         state.frontend.fullscreen_movie = Some(movie);
         if running_scenario {
             state.frontend.screen = crate::ui::game_screen::GameScreen::MainMenu;
@@ -398,6 +400,81 @@ impl App {
         {
             movie.abort();
             state.platform.window.request_redraw();
+        }
+    }
+
+    /// Direct touch ownership runs before any generic pointer translation.
+    /// Other movie-area touches are consumed but never arm a skip action.
+    #[cfg(target_os = "ios")]
+    pub(crate) fn fullscreen_movie_touch(
+        state: &mut AppState,
+        touch: &winit::event::Touch,
+    ) -> bool {
+        if state.platform.capture_client_size.is_some() {
+            return false;
+        }
+        let Some(movie) = state.frontend.fullscreen_movie.as_mut() else {
+            return false;
+        };
+        if state.platform.window_active {
+            movie.skip_touch(
+                touch,
+                [
+                    state.renderer.gpu.config.width,
+                    state.renderer.gpu.config.height,
+                ],
+                state.platform.window.scale_factor() as f32,
+            );
+        } else {
+            movie.cancel_skip_pointer();
+        }
+        state.platform.window.request_redraw();
+        true
+    }
+
+    pub(crate) fn fullscreen_movie_pointer_moved(state: &mut AppState) -> bool {
+        let position = state.match_state.input.cursor_px();
+        let Some(movie) = state.frontend.fullscreen_movie.as_mut() else {
+            return false;
+        };
+        movie.skip_pointer_move(
+            position,
+            [
+                state.renderer.gpu.config.width,
+                state.renderer.gpu.config.height,
+            ],
+            state.platform.window.scale_factor() as f32,
+        );
+        state.platform.window.request_redraw();
+        true
+    }
+
+    pub(crate) fn fullscreen_movie_mouse_button(
+        state: &mut AppState,
+        button: winit::event::MouseButton,
+        pressed: bool,
+    ) {
+        let position = state.match_state.input.cursor_px();
+        if button == winit::event::MouseButton::Left
+            && state.platform.window_active
+            && let Some(movie) = state.frontend.fullscreen_movie.as_mut()
+        {
+            movie.skip_pointer_button(
+                pressed,
+                position,
+                [
+                    state.renderer.gpu.config.width,
+                    state.renderer.gpu.config.height,
+                ],
+                state.platform.window.scale_factor() as f32,
+            );
+            state.platform.window.request_redraw();
+        }
+    }
+
+    pub(crate) fn fullscreen_movie_cancel_pointer(state: &mut AppState) {
+        if let Some(movie) = state.frontend.fullscreen_movie.as_mut() {
+            movie.cancel_skip_pointer();
         }
     }
 

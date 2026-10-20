@@ -163,6 +163,10 @@ impl App {
     /// the shell pages draw whenever it loaded.
     fn show_os_cursor_only_without_game_cursor(state: &mut AppState, battlefield_drawn: bool) {
         let status_screen_drawn = std::mem::take(&mut state.frontend.status_screen_drawn);
+        if state.touch_input_mode() {
+            state.platform.window.set_cursor_visible(false);
+            return;
+        }
         let visible = if state.platform.cursor_confined {
             // Confined: the game owns the pointer through its
             // software cursor, so keep the OS cursor hidden everywhere the game

@@ -151,7 +151,10 @@ impl StartupSplashPresentation {
             "startup splash requires a non-zero client size"
         );
 
+        #[cfg(not(any(target_os = "ios", target_os = "macos")))]
         let ([width, height], placement) = splash_placement(client_width, client_height);
+        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        let ([width, height], placement) = branded_splash_placement(client_width, client_height);
         #[cfg(not(any(target_os = "ios", target_os = "macos")))]
         let rgba = compose_startup_splash(
             assets,
@@ -283,6 +286,23 @@ fn splash_placement(client_width: u32, client_height: u32) -> ([u32; 2], RectPx)
         let window = RectPx::new(0, 0, client_width as i32, client_height as i32);
         ([client_width, client_height], window)
     }
+}
+
+/// Keep the approved 4:3 art at full height, with text over the picture. The
+/// canvas follows the viewport aspect ratio, so no extra footer pushes art up.
+#[cfg(any(target_os = "ios", target_os = "macos", test))]
+fn branded_splash_placement(width: u32, height: u32) -> ([u32; 2], RectPx) {
+    let rows = if (width, height) == (640, 480) {
+        480
+    } else {
+        600
+    };
+    let columns = (u64::from(width) * u64::from(rows) / u64::from(height.max(1)))
+        .clamp(1, u64::from(u32::MAX)) as u32;
+    (
+        [columns, rows],
+        RectPx::new(0, 0, width as i32, height as i32),
+    )
 }
 
 /// gamemd's splash for a `client_width` x `client_height` client: the art
@@ -451,16 +471,24 @@ fn compose_branded_startup_splash(
     let mut rasterize = |codepoint, width| rasterizer.glyph(codepoint, width);
     #[cfg(not(any(target_os = "ios", target_os = "macos")))]
     let mut rasterize = |_, _| None;
-    let column_width = (width.saturating_sub(40)) / 2;
-    let disclaimer = wrap_footer_lines(font, &WERHD_DISCLAIMER, column_width, ROWS);
-    let copyright = wrap_footer_lines(font, &WERHD_COPYRIGHT, column_width, ROWS);
-    let footer_height =
-        (disclaimer.len().max(copyright.len()) as u32 * LINE_HEIGHT + 20).min(height / 3);
-    let art_height = height - footer_height;
-    let art_width = (art_height * 4 / 3).min(width);
+    let art_width = (height * 4 / 3).min(width);
     let art_height = art_width * 3 / 4;
     let art_x = (width - art_width) / 2;
-    let art_y = (height - footer_height - art_height) / 2;
+    let art_y = (height - art_height) / 2;
+    let column_width = art_width.saturating_sub(40) / 2;
+    let disclaimer = wrap_footer_lines(font, &WERHD_DISCLAIMER, column_width, ROWS);
+    // At 640x480 keep the right block below the green URL wordmark: two
+    // compact rows starting at y446, rather than three rows over the logo.
+    let (copyright_rows, copyright_line_height) = if art_height <= 480 {
+        (11, 12)
+    } else {
+        (ROWS, LINE_HEIGHT)
+    };
+    let copyright = wrap_footer_lines(font, &WERHD_COPYRIGHT, column_width, copyright_rows);
+    let footer_height = (disclaimer.len() as u32 * LINE_HEIGHT)
+        .max(copyright.len() as u32 * copyright_line_height)
+        .saturating_add(20)
+        .min(height / 3);
     let image = image::load_from_memory_with_format(
         include_bytes!("../../../art/branding/werhd-loading.png"),
         image::ImageFormat::Png,
@@ -485,6 +513,16 @@ fn compose_branded_startup_splash(
         art_y as i32,
         RgbaBlend::SourceOver,
     );
+    // A translucent bottom scrim keeps copyright readable without allocating
+    // a black footer or reducing the full-height artwork.
+    let footer_top = art_y + art_height.saturating_sub(footer_height);
+    for y in footer_top..art_y + art_height {
+        let alpha = ((y - footer_top + 1) * 170 / footer_height.max(1)) as u8;
+        for x in art_x..art_x + art_width {
+            let offset = ((y * width + x) * 4) as usize;
+            source_over_rgba(&mut canvas[offset..offset + 4], &[0, 0, 0, alpha]);
+        }
+    }
     let loading = csf_text(csf, LOADING_KEY, LOADING_FALLBACK);
     draw_text_with_rasterizer(
         &mut canvas,
@@ -493,19 +531,22 @@ fn compose_branded_startup_splash(
         font,
         &loading,
         art_x as i32 + 10,
-        (art_y + art_height) as i32 - font.cell_height as i32 - 6,
+        footer_top as i32 - font.cell_height as i32 - 6,
         &mut rasterize,
     );
     // Like the web splash: independent left/right blocks, bottom-aligned,
-    // with 10px outer margins. Reserve their space rather than covering art.
-    for (lines, right_aligned) in [(&disclaimer, false), (&copyright, true)] {
-        let first_y = height as i32 - 10 - lines.len() as i32 * LINE_HEIGHT as i32;
+    // with 10px margins inside the artwork; they float over its lower edge.
+    for (lines, right_aligned, rows, line_height) in [
+        (&disclaimer, false, ROWS, LINE_HEIGHT),
+        (&copyright, true, copyright_rows, copyright_line_height),
+    ] {
+        let first_y = (art_y + art_height) as i32 - 10 - lines.len() as i32 * line_height as i32;
         for (index, line) in lines.iter().enumerate() {
-            let line_width = scaled_footer_width(font, line, ROWS);
+            let line_width = scaled_footer_width(font, line, rows);
             let x = if right_aligned {
-                width as i32 - 10 - line_width as i32
+                (art_x + art_width) as i32 - 10 - line_width as i32
             } else {
-                10
+                art_x as i32 + 10
             };
             let source_width = font.text_width(line).max(1);
             let source_rows = u32::from(font.bitmap_rows).max(1);
@@ -530,7 +571,7 @@ fn compose_branded_startup_splash(
             let image = image::imageops::resize(
                 &image,
                 line_width.max(1),
-                ROWS,
+                rows,
                 image::imageops::FilterType::Lanczos3,
             );
             blit_rgba_clipped(
@@ -541,7 +582,7 @@ fn compose_branded_startup_splash(
                 image.width() as usize,
                 image.height() as usize,
                 x,
-                first_y + index as i32 * LINE_HEIGHT as i32,
+                first_y + index as i32 * line_height as i32,
                 RgbaBlend::SourceOver,
             );
         }
@@ -974,7 +1015,7 @@ mod tests {
 
         // The web copy includes Chinese and long mixed-language lines. Verify
         // it fits both shell sizes with the real localized font, without
-        // clipping either footer column or growing into the reserved artwork.
+        // clipping either footer column while they overlay the complete artwork.
         for (width, height) in [(640, 480), (800, 600)] {
             let column_width = (width - 40) / 2;
             let mut max_lines = 0;
@@ -991,10 +1032,31 @@ mod tests {
                 );
             }
             assert!(max_lines as u32 * 15 + 20 <= height / 3);
+            let (copy_rows, copy_line_height) = if height <= 480 { (11, 12) } else { (13, 15) };
+            let copyright = wrap_footer_lines(&font, &WERHD_COPYRIGHT, column_width, copy_rows);
+            assert_eq!(copyright.len(), 2, "copyright stays below the wordmark");
+            let copyright_top = height - 10 - copyright.len() as u32 * copy_line_height;
+            assert!(
+                copyright_top >= height * 93 / 100,
+                "copyright overlaps the URL"
+            );
             let branded = compose_branded_startup_splash(None, &font, width, height)
                 .expect("compose approved Apple splash with web footer");
             assert_eq!(branded.len(), width as usize * height as usize * 4);
             assert!(branded.chunks_exact(4).all(|pixel| pixel[3] == 255));
+        }
+    }
+
+    #[test]
+    fn branded_art_uses_full_viewport_height_without_a_separate_footer() {
+        for (width, height) in [(640, 480), (800, 600), (1600, 900), (2622, 1206)] {
+            let ([columns, rows], placement) = branded_splash_placement(width, height);
+            assert_eq!(placement, RectPx::new(0, 0, width as i32, height as i32));
+            assert!(
+                (i64::from(columns) * i64::from(height) - i64::from(width) * i64::from(rows)).abs()
+                    < i64::from(height)
+            );
+            assert!(columns >= rows * 4 / 3);
         }
     }
 

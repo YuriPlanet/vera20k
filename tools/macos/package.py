@@ -53,9 +53,10 @@ def package(args):
     executable = args.executable.resolve(strict=True)
     asset_root = args.asset_root.resolve(strict=True)
     icon = (ROOT / "art/branding/wannafire-app-icon.png").resolve(strict=True)
+    subtitle = args.movie_subtitles.resolve(strict=True) if args.movie_subtitles else None
     if not asset_root.is_dir():
         raise ValueError("asset-root must be a directory")
-    if any(output == path or output in path.parents for path in (executable, asset_root, icon)):
+    if any(output == path or output in path.parents for path in (executable, asset_root, icon, *([subtitle] if subtitle else []))):
         raise ValueError("output must be separate from all source files")
     if asset_root == output or asset_root in output.parents:
         raise ValueError("output must not be inside retail assets")
@@ -87,6 +88,19 @@ def package(args):
         # ordinary filesystem copies can lose. The existing config reader can
         # follow this relative link without adding another discovery owner.
         (binaries / "config.toml").symlink_to("../Resources/config.toml")
+        subtitle_record = None
+        if subtitle:
+            if not subtitle.is_file():
+                raise ValueError("movie-subtitles must be a regular file")
+            shutil.copyfile(subtitle, resources / "subtitlemd.txt")
+            attribution = []
+            for name in ("creditsmd.txt", "README.upstream.md"):
+                source = subtitle.parent / name
+                if source.is_file():
+                    shutil.copyfile(source, resources / name)
+                    attribution.append({"path": name, "sha256": digest(source)})
+            subtitle_record = {"source": str(subtitle), "sha256": digest(subtitle),
+                               "path": "Contents/Resources/subtitlemd.txt", "attribution": attribution}
         iconset = staging / "AppIcon.iconset"
         iconset.mkdir()
         for points in (16, 32, 128, 256, 512):
@@ -128,6 +142,7 @@ def package(args):
                            "sha256": digest(binaries / "vera20k"), "platform": "MACOS"},
             "app_icon": {"source": str(icon), "sha256": digest(icon), "icns_sha256": digest(icns)},
             "signing_mode": "ad-hoc",
+            "movie_subtitles": subtitle_record,
         }
         (staging / "package-manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
         shutil.rmtree(iconset)
@@ -148,6 +163,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--build-number", default="20261020.3")
     parser.add_argument("--profile-name", default="Player")
+    parser.add_argument("--movie-subtitles", type=Path,
+                        help="optional local YR subtitlemd.txt, with sibling credits/source attribution")
     parser.add_argument("--replace", action="store_true")
     args = parser.parse_args()
     try:
