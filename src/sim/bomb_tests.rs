@@ -515,7 +515,7 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
             let planter = index(&input["planter"]).unwrap_or(u64::MAX);
             let target = index(&input["target"]);
             let carrier_before = target.and_then(|id| bomb(&sim, id));
-            sim.bomb_attach(planter, target, &rules);
+            sim.bomb_attach_for_test(planter, target, &rules);
             let native = case.bombs.first();
             match native {
                 Some(native) => {
@@ -568,7 +568,15 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
         "detonate" => {
             let carrier = ids[1];
             let native_blast = case.events.iter().any(|event| event[0] == "area_damage");
-            let blast = sim.take_bomb_blast(carrier, &rules);
+            let blast = crate::sim::world::Simulation::take_bomb_blast(
+                &sim.interner,
+                &sim.session,
+                &mut sim.substrate,
+                &sim.resolved_terrain,
+                &mut sim.bombs,
+                carrier,
+                &rules,
+            );
             assert!(
                 bomb(&sim, carrier).is_none(),
                 "{name}: the record goes first"
@@ -654,7 +662,14 @@ fn native_update_all_corpus() {
             houses,
         } = native_world(input, &rules);
         sim.bombs.visibility_countdown = input["countdown"].as_i64().unwrap() as i32;
-        sim.bomb_list_update(&rules);
+        crate::sim::world::Simulation::bomb_list_update(
+            &sim.interner,
+            &mut sim.substrate,
+            &sim.houses,
+            &sim.resolved_terrain,
+            &mut sim.bombs,
+            &rules,
+        );
         let list = case.list.as_ref().unwrap();
         assert_eq!(
             i64::from(sim.bombs.visibility_countdown),
@@ -837,7 +852,7 @@ fn retail_fire_once_defuse_releases_target_and_carrier() {
     let ivan = spawn(&mut sim, rules, "IVAN", "Russians", 30, 10);
     let engineer = spawn(&mut sim, rules, "ENGINEER", "Americans", 11, 10);
     assert!(rules.weapon("DefuseKit").unwrap().fire_once);
-    sim.bomb_attach(ivan, Some(tank), rules);
+    sim.bomb_attach_for_test(ivan, Some(tank), rules);
     let health = entity(&sim, tank).health.current();
     // The ordinary DisarmBomb click emits Attack for an allied object
     // (`app/input/context_order.rs::bomb_order`), retaining native Attack
@@ -890,7 +905,7 @@ fn a_bomb_outlives_its_planter_and_credits_no_one() {
     let tank = spawn(&mut sim, &rules, "LTNK", "Americans", 12, 10);
     let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 11, 10);
     sim.session.set_binary_frame_for_test(100);
-    sim.bomb_attach(ivan, Some(tank), &rules);
+    sim.bomb_attach_for_test(ivan, Some(tank), &rules);
     sim.uninit_with_rules(ivan, &rules);
     sim.flush_pending_delete();
     assert_eq!(bomb(&sim, tank).unwrap().planter, None);
@@ -920,7 +935,7 @@ fn removal_and_capture_defuse_silently() {
     let garrison = spawn(&mut sim, &rules, "CAGARR", "Americans", 18, 10);
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 22, 10);
     for carrier in [sold, captured, garrison, tank] {
-        sim.bomb_attach(ivan, Some(carrier), &rules);
+        sim.bomb_attach_for_test(ivan, Some(carrier), &rules);
     }
     let russians = sim.interner.intern("Russians");
 
@@ -1003,7 +1018,7 @@ fn a_bombed_crazy_ivan_blows_up_once() {
     for id in [tank, carrier, engineer] {
         place(&mut sim, &rules, id, (3000, 3100));
     }
-    sim.bomb_attach(planter, Some(carrier), &rules);
+    sim.bomb_attach_for_test(planter, Some(carrier), &rules);
     kill(&mut sim, &rules, carrier);
     assert!(sim.bomb_carriers().is_empty());
     assert_eq!(entity(&sim, tank).health.current(), 1000 - 450, "one blast");
@@ -1026,9 +1041,9 @@ fn a_blast_sets_off_the_bombs_it_kills() {
         place(&mut sim, &rules, id, (3000, 3100));
     }
     sim.session.set_binary_frame_for_test(100);
-    sim.bomb_attach(ivan, Some(first), &rules);
+    sim.bomb_attach_for_test(ivan, Some(first), &rules);
     sim.session.set_binary_frame_for_test(200);
-    sim.bomb_attach(ivan, Some(second), &rules);
+    sim.bomb_attach_for_test(ivan, Some(second), &rules);
     sim.session.set_binary_frame_for_test(100 + 451);
     sim.bomb_fuse_step(
         first,
@@ -1052,7 +1067,7 @@ fn an_engineer_defuses_a_bomb() {
     let clean = spawn(&mut sim, &rules, "HTNK", "Russians", 12, 14);
     let engineer = spawn(&mut sim, &rules, "ENGINEER", "Americans", 11, 14);
     let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 30, 10);
-    sim.bomb_attach(ivan, Some(tank), &rules);
+    sim.bomb_attach_for_test(ivan, Some(tank), &rules);
 
     // Against an unbombed tank the kit is illegal: nothing happens.
     attack(&mut sim, engineer, clean);
@@ -1083,8 +1098,8 @@ fn no_engineer_defuses_unordered() {
     let american_tank = spawn(&mut sim, &rules, "HTNK", "Americans", 22, 10);
     let american_ivan = spawn(&mut sim, &rules, "IVAN", "Americans", 30, 30);
     let russian_ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 5, 30);
-    sim.bomb_attach(american_ivan, Some(russian_tank), &rules);
-    sim.bomb_attach(russian_ivan, Some(american_tank), &rules);
+    sim.bomb_attach_for_test(american_ivan, Some(russian_tank), &rules);
+    sim.bomb_attach_for_test(russian_ivan, Some(american_tank), &rules);
     spawn(&mut sim, &rules, "ENGINEER", "Americans", 12, 11);
     spawn(&mut sim, &rules, "ENGINEER", "Russians", 22, 11);
     for _ in 0..300 {
@@ -1108,11 +1123,25 @@ fn a_bomb_survives_a_snapshot() {
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
     let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 11, 10);
     let unbombed = sim.state_hash();
-    sim.bomb_attach(ivan, Some(tank), &rules);
+    sim.bomb_attach_for_test(ivan, Some(tank), &rules);
     assert_ne!(sim.state_hash(), unbombed, "the bomb is hashed");
     // Two UpdateAll calls after the attach: the planter's house sees it.
-    sim.bomb_list_update(&rules);
-    sim.bomb_list_update(&rules);
+    crate::sim::world::Simulation::bomb_list_update(
+        &sim.interner,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        &mut sim.bombs,
+        &rules,
+    );
+    crate::sim::world::Simulation::bomb_list_update(
+        &sim.interner,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        &mut sim.bombs,
+        &rules,
+    );
     let russians = sim.interner.get("Russians").unwrap();
     assert!(sim.bomb_seen_by(tank, russians));
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "bomb", 0);
@@ -1200,7 +1229,14 @@ fn who_sees_a_bomb_follows_the_native_refresh() {
     {
         bomb.seen_by = 0;
     }
-    sim.bomb_list_update(&rules);
+    crate::sim::world::Simulation::bomb_list_update(
+        &sim.interner,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        &mut sim.bombs,
+        &rules,
+    );
     assert!(sim.bomb_seen_by(tank, americans));
     assert_eq!(sim.state_hash(), before, "BombVisible is presentation");
 }

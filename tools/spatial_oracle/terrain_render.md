@@ -11,8 +11,7 @@ The separate `stock_shapes` records 44 original format-3 decoded-index witnesses
 all 22 body/shadow frames of the two unique retail byte variants, bound to all
 18 TIBTRE01–03 theater/type assets.
 
-The binary is active-retail `gamemd.exe`, SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+The binary is active-retail `gamemd.exe`.
 With the existing Unicorn environment and `VERA20K_GAMEMD_EXE` or `RA2_DIR` set:
 
 ```sh

@@ -46,10 +46,6 @@ fn ground_command_history<'a>(corpus: &'a Value, name: &str) -> &'a Value {
         .iter()
         .find(|row| row["name"] == name)
         .unwrap_or_else(|| panic!("missing original ground-command history {name}"));
-    assert_eq!(
-        row["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(row["status"], "PASS");
     row
 }
@@ -1700,10 +1696,6 @@ pub(super) fn corpus() -> &'static Value {
     let data =
         crate::test_fixture::json("src/sim/world/fixtures/factory_infantry_local_native.json");
     assert_eq!(data["schema_version"], 2);
-    assert_eq!(
-        data["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(data["products"].as_array().unwrap().len(), 2);
     assert_eq!(data["rally"]["products"].as_array().unwrap().len(), 2);
     data
@@ -2039,7 +2031,6 @@ fn joined_two_paid_gi(route: OutputRoute) {
                     "src/sim/world/fixtures/factory_infantry_publication_native.json",
                 ))
                 .unwrap();
-                assert_eq!(phase["native_sha256"], native["native_sha256"]);
                 let event_types: Vec<_> = admitted
                     .iter()
                     .map(|command| match command.payload {

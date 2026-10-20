@@ -8,8 +8,7 @@ does not create a raised deck or change the physical water outside the span.
 This is the LOBRDG01..28 family (OverlayTypes74..101, wooden physical art),
 distinct from LOBRDB01..28 (205..232, native Name `Concrete Low Bridge`).
 
-The native-only corpora use gamemd SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`:
+The native-only corpora use original `gamemd.exe`:
 
 - `naval_occupants` executes Cell487A10, Unit73F0A0/Foot4D9C10 admission,
   Ship6A3F50 AtCoord, and Unit737C90→Foot4D7330→Techno701900→Object5F5390.

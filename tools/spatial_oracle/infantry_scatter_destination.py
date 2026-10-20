@@ -500,7 +500,7 @@ def generate_teleport(cases=None):
                 type_inputs=type_inputs, native_identity=identity,
                 rows=[query(case, teleport_records=records, teleport_type_inputs=type_inputs)
                       for case in (teleport_cases() if cases is None else cases)],
-                transport_native_identity=dict(native_sha256=image_sha256(image),
+                transport_native_identity=dict(native_sha256=image_sha256(),
                     spans=[dict(address=hex(address), bytes=length,
                                 sha256=hashlib.sha256(file_span(image, address, length)[1]).hexdigest())
                            for address, length in ((0x746E20, 6), (0x41BEA0, 0x3D),
@@ -509,7 +509,7 @@ def generate_teleport(cases=None):
                 transport_rows=[teleport_transport_reference(query(
                                     case, teleport_records=records, teleport_type_inputs=type_inputs))
                                 for case in teleport_transport_cases()],
-                refused_enter_native_identity=dict(native_sha256=image_sha256(image),
+                refused_enter_native_identity=dict(native_sha256=image_sha256(),
                     spans=[dict(address=hex(address), bytes=length,
                                 sha256=hashlib.sha256(file_span(image, address, length)[1]).hexdigest())
                            for address, length in ((0x51A488, 0x35), (0x51D0D0, 0xBD4),

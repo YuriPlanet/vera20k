@@ -20,7 +20,7 @@ it lives in history only:
 | 131 archives become 64 | All 37 unchanged names retain their entry count/index digest. Another 27 are case changes or hash-to-filename renames, matched by index fingerprint and filename hash. The remaining 67 were false nested-MIX detections: 55 SHP, 10 PCX and 2 CSF leaf files. Release `asset ls` identifies every one in its parent archive; they remain covered as leaf assets. The production traversal changed in `af75f1c1c`. |
 | Format and audio counts | All 8,824 directly sniffed files, per-format counts and 3,438 bag entries are unchanged. The broader release `asset parse-check --all-mixes` identifier parses 11,855 files with zero failures; unknown formats remain explicitly uncovered. |
 | CSF, PCX and SHP rollups | Replaying the historical archive order through the current decoders reproduces each old digest exactly. Only traversal order changed these aggregates. |
-| PAL rollup and three named PAL digests | `58f999bfd` replaced the old full-range scaling with native component expansion. `python -m tools.sidebar_oracle.palette --check` reproduced the committed fixture against the pinned executable. The corpus test now derives expected RGB from its complete native byte-domain outputs, without a second scale formula. Alpha policy is excluded from this native comparison. |
+| PAL rollup and three named PAL digests | `58f999bfd` replaced the old full-range scaling with native component expansion. `python -m tools.sidebar_oracle.palette --check` reproduced the committed fixture against the retail executable. The corpus test now derives expected RGB from its complete native byte-domain outputs, without a second scale formula. Alpha policy is excluded from this native comparison. |
 | TMP rollup | Historical-order comparison against `58b5d5b3e:src/assets/tmp_decode.rs` reproduces the old digest `11488277409661197448`. Dimensions, origins and color pixels match on every tile. Depth differs on 3,527 tiles in 1,968 files: `58f999bfd` replaced independent ExtraZ `<32`/empty-destination filtering with covered-color ExtraZ composition. Current decoders in the same historical order yield `5271243436535791568`. This is an accounted Rust baseline migration, **not newly demonstrated native TMP depth parity**. |
 | Seven non-PAL named digests | Unchanged. Inactive-theater files now use the existing asset browser's explicit catalogue fallback rather than pretending they are reachable through normal runtime lookup. |
 
@@ -37,7 +37,7 @@ migration, `git show 58b5d5b3e:tests/fixtures/retail_goldens/manifest.json` retr
 the original reference. The recorded archive order allows the same decoder-fold
 experiment to be repeated without reconstructing any asset decoder.
 
-The checked palette run records native SHA-256 and fixture payload SHA-256 in the
+The checked palette run records fixture payload SHA-256 in the
 comparison JSON and the oracle's existing metadata. Original render-time TMP
 depth composition remains outside this parser corpus's proof; see the explicit
 limitation in the historical TMP report.

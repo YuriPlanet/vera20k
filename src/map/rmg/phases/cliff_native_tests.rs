@@ -35,10 +35,6 @@ pub(super) fn observe_placement(tile: i32, origin: (i32, i32), result: &Placemen
 fn corpus() -> &'static Value {
     let doc = crate::test_fixture::json("tools/rmg_oracle/cliff_materialization.json");
     assert_eq!(doc["schema"], 2);
-    assert_eq!(
-        doc["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     doc
 }
 

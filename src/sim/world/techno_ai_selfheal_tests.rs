@@ -148,7 +148,15 @@ fn losing_one_of_three_hospitals_releases_one_share() {
         .health
         .set_for_test(20);
     sim.session.set_binary_frame_for_test(50);
-    house_self_heal_step(&mut sim, man, &rules);
+    house_self_heal_step(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        man,
+        &rules,
+    );
     assert_eq!(
         sim.substrate.entities.get(man).unwrap().health.current(),
         80,
@@ -190,7 +198,15 @@ fn losing_one_of_three_hospitals_releases_one_share() {
         .health
         .set_for_test(20);
     sim.session.set_binary_frame_for_test(100);
-    house_self_heal_step(&mut sim, man, &rules);
+    house_self_heal_step(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        man,
+        &rules,
+    );
     assert_eq!(
         sim.substrate.entities.get(man).unwrap().health.current(),
         40,
@@ -220,8 +236,24 @@ fn only_infantry_and_units_reach_a_house_heal_arm() {
     }
 
     sim.session.set_binary_frame_for_test(150); // divisible by both 50 and 75
-    house_self_heal_step(&mut sim, plant, &rules);
-    house_self_heal_step(&mut sim, aircraft, &rules);
+    house_self_heal_step(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        plant,
+        &rules,
+    );
+    house_self_heal_step(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        aircraft,
+        &rules,
+    );
     assert_eq!(
         sim.substrate.entities.get(plant).unwrap().health.current(),
         40,
@@ -261,7 +293,15 @@ fn an_organic_no_infantry_takes_the_hospital_arm() {
     // The hospital counter alone: 20 x 1 on the 50-frame cadence.
     sim.houses.get_mut(&owner).unwrap().grant_self_heal(1, 0);
     sim.session.set_binary_frame_for_test(150);
-    house_self_heal_step(&mut sim, man, &rules);
+    house_self_heal_step(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        man,
+        &rules,
+    );
     assert_eq!(
         sim.substrate.entities.get(man).unwrap().health.current(),
         120,
@@ -279,7 +319,15 @@ fn an_organic_no_infantry_takes_the_hospital_arm() {
         .health
         .set_for_test(100);
     sim.session.set_binary_frame_for_test(300);
-    house_self_heal_step(&mut sim, man, &rules);
+    house_self_heal_step(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        man,
+        &rules,
+    );
     assert_eq!(
         sim.substrate.entities.get(man).unwrap().health.current(),
         100,
@@ -305,7 +353,15 @@ fn an_over_strength_or_dead_object_never_heals() {
         .health
         .set_for_test(320);
     sim.session.set_binary_frame_for_test(75);
-    house_self_heal_step(&mut sim, tank, &rules);
+    house_self_heal_step(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        tank,
+        &rules,
+    );
     assert_eq!(
         sim.substrate.entities.get(tank).unwrap().health.current(),
         320,
@@ -320,7 +376,15 @@ fn an_over_strength_or_dead_object_never_heals() {
         .health
         .set_for_test(0);
     sim.session.set_binary_frame_for_test(150);
-    house_self_heal_step(&mut sim, tank, &rules);
+    house_self_heal_step(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        tank,
+        &rules,
+    );
     assert_eq!(
         sim.substrate.entities.get(tank).unwrap().health.current(),
         0,
@@ -342,7 +406,15 @@ fn the_heal_stops_at_full_strength() {
     sim.houses.get_mut(&owner).unwrap().grant_self_heal(0, 2);
 
     sim.session.set_binary_frame_for_test(75);
-    house_self_heal_step(&mut sim, tank, &rules);
+    house_self_heal_step(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        tank,
+        &rules,
+    );
     assert_eq!(
         sim.substrate.entities.get(tank).unwrap().health.current(),
         strength,
@@ -350,7 +422,15 @@ fn the_heal_stops_at_full_strength() {
     );
 
     sim.session.set_binary_frame_for_test(150);
-    house_self_heal_step(&mut sim, tank, &rules);
+    house_self_heal_step(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &sim.houses,
+        &sim.resolved_terrain,
+        tank,
+        &rules,
+    );
     assert_eq!(
         sim.substrate.entities.get(tank).unwrap().health.current(),
         strength,
@@ -449,7 +529,15 @@ fn missing_house_self_heal_keys_retain_constructor_defaults_and_completed_buildi
     for (frame, expected) in [(999, 10), (1000, 11), (1001, 11)] {
         sim.session.set_binary_frame_for_test(frame);
         for actor in [infantry, tank] {
-            house_self_heal_step(&mut sim, actor, &rules);
+            house_self_heal_step(
+                &sim.interner,
+                &sim.session,
+                &mut sim.substrate,
+                &sim.houses,
+                &sim.resolved_terrain,
+                actor,
+                &rules,
+            );
             assert_eq!(
                 sim.entities().get(actor).unwrap().health.current(),
                 expected
@@ -469,7 +557,15 @@ fn missing_house_self_heal_keys_retain_constructor_defaults_and_completed_buildi
     assert_eq!(sim.houses[&other].self_heal_units(), 1);
     sim.session.set_binary_frame_for_test(2000);
     for actor in [infantry, tank] {
-        house_self_heal_step(&mut sim, actor, &rules);
+        house_self_heal_step(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.houses,
+            &sim.resolved_terrain,
+            actor,
+            &rules,
+        );
         assert_eq!(sim.entities().get(actor).unwrap().health.current(), 11);
     }
 }
@@ -506,7 +602,15 @@ fn authored_house_self_heal_divide_faults_precede_the_house_count() {
         sim.session
             .set_binary_frame_for_test(row["binary_frame"].as_i64().unwrap() as u32);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            house_self_heal_step(&mut sim, actor, &rules);
+            house_self_heal_step(
+                &sim.interner,
+                &sim.session,
+                &mut sim.substrate,
+                &sim.houses,
+                &sim.resolved_terrain,
+                actor,
+                &rules,
+            );
         }));
         assert_eq!(row["fault"]["interrupt"], 0);
         assert!(result.is_err(), "{row}");

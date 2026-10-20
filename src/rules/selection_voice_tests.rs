@@ -1,6 +1,6 @@
 //! Selection/Attack voice fixed-catalog binding and reached passes.
 //! Reader525430 / TechnoReadINI712B1D..712BF1; empty constructors710D74..710DBD.
-//! Original1cdd1180 controls: input_oracle/selection_navigation.{py,json,meta.json}.
+//! Original gamemd controls: input_oracle/selection_navigation.{py,json,meta.json}.
 //! Attack list/four slots/Rules+230: spatial_oracle/attack_order_voice.
 
 use std::sync::Arc;
@@ -14,10 +14,6 @@ use serde_json::{Value, json};
 
 fn attack_voice_native() -> &'static Value {
     let native = crate::test_fixture::json("tools/spatial_oracle/attack_order_voice.json");
-    assert_eq!(
-        native["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     native
 }
 
@@ -211,10 +207,6 @@ fn move_voice_reader_matches_original_constructor_and_retained_passes() {
 
     let native = crate::test_fixture::json("tools/spatial_oracle/move_order_voice.json");
     assert_eq!(native["schema"], 1);
-    assert_eq!(
-        native["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let sounds = order_voice_catalog(native);
     let assert_fields = |rules: &RuleSet, expected: &Value, label: &str| {
         let object = rules.object("MTNK").unwrap();
@@ -577,15 +569,7 @@ fn selection_voice_native() -> Value {
         "tools/input_oracle/selection_navigation.json",
     ))
     .unwrap();
-    let meta: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/input_oracle/selection_navigation.meta.json",
-    ))
-    .unwrap();
     assert_eq!(corpus["schema"], 1);
-    assert_eq!(
-        meta["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let readers = &corpus["enslaved_voice_type_histories"];
     assert_eq!(readers["reader_entry"], "0x712b1d");
     assert_eq!(readers["enslaved_reader_entry"], "0x712b87");

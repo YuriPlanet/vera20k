@@ -5,8 +5,7 @@ Run `python -m tools.spatial_oracle.bridge_recalc_presentation --check`, with
 [`native_oracle`](../native_oracle.md). `VERA20K_BRIDGE_REPAIR_ASSETS` names a
 directory containing the original extracted `Ovrpsb03.ubn` and `Ovrpsb03a.ubn`;
 their corpus hashes identify the physical NewUrban entries. `--write` explicitly
-regenerates the reference and sidecar. Original executable SHA-256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+regenerates the reference and sidecar.
 
 Historical `groups`, `process_table` and `wheel_values` retain their existing
 Recalc, independent radar and tactical lookup observations. Those controls use

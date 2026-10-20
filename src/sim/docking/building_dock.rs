@@ -1591,7 +1591,7 @@ pub(crate) fn mission_repair(
                 // Original44BFD9 only announces an exactly empty wallet;
                 // a nonzero shortfall remains silent. Client filters +41A.
                 let owner = sim.substrate.entities.get(depot)?.owner();
-                if crate::sim::credit_income::available_money(sim, owner) == 0 {
+                if crate::sim::credit_income::available_money(&sim.houses, owner) == 0 {
                     sim.sound_events.emit(SimSoundEvent::HouseEva {
                         owner,
                         event: "EVA_InsufficientFunds",

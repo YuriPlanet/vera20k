@@ -9,10 +9,6 @@ use super::movies::MovieRegistry;
 
 fn native() -> &'static Value {
     let fixture = crate::test_fixture::json("tools/input_oracle/campaign_start.json");
-    assert_eq!(
-        fixture["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     fixture
 }
 

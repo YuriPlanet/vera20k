@@ -909,7 +909,7 @@ mod tests {
             crate::util::save_codec::serialize(&sim).expect("serialize terrain AnimClass state");
         let mut restored: Simulation =
             crate::util::save_codec::deserialize(&bytes).expect("deserialize state");
-        restored.rebuild_logic_membership();
+        restored.rebuild_logic_membership_for_test();
         assert_eq!(restored.live_object_order_snapshot(), expected_order);
         assert_eq!(restored.state_hash(), expected_hash);
         assert!(restored.anim(ids[0]).unwrap().use_cell_drawer());

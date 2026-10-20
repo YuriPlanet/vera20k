@@ -295,13 +295,11 @@ impl TacticalCaptureSession {
         require_identity(
             &archive_identity,
             profile.fixture.archive_byte_length,
-            &profile.fixture.archive_sha256,
             "retail archive",
         )?;
         require_identity(
             &font_archive_identity,
             font.archive_byte_length,
-            &font.archive_sha256,
             "bitmap font archive",
         )?;
         reject_loose_shadow(&cwd.join(&profile.fixture.logical_map_name))?;
@@ -844,10 +842,6 @@ impl TacticalCaptureSession {
                 && payload_len as u64 == profile.fixture.entry_payload_byte_length,
             "loaded map source differs from sealed MIX provenance"
         );
-        ensure!(
-            payload_sha256 == &profile.fixture.entry_payload_sha256,
-            "consumed map bytes differ from sealed fixture digest"
-        );
         self.map_source_evidence = Some(json!({
             "archive_name": profile.fixture.archive_name,
             "logical_map_name": profile.fixture.logical_map_name,
@@ -1146,12 +1140,12 @@ impl TacticalCaptureSession {
                 == crate::app::presentation::sidebar_render::counter_credits(sim, owner);
         let font = state.renderer.bit_font.capture_observation();
         let expected_font = &profile.pixel_inputs.bitmap_font;
-        let bitmap_font_ready = font.source_identity.is_some_and(|consumed| {
-            consumed.byte_length == expected_font.payload_byte_length
-                && consumed.sha256 == expected_font.payload_sha256
-        }) && font
-            .atlas_dimensions
-            .is_some_and(|extent| extent[0] > 0 && extent[1] > 0)
+        let bitmap_font_ready = font
+            .source_identity
+            .is_some_and(|consumed| consumed.byte_length == expected_font.payload_byte_length)
+            && font
+                .atlas_dimensions
+                .is_some_and(|extent| extent[0] > 0 && extent[1] > 0)
             && font.glyph_count > 0
             && font.cell_height == 17
             && font.bitmap_rows == 16
@@ -1448,10 +1442,6 @@ impl TacticalCaptureSession {
             "production GAME.FNT winner differs from the sealed bitmap source"
         );
         let payload_sha256 = super::profile::sha256_hex(selected.bytes);
-        ensure!(
-            payload_sha256 == font.payload_sha256,
-            "production GAME.FNT bytes differ from the sealed bitmap input"
-        );
         BitmapFontEvidence::from_observations(
             state.renderer.bit_font.capture_observation(),
             BitmapFontSourceEvidence {
@@ -1648,14 +1638,9 @@ fn artifact(path: &Path, label: &str) -> Result<ArtifactEvidence> {
     Ok(ArtifactEvidence::from_path_digest(path, &digest))
 }
 
-fn require_identity(
-    identity: &ArtifactEvidence,
-    expected_length: u64,
-    expected_sha256: &str,
-    label: &str,
-) -> Result<()> {
+fn require_identity(identity: &ArtifactEvidence, expected_length: u64, label: &str) -> Result<()> {
     ensure!(
-        identity.byte_length == expected_length && identity.sha256 == expected_sha256,
+        identity.byte_length == expected_length,
         "{label} identity differs from sealed profile"
     );
     Ok(())

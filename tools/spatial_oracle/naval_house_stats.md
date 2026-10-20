@@ -1,9 +1,7 @@
 # House statistics through sinking saves
 
 `naval_house_stats.py` executes the original concrete House save and load,
-not merely a raw-memory-copy surrogate. The original binary is pinned by
-`tools.native_oracle` to SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+not merely a raw-memory-copy surrogate.
 
 From the VERA20k repository root, with the native Python environment and retail
 executable configured, run:

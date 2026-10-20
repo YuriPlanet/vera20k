@@ -119,7 +119,12 @@ impl Simulation {
 
         // Post_Map_Init686AFE calls68C050 after launch alliances, before
         // Full_Init's particle/OreTwinkle tail. Restore never reruns this pass.
-        self.assign_secret_lab_production(input.rules);
+        Self::assign_secret_lab_production(
+            &mut self.interner,
+            &mut self.scenario_rng,
+            &mut self.substrate,
+            input.rules,
+        );
 
         // ReadScenario684ACE → FillInData684F02..684F7F, before restamp
         // and the particle/OreTwinkle tail. Every nonnull House participates;

@@ -311,10 +311,6 @@ mod tests {
             "tools/input_oracle/campaign_start.json",
         ))
         .expect("original campaign-start corpus");
-        assert_eq!(
-            fixture["native_sha256"],
-            "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-        );
         let rows = fixture["progress_rows"]["rows"].as_array().unwrap();
         assert!(!rows.is_empty(), "executed campaign row cases");
         // This is the corpus's supplied font prior, not a retail raster

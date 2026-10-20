@@ -28,7 +28,6 @@ struct GateRow {
 
 #[derive(Deserialize)]
 struct GateCorpus {
-    native_sha256: String,
     rows: Vec<GateRow>,
 }
 
@@ -38,10 +37,6 @@ fn bridge_layer_gate_matches_original_flags_coordinates_and_retained_dummy() {
         "tools/spatial_oracle/bridge_target_layer.json",
     ))
     .unwrap();
-    assert_eq!(
-        corpus.native_sha256,
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let mut compared = 0;
     let mut noncanonical_bytes = 0;
     for row in &corpus.rows {

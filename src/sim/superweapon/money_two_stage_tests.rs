@@ -187,7 +187,16 @@ fn superweapon_money_two_stage_reset_and_defeat_invalidate_pending_selection() {
                 .set_is_defeated_for_test(true);
             superweapon::update_owned_supers(&mut sim, &rules, owner);
         } else {
-            superweapon::reset_super(&mut sim, &rules, owner, "Sphere");
+            superweapon::reset_super(
+                &sim.interner,
+                &sim.session,
+                &mut sim.substrate,
+                &mut sim.sound_events,
+                &mut sim.super_weapons,
+                &rules,
+                owner,
+                "Sphere",
+            );
         }
         assert!(sim.paid_super_weapon_selection(owner).is_none());
         assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));

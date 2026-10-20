@@ -6,8 +6,6 @@ instructions. VERA's interpreted/exported values do not initialize these readers
 The generator supplies lexical entries from the physical retail files, executes
 original readers, and records exact scalar bits and resolved native names.
 
-The binary identity is the shared oracle's pinned active-retail `gamemd.exe`
-SHA-256 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 Original executable instructions are unchanged. Cached INI indexes use original
 CRC results; allocator storage and CRT TLS storage are supplied. Native physical
 INI loading, archive lookup, whole Rules processing and full Terrain readers are

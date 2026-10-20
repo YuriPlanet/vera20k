@@ -2176,7 +2176,9 @@ fn a_due_ivan_bomb_precedes_the_same_turn_mastermind_overload() {
         .simulation_mut()
         .spawn_object("IVAN", "Russians", 48, 48, 0, &rules)
         .expect("retail Ivan supplied at the existing Attach entry");
-    scene.simulation_mut().bomb_attach(ivan, Some(mind), &rules);
+    scene
+        .simulation_mut()
+        .bomb_attach_for_test(ivan, Some(mind), &rules);
     assert!(
         scene
             .simulation()

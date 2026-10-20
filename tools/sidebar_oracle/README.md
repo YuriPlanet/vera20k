@@ -1,7 +1,6 @@
 # Original sidebar geometry and retained radar evidence
 
-Each oracle executes bytes from the original `gamemd.exe`, SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+Each oracle executes bytes from the original `gamemd.exe`.
 Set `VERA20K_GAMEMD_EXE` to that executable and run, for example,
 `python -B -m tools.sidebar_oracle.geometry --check`. Each script documents
 its complete execution boundary and substitutions in the associated metadata.

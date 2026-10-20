@@ -1,9 +1,8 @@
 # Ordinary Cannon / 120MM bridge rendering
 
 This corpus bounds the common `MTNK → 105mm → Cannon → Image=120MM` SHP
-presentation route. Original executable SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`;
-all executions use the hash-enforcing shared runner and Unicorn 2.1.4.
+presentation route. All executions use original `gamemd.exe` through the shared
+runner and Unicorn 2.1.4.
 The separate [input corpus](bridge_render_inputs.py) establishes the selected
 original constructors, readers, image and palette prerequisites. `120MM` is the
 projectile's image identifier; it is not the `120mm` weapon.

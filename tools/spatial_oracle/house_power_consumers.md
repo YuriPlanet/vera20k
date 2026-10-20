@@ -8,11 +8,10 @@ Construction fixture owners. Original PE instructions decide health, power,
 Factory rate and cadence, blackout timers, radar availability and EVA advice;
 no gameplay result is supplied by a hook.
 
-The original is active-retail `gamemd.exe`, SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+The original is active-retail `gamemd.exe`.
 The payload records every reached instruction boundary, original byte hashes,
 entry order, complete Main/Scenario RNG buffers and unchanged executable
-sections. The shared oracle owner rejects an unsupported executable and refuses to publish
+sections. The shared oracle owner refuses to publish
 if an imported fixture owner changes during the run.
 The 44 retained histories have identical native state and instruction receipts
 to the source research packet. Only portable provenance and explicit startup

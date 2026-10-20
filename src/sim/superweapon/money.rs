@@ -5,7 +5,9 @@
 //! spending and score; there is no competing financial state here.
 
 use crate::rules::superweapon_type::{SuperWeaponKind, SuperWeaponType};
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
+use crate::sim::world::FrameChannel;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
 #[cfg(test)]
@@ -25,11 +27,11 @@ pub(super) fn configuration_supported(sw: &SuperWeaponType) -> bool {
             ))
 }
 
-pub(super) fn can_afford(sim: &Simulation, owner: InternedId, sw: &SuperWeaponType) -> bool {
+pub(super) fn can_afford(houses: &Houses, owner: InternedId, sw: &SuperWeaponType) -> bool {
     if sw.money_amount == 0 {
         return true;
     }
-    sim.houses.get(&owner).is_some_and(|house| {
+    houses.get(&owner).is_some_and(|house| {
         sw.money_amount > 0
             || i64::from(house.economy().available_money()) >= -i64::from(sw.money_amount)
     })
@@ -51,37 +53,38 @@ pub(super) fn valid_target(sim: &Simulation, sw: &SuperWeaponType, cell: (u16, u
 /// Read-only wallet decision, with an owner-scoped presentation fact on refusal.
 /// Called before paired-Super mutation, and checked again at settlement.
 pub(super) fn admit(
-    sim: &mut Simulation,
+    sound_events: &mut FrameChannel<SimSoundEvent>,
+    houses: &Houses,
     owner: InternedId,
     sw_type: InternedId,
     sw: &SuperWeaponType,
 ) -> bool {
-    if can_afford(sim, owner, sw) {
+    if can_afford(houses, owner, sw) {
         return true;
     }
-    if sim.houses.contains_key(&owner) {
-        sim.sound_events
-            .emit(SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type });
+    if houses.contains_key(&owner) {
+        sound_events.emit(SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type });
     }
     false
 }
 
 pub(super) fn transact(
-    sim: &mut Simulation,
+    sound_events: &mut FrameChannel<SimSoundEvent>,
+    houses: &mut Houses,
     owner: InternedId,
     sw_type: InternedId,
     sw: &SuperWeaponType,
 ) -> bool {
-    if !admit(sim, owner, sw_type, sw) {
+    if !admit(sound_events, houses, owner, sw_type, sw) {
         return false;
     }
     if sw.money_amount < 0 {
         // Affordability proves the positive cost fits a signed wallet, so the
         // checked conversion cannot overflow even for an authored i32::MIN.
         let cost = sw.money_amount.checked_neg().expect("admitted signed cost");
-        crate::sim::credit_income::spend_money(&mut sim.houses, owner, cost);
+        crate::sim::credit_income::spend_money(houses, owner, cost);
     } else if sw.money_amount > 0 {
-        crate::sim::credit_income::add_credits(&mut sim.houses, owner, sw.money_amount);
+        crate::sim::credit_income::add_credits(houses, owner, sw.money_amount);
     }
     true
 }

@@ -110,10 +110,6 @@ fn infantry_unlimbo_matches_native_gate_incoming_membership_and_signed_xy() {
     ))
     .unwrap();
     assert_eq!(corpus["schema_version"], 1);
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let mut compared = 0;
     for row in corpus["rows"].as_array().unwrap() {
         // The retained -123264 control exceeds the existing Position owner's
@@ -1250,7 +1246,13 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
     authored
         .lighting_sources
         .set_building_light_active(authored_id, false);
-    authored.allocate_building_light(authored_id, &rules);
+    Simulation::allocate_building_light(
+        &authored.interner,
+        &authored.substrate,
+        &mut authored.lighting_sources,
+        authored_id,
+        &rules,
+    );
     assert!(
         !authored.lighting_sources.buildings()[&authored_id].active,
         "a repeated construction callback must not activate an existing614"

@@ -1,5 +1,5 @@
 //! House50D6D0, called by TAction128/6E1A40: all owned ground Foots to a
-//! waypoint's placement sweep. Original Steam gamemd SHA3e81a617..08600;
+//! waypoint's placement sweep. Original Steam gamemd;
 //! instruction bodies via tools.native_inspect. Existing cell/entry/sub-cell
 //! and Chrono owners retain their arithmetic, RNG, occupancy and cleanup.
 
@@ -82,9 +82,16 @@ impl Simulation {
                 //50D93B passes priority0/false/false to original481180.
                 //Its existing owner pays any sub-cell RNG, even if WarpTo
                 //subsequently refuses. A null result is the zero coordinate.
-                coord = self
-                    .place_infantry_spot_in_cell(rules, identity, coord)?
-                    .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
+                coord = Self::place_infantry_spot_in_cell(
+                    &self.interner,
+                    &mut self.scenario_rng,
+                    &self.substrate,
+                    &self.resolved_terrain,
+                    rules,
+                    identity,
+                    coord,
+                )?
+                .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
             }
             if self.foot_chrono_warp_to(id, coord, rules, registry, effects)? {
                 offset += 1;

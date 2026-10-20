@@ -61,10 +61,10 @@ class ReplayCommandTests(unittest.TestCase):
         self.assertIsNone(sources.replay_command([], main_module('unittest')))
         self.assertIsNone(sources.replay_command([], main_module(file='/elsewhere/tool.py')))
 
-    def test_the_replay_command_and_a_legacy_source_pin_are_not_evidence(self):
+    def test_the_replay_command_and_legacy_source_and_gamemd_pins_are_not_evidence(self):
         metadata = {'native_sha256': 'n', 'payload_sha256': 'p', sources.REPLAY_FIELD: 'python -m tools.x',
                     sources.LEGACY_SOURCE_FIELD: {'tools/x.py': '0' * 64}}
-        self.assertEqual(sources.evidence(metadata), {'native_sha256': 'n', 'payload_sha256': 'p'})
+        self.assertEqual(sources.evidence(metadata), {'payload_sha256': 'p'})
 
 
 if __name__ == '__main__':

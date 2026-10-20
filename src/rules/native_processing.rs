@@ -1107,7 +1107,7 @@ impl ProcessedRulesLayers {
     }
 
     /// ReadGeneral670DE9/670E30/670E57, current scalar defaults across
-    /// layers and Type resets (original gamemd SHA2561cdd1180..84298c).
+    /// layers and Type resets (original gamemd).
     pub(crate) fn repair_service_inputs(&self) -> (i32, f64, f64) {
         let state = self.native_type_construction_trace.registry_state();
         (
@@ -2455,7 +2455,7 @@ struct WeaponReadState {
     /// Weapon771C70 initializes +A4/+AC to zero/null. ReadINI7722D4..7722E8
     /// reads Damage with its current signed value;77294C..772981 only replaces
     /// the Warhead pointer after a nonempty ReadString128. Executed controls:
-    /// spatial_oracle/trigger_do_explosion.json (Steam3e81a617..08600).
+    /// spatial_oracle/trigger_do_explosion.json (Steam gamemd).
     damage: i32,
     warhead: Option<usize>,
     /// `Anim=` (`0x00772471`): ReadString128, then each `strtok` token's
@@ -3128,7 +3128,7 @@ impl RulesPassProcessor {
         // ReadGeneral66F30E..66F350: ReadInt5276D0, exact-case keys,
         // current +7B8/+7BC as defaults, in this order, without clamps.
         // Original: tools.native_inspect disasm0x66F30E --bytes66;
-        // ctor0x666163 --bytes20 (supported retail gamemd3e81a617...).
+        // ctor0x666163 --bytes20 (supported retail gamemd).
         self.rules_parachute_max_fall_rate =
             section.read_int("ParachuteMaxFallRate", self.rules_parachute_max_fall_rate);
         self.rules_no_parachute_max_fall_rate = section.read_int(
@@ -3137,7 +3137,7 @@ impl RulesPassProcessor {
         );
         // ReadGeneral670C13..670C6C: ReadInt5276D0 in side order, current
         // signed values as defaults, no clamp. Full_Init6876AC ->6686C0
-        // resets Types, not these RulesClass fields. Original SHA1cdd1180.
+        // resets Types, not these RulesClass fields. Original gamemd.
         for (value, key) in self.rules_survivor_divisors.iter_mut().zip([
             "AlliedSurvivorDivisor",
             "SovietSurvivorDivisor",

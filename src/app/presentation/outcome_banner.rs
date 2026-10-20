@@ -1,5 +1,5 @@
 //! House FlagWin4FC9E0/FlagLose4FCBD0 -> Tactical SetScreenText6D4DB0,
-//! Draw6D4B25 ->6D4E20. Steam3e81a617..08600 original body/caller bytes.
+//! Draw6D4B25 ->6D4E20. Steam gamemd original body/caller bytes.
 //!
 //! The selected campaign has one PlayerPtr result. Its text/frame is derived
 //! from that House's existing serialized outcome; no second result or expiry

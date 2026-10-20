@@ -7,8 +7,6 @@ MTNK/GADEPT and signed/boundary controls. Its outputs are
 [building_repair.depot_service.meta.json](building_repair.depot_service.meta.json).
 The existing building self-repair payload and sidecar are unchanged.
 
-The executable SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 Unicorn 2.1.4 runs under the existing fixture's ambient x87 word `0x0E7F`
 (PC53, chop). Every scene asserts that original executable text and the four
 actual Unit/UnitType/Building/BuildingType vtables remain byte-identical.

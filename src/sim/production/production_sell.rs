@@ -133,7 +133,7 @@ pub(crate) fn techno_refund(sim: &Simulation, rules: &RuleSet, id: u64) -> Optio
         rules,
         object,
         sim.houses.get(&owner)?,
-        &sim.house_cost_factors(owner)?,
+        &Simulation::house_cost_factors(&sim.houses, owner)?,
         sim.session.game_mode_nonzero(),
         false,
     ))
@@ -418,9 +418,7 @@ pub fn sell_stage_zero(
             (building.owner(), upgrade_type)
         })
     }) {
-        // Steam gamemd SHA256
-        // 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600:
-        //44AAC3..44AB03 constructs the last type, refunds it through70ADA0,
+        // Steam gamemd:44AAC3..44AB03 constructs the last type, refunds it through70ADA0,
         // scalar-deletes it, then calls PowerDown451690. Reuse the shared
         // constructor/destructor transaction: ID/RNG remain spent, tracking
         // is undone synchronously, and no UnInit/loss bookkeeping runs.

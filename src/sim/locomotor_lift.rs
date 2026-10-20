@@ -2,7 +2,7 @@
 //! class on the ground vehicle it hits, and the firer holds it aloft until it
 //! lets it drop.
 //!
-//! gamemd-derived (instruction reading; YR 1.001, SHA-256 `1cdd1180…4298c`):
+//! gamemd-derived (instruction reading; YR 1.001):
 //! - the detonation's locomotor arm, `BulletClass::DetonateAtCoord`
 //!   `0x004694CB..0x00469700` ([`Simulation::locomotor_detonation`]);
 //! - `TechnoClass::ImbueLocomotor @ 0x00710000`
@@ -277,7 +277,7 @@ impl Simulation {
     /// at a landed aircraft. Effect: VERA's shot does nothing; native's lift
     /// and drop of an aircraft are untraced. Frequency: uncommon.
     ///
-    /// Native execution (`gamemd` 3e81a617…d308600, FPCW 0x0E3F) confirms
+    /// Native execution (`gamemd`, FPCW 0x0E3F) confirms
     /// FILD Bullet strength then FCOMP current Type+0x380 Size at `0x004696BD`:
     /// strength 1 vs Size 1.5 refuses; strength 2 vs 1.5 accepts; equality
     /// and unordered comparisons refuse. The `ReadDouble` owner preserves

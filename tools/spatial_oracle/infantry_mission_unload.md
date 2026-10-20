@@ -12,8 +12,7 @@ PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.infantry_deploy_action 
 PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.infantry_action_callback --check
 ```
 
-The companion JSON and metadata pin active-retail `gamemd.exe` SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`, the executed
+The companion JSON and metadata pin the executed
 original code slices, the actual Infantry and constructor-installed Walk vtables,
 and the generator hash. Only OS interlocked imports are supplied. No gameplay
 body or vtable entry is replaced. Scenario/Main/MapGen are separately seeded31 by

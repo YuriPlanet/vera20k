@@ -6,8 +6,6 @@ pointer-expiry callbacks, Attack dispatch, Unit idle, Ready/Commence, selected
 TechnoAI and UnitAI scalar prefixes, and Harvest states 0/1. Expectations come
 from `gamemd.exe`, independently of Rust.
 
-The accepted executable SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 The validation receipt (`tools/spatial_oracle/harvest_attack_return.validation.json`, in git at 1b1a8b43e) binds Rust replay,
 retail integration, source identity and the ordinary release observation.
 Each history checks that the original image instruction region and Unit vtable

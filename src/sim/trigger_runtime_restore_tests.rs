@@ -1,5 +1,5 @@
 //! Native126/6E30C0 -> House50D440 and Foot4DF510 prerequisites.
-//! Steam SHA2563e81a617..08600; new control flow is instruction-derived.
+//! Steam gamemd; new control flow is instruction-derived.
 //! Existing constructors, coordinate/FNPC kernels and Unlimbo keep their
 //! executable comparisons. Supplied-nearby tests assert caller arguments,
 //! and do not claim the supplied answer as native placement output.

@@ -40,7 +40,7 @@ pub const ENEMIES_DESTROYED_LABEL_STATIC: u16 = 0x069F;
 pub const ENEMIES_DESTROYED_VALUE_STATIC: u16 = 0x06F6;
 pub const SCORE_ART_REGION_STATIC: u16 = 0x072B;
 
-/// Retail `gamemd.exe` SHA-256 `3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`:
+/// Retail `gamemd.exe`:
 /// `0x006033F0` returns 100 ms for dialog `0x103` / static `0x72B`.
 const CAMPAIGN_SCORE_EMBLEM_INTERVAL: Duration = Duration::from_millis(100);
 /// `0x006C93C9..0x006C93E1` handles its frame-zero `0x4D8` by selecting SCRA

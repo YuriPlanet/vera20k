@@ -536,7 +536,13 @@ fn gattling_idle_decay_matches_the_original() {
         assert_eq!(dead, input["dead"] == true, "{name}");
         let stage_before = entity.gattling.stage();
         with_draws(&mut sim, row, |sim| {
-            gattling_idle(sim, building, &rules);
+            gattling_idle(
+                &sim.interner,
+                &sim.session,
+                &mut sim.substrate,
+                building,
+                &rules,
+            );
             0
         });
         assert_gattling(&sim, building, row, stage_before);

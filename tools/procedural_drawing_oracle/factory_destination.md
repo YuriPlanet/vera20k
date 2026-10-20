@@ -1,7 +1,6 @@
 # Factory destination and Stop prerequisite
 
-Active retail `gamemd.exe` SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+Native evidence uses active retail `gamemd.exe`.
 Regenerate with `python -m tools.procedural_drawing_oracle.factory_destination --write`;
 `--check` compares without replacing the evidence. The shared `native_oracle`
 loader checks the immutable executable before mapping it. No instructions or

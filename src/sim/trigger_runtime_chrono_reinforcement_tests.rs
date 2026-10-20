@@ -24,10 +24,6 @@ fn corpus() -> Value {
         "tools/spatial_oracle/trigger_chrono_reinforcement.json",
     ))
     .unwrap();
-    assert_eq!(
-        result["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     result
 }
 

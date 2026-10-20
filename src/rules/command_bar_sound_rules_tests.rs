@@ -1,5 +1,5 @@
 //! Command-bar Rules references through the existing pass and fixed-catalog owners.
-//! Original gamemd SHA2561cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c:
+//! Original gamemd:
 //! constructor665892/665898=-1; AudioVisual669423..6694B6 reads GUIOpenSound
 //! then GUICloseSound with ReadString128/VocFind7514D0/current-ID retention.
 //! SidebarInput6D091A/6D0860 consumes them separately from shell combo cues.

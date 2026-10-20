@@ -8,10 +8,6 @@ fn original_infantry_and_unit_approach_radii_and_rays() {
         "tools/spatial_oracle/fv_cell_attack/cleg_approach_vectors.json",
     ))
     .unwrap();
-    assert_eq!(
-        native["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(native["infantry_identity"]["rtti"], 15);
     let cases = native["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 380);
@@ -242,10 +238,6 @@ fn original_approach_candidate_geometry_and_order() {
         "tools/spatial_oracle/fv_cell_attack/approach_vectors.json",
     ))
     .unwrap();
-    assert_eq!(
-        native["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let original_offsets = native["original_constants"]
         .as_array()
         .unwrap()

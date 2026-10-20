@@ -1,5 +1,5 @@
 //! Instruction-established Execute31/HasOccurred54 production regressions.
-//! Steam gamemd SHA2563e81a617..08600; no whole-map/native rendering claim.
+//! Steam gamemd; no whole-map/native rendering claim.
 use super::tests::{event_ingress_fixture_with_rules, install_event_ingress_map};
 use super::*;
 use crate::rules::ruleset::RuleSet;

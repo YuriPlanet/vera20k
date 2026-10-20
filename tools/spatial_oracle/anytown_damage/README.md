@@ -2,8 +2,7 @@
 
 This packet preserves twelve bounded native witnesses for the stock **Anytown,
 Amerika (2–4), `XMP03T4.MAP`** concrete low bridge. It executes original
-active-retail `gamemd.exe`, SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+active-retail `gamemd.exe`.
 The damage machines check the complete mapped `.text` remains
 `4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc`.
 These are bounded native executions. The navigation addition includes a saved

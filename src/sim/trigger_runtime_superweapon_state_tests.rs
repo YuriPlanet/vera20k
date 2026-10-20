@@ -29,10 +29,6 @@ fn all03_inputs() -> Option<(RuleSet, MapFile)> {
     let raw = assets.get_ref("ALL03UMD.MAP").expect("retail ALL03");
     let map = MapFile::from_bytes(raw).unwrap();
     let data = corpus();
-    assert_eq!(
-        data["retail_inputs"]["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     for source in data["retail_inputs"]["sources"].as_array().unwrap() {
         let name = source["file"].as_str().unwrap();
         assert_eq!(
@@ -223,7 +219,16 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
                         int(&row["firing_type"])
                     );
                 }
-                "reset_running" => superweapon::reset_super(&mut sim, &rules, owner, "NukeSpecial"),
+                "reset_running" => superweapon::reset_super(
+                    &sim.interner,
+                    &sim.session,
+                    &mut sim.substrate,
+                    &mut sim.sound_events,
+                    &mut sim.super_weapons,
+                    &rules,
+                    owner,
+                    "NukeSpecial",
+                ),
                 "enemy_selection_prior" => {
                     // Full House enemy selection/cadence is outside the
                     // original control, which supplies the chosen enemy here.

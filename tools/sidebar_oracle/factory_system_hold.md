@@ -112,5 +112,5 @@ scheduling, full Rules/VFS winner selection, rendered HOLD pixels and whole
 EVA/device behavior remain outside these controls. Existing EVA transport is
 an observed sink; no new gameplay answer is substituted.
 
-The sidecar pins the executable hash, replay command, physical input hashes,
+The sidecar pins the replay command, physical input hashes,
 entry points and supplied seams. It contains no repository-source hashes.

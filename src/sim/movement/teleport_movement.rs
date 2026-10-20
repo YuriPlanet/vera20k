@@ -27,8 +27,11 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::GeneralRules;
 use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::components::DriveCoord;
+use crate::sim::intern::StringInterner;
 use crate::sim::pathfinding::PathGrid;
+use crate::sim::world::FrameChannel;
 use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::SimSoundEvent;
 use std::sync::Arc;
 
 const TELEPORT_WARP_DRAW_FLAGS: u32 = 0x600;
@@ -47,16 +50,18 @@ impl crate::sim::world::Simulation {
     /// ChronoOutSound/ChronoInSound (TechnoType+0x578/+0x574), else
     /// `[AudioVisual]` (Rules+0x21C/+0x218), else silence.
     pub(crate) fn teleport_warp_sound(
-        &mut self,
+        interner: &mut StringInterner,
+        substrate: &ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
         id: u64,
         sound: WarpSound,
         rules: &crate::rules::ruleset::RuleSet,
     ) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         let (rx, ry) = (entity.position.rx(), entity.position.ry());
-        let object = self.object_type(entity.type_ref(), rules);
+        let object = interner.object_type(entity.type_ref(), rules);
         let name = match sound {
             WarpSound::Out => object
                 .and_then(|object| object.chrono_out_sound.clone())
@@ -66,9 +71,12 @@ impl crate::sim::world::Simulation {
                 .or_else(|| rules.general.chrono_in_sound.clone()),
         };
         if let Some(name) = name {
-            let sound_id = self.interner.intern(&name);
-            self.sound_events
-                .emit(crate::sim::world::SimSoundEvent::ChronoTeleport { sound_id, rx, ry });
+            let sound_id = interner.intern(&name);
+            sound_events.emit(crate::sim::world::SimSoundEvent::ChronoTeleport {
+                sound_id,
+                rx,
+                ry,
+            });
         }
     }
 

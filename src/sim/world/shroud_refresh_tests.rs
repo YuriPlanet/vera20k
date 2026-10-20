@@ -1329,3 +1329,307 @@ fn listed_shroud_edge_updates_survive_their_callbacks() {
         assert_eq!(&listed, complete, "record {index}");
     }
 }
+
+/// Horizontal_Step's tail (`0x004CF55D..0x004CF5EC`): a selected enemy
+/// aircraft drops out of the player's selection once it flies over the
+/// player's shroud (`MapClass::IsShrouded @ 0x00586360` at its Location);
+/// over mapped ground it stays selected, and the player's own aircraft is
+/// never deselected.
+#[test]
+fn a_selected_enemy_aircraft_is_deselected_over_the_players_shroud() {
+    let (mut sim, rules, registry, player, enemy_house) = shroud_selection_fixture(true);
+    let own = sim
+        .spawn_object_with_overlay_registry("HORNET", "Americans", 6, 12, 0, &rules, &registry)
+        .unwrap();
+    let enemy = sim
+        .spawn_object_with_overlay_registry("HORNET", "Russians", 8, 15, 0, &rules, &registry)
+        .unwrap();
+    let flights = [(own, player, 12), (enemy, enemy_house, 15)];
+    let tracks = move_east_selected(&mut sim, &rules, &registry, &flights, 600);
+    for (id, track) in [own, enemy].into_iter().zip(tracks) {
+        assert!(
+            track.selected_over_mapped_ground,
+            "{id}: over mapped ground it stays selected"
+        );
+        assert!(track.reached_shroud, "{id}: it flies into the shroud");
+    }
+    assert!(
+        !selected(&sim, enemy),
+        "over the player's shroud it leaves the selection"
+    );
+    assert!(
+        selected(&sim, own),
+        "the player's own aircraft stays selected"
+    );
+}
+
+/// Foot PerCellProcess's step (`0x004D8DA7..0x004D8DF5`): a selected enemy
+/// infantryman walking into the player's shroud leaves the player's
+/// selection at the first cell he arrives at there; over mapped ground he
+/// stays selected. (A walker's own sight keeps the player's own Location
+/// mapped, so the owner test shows only on the fliers above.)
+#[test]
+fn a_selected_enemy_infantryman_is_deselected_walking_into_the_players_shroud() {
+    let (mut sim, rules, registry, _, enemy_house) = shroud_selection_fixture(true);
+    // The player keeps an object, so his house stays in the game.
+    sim.spawn_object_with_overlay_registry("ENGINEER", "Americans", 6, 12, 0, &rules, &registry)
+        .unwrap();
+    let enemy = sim
+        .spawn_object_with_overlay_registry("ENGINEER", "Russians", 8, 15, 0, &rules, &registry)
+        .unwrap();
+    let [track] = move_east_selected(
+        &mut sim,
+        &rules,
+        &registry,
+        &[(enemy, enemy_house, 15)],
+        4000,
+    )
+    .try_into()
+    .ok()
+    .unwrap();
+    assert!(
+        track.selected_over_mapped_ground,
+        "over mapped ground he stays selected"
+    );
+    assert!(track.reached_shroud, "he walks into the shroud");
+    assert!(
+        !selected(&sim, enemy),
+        "in the player's shroud he leaves the selection"
+    );
+}
+
+/// Jumpjet Process's deselect (`0x0054B07D..0x0054B10C`): a selected enemy
+/// jumpjet drops out of the player's selection once it flies over the
+/// player's shroud; over mapped ground it stays selected, and the player's
+/// own jumpjet is never deselected.
+#[test]
+fn a_selected_enemy_jumpjet_is_deselected_over_the_players_shroud() {
+    let (mut sim, rules, registry, player, enemy_house) = shroud_selection_fixture(true);
+    let own = sim
+        .spawn_object_with_overlay_registry("JUMPJET", "Americans", 6, 12, 0, &rules, &registry)
+        .unwrap();
+    let enemy = sim
+        .spawn_object_with_overlay_registry("JUMPJET", "Russians", 8, 15, 0, &rules, &registry)
+        .unwrap();
+    let flights = [(own, player, 12), (enemy, enemy_house, 15)];
+    let tracks = move_east_selected(&mut sim, &rules, &registry, &flights, 600);
+    for (id, track) in [own, enemy].into_iter().zip(tracks) {
+        assert!(
+            track.selected_over_mapped_ground,
+            "{id}: over mapped ground it stays selected"
+        );
+        assert!(track.reached_shroud, "{id}: it flies into the shroud");
+    }
+    assert!(
+        !selected(&sim, enemy),
+        "over the player's shroud it leaves the selection"
+    );
+    assert!(
+        selected(&sim, own),
+        "the player's own jumpjet stays selected"
+    );
+}
+
+/// Jumpjet Process's discovery (`0x0054B112..0x0054B166`), in a campaign,
+/// where a Cell put discovers an object only off the player's shroud
+/// (`0x0047E953..0x0047E9DC`): an enemy jumpjet put down in the shroud stays
+/// undiscovered until it flies over ground the player has mapped, where the
+/// player discovers it while it is still airborne.
+#[test]
+fn a_campaign_enemy_jumpjet_is_discovered_flying_over_mapped_ground() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let (mut sim, rules, registry, _, enemy_house) = shroud_selection_fixture(false);
+    let enemy = sim
+        .spawn_object_with_overlay_registry("JUMPJET", "Russians", 30, 15, 0, &rules, &registry)
+        .unwrap();
+    let discovered = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(enemy)
+            .unwrap()
+            .discovery
+            .discovered_by_current_house()
+    };
+    assert!(
+        !discovered(&sim),
+        "put down in the shroud, it is undiscovered"
+    );
+    let grid = sim.path_grid.clone();
+    let order = CommandEnvelope::new(
+        enemy_house,
+        sim.session.tick(),
+        Command::Move {
+            entity_id: enemy,
+            target_rx: 8,
+            target_ry: 15,
+        },
+    );
+    sim.advance_tick(&[order], Some(&rules), grid.as_deref(), Some(&registry), 67);
+    // MapClass::IsShrouded at the jumpjet's Location, height-projected.
+    let over_shroud = |sim: &Simulation| {
+        let entity = sim.substrate.entities.get(enemy).unwrap();
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        crate::sim::vision::point_is_shrouded(
+            &sim.fog,
+            &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+            sim.session.current_house().unwrap(),
+            crate::sim::movement::ground_pose::object_location(entity, Some(terrain)),
+        )
+    };
+    let mut flew_over_shroud = false;
+    let mut discovered_in_flight = false;
+    for _ in 0..600 {
+        let due = sim.take_due_commands();
+        sim.advance_tick(&due, Some(&rules), grid.as_deref(), Some(&registry), 67);
+        if !discovered(&sim) {
+            assert!(
+                over_shroud(&sim),
+                "over mapped ground it is discovered the same frame"
+            );
+            flew_over_shroud = true;
+            continue;
+        }
+        let entity = sim.substrate.entities.get(enemy).unwrap();
+        discovered_in_flight = crate::sim::movement::air_movement::current_fly_height(
+            entity,
+            sim.resolved_terrain.as_ref(),
+        ) > 0
+            && !over_shroud(&sim);
+        break;
+    }
+    assert!(flew_over_shroud, "it flew undiscovered over the shroud");
+    assert!(
+        discovered_in_flight,
+        "the player discovers it in flight over mapped ground"
+    );
+}
+
+/// A skirmish (or campaign) scene whose player (Americans) has mapped the
+/// west of the map only: the 12-cell radius around (6, 12).
+fn shroud_selection_fixture(
+    skirmish: bool,
+) -> (
+    Simulation,
+    crate::rules::ruleset::RuleSet,
+    crate::rules::overlay_types::OverlayTypeRegistry,
+    crate::sim::intern::InternedId,
+    crate::sim::intern::InternedId,
+) {
+    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules("");
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(skirmish),
+    );
+    sim.session.game_options_mut_for_test().short_game = false;
+    for (side, name) in ["Americans", "Russians"].into_iter().enumerate() {
+        let house = sim.interner.intern(name);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                house, side as u8, None, true, 0, 10,
+            ));
+    }
+    let player = sim.interner.get("Americans").unwrap();
+    let enemy = sim.interner.get("Russians").unwrap();
+    sim.session.set_current_house_for_test(Some(player));
+    sim.fog = FogState::new(33, 33);
+    sim.fog.ensure_viewer(player);
+    // MapClass::RevealArea's final0/final1 pair maps the cells with no
+    // sustained sight source.
+    let config = sim.sight_reveal_config(Some(&rules));
+    for final_pass in [false, true] {
+        let _ = sim.reveal_area(
+            &[player],
+            (6, 12),
+            0,
+            12,
+            None,
+            final_pass,
+            &config,
+            UninitContext::default(),
+            crate::sim::vision::MapRevealProjection::Transient,
+            Some(player),
+        );
+    }
+    (sim, rules, registry, player, enemy)
+}
+
+fn selected(sim: &Simulation, id: u64) -> bool {
+    sim.substrate
+        .entities
+        .get(id)
+        .unwrap()
+        .selection
+        .is_selected()
+}
+
+/// What one mover did on its way east.
+struct EastTrack {
+    /// It crossed the player's mapped ground (cells 10..=14), and was
+    /// selected on every frame there.
+    selected_over_mapped_ground: bool,
+    /// It reached cell 24, inside the shroud.
+    reached_shroud: bool,
+}
+
+/// Select each `(object, owner, row)` mover, order it east to (30, row), and
+/// run the production tick until every one reaches cell 24 (`frames` at
+/// most).
+fn move_east_selected(
+    sim: &mut Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    flights: &[(u64, crate::sim::intern::InternedId, u16)],
+    frames: u32,
+) -> Vec<EastTrack> {
+    use crate::sim::command::{Command, CommandEnvelope};
+    for &(id, ..) in flights {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .selection
+            .set_selected_for_test(true);
+    }
+    let orders: Vec<_> = flights
+        .iter()
+        .map(|&(id, owner, row)| {
+            CommandEnvelope::new(
+                owner,
+                sim.session.tick(),
+                Command::Move {
+                    entity_id: id,
+                    target_rx: 30,
+                    target_ry: row,
+                },
+            )
+        })
+        .collect();
+    let grid = sim.path_grid.clone();
+    sim.advance_tick(&orders, Some(rules), grid.as_deref(), Some(registry), 67);
+    let mut tracks: Vec<_> = flights
+        .iter()
+        .map(|_| EastTrack {
+            selected_over_mapped_ground: true,
+            reached_shroud: false,
+        })
+        .collect();
+    let mut over_mapped = vec![false; flights.len()];
+    for _ in 0..frames {
+        if tracks.iter().all(|track| track.reached_shroud) {
+            break;
+        }
+        let due = sim.take_due_commands();
+        sim.advance_tick(&due, Some(rules), grid.as_deref(), Some(registry), 67);
+        for (index, &(id, ..)) in flights.iter().enumerate() {
+            let rx = sim.substrate.entities.get(id).unwrap().position.rx();
+            if (10..=14).contains(&rx) {
+                over_mapped[index] = true;
+                tracks[index].selected_over_mapped_ground &= selected(sim, id);
+            }
+            tracks[index].reached_shroud |= rx >= 24;
+        }
+    }
+    for (track, seen) in tracks.iter_mut().zip(over_mapped) {
+        track.selected_over_mapped_ground &= seen;
+    }
+    tracks
+}

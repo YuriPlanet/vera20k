@@ -15,6 +15,7 @@ use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 /// Techno `+0x508`, the threat this object last published to its enemies'
@@ -221,21 +222,28 @@ impl Simulation {
         );
     }
 
-    fn remove_spatial_threat_at(&mut self, id: u64, cell: (i16, i16)) {
-        let actor = self.substrate.entities.get(id).unwrap();
+    fn remove_spatial_threat_at(
+        interner: &StringInterner,
+        house_alliances: &HouseAlliances,
+        substrate: &mut ObjectSubstrate,
+        houses: &mut Houses,
+        id: u64,
+        cell: (i16, i16),
+    ) {
+        let actor = substrate.entities.get(id).unwrap();
         let owner = actor.owner();
         let value = actor
             .cached_spatial_threat()
             .expect("required native Techno+508 read before an admitted threat publication");
         Self::cell_update_spatial_threat(
-            &self.interner,
-            &self.house_alliances,
-            &mut self.houses,
+            interner,
+            house_alliances,
+            houses,
             owner,
             cell,
             value.wrapping_neg(),
         );
-        self.substrate
+        substrate
             .entities
             .get_mut(id)
             .unwrap()
@@ -288,7 +296,14 @@ impl Simulation {
             })
         };
         if let Some(cell) = cell {
-            self.remove_spatial_threat_at(id, cell);
+            Self::remove_spatial_threat_at(
+                &self.interner,
+                &self.house_alliances,
+                &mut self.substrate,
+                &mut self.houses,
+                id,
+                cell,
+            );
         }
     }
 
@@ -308,7 +323,14 @@ impl Simulation {
                 )
             })
         }?;
-        self.remove_spatial_threat_at(id, cell);
+        Self::remove_spatial_threat_at(
+            &self.interner,
+            &self.house_alliances,
+            &mut self.substrate,
+            &mut self.houses,
+            id,
+            cell,
+        );
         Some(cell)
     }
 
@@ -346,7 +368,14 @@ impl Simulation {
             return;
         };
         let old = terrain.native_cell_coord(terrain.native_cell_identity(old));
-        self.remove_spatial_threat_at(id, old);
+        Self::remove_spatial_threat_at(
+            &self.interner,
+            &self.house_alliances,
+            &mut self.substrate,
+            &mut self.houses,
+            id,
+            old,
+        );
         if let Some(current) = self.spatial_threat_current_cell(id, None) {
             self.add_spatial_threat_at(id, current, rules);
         }
@@ -361,7 +390,14 @@ impl Simulation {
         terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     ) {
         if let Some(cell) = self.spatial_threat_current_cell(id, terrain) {
-            self.remove_spatial_threat_at(id, cell);
+            Self::remove_spatial_threat_at(
+                &self.interner,
+                &self.house_alliances,
+                &mut self.substrate,
+                &mut self.houses,
+                id,
+                cell,
+            );
             self.add_spatial_threat_at(id, cell, rules);
         }
     }

@@ -9,8 +9,6 @@ validation controls;
 assumptions and substitutions. The historical 420-row
 replacement payload and its metadata remain byte-identical.
 
-Original `gamemd.exe` SHA-256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 The native environment uses Unicorn 2.1.4 and x87 control word `0x0E7F`.
 Every row asserts unchanged original executable sections and Building,
 BuildingType and Anim vtables. Numeric values, frame histories, RNG states and

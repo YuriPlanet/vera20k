@@ -38,7 +38,6 @@ struct Row {
 
 #[derive(Deserialize)]
 struct Corpus {
-    native_sha256: String,
     rows: Vec<Row>,
 }
 
@@ -74,16 +73,11 @@ fn original_fv_range_uses_live_dummy_ground_and_source_bridge_queries() {
         "tools/spatial_oracle/in_range_cell_boundary.json",
     ))
     .unwrap();
-    assert_eq!(
-        corpus.native_sha256,
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(corpus.rows.len(), 6);
     let ties: Corpus = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/fv_cell_attack/range_ties.json",
     ))
     .unwrap();
-    assert_eq!(ties.native_sha256, corpus.native_sha256);
     assert_eq!(ties.rows.len(), 12);
     corpus.rows.extend(ties.rows);
     assert_eq!(

@@ -36,7 +36,15 @@ impl Simulation {
             .is_some_and(|object| object.gap_generator);
         self.lighting_sources.set_building_light_active(id, enabled);
         if !enabled && gap {
-            self.remove_building_gap(id);
+            Self::remove_building_gap(
+                &self.interner,
+                &mut self.fog,
+                &self.house_alliances,
+                &mut self.substrate,
+                &self.houses,
+                &self.resolved_terrain,
+                id,
+            );
         }
         for (slot, anim_id) in slots.into_iter().enumerate() {
             if self

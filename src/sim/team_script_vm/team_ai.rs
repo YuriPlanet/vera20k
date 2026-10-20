@@ -27,6 +27,9 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
 use super::{TeamRules, TeamScriptState, TeamTarget, script_action_at};
+use crate::sim::intern::StringInterner;
+use crate::sim::team_script_vm::TeamScriptVm;
+use crate::sim::world::ObjectSubstrate;
 
 /// Script actions 53 and 54 relax the stray distance (`Rules+0x1720`
 /// instead of `+0x171C`) for Regroup and Coordinate_Move.
@@ -650,14 +653,21 @@ impl Simulation {
     /// the head is an aircraft or unarmed (`GetWeapon(0)`), or `source` is
     /// the team's move target. Nothing after those writes has an effect
     /// (`0x006EB432..0x006EB477` ends in a discarded `WhatAmI`).
-    pub(crate) fn team_took_damage(&mut self, member: u64, source: Option<u64>, rules: &RuleSet) {
+    pub(crate) fn team_took_damage(
+        interner: &StringInterner,
+        substrate: &ObjectSubstrate,
+        team_script_vm: &mut TeamScriptVm,
+        member: u64,
+        source: Option<u64>,
+        rules: &RuleSet,
+    ) {
         let Some(source) = source else {
             return;
         };
-        let Some(team_id) = self.team_script_vm.member_team.get(&member).copied() else {
+        let Some(team_id) = team_script_vm.member_team.get(&member).copied() else {
             return;
         };
-        let vm = &self.team_script_vm;
+        let vm = &*team_script_vm;
         let Some(team) = vm.teams.get(&team_id) else {
             return;
         };
@@ -672,11 +682,11 @@ impl Simulation {
             let Some(head) = team
                 .members
                 .first()
-                .and_then(|head| self.substrate.entities.get(head.id))
+                .and_then(|head| substrate.entities.get(head.id))
             else {
                 return;
             };
-            let armed = self
+            let armed = interner
                 .object_type(head.type_ref(), rules)
                 .and_then(|object| {
                     crate::sim::combat::combat_weapon::weapon_for_index(
@@ -700,7 +710,7 @@ impl Simulation {
                 return;
             }
         }
-        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+        if let Some(team) = team_script_vm.teams.get_mut(&team_id) {
             team.zone = None;
             team.reforming = true;
         }

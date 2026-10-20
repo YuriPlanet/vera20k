@@ -220,7 +220,7 @@ impl Simulation {
     /// test/clear. Common infantry522510 deployment chooses +594 instead of
     /// +590; a missing slot stays silent, with no fallback or Main draw.
     /// Source: tools/input_oracle/slave_miner_pack_voice.{json,meta.json};
-    /// original1cdd1180.
+    /// original gamemd.
     pub fn deploy_voice_request<'a>(
         &mut self,
         rules: &'a RuleSet,

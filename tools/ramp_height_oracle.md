@@ -11,7 +11,7 @@ python -m tools.ramp_height_oracle --write --output .local/ramp-height-candidate
 Default/`--check` is read-only. Imports and help do not resolve retail files or run
 native code. `--write` explicitly publishes a candidate and provenance sidecar;
 review the candidate before changing the recorded reference. The shared
-`tools.native_oracle` owns executable identity, PE mapping, completion, required
+`tools.native_oracle` owns executable selection, PE mapping, completion, required
 callee checks and publication. Fixture-local code owns supplied map/object state
 and case enumeration. No original instruction bytes or call results are replaced.
 
@@ -26,7 +26,7 @@ without publishing vectors. Placement-vtable checks remain active under `-O`.
 The checked-in [golden](ramp_height_vectors.json) remains byte-identical. The
 shared writer normalizes JSON key order in a newly exported candidate; all payload
 fields compare structurally. Its [sidecar](ramp_height_vectors.meta.json) records
-scope, binary identity and canonical payload hash separately.
+scope and canonical payload hash separately.
 [Validation](ramp_height.validation.json) records native replay and Rust coverage.
 
 ```sh
@@ -45,4 +45,4 @@ Unit/Infantry placement outputs retained in the native fixture are not all compa
 by that Rust test. These supplied-state samples do not establish whole locomotor,
 world-entry callback, occupation or rendering parity. RNG, timer and detach behavior
 is outside this oracle's scope. Portable failure/lifecycle tests run in
-`python -m tools.run_tests`; native replay requires the pinned retail executable.
+`python -m tools.run_tests`; native replay requires a retail executable.

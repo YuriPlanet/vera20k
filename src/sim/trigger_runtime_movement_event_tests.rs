@@ -1,4 +1,4 @@
-//! Original Steam3e81a617..08600:12 HasOccurred23 and14 HasOccurred34 controls.
+//! Original Steam gamemd:12 HasOccurred23 and14 HasOccurred34 controls.
 //! Native34 executes the real distance kernel and actor GetCoords, with an
 //! explicit waypoint-coordinate sink. Separate68BD00 controls cover its map.
 use super::tests::{event_ingress_fixture, install_event_ingress_map, spawn_event_ingress_unit};

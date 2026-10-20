@@ -13,7 +13,7 @@ The six rows cross frames 15/16/17 with center infantry armor0 and adjacent
 vehicle armor5. They use the existing test's synthetic Desolator-shaped rules,
 including its exact eleven-token RadSite Verses string, `.2` factor, delay16,
 cap500 and level500/spread2. This is not a retail-layer export. Metadata pins
-the original executable SHA-256 and all substitutions.
+all substitutions.
 
 Original Warhead constructor and selected reader blocks execute, including
 `75DDCC..75DE5A` for Verses. The complete Radiation reader `66CF70` executes

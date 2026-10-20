@@ -58,9 +58,12 @@ mod view_admission_tests;
 
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponType;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
+use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
+use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
@@ -865,25 +868,34 @@ impl SuperWeaponInstance {
 /// without grant, ready or hold admission. A missing constructed instance
 /// cannot be reset. Executed dispatch controls and signed timer boundaries:
 /// `tools/spatial_oracle/trigger_superweapon_reset.meta.json`.
-pub(crate) fn reset_super(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, sw_type: &str) {
-    let (Some(type_id), Some(sw)) = (sim.interner.get(sw_type), rules.super_weapon(sw_type)) else {
+pub(crate) fn reset_super(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    sound_events: &mut FrameChannel<SimSoundEvent>,
+    super_weapons: &mut SuperWeapons,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw_type: &str,
+) {
+    let (Some(type_id), Some(sw)) = (interner.get(sw_type), rules.super_weapon(sw_type)) else {
         return;
     };
-    if let Some(selection) = sim.paid_super_weapon_selection(owner)
+    if let Some(selection) = super_weapons.paid_selection(owner)
         && (selection.source == type_id || selection.destination == type_id)
     {
         Simulation::cancel_paid_super_weapon_selection(
-            &mut sim.substrate,
-            &mut sim.sound_events,
-            &mut sim.super_weapons,
+            substrate,
+            sound_events,
+            super_weapons,
             rules,
             owner,
             selection,
         );
     }
-    Simulation::release_super_anim(&mut sim.substrate, &mut sim.super_weapons, owner, type_id);
-    let frame = sim.session.binary_frame();
-    if let Some(instance) = sim.super_weapons.instance_mut(&owner, &type_id) {
+    Simulation::release_super_anim(substrate, super_weapons, owner, type_id);
+    let frame = session.binary_frame();
+    if let Some(instance) = super_weapons.instance_mut(&owner, &type_id) {
         instance.reset(sw, frame);
     }
 }
@@ -995,8 +1007,8 @@ pub(crate) fn supers_of_kind_remaining(
 }
 
 /// The place a Super joining the timer list takes: after every place taken.
-fn next_timer_place(sim: &Simulation) -> u32 {
-    sim.super_weapons
+fn next_timer_place(super_weapons: &SuperWeapons) -> u32 {
+    super_weapons
         .iter()
         .flat_map(|(_, weapons)| weapons.values())
         .filter_map(|instance| instance.timer_place)
@@ -1141,7 +1153,7 @@ pub fn superweapon_views_for_owner(
             } else {
                 inst.can_fire(sw_type)
             },
-            can_afford: money::can_afford(sim, *owner, money_type),
+            can_afford: money::can_afford(&sim.houses, *owner, money_type),
             sidebar_image: sw_type.sidebar_image.clone(),
         });
     }
@@ -1532,7 +1544,18 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
         if !sim.session.game_options().super_weapons && sw.disableable_from_shell {
             continue;
         }
-        grant_super(sim, rules, owner, type_id, false, low_power);
+        grant_super(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.houses,
+            &mut sim.super_weapons,
+            rules,
+            owner,
+            type_id,
+            false,
+            low_power,
+        );
     }
 }
 
@@ -1541,30 +1564,34 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
 /// Original AL reports timer restart; both native callers ignore it. The
 /// private state helper instead reports admission to coordinate these effects.
 fn grant_super(
-    sim: &mut Simulation,
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    houses: &Houses,
+    super_weapons: &mut SuperWeapons,
     rules: &RuleSet,
     owner: InternedId,
     type_id: InternedId,
     one_time: bool,
     on_hold: bool,
 ) -> bool {
-    let Some(house) = sim.houses.get(&owner) else {
+    let Some(house) = houses.get(&owner) else {
         return false;
     };
     let passive = house.multiplay_passive();
-    let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
+    let Some(sw) = rules.super_weapon(interner.resolve(type_id)) else {
         return false;
     };
-    let place = next_timer_place(sim);
-    let Some(instance) = sim.super_weapons.instance_mut(&owner, &type_id) else {
+    let place = next_timer_place(super_weapons);
+    let Some(instance) = super_weapons.instance_mut(&owner, &type_id) else {
         return false;
     };
-    if !instance.apply_grant_state(sw, sim.session.binary_frame(), one_time, on_hold) {
+    if !instance.apply_grant_state(sw, session.binary_frame(), one_time, on_hold) {
         return false;
     }
     instance.timer_place = (sw.show_timer && !passive).then_some(place);
     if !sw.manual_control {
-        Simulation::release_super_anim(&mut sim.substrate, &mut sim.super_weapons, owner, type_id);
+        Simulation::release_super_anim(substrate, super_weapons, owner, type_id);
     }
     true
 }
@@ -1575,22 +1602,36 @@ fn grant_super(
 /// Native local Sidebar Add/Recalc is projected by the existing active views,
 /// not by StatusChanged (whose distinct hold/revoke consumer clears selection).
 pub(crate) fn trigger_grant_super(
-    sim: &mut Simulation,
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    houses: &Houses,
+    super_weapons: &mut SuperWeapons,
     rules: &RuleSet,
     owner: InternedId,
     type_id: InternedId,
     one_time: bool,
 ) -> bool {
-    if !sim
-        .super_weapons
+    if !super_weapons
         .get(&owner)
         .is_some_and(|weapons| weapons.contains_key(&type_id))
     {
         return false;
     }
-    grant_super(sim, rules, owner, type_id, one_time, false);
+    grant_super(
+        interner,
+        session,
+        substrate,
+        houses,
+        super_weapons,
+        rules,
+        owner,
+        type_id,
+        one_time,
+        false,
+    );
     if !one_time {
-        sim.super_weapons
+        super_weapons
             .instance_mut(&owner, &type_id)
             .unwrap()
             .can_lose = false;

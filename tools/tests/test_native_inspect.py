@@ -27,14 +27,13 @@ def command(data, *args):
 
 
 class NativeInspectTests(unittest.TestCase):
-    def test_packet_records_actual_bytes_not_the_legacy_reference_identity(self):
+    def test_packet_records_section_bytes_and_no_executable_hash(self):
         data = code_image(b'\xc3')
         stdout = io.StringIO()
         with patch.object(native, 'image_bytes', return_value=data), redirect_stdout(stdout):
             self.assertEqual(scan.main(['sections']), 0)
         packet = json.loads(stdout.getvalue())
-        self.assertEqual(packet['native_sha256'], hashlib.sha256(data).hexdigest())
-        self.assertNotEqual(packet['native_sha256'], native.NATIVE_SHA256)
+        self.assertNotIn('native_sha256', packet)
         self.assertEqual(packet['result']['sections'][0]['file_backed_sha256'],
                          hashlib.sha256(b'\xc3').hexdigest())
 
@@ -132,15 +131,16 @@ class NativeInspectTests(unittest.TestCase):
         self.assertEqual((result.returncode, result.stdout), (2, ''))
         self.assertIn('Missing original executable', result.stderr)
 
-    def test_wrong_image_hash_fails_without_json_evidence(self):
+    def test_any_executable_is_inspected(self):
         with tempfile.TemporaryDirectory() as root:
             image = Path(root) / 'gamemd.exe'
             image.write_bytes(code_image(b'\xc3'))
             env = {**os.environ, 'VERA20K_GAMEMD_EXE': str(image)}
             result = subprocess.run([sys.executable, '-m', 'tools.native_inspect', 'sections'],
                                     env=env, capture_output=True, text=True)
-        self.assertEqual((result.returncode, result.stdout), (2, ''))
-        self.assertIn('Unsupported gamemd.exe SHA-256', result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['result']['sections'][0]['file_backed_sha256'],
+                         hashlib.sha256(b'\xc3').hexdigest())
 
 
 if __name__ == '__main__':

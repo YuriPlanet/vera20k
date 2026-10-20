@@ -1,6 +1,6 @@
 # DRAGON LineTrail input, lifecycle and pixels
 
-`line_trail.py` executes the pinned active-retail executable. The physical input
+`line_trail.py` executes the active-retail executable. The physical input
 set is the same selected Hills scenario as the IFV chain: RULESMD, absent
 LANGRULE, MPBattleMD, Hills and fixed ARTMD. Its `source_files` records the exact
 extracted-byte hashes. Archive traversal is supplied by the production asset

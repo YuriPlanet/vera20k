@@ -1,7 +1,6 @@
 //! Paid stock Industrial Plant/HTNK history through the bound production runtime.
 //! Native: House50BF60/50BEB0, Factory4C9C70/4C9FF0, Selling449C30,
-//! HowManySurvivors451330, Rules667371/670C13, gamemd SHA256
-//! 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+//! HowManySurvivors451330, Rules667371/670C13, gamemd.
 //! Instruction/retail-derived expectations; this is a Rust regression, not
 //! original execution, a native charging timestamp or whole-game parity.
 

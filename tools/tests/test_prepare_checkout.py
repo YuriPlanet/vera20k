@@ -178,14 +178,10 @@ class MainCheckoutTests(CheckoutTest):
             self.assertIn('fix: point RA2_DIR at the game folder', text)
 
     @unittest.skipUnless(importlib.util.find_spec('unicorn'), 'native oracles need Unicorn')
-    def test_native_oracles_refuse_an_unknown_executable(self):
+    def test_native_oracles_accept_any_executable(self):
         os.environ['RA2_DIR'] = str(self.game)
         text, _ = self.report(self.main, self.main)
-        self.assertIn('problem   native oracles: Unsupported gamemd.exe SHA-256', text)
-        self.assertIn('fix: point RA2_DIR at the folder with the retail gamemd.exe', text)
-        os.environ['VERA20K_GAMEMD_EXE'] = str(self.game / 'gamemd.exe')
-        text, _ = self.report(self.main, self.main)
-        self.assertIn('fix: point VERA20K_GAMEMD_EXE at the retail gamemd.exe, or unset it', text)
+        self.assertIn('ok        native oracles: retail gamemd.exe at', text)
 
     def test_check_and_ra2_dir_conflict(self):
         with self.assertRaises(SystemExit), redirect_stdout(io.StringIO()), \

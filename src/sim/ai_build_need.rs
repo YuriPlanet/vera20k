@@ -149,7 +149,7 @@ fn can_make_money(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> bool 
     if destinations && gatherers {
         return true;
     }
-    let money = available_money(sim, owner);
+    let money = available_money(&sim.houses, owner);
     let types = EconomyTypes::of(sim, rules, house);
     let price = |object: &ObjectType| sim.cost_of(owner, object, rules);
     let harvester = types.harvester.map_or(i32::MAX, price);
@@ -197,7 +197,7 @@ pub(crate) fn check_build_need(sim: &Simulation, rules: &RuleSet, owner: Interne
     {
         return false;
     }
-    let money = available_money(sim, owner);
+    let money = available_money(&sim.houses, owner);
     let types = EconomyTypes::of(sim, rules, house);
     if house.tracking().resource_destinations() > 0 {
         if refinery_under_construction(sim, rules, house) {
@@ -395,7 +395,8 @@ fn sell_node(
     effects: FrameEffects<'_>,
 ) {
     let node = sim.houses[&owner].base_plan().nodes()[index];
-    let building = node_building(sim, owner, &node).filter(|&id| can_sell_building(sim, rules, id));
+    let building =
+        node_building(&sim.substrate, owner, &node).filter(|&id| can_sell_building(sim, rules, id));
     if let Some(id) = building {
         sell_back(sim, rules, id, SellOrder::Computer, registry, effects);
         let gate = sim

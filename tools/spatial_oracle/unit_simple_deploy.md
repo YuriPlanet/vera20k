@@ -1,7 +1,6 @@
 # Unit simple deployment and shared Foot body counter
 
-Original executable: `gamemd.exe`, SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+Original executable: `gamemd.exe`.
 The current executable comparison is
 [`unit_simple_deploy.py`](unit_simple_deploy.py), with results in
 [`unit_simple_deploy.json`](unit_simple_deploy.json) and explicit fixture

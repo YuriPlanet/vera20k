@@ -890,8 +890,22 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     stamp_type_foundation(&mut sim, &rules, 2);
     // Direct fixture insertion bypasses Building::Unlimbo's 448070 call.
     // Publish both native primary slots before testing delivery selection.
-    super::initialize_factory_primary(&mut sim, 1, &rules);
-    super::initialize_factory_primary(&mut sim, 2, &rules);
+    super::initialize_factory_primary(
+        &sim.interner,
+        &mut sim.production,
+        &sim.substrate,
+        &sim.houses,
+        1,
+        &rules,
+    );
+    super::initialize_factory_primary(
+        &sim.interner,
+        &mut sim.production,
+        &sim.substrate,
+        &sim.houses,
+        2,
+        &rules,
+    );
     let vehicle_candidates = super::producer_candidates_for_owner_category(
         &sim.substrate.entities,
         &rules,
@@ -1076,8 +1090,22 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
     spawn_structure(&mut sim, &rules, 2, "Americans", "GAYARD", 20, 20);
     stamp_type_foundation(&mut sim, &rules, 1);
     stamp_type_foundation(&mut sim, &rules, 2);
-    super::initialize_factory_primary(&mut sim, 1, &rules);
-    super::initialize_factory_primary(&mut sim, 2, &rules);
+    super::initialize_factory_primary(
+        &sim.interner,
+        &mut sim.production,
+        &sim.substrate,
+        &sim.houses,
+        1,
+        &rules,
+    );
+    super::initialize_factory_primary(
+        &sim.interner,
+        &mut sim.production,
+        &sim.substrate,
+        &sim.houses,
+        2,
+        &rules,
+    );
     sim.substrate
         .mission_assign_exact(
             1,
@@ -1224,8 +1252,22 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     spawn_structure(&mut sim, &rules, 2, "Americans", "GAYARD", 20, 20);
     stamp_type_foundation(&mut sim, &rules, 1);
     stamp_type_foundation(&mut sim, &rules, 2);
-    super::initialize_factory_primary(&mut sim, 1, &rules);
-    super::initialize_factory_primary(&mut sim, 2, &rules);
+    super::initialize_factory_primary(
+        &sim.interner,
+        &mut sim.production,
+        &sim.substrate,
+        &sim.houses,
+        1,
+        &rules,
+    );
+    super::initialize_factory_primary(
+        &sim.interner,
+        &mut sim.production,
+        &sim.substrate,
+        &sim.houses,
+        2,
+        &rules,
+    );
     arm_build_via(
         &mut sim,
         &rules,

@@ -8,7 +8,7 @@ python -B -m tools.procedural_drawing_oracle.shroud_frontier --fire --check
 ```
 
 The default stationary and `--moving` modes retain their existing payloads.
-The sidecar records executable identity and command, without source hashes.
+The sidecar records the command, without executable or source hashes.
 The selected consumer is the existing simulation vision/fire caller chain.
 
 ## Native component boundary

@@ -1,7 +1,6 @@
 # FV numbered FLH and two burst tails
 
-`ifv_fire_coord.py/json/meta.json` execute original `gamemd.exe`, SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+`ifv_fire_coord.py/json/meta.json` execute original `gamemd.exe`.
 The saved metadata pins Unicorn 2.1.4 and physical input hashes. The fixture
 imports the common type/map preparation from `guided_step.py`; there are no
 `/tmp` imports, patched original instructions, Rust values or calculated goldens.

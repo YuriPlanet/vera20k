@@ -2,8 +2,7 @@
 
 Run `python -m tools.storage_oracle.saved_game_layout --check`; use `--write`
 to regenerate native observations and their metadata. Configure retail through
-[`native_oracle`](../native_oracle.md). The accepted executable SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+[`native_oracle`](../native_oracle.md).
 
 The existing three `resources` and 21 `cases` are unchanged: physical B7/2B4/2B5
 templates plus original ordinary child placement `0x60B7A0`. The added controls

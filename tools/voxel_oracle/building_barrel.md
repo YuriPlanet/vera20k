@@ -1,7 +1,7 @@
 # Building voxel turret and barrel submission
 
-`building_barrel.py` executes the original retail instructions from the executable
-with SHA-256 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+`building_barrel.py` executes the original retail instructions from
+`gamemd.exe`.
 Its `.json` records 21 loader cases and 56 draw cases; the `.meta.json` records
 Unicorn versions, substitutions and the payload hash.
 

@@ -418,8 +418,7 @@ fn scatter_occupy_cell_objects(
 }
 
 /// Building459069..4590F9 reads both virtual GetCoords, computes the full
-/// facing word and adds0x7FFF before Facing::Set. Steam gamemd SHA256
-/// 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600;
+/// facing word and adds0x7FFF before Facing::Set. Steam gamemd;
 /// executed controls: tools/spatial_oracle/locomotor_force_track.bunker_install.json.
 /// The shared coordinate and direction owners retain sub-cell/foundation
 /// offsets; matching raw cells (or matching coordinates) do not skip the turn.

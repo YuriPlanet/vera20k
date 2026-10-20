@@ -1,6 +1,6 @@
 # Laser reader prerequisites
 
-`weapon_laser.py/json/meta.json` execute the pinned active-retail executable
+`weapon_laser.py/json/meta.json` execute the active-retail executable
 using the existing Weapon/BulletReader and Rules reset fixtures. The corpus
 owns the selected laser and detail reader prerequisites; `building_prism`
 owns laser construction, update, detail admission and drawing.

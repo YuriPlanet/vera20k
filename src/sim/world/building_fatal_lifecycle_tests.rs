@@ -1726,10 +1726,6 @@ fn original_direct_ap_receivers_join_debris_crew_uninit_power_and_deferred_destr
         "tools/spatial_oracle/building_death_anims_joined.json",
     ))
     .unwrap();
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let route = &corpus["routes"][1];
     assert_eq!(route["input"]["route"], "direct_ap_multi_hit_control");
     let mut fixture = Fixture::new(&corpus, &route["before"]);

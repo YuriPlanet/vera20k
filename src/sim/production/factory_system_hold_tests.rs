@@ -293,7 +293,12 @@ impl PaidHead {
             "online_barracks_limbo" => {
                 sim.techno_limbo_with_rules(self.barracks, rules, None);
             }
-            "original_temporal_release" => sim.temporal_let_go(self.attacker),
+            "original_temporal_release" => crate::sim::world::Simulation::temporal_let_go(
+                &mut sim.substrate,
+                &mut sim.houses,
+                &mut sim.power_states,
+                self.attacker,
+            ),
             "release_house_suffix" => {
                 assert!(sim.recheck_house_tech_tree(self.owner, rules).is_empty())
             }
@@ -340,7 +345,7 @@ impl PaidHead {
                 assert!(self.successor.replace(successor).is_none());
             }
             "external_spend_wallet" => {
-                let money = crate::sim::credit_income::available_money(sim, self.owner);
+                let money = crate::sim::credit_income::available_money(&sim.houses, self.owner);
                 crate::sim::credit_income::spend_money(&mut sim.houses, self.owner, money);
             }
             other => panic!("unconsumed original phase {other}"),

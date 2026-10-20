@@ -43,11 +43,14 @@ use target_scan::{can_acquire_target, passive_acquire_step};
 
 use super::{FrameEffects, ObjectSubstrate, Simulation};
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::houses::Houses;
 use crate::sim::intern::StringInterner;
 use crate::sim::miner::MinerConfig;
 use crate::sim::mission::MissionType;
+use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameChannel;
 use crate::sim::world::SimSoundEvent;
@@ -867,7 +870,13 @@ fn techno_ai_shell(
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
             flash_step(&mut sim.substrate, id);
             if let Some(rules) = rules {
-                building_missions::gattling_idle(sim, id, rules);
+                building_missions::gattling_idle(
+                    &sim.interner,
+                    &sim.session,
+                    &mut sim.substrate,
+                    id,
+                    rules,
+                );
             }
             // The ready check after the Techno AI (`0x0043FF91`).
             building_missions::ready_commence(&sim.session, &mut sim.substrate, id, false);
@@ -894,7 +903,7 @@ fn techno_ai_shell(
             // for a warp (`0x0043FD14`, `0x0043FD26`) or a cleared IsAlive
             // (`0x0043FE63`), and Techno AI's self-heal skips Health 0
             // (`0x0070BE80`).
-            // Steam gamemd3e81a617..08600 control: object_health.py
+            // Steam gamemd control: object_health.py
             // --building-zero-health and building_zero_health.{json,meta.json}.
             // This caller draws no RNG and writes no timer. Anim retirement,
             // Limbo/detach, survivor draws/smudges and rubble stay with their
@@ -957,7 +966,13 @@ fn techno_ai_shell(
                     ctx,
                     &mut outcome.bridge_state_changed,
                 );
-                sim.update_tesla_charge(id, rules);
+                Simulation::update_tesla_charge(
+                    &sim.interner,
+                    &mut sim.substrate,
+                    &sim.power_states,
+                    id,
+                    rules,
+                );
                 // Building4401A3..4401AF: allegiance belongs to this object's
                 // AI tail, before repair/power and factory work. Earlier
                 // native returns admit only a live, nonzero-health building.
@@ -1138,9 +1153,35 @@ fn veterancy_promotion_step(
 /// The unit arm's tail after the add (`0x6FA85A..0x6FA89D`) retires the damage
 /// smoke when the object holds one; [`Simulation::retire_damage_smoke_after_self_heal`]
 /// is that owner, which [`self_heal_step`] already drives.
-fn house_self_heal_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    house_heal_arm(sim, id, rules, false);
-    house_heal_arm(sim, id, rules, true);
+fn house_self_heal_step(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    houses: &Houses,
+    resolved_terrain: &Option<ResolvedTerrainGrid>,
+    id: u64,
+    rules: &RuleSet,
+) {
+    house_heal_arm(
+        interner,
+        session,
+        substrate,
+        houses,
+        resolved_terrain,
+        id,
+        rules,
+        false,
+    );
+    house_heal_arm(
+        interner,
+        session,
+        substrate,
+        houses,
+        resolved_terrain,
+        id,
+        rules,
+        true,
+    );
 }
 
 /// One arm of [`house_self_heal_step`]. `infantry` selects the hospital arm:
@@ -1166,11 +1207,20 @@ fn house_self_heal_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 /// `bl` is built at `0x006FA79A..0x006FA7B0` (`ebp` is zeroed at `0x006F9E58`):
 /// it is set when `Health >= Type+0xA0` (`0x006FA7A2`, `jl` past the set) or when
 /// `Health == 0` (`0x006FA7AC`), and either arm leaves before its heal block.
-fn house_heal_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, infantry: bool) {
-    let Some(entity) = sim.substrate.entities.get(id) else {
+fn house_heal_arm(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    houses: &Houses,
+    resolved_terrain: &Option<ResolvedTerrainGrid>,
+    id: u64,
+    rules: &RuleSet,
+    infantry: bool,
+) {
+    let Some(entity) = substrate.entities.get(id) else {
         return;
     };
-    let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+    let Some(object) = interner.object_type(entity.type_ref(), rules) else {
         return;
     };
     let unit = entity.category() == EntityCategory::Unit;
@@ -1195,7 +1245,7 @@ fn house_heal_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, infantry: bool
     // Original6FA7EE/6FA8E2 divides before testing the House count. Missing
     // keys retain constructor1000; an explicitly invalid IDIV is a fault,
     // including period0 with no grant and signed MIN/-1 overflow.
-    let frame = sim.session.binary_frame() as i32;
+    let frame = session.binary_frame() as i32;
     let remainder = frame.checked_rem(interval).unwrap_or_else(|| {
         panic!("native House self-heal IDIV fault at 006FA7EE/006FA8E2: frame={frame} period={interval}")
     });
@@ -1203,7 +1253,7 @@ fn house_heal_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, infantry: bool
         return;
     }
     let owner = entity.owner();
-    let count = sim.houses.get(&owner).map_or(0, |house| {
+    let count = houses.get(&owner).map_or(0, |house| {
         if infantry {
             house.self_heal_infantry()
         } else {
@@ -1219,7 +1269,7 @@ fn house_heal_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, infantry: bool
         rules.general.self_heal_unit_amount
     };
     let step = amount.wrapping_mul(count);
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+    let Some(entity) = substrate.entities.get_mut(id) else {
         return;
     };
     let missing = strength.wrapping_sub(entity.health.current());
@@ -1228,7 +1278,13 @@ fn house_heal_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, infantry: bool
     // Only the unit arm carries the damage-smoke tail before the cloak tick;
     // the infantry arm rejoins the common flow at 0x006FA941.
     if !infantry {
-        sim.retire_damage_smoke_after_self_heal(id, rules);
+        Simulation::retire_damage_smoke_after_self_heal(
+            interner,
+            substrate,
+            resolved_terrain,
+            id,
+            rules,
+        );
     }
 }
 
@@ -1241,12 +1297,18 @@ fn house_heal_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, infantry: bool
 /// Original corpus: building_art_transition.json. After non-Greater health,
 /// virtual1C8 is Object GetHeight5F5F40, which also retires smoke below -10
 /// leptons relative to the live ground surface and explicit OnBridge offset.
-fn self_heal_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    let Some(entity) = sim.substrate.entities.get(id) else {
+fn self_heal_step(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    resolved_terrain: &Option<ResolvedTerrainGrid>,
+    id: u64,
+    rules: &RuleSet,
+) {
+    let Some(entity) = substrate.entities.get(id) else {
         return;
     };
-    let Some(object) = sim
-        .interner
+    let Some(object) = interner
         .try_resolve(entity.type_ref())
         .and_then(|type_id| rules.object(type_id))
     else {
@@ -1257,15 +1319,21 @@ fn self_heal_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     if !crate::sim::combat::veterancy::self_heal_eligible(
         entity,
         object,
-        sim.session.binary_frame(),
+        session.binary_frame(),
         interval,
     ) {
         return;
     }
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+    if let Some(entity) = substrate.entities.get_mut(id) {
         entity.health.heal(1);
     }
-    sim.retire_damage_smoke_after_self_heal(id, rules);
+    Simulation::retire_damage_smoke_after_self_heal(
+        interner,
+        substrate,
+        resolved_terrain,
+        id,
+        rules,
+    );
 }
 
 /// `AircraftClass::AI @ 0x00414D4D..0x00414DA1`, read from the disassembly:
@@ -1399,7 +1467,7 @@ fn techno_common_steps(
     effects: FrameEffects<'_>,
     turret_rotate_sample: Option<bool>,
 ) -> bool {
-    iron_tint_step(sim, id);
+    iron_tint_step(&sim.session, &mut sim.scenario_rng, &mut sim.substrate, id);
     // Techno6F9EBB follows the tint head and precedes veterancy/drain work.
     // A queued voice probes its handle only when this actor really reaches
     // this slot; recording final Logic membership would lose early exits.
@@ -1521,21 +1589,25 @@ fn berserk_step(
 /// consuming its jitter draw after the Iron draw on the same Scenario stream.
 ///
 /// [`InvulnerabilityState::update_tint`]: crate::sim::superweapon::invulnerability::InvulnerabilityState::update_tint
-fn iron_tint_step(sim: &mut Simulation, id: u64) {
-    let frame = sim.session.binary_frame() as i32;
-    let airstrike_active = sim.airstrike_tint_active(id);
-    if let Some(curtain) = sim
-        .substrate
+fn iron_tint_step(
+    session: &ScenarioSession,
+    scenario_rng: &mut SimRng,
+    substrate: &mut ObjectSubstrate,
+    id: u64,
+) {
+    let frame = session.binary_frame() as i32;
+    let airstrike_active = substrate.airstrike_tint_active(id);
+    if let Some(curtain) = substrate
         .entities
         .get_mut(id)
         .and_then(|entity| entity.invulnerability.as_mut())
     {
-        curtain.update_tint(frame, &mut sim.scenario_rng);
+        curtain.update_tint(frame, scenario_rng);
     }
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+    if let Some(entity) = substrate.entities.get_mut(id) {
         entity
             .airstrike_tint
-            .update_tint(frame, airstrike_active, &mut sim.scenario_rng);
+            .update_tint(frame, airstrike_active, scenario_rng);
     }
 }
 
@@ -1800,8 +1872,23 @@ fn techno_after_acquisition(
         return false;
     }
     if let Some(rules) = rules {
-        self_heal_step(sim, id, rules);
-        house_self_heal_step(sim, id, rules);
+        self_heal_step(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            id,
+            rules,
+        );
+        house_self_heal_step(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.houses,
+            &sim.resolved_terrain,
+            id,
+            rules,
+        );
         super::techno_ai_cloak::tick_stock_cloak_producer(
             sim,
             id,
@@ -5112,7 +5199,12 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
         let mut restored = GameSnapshot::load(&bytes).expect("load").sim;
-        restored.rebuild_logic_membership(); // the real post-deserialize step
+        Simulation::rebuild_logic_membership(
+            &mut restored.terrain_objects,
+            &mut restored.substrate,
+            &mut restored.projectiles,
+            &mut restored.waves,
+        ); // the real post-deserialize step
         assert_eq!(
             restored.state_hash(),
             hash_before,

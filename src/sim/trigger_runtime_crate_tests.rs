@@ -37,10 +37,6 @@ fn fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
 
 fn corpus() -> &'static Value {
     let native = crate::test_fixture::json("tools/spatial_oracle/trigger_crate.json");
-    assert_eq!(
-        native["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     native
 }
 
@@ -106,7 +102,7 @@ fn poll(sim: &mut Simulation, rules: &RuleSet, registry: &OverlayTypeRegistry) {
     let _ = sim.advance_triggers(Some(rules), Some(registry), FrameEffects::default());
 }
 
-/// Steam3e81a617 Execute6DF69B ->68BCC0 ->56BEC0. The native
+/// Steam gamemd Execute6DF69B ->68BCC0 ->56BEC0. The native
 /// corpus supplies a flat interior scene; the fixture's padding row/column is
 /// immaterial to these eight choices. No retail geometry is substituted as a
 /// golden: selected cells, AL, five slot words and all RNG bytes are native.

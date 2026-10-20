@@ -9,8 +9,6 @@ The original direction initializer49F2F0 executes. Run:
 python -m tools.spatial_oracle.bridge_repair_query --check
 ```
 
-Original executable SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 Every row verifies unchanged mapped `.text`, supplied resident cells and ordered
 record bytes. No query, lookup, search, Boolean or arithmetic result is supplied.
 Metadata pins harness/shared sources and canonical payload identity.

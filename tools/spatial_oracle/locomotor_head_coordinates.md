@@ -8,9 +8,7 @@ checkout with the original `gamemd.exe` available to `tools.native_oracle`:
 PYTHONPATH=. python -m tools.spatial_oracle.locomotor_head_coordinates --check
 ```
 
-The binary SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-The metadata records its identity, original entry points, assumptions, and the
+The metadata records original entry points, assumptions, and the
 32 Python/Rust sources bound to the comparison.
 
 The four `initializer_controls` execute Cell `49F2F0` through true RET `49F39B`

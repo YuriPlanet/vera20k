@@ -1,7 +1,7 @@
 //! TechnoType identity, current-default reads and generation retirement.
 //!
 //! The native lifecycle controls execute real AircraftType construction,
-//! TAction106, Process and Reset on gamemd3e81a617..08600. The tests below
+//! TAction106, Process and Reset on gamemd. The tests below
 //! compare their bounded scalar/identity history, not whole Full_Init parity.
 
 use super::*;

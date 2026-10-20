@@ -4,7 +4,7 @@ Three controls execute original Bullet AI `0x4668BD..0x467B7A` and reached
 `HomingTrack(0x5B20F0)` using the existing [guided-control harness](ifv_guided_controls.md).
 They establish the incoming states used by two focused lifecycle regressions;
 they do not execute pointer expiry, snapshots, scheduling, damage or retirement.
-The executable identity, physical input hashes and supplied boundaries are
+The physical input hashes and supplied boundaries are
 recorded in the JSON and companion metadata. Independent `--check` passes.
 
 ```sh

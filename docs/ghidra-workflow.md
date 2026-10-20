@@ -5,9 +5,9 @@ behavior and recurring interpretation errors; choose the investigation method yo
 
 For repeatable static byte reads, disassembly, direct caller candidates and field
 scans beside Ghidra, use [the shared native inspection tool](../tools/native_inspect.md).
-It checks the original executable identity and maps file-backed PE ranges through
-the oracle owner. Its linear sweeps do not establish instruction boundaries,
-reachability or exhaustive aliases; preserve those limits in findings.
+It maps file-backed PE ranges of the selected executable through the oracle owner.
+Its linear sweeps do not establish instruction boundaries, reachability or
+exhaustive aliases; preserve those limits in findings.
 
 Loaded PE images can contain zero-filled virtual tails with no original file bytes.
 Do not record an empty string or zero read there as an executable literal. For

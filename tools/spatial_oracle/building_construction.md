@@ -1,7 +1,6 @@
 # Building Construction → Grand_Opening
 
-Original reference: active-retail `gamemd.exe`, SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+Original reference: active-retail `gamemd.exe`.
 The generator checks every executable PE section before and after execution;
 original instructions are never patched.
 

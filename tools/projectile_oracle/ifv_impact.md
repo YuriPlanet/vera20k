@@ -1,7 +1,7 @@
 # Native IFV impact and complete bounded object lifetime
 
 Reproducible native addition; `ifv_launch` evidence is unchanged. Run from the
-owned checkout, with the hash-pinned gamemd and Unicorn2.1.4:
+owned checkout, with retail gamemd and Unicorn2.1.4:
 
 ```sh
 source ~/Documents/vera20k-dev/env.sh
@@ -69,7 +69,7 @@ Declared inputs and boundaries:
   RTTI uses verified IsBadReadPtr(7E115C), supplied false after mapped-memory
   validation, with an empty supplied FS exception chain. No native code patches.
 
-The companion metadata pins executable identity and the result payload hash.
+The companion metadata pins the result payload hash.
 Native input layers and physical assets are hashed in the payload. `--check`
 executes again without writing. `--write` explicitly regenerates the corpus.
 The separate `ifv_bridge_impact` executes bounded bridge damage/topology and

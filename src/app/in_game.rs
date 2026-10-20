@@ -67,7 +67,7 @@ impl App {
             // after the match returns (EBX=0 from48CCD4); the restart clears
             // it at686424. The runtime may remain retained, but Tag
             // destruction must see a stopped session.
-            // Source: original gamemd.exe instructions, SHA2561cdd1180..84298c.
+            // Source: original gamemd.exe instructions.
             runtime.simulation.retire_scenario_started();
         }
         state.match_state.scenario_restart_requested = false;

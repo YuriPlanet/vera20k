@@ -69,10 +69,6 @@ fn load_hills() -> crate::headless_scenario::HeadlessScenario {
     use crate::map::source::{LoadedMapSource, load_map_by_name_or_path_with_assets};
     let retail = retail_dir().expect("this ignored native-input test requires retail assets");
     let native = receipt();
-    assert_eq!(
-        native["native_sha256"].as_str().unwrap(),
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(native["code_unchanged"], true);
     let assets = AssetManager::new(&retail, MediaArchiveMode::STOCK_DIGITAL)
         .expect("ordinary retail archive stack");

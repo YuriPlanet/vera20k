@@ -93,5 +93,5 @@ gameplay timer or detach. Rebuilding the table calls its original frees/vector
 reset/allocations; existing bounded allocator/free/TLS/CRT and physical RawFile
 Windows transport remain storage/IO services rather than claimed OS lifetime.
 
-The sidecar pins the supported executable and replay command. Source hashes,
+The sidecar pins the replay command. Source hashes,
 validation logs, disassembly and screenshots are not part of the corpus.

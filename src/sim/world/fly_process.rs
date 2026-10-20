@@ -22,9 +22,8 @@
 //! (`Simulation::fly_crash_fall`) drops it. Nothing in VERA powers off an
 //! aircraft (native: EMP), so both are dormant.
 //!
-//! RESIDUAL: Horizontal_Step's deselect (`0x004CF55D..0x004CF5EC`): a
-//! selected aircraft of a house no human controls is deselected (vt+0x150)
-//! over shroud, or fog while fog is on. Selection is the client's.
+//! Horizontal_Step ends by deselecting another house's object over the
+//! player's shroud ([`Simulation::deselect_over_player_shroud`]).
 
 use super::Simulation;
 use crate::map::entities::EntityCategory;
@@ -750,6 +749,8 @@ impl Simulation {
         if land {
             self.begin_fly_landing(id, rules, registry, frame_effects);
         }
+        // 0x004CF55D..0x004CF5EC: the owner test is 0x0050B6F0.
+        self.deselect_over_player_shroud(id, Self::house_is_human_player);
         distance
     }
 

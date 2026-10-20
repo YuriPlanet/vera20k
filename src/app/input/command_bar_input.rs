@@ -76,7 +76,7 @@ pub(super) fn apply(state: &mut AppState, result: u16) -> bool {
     let id = result & !(RESULT_BUTTON | RESULT_RIGHT);
     if id == 0xF0 || id == 0xF1 {
         let opening = id == 0xF1;
-        // Original gamemd.exe (SHA2561cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c):
+        // Original gamemd.exe:
         // SidebarInput6D08F5 refuses F1 on Session+300 before its cue,
         // state or gadget changes. F0 has no defeat guard. The retained
         // driver has already consumed/released the physical button.

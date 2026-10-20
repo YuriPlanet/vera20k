@@ -63,7 +63,6 @@ def initialized_process_fixture():
     uc.mem_map(STACK_BASE,STACK_SIZE);uc.mem_map(RET_MAGIC,0x1000)
     sp=STACK_BASE+STACK_SIZE-0x1000
     capture=json.loads(Path(__file__).with_name("tube_startup_capture.json").read_text())
-    assert capture["native_sha256"]==NATIVE_SHA256
     captured={int(row["eip"],16):row for row in capture["captures"]}
     assert captured[0x49F0E0]["fpcw"]==captured[0x49F190]["fpcw"]=="0xe7f"
     uc.reg_write(UC_X86_REG_FPCW,int(captured[0x49F0E0]["fpcw"],16))

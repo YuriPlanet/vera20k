@@ -6,9 +6,7 @@ unmodified stock map and resident fixtures come from the existing
 `tools/spatial_oracle/anytown_damage` package. No bridge-cache representation,
 cursor predicate or native lookup answer is supplied by Rust or by this harness.
 
-The executable SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`;
-the complete original mapped `.text` remains SHA256
+The complete original mapped `.text` remains SHA256
 `4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc`
 after every measured call. No native instruction is patched. The canonical
 payload SHA256 is

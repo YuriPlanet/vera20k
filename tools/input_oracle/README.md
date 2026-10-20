@@ -13,8 +13,6 @@ python -m tools.input_oracle.fast_scroll --write
 ```
 
 Configure `VERA20K_GAMEMD_EXE` or `RA2_DIR` as described by the shared runner.
-Accepted executable SHA-256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 No retail executable is included. Help does not require retail configuration.
 
 ## Executed coverage
@@ -77,7 +75,7 @@ comparison. The full viewport updater executes; no ZBuffer is allocated.
 The existing discovery-geometry startup executes original initializers for the
 independent ground/shroud height scalars and projection constants.
 The margin control reaches the original cursor setter's already-set/null-image
-early return. Sidecars record executable identity, replay and these boundaries,
+early return. Sidecars record replay and these boundaries,
 without repository source hashes.
 
 ## Established native behavior

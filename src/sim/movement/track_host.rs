@@ -203,7 +203,15 @@ impl Simulation {
             }
             return false;
         }
-        self.track_apply_occupation_at(id, family, supplied, true);
+        Self::track_apply_occupation_at(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
+            id,
+            family,
+            supplied,
+            true,
+        );
         let Some(loco) = self
             .substrate
             .entities
@@ -293,11 +301,11 @@ impl Simulation {
     /// The track (`+0x58`/`+0x5C`), HeadToCoord (`+0x40`) and owner Location (`+0x9C`)
     /// that Process_Drive_Track (Drive `0x004B0F20`, Ship `0x006A05F0`) reads.
     fn track_state(
-        &self,
+        substrate: &ObjectSubstrate,
         id: u64,
         family: TrackFamily,
     ) -> Option<(TrackProgress, DriveCoord, DriveCoord)> {
-        let entity = self.substrate.entities.get(id)?;
+        let entity = substrate.entities.get(id)?;
         Some((
             progress(entity, family)?,
             head(entity, family),
@@ -343,7 +351,7 @@ impl Simulation {
             retry,
             ..
         } = invocation;
-        let Some((state, _, _)) = self.track_state(id, family) else {
+        let Some((state, _, _)) = Self::track_state(&self.substrate, id, family) else {
             return Ok(TrackPass::default());
         };
         let mut call = TrackProcess::begin(family, &state, fresh_budget, retry);
@@ -362,7 +370,9 @@ impl Simulation {
                 direction < 8 && crate::util::direction::direction_from_facing(facing) != direction
             });
         loop {
-            let Some((state, stored_head, current)) = self.track_state(id, family) else {
+            let Some((state, stored_head, current)) =
+                Self::track_state(&self.substrate, id, family)
+            else {
                 return Ok(TrackPass::paid(moved));
             };
             let Some(payment) = call.pay_current(&state) else {
@@ -469,7 +479,8 @@ impl Simulation {
                     entity.navigation.path_runtime_mut().clear_blockage();
                 }
             }
-            let Some((live, live_head, actual)) = self.track_state(id, family) else {
+            let Some((live, live_head, actual)) = Self::track_state(&self.substrate, id, family)
+            else {
                 return Ok(TrackPass::paid(moved));
             };
             let previous = if live.cursor() == 0 {
@@ -543,7 +554,7 @@ impl Simulation {
                     .body_facing
                     .snap(u16::from(facing) << 8, self.session.binary_frame());
             }
-            let Some((live, _, _)) = self.track_state(id, family) else {
+            let Some((live, _, _)) = Self::track_state(&self.substrate, id, family) else {
                 return Ok(TrackPass::paid(moved));
             };
             if call.is_at_occupation_handoff(&live) {
@@ -555,7 +566,7 @@ impl Simulation {
                     false,
                 );
             }
-            let Some((live, _, _)) = self.track_state(id, family) else {
+            let Some((live, _, _)) = Self::track_state(&self.substrate, id, family) else {
                 return Ok(TrackPass::paid(moved));
             };
             if chain_allowed
@@ -601,7 +612,8 @@ impl Simulation {
             .as_mut()
             .unwrap()
             .store_track_progress(family, state);
-        let Some((live, stored_head, current)) = self.track_state(id, family) else {
+        let Some((live, stored_head, current)) = Self::track_state(&self.substrate, id, family)
+        else {
             return Ok(TrackPass::paid(moved));
         };
         if let Some(step) = live.residual_step(family, current, stored_head) {
@@ -858,26 +870,37 @@ impl Simulation {
 
     /// Apply_Track_Occupation_Mode(0/1), Drive4B0AD0 / Ship6A01A0:
     /// direct raw handoff then full supplied head, with no Foot+6B6 gate.
-    pub(super) fn track_apply_occupation(&mut self, id: u64, family: TrackFamily, put: bool) {
-        let supplied = head_or_null(self.substrate.entities.get(id), family);
-        self.track_apply_occupation_at(id, family, supplied, put);
+    pub(super) fn track_apply_occupation(
+        substrate: &mut ObjectSubstrate,
+        path_grid: &Option<Arc<PathGrid>>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        family: TrackFamily,
+        put: bool,
+    ) {
+        let supplied = head_or_null(substrate.entities.get(id), family);
+        Self::track_apply_occupation_at(
+            substrate,
+            path_grid,
+            resolved_terrain,
+            id,
+            family,
+            supplied,
+            put,
+        );
     }
 
     fn track_apply_occupation_at(
-        &mut self,
+        substrate: &mut ObjectSubstrate,
+        path_grid: &Option<Arc<PathGrid>>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         family: TrackFamily,
         supplied: DriveCoord,
         put: bool,
     ) {
-        for coord in self.track_occupation_coords(id, family, supplied) {
-            Self::track_raw_mark_at(
-                &mut self.substrate,
-                &self.path_grid,
-                &self.resolved_terrain,
-                coord,
-                put,
-            );
+        for coord in Self::track_occupation_coords(substrate, id, family, supplied) {
+            Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, coord, put);
         }
     }
 
@@ -890,7 +913,7 @@ impl Simulation {
         family: TrackFamily,
     ) -> Vec<((u16, u16), MovementLayer)> {
         let supplied = head_or_null(self.substrate.entities.get(id), family);
-        self.track_occupation_coords(id, family, supplied)
+        Self::track_occupation_coords(&self.substrate, id, family, supplied)
             .into_iter()
             .map(|coord| {
                 super::foot_mark::raw_occupation_plane(
@@ -908,12 +931,12 @@ impl Simulation {
     /// has not passed it, then `supplied`. Empty without a track or for a
     /// null `supplied`.
     fn track_occupation_coords(
-        &self,
+        substrate: &ObjectSubstrate,
         id: u64,
         family: TrackFamily,
         supplied: DriveCoord,
     ) -> Vec<DriveCoord> {
-        let Some((state, retained_head, current)) = self.track_state(id, family) else {
+        let Some((state, retained_head, current)) = Self::track_state(substrate, id, family) else {
             return Vec::new();
         };
         if supplied == (DriveCoord { x: 0, y: 0, z: 0 }) {
@@ -1107,7 +1130,14 @@ impl Simulation {
             }
             return Ok(true);
         }
-        self.track_apply_occupation(id, family, true);
+        Self::track_apply_occupation(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
+            id,
+            family,
+            true,
+        );
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.foot_speed.set_speed_fraction(saved_speed);
             entity.navigation.path_replay_mut().consume(1);
@@ -1176,7 +1206,12 @@ impl Simulation {
         // then asks RefreshMegaMission (vt+0x4D0, Techno709A5D) whether an
         // attack-move resumes. Its false answer asks the active PlanMgr
         // path (Techno+0x430=705D50 ->6385C0).
-        self.temporal_release_if_warping(id);
+        Self::temporal_release_if_warping(
+            &mut self.substrate,
+            &mut self.houses,
+            &mut self.power_states,
+            id,
+        );
         if !self.foot_refresh_mega_mission(id, rules, registry, effects) {
             self.planning_enter_idle(id);
         }

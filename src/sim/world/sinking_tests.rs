@@ -142,7 +142,13 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
     // at that same cursor; this test does not assert saved Scenario retention.
     sim.scenario_rng = SimRng::new(0);
     let active_hash = sim.state_hash();
-    sim.sinking_edge_sounds(id, &rules);
+    Simulation::sinking_edge_sounds(
+        &sim.interner,
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        id,
+        &rules,
+    );
     assert_ne!(
         sim.state_hash(),
         active_hash,
@@ -290,7 +296,13 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
         sim.scenario_rng = SimRng::new(1);
         sim.mapgen_rng = SimRng::new(1);
         sim.sound_events.clear_for_test();
-        sim.sinking_edge_sounds(id, &rules);
+        Simulation::sinking_edge_sounds(
+            &sim.interner,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            id,
+            &rules,
+        );
         let events: Vec<_> = sim
             .sound_events
             .iter()
@@ -398,7 +410,13 @@ fn load_preserves_sinking_edge_and_resets_shared_foot_sound_bytes() {
         );
         let rng = loaded.rng_state();
         assert!(loaded.sound_events.is_empty());
-        loaded.sinking_edge_sounds(id, &rules);
+        Simulation::sinking_edge_sounds(
+            &loaded.interner,
+            &mut loaded.substrate,
+            &mut loaded.sound_events,
+            id,
+            &rules,
+        );
         assert_eq!(
             loaded.sound_events.len(),
             row["events"].as_array().unwrap().len()

@@ -3,8 +3,14 @@
 //! Evidence: PHASE3_GAP_OPERATIONAL_PUBLICATION_NATIVE_REPORT.md.
 use super::Simulation;
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::house_diplomacy::HouseAlliances;
+use crate::sim::houses::Houses;
+use crate::sim::intern::StringInterner;
+use crate::sim::vision::FogState;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::{intern::InternedId, power_system, vision};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -209,7 +215,18 @@ impl Simulation {
         if let Some((_, radius)) = self.gap_operational_state(id, rules) {
             let viewers = self.gap_viewers();
             for viewer in viewers {
-                self.set_building_gap_for_viewer(id, viewer, operational, radius);
+                Self::set_building_gap_for_viewer(
+                    &self.interner,
+                    &mut self.fog,
+                    &self.house_alliances,
+                    &mut self.substrate,
+                    &self.houses,
+                    &self.resolved_terrain,
+                    id,
+                    viewer,
+                    operational,
+                    radius,
+                );
             }
         }
         self.update_building_anim_power(id, operational, rules);
@@ -218,13 +235,18 @@ impl Simulation {
     /// One viewer's gap add `0x006FB170` or removal `0x006FB470` (latch `+0x269`,
     /// radius `+0x26C`) around the cell of the building's Location.
     fn set_building_gap_for_viewer(
-        &mut self,
+        interner: &StringInterner,
+        fog: &mut FogState,
+        house_alliances: &HouseAlliances,
+        substrate: &mut ObjectSubstrate,
+        houses: &Houses,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         viewer: InternedId,
         active: bool,
         radius: i32,
     ) {
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
+        let Some(entity) = substrate.entities.get_mut(id) else {
             return;
         };
         let deposit = entity.gap_generator.viewers.entry(viewer).or_default();
@@ -236,20 +258,19 @@ impl Simulation {
         }
         deposit.active = active;
         let radius = deposit.radius;
-        let source = building_gap_source(entity, radius, self.resolved_terrain.as_ref());
-        self.fog.ensure_viewer(viewer);
-        let spy_sat_active = self
-            .houses
+        let source = building_gap_source(entity, radius, resolved_terrain.as_ref());
+        fog.ensure_viewer(viewer);
+        let spy_sat_active = houses
             .iter()
             .filter_map(|(&owner, house)| house.spy_sat_active().then_some(owner))
             .collect();
         vision::publish_gap_generator_event(
-            &mut self.fog,
-            self.house_alliances.as_map(),
+            fog,
+            house_alliances.as_map(),
             viewer,
             source,
             active,
-            &self.interner,
+            interner,
             &spy_sat_active,
         );
     }
@@ -257,8 +278,16 @@ impl Simulation {
     /// Techno6F6AC0 calls6FB470 before Object Conceal; DisableStuff4524E9
     /// invokes the same removal immediately, independently of operational6C8.
     /// Removal has no operational check and leaves cached26C/Building6C8 alone.
-    pub(crate) fn remove_building_gap(&mut self, id: u64) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    pub(crate) fn remove_building_gap(
+        interner: &StringInterner,
+        fog: &mut FogState,
+        house_alliances: &HouseAlliances,
+        substrate: &mut ObjectSubstrate,
+        houses: &Houses,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+    ) {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         let viewers: Vec<_> = entity
@@ -268,7 +297,18 @@ impl Simulation {
             .filter_map(|(&viewer, deposit)| deposit.active.then_some((viewer, deposit.radius)))
             .collect();
         for (viewer, radius) in viewers {
-            self.set_building_gap_for_viewer(id, viewer, false, radius);
+            Self::set_building_gap_for_viewer(
+                interner,
+                fog,
+                house_alliances,
+                substrate,
+                houses,
+                resolved_terrain,
+                id,
+                viewer,
+                false,
+                radius,
+            );
         }
     }
 
@@ -280,7 +320,18 @@ impl Simulation {
         };
         let viewers = self.gap_viewers();
         for viewer in viewers {
-            self.set_building_gap_for_viewer(id, viewer, operational, radius);
+            Self::set_building_gap_for_viewer(
+                &self.interner,
+                &mut self.fog,
+                &self.house_alliances,
+                &mut self.substrate,
+                &self.houses,
+                &self.resolved_terrain,
+                id,
+                viewer,
+                operational,
+                radius,
+            );
         }
     }
 

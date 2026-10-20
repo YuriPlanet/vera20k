@@ -1,5 +1,5 @@
 //! Scenario cargo switches and Unit73838A's production fatal-receiver consumer.
-//! Native control flow: Steam gamemd SHA2563e81a617..08600, Execute97
+//! Native control flow: Steam gamemd, Execute97
 //! 6DD8EE, Execute87 6DDBD5, Basic68A217/68A235/68A5A7 and Unit73838A.
 //! Existing crate/FNPC oracles own numeric values and RNG; these tests do
 //! not substitute a hand-computed placement or timer golden.
@@ -254,7 +254,7 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
     let collector = sim
         .spawn_object_at_height("CARGOTRUCK", "Americans", 16, 15, 0, 0, &rules)
         .unwrap();
-    let money = crate::sim::credit_income::available_money(&sim, owner);
+    let money = crate::sim::credit_income::available_money(&sim.houses, owner);
     assert!(sim.pickup_crate_at(
         collector,
         (slot.cell_x, slot.cell_y),
@@ -273,7 +273,7 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
             .overlay_id
             .is_none()
     );
-    assert!(crate::sim::credit_income::available_money(&sim, owner) > money);
+    assert!(crate::sim::credit_income::available_money(&sim.houses, owner) > money);
     assert!(
         sim.trigger_runtime.dirty[3],
         "native CrateTrigger still feeds event50"

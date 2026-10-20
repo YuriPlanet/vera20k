@@ -97,12 +97,6 @@ pub fn factory_unit_ready_native() -> &'static serde_json::Value {
         "tools/spatial_oracle/_factory_infantry_output/fixtures/unit-ready-consumer-rust.json",
     );
     assert_eq!(fixture["schema"], 1);
-    for control in fixture["controls"].as_object().unwrap().values() {
-        assert_eq!(
-            control["native_sha256"],
-            "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-        );
-    }
     fixture
 }
 

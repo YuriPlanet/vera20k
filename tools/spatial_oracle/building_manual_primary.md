@@ -11,7 +11,7 @@ The directory contains the existing construction profile's physical RULESMD,
 ARTMD, SOUNDMD, MPBattleMD and selected SHPs, plus `Hills.map`. The optional
 LANGRULE layer is absent in this selected installation. `ini/evamd.ini` is the
 unlayered retail cue source. `--write` deliberately records original execution;
-the sidecar records executable identity, replay command and evidence bounds.
+the sidecar records the replay command and evidence bounds.
 The default and `--joined` modes retain their separate payloads.
 
 This extends the existing `JoinedFixture`, native input readers, allocation,

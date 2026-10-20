@@ -2,12 +2,10 @@
 
 `building_prism.py --disk` extends the existing `LaserScene` and `LaserPixels`
 owners. The default Prism payload and command remain separate. Native output is
-stored in `disk_laser.json`; its sidecar records the original image identity,
+stored in `disk_laser.json`; its sidecar records the
 replay command and component bounds. Neither output is a whole Disk gameplay or
 Display replay.
 
-The original image SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 Native body bounds below include the last byte:
 
 | Native body | Bounds | Responsibility |

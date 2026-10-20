@@ -24,9 +24,8 @@ PYTHONPATH=. python -m tools.spatial_oracle.cmin_dock --check
 The separate infantry_default_motion.json/meta corpus preserves54 original
 controls. Default mode retains its existing527 Jumpjet rows. --check writes
 no references; --write deliberately regenerates original executable results.
-Metadata pins native SHA256, Unicorn identity, supplied inputs and callback
-boundaries. Native SHA256 is
-1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+Metadata pins Unicorn identity, supplied inputs and callback
+boundaries.
 
 ## Executed evidence
 

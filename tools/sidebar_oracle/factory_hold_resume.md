@@ -13,9 +13,8 @@ python -B -m tools.sidebar_oracle.factory_loss --hold-resume --check
 ```
 
 `--write` generates `factory_hold_resume.json` and its sidecar. The sidecar pins
-the original binary, command and physical inputs, without repository-source
-hashes. Supported image SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+the command and physical inputs, without executable or repository-source
+hashes.
 Use the physical cache described by [sale-sidebar](factory_sale_sidebar.md).
 Its original layout/tab setup is reused even though these controls do not Draw.
 The input service and admitted House/map priors are bounded; this is not a full

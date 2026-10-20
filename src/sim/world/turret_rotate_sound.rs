@@ -64,6 +64,7 @@
 use super::{FrameEffects, SimSoundEvent, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::world::ObjectSubstrate;
 
 /// The loop-handle owner of a techno's turret rotation sound
 /// (`TechnoClass+0x488`). A tag bit keeps it apart from the object's own sound
@@ -244,7 +245,7 @@ impl Simulation {
         effects: FrameEffects<'_>,
         rules: Option<&RuleSet>,
     ) {
-        if !self.turret_rotate_loop_live(id) {
+        if !Self::turret_rotate_loop_live(&self.substrate, id) {
             return;
         }
         self.sound_events.emit(SimSoundEvent::ObjectSoundReleased {
@@ -257,8 +258,8 @@ impl Simulation {
     }
 
     // This queries the control latch, not whether the audio owner has a source.
-    fn turret_rotate_loop_live(&self, id: u64) -> bool {
-        self.substrate
+    fn turret_rotate_loop_live(substrate: &ObjectSubstrate, id: u64) -> bool {
+        substrate
             .entities
             .get(id)
             .is_some_and(|entity| !entity.turret_rotate_latch.is_armed())

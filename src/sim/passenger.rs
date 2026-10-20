@@ -83,7 +83,12 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::houses::Houses;
 use crate::sim::intern::{InternedId, StringInterner};
+use crate::sim::power_system::PowerStates;
+use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{ConcealOutcome, FrameEffects, SimSoundEvent, Simulation, UninitContext};
 
 /// The cargo hold of a type that holds passengers: CargoClass `Passengers`
@@ -131,7 +136,7 @@ pub struct PassengerCargo {
     garrison_fire_index: u8,
     /// A transport's own passenger relation is independent of its cargo.
     /// Unit73A6EC..73A77C attaches it without clearing CargoClass+114;
-    /// Steam gamemd.exe SHA3e81a617, original Unit739EC0 instructions.
+    /// Steam gamemd.exe, original Unit739EC0 instructions.
     /// The passenger owner alone mutates this serialized relation.
     #[serde(default)]
     carrier_relation: CarrierRelation,
@@ -373,7 +378,7 @@ impl Simulation {
     /// its existing member chain without count/size admission. The caller
     /// owns transport/rider policy; this native leaf does not write +11C or
     /// OpenTopped. No member/Team removal or owner transfer is invented here.
-    /// Steam gamemd3e81a617..08600; Full65DF88 and ordinary radio admission
+    /// Steam gamemd; Full65DF88 and ordinary radio admission
     /// share PassengerCargo's prepend/recount owner.
     pub(crate) fn add_cargo_passenger_chain(
         &mut self,
@@ -1038,7 +1043,16 @@ pub(crate) fn board_passenger(
         sim.open_topped_passengers_take_target(pax_id, None, rules, registry, effects);
     }
     if gunner && !arm.building() {
-        receive_gunner(sim, rules, carrier_id, pax_id);
+        receive_gunner(
+            &sim.interner,
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.substrate,
+            &sim.houses,
+            rules,
+            carrier_id,
+            pax_id,
+        );
     }
     true
 }
@@ -1111,7 +1125,7 @@ pub fn add_garrison_occupant(
     }
     sim.refresh_spatial_threat(building_id, rules, None);
     if count == 1 {
-        let _ = sim.mark_entity_refresh(building_id);
+        let _ = Simulation::mark_entity_refresh(&sim.substrate, building_id);
         sim.sound_events
             .emit(SimSoundEvent::StructureGarrisoned { owner });
         sim.sound_events
@@ -1127,52 +1141,79 @@ pub fn add_garrison_occupant(
 
 /// Gunner caller dispatch to UnitClass +4D4 (746420). Temporal ownership
 /// moves first; its mode7 step precedes the final passenger IFVMode selector.
-fn receive_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_id: u64) {
-    let Some(transport) = sim.substrate.entities.get(transport_id) else {
+fn receive_gunner(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    scenario_rng: &mut SimRng,
+    substrate: &mut ObjectSubstrate,
+    houses: &Houses,
+    rules: &RuleSet,
+    transport_id: u64,
+    pax_id: u64,
+) {
+    let Some(transport) = substrate.entities.get(transport_id) else {
         return;
     };
-    let Some(object) = sim.interner.object_type(transport.type_ref(), rules) else {
+    let Some(object) = interner.object_type(transport.type_ref(), rules) else {
         return;
     };
     // Aircraft/Foot bind this virtual slot to the 4DE750 stub.
     if transport.category() != crate::map::entities::EntityCategory::Unit || !object.gunner {
         return;
     }
-    let Some(passenger) = sim.substrate.entities.get(pax_id) else {
+    let Some(passenger) = substrate.entities.get(pax_id) else {
         return;
     };
     // 74643A..746460 samples the donor before moving its manager. Native
     // tests nonzero, including a paused signed duration, rather than >0.
     let donor_rearming = passenger
         .rearm_timer
-        .remaining(sim.session.binary_frame() as i32)
+        .remaining(session.binary_frame() as i32)
         != 0;
-    if sim.substrate.temporal_receive_gunner(transport_id, pax_id) {
-        if let Some(transport) = sim.substrate.entities.get_mut(transport_id) {
+    if substrate.temporal_receive_gunner(transport_id, pax_id) {
+        if let Some(transport) = substrate.entities.get_mut(transport_id) {
             transport.set_gunner_weapon(7, object);
         }
         if donor_rearming {
-            rearm_transferred_gunner(sim, rules, transport_id, 7);
+            rearm_transferred_gunner(
+                interner,
+                session,
+                scenario_rng,
+                substrate,
+                houses,
+                rules,
+                transport_id,
+                7,
+            );
         }
     }
-    let mode = sim
-        .substrate
+    let mode = substrate
         .entities
         .get(pax_id)
-        .and_then(|passenger| sim.interner.object_type(passenger.type_ref(), rules))
+        .and_then(|passenger| interner.object_type(passenger.type_ref(), rules))
         .map_or(0, |passenger| passenger.ifv_mode);
-    if let Some(transport) = sim.substrate.entities.get_mut(transport_id) {
+    if let Some(transport) = substrate.entities.get_mut(transport_id) {
         transport.set_gunner_weapon(mode, object);
     }
 }
 
 /// Gunner caller dispatch to UnitClass +4D8 (7464E0). RemoveGunner always
 /// selects mode0 after optional temporal return/LetGo, even with no gunner.
-fn remove_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_id: Option<u64>) {
-    let Some(transport) = sim.substrate.entities.get(transport_id) else {
+fn remove_gunner(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    scenario_rng: &mut SimRng,
+    substrate: &mut ObjectSubstrate,
+    houses: &mut Houses,
+    power_states: &mut PowerStates,
+    rules: &RuleSet,
+    transport_id: u64,
+    pax_id: Option<u64>,
+) {
+    let Some(transport) = substrate.entities.get(transport_id) else {
         return;
     };
-    let Some(object) = sim.interner.object_type(transport.type_ref(), rules) else {
+    let Some(object) = interner.object_type(transport.type_ref(), rules) else {
         return;
     };
     // Aircraft/Foot bind this virtual slot to the 4DE760 stub.
@@ -1183,15 +1224,24 @@ fn remove_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_i
     // passenger's current burst/rank/House are read after LetGo below.
     let donor_rearming = transport
         .rearm_timer
-        .remaining(sim.session.binary_frame() as i32)
+        .remaining(session.binary_frame() as i32)
         != 0;
     if let Some(pax_id) = pax_id
-        && sim.temporal_remove_gunner(transport_id, pax_id)
+        && Simulation::temporal_remove_gunner(substrate, houses, power_states, transport_id, pax_id)
         && donor_rearming
     {
-        rearm_transferred_gunner(sim, rules, pax_id, 0);
+        rearm_transferred_gunner(
+            interner,
+            session,
+            scenario_rng,
+            substrate,
+            &*houses,
+            rules,
+            pax_id,
+            0,
+        );
     }
-    if let Some(transport) = sim.substrate.entities.get_mut(transport_id) {
+    if let Some(transport) = substrate.entities.get_mut(transport_id) {
         transport.set_gunner_weapon(0, object);
     }
 }
@@ -1202,22 +1252,31 @@ fn remove_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_i
 /// Neither copies the donor's remainder nor writes FireAt's charge delay+2F8.
 /// Original body/RNG controls: `tools/spatial_oracle/ifv_turret_switching.py
 /// --temporal-gunner`, consumed as `ifv_temporal_gunner.json`.
-fn rearm_transferred_gunner(sim: &mut Simulation, rules: &RuleSet, receiver: u64, slot: i32) {
-    let Some(actor) = sim.substrate.entities.get_mut(receiver) else {
+fn rearm_transferred_gunner(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    scenario_rng: &mut SimRng,
+    substrate: &mut ObjectSubstrate,
+    houses: &Houses,
+    rules: &RuleSet,
+    receiver: u64,
+    slot: i32,
+) {
+    let Some(actor) = substrate.entities.get_mut(receiver) else {
         return;
     };
     let burst_index = actor.weapon_burst.advance();
-    let actor = sim.substrate.entities.get(receiver).unwrap();
-    let Some(object) = sim.interner.object_type(actor.type_ref(), rules) else {
+    let actor = substrate.entities.get(receiver).unwrap();
+    let Some(object) = interner.object_type(actor.type_ref(), rules) else {
         return;
     };
     let weapon = crate::sim::combat::combat_weapon::get_weapon(
         actor,
         object,
         slot,
-        &sim.substrate.entities,
+        &substrate.entities,
         rules,
-        &sim.interner,
+        interner,
     );
     // GetROF reads the firer's context, never its target. Keep the existing
     // snapshot adapter used by FireAt/C4; an untargeted actor uses its cell.
@@ -1236,9 +1295,9 @@ fn rearm_transferred_gunner(sim: &mut Simulation, rules: &RuleSet, receiver: u64
         ..Default::default()
     };
     let rof = crate::sim::combat::world_fire::snapshot_get_rof(
-        &mut sim.scenario_rng,
-        &sim.substrate,
-        &sim.houses,
+        scenario_rng,
+        &*substrate,
+        houses,
         rules,
         &snapshot,
         object,
@@ -1246,8 +1305,8 @@ fn rearm_transferred_gunner(sim: &mut Simulation, rules: &RuleSet, receiver: u64
         live,
         burst_index,
     );
-    let frame = sim.session.binary_frame() as i32;
-    if let Some(actor) = sim.substrate.entities.get_mut(receiver) {
+    let frame = session.binary_frame() as i32;
+    if let Some(actor) = substrate.entities.get_mut(receiver) {
         actor.rearm_timer.start(frame, rof);
     }
 }

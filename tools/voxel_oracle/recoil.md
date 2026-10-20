@@ -1,7 +1,6 @@
 # Native recoil state and retained rules
 
-`recoil.py` executes original instructions from retail `gamemd.exe`, SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+`recoil.py` executes original instructions from retail `gamemd.exe`.
 `recoil.json` records constructor values, eight reader controls, retained-layer
 controls, four firing gates, thirteen histories and four arm-helper comparisons.
 The physical GTGCAN, CAEAST02, NASAM and YAGGUN rows record source hashes and the

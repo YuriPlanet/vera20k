@@ -85,10 +85,6 @@ fn authored_ai_trigger_actions_change_only_the_selected_house_latch() {
 
 fn corpus() -> &'static serde_json::Value {
     let value = crate::test_fixture::json("tools/spatial_oracle/trigger_ai_activation.json");
-    assert_eq!(
-        value["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     assert_eq!(value["actions"]["controls"].as_array().unwrap().len(), 26);
     assert_eq!(value["histories"].as_array().unwrap().len(), 14);
     value
@@ -820,7 +816,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
     }
 }
 
-// Steam 3e81a617..08600: Execute30/50C210's 21 caller controls and 15
+// Steam gamemd: Execute30/50C210's 21 caller controls and 15
 // Execute76 controls, including 14 original due-selector/RNG histories.
 // Recalc 5054B0 and ComputerParanoid are declared sinks in the 30 controls;
 // production planner/retail checks below are Rust integration regressions.
@@ -1302,7 +1298,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
     let mapgen_before = sim.mapgen_rng.native_state_hex();
     let untouched = save_codec::serialize(&sim.houses[&houses[2]]).unwrap();
     sim.advance_triggers(Some(&rules), Some(&registry), FrameEffects::default());
-    // Original consecutive Read/Execute13/77/78/79, Steam3e81a617..08600:
+    // Original consecutive Read/Execute13/77/78/79, Steam gamemd:
     // 13 selects Country7, while all three ratio actions use incoming House0.
     assert_eq!(
         sim.houses[&houses[0]].scenario_team_ratios(),

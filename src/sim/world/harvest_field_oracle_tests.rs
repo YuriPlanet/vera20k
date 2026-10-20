@@ -385,7 +385,16 @@ fn reduce_tiberium_matches_the_original_cell_reduction() {
         let input = &row["input"];
         let mut s = row_scene(input);
         let at = cell(&input["cell"]);
-        let outcome = s.sim.reduce_tiberium_at_with_native_context(
+        let outcome = crate::sim::world::Simulation::reduce_tiberium_at_with_native_context(
+            &s.sim.terrain_objects,
+            &s.sim.ore_growth_config,
+            &mut s.sim.ore_growth_state,
+            &s.sim.session,
+            &mut s.sim.scenario_rng,
+            &s.sim.substrate,
+            &mut s.sim.resolved_terrain,
+            &mut s.sim.overlay_grid,
+            &mut s.sim.dirty_cells,
             at,
             input["amount"].as_i64().unwrap() as i32,
             Some(&s.rules),

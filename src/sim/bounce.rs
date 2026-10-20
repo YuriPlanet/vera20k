@@ -36,7 +36,7 @@ use crate::util::native_x87::{
     NativeF32Bits, NativeF64Bits, NativeX87Error, X87Chop53, X87Ordering, X87Value, sqrt_approx_f32,
 };
 
-/// Transient Anim4222FF..422433 launch values (Steam3e81a617..08600).
+/// Transient Anim4222FF..422433 launch values (Steam gamemd).
 /// Its literal70 lifetime is only an input to the initial displacement.
 pub(crate) struct MeteorLaunch {
     pub start: IVec3,

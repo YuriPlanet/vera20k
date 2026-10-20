@@ -15,6 +15,12 @@
 /// The signed native flash dword `TechnoClass+0xF0`, owned by this module.
 /// Each writer's value is kept with all its bits. `+0xF4` is a parity cache
 /// for drawing, not a separate gameplay timer.
+use crate::sim::house_diplomacy::HouseAlliances;
+use crate::sim::intern::StringInterner;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::vision::FogState;
+use crate::sim::world::ObjectSubstrate;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Flashing {
     frames: i32,
@@ -62,24 +68,32 @@ impl crate::sim::world::Simulation {
     /// ([`crate::sim::game_entity::GameEntity::disguise_hides_house_from`]):
     /// a Mirage worn as terrain stays dark to an enemy that cannot see
     /// through it; a Spy always flashes.
-    pub(crate) fn flash_object(&mut self, id: u64, frames: i32) {
+    pub(crate) fn flash_object(
+        interner: &StringInterner,
+        session: &ScenarioSession,
+        fog: &FogState,
+        house_alliances: &HouseAlliances,
+        substrate: &mut ObjectSubstrate,
+        id: u64,
+        frames: i32,
+    ) {
         use crate::map::entities::EntityCategory;
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         match entity.category() {
             EntityCategory::Structure | EntityCategory::Aircraft => {}
             EntityCategory::Infantry | EntityCategory::Unit => {
-                let hidden = self.session.current_house().is_some_and(|player| {
+                let hidden = session.current_house().is_some_and(|player| {
                     entity.disguise_hides_house_from(
                         player,
-                        Some(&self.fog),
-                        Some(self.house_alliances.as_map()),
-                        &self.interner,
+                        Some(fog),
+                        Some(house_alliances.as_map()),
+                        interner,
                     )
                 });
                 if !hidden {
-                    self.substrate
+                    substrate
                         .entities
                         .get_mut(id)
                         .unwrap()
@@ -89,11 +103,7 @@ impl crate::sim::world::Simulation {
                 return;
             }
         }
-        self.substrate
-            .entities
-            .get_mut(id)
-            .unwrap()
-            .flash_base(frames);
+        substrate.entities.get_mut(id).unwrap().flash_base(frames);
     }
 }
 

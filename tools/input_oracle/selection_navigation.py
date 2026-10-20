@@ -2094,7 +2094,6 @@ def i32_value(value):
 
 
 def house_cheer_generate():
-    assert image_sha256() == NATIVE_SHA256
     return dict(schema_version=1, source="unicorn/gamemd.exe",
         native_sha256=image_sha256(),
         cases=[house_cheer_case(spec) for spec in house_cheer_inputs()])

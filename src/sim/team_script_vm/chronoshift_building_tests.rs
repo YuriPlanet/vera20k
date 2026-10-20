@@ -32,7 +32,11 @@ fn action56_paid_pair_settles_the_shared_wallet_once_after_destination() {
         let owner = scene.sim.interner.get(OWNER).unwrap();
         let source_id = scene.sim.interner.get("SW3").unwrap();
         crate::sim::superweapon::trigger_grant_super(
-            &mut scene.sim,
+            &scene.sim.interner,
+            &scene.sim.session,
+            &mut scene.sim.substrate,
+            &scene.sim.houses,
+            &mut scene.sim.super_weapons,
             &scene.rules,
             owner,
             source_id,

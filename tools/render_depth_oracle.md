@@ -34,9 +34,7 @@ initializer `49F2F0` executes before the fixture writes cached FPCW `822D80`;
 its live FPCW, and every later call's live/cached word, retain `0x0E7F` chronology.
 Original virtual methods and instructions remain unpatched.
 
-Native binary SHA-256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-The sidecar records the binary, Unicorn core/binding, entry points, runtime
+The sidecar records the Unicorn core/binding, entry points, runtime
 assumptions and canonical payload hash. The shared publisher hashes the producer
 and shared native owner before generation and refuses to compare or publish if
 one changed through metadata construction; nothing is recorded.

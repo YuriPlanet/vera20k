@@ -424,7 +424,7 @@ impl ScenarioLightingState {
     /// Execute1426E2E60 /1436E2EB0 /1446E2F00 retains the raw signed
     /// percentage at3534/3538/353C. RecalcLighting takes all three normal
     /// percentages times10 with32-bit wrapping, independently of the selected
-    /// alternate profile. Original Steam gamemd3e81a617..08600;30 executed
+    /// alternate profile. Original Steam gamemd;30 executed
     /// controls cover the reader, call arguments and post-call field stores.
     pub(crate) fn retint_normal_component(&mut self, component: usize, value: i32) -> [i32; 3] {
         match component {
@@ -450,7 +450,7 @@ impl ScenarioLightingState {
     /// Execute71@6DF250 and72@6DF271 load +90 as binary32, not as an
     /// integer value, and store binary64 to Rules+1670/+1668. The existing
     /// integer action reader remains authoritative. No timer/RNG/detach or
-    /// immediate relight occurs. Steam gamemd3e81a617..08600, original
+    /// immediate relight occurs. Steam gamemd, original
     /// constructor/read/Execute and Logic controls in the nearby tests.
     pub(crate) fn set_ambient_change_input(&mut self, rate: bool, bits: i32) {
         self.ambient_change_overrides[usize::from(!rate)] =

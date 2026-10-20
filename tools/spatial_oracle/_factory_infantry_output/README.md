@@ -29,9 +29,10 @@ package; their complete native comparisons matched, but their CLI status is FAIL
 ## Configure physical inputs
 
 Use the existing `tools.native_oracle` configuration: set `VERA20K_GAMEMD_EXE`
-to the executable, or `RA2_DIR` to its directory. Required active-retail SHA256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-Original file bytes and selected instruction/data/vtable spans are checked.
+to the executable, or `RA2_DIR` to its directory.
+Unlike the other oracles, this sealed packet still requires the original YR 1.001
+file: its sources are pinned by hash, so its file-identity checks stay until the
+packet is next refreshed. Selected instruction/data/vtable spans are checked too.
 
 Supply an existing extracted input directory with `--assets` or
 `VERA20K_FACTORY_INFANTRY_OUTPUT_ASSETS`. `meta.json:physical_inputs` pins its

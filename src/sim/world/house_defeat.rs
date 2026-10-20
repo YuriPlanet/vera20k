@@ -348,7 +348,7 @@ impl Simulation {
             self.computer_paranoid(rules, context.registry(), context.effects());
         }
         let planning_commit = if self.session.current_house() == Some(owner) {
-            // Original1cdd:4FC1EE ->637A10, before Session+300/reveal
+            // Original gamemd:4FC1EE ->637A10, before Session+300/reveal
             // and the loss announcement. Input owns the exit and2B event;
             // House returns it to MainTick's existing post-Logic dispatcher.
             // Earlier death cues precede EndPlanningModeSound; MatchOutcome's
@@ -648,7 +648,7 @@ impl Simulation {
     }
 
     /// HouseClass cleanup4FC6D0/4FC790/4FC820/4FC8D0. Original Steam
-    ///3e81a617..08600; tools/spatial_oracle/house_blowup_all is the oracle.
+    ///gamemd; tools/spatial_oracle/house_blowup_all is the oracle.
     /// One owner for defeat and trigger119..122, including limbo/RTTI/Naval
     /// admission, dynamic registry order and same-callback receiver effects.
     pub(crate) fn house_blowup(

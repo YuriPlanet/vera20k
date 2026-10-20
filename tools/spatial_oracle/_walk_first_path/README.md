@@ -211,8 +211,7 @@ GI evidence. `--check-gi-reissue` freshly executes a selected accepted history
 and compares every selected field; `--gi-reissue` produces a new full receipt
 without accepting it. Outputs use exclusive creation and deterministic gzip.
 Physical inputs reuse the exact65-file closure (LANGRULE absent) declared in
-`_factory_infantry_output/meta.json`. Native SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+`_factory_infantry_output/meta.json`.
 
 Click Cells, auxiliary wrapper arguments0, selected scheduling/absolute frames,
 human House and flat fixture map are supplied inputs. Existing Fixture OS

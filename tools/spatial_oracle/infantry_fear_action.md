@@ -20,8 +20,6 @@ and its provenance sidecar. It does not replace the default corpus.
 
 ## Native evidence
 
-The active-retail binary SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 All 46 selected controls enter unchanged `Infantry5200B0`; 45 return and one
 stops at the declared pre-Scatter boundary. Their
 actual class requests run original `51D6F0`; original House `50B730`, COM Walk

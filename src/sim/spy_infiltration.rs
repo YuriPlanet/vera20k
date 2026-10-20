@@ -129,11 +129,20 @@ impl Simulation {
             .as_deref()
             .filter(|name| rules.super_weapon(name).is_some())
         {
-            crate::sim::superweapon::reset_super(self, rules, owner, super_weapon);
+            crate::sim::superweapon::reset_super(
+                &self.interner,
+                &self.session,
+                &mut self.substrate,
+                &mut self.sound_events,
+                &mut self.super_weapons,
+                rules,
+                owner,
+                super_weapon,
+            );
             InfiltrationEffect::SuperWeapon
         } else if object.storage > 0 {
             let amount = stolen_money(
-                credit_income::available_money(self, owner),
+                credit_income::available_money(&self.houses, owner),
                 rules.general.spy_money_steal_percent,
             );
             credit_income::spend_money(&mut self.houses, owner, amount);

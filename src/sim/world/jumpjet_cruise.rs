@@ -111,6 +111,20 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn is_object_alive(&self) -> bool {
         self.owner().is_object_alive()
     }
+    fn visibility_tail(&mut self, runtime: &mut JumpjetRuntime) {
+        let id = self.stable_id;
+        // 0x0054B07D..0x0054B10C: the owner test compares PlayerPtr directly.
+        self.sim.deselect_over_player_shroud(id, |sim, owner| {
+            sim.session.current_house() == Some(owner)
+        });
+        if let Some(player) = self.sim.jumpjet_discovery_due(id) {
+            let context = super::UninitContext::new(self.rules, self.registry)
+                .with_effects(self.frame_effects);
+            runtime.with_owner_call(self.sim, id, |sim| {
+                sim.discover_techno(id, player, context);
+            });
+        }
+    }
     /// `Object+0x74`, Marked.
     fn marked(&self) -> bool {
         self.owner().lifecycle.cell_marked()
@@ -535,8 +549,15 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.mark(false);
         self.set_location(coord);
         self.mark(true);
-        self.sim
-            .submit_entity_display(self.stable_id, self.rules, None);
+        Simulation::submit_entity_display(
+            &self.sim.interner,
+            &self.sim.terrain_objects,
+            &mut self.sim.substrate,
+            &self.sim.resolved_terrain,
+            self.stable_id,
+            self.rules,
+            None,
+        );
     }
     fn mark(&mut self, put: bool) {
         if put {
@@ -659,6 +680,28 @@ fn jumpjet_locomotor(entity: &crate::sim::game_entity::GameEntity) -> bool {
 }
 
 impl Simulation {
+    /// Process's discovery probe (`0x0054B112..0x0054B166`): the player
+    /// (`0x00A83D4C`) discovers (vt+0x198, [`Self::discover_techno`]) another
+    /// house's object it has not discovered (`+0x41B`) whose Location is not
+    /// shrouded on its map (`MapClass::IsShrouded @ 0x00586360`). So an enemy
+    /// jumpjet flying into ground the player has mapped is discovered there;
+    /// a Jumpjet's PerCell runs only at touchdown. Outside a campaign a Cell
+    /// put (`0x0047E953..0x0047E9DC`, [`Self::discover_cell_put_object`]) has
+    /// already discovered every object it puts down, so the probe only acts
+    /// in a campaign. Answers the player when the probe discovers.
+    fn jumpjet_discovery_due(&self, id: u64) -> Option<crate::sim::intern::InternedId> {
+        let player = self.session.current_house()?;
+        let terrain = self.resolved_terrain.as_ref()?;
+        let entity = self.substrate.entities.get(id)?;
+        if entity.discovery.discovered_by_current_house() || entity.owner() == player {
+            return None;
+        }
+        let location = crate::sim::movement::ground_pose::object_location(entity, Some(terrain));
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        (!crate::sim::vision::point_is_shrouded(&self.fog, &cells, player, location))
+            .then_some(player)
+    }
+
     /// `INotifyProc::Notify(0x117B)` of a `BalloonHover=` or `JumpJet=` owner
     /// (Infantry `0x00522A60..0x00522AF4`, Unit `0x00746100..0x00746194`),
     /// which Jumpjet State 1 raises while the owner climbs in contact with its

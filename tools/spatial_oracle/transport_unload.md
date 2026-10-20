@@ -43,8 +43,8 @@ VERA20K_ANYTOWN_INPUTS=/path/to/extracted/inputs \
 python -m tools.spatial_oracle.transport_unload --retail --check
 ```
 
-Use `--write` only to deliberately regenerate a corpus. Each sidecar identifies
-the actual executable hash, replay command and fixture boundaries. The retail
+Use `--write` only to deliberately regenerate a corpus. Each sidecar records
+the replay command and fixture boundaries. The retail
 Rust command tests use physical stock rules/ART on an explicit flat arena;
 the native crop histories establish the corresponding handler and facing
 controls, rather than a complete match comparison.

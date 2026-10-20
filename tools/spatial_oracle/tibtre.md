@@ -1,7 +1,6 @@
 # TIBTRE native executable comparison
 
-`tibtre.py` executes the pinned retail `gamemd.exe` SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c` with the
+`tibtre.py` executes retail `gamemd.exe` with the
 shared checked Unicorn runner. The saved JSON is native output, not a Python or
 Rust implementation of the mechanism. Its sidecar records the environment,
 declared inputs, service sinks and payload hash.

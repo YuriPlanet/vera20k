@@ -28,8 +28,15 @@ use crate::util::direction::DIRECTION_DELTAS;
 
 use crate::sim::intern::InternedId;
 
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::sim::dirty_cells::DirtyCells;
 use crate::sim::movement::ground_pose::{object_get_coords, object_world_z_leptons};
+use crate::sim::ore_growth::OreGrowthConfig;
+use crate::sim::ore_growth::OreGrowthState;
+use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::world::ObjectSubstrate;
 use crate::util::native_x87::{X87Chop53, sqrt_approx_f32};
 
@@ -653,8 +660,21 @@ fn harvest_ore_tick(
         .capacity_bales
         .saturating_sub(snap.miner.cargo.len() as u16)
         .min(1);
-    let reduction =
-        sim.reduce_tiberium_at_with_native_context(cell, request, Some(rules), overlay_registry);
+    let reduction = Simulation::reduce_tiberium_at_with_native_context(
+        &sim.terrain_objects,
+        &sim.ore_growth_config,
+        &mut sim.ore_growth_state,
+        &sim.session,
+        &mut sim.scenario_rng,
+        &sim.substrate,
+        &mut sim.resolved_terrain,
+        &mut sim.overlay_grid,
+        &mut sim.dirty_cells,
+        cell,
+        request,
+        Some(rules),
+        overlay_registry,
+    );
     let Some(resource_type) = reduction
         .resource_type
         .filter(|_| reduction.removed_amount > 0)
@@ -979,14 +999,35 @@ fn house_owns_dock_instance(sim: &Simulation, rules: &RuleSet, snap: &MinerSnaps
 
 /// Extract one bale from a tiberium cell: one density level of the overlay.
 pub(crate) fn extract_bale(
-    sim: &mut Simulation,
+    terrain_objects: &TerrainObjectStore,
+    ore_growth_config: &OreGrowthConfig,
+    ore_growth_state: &mut OreGrowthState,
+    session: &ScenarioSession,
+    scenario_rng: &mut SimRng,
+    substrate: &ObjectSubstrate,
+    resolved_terrain: &mut Option<ResolvedTerrainGrid>,
+    overlay_grid: &mut Option<OverlayGrid>,
+    dirty_cells: &mut DirtyCells,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     cell: (u16, u16),
     config: &MinerConfig,
 ) -> Option<CargoBale> {
-    let outcome =
-        sim.reduce_tiberium_at_with_native_context(cell, 1, Some(rules), overlay_registry);
+    let outcome = Simulation::reduce_tiberium_at_with_native_context(
+        terrain_objects,
+        ore_growth_config,
+        ore_growth_state,
+        session,
+        scenario_rng,
+        substrate,
+        resolved_terrain,
+        overlay_grid,
+        dirty_cells,
+        cell,
+        1,
+        Some(rules),
+        overlay_registry,
+    );
     if outcome.removed_amount == 0 {
         return None;
     }

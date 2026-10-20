@@ -95,7 +95,7 @@ const CELL_FLAG_BRIDGE_DECK: u32 = 0x200;
 
 impl Simulation {
     /// Foot4DF7F0 / Infantry522FE0, virtual508. Source: unchanged active-YR
-    /// bodies, Steam3e81a617..08600 (tools.native_inspect). Reuses the single
+    /// bodies, Steam gamemd (tools.native_inspect). Reuses the single
     /// Teleport/piggyback warp owner; no action-specific position/state copy.
     /// No own RNG/timer/detach: class destination and Walk sub-cell consumers
     /// retain theirs, and subsequent Teleport Process owns warp timers.
@@ -298,7 +298,14 @@ impl Simulation {
             2 => {
                 self.teleport_warp_out(id, rules);
                 self.foot_mark_remove(id, Some(rules), registry, ctx.effects);
-                self.teleport_warp_sound(id, WarpSound::Out, rules);
+                Self::teleport_warp_sound(
+                    &mut self.interner,
+                    &self.substrate,
+                    &mut self.sound_events,
+                    id,
+                    WarpSound::Out,
+                    rules,
+                );
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     // The warp-out's OnBridge clear (`0x007198FA`).
                     entity.on_bridge.store(false);
@@ -353,7 +360,14 @@ impl Simulation {
             }
             5 => {
                 let marked = self.chrono_settle(id, rules, registry, ctx.effects);
-                self.teleport_warp_sound(id, WarpSound::In, rules);
+                Self::teleport_warp_sound(
+                    &mut self.interner,
+                    &self.substrate,
+                    &mut self.sound_events,
+                    id,
+                    WarpSound::In,
+                    rules,
+                );
                 self.chrono_playfield_check(id);
                 //719AA3..719AC9: a newly reinforced member skips the
                 //Chronosphere's terrain kill/sink/transform validation.

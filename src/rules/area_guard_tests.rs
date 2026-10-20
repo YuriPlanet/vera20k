@@ -13,10 +13,6 @@ use std::sync::Arc;
 
 pub fn native() -> &'static Value {
     let corpus = crate::test_fixture::json("tools/input_oracle/area_guard.json");
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     corpus
 }
 

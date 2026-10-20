@@ -1,6 +1,5 @@
 //! Logic-polled ambient threshold events, native71EAE7 /71EB06.
-//! Original gamemd.exe SHA256:
-//! 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600.
+//! Original gamemd.exe.
 //! Instruction-established signed <= / >=; these are production regressions,
 //! not a capture or exhaustive native execution comparison.
 use super::*;

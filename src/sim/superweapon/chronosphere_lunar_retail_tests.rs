@@ -1,8 +1,7 @@
 //! Paid Moon Patrol AMCV -> concrete wall -> living sink through the bound runtime.
 //!
 //! Native Cell4865D0, UnitCanEnter73F48F/73FCD3, launch6CC864/6CC91D,
-//! PostWarp718AA9/718AC2 and Unit7364A1. Original gamemd SHA256
-//! 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+//! PostWarp718AA9/718AC2 and Unit7364A1. Original gamemd.
 //! Instruction/physical-retail expectations; this is a Rust production regression,
 //! not original whole-scene execution. All mutable game state comes from the
 //! normal Battle launch and commands; the input chooser only reads live owners.

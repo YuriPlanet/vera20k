@@ -7,8 +7,8 @@ python -m tools.spatial_oracle.damage_smoke --check
 `damage_smoke.py` inherits the existing `electric_bolt.SparkBirth(BulletReader)`
 runtime and observes original Particle and ParticleSystem bodies. It introduces
 no image mapper, INI parser, RNG algorithm or gameplay implementation.
-The JSON contains original-produced results; its sidecar records the selected
-executable hash and command. Default execution checks; `--write` deliberately
+The JSON contains original-produced results; its sidecar records the
+command. Default execution checks; `--write` deliberately
 creates or replaces a reference.
 
 Unit following has a separate small corpus consumed by

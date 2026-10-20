@@ -15,10 +15,10 @@ python -m tools.bridge_click_oracle --plane --write
 `plane_vectors.json` contains 24 calls to the complete original `6D2280` body,
 including its original `5AFB80` matrix multiply and both `7C5F00` integer
 conversions on each admitted call. The shared `NativeFixture` executes the
-original `6D1DC5..6D1E1E` constructor matrix block. The original image loader,
-binary hash checks and reference workflow are reused. No instructions or
+original `6D1DC5..6D1E1E` constructor matrix block. The original image loader
+and reference workflow are reused. No instructions or
 function results are replaced. Output guards, return pointer and stack cleanup
-are checked after each call. Metadata records the executable hash and command.
+are checked after each call. Metadata records the command.
 
 Inputs are integer VERA world pixels, including its existing +15 Y row bias.
 The incoming native point is `(world_x-camera_x, world_y-15-camera_y)`.

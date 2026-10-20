@@ -761,11 +761,17 @@ impl Simulation {
             return self.tube_exit_blocked(id, Some(rules), registry, effects);
         }
 
-        let out = self
-            .place_infantry_in_ground_cell(rules, location)
-            .map_or(DriveCoord { x: 0, y: 0, z: 0 }, |spot| {
-                walk_head::selected_head(location, spot, 0, false)
-            });
+        let out = Self::place_infantry_in_ground_cell(
+            &self.interner,
+            &mut self.scenario_rng,
+            &self.substrate,
+            &self.resolved_terrain,
+            rules,
+            location,
+        )
+        .map_or(DriveCoord { x: 0, y: 0, z: 0 }, |spot| {
+            walk_head::selected_head(location, spot, 0, false)
+        });
         let (exit, level) = {
             let cells = NativeCellQuery::canonical(
                 self.resolved_terrain

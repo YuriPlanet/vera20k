@@ -68,14 +68,15 @@ production code and side-by-side play against retail. Each PR states the evidenc
 each claim reached.
 
 Keep a native comparison only while a Rust test or tool consumes it: its harness and a
-small corpus of controls rather than bulk replays, with a sidecar recording the binary
-hash and the command. Sidecars pin no hashes of repository sources; those go stale
+small corpus of controls rather than bulk replays, with a sidecar recording the command.
+Every gamemd.exe build is treated as the same game: code, tests and comments neither
+check nor cite its hash. Sidecars pin no hashes of repository sources; those go stale
 without any change in native output. Validation results (test counts, captures, critic
 findings) go in the PR description and the checkpoint, not the tree: do not
 commit receipts, run logs, capture screenshots, critic reviews or static disassembly
 packets.
 
-Each cohesive gamemd-derived Rust behavior carries nearby native identity/address
+Each cohesive gamemd-derived Rust behavior carries nearby native function name/address
 and source; sim-behavior commits cite their evidence.
 Consult the [Ghidra reference](docs/ghidra-workflow.md) for access,
 interpretation pitfalls and shared-database edits.

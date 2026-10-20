@@ -195,27 +195,23 @@ impl Simulation {
     }
 
     pub(super) fn submit_entity_display(
-        &mut self,
+        interner: &StringInterner,
+        terrain_objects: &TerrainObjectStore,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         rules: Option<&RuleSet>,
         terrain: Option<&ResolvedTerrainGrid>,
     ) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         let layer = entity_layer(
             entity,
-            terrain.or(self.resolved_terrain.as_ref()),
-            rules.map(|rules| (rules, &self.interner)),
+            terrain.or(resolved_terrain.as_ref()),
+            rules.map(|rules| (rules, interner)),
         );
-        Self::submit_object_display(
-            &self.interner,
-            &self.terrain_objects,
-            &mut self.substrate,
-            id,
-            layer,
-            rules,
-        );
+        Self::submit_object_display(interner, terrain_objects, substrate, id, layer, rules);
     }
 
     pub(crate) fn entity_display_layer(
@@ -236,7 +232,15 @@ impl Simulation {
     /// resubmission site does.
     #[cfg(any(test, feature = "test-support"))]
     pub fn resubmit_entity_display_for_test(&mut self, id: u64) {
-        self.submit_entity_display(id, None, None);
+        Self::submit_entity_display(
+            &self.interner,
+            &self.terrain_objects,
+            &mut self.substrate,
+            &self.resolved_terrain,
+            id,
+            None,
+            None,
+        );
     }
 
     /// Jumpjet54AECB/54AED1 captures the live query before Process.54B16F
@@ -244,22 +248,33 @@ impl Simulation {
     /// not Object+94. Fly has different explicit resubmission sites and must
     /// not be normalized here by a generic per-frame layer/cache comparison.
     pub(super) fn complete_jumpjet_display_process(
-        &mut self,
+        interner: &StringInterner,
+        terrain_objects: &TerrainObjectStore,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         before: DisplayLayer,
         rules: Option<&RuleSet>,
     ) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         if entity.lifecycle.object_alive()
             && entity_layer(
                 entity,
-                self.resolved_terrain.as_ref(),
-                rules.map(|rules| (rules, &self.interner)),
+                resolved_terrain.as_ref(),
+                rules.map(|rules| (rules, interner)),
             ) != before
         {
-            self.submit_entity_display(id, rules, None);
+            Self::submit_entity_display(
+                interner,
+                terrain_objects,
+                substrate,
+                resolved_terrain,
+                id,
+                rules,
+                None,
+            );
         }
     }
 

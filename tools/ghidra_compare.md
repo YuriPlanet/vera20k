@@ -24,10 +24,9 @@ program and that `/get_metadata?program=gamemd.exe` resolves it before comparing
 The server's project-loading argument separately uses the project path.
 `--before-program` and `--after-program` are required; the tool never uses a
 mutable current-program selection. The client does not attest the
-server's loaded bytes. Native frame bytes are independently checked through the
-shared oracle owner against the two supported identities documented in
-[`native_oracle.md`](native_oracle.md#steam-compatibility-and-evidence-identity).
-Frame reports record the actual selected file hash, not the legacy vector identifier.
+server's loaded bytes. Native frame bytes are read independently through the
+shared oracle owner from whichever `gamemd.exe` is selected, with no identity check
+(see [`native_oracle.md`](native_oracle.md#evidence-identity)).
 
 Coordinate with the project owner and compare stable saved/rehearsal projects.
 Do not open the same project concurrently in GUI and headless Ghidra. Follow

@@ -242,10 +242,6 @@ fn native_base_response_dispatch_matches_14_represented_original_tails() {
 fn corpus() -> &'static Value {
     let rows = crate::test_fixture::json("tools/spatial_oracle/base_defense_response.json");
     assert_eq!(rows["schema_version"], 1);
-    assert_eq!(
-        rows["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
-    );
     rows
 }
 

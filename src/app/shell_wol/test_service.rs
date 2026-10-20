@@ -114,7 +114,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         WolServiceRequest::EnsureApi => WolServiceEvent::Api(WolApiStatus::Available),
         WolServiceRequest::ListCredentials => WolServiceEvent::Credentials(Vec::new()),
         WolServiceRequest::FetchServers { .. } => {
-            service_event(state, WolServiceEvent::ServerStatus(SERVER_STATUS_READY));
+            service_event(state, WolServiceEvent::NetStatus(SERVER_STATUS_READY));
             WolServiceEvent::ServerList(Ok(servers()))
         }
         WolServiceRequest::Connect { .. } => {

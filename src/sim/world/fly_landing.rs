@@ -3,27 +3,41 @@
 //! Native executable corpus: tools/spatial_oracle/fly_landing_phase.*.
 use super::{Simulation, display_layers::DisplayLayer};
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::intern::StringInterner;
 use crate::sim::movement::{air_movement, ground_pose, locomotor::MovementLayer};
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::SimSoundEvent;
 use crate::util::fixed_math::SIM_ZERO;
 
 impl Simulation {
-    pub(crate) fn finish_fly_takeoff_entry(&mut self, id: u64, rules: Option<&RuleSet>) {
-        Self::aircraft_tracker_add(&self.session, &mut self.substrate, id);
-        let Some(e) = self.substrate.entities.get_mut(id) else {
+    pub(crate) fn finish_fly_takeoff_entry(
+        interner: &mut StringInterner,
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        rules: Option<&RuleSet>,
+    ) {
+        Self::aircraft_tracker_add(session, substrate, id);
+        let Some(e) = substrate.entities.get_mut(id) else {
             return;
         };
         air_movement::ensure_fly_secondary_facing(e);
-        if air_movement::current_fly_height(e, self.resolved_terrain.as_ref()) == 0 {
+        if air_movement::current_fly_height(e, resolved_terrain.as_ref()) == 0 {
             e.body_facing.snap(
                 e.barrel_facing.unwrap().destination(),
-                self.session.binary_frame(),
+                session.binary_frame(),
             );
         }
         let sound = rules
-            .and_then(|r| self.interner.object_type(e.type_ref(), r))
+            .and_then(|r| interner.object_type(e.type_ref(), r))
             .and_then(|o| o.aux_sound1.as_deref());
         if let Some(sound) = sound {
             let c = ground_pose::position_world_coord(&e.position);
@@ -32,9 +46,8 @@ impl Simulation {
                 y: c.y,
                 z: c.z,
             };
-            let sound_id = self.interner.intern(sound);
-            self.sound_events
-                .emit(super::SimSoundEvent::AircraftPhase { sound_id, world });
+            let sound_id = interner.intern(sound);
+            sound_events.emit(super::SimSoundEvent::AircraftPhase { sound_id, world });
         }
     }
 
@@ -225,7 +238,12 @@ impl Simulation {
         fly.finish_landing();
         fly.halt();
         entity.foot_speed.set_speed_fraction(SIM_ZERO);
-        self.foot_neighbors_after_fly_landing(id);
+        Self::foot_neighbors_after_fly_landing(
+            &mut self.substrate,
+            &self.resolved_terrain,
+            &mut self.overlay_grid,
+            id,
+        );
         let entity = self.substrate.entities.get(id).unwrap();
         let destination = entity
             .locomotor
@@ -453,7 +471,15 @@ impl Simulation {
         };
         let e = self.substrate.entities.get(id).unwrap();
         let coord = ground_pose::position_world_coord(&e.position);
-        self.begin_fly_takeoff(id, Some(rules));
+        Self::begin_fly_takeoff(
+            &mut self.interner,
+            &self.session,
+            &mut self.substrate,
+            &mut self.sound_events,
+            &self.resolved_terrain,
+            id,
+            Some(rules),
+        );
         if self.map_size_diamond().is_none() {
             return false;
         }
@@ -488,7 +514,17 @@ impl Simulation {
                         .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
                 }
             }
-            self.move_air_coordinate(id, coord, None, Some(rules));
+            Self::move_air_coordinate(
+                &mut self.interner,
+                &self.session,
+                &mut self.substrate,
+                &mut self.sound_events,
+                &self.resolved_terrain,
+                id,
+                coord,
+                None,
+                Some(rules),
+            );
             true
         } else {
             self.receive_own_health_c4(id, rules, None, frame_effects);
@@ -610,7 +646,15 @@ mod tests {
             Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, id);
         }
         sim.add_entity_occupancy(id);
-        sim.submit_entity_display(id, Some(&rules), None);
+        Simulation::submit_entity_display(
+            &sim.interner,
+            &sim.terrain_objects,
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            id,
+            Some(&rules),
+            None,
+        );
         let e = sim.substrate.entities.get_mut(id).unwrap();
         e.position
             .set_exact_z_leptons_for_test(Some(before["coordinates"][2].as_i64().unwrap() as i32));
@@ -672,7 +716,12 @@ mod tests {
             e.barrel_facing = Some(facing(0x6000, 0x2000));
             let rng = sim.scenario_rng.logical_state();
             if input["move"].as_bool().unwrap() {
-                sim.move_air_coordinate(
+                Simulation::move_air_coordinate(
+                    &mut sim.interner,
+                    &sim.session,
+                    &mut sim.substrate,
+                    &mut sim.sound_events,
+                    &sim.resolved_terrain,
                     1,
                     DriveCoord {
                         x: 16768,
@@ -683,7 +732,15 @@ mod tests {
                     Some(&rules),
                 );
             } else {
-                sim.begin_fly_takeoff(1, Some(&rules));
+                Simulation::begin_fly_takeoff(
+                    &mut sim.interner,
+                    &sim.session,
+                    &mut sim.substrate,
+                    &mut sim.sound_events,
+                    &sim.resolved_terrain,
+                    1,
+                    Some(&rules),
+                );
             }
             let e = sim.substrate.entities.get(1).unwrap();
             let state = e.locomotor.as_ref().unwrap().fly_runtime().unwrap();

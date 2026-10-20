@@ -1,7 +1,7 @@
-# Inspect supported native executables
+# Inspect native executables
 
 Use `python -m tools.native_inspect` before writing a session-local disassembler,
-VA mapper or whole-code scan. It shares executable selection, SHA checking and
+VA mapper or whole-code scan. It shares executable selection and
 PE parsing with `tools.native_oracle`; `native_oracle.file_span` is the single
 owner of original file-backed VA reads. This tool performs no emulation, writes
 no goldens and does not modify Ghidra.
@@ -13,8 +13,8 @@ python -m pip install -r tools/requirements-test.txt
 ```
 
 Select `VERA20K_GAMEMD_EXE` or `RA2_DIR` as described in
-[native setup](native_oracle.md). Any release carrying the supported game code is accepted.
-Import and `--help` do not read it. Missing/wrong images and invalid requests fail
+[native setup](native_oracle.md). Any `gamemd.exe` is read, with no identity check.
+Import and `--help` do not read it. Missing/malformed images and invalid requests fail
 with nonzero status, diagnostics on stderr and no JSON evidence on stdout.
 
 ```sh
@@ -28,15 +28,14 @@ python -m tools.native_inspect find-bytes "32 c0 c2 04 00"
 ```
 
 Save stdout to a file when preserving a finding. Each deterministic JSON packet
-records schema version, native SHA-256, Capstone version and the complete parsed
-request. Addresses and file offsets are JSON integers; command arguments accept
+records schema version, image base, Capstone version and the
+complete parsed request. Addresses and file offsets are JSON integers; command arguments accept
 decimal or `0x` notation. No timestamps or machine-specific paths affect comparison.
 
 ## Scope and coverage
 
 - `sections` reports section index, VA, raw offset/length, virtual size, flags
-  and the SHA-256 of each complete file-backed section. The packet's
-  `native_sha256` is the game-code identity, the same for every accepted release.
+  and the SHA-256 of each complete file-backed section.
   A virtual tail is not original file content. Do not convert VA to file offset
   by subtracting the image base: the retail fourth section differs, and `.data`
   includes a large unbacked runtime region.

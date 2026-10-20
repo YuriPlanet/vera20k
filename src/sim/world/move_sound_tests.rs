@@ -188,7 +188,17 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
             None,
             sim.session.binary_frame(),
         );
-        sim.tick_move_sound_after_process(id, body_before, Some(rules));
+        Simulation::tick_move_sound_after_process(
+            &sim.interner,
+            &sim.session,
+            &sim.main_rng,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            &sim.houses,
+            id,
+            body_before,
+            Some(rules),
+        );
     });
     assert_eq!(
         actor_state(sim, id),

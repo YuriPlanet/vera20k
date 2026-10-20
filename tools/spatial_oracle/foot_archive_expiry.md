@@ -2,7 +2,7 @@
 
 The separate `--archive-expiry` mode in [foot_attack_move.py](foot_attack_move.py)
 executes complete original Unit, Infantry and Aircraft expiry handlers. It uses
-[the pinned retail image and shared runner](../native_oracle.md), original
+[the retail image and shared runner](../native_oracle.md), original
 concrete vtables and no substituted callables. The default attack-move mode's
 638 rows, including its bounded saved-target expiry slice, retain their prior
 payload bytes and native metadata values.

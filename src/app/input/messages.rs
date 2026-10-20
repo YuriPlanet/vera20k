@@ -433,6 +433,19 @@ pub(crate) fn post_chat_line(state: &mut AppState, name: &str, text: &str, rgb: 
 /// scheme (`0x004E12D0` with `0x00822728`), flags 0x16, MessageDelay*900
 /// (`0x0055EED0..0x0055EF2C`).
 pub(crate) fn post_observer_refusal(state: &mut AppState) {
+    post_grey_row(state, "TXT_OBSERVER_CANT_SEND", true);
+}
+
+/// The WOL NetStatus sink's lost connection in a match (`0x007AA7C0..`):
+/// one `TXT_WOL_CONNLOST` row in the same scheme, flags and timeout, with
+/// its sound.
+pub(crate) fn post_wol_connection_lost(state: &mut AppState) {
+    post_grey_row(state, "TXT_WOL_CONNLOST", false);
+}
+
+/// A CSF row in `GadgetClass::GetColorScheme` (`0x004E12D0`, "Grey"),
+/// flags 0x16, `MessageDelay * 900`.
+fn post_grey_row(state: &mut AppState, key: &str, silent: bool) {
     let Some(rules) = state.rules() else {
         return;
     };
@@ -450,10 +463,10 @@ pub(crate) fn post_observer_refusal(state: &mut AppState) {
         state,
         &crate::ui::messages::MessagePost {
             prefix: None,
-            text: "TXT_OBSERVER_CANT_SEND",
+            text: key,
             rgb,
             timeout_ms,
-            silent: true,
+            silent,
         },
     );
 }

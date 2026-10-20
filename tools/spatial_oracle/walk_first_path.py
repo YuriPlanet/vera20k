@@ -664,7 +664,6 @@ def project_gi_reissue(result):
  from tools.spatial_oracle._factory_infantry_output import runtime as rt
  rt.require(result.get('status')=='PASS' and result.get('history',{}).get('status')=='PASS',
      'Cannot project a failed native GI observation')
- rt.require(result['native_sha256']==rt.metadata()['native_sha256'],'Native binary identity differs')
  def select(value):
   if isinstance(value,dict):
    if value.get('map_address')==0x87F7E8 and 'raw_header' in value:
@@ -726,7 +725,6 @@ def saved_gi_reissues():
  """
  from tools.spatial_oracle._factory_infantry_output import runtime as rt
  meta=json.loads((GI_EVIDENCE/'manifest.json').read_text())
- rt.require(meta['native_sha256']==rt.metadata()['native_sha256'],'GI manifest binary differs')
  rt.verify_helpers()
  for files in meta['source_boundaries'].values():
   for row in files.values():_gi_read_pinned(row,decode=False)

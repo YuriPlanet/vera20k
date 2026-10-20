@@ -1,6 +1,6 @@
 //! Building virtual+A0 and Object Select's state-admission prefix.
 //!
-//! Steam gamemd 3e81a617: original44F5C0,455DA0,50B730 and5F4520..5F45A0.
+//! Steam gamemd: original44F5C0,455DA0,50B730 and5F4520..5F45A0.
 //! Corpus: tools/procedural_drawing_oracle/factory_destination.py --control.
 //! Prepared live state, not constructor/INI execution or full UI selection.
 

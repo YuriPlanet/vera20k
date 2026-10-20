@@ -844,10 +844,6 @@ fn cleg_cell_requests_match_every_original_command_boundary() {
         return;
     };
     let data = corpus();
-    assert_eq!(
-        data["native_identity"]["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let rows = data["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 22);
     let mut compared = 0;

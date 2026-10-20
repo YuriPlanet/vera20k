@@ -110,11 +110,10 @@ LeftUp restarts action-line timer25 at4ABFAE ->70D150. Those later effects are
 instruction evidence and existing-owner production tests, not this bounded
 window execution. No detach appears in the measured immediate route.
 
-Historical sidecars retain their actual executable identities. If a historical
-reference names3e81 while the selected file is1cdd, a strict provenance check
-correctly refuses that identity change even when all payload behavior matches.
-Use the shared [section-compatibility evidence](../native_oracle.md#steam-compatibility-and-evidence-identity)
-to qualify a separate semantic replay; do not relabel or rebaseline old evidence.
+Historical sidecars and payloads keep their recorded executable hashes as inert
+history; any `gamemd.exe` replays them (see
+[evidence identity](../native_oracle.md#evidence-identity)). Do not relabel or
+rebaseline old evidence.
 
 ## Attack acknowledgement
 

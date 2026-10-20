@@ -2,8 +2,7 @@
 
 `building_repair.py --depot-waiters` extends the existing depot VM and native
 input readers. The [golden payload](building_repair.depot_waiters.json) and
-[sidecar](building_repair.depot_waiters.meta.json) pin active-retail executable
-SHA256 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`,
+[sidecar](building_repair.depot_waiters.meta.json) pin
 Unicorn 2.1.4, original entry points and declared substitutions.
 Original text and the four actual Unit/UnitType/Building/BuildingType vtables
 remain unchanged. Expected values come from native execution.

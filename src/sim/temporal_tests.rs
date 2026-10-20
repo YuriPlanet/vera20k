@@ -795,16 +795,31 @@ fn let_go_hands_over_progress_or_frees_the_target() {
     let c = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 12);
     chain(&mut sim, tank, &[a, b, c], 1234);
 
-    sim.temporal_let_go(b);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        b,
+    );
     assert_eq!((link(&sim, a).next, link(&sim, c).prev), (Some(c), Some(a)));
     assert_eq!(link(&sim, b), TemporalLink::default().with_remaining(0));
 
-    sim.temporal_let_go(a);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        a,
+    );
     assert_eq!(head_of(&sim, tank), Some(c));
     assert_eq!(link(&sim, c).warp_remaining, 1234, "progress inherited");
     assert_eq!(link(&sim, c).prev, None);
 
-    sim.temporal_let_go(c);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        c,
+    );
     assert_eq!(head_of(&sim, tank), None);
     assert!(!entity(&sim, tank).is_warped_out());
 }
@@ -875,7 +890,13 @@ fn the_ifv_borrows_its_gunners_beam() {
     assert_eq!(head_of(&sim, tank), Some(ifv));
     assert_eq!(link(&sim, partner).prev, Some(ifv));
 
-    sim.temporal_remove_gunner(ifv, cleg);
+    crate::sim::world::Simulation::temporal_remove_gunner(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        ifv,
+        cleg,
+    );
     assert!(!entity(&sim, ifv).temporal.has_link());
     assert!(entity(&sim, cleg).temporal.has_link());
     assert!(
@@ -924,7 +945,12 @@ fn a_warped_building_goes_offline() {
     assert_eq!(output(&mut sim), 0, "GetPowerOutput 0x0044E7C7");
     assert_eq!(sim.building_operational_state(plant, &rules), Some(false));
 
-    sim.temporal_let_go(cleg);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
     assert!(entity(&sim, plant).building_online());
     assert_eq!(output(&mut sim), 100);
     assert_eq!(sim.building_operational_state(plant, &rules), Some(true));
@@ -956,7 +982,12 @@ fn trigger_online_is_independent_of_temporal_and_corrupt_chain_clear_does_not_re
     loaded.resolve_type_handles(&rules);
     assert!(entity(&loaded, building).building_online());
     assert!(entity(&loaded, building).is_warped_out());
-    sim.temporal_let_go(cleg);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
     assert!(
         entity(&sim, building).building_online(),
         "71AC3D forces on without normal callbacks"
@@ -1024,7 +1055,12 @@ fn a_warped_superweapon_building_holds_its_super() {
     }
     assert_eq!(state(&sim), warped, "the time left stays");
 
-    sim.temporal_let_go(cleg);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
     step(&mut sim);
     let (active, held, start, duration) = state(&sim);
     assert!(active && !held && start != -1, "released");
@@ -1598,7 +1634,12 @@ fn a_warp_in_progress_survives_a_snapshot() {
     assert_ne!(
         {
             let mut other = restored;
-            other.temporal_let_go(b);
+            crate::sim::world::Simulation::temporal_let_go(
+                &mut other.substrate,
+                &mut other.houses,
+                &mut other.power_states,
+                b,
+            );
             other.state_hash()
         },
         hash,
@@ -1712,7 +1753,12 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
         "no bill"
     );
     // Released, the building repairs again.
-    sim.temporal_let_go(cleg2);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg2,
+    );
     sim.object_ai_visit_one(plant, Some(&rules), ctx);
     assert!(entity(&sim, plant).health.current() > 300);
 }
@@ -1883,7 +1929,12 @@ fn a_released_mover_does_not_resume_its_order() {
         "the order ends"
     );
     let frozen_at = entity(&sim, tank).position.rx();
-    sim.temporal_let_go(cleg);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
     for _ in 0..150 {
         step(&mut sim);
     }
@@ -2088,7 +2139,12 @@ fn a_warped_building_cannot_be_captured() {
         ),
         "refusal clears the building destination and scatters away"
     );
-    sim.temporal_let_go(cleg);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
     enter(&mut sim);
     assert_eq!(entity(&sim, plant).owner(), russians, "captured once free");
     assert!(
@@ -2138,8 +2194,18 @@ fn a_warped_transport_admits_no_one() {
     );
     assert!(!admits(&sim, fortress), "a warped Unit transport");
     assert!(!admits(&sim, reactor), "a warped absorber");
-    sim.temporal_let_go(cleg);
-    sim.temporal_let_go(cleg2);
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg,
+    );
+    crate::sim::world::Simulation::temporal_let_go(
+        &mut sim.substrate,
+        &mut sim.houses,
+        &mut sim.power_states,
+        cleg2,
+    );
     assert!(admits(&sim, fortress));
     assert!(admits(&sim, reactor));
 }
@@ -2584,8 +2650,18 @@ fn native_first_head_building_warning_and_release_corpus() {
                     None,
                     FrameEffects::default(),
                 ),
-                "release_firer" => sim.temporal_let_go(attackers[0]),
-                "release_original_head" => sim.temporal_let_go(attackers[1]),
+                "release_firer" => crate::sim::world::Simulation::temporal_let_go(
+                    &mut sim.substrate,
+                    &mut sim.houses,
+                    &mut sim.power_states,
+                    attackers[0],
+                ),
+                "release_original_head" => crate::sim::world::Simulation::temporal_let_go(
+                    &mut sim.substrate,
+                    &mut sim.houses,
+                    &mut sim.power_states,
+                    attackers[1],
+                ),
                 other => panic!("{name}: unknown native phase {other}"),
             }
             let state = &phase["state"];

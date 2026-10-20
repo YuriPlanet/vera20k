@@ -1741,9 +1741,8 @@ impl ArtRegistry {
     /// has no `Cameo=`; that fallback is kept as the second lookup. Neither
     /// path substitutes `AltCameo=` (a separate field, `+0x710`); a missing
     /// cameo falls back to the resolved image id so the loader's `XXICON`
-    /// style guesses run. Read in the Steam `gamemd.exe`
-    /// (SHA-256 `3e81a617…`); the `0x00716C9C` site matches the pinned
-    /// build's citation above.
+    /// style guesses run. Read in the Steam `gamemd.exe`; the `0x00716C9C`
+    /// site matches the citation above.
     pub fn resolve_declared_cameo_id(&self, type_id: &str, rules_image: &str) -> String {
         let resolved: ResolvedObjectArt<'_> = self.resolve_object_art(type_id, rules_image);
         let type_upper: String = type_id.to_uppercase();

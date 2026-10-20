@@ -636,7 +636,14 @@ fn place_selects_the_original_house_order_and_primary_factory() {
             .production
             .primary_factory_ids(owner, ProductionCategory::Building)
             .next();
-        initialize_factory_primary(&mut sim, ids[index], &rules);
+        initialize_factory_primary(
+            &sim.interner,
+            &mut sim.production,
+            &sim.substrate,
+            &sim.houses,
+            ids[index],
+            &rules,
+        );
         let after = sim
             .production
             .primary_factory_ids(owner, ProductionCategory::Building)

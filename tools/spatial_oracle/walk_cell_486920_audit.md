@@ -9,8 +9,6 @@ residual. This is not a claim that its entire native branch is unreachable.
 
 ## Executed evidence and reproduction
 
-Original gamemd SHA256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 Unicorn 2.1.4, core `[2,1,33621247]`. The [harness](walk_cell_486920_audit.py)
 uses adjacent [native outputs](walk_cell_486920_audit.json) and
 [provenance](walk_cell_486920_audit.meta.json).

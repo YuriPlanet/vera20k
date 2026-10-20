@@ -167,6 +167,7 @@ pub(crate) struct WolMember {
 
 pub(crate) const MEMBER_OPERATOR: u32 = 1;
 pub(crate) const MEMBER_VOICE: u32 = 2;
+pub(crate) const MEMBER_LOCAL: u32 = 0x8000;
 
 impl WolMember {
     fn operator(&self) -> bool {

@@ -1,7 +1,7 @@
 //! Fresh fixed-tail House cash through a real stock SPY entry. Original
 //! CreateHouses687F10's Neutral/Special tail6882C2..68837E constructs these
 //! Houses without participant SetCreditsAndColor4FCE00. House ctor4F58D8
-//! initializes cash to zero. Binary1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
+//! initializes cash to zero. Binary gamemd.
 
 use crate::headless_scenario::{SIM_TICK_MS, battle_session, load_session};
 use crate::sim::command::{Command, CommandEnvelope};

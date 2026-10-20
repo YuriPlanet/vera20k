@@ -1,7 +1,6 @@
 # ReadDouble percent product, the prone damage head and the C4 fuse
 
-`read_double_percent.py` executes original gamemd.exe SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+`read_double_percent.py` executes original gamemd.exe.
 Its JSON results are native outputs, not calculations copied from Rust.
 The `.meta.json` file pins the payload and lists the supplied boundaries.
 

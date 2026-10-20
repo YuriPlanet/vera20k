@@ -934,7 +934,14 @@ impl Simulation {
                 .map(NativeCellQuery::canonical)
                 .as_ref(),
         );
-        let spot = self.place_infantry_in_ground_cell(rules, coords)?;
+        let spot = Self::place_infantry_in_ground_cell(
+            &self.interner,
+            &mut self.scenario_rng,
+            &self.substrate,
+            &self.resolved_terrain,
+            rules,
+            coords,
+        )?;
         if !owner_is_unit {
             let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(Some(spot));
             coords.x = i32::from(adjacent.0) * 256 + sub_x.to_num::<i32>();

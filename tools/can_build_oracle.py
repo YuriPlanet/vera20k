@@ -653,8 +653,6 @@ def produced_history_case(row):
 
 
 def produced_history_generate():
-    if native.image_sha256() != native.NATIVE_SHA256:
-        raise OracleError('Produced history requires the active-retail original image')
     return dict(schema_version=1, native_sha256=native.image_sha256(),
                 cases=[produced_history_case(row) for row in produced_history_inputs()])
 

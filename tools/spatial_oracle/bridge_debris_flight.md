@@ -11,9 +11,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. \
 ```
 
 Configure `VERA20K_GAMEMD_EXE` or `RA2_DIR` as described in
-[the native oracle guide](../native_oracle.md). The loader verifies retail SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-The metadata records Unicorn identity, binary and payload hashes, exact entry
+[the native oracle guide](../native_oracle.md).
+The metadata records Unicorn identity, the payload hash, exact entry
 points, assumptions, substitutions and the input-file hash.
 
 ## Inputs and execution

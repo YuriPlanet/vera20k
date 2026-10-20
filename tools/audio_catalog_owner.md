@@ -16,8 +16,6 @@ later map cannot replace it. A lost manager lease never resets live Rules.
 
 ## Native evidence and bounds
 
-Original binary SHA-256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 These lifecycle/source decisions are established from original instructions,
 not from executing Windows startup or interpreting Ghidra labels:
 

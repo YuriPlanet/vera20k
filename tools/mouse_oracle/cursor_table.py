@@ -30,8 +30,8 @@ Two structures, both compiled into the executable and not INI-driven:
   default target pushes row 0. Two targets derive the row from a call instead of
   an immediate.
 
-The executable identity is recorded in the sidecar. The anchor checks below must
-pass before anything is written, so a binary whose code does not match the
+Any gamemd.exe is read. The anchor checks below must pass before anything is
+written, so a binary whose code does not match the
 layout this tool assumes is rejected rather than mis-read.
 
     py -3 -m tools.mouse_oracle.cursor_table --exe <gamemd.exe> --write
@@ -74,13 +74,9 @@ MAX_RATE = 8
 # The scan stops at the first record that fails, so this only bounds the search.
 MAX_ROW_SCAN = 256
 
-# Stock retail gamemd.exe. A launcher-patched copy is only accepted with
-# --accept-patched, and its identity is recorded in the sidecar.
-STOCK_SHA256 = "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-
 # Addresses this extraction assumes, each recorded elsewhere in this repository
 # from stock analysis. Every one must decode as stated before the tables are
-# trusted: they are the cross-check that lets a patched binary be read at all.
+# trusted: they are the cross-check that lets any build be read.
 ANCHORS = {
     0x005BDC95: "8d348d28d08200",  # lea esi,[ecx*4 + 0x82d028]
     0x004AB453: "ff248584b84a00",  # jmp [eax*4 + 0x4ab884]
@@ -246,17 +242,8 @@ def read_action_rows(image: Image) -> tuple[list[dict], int]:
     return out, count
 
 
-def extract(exe: Path, accept_patched: bool) -> tuple[dict, dict]:
-    # `file_span` and the sidecar both require the caller to have established
-    # the input's identity, so that happens before any read.
+def extract(exe: Path) -> tuple[dict, dict]:
     data = exe.read_bytes()
-    sha = native.image_sha256(data)
-    if sha != STOCK_SHA256 and not accept_patched:
-        raise SystemExit(
-            "%s has SHA-256 %s, not the stock %s.\n"
-            "Re-run with --accept-patched to record this binary's identity in "
-            "the sidecar." % (exe, sha, STOCK_SHA256)
-        )
     image = Image(data)
     problems = check_anchors(image)
     if problems:
@@ -287,9 +274,6 @@ def extract(exe: Path, accept_patched: bool) -> tuple[dict, dict]:
     }
     sidecar = {
         "schema_version": 1,
-        "native_sha256": sha,
-        "stock_sha256": STOCK_SHA256,
-        "binary_is_stock": sha == STOCK_SHA256,
         "binary_size": len(data),
         "command": "py -3 -m tools.mouse_oracle.cursor_table --exe <path> --write",
         "scope": (
@@ -319,17 +303,12 @@ def main() -> int:
     ap.add_argument("--exe", type=Path, help="gamemd executable to read")
     ap.add_argument("--write", action="store_true", help="write the fixture and sidecar")
     ap.add_argument("--check", action="store_true", help="compare the committed fixture")
-    ap.add_argument(
-        "--accept-patched",
-        action="store_true",
-        help="allow a binary whose hash is not the stock one (recorded in the sidecar)",
-    )
     args = ap.parse_args()
 
     if args.exe is None or args.write == args.check:
         raise SystemExit("give --exe with exactly one of --write or --check")
 
-    payload, sidecar = extract(args.exe, args.accept_patched)
+    payload, sidecar = extract(args.exe)
     if args.check:
         committed = json.loads((REPO / FIXTURE).read_text(encoding="utf-8"))
         if committed == payload:

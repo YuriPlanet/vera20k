@@ -2716,7 +2716,12 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
         .get_mut(7)
         .unwrap()
         .set_in_logic_vector_for_test(false);
-    sim.rebuild_logic_membership();
+    Simulation::rebuild_logic_membership(
+        &mut sim.terrain_objects,
+        &mut sim.substrate,
+        &mut sim.projectiles,
+        &mut sim.waves,
+    );
     assert!(
         sim.substrate
             .particle_systems
@@ -3411,7 +3416,7 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
     let rules =
         crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(""))
             .unwrap();
-    // Steam gamemd3e81a617, TechnoPointerExpired7078B2..7078DB compares
+    // Steam gamemd, TechnoPointerExpired7078B2..7078DB compares
     // Object+90, exact Health==0 and ScenarioInit, independently of control.
     // These are controlled receiver priors, not a full transport fixture.
     for (alive, health, placement_scope, retain_inside) in [
@@ -9194,7 +9199,17 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
             .as_ref()
             .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
         let coordinate = crate::sim::movement::target_cell_coord(2, 2, cells.as_ref());
-        assert!(sim.move_air_coordinate(1, coordinate, None, Some(&rules)));
+        assert!(Simulation::move_air_coordinate(
+            &mut sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            &sim.resolved_terrain,
+            1,
+            coordinate,
+            None,
+            Some(&rules)
+        ));
         sim.tick_air_movement_with_cell_lists_one(
             1,
             Some(&rules),
@@ -9464,7 +9479,15 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
             let id = step["actor"].as_u64().map_or(0, |i| i + 1);
             match step["op"].as_str().unwrap() {
                 "submit" => match actors[id as usize - 1]["kind"].as_str().unwrap() {
-                    "unit" | "building" => sim.submit_entity_display(id, Some(&rules), None),
+                    "unit" | "building" => Simulation::submit_entity_display(
+                        &sim.interner,
+                        &sim.terrain_objects,
+                        &mut sim.substrate,
+                        &sim.resolved_terrain,
+                        id,
+                        Some(&rules),
+                        None,
+                    ),
                     "particle" => {
                         sim.reveal_particle_system(id, Some(&rules));
                     }
@@ -9595,14 +9618,30 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
         .unwrap()
         .position
         .set_exact_z_leptons_for_test(Some(600));
-    sim.complete_jumpjet_display_process(id, before, None);
+    Simulation::complete_jumpjet_display_process(
+        &sim.interner,
+        &sim.terrain_objects,
+        &mut sim.substrate,
+        &sim.resolved_terrain,
+        id,
+        before,
+        None,
+    );
     assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
     // The native tail's alive gate prevents another submission after death.
     let before = sim.entity_display_layer(id, None).unwrap();
     let entity = sim.substrate.entities.get_mut(id).unwrap();
     entity.lifecycle.set_object_alive_for_test(false);
     entity.position.set_exact_z_leptons_for_test(Some(0));
-    sim.complete_jumpjet_display_process(id, before, None);
+    Simulation::complete_jumpjet_display_process(
+        &sim.interner,
+        &sim.terrain_objects,
+        &mut sim.substrate,
+        &sim.resolved_terrain,
+        id,
+        before,
+        None,
+    );
     assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
 }
 
@@ -9619,7 +9658,15 @@ fn display_registration_expires_with_a_resubmitted_uninit_owner() {
     sim.try_reveal_entity(id, common_raw_request(3, 3, 0, 128, 128));
     sim.uninit(id);
     assert!(sim.substrate.entities.get(id).unwrap().lifecycle.in_limbo());
-    sim.submit_entity_display(id, None, None);
+    Simulation::submit_entity_display(
+        &sim.interner,
+        &sim.terrain_objects,
+        &mut sim.substrate,
+        &sim.resolved_terrain,
+        id,
+        None,
+        None,
+    );
     assert_eq!(
         sim.substrate.display.layer_of(id),
         Some(DisplayLayer::GROUND)

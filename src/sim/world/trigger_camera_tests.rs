@@ -97,7 +97,7 @@ fn waypoint_ground_bridge_and_dummy_coordinates_match_original_actions48_and112(
     }
 }
 
-/// Original Steam3e81a617..08600 GetWaypointLocation68BD00 + Cell486840 /
+/// Original Steam gamemd GetWaypointLocation68BD00 + Cell486840 /
 /// 47B3A0, with Scenario CRT8148A8..8148CC deriving deck416. Sparse Cell
 /// fields are declared inputs; this is not a full map-load comparison.
 #[test]

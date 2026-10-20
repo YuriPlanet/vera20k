@@ -27,7 +27,7 @@
 //!
 //! Original constructor/Logic-before-crew execution:
 //! `tools/spatial_oracle/building_death_anims.py` (joined fatal lifecycle),
-//! gamemd SHA1cdd1180e49024fbda8ad568caac2e86e.
+//! gamemd.
 //!
 //! A dropped bomb over water at height <= 10 takes the water splash
 //! (`0x00737E78..0x00737F6B`) instead of `Death_Explosion`; this owner
@@ -237,7 +237,7 @@ impl Simulation {
                     self.substrate.set_anim_owner_house(anim, house);
                     self.substrate.anims.set_anim_house_remap(anim, house);
                 }
-                self.anim_mark_cell_occupancy(anim);
+                Self::anim_mark_cell_occupancy(&mut self.substrate, &self.resolved_terrain, anim);
             }
         }
         Some(anim)
@@ -250,7 +250,7 @@ impl Simulation {
     /// and the subsequent anims use raw Location, not GetCoords or floor Z.
     /// Original instructions: `python -m tools.native_inspect disasm
     /// 0x70222E --bytes 96` (also 0x737E78/260, 0x5181B5/255), supported
-    /// retail gamemd SHA256 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600.
+    /// retail gamemd.
     pub(crate) fn dropped_bomb_water_death_location(&self, id: u64) -> Option<AnimWorldCoord> {
         let entity = self.substrate.entities.get(id)?;
         if crate::sim::movement::air_movement::current_fly_height(

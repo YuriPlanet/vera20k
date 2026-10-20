@@ -128,8 +128,7 @@ that does not use Paid is unchanged.
 
 ## Reproduction
 
-Use the pinned original `gamemd.exe` (SHA256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`),
+Use the original `gamemd.exe`,
 Unicorn 2.1.4 and local retail assets as described in
 [`tools/native_oracle.md`](../../native_oracle.md). Set `VERA20K_GAMEMD_EXE`
 (or `RA2_DIR`), `VERA20K_ANYTOWN_INPUTS`, `VERA20K_SHRAPNEL_INPUTS` and

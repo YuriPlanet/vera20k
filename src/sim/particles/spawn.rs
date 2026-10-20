@@ -13,9 +13,11 @@
 //! shared live Logic vector and their owned particles run in that system visit.
 
 use super::{Particle, ParticleSystem};
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::particle_system_type::{ParticleSystemBehavesLike, ParticleSystemTypeId};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
+use crate::sim::intern::StringInterner;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
@@ -108,7 +110,7 @@ impl Simulation {
             )
         };
         if !below(rules.general.condition_yellow)
-            || self.damage_particle_owner_height(entity) <= -10
+            || Self::damage_particle_owner_height(&self.resolved_terrain, entity) <= -10
             || entity.spark_particle_system.system().is_some()
         {
             return;
@@ -167,56 +169,60 @@ impl Simulation {
 
     /// Reached healing tails 6FA75A,45096C,451477: ordered Greater only.
     /// This never creates smoke and never clears the retained owner slot.
-    pub(crate) fn retire_damage_smoke_after_heal(&mut self, stable_id: u64, rules: &RuleSet) {
-        let above = self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| {
-                self.object_type(entity.type_ref(), rules)
-                    .is_some_and(|object| {
-                        entity
-                            .health
-                            .compare_ratio(object.strength, rules.general.condition_yellow)
-                            == crate::util::native_x87::MaskedX87Ordering::Greater
-                    })
-            });
+    pub(crate) fn retire_damage_smoke_after_heal(
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
+        stable_id: u64,
+        rules: &RuleSet,
+    ) {
+        let above = substrate.entities.get(stable_id).is_some_and(|entity| {
+            interner
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| {
+                    entity
+                        .health
+                        .compare_ratio(object.strength, rules.general.condition_yellow)
+                        == crate::util::native_x87::MaskedX87Ordering::Greater
+                })
+        });
         if above {
-            self.substrate.retire_attached_damage_smoke(stable_id);
+            substrate.retire_attached_damage_smoke(stable_id);
         }
     }
 
     /// Selfheal6FA75A has an additional Object GetHeight5F5F40 arm after a
     /// non-Greater health comparison. Read retained raw Object XYZ (not the
     /// building's foundation-center coordinate), then the live terrain surface.
-    pub(crate) fn retire_damage_smoke_after_self_heal(&mut self, stable_id: u64, rules: &RuleSet) {
-        let retire = self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| {
-                let Some(object) = self.object_type(entity.type_ref(), rules) else {
-                    return false;
-                };
-                if entity
-                    .health
-                    .compare_ratio(object.strength, rules.general.condition_yellow)
-                    == crate::util::native_x87::MaskedX87Ordering::Greater
-                {
-                    return true;
-                }
-                self.damage_particle_owner_height(entity) < -10
-            });
+    pub(crate) fn retire_damage_smoke_after_self_heal(
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        stable_id: u64,
+        rules: &RuleSet,
+    ) {
+        let retire = substrate.entities.get(stable_id).is_some_and(|entity| {
+            let Some(object) = interner.object_type(entity.type_ref(), rules) else {
+                return false;
+            };
+            if entity
+                .health
+                .compare_ratio(object.strength, rules.general.condition_yellow)
+                == crate::util::native_x87::MaskedX87Ordering::Greater
+            {
+                return true;
+            }
+            Self::damage_particle_owner_height(resolved_terrain, entity) < -10
+        });
         if retire {
-            self.substrate.retire_attached_damage_smoke(stable_id);
+            substrate.retire_attached_damage_smoke(stable_id);
         }
     }
     /// Shared original Object5F5F40 adapter for the Smoke and Cyborg Spark gates.
-    fn damage_particle_owner_height(&self, entity: &crate::sim::game_entity::GameEntity) -> i32 {
-        crate::sim::movement::air_movement::current_fly_height(
-            entity,
-            self.resolved_terrain.as_ref(),
-        )
+    fn damage_particle_owner_height(
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> i32 {
+        crate::sim::movement::air_movement::current_fly_height(entity, resolved_terrain.as_ref())
     }
 
     /// Spawn a new particle system. Returns the new system's stable id, or
@@ -497,12 +503,9 @@ impl Simulation {
         // Original702952..70295F queries height only after the existing-slot,
         // damage-result and nonempty-type-list gates. Strictly greater than-10;
         // a rejected height must consume no selection RNG or constructor ID.
-        if self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_none_or(|entity| self.damage_particle_owner_height(entity) <= -10)
-        {
+        if self.substrate.entities.get(stable_id).is_none_or(|entity| {
+            Self::damage_particle_owner_height(&self.resolved_terrain, entity) <= -10
+        }) {
             return;
         }
         let selected = self
@@ -758,7 +761,7 @@ mod tests {
             cell.slope_type = input["slope"].as_u64().unwrap() as u8;
             sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(8, 8, vec![cell]));
             assert_eq!(
-                sim.damage_particle_owner_height(&entity),
+                Simulation::damage_particle_owner_height(&sim.resolved_terrain, &entity),
                 row["output"]["height"].as_i64().unwrap() as i32
             );
             sim.substrate.entities.insert(entity);

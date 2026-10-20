@@ -15,7 +15,7 @@ python -m tools.spatial_oracle.terrain_strength --check
 
 Run from the repository root with the executable and Unicorn configured as in
 [the native comparison workflow](../native_oracle.md). The sidecar pins the
-binary identity, input boundary and substitutions. There are 69 fresh-type
+input boundary and substitutions. There are 69 fresh-type
 rows (68 successful reads and one supplied failed-base-reader gate) plus three
 two-pass retention characterizations. The complete ObjectType reader and
 scenario rules-pass driver do not execute. Resolved TreeStrength is supplied;

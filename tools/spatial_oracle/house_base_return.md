@@ -15,9 +15,7 @@ python -m tools.spatial_oracle.house_base_projection --ordinary-return --check
 Configure Python, Unicorn and the original executable as described in
 [native_oracle.md](../native_oracle.md). Each selected run takes about three
 seconds on the current machine. `--write` deliberately replaces the selected
-corpus and its provenance; the default and `--check` write no files. The native
-image SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+corpus and its provenance; the default and `--check` write no files.
 
 ## Original execution and retained ownership
 

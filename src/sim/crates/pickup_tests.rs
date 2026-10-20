@@ -951,7 +951,16 @@ fn random_unit_crate_with_only_forbidden_mcvs_returns_without_rng() {
             .set_is_human_for_test(human);
         let before = sim.scenario_rng.native_state_hex();
         assert!(
-            effects::choose_unit_crate_type(&mut sim, &rules, owner, false).is_none(),
+            effects::choose_unit_crate_type(
+                &sim.interner,
+                &sim.session,
+                &mut sim.scenario_rng,
+                &sim.houses,
+                &rules,
+                owner,
+                false
+            )
+            .is_none(),
             "no vehicle is eligible with bases={bases}, human={human}"
         );
         assert_eq!(sim.scenario_rng.native_state_hex(), before);
@@ -973,8 +982,16 @@ fn random_unit_crate_still_allows_a_human_mcv_with_bases() {
         .unwrap()
         .set_is_human_for_test(true);
     assert_eq!(
-        effects::choose_unit_crate_type(&mut sim, &rules, owner, false)
-            .map(|object| object.id.as_str()),
+        effects::choose_unit_crate_type(
+            &sim.interner,
+            &sim.session,
+            &mut sim.scenario_rng,
+            &sim.houses,
+            &rules,
+            owner,
+            false
+        )
+        .map(|object| object.id.as_str()),
         Some("AMCV")
     );
 }
@@ -1006,8 +1023,16 @@ fn random_unit_crate_keeps_rejected_draws_before_an_eligible_vehicle() {
         })
         .expect("a deterministic rejected-MCV then accepted-tank draw pair");
     assert_eq!(
-        effects::choose_unit_crate_type(&mut sim, &rules, owner, false)
-            .map(|object| object.id.as_str()),
+        effects::choose_unit_crate_type(
+            &sim.interner,
+            &sim.session,
+            &mut sim.scenario_rng,
+            &sim.houses,
+            &rules,
+            owner,
+            false
+        )
+        .map(|object| object.id.as_str()),
         Some("TNK")
     );
     assert_eq!(

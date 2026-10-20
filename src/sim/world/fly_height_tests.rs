@@ -420,7 +420,17 @@ fn assert_native_move_takeoff(sim: &mut Simulation, rules: &RuleSet, row: &serde
         .as_ref()
         .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
     let coordinate = crate::sim::movement::target_cell_coord(12, 10, cells.as_ref());
-    assert!(sim.move_air_coordinate(1, coordinate, None, Some(rules)));
+    assert!(Simulation::move_air_coordinate(
+        &mut sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        &sim.resolved_terrain,
+        1,
+        coordinate,
+        None,
+        Some(rules)
+    ));
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!(
         entity.locomotor.as_ref().unwrap().fly_target_height(),
@@ -565,7 +575,12 @@ fn destination_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
 }
 
 fn issue_coordinate(sim: &mut Simulation, rules: &RuleSet, xyz: [i32; 3]) -> bool {
-    sim.move_air_coordinate(
+    Simulation::move_air_coordinate(
+        &mut sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        &sim.resolved_terrain,
         1,
         crate::sim::components::DriveCoord {
             x: xyz[0],
@@ -642,7 +657,17 @@ fn fly_cell_orders_resolve_ground_before_retaining_the_coordinate() {
         .as_ref()
         .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
     let coordinate = crate::sim::movement::target_cell_coord(64, 64, cells.as_ref());
-    assert!(sim.move_air_coordinate(1, coordinate, None, Some(&rules)));
+    assert!(Simulation::move_air_coordinate(
+        &mut sim.interner,
+        &sim.session,
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        &sim.resolved_terrain,
+        1,
+        coordinate,
+        None,
+        Some(&rules)
+    ));
     let destination = sim
         .substrate
         .entities
@@ -855,7 +880,14 @@ fn fly_takeoff_callback_matches_all_original_histories() {
     for row in rows {
         let (mut sim, rules) = takeoff_fixture(&row);
         let rng = sim.scenario_rng.logical_state();
-        sim.apply_fly_takeoff_callback(1, Some(&rules));
+        Simulation::apply_fly_takeoff_callback(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            1,
+            Some(&rules),
+        );
         assert_native_takeoff_result(&sim, &row);
         assert_eq!(sim.scenario_rng.logical_state(), rng);
     }
@@ -883,8 +915,24 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
         other.position = position;
         other.set_on_bridge(on_bridge);
         other.locomotor = loco;
-        sim.submit_entity_display(1, Some(&rules), None);
-        sim.submit_entity_display(peer, Some(&rules), None);
+        Simulation::submit_entity_display(
+            &sim.interner,
+            &sim.terrain_objects,
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            1,
+            Some(&rules),
+            None,
+        );
+        Simulation::submit_entity_display(
+            &sim.interner,
+            &sim.terrain_objects,
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            peer,
+            Some(&rules),
+            None,
+        );
         let rng = sim.scenario_rng.logical_state();
         let admitted = sim.complete_fly_phase(
             1,
@@ -953,8 +1001,24 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
         other.position = position;
         other.set_on_bridge(on_bridge);
         other.locomotor = loco;
-        sim.submit_entity_display(1, Some(&rules), None);
-        sim.submit_entity_display(peer, Some(&rules), None);
+        Simulation::submit_entity_display(
+            &sim.interner,
+            &sim.terrain_objects,
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            1,
+            Some(&rules),
+            None,
+        );
+        Simulation::submit_entity_display(
+            &sim.interner,
+            &sim.terrain_objects,
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            peer,
+            Some(&rules),
+            None,
+        );
         let rng = sim.scenario_rng.logical_state();
         assert!(!sim.complete_fly_phase(
             1,
@@ -1010,7 +1074,15 @@ fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
         "landable":false, "flight_level":40000, "moving":true,
     }});
     let (mut sim, rules) = takeoff_fixture(&row);
-    sim.submit_entity_display(1, Some(&rules), None);
+    Simulation::submit_entity_display(
+        &sim.interner,
+        &sim.terrain_objects,
+        &mut sim.substrate,
+        &sim.resolved_terrain,
+        1,
+        Some(&rules),
+        None,
+    );
     sim.tick_air_movement_with_cell_lists_one(
         1,
         Some(&rules),

@@ -564,7 +564,6 @@ fn native_building_status_labels(fixture: &'static str) {
     if native.get("producer_priors").is_some() {
         let producer =
             crate::test_fixture::json("tools/spatial_oracle/building_manual_primary.json");
-        assert_eq!(native["native_sha256"], producer["native_sha256"]);
         for (key, phase) in [("primary_on", 3), ("primary_off", 5)] {
             assert_eq!(
                 native["producer_priors"][key]["value"],
@@ -1414,10 +1413,10 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     let frame = sim.session().binary_frame();
                     sim.session_mut_for_test()
                         .set_binary_frame_for_test(start as u32);
-                    sim.bomb_attach(planter, Some(id), rules);
-                    sim.bomb_list_update(rules);
+                    sim.bomb_attach_for_test(planter, Some(id), rules);
+                    sim.bomb_list_update_for_test(rules);
                     if actor["bomb_visible"].as_bool().unwrap_or(true) {
-                        sim.bomb_list_update(rules);
+                        sim.bomb_list_update_for_test(rules);
                     }
                     sim.session_mut_for_test().set_binary_frame_for_test(frame);
                     let record = sim

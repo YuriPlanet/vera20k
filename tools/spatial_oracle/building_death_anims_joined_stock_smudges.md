@@ -8,9 +8,7 @@ payloads. This comparison establishes the selected stock smudge prerequisite,
 its transient lifecycle and the complete subsequent footprint, crew and drain
 continuation; it does not establish whole-object or whole-game parity.
 
-The accepted original executable SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-The sidecar pins the executable, original-code section identities, Python/Unicorn
+The sidecar pins the Python/Unicorn
 environment, existing fixture owners and the additive source. No native result
 is generated from Rust.
 

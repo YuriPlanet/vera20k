@@ -32,6 +32,9 @@ use super::{FrameEffects, SimSoundEvent, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
+use crate::sim::intern::StringInterner;
+use crate::sim::world::FrameChannel;
+use crate::sim::world::ObjectSubstrate;
 
 /// The tag keeps this handle apart from the object's own sound handle (bare
 /// id) and from the other owner families (`1 << 58` to `1 << 62`).
@@ -100,20 +103,26 @@ impl Simulation {
 
     /// The destructor's Release (`0x0043BD1A`), for a building whose type
     /// can have given the handle a sound.
-    pub(super) fn release_building_working_sound(&mut self, id: u64, rules: Option<&RuleSet>) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    pub(super) fn release_building_working_sound(
+        interner: &StringInterner,
+        substrate: &ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        id: u64,
+        rules: Option<&RuleSet>,
+    ) {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         if entity.category() != EntityCategory::Structure {
             return;
         }
         let authored = rules
-            .and_then(|rules| self.object_type(entity.type_ref(), rules))
+            .and_then(|rules| interner.object_type(entity.type_ref(), rules))
             .is_some_and(|object| {
                 object.working_sound.is_some() || object.not_working_sound.is_some()
             });
         if authored {
-            self.sound_events.emit(SimSoundEvent::ObjectSoundReleased {
+            sound_events.emit(SimSoundEvent::ObjectSoundReleased {
                 owner: working_sound_owner(id),
             });
         }

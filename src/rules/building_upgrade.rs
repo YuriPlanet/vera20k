@@ -1,7 +1,6 @@
 //! Retained BuildingType inputs for installing a building on another building.
 //!
-//! Active-retail gamemd.exe (Steam SHA256
-//! 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600):
+//! Active-retail gamemd.exe (Steam):
 //! constructor45DD90 seeds the host's empty string at45E41C, level-1 at45E1FA,
 //! and capacity0 at45DF31. ReadINI45FE50 reads the Rules section, not ART:
 //! PowersUpBuilding460E17..460E65, PowersUpToLevel460E6C..460E80, then

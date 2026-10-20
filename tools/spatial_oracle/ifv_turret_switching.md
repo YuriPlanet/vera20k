@@ -2,8 +2,6 @@
 
 [`ifv_turret_switching.py`](ifv_turret_switching.py) executes original retail
 `gamemd.exe` instructions through the shared [native oracle](../native_oracle.md).
-The executable SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 The [payload](ifv_turret_switching.json) holds the observed outputs; its
 [sidecar](ifv_turret_switching.meta.json) pins code spans, environment, input
 assumptions, substitutions and payload identity. No expected scalar or timer

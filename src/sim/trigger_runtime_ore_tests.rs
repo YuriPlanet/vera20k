@@ -1,4 +1,4 @@
-//! Steam gamemd.exe3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600:
+//! Steam gamemd.exe:
 //! seven original59/57B790 executions observed109 ordered480A80(centre,1)
 //! sinks (real/Dummy, signed extremes, primary versus tail waypoint).
 //! Thirteen original86 controls pin the raw low-byte store. They do not

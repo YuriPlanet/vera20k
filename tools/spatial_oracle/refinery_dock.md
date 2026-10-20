@@ -2,8 +2,7 @@
 
 `refinery_dock.py` retains the original 107 rows, 57 continuation controls and
 three War Miner histories. Separate additions contain nine actual-slot admission
-controls and four Building contact-constructor controls. The executable SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`;
+controls and four Building contact-constructor controls.
 Unicorn 2.1.4 executes unchanged original text and Unit/Building vtables.
 The JSON contains native outputs, not values calculated by Rust or the harness.
 The sidecar records the payload hash.

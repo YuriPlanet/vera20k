@@ -1,4 +1,4 @@
-//! Steam3e81a617: Execute6DF588, TeamType6F1F70, Talk70F120.
+//! Steam gamemd: Execute6DF588, TeamType6F1F70, Talk70F120.
 use super::*;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::util::save_codec;

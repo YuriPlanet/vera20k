@@ -14,8 +14,8 @@ python -m tools.spatial_oracle.bridge_shadow_render --ore --write
 
 The default checks without writing. The selected files are
 [`ore_render.json`](ore_render.json) and its
-[sidecar](ore_render.meta.json). The sidecar pins executable identity and command,
-without repository-source hashes. Use the native dependencies and installation
+[sidecar](ore_render.meta.json). The sidecar pins the command,
+without executable or repository-source hashes. Use the native dependencies and installation
 configuration in [`../native_oracle.md`](../native_oracle.md). Authored MAP packs
 use the existing `shrapnel_repair.map_facts.decode_cells` LCW/liblzo2 owner;
 this is data extraction, not native map loading.

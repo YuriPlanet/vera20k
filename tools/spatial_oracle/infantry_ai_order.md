@@ -6,7 +6,7 @@
 The 22 controls establish caller ordering and gates. **They do not execute a
 complete shot, full Foot AI or a full Scenario.**
 
-From the repository root, with the SHA-pinned retail executable configured:
+From the repository root, with the retail executable configured:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python tools/spatial_oracle/infantry_ai_order.py --check

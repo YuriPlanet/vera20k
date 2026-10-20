@@ -1,7 +1,7 @@
 # Engineer bridge-hut action, object click and display cursor
 
 The [caller harness](engineer_bridge_cursor_caller.py), [122 native comparison rows](engineer_bridge_cursor_caller.json)
-and [provenance](engineer_bridge_cursor_caller.meta.json) execute SHA-pinned retail
+and [provenance](engineer_bridge_cursor_caller.meta.json) execute retail
 `gamemd.exe` instructions. They establish the caller's hut admission, action
 arithmetic, object-click composition and selected display cursors, with the geometric `587410` answer
 supplied explicitly. They do not establish the geometric answer or complete repair.
@@ -20,8 +20,6 @@ boolean-reader layers establish Building `Repairable=true`,
 `BridgeRepairHut=false` and Infantry `Engineer=false` defaults. Those packet
 sections supply type fields and INI caches; they do not execute the complete
 physical rules loader or certify every key in its type readers.
-Original executable SHA-256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`;
 Every row verifies unchanged mapped `.text`; action/click rows also verify unchanged
 fixture object/type/house bytes. The original 64 action/click/display rows are retained unchanged.
 The metadata also pins the harness and shared native helpers. No Rust output

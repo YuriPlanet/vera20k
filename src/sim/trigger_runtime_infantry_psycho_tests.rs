@@ -1,5 +1,4 @@
-//! Execute91 6DDAF9..6DDB5A and Infantry5220F0, Steam gamemd
-//! 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600.
+//! Execute91 6DDAF9..6DDB5A and Infantry5220F0, Steam gamemd.
 //! Instruction-established controls, exercised through production owners.
 use super::*;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};

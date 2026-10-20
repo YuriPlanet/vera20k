@@ -16,10 +16,7 @@ including RULESMD/ARTMD/SOUNDMD, optional LANGRULE, MPBattleMD, Hills.map/Hills.
 Audio IDX/BAG and the shared joined world's assets. The configured original
 game's `RetailRulesInputs` supplies physical TRST, MININUKE and DEATH_A..F SHPs.
 `--write` deliberately regenerates the reference. The `.meta.json` sidecar pins
-the original binary, command and bounds, never repository-source hashes.
-
-Original binary SHA256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+the command and bounds, never executable or repository-source hashes.
 
 ## Executed stock component
 

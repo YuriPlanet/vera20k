@@ -11,6 +11,7 @@ use crate::map::playfield::local_to_packed_cell;
 use crate::rules::object_type::ObjectCategory;
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::economy::Economy;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
@@ -712,7 +713,7 @@ pub struct HouseState {
     /// House4F57DE..4F57F0 initializes +26C/+270/+274/+278 to -1.
     /// Record_Last_Built4FB6B0 writes before DontScore; Building discovery
     /// 44D601 also writes its owner's building slot outside ScenarioInit.
-    /// Executed controls: tag_lifecycle --build-type-events (Steam3e81a617).
+    /// Executed controls: tag_lifecycle --build-type-events (Steam gamemd).
     #[serde(default)]
     last_built_types: LastBuiltTypes,
     /// Successful scored factory deliveries by category and native Type
@@ -872,7 +873,7 @@ struct HouseSuperWeaponTargets {
     defense_frame: i32,
     /// House+54EC: constructor4F5A77 writes1; active Execute35 stores the
     /// signed Action+90 at6DE1F1. AI target pickers read it independently of
-    /// the scripted target cell. Steam gamemd3e81a617..08600.
+    /// the scripted target cell. Steam gamemd.
     #[serde(default = "default_super_target_kind")]
     preferred_kind: i32,
 }
@@ -1727,7 +1728,7 @@ impl HouseState {
     }
 
     /// Active Execute77/78/79 stores the full signed Action+90 at
-    /// 6DF38E/6DF3B8/6DF3E2 (Steam gamemd 3e81a617..08600). These are the
+    /// 6DF38E/6DF3B8/6DF3E2 (Steam gamemd). These are the
     /// existing ReadScenarioINI500B40 fields +5660/+5664/+5668, independent
     /// of the live AI-trigger selector's +565C ratio. No timer or RNG write.
     pub(crate) fn set_aircraft_team_ratio(&mut self, value: i32) {
@@ -1859,7 +1860,7 @@ impl HouseState {
     }
 
     /// House50DA50, reached by TAction1416E44C0: clear the alert and restore
-    /// its constructor frame (-100). Original Steam gamemd3e81a617..08600,
+    /// its constructor frame (-100). Original Steam gamemd,
     /// instruction reading. Native also clears +54F8, which currently retains
     /// its constructor zero here (ai_fire's secondary-cell residual).
     pub(crate) fn clear_super_weapon_defense(&mut self) {
@@ -2286,7 +2287,7 @@ impl HouseState {
 
     /// Active TAction74/75 stores only House+1F2 at6DF2FA/6DF339.
     /// The House team timer, selector RNG and existing Teams remain with
-    /// ai_team_creation. Steam3e81a617; trigger_action_values --ai-activation.
+    /// ai_team_creation. Steam gamemd; trigger_action_values --ai-activation.
     pub(crate) fn set_ai_triggers_active(&mut self, active: bool) {
         self.ai_activation.ai_triggers_active = active;
     }
@@ -2322,7 +2323,7 @@ impl HouseState {
     }
 
     /// Execute13 6DEB18 -> shared House selector6E45E0 ->6DEB41 writes
-    /// only House+1EF=1 (Steam gamemd 3e81a617..08600). This neither
+    /// only House+1EF=1 (Steam gamemd). This neither
     /// co-enables the other activation bytes nor immediately creates a team.
     pub(crate) fn enable_scripted_autocreate(&mut self) {
         self.ai_activation.autocreate_allowed = true;
@@ -2546,10 +2547,10 @@ impl crate::sim::world::Simulation {
     /// internal House identity. Only fully initialized scenario Houses take
     /// this path; generated preconsumed and partial diagnostic rows retain
     /// their explicit internal-key projection in the map constructor owner.
-    pub(crate) fn scenario_house_named(&self, requested: &str) -> Option<InternedId> {
+    pub(crate) fn scenario_house_named(houses: &Houses, requested: &str) -> Option<InternedId> {
         let index = crate::map::houses::find_house_index(
-            self.houses.order().iter().map(|owner| {
-                self.houses
+            houses.order().iter().map(|owner| {
+                houses
                     .get(owner)
                     .expect("registered House array entry")
                     .native_scenario_name()
@@ -2557,7 +2558,7 @@ impl crate::sim::world::Simulation {
             }),
             requested,
         )?;
-        Some(self.houses.order()[index])
+        Some(houses.order()[index])
     }
 }
 

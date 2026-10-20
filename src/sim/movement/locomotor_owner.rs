@@ -234,10 +234,24 @@ impl crate::sim::world::Simulation {
             .and_then(|entity| entity.locomotor.as_ref().map(|loco| loco.active_kind()));
         match kind {
             Some(crate::rules::locomotor_type::LocomotorKind::Drive) => {
-                self.track_apply_occupation(id, super::track_process::TrackFamily::Drive, put);
+                Self::track_apply_occupation(
+                    &mut self.substrate,
+                    &self.path_grid,
+                    &self.resolved_terrain,
+                    id,
+                    super::track_process::TrackFamily::Drive,
+                    put,
+                );
             }
             Some(crate::rules::locomotor_type::LocomotorKind::Ship) => {
-                self.track_apply_occupation(id, super::track_process::TrackFamily::Ship, put);
+                Self::track_apply_occupation(
+                    &mut self.substrate,
+                    &self.path_grid,
+                    &self.resolved_terrain,
+                    id,
+                    super::track_process::TrackFamily::Ship,
+                    put,
+                );
             }
             Some(crate::rules::locomotor_type::LocomotorKind::Hover) => {
                 Self::hover_mark_all_occupation_bits(

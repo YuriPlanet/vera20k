@@ -1,6 +1,6 @@
 //! Damage-sound catalog binding through the actual retained rules passes.
 //! These reader regressions do not establish receiver arithmetic parity.
-//! Original gamemd SHA2561cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c:
+//! Original gamemd:
 //! type712EB7..712F07 and Rules66AC98..66ACDD use ReadString528A10 (128 bytes)
 //! then VocFindIndex7514D0, retaining previous valid IDs on failed resolution.
 
@@ -22,10 +22,6 @@ fn damage_sound_global_reference_retention_matches_whole_native_reader_passes() 
     ))
     .unwrap();
     assert_eq!(corpus["selected_profile"], "all");
-    assert_eq!(
-        corpus["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let passes = corpus["threshold_controls"]["global_later_passes"]
         .as_array()
         .unwrap();

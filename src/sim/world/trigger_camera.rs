@@ -46,7 +46,7 @@ impl Simulation {
     /// call its Cell486840 GetCoords, then read its flags500 for the deck.
     /// Unlike the inline camera/animation path above, packed aliases use the
     /// selected Cell's own coordinate, and height reads never re-query it.
-    /// Eleven original Steam3e81a617..08600 controls cover aliases, both deck
+    /// Eleven original Steam gamemd controls cover aliases, both deck
     /// flags, signed levels/slopes and the shared Dummy. Scenario CRTs derive
     /// B054BC=416; the Cell coordinate kernel owns all height arithmetic.
     pub(crate) fn trigger_waypoint_location(&self, index: i32) -> Option<[i32; 3]> {

@@ -2,7 +2,7 @@
 
 The existing duration and retained-or-pending query controls are unchanged.
 Run `python -m tools.storage_oracle.sound_theme_metadata --write` to regenerate,
-then independently run `--check` against the pinned retail executable. The meta
+then independently run `--check` against the retail executable. The meta
 sidecar records its identity, inputs, executed bodies and transport boundaries.
 
 `save_load_cases` executes `ThemeSave 0x721010`, `ThemeLoad 0x721040` and

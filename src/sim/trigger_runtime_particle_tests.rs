@@ -1,4 +1,4 @@
-//! Steam gamemd.exe3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600.
+//! Steam gamemd.exe.
 //! Original Execute88/89 controls: 6DF3F7/6DF49E, 68BCC0, 642740,
 //! 41BEA0, 50E470 and virtual F8=6301E0. Creation controls declare type
 //! arrays and observe Ground578080 / constructor62DC50 as argument sinks;

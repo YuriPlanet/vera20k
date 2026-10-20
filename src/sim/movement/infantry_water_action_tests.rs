@@ -381,10 +381,6 @@ fn native_constructor_and_physical_readers_supply_water_state_and_raw_records() 
         .iter()
         .find(|row| row["kind"] == "constructors")
         .unwrap();
-    assert_eq!(
-        constructors["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     for receipt in constructors["constructors"].as_array().unwrap() {
         if receipt["entry"] == "0x517a50" {
             assert_eq!(receipt["after"]["0x6e8"], 2);

@@ -33,10 +33,6 @@ const PRODUCER: u64 = 30;
 
 fn corpus() -> &'static Value {
     let value = crate::test_fixture::json("tools/spatial_oracle/house_power_consumers.json");
-    assert_eq!(
-        value["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     value
 }
 

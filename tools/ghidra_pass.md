@@ -6,15 +6,15 @@ exist (the main annotation machine, downloaded snapshots), so a pass made on one
 copy is kept as a JSON ledger in [`ghidra_pass/passes/`](ghidra_pass/passes/) and
 replayed on the others instead of being redone by hand.
 
-The script refuses a program whose executable SHA-256 is not the ledger's
-(`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`) and rejects a
+Any `gamemd.exe` program is accepted: every build is the same game, and the
+per-operation expectations below catch a database that differs. The script rejects a
 malformed ledger (unknown operation, missing field, two renames to one name) before
 it reads anything else. It never overwrites state it did not plan against: each
 operation records what it expects to find, and anything else is a conflict that is
 reported and skipped.
 
 The [Rust-cited names ledger](ghidra_pass/passes/2026-10-04-vera-cited-names.json)
-was reviewed against the pinned original PE on 2026-10-05. It now admits 189 of
+was reviewed against the original PE on 2026-10-05. It now admits 189 of
 the original 191 names, including ten neutral replacements where a proposed
 class or source name lacked evidence, and 217 bounded function/table plates.
 Five template/operator spellings also use C identifiers: Ghidra otherwise prints
@@ -82,7 +82,6 @@ remains.
   "format": 1,
   "pass": "2026-10-04 VERA-cited names",
   "tag": "[2026-10-04 VERA-cited names]",
-  "program_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "planned_against": "the database snapshot the pass was made on",
   "atomic": false,
   "ops": [

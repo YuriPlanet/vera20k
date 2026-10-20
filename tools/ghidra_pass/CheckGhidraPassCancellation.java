@@ -83,7 +83,6 @@ public class CheckGhidraPassCancellation extends GhidraScript {
         ledger.addProperty("format", 1);
         ledger.addProperty("pass", "cancellation regression probe");
         ledger.addProperty("tag", "[cancellation regression probe]");
-        ledger.addProperty("program_sha256", currentProgram.getExecutableSHA256());
         ledger.addProperty("planned_against", "private read-only project copy");
         ledger.addProperty("atomic", true);
         JsonObject rename = new JsonObject();

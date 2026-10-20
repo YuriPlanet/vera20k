@@ -123,7 +123,7 @@ impl Simulation {
     /// Original joined construction controls reach51BDC9 on frames269/486;
     /// Scatter's51D385 draw precedes its synchronous Walk Process51D478.
     /// Evidence: basic-factory-output-idle-prerequisite-research, original
-    /// construction/no-rally and planning-header controls (gamemd1cdd1180).
+    /// construction/no-rally and planning-header controls (gamemd).
     fn scatter_idle_infantry_from_building(
         &mut self,
         stable_id: u64,
@@ -407,7 +407,14 @@ impl Simulation {
             // ChronoOut plays at the old Location (`0x0071962C`).
             sim.foot_mark_remove(stable_id, rules, overlay_registry, ctx.effects);
             if let Some(rules) = rules {
-                sim.teleport_warp_sound(stable_id, teleport_movement::WarpSound::Out, rules);
+                Self::teleport_warp_sound(
+                    &mut sim.interner,
+                    &sim.substrate,
+                    &mut sim.sound_events,
+                    stable_id,
+                    teleport_movement::WarpSound::Out,
+                    rules,
+                );
             }
         }
         sim.process_teleport(stable_id, rules, ctx);
@@ -425,7 +432,14 @@ impl Simulation {
         if teleport_relocating {
             // 0x00719710: ChronoIn at the new Location.
             if let Some(rules) = rules {
-                sim.teleport_warp_sound(stable_id, teleport_movement::WarpSound::In, rules);
+                Self::teleport_warp_sound(
+                    &mut sim.interner,
+                    &sim.substrate,
+                    &mut sim.sound_events,
+                    stable_id,
+                    teleport_movement::WarpSound::In,
+                    rules,
+                );
             }
             // Relocation 0x0071971C calls vt+0x18C(2), including a same-cell
             // relocation; ordinary Fly motion has no such call.
@@ -1081,13 +1095,41 @@ impl Simulation {
                     sim, stable_id, rules,
                 );
             }
-            sim.temporal_release_if_warping(stable_id);
+            Self::temporal_release_if_warping(
+                &mut sim.substrate,
+                &mut sim.houses,
+                &mut sim.power_states,
+                stable_id,
+            );
         }
 
-        sim.tick_move_sound_after_process(stable_id, body_frame_before_process, rules);
+        Self::tick_move_sound_after_process(
+            &sim.interner,
+            &sim.session,
+            &sim.main_rng,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            &sim.houses,
+            stable_id,
+            body_frame_before_process,
+            rules,
+        );
         if let Some(rules) = rules {
-            sim.sinking_edge_sounds(stable_id, rules);
-            sim.crash_edge_sounds(stable_id, rules);
+            Self::sinking_edge_sounds(
+                &sim.interner,
+                &mut sim.substrate,
+                &mut sim.sound_events,
+                stable_id,
+                rules,
+            );
+            Self::crash_edge_sounds(
+                &sim.interner,
+                &mut sim.substrate,
+                &mut sim.sound_events,
+                &sim.houses,
+                stable_id,
+                rules,
+            );
             if sim.tick_ship_sinking(stable_id, rules, overlay_registry, object_ctx.effects) {
                 return Ok(outcome);
             }

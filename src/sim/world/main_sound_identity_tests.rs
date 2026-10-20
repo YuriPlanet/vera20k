@@ -117,15 +117,55 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
     assert_eq!(quiet.state_hash(), serviced.state_hash());
 
     let (_, quiet_draws) = crate::sim::rng::trace_draws(|| {
-        quiet.tick_move_sound_after_process(quiet_squids[0], 0, Some(&rules));
-        quiet.tick_move_sound_after_process(quiet_squids[1], 0, Some(&rules));
+        Simulation::tick_move_sound_after_process(
+            &quiet.interner,
+            &quiet.session,
+            &quiet.main_rng,
+            &mut quiet.substrate,
+            &mut quiet.sound_events,
+            &quiet.houses,
+            quiet_squids[0],
+            0,
+            Some(&rules),
+        );
+        Simulation::tick_move_sound_after_process(
+            &quiet.interner,
+            &quiet.session,
+            &quiet.main_rng,
+            &mut quiet.substrate,
+            &mut quiet.sound_events,
+            &quiet.houses,
+            quiet_squids[1],
+            0,
+            Some(&rules),
+        );
     });
     let (_, serviced_draws) = crate::sim::rng::trace_draws(|| {
-        serviced.tick_move_sound_after_process(serviced_squids[0], 0, Some(&rules));
+        Simulation::tick_move_sound_after_process(
+            &serviced.interner,
+            &serviced.session,
+            &serviced.main_rng,
+            &mut serviced.substrate,
+            &mut serviced.sound_events,
+            &serviced.houses,
+            serviced_squids[0],
+            0,
+            Some(&rules),
+        );
         // One ordinary inclusive presentation draw between otherwise identical
         // paid Foot visits. No Scenario or MapGen capability is lent.
         let _ = serviced.presentation_main_draws().ranged(0, 1);
-        serviced.tick_move_sound_after_process(serviced_squids[1], 0, Some(&rules));
+        Simulation::tick_move_sound_after_process(
+            &serviced.interner,
+            &serviced.session,
+            &serviced.main_rng,
+            &mut serviced.substrate,
+            &mut serviced.sound_events,
+            &serviced.houses,
+            serviced_squids[1],
+            0,
+            Some(&rules),
+        );
     });
     let rng: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/rmg_oracle/vectors/rng.json",

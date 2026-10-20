@@ -84,7 +84,6 @@ def project_row(row, group):
 def generate():
     packets = {group: read_result(source) for group, source in SOURCES.items()}
     native_sha256 = packets['candidates']['native_sha256']
-    assert all(packet['native_sha256'] == native_sha256 for packet in packets.values())
     result = dict(
         native_sha256=native_sha256,
         sources={source.name: digest(source.read_bytes()) for source in SOURCES.values()},

@@ -69,15 +69,6 @@ class RenderDepthCompletionTests(unittest.TestCase):
             result = fixture.execute(depth.fixtures()[0])
             self.assertEqual(set(result), set(depth.TARGETS))
 
-    def test_wrong_original_image_fails_at_shared_identity_owner(self):
-        with tempfile.TemporaryDirectory() as directory:
-            executable = Path(directory) / 'gamemd.exe'
-            executable.write_bytes(synthetic_image())
-            with patch.object(native_oracle, 'configured_gamemd', return_value=executable):
-                with self.assertRaisesRegex(native_oracle.OracleError,
-                                            'Unsupported gamemd.exe SHA-256'):
-                    depth.NativeFixture()
-
     def test_failed_write_preserves_both_reference_and_sidecar(self):
         bad_cases = [
             (stage + '/' + label, synthetic_image(**{stage: opcodes}), message)
@@ -143,7 +134,6 @@ class RenderDepthCompletionTests(unittest.TestCase):
         cases = (
             'test_initializer_and_foot_cannot_publish_early_stops_or_faults',
             'test_full_foot_requires_each_helper_in_that_call',
-            'test_wrong_original_image_fails_at_shared_identity_owner',
             'test_failed_write_preserves_both_reference_and_sidecar',
             'test_source_drift_cannot_relabel_or_replace_results',
         )

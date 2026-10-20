@@ -821,7 +821,7 @@ impl DisguiseRuntime {
 
 impl crate::sim::world::Simulation {
     /// Forced GetDisguise(1): Infantry522640 and Unit7465B0, Steam
-    /// gamemd3e81a617..08600. It reads retained Techno+518 without testing
+    /// gamemd. It reads retained Techno+518 without testing
     /// Disguised+1D8. Infantry alone falls back to Rules+D58/D5C/D60 by
     /// PlayerPtr's planning side; NULL/other sides select the third slot.
     pub(crate) fn forced_disguise_type(

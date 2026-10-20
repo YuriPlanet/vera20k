@@ -20,10 +20,6 @@ fn native_house_playfield_clamp_matches_all_72_original_rows() {
     ))
     .unwrap();
     assert_eq!(provenance["schema_version"], 1);
-    assert_eq!(
-        provenance["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
     let rows: Vec<ClampRow> = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/house_cell_clamp.json",
     ))

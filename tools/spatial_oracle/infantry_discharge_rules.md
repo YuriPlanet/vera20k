@@ -11,8 +11,7 @@ The four signed DWORDs at `E40/E44/E48/E4C` are respectively `FireUp`,
 retained field as the default. There is no clamp, byte conversion or fallback
 to another key. The executed constructor receipt uses original EBX zeroing
 at `5236A7` and original stores `5236D7..5236F9`; base construction and vector
-allocation are outside that receipt. The fixed native binary SHA256 is
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+allocation are outside that receipt.
 
 The existing fixture supplies INI cache backing at reader entry. Both modes
 reuse one cache owner; original CRC lookup, ReadInt and CRT numeric parsing

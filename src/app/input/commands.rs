@@ -1210,7 +1210,7 @@ pub(super) fn queue_house_cheer_in_sim(
 ) -> Option<u64> {
     // Preserve the ordinary keyboard/bar Scenario+35A2 lock before entering
     // the producer. Original730F30's own guard is the distinct Session+300
-    // defeat flag (active1cdd; tools/input_oracle/house_cheer.md).
+    // defeat flag (active gamemd; tools/input_oracle/house_cheer.md).
     if sim.session().input_locked() {
         return None;
     }

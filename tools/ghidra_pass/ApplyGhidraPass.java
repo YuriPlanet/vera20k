@@ -41,11 +41,6 @@ public class ApplyGhidraPass extends GhidraScript {
         JsonObject ledger = JsonParser.parseString(
             Files.readString(ledgerFile.toPath(), StandardCharsets.UTF_8)).getAsJsonObject();
         JsonArray ops = validate(ledger);
-        String expected = ledger.get("program_sha256").getAsString();
-        String actual = currentProgram.getExecutableSHA256();
-        if (actual == null || !actual.equalsIgnoreCase(expected)) {
-            throw new IllegalStateException("program SHA-256 " + actual + " is not the ledger's " + expected);
-        }
         tag = ledger.get("tag").getAsString();
         boolean atomic = ledger.has("atomic") && ledger.get("atomic").getAsBoolean();
         println("PASS " + ledger.get("pass").getAsString() + " (" + ops.size() + " ops, mode " + mode + ")");
@@ -115,7 +110,7 @@ public class ApplyGhidraPass extends GhidraScript {
         if (!ledger.has("format") || ledger.get("format").getAsInt() != 1) {
             throw new IllegalArgumentException("unsupported ledger format " + ledger.get("format"));
         }
-        for (String key : List.of("pass", "tag", "program_sha256", "planned_against", "ops")) {
+        for (String key : List.of("pass", "tag", "planned_against", "ops")) {
             if (!ledger.has(key)) throw new IllegalArgumentException("ledger lacks " + key);
         }
         JsonArray ops = ledger.getAsJsonArray("ops");

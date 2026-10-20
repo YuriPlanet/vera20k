@@ -888,8 +888,13 @@ fn load_onto_transport_matches_the_original() {
 fn wait_until_loaded_matches_the_original() {
     for (case, row) in oracle_rows("wait_loaded").iter().enumerate() {
         let mut team = OracleTeam::new(row, 43);
-        team.sim
-            .team_action_wait_until_loaded(team.team, &team.rules);
+        crate::sim::world::Simulation::team_action_wait_until_loaded(
+            &team.sim.interner,
+            &team.sim.substrate,
+            &mut team.sim.team_script_vm,
+            team.team,
+            &team.rules,
+        );
         assert_eq!(team.finished(), flag(&row["finished"]), "case {case}");
     }
 }

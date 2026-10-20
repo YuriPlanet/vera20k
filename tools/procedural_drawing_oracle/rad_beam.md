@@ -25,8 +25,7 @@ python -B -m tools.procedural_drawing_oracle.rad_beam --check
 
 `--write` produces `rad_beam.json` and `rad_beam.meta.json` beside this document;
 `--check` compares newly executed output without changing them. The shared
-[`finish_vectors`](../native_oracle.py) owner records the actual binary SHA,
-canonical replay command and payload hash. It rejects source/input changes
+[`finish_vectors`](../native_oracle.py) owner records the canonical replay command and payload hash. It rejects source/input changes
 during a run; sidecars retain no repository source hashes. Numeric goldens must
 come from that execution, not this document or Rust output.
 

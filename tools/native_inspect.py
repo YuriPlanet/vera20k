@@ -214,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         data = native.image_bytes()
         result = inspect(data, options)
-        packet = dict(schema=1, native_sha256=native.image_sha256(data), image_base=native.IMAGE_BASE,
+        packet = dict(schema=1, image_base=native.IMAGE_BASE,
                       capstone_version=capstone.__version__, request=vars(options), result=result)
         print(json.dumps(packet, indent=2))
         return 0

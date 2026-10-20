@@ -324,7 +324,13 @@ impl Simulation {
         // (a capture counts), with the +0x6E4 test done by the entry guard
         // above rather than per arm.
         self.grant_house_self_heal(id, rules);
-        crate::sim::credit_income::produce_cash_on_grand_opening(self, id, rules);
+        crate::sim::credit_income::produce_cash_on_grand_opening(
+            &self.interner,
+            &self.session,
+            &mut self.substrate,
+            id,
+            rules,
+        );
         if first_opening && !refinery {
             for slot in [18, 3, 4, 5, 6] {
                 self.set_building_anim_slot(
@@ -1515,7 +1521,7 @@ mod slot_tests {
     /// live Anim (owner+CC=0, inactive+19B=0). BuildingDestructor43BDC5
     /// calls ClearAnimSlot451E40(-2) only at deferred scalar destruction.
     /// Executed control: ordinary-building-destruction-research/continuation-1
-    /// cleanup-registered-output.json, gamemd SHA1cdd1180e49024fb.
+    /// cleanup-registered-output.json, gamemd.
     #[test]
     fn building_uninit_retains_ordinary_slots_until_scalar_destruction() {
         let (mut sim, rules, id) = slot_test_fixture();

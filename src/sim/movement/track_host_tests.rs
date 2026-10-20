@@ -746,7 +746,14 @@ fn apply_one_marks_handoff_and_full_head_without_foot_enable() {
                 .unwrap()
                 .store_track_progress(family, TrackProgress::for_test(1, 0, false, 0))
         );
-        sim.track_apply_occupation(1, family, true);
+        crate::sim::world::Simulation::track_apply_occupation(
+            &mut sim.substrate,
+            &sim.path_grid,
+            &sim.resolved_terrain,
+            1,
+            family,
+            true,
+        );
         // Drive/Ship Apply1 invokes raw marks directly regardless of +6B6.
         assert_eq!(
             sim.substrate.raw_cell_occupation.ground_bits(10, 9) & 0x20,
@@ -837,7 +844,14 @@ fn ordinary_foot_limbo_releases_live_head_and_handoff_for_both_families() {
         let mut state = loco.track_progress(family).unwrap();
         state.set_turn_index(1);
         assert!(loco.store_track_progress(family, state));
-        sim.track_apply_occupation(1, family, true);
+        crate::sim::world::Simulation::track_apply_occupation(
+            &mut sim.substrate,
+            &sim.path_grid,
+            &sim.resolved_terrain,
+            1,
+            family,
+            true,
+        );
         let entity = sim.substrate.entities.get(1).unwrap();
         let (handoff, head) = super::super::at_coord::AtCoordQuery::from_state(
             if family == TrackFamily::Drive {
@@ -906,7 +920,14 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
         state.set_turn_index(1);
         assert!(loco.store_track_progress(family, state));
         let supplied = head(sim.substrate.entities.get(1).unwrap(), family);
-        sim.track_apply_occupation(1, family, true);
+        crate::sim::world::Simulation::track_apply_occupation(
+            &mut sim.substrate,
+            &sim.path_grid,
+            &sim.resolved_terrain,
+            1,
+            family,
+            true,
+        );
         sim.techno_limbo(1);
         assert!(sim.substrate.entities.get(1).unwrap().lifecycle.in_limbo());
         let at = cell(supplied);

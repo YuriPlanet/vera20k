@@ -3,8 +3,6 @@
 `factory_loss.py --naval-output` is an additive profile of the existing native
 fixture owner. It writes `factory_naval_output.json` and its provenance sidecar;
 the historical default, sale, sidebar and hold profiles remain independent.
-Supported original executable SHA256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 
 ```sh
 VERA20K_GAMEMD_EXE=/absolute/path/gamemd.exe \

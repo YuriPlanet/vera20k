@@ -1,5 +1,5 @@
 //! TAction140/141: Execute6E4460/6E44C0 -> House50DA20/50DA50.
-//! Original gamemd.exe3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600.
+//! Original gamemd.exe.
 //! Writes/admission are instruction-established; timing goldens below reuse
 //! original AI_TryFireSW execution, not a second implementation of its timer.
 use super::*;

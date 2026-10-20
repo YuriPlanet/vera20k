@@ -95,6 +95,7 @@ use crate::sim::combat::combat_weapon::{self, WeaponSlot};
 use crate::sim::combat::fire_error::FireError;
 use crate::sim::combat::gattling::{StageCall, is_elite};
 use crate::sim::combat::{BuildingShot, fire_coord};
+use crate::sim::intern::StringInterner;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
 use crate::sim::projectile::ProjectilePayload;
@@ -1101,21 +1102,26 @@ fn advance_turret_anim(substrate: &mut ObjectSubstrate, id: u64) {
 ///   shot (`0x0043FEE9..0x0043FF67`: `Frame - LastFireFrame`, signed, whatever
 ///   the target), then `+0x148` again while the value is above 0
 ///   (`0x0043FF6C..0x0043FF8B`).
-pub(super) fn gattling_idle(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    if !super::ai_alive(&sim.substrate, id) {
+pub(super) fn gattling_idle(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    id: u64,
+    rules: &RuleSet,
+) {
+    if !super::ai_alive(&*substrate, id) {
         return;
     }
-    let Some(obj) = sim
-        .substrate
+    let Some(obj) = substrate
         .entities
         .get(id)
-        .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+        .and_then(|entity| interner.object_type(entity.type_ref(), rules))
         .filter(|obj| obj.is_gattling)
     else {
         return;
     };
-    let now = sim.session.binary_frame() as i32;
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+    let now = session.binary_frame() as i32;
+    let Some(entity) = substrate.entities.get_mut(id) else {
         return;
     };
     if entity.gattling.value() > 0 {

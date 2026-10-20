@@ -6,7 +6,7 @@ use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 /// Building43B882 initializes this latch to one. It is independent of
 /// Techno+270/278: GoOnline can set it while a Temporal chain still exists.
-/// Steam gamemd SHA256 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600.
+/// Steam gamemd.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub(crate) struct BuildingOnline {

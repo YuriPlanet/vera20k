@@ -148,7 +148,7 @@ python -m tools.spatial_oracle.capture_overload_update --techno-order --check
 ```
 
 Use `--techno-order --write` only for deliberate new-reference generation. The
-sidecar records the immutable executable hash, replay command, callback
+sidecar records the replay command, callback
 boundaries and payload hash, without repository-source hashes. Original byte
 reads can be repeated through `tools.native_inspect disasm 0x6FA646 --bytes
 0x315` and the full function entry at `0x6F9E50`. Instructions, isolated callback

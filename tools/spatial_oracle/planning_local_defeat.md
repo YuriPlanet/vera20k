@@ -8,9 +8,8 @@ VERA20K_PLANNING_DEFEAT_ASSETS=/path/to/extracted-retail \
 The selected directory contains physical RULESMD.INI, SOUNDMD.INI,
 MPBattleMD.ini and Hills.map. LANGRULE.INI is absent in this installation.
 `--write` records the separate current-original profile. The historical
-planning_mode.json/meta, whose executable identity is3e81, remain unchanged.
-The new sidecar pins the current1cdd original identity and replay command,
-without repository-source hashes.
+planning_mode.json/meta remain unchanged. The new sidecar pins the replay
+command, without executable or repository-source hashes.
 
 Four small histories execute whole PlanMgr637A10, press/release731A50/731A70
 and registered command536750. The keyboard command object comes from the

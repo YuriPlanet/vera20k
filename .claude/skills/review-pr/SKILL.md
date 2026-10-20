@@ -39,10 +39,9 @@ oracles, scripts) until steps 1 and 2 are clean.
      `tools.native_oracle.image_bytes()` or with Ghidra. Compare loop order,
      compares, fields read and written, gates, and any RNG, timer or detach calls
      against the Rust. Ghidra names and the PR's prose are leads, not proof.
-   - Each oracle sidecar's `native_sha256` should equal
-     `tools.native_oracle.image_sha256()`, the game-code identity every supported
-     release reports. Older sidecars may record Steam's file hash `3e81a617…`, the
-     same code. Any other value means the code differed; say so.
+   - Any `gamemd.exe` release is the same game: sidecars record the replay
+     command, not the executable's hash. A legacy `native_sha256` in an older
+     sidecar is inert history, not something to check.
    - INI claims must use the native readers in `src/rules/ini_value.rs` and check
      the retail values in every layer.
    - Goldens must come from native execution or retail bytes and run through

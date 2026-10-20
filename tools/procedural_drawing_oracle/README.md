@@ -33,8 +33,8 @@ context so the next independent control cannot inherit a pending exception.
 `unit_heal_to_full` executes the original bounded House-heal AI arm before
 rendering and records the resulting Health; whole native tick scheduling,
 natural damage/capture/grant/revoke, smoke cleanup and full-game frames remain
-outside this supplied-state corpus. Binary identity and the replay command
-are in its sidecar; implementation validation belongs in the PR/checkpoint.
+outside this supplied-state corpus. The replay command
+is in its sidecar; implementation validation belongs in the PR/checkpoint.
 
 ## Selected ground Unit Attack
 
@@ -190,8 +190,7 @@ planning, range/selection rasters and the remaining whole-scope families stay op
 
 ## Original executable
 
-All original execution uses active-retail `gamemd.exe`, SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
+All original execution uses active-retail `gamemd.exe`.
 Use the shared [native runner](../native_oracle.md), Unicorn2.1.4 and the explicit
 FPCW0E7F/RGB565 fixture. Original bytes and prepared boundaries are recorded in
 `rally.meta.json`.

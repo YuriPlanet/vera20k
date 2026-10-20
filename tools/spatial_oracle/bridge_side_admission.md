@@ -7,8 +7,6 @@ establishes that these consumers use raw structural bit `0x100`, with the
 appropriate height and occupancy plane, rather than requiring a local bridge
 sprite overlay.
 
-Original binary SHA-256:
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
 Canonical payload SHA-256:
 `1cd1a816908f017e1de7e761f16ec330401408ad1b0a15bb2ad7bd5493d5987c`.
 The `.meta.json` records the native version, supplied state, boundaries and

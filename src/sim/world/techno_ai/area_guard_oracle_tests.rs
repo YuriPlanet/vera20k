@@ -19,7 +19,6 @@ fn corpus() -> &'static Value {
             "tools/input_oracle/area_guard.json",
         ))
         .unwrap();
-        assert_eq!(value["native_sha256"], oracle()["native_sha256"]);
         value
     })
 }

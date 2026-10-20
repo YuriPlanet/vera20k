@@ -9,9 +9,7 @@ count. Splitting the path at layer transitions or skipping Tube paths loses
 native decisions. Presentation layers are a projection of the resulting path;
 they are not substitutes for the retained descriptor heights.
 
-All native packets identify the active retail executable by SHA-256
-`1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-They execute original instructions with Unicorn 2.1.4. Their metadata records
+All native packets execute original active-retail instructions with Unicorn 2.1.4. Their metadata records
 entry points, input substitutions and coverage limits.
 
 | Packet | Executed evidence | Limits |

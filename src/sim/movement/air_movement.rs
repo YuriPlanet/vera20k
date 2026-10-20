@@ -437,7 +437,12 @@ pub(crate) mod tests {
         entity.locomotor = Some(make_fly_loco());
         sim.substrate.entities.insert(entity);
 
-        let ok = sim.move_air_coordinate(
+        let ok = crate::sim::world::Simulation::move_air_coordinate(
+            &mut sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            &sim.resolved_terrain,
             1,
             crate::sim::movement::target_cell_coord(20, 15, None),
             None,
@@ -536,7 +541,12 @@ pub(crate) mod tests {
         entity.locomotor = Some(make_fly_loco());
         sim.substrate.entities.insert(entity);
 
-        let ok = sim.move_air_coordinate(
+        let ok = crate::sim::world::Simulation::move_air_coordinate(
+            &mut sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            &sim.resolved_terrain,
             1,
             crate::sim::movement::target_cell_coord(10, 10, None),
             None,

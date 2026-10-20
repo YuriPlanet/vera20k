@@ -150,7 +150,14 @@ fn exit_finished_object(
             //4501A4 reads after exit. A consumed wall is still retained at
             //its constructor Location until the frame's shared725C70 drain.
             let object = BuiltObject::capture(sim, product);
-            record_last_built(sim, rules, owner, object);
+            record_last_built(
+                &sim.interner,
+                &mut sim.sound_events,
+                &mut sim.houses,
+                rules,
+                owner,
+                object,
+            );
             // CompletedProduction lets the placed object go; the delete
             // finds none to abandon.
             sim.production
@@ -222,7 +229,7 @@ fn start_factory(
     factory_rtti: i32,
     effects: FrameEffects<'_>,
 ) {
-    if crate::sim::credit_income::available_money(sim, owner) <= 10 {
+    if crate::sim::credit_income::available_money(&sim.houses, owner) <= 10 {
         return;
     }
     let Some(object) = ai_base_building::suggest_new_object(sim, rules, owner, factory_rtti) else {

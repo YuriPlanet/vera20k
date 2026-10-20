@@ -110,6 +110,8 @@ enum BoxThen {
     Resolution { channel: WolChannel },
     /// The runner gives up and returns 0: the welcome.
     Close,
+    /// `0x007AB670`'s box for this user's kick out of a chat lobby.
+    Kicked,
 }
 
 /// One runner of the custom lobby.
@@ -162,7 +164,7 @@ fn lobby(state: &AppState) -> Option<&WolLobby> {
 }
 
 /// This user is in a channel (`[0xB77DD0]`): a leave will see its OnPart.
-pub(super) fn in_channel(state: &AppState) -> bool {
+pub(crate) fn in_channel(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.current.is_some())
 }
 
@@ -265,6 +267,10 @@ fn close_wait(state: &mut AppState) {
 
 fn show_box(state: &mut AppState, key: &str, yes_no: bool, then: BoxThen) {
     let message = service::message_box(state, key, yes_no);
+    put_box(state, message, then);
+}
+
+fn put_box(state: &mut AppState, message: WolMessageBox, then: BoxThen) {
     let dialog = message.dialog();
     let Some(lobby) = lobby_mut(state) else {
         return;
@@ -290,6 +296,18 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
     };
     // Runner entry clears [0xB77DC1] (0x00787973).
     visit.in_game = false;
+    if visit.disconnected {
+        // 0x007879B6: after a lost connection the runner logs in again
+        // first, and a failed login ends it (the welcome).
+        visit.relogin = Some(postmatch);
+        visit.lobby = None;
+        visit.page = WolPage::Backdrop { wait: None };
+        state.frontend.wol_lobby_art = None;
+        state.match_state.session.leave_network();
+        state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+        service::begin_flow(state);
+        return;
+    }
     if state.match_state.session.network_return_context().is_none() {
         state
             .match_state
@@ -538,15 +556,37 @@ fn send_join(state: &mut AppState, channel: WolChannel, key: String, game: bool,
     }
 }
 
+/// `0x00785740` for this user: `TXT_YOULEFT` with the room text (a
+/// `Lob_41_<n>` name as `TXT_JOINED_S` shows it, else the raw name; not in
+/// Quick Match), then the channel record and its users cleared. The line
+/// reaches the lobby's transcript under any wait box (`0x005E2700` walks
+/// the dialog stack).
+fn left_channel(state: &mut AppState) {
+    let Some(current) = lobby_mut(state).and_then(|lobby| {
+        lobby.members.clear();
+        lobby.current.take()
+    }) else {
+        return;
+    };
+    let room = match current.lobby_number() {
+        Some(number) => WolLobbyRow::joined_name(number, &base_names(state)),
+        None => current.name,
+    };
+    let text = crate::assets::csf_file::format_csf(
+        &csf(state, "TXT_YOULEFT"),
+        &[crate::assets::csf_file::CsfArg::Str(&room)],
+    );
+    message_line(state, text);
+}
+
 /// The leave finished (the sink cleared `[0xB77DD0]`) or its 15 s ran out.
 fn leave_finished(state: &mut AppState, left: bool) {
+    if left {
+        left_channel(state);
+    }
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
-    if left {
-        lobby.current = None;
-        lobby.members.clear();
-    }
     let Step::Leaving { then, .. } = std::mem::replace(&mut lobby.step, Step::Ready) else {
         if left {
             refill_players(state);
@@ -1114,6 +1154,17 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
                 answer_resolution(state, channel, control == BOX_YES)
             }
             BoxThen::Close => close_runner(state),
+            BoxThen::Kicked => {
+                // The next lobby pick moves on, then 0x00785740.
+                state.frontend.wol_lobby_globals.lobby_number += 1;
+                left_channel(state);
+                if let Some(lobby) = lobby_mut(state) {
+                    lobby.step = Step::Ready;
+                }
+                refill_players(state);
+                refill_lobbies(state);
+                refill_games(state);
+            }
         }
         return;
     }
@@ -1534,6 +1585,142 @@ pub(super) fn located(state: &mut AppState, result: Result<WolChannel, u32>) {
             visit.locate_name = None;
         }
     }
+}
+
+/// The NetStatus sink `0x007AA6D0` outside the server-list wait: only
+/// [`service::NET_STATUS_LOST`] while connected (`[0xB77DC0]` clear) does
+/// anything. In a match it posts one `TXT_WOL_CONNLOST` row (`[0xB77DC2]`
+/// once) and clears the channel records, leaving `[0xB77DC0]` alone; the
+/// runner logs in again on its next entry. Outside a match, with `0x113`
+/// in the stack, `TXT_YOURE_DISCON` shows from inside the sink; then
+/// `[0xB77DC0]` and `[0xB77DC2]` are set, the channel records cleared and
+/// event 0 ends the runner, whose `[0xB77AD0]` box is empty (the welcome).
+/// RESIDUAL: native shows that box over a running C2/C9; here the setup is
+/// dropped first and the box shows over `0x113`. A native slide pumps no
+/// messages, so the sink never runs mid-slide; here a status arriving during
+/// a C2/C9 Back slide is handled at once and the slide's end then starts a
+/// re-login over the box.
+pub(super) fn net_status(state: &mut AppState, status: u32) {
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    if !visit.connected || status != service::NET_STATUS_LOST {
+        return;
+    }
+    if visit.in_game {
+        if visit.disconnected {
+            return;
+        }
+        visit.disconnected = true;
+        if let Some(lobby) = visit.lobby_mut() {
+            lobby.current = None;
+            lobby.pending = None;
+            lobby.members.clear();
+        }
+        crate::app::input::messages::post_wol_connection_lost(state);
+        return;
+    }
+    visit.connected = false;
+    visit.disconnected = true;
+    let Some(lobby) = visit.lobby_mut() else {
+        return;
+    };
+    lobby.current = None;
+    lobby.pending = None;
+    lobby.members.clear();
+    if state.frontend.shell_route.network_setup() {
+        crate::app::shell_network_setup::abandon_for_wol_runner(state);
+        state.frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
+        if let Some(lobby) = lobby_mut(state) {
+            lobby.shown = true;
+            lobby.covered = false;
+        }
+        open_art(state);
+    }
+    // The records are zeroed without a list refill; the box shows over the
+    // lists as they were, and the runner then closes.
+    show_box(state, "TXT_YOURE_DISCON", false, BoxThen::Close);
+    state.platform.window.request_redraw();
+}
+
+/// The kick sink `0x007AB670` in a chat lobby; nothing while a match runs.
+/// This user: `TXT_YOURE_KICKED` with the channel's name and the kicker in
+/// a box, whose close moves the lobby pick on (`[0xB77DD4]`) and runs the
+/// leave tail `0x00785740`. Another user: `TXT_USER_KICKED` in the
+/// transcript, then its leave from the users.
+/// RESIDUAL: a game channel's kick (C2/C9: `TXT_CHANNEL_FULL`, the line in
+/// the hidden `0x113`, the setup's leave) is not ported. Another user's
+/// line is skipped natively when `0x005E9510` finds no open slot among the
+/// session nodes, which in a chat lobby depends on what the last setup
+/// left; it is always shown here.
+pub(super) fn kicked(state: &mut AppState, channel: WolChannel, user: WolMember, by: WolMember) {
+    if state
+        .frontend
+        .wol
+        .as_ref()
+        .is_none_or(|visit| visit.in_game)
+    {
+        return;
+    }
+    let Some(lobby) = lobby(state) else {
+        return;
+    };
+    if lobby
+        .current
+        .as_ref()
+        .is_some_and(|current| current.kind != 0)
+    {
+        log::warn!("WOL game-channel kick is not ported");
+        return;
+    }
+    use crate::assets::csf_file::{CsfArg, format_csf};
+    if user.flags & MEMBER_LOCAL != 0 {
+        let text = format_csf(
+            &csf(state, "TXT_YOURE_KICKED"),
+            &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
+        );
+        let message = service::message_box_text(state, text, false);
+        put_box(state, message, BoxThen::Kicked);
+    } else {
+        let text = format_csf(
+            &csf(state, "TXT_USER_KICKED"),
+            &[
+                CsfArg::Str(&user.name),
+                CsfArg::Str(&channel.name),
+                CsfArg::Str(&by.name),
+            ],
+        );
+        message_line(state, text);
+        if let Some(lobby) = lobby_mut(state) {
+            lobby.members.retain(|member| member.name != user.name);
+        }
+        refill_players(state);
+    }
+    state.platform.window.request_redraw();
+}
+
+/// The ban sink `0x007AB3C0`: outside a match, `TXT_CHAN_BAN` or
+/// `TXT_CHAN_UNBAN` with the name in the transcript.
+pub(super) fn channel_ban(state: &mut AppState, name: &str, banned: bool) {
+    if state
+        .frontend
+        .wol
+        .as_ref()
+        .is_none_or(|visit| visit.in_game)
+    {
+        return;
+    }
+    let key = if banned {
+        "TXT_CHAN_BAN"
+    } else {
+        "TXT_CHAN_UNBAN"
+    };
+    let text = crate::assets::csf_file::format_csf(
+        &csf(state, key),
+        &[crate::assets::csf_file::CsfArg::Str(name)],
+    );
+    message_line(state, text);
+    state.platform.window.request_redraw();
 }
 
 /// The page sink (`0x007A9200`, UTF-16 `0x007A9550`): the two gates, then

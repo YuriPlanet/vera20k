@@ -187,7 +187,9 @@ pub(crate) fn try_fire(
         }
         // Do not spend targeting RNG or attempt an unaffordable paid launch.
         // The Fire_SW transaction checks the current wallet again.
-        if !super::money::configuration_supported(sw) || !super::money::can_afford(sim, owner, sw) {
+        if !super::money::configuration_supported(sw)
+            || !super::money::can_afford(&sim.houses, owner, sw)
+        {
             continue;
         }
         let arm = AiFireArm::of(sw.kind);
@@ -263,7 +265,7 @@ fn rally_target(
     ((x, y) != NO_CELL).then_some((x as u16, y as u16))
 }
 
-/// HouseClass::AI_FindTeamTarget50D170 (Steam gamemd3e81a617..08600):
+/// HouseClass::AI_FindTeamTarget50D170 (Steam gamemd):
 /// first own Team in registration order, shared GetLeader6EC3D0, then its
 /// GreatestThreat with QuarryToThreat645BB0 and OnlyTargetHouseEnemy=true.
 /// The caller stages that true argument BEFORE GetCoords(vt48); it is not

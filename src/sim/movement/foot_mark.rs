@@ -206,10 +206,9 @@ impl Simulation {
     /// VERA does not retain Object+0x80 or invent a dirty-byte predicate.
     /// Evidence: human-infantry-output-downstream-research/mark-radio.native.json,
     /// SHA256 270a1321e3a5509df0eb58500883737f69af2172726da216f7ca107962391127;
-    /// pinned active-retail gamemd SHA256
-    /// 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
-    pub(crate) fn mark_entity_refresh(&self, id: u64) -> bool {
-        self.substrate
+    /// active-retail gamemd.
+    pub(crate) fn mark_entity_refresh(substrate: &ObjectSubstrate, id: u64) -> bool {
+        substrate
             .entities
             .get(id)
             .is_some_and(|entity| entity.category() != EntityCategory::Structure)

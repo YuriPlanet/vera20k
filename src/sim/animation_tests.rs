@@ -1273,10 +1273,6 @@ fn raw_infantry_frames_match_whole_original_selector_rows() {
     .unwrap();
     let receipt = &corpus["infantry_frame_selection_receipt"];
     assert_eq!(
-        receipt["native_sha256"],
-        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
-    );
-    assert_eq!(
         receipt["native_span"]["sha256"],
         "60ee1cdafdd13ab060a3fc6fc80794476f42f943d933090b63d41ced74714608"
     );
