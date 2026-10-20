@@ -431,7 +431,9 @@ class WaveMachine(prism.LaserPixels):
     def read32(self, p):
         return u32(self.u, p)
 
-    def __init__(self, donor, case=None, *, table_timeout_us=60_000_000):
+    def __init__(self, donor, case=None, *, table_timeout_us=60_000_000,
+                 call_timeout_us=10_000_000):
+        self.call_timeout_us = call_timeout_us
         self.measuring, self.phase = False, 'surface_setup'
         super().__init__(dict(case or {}, size=(80, 80), seed=31))
         u = self.u
@@ -744,7 +746,8 @@ class WaveMachine(prism.LaserPixels):
         context = dict(component='magnetic_wave', case=dict(self.current_case),
             entry=hex(entry), object=hex(obj), args=[hex(value & 0xFFFFFFFF) for value in args])
         try:
-            value = self.invoke(entry, obj, args, instruction_limit=limit, context=context)
+            value = self.invoke(entry, obj, args, instruction_limit=limit,
+                                timeout_us=self.call_timeout_us, context=context)
         except native.NativeExecutionError as error:
             # Keep the shared runner's diagnostics/report intact, and make the
             # exact caller visible even when no failure directory is requested.
@@ -1477,7 +1480,10 @@ def sonic_generate():
     """
     root = assets_root()
     donor = UnitInputs(root, RETAINED_MAP)
-    machine = WaveMachine(donor, table_timeout_us=300_000_000)
+    # Dense per-pixel trace callbacks can exceed the legacy host deadline
+    # under concurrent builds. Keep every emulated instruction bound intact.
+    machine = WaveMachine(donor, table_timeout_us=300_000_000,
+                          call_timeout_us=120_000_000)
     print('Original Sonic table/surface startup finished', flush=True)
     rows, directions, pointers = [], set(), []
     for case in geometry_cases():
