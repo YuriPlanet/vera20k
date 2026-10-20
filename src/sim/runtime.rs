@@ -127,8 +127,8 @@ impl<'a> SimView<'a> {
     /// acknowledges this exact generation only after a completed update.
     pub fn radar_terrain_dirty(&self) -> (&'a [(u16, u16)], u64) {
         (
-            &self.simulation.radar_terrain_dirty_cells,
-            self.simulation.radar_terrain_dirty_generation,
+            self.simulation.dirty_cells.radar(),
+            self.simulation.dirty_cells.radar_generation(),
         )
     }
 

@@ -6277,7 +6277,7 @@ fn wall_warhead_damages_and_destroys_wall_overlay() {
         "overlay should be cleared"
     );
     assert_eq!(
-        sim.radar_terrain_dirty_cells,
+        sim.dirty_cells.radar(),
         vec![
             (5, 5),
             (5, 3),
@@ -6295,9 +6295,9 @@ fn wall_warhead_damages_and_destroys_wall_overlay() {
         ],
         "direct wall damage uses the terminal DestroyOverlay visit stencil",
     );
-    assert_eq!(sim.radar_terrain_dirty_generation, 13);
+    assert_eq!(sim.dirty_cells.radar_generation(), 13);
     assert_eq!(
-        sim.tactical_dirty_cells,
+        sim.dirty_cells.tactical_for_test(),
         vec![
             (5, 5),
             (5, 3),
@@ -6393,13 +6393,13 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
         "crusher drive-over must remove the wall overlay"
     );
     assert_eq!(
-        sim.radar_terrain_dirty_cells.len(),
+        sim.dirty_cells.radar().len(),
         13,
         "crusher uses the terminal DestroyOverlay radar-dirty stencil",
     );
-    assert_eq!(sim.radar_terrain_dirty_cells[0], (5, 5));
-    assert_eq!(sim.radar_terrain_dirty_generation, 13);
-    assert_eq!(sim.tactical_dirty_cells.len(), 21);
+    assert_eq!(sim.dirty_cells.radar()[0], (5, 5));
+    assert_eq!(sim.dirty_cells.radar_generation(), 13);
+    assert_eq!(sim.dirty_cells.tactical_for_test().len(), 21);
     assert!(
         sim.substrate
             .entities

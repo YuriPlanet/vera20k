@@ -1359,25 +1359,9 @@ pub struct Simulation {
     /// snapshot restoration so per-cell selection needs no string interning.
     #[serde(skip)]
     pub(crate) metallic_debris: Vec<InternedId>,
-    /// Runtime terrain cells whose radar/minimap terrain pixel needs refresh.
-    /// Presentation reads this generation and acknowledges the exact batch
-    /// only after its radar update completes. The list is de-duplicated within
-    /// that pending update window, then cleared so the same cell can re-arm.
+    /// Radar and tactical redraw marks for runtime cell changes.
     #[serde(skip)]
-    pub(crate) radar_terrain_dirty_cells: Vec<(u16, u16)>,
-    #[serde(skip)]
-    pub(crate) radar_terrain_dirty_generation: u64,
-    /// Derived index of `radar_terrain_dirty_cells` for
-    /// [`Self::mark_radar_terrain_dirty_cells`], with the list length and
-    /// generation it was built for. Every other writer pushes (changing the
-    /// length) and bumps the generation it is given
-    /// ([`mark_wall_radar_dirty_cell`]); the only clear empties the list. A
-    /// mismatch of either rebuilds the index from the list.
-    #[serde(skip)]
-    radar_terrain_dirty_index: (BTreeSet<(u16, u16)>, usize, u64),
-    /// Runtime cell rects dirtied by tiberium mutation side effects.
-    #[serde(skip)]
-    pub(crate) tactical_dirty_cells: Vec<(u16, u16)>,
+    pub(crate) dirty_cells: crate::sim::dirty_cells::DirtyCells,
     /// Per-player power state (output, drain, low-power flag, spy blackout timer).
     /// Updated each tick by `power_system::tick_power_states()`.
     pub(crate) power_states: BTreeMap<InternedId, PowerState>,
@@ -1453,17 +1437,6 @@ impl Default for Simulation {
     }
 }
 
-pub(crate) fn mark_wall_radar_dirty_cell(
-    cells: &mut Vec<(u16, u16)>,
-    generation: &mut u64,
-    cell: (u16, u16),
-) {
-    if !cells.contains(&cell) {
-        cells.push(cell);
-        *generation = (*generation).wrapping_add(1);
-    }
-}
-
 fn dispatch_tiberium_reduction_inline(
     request: &crate::sim::combat::TiberiumReductionRequest,
     rules: &RuleSet,
@@ -1476,9 +1449,7 @@ fn dispatch_tiberium_reduction_inline(
     live_objects: Option<crate::sim::tiberium::NativeCellObjectView<'_>>,
     binary_frame: u32,
     spread_enabled: bool,
-    radar_dirty_cells: &mut Vec<(u16, u16)>,
-    radar_dirty_generation: &mut u64,
-    tactical_dirty_cells: &mut Vec<(u16, u16)>,
+    dirty_cells: &mut crate::sim::dirty_cells::DirtyCells,
 ) {
     let mut context = crate::sim::tiberium::ReduceTiberiumContext {
         overlay_grid,
@@ -1491,9 +1462,7 @@ fn dispatch_tiberium_reduction_inline(
         rng: Some(scenario_rng),
         binary_frame,
         spread_enabled,
-        radar_dirty_cells: Some(radar_dirty_cells),
-        radar_dirty_generation: Some(radar_dirty_generation),
-        tactical_dirty_cells: Some(tactical_dirty_cells),
+        dirty_cells: Some(dirty_cells),
     };
     let _ = crate::sim::tiberium::reduce_tiberium(
         &mut context,
@@ -1516,9 +1485,7 @@ pub(crate) struct SimulationAreaDamageCellPrelude<'a> {
     terrain_object_cells: &'a BTreeMap<(u16, u16), u64>,
     binary_frame: u32,
     spread_enabled: bool,
-    radar_dirty_cells: &'a mut Vec<(u16, u16)>,
-    radar_dirty_generation: &'a mut u64,
-    tactical_dirty_cells: &'a mut Vec<(u16, u16)>,
+    dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     zone_grid: &'a mut Option<ZoneGrid>,
     path_grid: &'a mut Option<Arc<PathGrid>>,
     bridge_state: Option<&'a BridgeRuntimeState>,
@@ -1566,20 +1533,14 @@ impl crate::sim::combat::combat_aoe::AoECellPrelude for SimulationAreaDamageCell
             }),
             self.binary_frame,
             self.spread_enabled,
-            self.radar_dirty_cells,
-            self.radar_dirty_generation,
-            self.tactical_dirty_cells,
+            self.dirty_cells,
         );
     }
 
     fn wall_dirty_step(&mut self, step: WallDirtyStep, packed_coord: (u16, u16)) {
         match step {
-            WallDirtyStep::Tactical => self.tactical_dirty_cells.push(packed_coord),
-            WallDirtyStep::Radar => mark_wall_radar_dirty_cell(
-                self.radar_dirty_cells,
-                self.radar_dirty_generation,
-                packed_coord,
-            ),
+            WallDirtyStep::Tactical => self.dirty_cells.mark_tactical(packed_coord),
+            WallDirtyStep::Radar => self.dirty_cells.mark_radar([packed_coord]),
         }
     }
 
@@ -1614,9 +1575,7 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
     terrain_object_cells: &'a BTreeMap<(u16, u16), u64>,
     binary_frame: u32,
     spread_enabled: bool,
-    radar_dirty_cells: &'a mut Vec<(u16, u16)>,
-    radar_dirty_generation: &'a mut u64,
-    tactical_dirty_cells: &'a mut Vec<(u16, u16)>,
+    dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     zone_grid: &'a mut Option<ZoneGrid>,
     path_grid: &'a mut Option<Arc<PathGrid>>,
     bridge_state: Option<&'a BridgeRuntimeState>,
@@ -1634,9 +1593,7 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
         terrain_object_cells,
         binary_frame,
         spread_enabled,
-        radar_dirty_cells,
-        radar_dirty_generation,
-        tactical_dirty_cells,
+        dirty_cells,
         zone_grid,
         path_grid,
         bridge_state,
@@ -1742,9 +1699,7 @@ pub(crate) struct SimulationWallRuntimeHost<'a> {
         &'a BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) detach_trace: &'a mut Vec<crate::sim::combat::combat_aoe::CellTargetDetach>,
-    pub(crate) radar_dirty_cells: &'a mut Vec<(u16, u16)>,
-    pub(crate) radar_dirty_generation: &'a mut u64,
-    pub(crate) tactical_dirty_cells: &'a mut Vec<(u16, u16)>,
+    pub(crate) dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     pub(crate) zone_grid: &'a mut Option<ZoneGrid>,
     pub(crate) path_grid: &'a mut Option<Arc<PathGrid>>,
     pub(crate) bridge_state: Option<&'a BridgeRuntimeState>,
@@ -1754,12 +1709,8 @@ pub(crate) struct SimulationWallRuntimeHost<'a> {
 impl WallDamageTransactionHost for SimulationWallRuntimeHost<'_> {
     fn dirty_step(&mut self, step: WallDirtyStep, packed_coord: (u16, u16)) {
         match step {
-            WallDirtyStep::Tactical => self.tactical_dirty_cells.push(packed_coord),
-            WallDirtyStep::Radar => mark_wall_radar_dirty_cell(
-                self.radar_dirty_cells,
-                self.radar_dirty_generation,
-                packed_coord,
-            ),
+            WallDirtyStep::Tactical => self.dirty_cells.mark_tactical(packed_coord),
+            WallDirtyStep::Radar => self.dirty_cells.mark_radar([packed_coord]),
         }
     }
 
@@ -1812,9 +1763,7 @@ fn dispatch_smudge_inline(
     terrain_object_cells: &BTreeMap<(u16, u16), u64>,
     binary_frame: u32,
     spread_enabled: bool,
-    radar_dirty_cells: &mut Vec<(u16, u16)>,
-    radar_dirty_generation: &mut u64,
-    tactical_dirty_cells: &mut Vec<(u16, u16)>,
+    dirty_cells: &mut crate::sim::dirty_cells::DirtyCells,
     construction: &mut crate::sim::smudge_grid::SmudgeConstruction<'_>,
 ) {
     let (Some(smudge_grid), Some(overlay_grid), Some(terrain)) =
@@ -1834,9 +1783,7 @@ fn dispatch_smudge_inline(
         )),
         binary_frame,
         spread_enabled,
-        radar_dirty_cells,
-        radar_dirty_generation,
-        tactical_dirty_cells,
+        dirty_cells,
     };
     crate::sim::combat::smudge_dispatch::dispatch_smudge_request(
         request,
@@ -2554,9 +2501,7 @@ impl Simulation {
                                 target_terrain_objects: self.terrain_objects.objects(),
                                 #[cfg(any(test, feature = "test-support"))]
                                 detach_trace: &mut effects.cell_target_detaches,
-                                radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
-                                radar_dirty_generation: &mut self.radar_terrain_dirty_generation,
-                                tactical_dirty_cells: &mut self.tactical_dirty_cells,
+                                dirty_cells: &mut self.dirty_cells,
                                 zone_grid: &mut self.zone_grid,
                                 path_grid: &mut self.path_grid,
                                 bridge_state: self.bridge_state.as_ref(),
@@ -2617,15 +2562,11 @@ impl Simulation {
                                 #[cfg(any(test, feature = "test-support"))]
                                 &mut effects.cell_target_detaches,
                             );
-                            self.mark_radar_terrain_dirty_cells([coord]);
+                            self.dirty_cells.mark_radar([coord]);
                         }
-                        {
-                            for &coord in &mutation.original_footprint {
-                                if !self.tactical_dirty_cells.contains(&coord) {
-                                    self.tactical_dirty_cells.push(coord);
-                                }
-                            }
-                        };
+                        for &coord in &mutation.original_footprint {
+                            self.dirty_cells.mark_tactical_once(coord);
+                        }
 
                         // Resolve the three types in native order, then make
                         // two row-major attempts at each of the 15 grid cells.
@@ -3214,11 +3155,11 @@ impl Simulation {
     }
 
     pub fn radar_terrain_dirty_cells(&self) -> &[(u16, u16)] {
-        &self.radar_terrain_dirty_cells
+        self.dirty_cells.radar()
     }
 
     pub fn radar_terrain_dirty_generation(&self) -> u64 {
-        self.radar_terrain_dirty_generation
+        self.dirty_cells.radar_generation()
     }
 
     pub fn power_states(&self) -> &BTreeMap<InternedId, PowerState> {
@@ -3869,10 +3810,7 @@ impl Simulation {
             playfield_revision: 0,
             bridge_explosions: Vec::new(),
             metallic_debris: Vec::new(),
-            radar_terrain_dirty_cells: Vec::new(),
-            radar_terrain_dirty_generation: 0,
-            radar_terrain_dirty_index: Default::default(),
-            tactical_dirty_cells: Vec::new(),
+            dirty_cells: Default::default(),
             power_states: BTreeMap::new(),
             super_weapons: BTreeMap::new(),
             lightning_storm: Default::default(),
@@ -4003,34 +3941,13 @@ impl Simulation {
         self.interner.resolve(id)
     }
 
-    /// Append each cell not yet in the pending radar-terrain batch. A
-    /// whole-map reveal marks every cell, so membership goes through the
-    /// derived index rather than a scan of the list.
-    pub fn mark_radar_terrain_dirty_cells<I>(&mut self, cells: I)
-    where
-        I: IntoIterator<Item = (u16, u16)>,
-    {
-        let built_for = (
-            self.radar_terrain_dirty_cells.len(),
-            self.radar_terrain_dirty_generation,
-        );
-        let index = &mut self.radar_terrain_dirty_index;
-        if (index.1, index.2) != built_for {
-            index.0 = self.radar_terrain_dirty_cells.iter().copied().collect();
-        }
-        let mut changed = false;
-        for cell in cells {
-            if index.0.insert(cell) {
-                self.radar_terrain_dirty_cells.push(cell);
-                changed = true;
-            }
-        }
-        if changed {
-            self.radar_terrain_dirty_generation =
-                self.radar_terrain_dirty_generation.wrapping_add(1);
-        }
-        index.1 = self.radar_terrain_dirty_cells.len();
-        index.2 = self.radar_terrain_dirty_generation;
+    /// Client-crate fixture for a pending radar batch.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn mark_radar_terrain_dirty_for_test(
+        &mut self,
+        cells: impl IntoIterator<Item = (u16, u16)>,
+    ) {
+        self.dirty_cells.mark_radar(cells);
     }
 
     pub(crate) fn flush_smudge_dirty(&mut self) {
@@ -4040,8 +3957,7 @@ impl Simulation {
             .map(crate::sim::smudge_grid::SmudgeGrid::drain_dirty)
             .unwrap_or_default();
         for cell in dirty {
-            self.tactical_dirty_cells.push(cell);
-            self.mark_radar_terrain_dirty_cells([cell]);
+            self.dirty_cells.mark_cell(cell);
         }
     }
 
@@ -4077,9 +3993,7 @@ impl Simulation {
             self.terrain_objects.cell_index(),
             binary_frame,
             spread_enabled,
-            &mut self.radar_terrain_dirty_cells,
-            &mut self.radar_terrain_dirty_generation,
-            &mut self.tactical_dirty_cells,
+            &mut self.dirty_cells,
             &mut construction,
         );
         if let Some(id) = construction.constructed_id() {
@@ -4148,9 +4062,7 @@ impl Simulation {
             rng: Some(&mut self.scenario_rng),
             binary_frame: self.session.binary_frame(),
             spread_enabled: self.ore_growth_config.spreads(),
-            radar_dirty_cells: Some(&mut self.radar_terrain_dirty_cells),
-            radar_dirty_generation: Some(&mut self.radar_terrain_dirty_generation),
-            tactical_dirty_cells: Some(&mut self.tactical_dirty_cells),
+            dirty_cells: Some(&mut self.dirty_cells),
         };
         crate::sim::tiberium::reduce_tiberium(&mut ctx, cell, amount.into())
     }
@@ -4315,9 +4227,7 @@ impl Simulation {
                     self.ore_growth_config.grows(),
                     self.ore_growth_config.spreads(),
                     self.ore_growth_config.tiberium_grows_flag(),
-                    Some(&mut self.radar_terrain_dirty_cells),
-                    Some(&mut self.radar_terrain_dirty_generation),
-                    Some(&mut self.tactical_dirty_cells),
+                    Some(&mut self.dirty_cells),
                 );
                 let spread = self.ore_growth_state.tick_native_spread_driver(
                     grid,
@@ -4330,9 +4240,7 @@ impl Simulation {
                     self.session.binary_frame(),
                     self.ore_growth_config.grows(),
                     self.ore_growth_config.spreads(),
-                    Some(&mut self.radar_terrain_dirty_cells),
-                    Some(&mut self.radar_terrain_dirty_generation),
-                    Some(&mut self.tactical_dirty_cells),
+                    Some(&mut self.dirty_cells),
                 );
                 // Original Place487190 -> Overlay Mark5FC570 -> Recalc47D2B0
                 // publishes LandType before Logic55B4DC returns to live-object
@@ -4530,21 +4438,12 @@ impl Simulation {
         true
     }
 
-    /// Acknowledge one completed radar-terrain presentation update.
-    ///
-    /// Active `RadarClass` dirty processing at `0x00655250` drains and clears
-    /// its retained cell list after the update. The generation guard prevents
-    /// a stale client acknowledgement from clearing a newer producer batch.
-    /// Both fields are presentation handoff state (`serde(skip)` and omitted
-    /// from `state_hash`), so this consumption cannot mutate lockstep state.
+    /// Acknowledge one completed radar-terrain presentation update
+    /// ([`DirtyCells::acknowledge_radar`](crate::sim::dirty_cells::DirtyCells::acknowledge_radar)).
+    /// The marks are presentation handoff state, so this consumption cannot
+    /// mutate lockstep state.
     pub(crate) fn acknowledge_radar_terrain_dirty(&mut self, generation: u64) -> bool {
-        if generation != self.radar_terrain_dirty_generation
-            || self.radar_terrain_dirty_cells.is_empty()
-        {
-            return false;
-        }
-        self.radar_terrain_dirty_cells.clear();
-        true
+        self.dirty_cells.acknowledge_radar(generation)
     }
 
     fn poll_triggers_for_master_frame(
@@ -6542,9 +6441,7 @@ impl Simulation {
             target_terrain_objects: self.terrain_objects.objects(),
             #[cfg(any(test, feature = "test-support"))]
             detach_trace: &mut cell_target_detaches,
-            radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
-            radar_dirty_generation: &mut self.radar_terrain_dirty_generation,
-            tactical_dirty_cells: &mut self.tactical_dirty_cells,
+            dirty_cells: &mut self.dirty_cells,
             zone_grid: &mut self.zone_grid,
             path_grid: &mut self.path_grid,
             bridge_state: self.bridge_state.as_ref(),

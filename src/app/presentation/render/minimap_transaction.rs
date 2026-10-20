@@ -43,7 +43,7 @@ mod tests {
     #[test]
     fn failed_or_skipped_minimap_presentation_retains_batch_for_successful_retry() {
         let mut sim = Simulation::new();
-        sim.mark_radar_terrain_dirty_cells([(7, 9)]);
+        sim.mark_radar_terrain_dirty_for_test([(7, 9)]);
         let mut runtime = SimRuntime::from_simulation(sim);
 
         let failed = present_minimap_frame(&mut runtime, |_| {

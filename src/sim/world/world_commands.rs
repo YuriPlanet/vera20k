@@ -802,9 +802,7 @@ impl Simulation {
                     target_terrain_objects: self.terrain_objects.objects(),
                     #[cfg(any(test, feature = "test-support"))]
                     detach_trace: &mut detach_trace,
-                    radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
-                    radar_dirty_generation: &mut self.radar_terrain_dirty_generation,
-                    tactical_dirty_cells: &mut self.tactical_dirty_cells,
+                    dirty_cells: &mut self.dirty_cells,
                     zone_grid: &mut self.zone_grid,
                     path_grid: &mut self.path_grid,
                     bridge_state: self.bridge_state.as_ref(),
@@ -873,7 +871,7 @@ impl Simulation {
                     .remove_retained_wall_neighbor_source(Some(terrain), nx, ny);
             }
         }
-        self.mark_radar_terrain_dirty_cells([(rx, ry)]);
+        self.dirty_cells.mark_radar([(rx, ry)]);
 
         // House4FD018 calls70D4A0, not7258D0 pointer expiry: Restore runs
         // before the conditional target clear, then Team targets detach.

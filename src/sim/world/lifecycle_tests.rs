@@ -710,9 +710,9 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
         "a footprint outside the full refinery rectangle survives"
     );
     let expected = vec![(4, 5), (5, 5), (4, 6), (5, 6), (7, 6)];
-    assert_eq!(sim.tactical_dirty_cells, expected);
-    assert_eq!(sim.radar_terrain_dirty_cells, expected);
-    assert_eq!(sim.radar_terrain_dirty_generation, 5);
+    assert_eq!(sim.dirty_cells.tactical_for_test(), expected);
+    assert_eq!(sim.dirty_cells.radar(), expected);
+    assert_eq!(sim.dirty_cells.radar_generation(), 5);
 }
 
 fn gsi_04_16_edge_gate_rules() -> crate::rules::ruleset::RuleSet {
@@ -5501,9 +5501,9 @@ fn persistent_bullet_logic_slot_publishes_native_wall_dirty_visits() {
             .overlay_data,
         0x10,
     );
-    assert!(partial.radar_terrain_dirty_cells.is_empty());
-    assert_eq!(partial.radar_terrain_dirty_generation, 0);
-    assert_eq!(partial.tactical_dirty_cells, vec![(5, 5)]);
+    assert!(partial.dirty_cells.radar().is_empty());
+    assert_eq!(partial.dirty_cells.radar_generation(), 0);
+    assert_eq!(partial.dirty_cells.tactical_for_test(), vec![(5, 5)]);
 
     let terminal = run(0x30);
     assert_eq!(
@@ -5516,7 +5516,7 @@ fn persistent_bullet_logic_slot_publishes_native_wall_dirty_visits() {
         None
     );
     assert_eq!(
-        terminal.radar_terrain_dirty_cells,
+        terminal.dirty_cells.radar(),
         vec![
             (5, 5),
             (5, 3),
@@ -5533,9 +5533,9 @@ fn persistent_bullet_logic_slot_publishes_native_wall_dirty_visits() {
             (6, 5),
         ],
     );
-    assert_eq!(terminal.radar_terrain_dirty_generation, 13);
+    assert_eq!(terminal.dirty_cells.radar_generation(), 13);
     assert_eq!(
-        terminal.tactical_dirty_cells,
+        terminal.dirty_cells.tactical_for_test(),
         vec![
             (5, 5),
             (5, 3),
@@ -7497,8 +7497,8 @@ fn terminal_type_zero_wave_with_empty_recorded_vector_has_no_damage_area_tail() 
     assert_eq!(sim.scenario_rng.logical_state(), expected_rng);
     assert!(!sim.active_wave_links.contains_key(&firer_id));
     assert!(sim.dynamic_terrain_cells.is_empty());
-    assert!(sim.radar_terrain_dirty_cells.is_empty());
-    assert!(sim.tactical_dirty_cells.is_empty());
+    assert!(sim.dirty_cells.radar().is_empty());
+    assert!(sim.dirty_cells.tactical_for_test().is_empty());
     assert_eq!(sim.substrate.pending_delete.object_ids(), vec![wave_id]);
 }
 
@@ -8274,8 +8274,8 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
             canonical_path.cell(rx, 10)
         );
     }
-    assert_eq!(sim.radar_terrain_dirty_cells.len(), 20);
-    assert_eq!(sim.tactical_dirty_cells.len(), 20);
+    assert_eq!(sim.dirty_cells.radar().len(), 20);
+    assert_eq!(sim.dirty_cells.tactical_for_test().len(), 20);
     let overlay = sim.overlay_grid.as_ref().unwrap();
     assert_eq!(overlay.cell(1, 0).overlay_id, None);
     assert_eq!(

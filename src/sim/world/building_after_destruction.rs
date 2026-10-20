@@ -49,7 +49,7 @@ use std::collections::BTreeSet;
 
 use crate::sim::intern::InternedId;
 
-use super::{FrameEffects, Simulation, mark_wall_radar_dirty_cell};
+use super::{FrameEffects, Simulation};
 
 impl Simulation {
     /// `BuildingClass::AfterDestruction @ 0x00441F60` for a building of
@@ -118,12 +118,8 @@ impl Simulation {
             BTreeSet::new()
         };
         for cell in cells {
-            mark_wall_radar_dirty_cell(
-                &mut self.radar_terrain_dirty_cells,
-                &mut self.radar_terrain_dirty_generation,
-                cell,
-            );
-            self.tactical_dirty_cells.push(cell);
+            self.dirty_cells.mark_radar([cell]);
+            self.dirty_cells.mark_tactical(cell);
             let (Some(grid), Some(terrain)) =
                 (self.overlay_grid.as_mut(), self.resolved_terrain.as_mut())
             else {

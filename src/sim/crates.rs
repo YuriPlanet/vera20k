@@ -574,7 +574,7 @@ pub(crate) fn construct_runtime_overlay(
         .load_objects
         .begin_mark(handle, None)
         .expect("crate Overlay enters Mark once");
-    sim.tactical_dirty_cells.push(dirty_cell);
+    sim.dirty_cells.mark_tactical(dirty_cell);
 
     let identity_before = crate_cell_identity(sim, cell);
     let request = OverlayMarkRequest {
@@ -1923,8 +1923,8 @@ pub(crate) mod tests {
                 .sum::<usize>(),
             8
         );
-        assert!(sim.radar_terrain_dirty_cells.contains(&cell));
-        assert!(sim.tactical_dirty_cells.contains(&(cell.0 - 1, cell.1)));
+        assert!(sim.dirty_cells.radar().contains(&cell));
+        assert!(sim.dirty_cells.tactical_for_test().contains(&(cell.0 - 1, cell.1)));
     }
 
     #[test]

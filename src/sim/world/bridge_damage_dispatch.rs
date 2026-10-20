@@ -304,8 +304,8 @@ impl DamageHost for LiveDamage<'_> {
         // same native damage attempt even when its driver returns false.
         self.drivers
             .sim
-            .tactical_dirty_cells
-            .push((self.event.rx, self.event.ry));
+            .dirty_cells
+            .mark_tactical((self.event.rx, self.event.ry));
     }
 }
 

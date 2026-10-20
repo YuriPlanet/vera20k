@@ -593,9 +593,7 @@ fn compare_case(row: &Value) {
                         rng: Some(&mut rng),
                         binary_frame: frame,
                         spread_enabled: input["spreads"] == true,
-                        radar_dirty_cells: None,
-                        radar_dirty_generation: None,
-                        tactical_dirty_cells: None,
+                        dirty_cells: None,
                     },
                     cell,
                     input["amount"].as_i64().unwrap_or(1) as i32,
@@ -620,8 +618,6 @@ fn compare_case(row: &Value) {
                     input["grows"] == true,
                     input["spreads"] == true,
                     None,
-                    None,
-                    None,
                 );
             }
             "spread_processor" => {
@@ -636,8 +632,6 @@ fn compare_case(row: &Value) {
                     &mut rng,
                     frame,
                     input["spreads"] == true,
-                    None,
-                    None,
                     None,
                 );
                 constructed.extend(result.into_overlay_constructions());
@@ -657,8 +651,6 @@ fn compare_case(row: &Value) {
                         input["spreads"] == true,
                         input["fast_growth"] == true,
                         None,
-                        None,
-                        None,
                     );
                 }
                 let result = state.tick_native_spread_driver(
@@ -672,8 +664,6 @@ fn compare_case(row: &Value) {
                     frame,
                     input["grows"] == true,
                     input["spreads"] == true,
-                    None,
-                    None,
                     None,
                 );
                 constructed.extend(result.into_overlay_constructions());
@@ -1023,8 +1013,6 @@ fn compare_authored_natural_phases(
                 config.spreads,
                 config.tiberium_grows_flag,
                 None,
-                None,
-                None,
             );
             let spread = state.tick_native_spread_driver(
                 &mut grid,
@@ -1037,8 +1025,6 @@ fn compare_authored_natural_phases(
                 frame,
                 config.grows,
                 config.spreads,
-                None,
-                None,
                 None,
             );
             (growth, spread)
@@ -1424,7 +1410,13 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
                 .unwrap()
                 .resolved_cell_is_current(cell, false)
         );
-        assert!(scene.sim().tactical_dirty_cells.contains(&(rx, ry)));
+        assert!(
+            scene
+                .sim()
+                .dirty_cells
+                .tactical_for_test()
+                .contains(&(rx, ry))
+        );
         assert!(radar_cells.contains(&(rx, ry)));
         assert!(
             output.overlay_updates.iter().any(|entry| {

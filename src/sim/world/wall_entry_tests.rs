@@ -557,8 +557,8 @@ fn assert_retail_wall_fire_profile(
                     .is_none(),
                 "Cell7258D0 target expiry is synchronous with removal"
             );
-            assert!(sim.radar_terrain_dirty_cells.contains(&source));
-            assert!(sim.tactical_dirty_cells.contains(&source));
+            assert!(sim.dirty_cells.radar().contains(&source));
+            assert!(sim.dirty_cells.tactical_for_test().contains(&source));
             removed_at = Some(step);
             shots_at_removal = Some(shots);
         }
@@ -934,7 +934,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
             // The original component starts before the later Building/Foot
             // population. Run its wall Mark material through the shared owner;
             // do not copy its resulting data/122/zone fields from the packet.
-            sim.acknowledge_radar_terrain_dirty(sim.radar_terrain_dirty_generation);
+            sim.acknowledge_radar_terrain_dirty(sim.dirty_cells.radar_generation());
             for placement in construction["placements"].as_array().unwrap() {
                 let coordinate = (
                     placement["cell"][0].as_u64().unwrap() as u16,
@@ -1036,10 +1036,10 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         sim.mapgen_rng = SimRng::new(seed);
         assert_eq!(rng(sim), case["initial"]["rng"]);
         if case.get("construction").is_none() {
-            sim.acknowledge_radar_terrain_dirty(sim.radar_terrain_dirty_generation);
+            sim.acknowledge_radar_terrain_dirty(sim.dirty_cells.radar_generation());
         }
         assert_eq!(
-            json!(sim.radar_terrain_dirty_cells),
+            json!(sim.dirty_cells.radar()),
             case["initial"]["radar"]["cells"]
         );
         let cursor = sim.native_identity_cursor();
@@ -1063,7 +1063,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
                 .iter()
                 .map(|cell| (cell.overlay_id, cell.wall_owner))
                 .collect::<Vec<_>>();
-            let tactical_start = sim.tactical_dirty_cells.len();
+            let tactical_start = sim.dirty_cells.tactical_for_test().len();
             let (_, draws) = crate::sim::rng::trace_draws(|| {
                 if direct {
                     let at = at(&step["source"]);
@@ -1185,7 +1185,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
             }
             assert_cell(sim, &step["source"], &neighbor_domain);
             assert_eq!(
-                json!(sim.radar_terrain_dirty_cells),
+                json!(sim.dirty_cells.radar()),
                 step["before_drain"]["radar"]["cells"]
             );
             assert_eq!(
@@ -1221,7 +1221,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
                 }
             }
             assert_eq!(
-                &sim.tactical_dirty_cells[tactical_start..],
+                &sim.dirty_cells.tactical_for_test()[tactical_start..],
                 expected_tactical
             );
             sim.process_pending_delete_with(
@@ -1312,8 +1312,8 @@ fn retail_mtnk_move_crushes_fences_through_per_cell_with_body_rocking() {
         for (index, &(x, y)) in cells.iter().enumerate() {
             if clears[index].is_none() && grid.cell(x, y).overlay_id.is_none() {
                 clears[index] = Some(step);
-                assert!(sim.radar_terrain_dirty_cells.contains(&(x, y)));
-                assert!(sim.tactical_dirty_cells.contains(&(x, y)));
+                assert!(sim.dirty_cells.radar().contains(&(x, y)));
+                assert!(sim.dirty_cells.tactical_for_test().contains(&(x, y)));
             }
         }
         sounds += output

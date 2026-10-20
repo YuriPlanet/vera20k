@@ -141,7 +141,7 @@ fn ordinary_bridge_continuation_precedes_cluster_rng_like_native() {
                 )
             })
             .collect();
-        assert_eq!(sim.tactical_dirty_cells, dirty, "{name}");
+        assert_eq!(sim.dirty_cells.tactical_for_test(), dirty, "{name}");
         let rng = sim.scenario_rng.logical_view();
         assert_eq!(
             serde_json::json!([rng.index_a, rng.index_b]),
@@ -224,7 +224,7 @@ fn nested_death_bridge_continuation_finishes_before_parent_area_returns() {
             units.push(id);
         }
         sim.scenario_rng = SimRng::new(native["seed"].as_u64().unwrap());
-        sim.tactical_dirty_cells.clear();
+        sim.dirty_cells.clear_tactical_for_test();
         let warhead = sim.interner.intern("WH");
         let hit = EntityDamageEvent::area(units[0], 100, 0, RAD_NO_ATTACKER, None, warhead);
         let mut run = world_receiver::ReceiverRun::default();
@@ -240,7 +240,11 @@ fn nested_death_bridge_continuation_finishes_before_parent_area_returns() {
         assert!(!effects.bridge_state_changed);
         // INNER's signed -1 packet still draws first and cannot pass. OUTER
         // then compares the second native result:29000 fails,31000 succeeds.
-        assert_eq!(sim.tactical_dirty_cells, expected_dirty, "{outer_damage}");
+        assert_eq!(
+            sim.dirty_cells.tactical_for_test(),
+            expected_dirty,
+            "{outer_damage}"
+        );
         let rng = sim.scenario_rng.logical_view();
         assert_eq!(
             serde_json::json!([rng.index_a, rng.index_b]),

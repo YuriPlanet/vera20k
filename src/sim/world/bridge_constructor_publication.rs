@@ -89,8 +89,8 @@ impl LivePublication<'_> {
             .begin_mark(handle, None)
             .map_err(|error| error.to_string())?;
         self.sim
-            .tactical_dirty_cells
-            .push((lookup.0 as u16, lookup.1 as u16));
+            .dirty_cells
+            .mark_tactical((lookup.0 as u16, lookup.1 as u16));
         let request = OverlayMarkRequest {
             overlay_id: overlay,
             flags,
