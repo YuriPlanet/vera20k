@@ -219,6 +219,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
     let lighting = CellLightGrid::new();
     let hidden = BTreeSet::new();
     let input = DisplayEffectInputs {
+        interpolation: None,
         sim: &sim,
         rules: &rules,
         camera: view_camera,
@@ -247,7 +248,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         })
         .collect();
     let body_depths = HashMap::from([(body_ids[0], 0.5), (body_ids[1], 0.5)]);
-    build_parachute_instances(&input, &mut parents, &body_depths);
+    build_parachute_instances(&input, &mut parents, &body_depths, None);
 
     let mut canopy_instances = Vec::with_capacity(2);
     for ((&id, (key, entry)), parent) in body_ids.iter().zip(&keys_and_entries).zip(&parents) {

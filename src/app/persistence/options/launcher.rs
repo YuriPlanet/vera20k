@@ -34,6 +34,7 @@ pub(crate) fn launcher_values_from_profile(
         full_screen: false,
         original_shape: profile.original_shape,
         ra2_look: profile.ra2_look,
+        render_interpolation: profile.render_interpolation,
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
         sidebar: profile.sidebar,
@@ -71,6 +72,7 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn set_full_screen(&mut self, full_screen: bool);
     fn store_original_shape(&mut self, original_shape: bool);
     fn store_ra2_look(&mut self, ra2_look: bool);
+    fn store_render_interpolation(&mut self, enabled: bool);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
 }
@@ -93,6 +95,9 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.store_original_shape(original_shape);
         }
         LauncherOptionsEvent::Ra2LookChanged(ra2_look) => operations.store_ra2_look(ra2_look),
+        LauncherOptionsEvent::RenderInterpolationChanged(enabled) => {
+            operations.store_render_interpolation(enabled);
+        }
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
         }
@@ -278,6 +283,7 @@ mod tests {
             unit_action_lines: false,
             show_hidden: true,
             ra2_look: true,
+            render_interpolation: false,
             shift_queue: true,
             wol_test_service: true,
             ..RetailOptionsProfile::default()
@@ -286,6 +292,7 @@ mod tests {
         assert!(!booleans.target_lines);
         assert!(booleans.show_hidden);
         assert!(booleans.ra2_look);
+        assert!(!booleans.render_interpolation);
         assert!(booleans.shift_queue);
         assert!(booleans.wol_test_service);
     }

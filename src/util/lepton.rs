@@ -298,8 +298,16 @@ pub fn absolute_leptons_to_screen(
     world_z_leptons: i32,
 ) -> (f32, f32) {
     let (screen_x, screen_y) = project_absolute_lepton_xy(world_x_leptons, world_y_leptons);
-    let screen_y = screen_y + WORLD_ROW_BIAS_PX
-        - crate::util::native_x87::adjust_for_z_standard(world_z_leptons);
+    // Planar projection (including the exact-Z render path's first stage)
+    // always asks for Z=0. Its native +0.5/chop result is exactly zero; avoid
+    // evaluating the software x87 expression for every ground-object read.
+    // Nonzero heights retain the original precision and operation order.
+    let lift = if world_z_leptons == 0 {
+        0
+    } else {
+        crate::util::native_x87::adjust_for_z_standard(world_z_leptons)
+    };
+    let screen_y = screen_y + WORLD_ROW_BIAS_PX - lift;
     (screen_x as f32, screen_y as f32)
 }
 

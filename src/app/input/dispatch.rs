@@ -395,7 +395,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                             };
                             if held_type_select {
                                 let picked = pick_entity_at_point(
-                                    sim.entities(),
+                                    crate::app::input::entity_pick::presented(state, sim),
                                     &click_order,
                                     fog_ref,
                                     preferred_local_owner_name(state).as_deref(),
@@ -423,7 +423,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                     ))
                                 } else {
                                     compute_click_selection_snapshot_with_playfield(
-                                        sim.entities(),
+                                        crate::app::input::entity_pick::presented(state, sim),
                                         &click_order,
                                         &current_selection,
                                         fog_ref,
@@ -446,7 +446,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                 held_type_select_batch = true;
                             } else {
                                 queued_selection = compute_click_selection_snapshot_with_playfield(
-                                    sim.entities(),
+                                    crate::app::input::entity_pick::presented(state, sim),
                                     &click_order,
                                     &current_selection,
                                     fog_ref,
@@ -481,7 +481,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                             if held_type_select {
                                 queued_selection =
                                     Some(compute_type_select_box_mutation_with_playfield(
-                                        sim.entities(),
+                                        crate::app::input::entity_pick::presented(state, sim),
                                         &screen_order,
                                         scope_order,
                                         &current_selection,
@@ -502,7 +502,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                     .as_deref()
                                     .unwrap_or(screen_order.as_slice());
                                 queued_selection = compute_box_selection_snapshot_with_playfield(
-                                    sim.entities(),
+                                    crate::app::input::entity_pick::presented(state, sim),
                                     preflight_order,
                                     &screen_order,
                                     &current_selection,
@@ -665,7 +665,7 @@ fn band_caught_drawn_object(
         Some((sim.fog(), sim.house_alliances()))
     };
     crate::app::input::entity_pick::band_rect_contains_drawn_object(
-        sim.entities(),
+        crate::app::input::entity_pick::presented(state, sim),
         encounter_order,
         fog_ref,
         preferred_local_owner_name(state).as_deref(),

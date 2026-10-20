@@ -25,6 +25,7 @@ use crate::render::unit_atlas::UnitAtlas;
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 
 pub(crate) struct MatchPresentationState {
+    pub(crate) interpolation: super::interpolation::RenderInterpolation,
     /// Native Techno+3CA waterline cache, captured by drawing and retained in
     /// the snapshot presentation supplement rather than simulation authority.
     pub(crate) sinking_waterlines: std::cell::RefCell<crate::render::sinking::SinkingWaterlines>,

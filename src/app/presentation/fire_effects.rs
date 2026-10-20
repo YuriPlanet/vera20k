@@ -12,6 +12,7 @@ use crate::sim::world::{SimFireEvent, Simulation};
 /// One persistent WaveClass draw resolved from simulation-owned registration state.
 #[derive(Debug, Clone)]
 pub(crate) struct WeaponWaveVisual {
+    pub id: u64,
     pub polygon: [[i32; 2]; 6],
     pub tint: [f32; 3],
 }
@@ -46,12 +47,13 @@ pub(crate) fn build_weapon_wave_visuals(
 ) -> Vec<WeaponWaveVisual> {
     sim.waves()
         .iter()
-        .filter_map(|(_, wave)| {
+        .filter_map(|(&id, wave)| {
             let polygon = wave.sonic_draw_polygon([0, 0])?;
             if !weapon_wave_visible(sim, observer, wave) {
                 return None;
             }
             Some(WeaponWaveVisual {
+                id,
                 polygon,
                 // Sonic samples the destination framebuffer;
                 // they never select a house remap. The current sprite batch

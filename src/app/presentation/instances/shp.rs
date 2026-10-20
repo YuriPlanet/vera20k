@@ -142,16 +142,21 @@ pub(crate) fn build_shp_instances(
         // lifted anchor. See `locomotor_visual::BUILDING_ART_LIFT_PX`. The screen
         // cull reads only that anchor, and the admission work below only reads,
         // so an object off the screen skips it.
+        // One fresh sample for this read-only entity draw. Reuse it for the
+        // anchor, infantry direction and building gun instead of reading the
+        // complete pose again for each field. Never retain it across draws.
+        let render_pose = crate::app::presentation::interpolation::pose(
+            state,
+            entity,
+            sim.session().binary_frame(),
+        );
         let (sx, sy) = {
-            let anchor = crate::render::locomotor_visual::screen_position(entity);
+            let [x, y] = render_pose.screen;
             if entity.category() == EntityCategory::Structure {
-                crate::render::locomotor_visual::building_art_anchor(anchor.0, anchor.1)
+                crate::render::locomotor_visual::building_art_anchor(x, y)
             } else {
                 // Infantry DrawIt519524/51958A uses the signed Foot+6B4 lift.
-                (
-                    anchor.0,
-                    anchor.1 - f32::from(entity.ion_blast_lift_pixels()),
-                )
+                (x, y - render_pose.visual_lift)
             }
         };
         if !in_view(sx, sy, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0) {
@@ -250,11 +255,11 @@ pub(crate) fn build_shp_instances(
                     .is_some()
             })
         {
-            if let Some(frame) = resolve_object_shp_frame(
+            if let Some(frame) = resolve_object_shp_frame_with_facing(
                 state,
                 sim.interner().resolve(entity.type_ref()),
                 entity,
-                sim.session().binary_frame(),
+                render_pose.body,
                 cells.as_ref(),
             ) {
                 emit_unit_terrain_body(
@@ -371,11 +376,11 @@ pub(crate) fn build_shp_instances(
                     (frame, None)
                 }
                 _ => {
-                    let Some(frame) = resolve_object_shp_frame(
+                    let Some(frame) = resolve_object_shp_frame_with_facing(
                         state,
                         type_str,
                         entity,
-                        sim.session().binary_frame(),
+                        render_pose.body,
                         cells.as_ref(),
                     ) else {
                         continue;
@@ -760,12 +765,10 @@ pub(crate) fn build_shp_instances(
                         .barrel_image_pitches
                         .borrow_mut(),
                     type_str,
-                    entity.body_facing_current(sim.session().binary_frame()),
-                    entity
-                        .barrel_elevation()
-                        .current(sim.session().binary_frame()),
+                    render_pose.body,
+                    render_pose.barrel,
                     entity.turret_anim_frame.frame(),
-                    entity.voxel_recoil(),
+                    render_pose.recoil,
                     turret_offset,
                     sx,
                     sy,
@@ -1783,7 +1786,20 @@ pub(crate) fn resolve_object_shp_frame(
     binary_frame: u32,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> Option<u16> {
-    let facing = entity.body_facing_byte(binary_frame);
+    let facing = crate::app::presentation::interpolation::pose(state, entity, binary_frame).body;
+    resolve_object_shp_frame_with_facing(state, type_id, entity, facing, cells)
+}
+
+/// The draw already owns a fresh pose. Other callers still use the wrapper
+/// above, which reads its own sample and retains same-frame mutation checks.
+fn resolve_object_shp_frame_with_facing(
+    state: &AppState,
+    type_id: &str,
+    entity: &crate::sim::game_entity::GameEntity,
+    facing: u16,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+) -> Option<u16> {
+    let facing = (facing >> 8) as u8;
     // Pass raw facing (not canonical) to resolve_shp_frame so the
     // facing-to-index division works correctly for any facing count
     // (6, 8, 10, etc.). The absolute frame index encodes the direction.

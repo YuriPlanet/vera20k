@@ -1484,7 +1484,10 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             }
         }
         let hover = hover_target_at_point(
-            sim,
+            crate::app::input::entity_pick::PresentedWorld {
+                sim,
+                interpolation: &state.match_state.match_presentation.interpolation,
+            },
             world_x,
             world_y,
             &owner,

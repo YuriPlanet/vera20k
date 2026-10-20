@@ -1936,7 +1936,7 @@ impl BatchRenderer {
         );
     }
 
-    fn draw_passthrough_range_bound<'a>(
+    pub(crate) fn draw_passthrough_range_bound<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
         texture: &'a BatchTexture,

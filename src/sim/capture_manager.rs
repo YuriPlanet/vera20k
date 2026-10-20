@@ -245,6 +245,9 @@ impl CaptureManagerState {
 /// without a second FLH, selection or timer owner. Colors use `owner`'s House.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CaptureLinkCoordinates {
+    /// Stable target identity lets presentation sample this endpoint without
+    /// guessing which overlapping actor supplied the coordinate.
+    pub victim: u64,
     pub from: crate::sim::components::DriveCoord,
     pub to: crate::sim::components::DriveCoord,
     pub owner: InternedId,
@@ -304,6 +307,7 @@ impl Simulation {
                     )
                     .coord;
                     Some(CaptureLinkCoordinates {
+                        victim: node.victim,
                         from: crate::sim::components::DriveCoord {
                             x: from.x,
                             y: from.y,

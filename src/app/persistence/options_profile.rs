@@ -122,6 +122,9 @@ pub(crate) struct RetailOptionsProfile {
     /// Whether the startup splash and the menu movie use Red Alert 2's art
     /// instead of Yuri's Revenge's: the Options page's RA2 Loading & Menu Movie.
     pub(crate) ra2_look: bool,
+    /// `[VERA] RenderInterpolation=`: client-only motion smoothing. This
+    /// prototype defaults on; it never changes the simulation rate or saves.
+    pub(crate) render_interpolation: bool,
     /// `[VERA] ShiftQueue=`: whether a Shift-click on a mobile strip queues
     /// [`Self::shift_queue_count`] builds: the Options page's Shift-Click
     /// Batch Queue. Off by default, so Shift + left click queues one copy as
@@ -193,6 +196,7 @@ impl Default for RetailOptionsProfile {
             original_shape: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             ra2_look: false,
+            render_interpolation: true,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             wol_test_service: false,
@@ -212,7 +216,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 8],
+    pub(crate) vera: [(&'static str, String); 9],
 }
 
 impl RetailOptionsLoad {
@@ -411,6 +415,8 @@ impl RetailOptionsProfile {
                 vera.read_int("Sidebar", self.sidebar.ini_value()),
             );
             self.ra2_look = vera.read_bool("RA2Look", self.ra2_look);
+            self.render_interpolation =
+                vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.shift_queue = vera.read_bool("ShiftQueue", self.shift_queue);
             // Absent keeps the current value; present-but-nonnumeric answers 0,
             // which the range lifts to 1 rather than a click that queues nothing.
@@ -505,6 +511,10 @@ impl RetailOptionsProfile {
                 (
                     "WolTestService",
                     format_bool(self.wol_test_service).to_string(),
+                ),
+                (
+                    "RenderInterpolation",
+                    format_bool(self.render_interpolation).to_string(),
                 ),
             ],
         }
@@ -1222,6 +1232,29 @@ mod tests {
         assert!(reread.retained_profile.shift_queue);
         assert!(reread.retained_profile.wol_test_service);
         assert_eq!(reread.retained_profile.shift_queue_count, 7);
+    }
+
+    #[test]
+    fn render_interpolation_preference_uses_the_existing_vera_profile_transaction() {
+        let startup = RetailStartupOptions::default();
+        assert!(
+            load_snapshot(&startup, b"")
+                .retained_profile
+                .render_interpolation
+        );
+        for (value, expected) in [("yes", true), ("no", false)] {
+            let input = format!("[VERA]\nRenderInterpolation={value}\nUnowned=keep\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            assert_eq!(profile.render_interpolation, expected);
+            let written = profile.transform_ra2md(input.as_bytes());
+            assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+            assert_eq!(
+                load_snapshot(&startup, &written)
+                    .retained_profile
+                    .render_interpolation,
+                expected
+            );
+        }
     }
 
     /// `read_int` answers 0 for a present-but-nonnumeric value and a hand-edited

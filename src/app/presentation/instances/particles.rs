@@ -20,10 +20,22 @@ use crate::render::tactical_draw_plan::{BlitPolicy, RenderZPolicy, SpriteEncodin
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::particle_type::ParticleBehavesLike;
 use crate::util::lepton::absolute_leptons_to_screen;
-use crate::util::native_x87::adjust_for_z_standard;
 
 use super::helpers::{compute_sprite_depth_params_lifted, projection_admitted};
 use super::overlays::DisplayEffectInputs;
+use crate::app::presentation::interpolation::{PointKind, PointPose, PointSample};
+
+fn sample(
+    input: &DisplayEffectInputs<'_>,
+    kind: PointKind,
+    id: u64,
+    pose: PointPose,
+) -> PointSample {
+    input.interpolation.map_or_else(
+        || pose.current(),
+        |cache| cache.sample_point(kind, id, pose, input.sim.session().binary_frame()),
+    )
+}
 
 /// Read-only projection of the actual piece submitted by this builder. It is
 /// collected only under the existing map diagnostic presentation policy.
@@ -119,7 +131,17 @@ pub(super) fn build_particle_system_instance(
     let Some(parent) = order.object_draw(system.stable_id(), SpriteEncoding::Plain) else {
         return;
     };
-    let point = absolute_leptons_to_screen(system.coords().x, system.coords().y, system.coords().z);
+    let painted = sample(
+        input,
+        PointKind::System,
+        system.stable_id(),
+        PointPose::new(
+            system.coords().to_array(),
+            system.type_id().0,
+            system.owner_entity(),
+        ),
+    );
+    let point = (painted.screen[0], painted.screen[1]);
     if system.in_limbo()
         || !projection_admitted([point.0, point.1], context.camera, context.viewport)
     {
@@ -131,7 +153,8 @@ pub(super) fn build_particle_system_instance(
         kind,
         &mut input.detail.borrow_mut(),
     );
-    if let Some(record) = record {
+    if let Some(mut record) = record {
+        record.coord = painted.projectile_coord();
         let mut planned = PlannedObjectInstance::object(parent, Vec::new());
         planned.body_draw = Some(ObjectBodyDraw::CombatLight(record));
         objects.push(planned);
@@ -143,11 +166,35 @@ pub(super) fn build_particle_system_instance(
 pub(super) fn build_spotlight_instance(
     input: &DisplayEffectInputs<'_>,
     id: u64,
-    light: crate::sim::world::BuildingSpotlight,
+    mut light: crate::sim::world::BuildingSpotlight,
     context: &ParticleDrawContext,
     objects: &mut Vec<PlannedObjectInstance>,
     order: &NativeDisplayOrder,
 ) {
+    if let Some(cache) = input.interpolation {
+        let original = light;
+        let mut next = 0;
+        let mut sample = |c| {
+            let kind = PointKind::Spotlight(next);
+            next += 1;
+            cache
+                .sample_draw_point(
+                    kind,
+                    id,
+                    PointPose::new(c, 0, None),
+                    input.sim.session().binary_frame(),
+                )
+                .coord
+        };
+        light.coord = sample(light.coord);
+        light.beam_origin = sample(light.beam_origin);
+        light.beam_edges = light.beam_edges.map(|edges| edges.map(&mut sample));
+        let lift = crate::util::native_x87::adjust_for_z_standard;
+        light.beam_z_adjust[0] -= lift(light.beam_origin[2]) - lift(original.beam_origin[2]);
+        if let Some((edge, old_edge)) = light.beam_edges.zip(original.beam_edges) {
+            light.beam_z_adjust[1] -= lift(edge[0][2]) - lift(old_edge[0][2]);
+        }
+    }
     let Some(parent) = order.object_draw(id, SpriteEncoding::Plain) else {
         return;
     };
@@ -212,11 +259,13 @@ pub(super) fn build_particle_instance(
     let camera = context.camera;
     let viewport = context.viewport;
     let axis = context.axis;
-    let point = absolute_leptons_to_screen(
-        particle.coords().x,
-        particle.coords().y,
-        particle.coords().z,
+    let painted = sample(
+        input,
+        PointKind::Particle,
+        particle.stable_id(),
+        PointPose::new(particle.coords().to_array(), particle.type_id().0, None),
     );
+    let point = (painted.screen[0], painted.screen[1]);
     if !projection_admitted([point.0, point.1], camera, viewport) {
         return;
     }
@@ -241,7 +290,7 @@ pub(super) fn build_particle_instance(
     if kind.behaves_like == ParticleBehavesLike::Spark {
         if let Some(spark) = particle.spark() {
             let command = crate::render::tactical_compat::SparkPointCommand {
-                world: particle.coords(),
+                world: painted.ivec3(),
                 start_rgb: spark.start_rgb,
                 color_index: spark.color_index,
                 color_accumulator: spark.color_accumulator,
@@ -314,7 +363,7 @@ pub(super) fn build_particle_instance(
     if flags & 6 != 0 {
         parent.policy = BlitPolicy::translucent(SpriteEncoding::Plain, RenderZPolicy::ReadOnly);
     }
-    let lift = adjust_for_z_standard(particle.coords().z);
+    let lift = painted.lift;
     let piece = ObjectPieceInstance {
         target: ObjectTexture::ShpPage(entry.page as usize),
         render_z: parent.policy.render_z,
@@ -328,7 +377,7 @@ pub(super) fn build_particle_instance(
                 axis.origin_y,
                 axis.world_height,
                 point.1,
-                lift,
+                lift.round() as i32,
             ),
             tint: crate::map::lighting::DEFAULT_TINT,
             alpha: 1.0,
@@ -337,7 +386,7 @@ pub(super) fn build_particle_instance(
             // global ANIM87F6C0, independently of cell lighting.
             palette_light: PaletteLight::plain(53, 1000),
             // 62D01D: this is the depth argument, not a screen-Y lift.
-            z_adjust: (-15i32).wrapping_sub(lift) as f32,
+            z_adjust: -15. - lift,
             z_gradient: ZGradient::Vertical as u32,
             ..Default::default()
         },

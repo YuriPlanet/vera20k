@@ -202,6 +202,7 @@ fn overlay_display_identity(
 /// Borrowed inputs to the one retained dynamic-effect traversal. App startup,
 /// platform windows and unrelated presentation resources are not draw inputs.
 pub(crate) struct DisplayEffectInputs<'a> {
+    pub interpolation: Option<&'a crate::app::presentation::interpolation::RenderInterpolation>,
     pub sim: &'a crate::sim::world::Simulation,
     pub rules: &'a crate::rules::ruleset::RuleSet,
     pub camera: [f32; 2],
@@ -364,7 +365,23 @@ pub(crate) fn build_display_effect_instances(
         let Some(anim_coord) = sim.anim_absolute_coord(anim.stable_id()) else {
             continue;
         };
-        let (center_x, center_y, rx, ry, _, lift_px) = anim_world_render_coords(anim_coord);
+        let (mut center_x, mut center_y, rx, ry, _, mut lift_px) =
+            anim_world_render_coords(anim_coord);
+        if let Some(interpolation) = input.interpolation {
+            use crate::app::presentation::interpolation::{PointKind, PointPose};
+            let sample = interpolation.sample_point(
+                PointKind::Anim,
+                stable_id,
+                PointPose::new(
+                    [anim_coord.x, anim_coord.y, anim_coord.z],
+                    anim.type_id().index(),
+                    anim.owner_entity(),
+                ),
+                sim.session().binary_frame(),
+            );
+            [center_x, center_y] = sample.screen;
+            lift_px = sample.lift.round() as i32;
+        }
         if !in_view(
             center_x, center_y, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0,
         ) {
@@ -1090,9 +1107,39 @@ pub(crate) fn build_weapon_wave_instances(
         state.match_state.input.camera_y,
     ]
     .map(|value| value.floor() as i32);
-    for (id, draw) in
-        crate::app::presentation::fire_effects::build_magnetic_wave_draws(sim, observer, camera)
+    let cache = &state.match_state.match_presentation.interpolation;
+    let sample = |id, index, p: [i32; 2]| {
+        use crate::app::presentation::interpolation::{PointKind, PointPose};
+        let [x, y, _] = cache
+            .sample_draw_point(
+                PointKind::Wave(index),
+                id,
+                PointPose::new([p[0], p[1], 0], 0, None),
+                sim.session().binary_frame(),
+            )
+            .coord;
+        [x, y]
+    };
+    for (id, mut draw) in
+        crate::app::presentation::fire_effects::build_magnetic_wave_draws(sim, observer, [0, 0])
     {
+        for (i, p) in draw.polygon.iter_mut().enumerate() {
+            let p0 = sample(id, i as u8, *p);
+            *p = [p0[0] - camera[0], p0[1] - camera[1]];
+        }
+        let p = sample(id, 6, draw.source_point);
+        draw.source_point = [p[0] - camera[0], p[1] - camera[1]];
+        {
+            use crate::app::presentation::interpolation::{PointKind, PointPose};
+            draw.source_z = cache
+                .sample_draw_point(
+                    PointKind::Wave(7),
+                    id,
+                    PointPose::new([0, 0, draw.source_z], 0, None),
+                    sim.session().binary_frame(),
+                )
+                .coord[2];
+        }
         use crate::app::presentation::render::draw_plan_lowering::{
             ObjectBodyDraw, PlannedObjectInstance,
         };
@@ -1109,7 +1156,11 @@ pub(crate) fn build_weapon_wave_instances(
         let projected: Vec<[f32; 2]> = wave
             .polygon
             .into_iter()
-            .map(|[x, y]| [x as f32, y as f32])
+            .enumerate()
+            .map(|(i, p)| {
+                let [x, y] = sample(wave.id, i as u8, p);
+                [x as f32, y as f32]
+            })
             .collect();
         instances.extend(crate::render::wave_geometry::build_wave_instances(
             &projected, wave.tint, 1.0, 0.00045,
@@ -1150,6 +1201,7 @@ pub(crate) fn build_parachute_instances(
     input: &DisplayEffectInputs<'_>,
     ground_objects: &mut [crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance],
     body_depths: &super::shp::ParachuteBodyDepths,
+    interpolation: Option<&crate::app::presentation::interpolation::RenderInterpolation>,
 ) {
     /// Depth epsilon — chute sorts slightly above the GI body. Half of the
     /// per-Z bias used in `compute_sprite_depth_params`. Increase if
@@ -1205,7 +1257,13 @@ pub(crate) fn build_parachute_instances(
         };
         // Draw the chute exactly where the body is drawn, so it follows the
         // airborne GI rather than the ground beneath it.
-        let (gx, gy) = crate::render::locomotor_visual::screen_position(entity);
+        let (gx, gy) = interpolation.map_or_else(
+            || crate::render::locomotor_visual::screen_position(entity),
+            |interpolation| {
+                let pose = interpolation.sample_entity(entity, sim.session().binary_frame());
+                (pose.screen[0], pose.screen[1])
+            },
+        );
         if !in_view(gx, gy, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0) {
             continue;
         }

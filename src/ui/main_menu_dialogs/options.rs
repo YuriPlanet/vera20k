@@ -66,6 +66,8 @@ pub(crate) const ORIGINAL_SHAPE_HELP: &str =
     "Battles keep the original 4:3 shape, with bars on wide screens.";
 pub(crate) const RA2_LOOK_LABEL: &str = "RA2 Loading & Menu Movie";
 pub(crate) const RA2_LOOK_HELP: &str = "Show the Red Alert 2 loading screen and menu movie.";
+pub(crate) const RENDER_INTERPOLATION_LABEL: &str = "Render Interpolation";
+pub(crate) const RENDER_INTERPOLATION_HELP: &str = "Smooth motion between simulation frames. Adds one frame of visual latency; does not increase simulation speed.";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
 pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "Developer Options";
 pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "Offline Internet Test Service";
@@ -352,6 +354,8 @@ pub(crate) enum LauncherCheckboxId {
     /// service instead of showing that WOLAPI is missing. The next Internet
     /// visit reads it.
     WolTestService,
+    /// Client-only smoothing, independent of native simulation and detail.
+    RenderInterpolation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,6 +380,7 @@ pub(crate) enum LauncherOptionsEvent {
     Ra2LookChanged(bool),
     ShiftQueueChanged(bool),
     WolTestServiceChanged(bool),
+    RenderInterpolationChanged(bool),
     ScorePreview(f32),
     SoundPreview(f32),
     VoicePreview(f32),
@@ -410,6 +415,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) full_screen: bool,
     pub(crate) original_shape: bool,
     pub(crate) ra2_look: bool,
+    pub(crate) render_interpolation: bool,
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
@@ -431,6 +437,7 @@ impl Default for LauncherOptionsValues {
             full_screen: false,
             original_shape: false,
             ra2_look: false,
+            render_interpolation: true,
             shift_queue: false,
             wol_test_service: false,
             sidebar: SidebarSize::Normal,
@@ -720,6 +727,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::Ra2Look => &mut self.values.ra2_look,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
             LauncherCheckboxId::WolTestService => &mut self.values.wol_test_service,
+            LauncherCheckboxId::RenderInterpolation => &mut self.values.render_interpolation,
         };
         *slot = !*slot;
         let checked = *slot;
@@ -741,6 +749,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::WolTestService => self
                 .pending_events
                 .push(LauncherOptionsEvent::WolTestServiceChanged(checked)),
+            LauncherCheckboxId::RenderInterpolation => self
+                .pending_events
+                .push(LauncherOptionsEvent::RenderInterpolationChanged(checked)),
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
             | LauncherCheckboxId::ShowHidden => {}

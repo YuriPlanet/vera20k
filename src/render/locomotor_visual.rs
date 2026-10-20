@@ -100,6 +100,26 @@ pub fn screen_position(entity: &GameEntity) -> (f32, f32) {
     (sx, sy - height_lift_px(entity))
 }
 
+/// Both render anchors for a consumer that needs position AND lift. Exact-Z
+/// objects share the same native AdjustForZ evaluation rather than requesting
+/// it again through screen_lift_px. Keep the stored-level fallback unchanged:
+/// its projection and depth lift are deliberately different paths.
+pub(crate) fn screen_position_and_lift(entity: &GameEntity) -> ((f32, f32), i32) {
+    if let Some(z) = entity.position.exact_z_leptons() {
+        let (sx, sy) = z_free_screen_position(&entity.position);
+        // Standard AdjustForZ(0) is exactly 0, including its +0.5/chop.
+        // This common ground-level case need not enter the x87 evaluator.
+        let lift = if z == 0 {
+            0
+        } else {
+            crate::util::native_x87::adjust_for_z_standard(z)
+        };
+        ((sx, sy - lift as f32), lift)
+    } else {
+        (screen_position(entity), screen_lift_px(entity))
+    }
+}
+
 /// [`screen_position`] of `entity`'s coordinate moved `distance` leptons along
 /// `facing`, at the same Z: the full-direction step Walk and Fly take
 /// ([`crate::util::native_trig::facing_step_world_xy`]), then the same

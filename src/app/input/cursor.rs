@@ -283,7 +283,7 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         ));
     }
     let hover = crate::app::input::entity_pick::hover_target_at_point(
-        sim,
+        crate::app::input::entity_pick::presented(state, sim),
         world_x,
         world_y,
         &owner,
