@@ -1229,7 +1229,9 @@ use crate::util::save_codec;
 // references in typed TechnoType prerequisites.
 // 460 -> 461: a Tiberium queue's heap is the shared native heap: its slots
 // lose the unused slot 0 and its size word replaces the queue's capacity.
-const SNAPSHOT_VERSION: u32 = 461;
+// 461 -> 463: retained Country starting-veterancy lists in ProcessedType.
+// Schema462 is allocated by the separate custom-armor chain.
+const SNAPSHOT_VERSION: u32 = 463;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10244,6 +10246,7 @@ mod tests {
         // 458 -> 459: the retained Rules/build extension capability.
         // 459 -> 460: retained generic prerequisite definitions.
         // 460 -> 461: Tiberium queues hold the shared native heap.
-        assert_eq!(super::SNAPSHOT_VERSION, 461);
+        // 461 -> 463: retain Country veteran membership in saved Rules.
+        assert_eq!(super::SNAPSHOT_VERSION, 463);
     }
 }

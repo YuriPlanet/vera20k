@@ -2683,3 +2683,6 @@ fn a_building_s_ai_repair_byte_follows_its_map_line_or_its_computer_owner() {
         );
     }
 }
+
+#[path = "country_veterancy_tests.rs"]
+mod country_veterancy_tests;

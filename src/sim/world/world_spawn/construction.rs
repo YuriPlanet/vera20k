@@ -301,10 +301,17 @@ impl Simulation {
         // constructor `0x0073563D..0x00735678` and InitFromType
         // `0x00746860..0x0074689B` alike) and such a building that undeploys
         // (`BuildingClass::Init_Managers`, `0x00442CD8..0x00442D0F`).
-        // Aircraft read neither. The countries' `VeteranInfantry=` and
-        // `VeteranUnits=` lists before them (`0x00517CE8`, `0x0074682B`) are
-        // dormant: no retail country sets one.
+        // Country list membership runs first and has no Trainable/Naval
+        // restriction: Infantry517CE7, Unit735604/746827, and the reached
+        // Aircraft InitFromType413F98 called by constructor413E2E.
+        // Aircraft read VeteranAircraft but neither of the spy flags below.
+        // Evidence: tools/rules_oracle/country_veterancy.md.
         let house = houses.get(&ge.owner());
+        if let (Some(house), Some(rules)) = (house, rules)
+            && rules.country_starts_veteran(interner.resolve(house.house_type_id()), obj)
+        {
+            ge.veterancy.set_veteran();
+        }
         let veteran = obj.trainable
             && house.is_some_and(|house| match category {
                 EntityCategory::Infantry => house.veteran_infantry(),

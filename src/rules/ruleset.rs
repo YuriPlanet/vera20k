@@ -27,7 +27,7 @@ use crate::rules::error::RulesError;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::mission_data::MissionControl;
 use crate::rules::native_processing::{
-    ProcessedRulesLayers, RulesLayerStack, house_type_index_of_name,
+    CountryVeterancyLists, ProcessedRulesLayers, RulesLayerStack, house_type_index_of_name,
 };
 use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
 use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeId};
@@ -63,6 +63,8 @@ mod multiplayer_rules_tests;
 /// Country-level fields needed by gameplay systems.
 #[derive(Debug, Clone)]
 pub struct CountryRules {
+    /// Retained HouseType+14C/+168/+184 lists projected by their process owner.
+    veteran_types: CountryVeterancyLists,
     /// Native HouseType+C0, initialized0 at51141C and read through
     /// ReadColor474A90 at51193D with the current index as default. The
     /// Process owner supplies the typed value from each actual catalog pass.
@@ -167,6 +169,7 @@ impl Default for CountryRules {
         // wipe out all ore income for any house built from the default. The neutral 1.0
         // multiplier is `INCOME_PPM_SCALE`, not 0.
         Self {
+            veteran_types: CountryVeterancyLists::default(),
             color_scheme: 0,
             multiplay: false,
             multiplay_passive: false,
@@ -196,8 +199,9 @@ impl Default for CountryRules {
 impl CountryRules {
     fn from_ini_section(section: &crate::rules::ini_parser::IniSection) -> Self {
         Self {
-            // Filled from the typed Process receipt, never by resolving an
-            // earlier projected string against the final Colors registry.
+            // Filled from the typed Process receipt; neither veteran lists
+            // nor earlier Color strings are re-resolved against final catalogs.
+            veteran_types: CountryVeterancyLists::default(),
             color_scheme: 0,
             multiplay: section.read_bool("Multiplay", Self::default().multiplay),
             multiplay_passive: section.read_bool("MultiplayPassive", false),
@@ -5717,9 +5721,15 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // v29: BuildingType upgrade inputs retain prior Rules-pass values.
-        b"rules-simulation-config-v29".hash(&mut hasher);
+        // v31: retain Country starting-veterancy type membership across Rules passes.
+        b"rules-simulation-config-v31".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        b"country-starting-veterancy-v1".hash(&mut hasher);
+        self.countries
+            .iter()
+            .map(|(id, country)| (id.to_ascii_uppercase(), &country.veteran_types))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         self.object_list
             .iter()
             .filter(|object| object.category == ObjectCategory::Building)
@@ -6473,7 +6483,7 @@ impl RuleSet {
     /// localized UIName; the app catalog owns that presentation check.
     pub(crate) fn refresh_country_side_projection<'a>(
         &mut self,
-        countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32)>,
+        countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32, &'a CountryVeterancyLists)>,
         sides: impl Iterator<Item = &'a str>,
     ) {
         let projection = project_country_side_registry(countries, sides);
@@ -6483,6 +6493,15 @@ impl RuleSet {
         self.side_ids = projection.side_ids;
         self.side_indices = projection.side_indices;
         self.country_sides = projection.country_sides;
+    }
+
+    /// Native Country veteran-list membership uses the current HouseType,
+    /// not ParentCountry, and is independent of Trainable/Naval/spy state.
+    /// Starting-rank callers: Infantry517CE7, Unit735604/746827,
+    /// Aircraft413F98. Building construction reads no such list.
+    pub fn country_starts_veteran(&self, country: &str, object: &ObjectType) -> bool {
+        self.country_rules(country)
+            .is_some_and(|rules| rules.veteran_types.contains(object.category, &object.id))
     }
 
     pub fn country_multiplay(&self, id: &str) -> bool {
@@ -7395,10 +7414,16 @@ impl RuleSet {
 fn parse_registry(ini: &IniFile, section_name: &str) -> Vec<String> {
     match ini.section(section_name) {
         Some(section) => {
+            // Every caller consumes NativeRulesRegistryState::finish's
+            // projected stored IDs. The original registry ReadString32 and
+            // constructor410800 truncation already ran there. Re-reading
+            // them would trim valid list-created IDs such as " TWO" and lose
+            // the Type pointer identity retained by Country veteran lists.
             let raw: Vec<String> = section
-                .keys()
-                .map(|key| section.read_string(key, "", 32))
+                .registry_ids()
+                .into_iter()
                 .filter(|value| !value.is_empty())
+                .map(str::to_owned)
                 .collect();
             // TypeClass identity is case-insensitive find-or-allocate. Preserve
             // declaration order while keeping the first spelling of an identity.
@@ -7440,7 +7465,7 @@ struct ProjectedCountrySideRegistry {
 /// reached-pass order; reconstructing those decisions from merged text would
 /// invent Countries, lose prior Side vectors and change allocation chronology.
 fn project_country_side_registry<'a>(
-    countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32)>,
+    countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32, &'a CountryVeterancyLists)>,
     sides: impl Iterator<Item = &'a str>,
 ) -> ProjectedCountrySideRegistry {
     let side_ids: Vec<String> = sides.map(str::to_owned).collect();
@@ -7456,7 +7481,7 @@ fn project_country_side_registry<'a>(
     let mut country_indices = HashMap::new();
     let mut country_sides = Vec::new();
     let mut rules = HashMap::new();
-    for (id, section, color, side) in countries {
+    for (id, section, color, side, veteran) in countries {
         let index = CountryIdx(
             u16::try_from(country_ids.len()).expect("[Countries] exceeds u16 identity space"),
         );
@@ -7472,6 +7497,7 @@ fn project_country_side_registry<'a>(
         rules.entry(id.to_owned()).or_insert_with(|| {
             let mut fields = CountryRules::from_ini_section(section);
             fields.color_scheme = color;
+            fields.veteran_types = veteran.clone();
             fields
         });
     }
