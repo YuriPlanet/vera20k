@@ -39,7 +39,10 @@ VERA20K is made by gamers, for gamers, and gamers have the final say in where it
 - **AI:** Parts of the original AI handle base building and scripted attacks.
 - **Ongoing work:** Gameplay accuracy, visuals and performance.
 - **Multiplayer:** Network play is not available yet.
-- **Scale:** Battles with 30 players and 20,000 units have not yet been demonstrated.
+- **Scale:** 30 houses and 20,000 units have been demonstrated headlessly (`sim-bench`
+  on a 500×500 map, 1,800 ticks, deterministic state hashes across repeated runs);
+  the heaviest scenarios still cost more than the 22 ms real-time tick budget,
+  so performance work continues.
 
 ## Architecture
 
