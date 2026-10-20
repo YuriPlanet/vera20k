@@ -302,6 +302,9 @@ pub struct DiplomacyView {
     pub chat_header: bool,
     /// 0x426 MPGameMode title, set only in LAN/WOL; otherwise `GUI:Blank`.
     pub mode_name: Option<String>,
+    /// 0x730 TauntsOn: shown, never disabled, with the mode's check in
+    /// LAN/WOL; `None` (hidden) otherwise.
+    pub taunts: Option<bool>,
     /// 0x71B: the selected scenario's description (Session+0xEA).
     pub map_name: String,
 }
@@ -340,13 +343,14 @@ impl DiplomacyView {
             .chain(row_controls)
             .chain(headers.map(DiplomacyControl::Header))
             .chain([DiplomacyControl::ModeName, DiplomacyControl::MapName])
+            .chain(self.taunts.map(|_| DiplomacyControl::Taunts))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::shell::in_game_shell::InGameShellSizes;
+    use crate::ui::shell::in_game_shell::allied_fixture_layout as shell;
 
     fn corpus() -> serde_json::Value {
         serde_json::from_str(crate::test_fixture::text(
@@ -378,40 +382,6 @@ mod tests {
 
     /// The Allied shell at a stock resolution, from the executed geometry
     /// fixture's loaded canvas sizes.
-    fn shell(width: i32, height: i32) -> InGameShellLayout {
-        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/storage_oracle/in_game_shell_geometry.json",
-        ))
-        .unwrap();
-        let assets = &fixture["assets"]["allied"];
-        let size = |address: &str| {
-            [
-                assets[address]["width"].as_i64().unwrap() as i32,
-                assets[address]["height"].as_i64().unwrap() as i32,
-            ]
-        };
-        InGameShellLayout::new(
-            width,
-            height,
-            InGameShellSizes {
-                background_small: size("00b0fad4"),
-                background_medium: size("00b0fac8"),
-                background_large: size("00b0fa50"),
-                credits: size("00b0fb08"),
-                top: size("00b0f9e0"),
-                radar: size("00b0fa68"),
-                side1: size("00b0fa70"),
-                side2: size("00b0fafc"),
-                side3: size("00b0fa8c"),
-                addon: size("00b0fa48"),
-                bottom_spacer: size("00b0fa3c"),
-                left_cap: size("00b0fa90"),
-                button_background: size("00b0faa8"),
-                right_cap: size("00b0fabc"),
-            },
-        )
-        .unwrap()
-    }
 
     /// Every ordinary child lands where original 0x0060B7A0 put it at 640x480,
     /// 800x600 and 1024x768, from the pinned template's own rects.
@@ -462,15 +432,16 @@ mod tests {
     /// Resume and footer places (0x00608D4B, 0x006097AB, 0x00601360).
     #[test]
     fn title_return_and_status_line_share_the_pause_menu_placements() {
-        use crate::ui::shell::pause_menu::{PauseMenuButton, pause_menu_layout};
+        use crate::ui::shell::pause_menu::{PauseMenuButton, PauseMenuTemplate, pause_menu_layout};
         for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
             let shell = shell(width, height);
             let layout = diplomacy_layout(width, height, shell, [125, 25]);
-            let pause = pause_menu_layout(width, height, shell, [125, 25]);
+            let pause =
+                pause_menu_layout(width, height, shell, [125, 25], PauseMenuTemplate::Offline);
             assert_eq!(layout.title, pause.title);
             assert_eq!(
                 layout.return_button,
-                pause.buttons[PauseMenuButton::Resume as usize]
+                pause.button(PauseMenuButton::Resume).unwrap()
             );
             assert_eq!(layout.status_line, pause.footer);
         }
@@ -535,5 +506,12 @@ mod tests {
         assert_eq!(view.control_at(&layout, name2.x, name2.y), None);
         view.rows[1] = Some(row(None));
         assert_eq!(view.control_at(&layout, allies.x, allies.y), None);
+        let taunts = layout.taunts;
+        assert_eq!(view.control_at(&layout, taunts.x, taunts.y), None);
+        view.taunts = Some(false);
+        assert_eq!(
+            view.control_at(&layout, taunts.x, taunts.y),
+            Some(DiplomacyControl::Taunts)
+        );
     }
 }

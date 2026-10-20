@@ -86,6 +86,8 @@ pub(super) fn encode_blank_loading_frame(
 pub(super) fn present_blank(
     gpu: &GpuContext,
     presenter: &ShellSurfacePresenter,
+    batch: &BatchRenderer,
+    fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
 ) -> anyhow::Result<()> {
     let output = gpu
         .surface
@@ -97,6 +99,7 @@ pub(super) fn present_blank(
             label: Some("Game Mode Blank"),
         });
     encode_blank(presenter, &mut encoder, &output.texture);
+    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present();
     Ok(())
@@ -838,6 +841,7 @@ pub(super) fn present_native_loading(
     depth_view: &wgpu::TextureView,
     batch: &BatchRenderer,
     font: &BitFont,
+    fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
     atlas: &LoadingScreenAtlas,
     composition: Option<&LoadingCompositionSnapshot>,
     campaign: Option<&CampaignLoadingPresentation>,
@@ -881,6 +885,7 @@ pub(super) fn present_native_loading(
         &mut encoder,
         &output.texture,
     )?;
+    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present();
     Ok(())

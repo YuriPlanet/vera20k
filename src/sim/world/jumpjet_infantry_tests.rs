@@ -119,6 +119,7 @@ pub(super) fn retail_dustbowl_rocketeer()
                     (px as i16, py as i16),
                     Some(owner_id),
                     None,
+                    None,
                 )
                 .then(|| sim.spawn_object(plant, owner, px, py, 0, &resources.rules))
                 .flatten()
@@ -131,7 +132,7 @@ pub(super) fn retail_dustbowl_rocketeer()
         ("RUSSIANS", "PLAYER"),
         ("PLAYER", "RUSSIANS"),
     ] {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(house.to_string())
             .or_default()
             .insert(ally.to_string());
@@ -848,7 +849,7 @@ fn rocketeer_crash_fixture(
             RevealOutcome::Revealed { .. }
         ));
     };
-    assert_eq!(sim.allocate_stable_id(), 1);
+    assert_eq!(sim.substrate.allocate_stable_id(), 1);
     let americans = sim.interner.intern("Americans");
     let jumpjet = sim.interner.intern("JUMPJET");
     let mut rocketeer = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
@@ -910,8 +911,8 @@ fn rocketeer_crash_fixture(
     if height > 0 {
         // This oracle midpoint is already airborne: native takeoff has added
         // its tracker entry before the held-cell slot is established.
-        sim.aircraft_tracker_add(1);
-        assert!(sim.set_cell_air_slot((52, 52), Some(1)));
+        crate::sim::world::Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
+        assert!(sim.substrate.set_cell_air_slot((52, 52), Some(1)));
     }
     // The row's action, started by Do_Action (forced) as the oracle starts it.
     let doing = input["doing"].as_i64().unwrap() as i32;
@@ -929,7 +930,7 @@ fn rocketeer_crash_fixture(
     }
     let shooter_type = sim.interner.intern("SHOOTER");
     let soviets = sim.interner.intern("Soviets");
-    let shooter = sim.allocate_stable_id();
+    let shooter = sim.substrate.allocate_stable_id();
     let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
         shooter,
         40,

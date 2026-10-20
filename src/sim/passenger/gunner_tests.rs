@@ -409,7 +409,8 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
     let bytes = GameSnapshot::save(&sim, 0, 0, "nested repair IFV", 0);
     let mut dangling = GameSnapshot::load(&bytes).unwrap().sim;
     dangling
-        .entities_mut()
+        .substrate
+        .entities
         .get_mut(ifv)
         .unwrap()
         .passenger_role
@@ -667,7 +668,7 @@ fn retail_gi_ifv_fires_its_selected_weapon_without_changing_the_turret() {
     ));
     let mut fired = false;
     for _ in 0..120 {
-        sim.fire_events.clear();
+        sim.fire_events.clear_for_test();
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
         assert_selection(&sim, ifv, (2, 1));
         if let Some(event) = sim
@@ -758,7 +759,7 @@ fn temporal_attack_arena(rules: &RuleSet) -> (Simulation, PathGrid, u64, u64, u6
     ));
     let mut fired = false;
     for _ in 0..120 {
-        sim.fire_events.clear();
+        sim.fire_events.clear_for_test();
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
         fired |= sim.fire_events.iter().any(|event| event.attacker_id == ifv);
         if fired && entity(&sim, target).temporal.is_warped() {
@@ -803,7 +804,7 @@ fn retail_boarding_plays_the_transports_enter_transport_sound() {
     ));
     let location =
         crate::sim::movement::ground_pose::position_world_coord(&entity(&sim, ifv).position);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     for _ in 0..180 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
         if entity(&sim, passenger).passenger_role.is_inside_transport() {
@@ -1121,7 +1122,7 @@ fn retail_a_refused_move_here_breaks_the_passengers_contact() {
     let ifv = sim.spawn_object("FV", OWNER, 16, 16, 64, rules).unwrap();
     let gi = sim.spawn_object("E1", OWNER, 15, 16, 64, rules).unwrap();
     let enter = crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Enter);
-    sim.mission_assign_exact(gi, enter, 0).unwrap();
+    sim.substrate.mission_assign_exact(gi, enter, 0).unwrap();
     assert_eq!(
         crate::sim::radio::transmit(
             &mut sim,

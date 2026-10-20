@@ -1875,6 +1875,21 @@ impl ArtRegistry {
         roots.into_iter().collect()
     }
 
+    /// Project the retained BuildingType record, even when its current Image
+    /// has no ART section. Names/offsets never come from a second flat read.
+    /// Legacy frame fields use their existing defaults: actual AnimClass
+    /// timing comes from its registered AnimType runtime owner on allocation.
+    pub fn building_power_up_config(
+        &self,
+        slot: u8,
+        record: &crate::rules::building_upgrade::BuildingPowerUpArt,
+    ) -> BuildingAnimConfig {
+        let empty = IniFile::empty();
+        power_up_config(slot, record, |name| {
+            parse_building_anim_variant(name.to_owned(), &empty)
+        })
+    }
+
     /// Mutable lookup; case-insensitive on the key.
     pub fn get_mut(&mut self, image_id: &str) -> Option<&mut ArtEntry> {
         let name = self.entry_names.get(&image_id.to_uppercase())?;
@@ -2177,6 +2192,16 @@ fn parse_building_anims(section: &IniSection, ini: &IniFile) -> Vec<BuildingAnim
     let mut anims: Vec<BuildingAnimConfig> = Vec::new();
 
     for &(base, suffixes, first_slot) in BUILDING_ANIM_KEYS {
+        if first_slot < 3 {
+            // Immutable declarations serve asset-root discovery only. Reuse
+            // the native reader; runtime consumers use the retained Type row.
+            let mut record = crate::rules::building_upgrade::BuildingPowerUpArt::default();
+            record.read_pass(section, usize::from(first_slot));
+            anims.push(power_up_config(first_slot, &record, |name| {
+                parse_building_anim_variant(name.to_owned(), ini)
+            }));
+            continue;
+        }
         let kind: BuildingAnimKind = match base {
             "ActiveAnim" => BuildingAnimKind::Active,
             "IdleAnim" => BuildingAnimKind::Idle,
@@ -2187,11 +2212,7 @@ fn parse_building_anims(section: &IniSection, ini: &IniFile) -> Vec<BuildingAnim
         };
         for (ordinal, &suffix) in suffixes.iter().enumerate() {
             let key: String = format!("{}{}", base, suffix);
-            let damaged_key = if first_slot < 3 {
-                format!("PowerUp{}DamagedAnim", first_slot + 1)
-            } else {
-                format!("{key}Damaged")
-            };
+            let damaged_key = format!("{key}Damaged");
             // Each anim name reads into `char[16]` (`0x004617CF` and its 56
             // siblings).
             let anim_type = section.read_string(&key, "", 0x10);
@@ -2201,26 +2222,10 @@ fn parse_building_anims(section: &IniSection, ini: &IniFile) -> Vec<BuildingAnim
                 continue;
             }
 
-            let x_key = if first_slot < 3 {
-                format!("PowerUp{}LocXX", first_slot + 1)
-            } else {
-                format!("{key}X")
-            };
-            let y_key = if first_slot < 3 {
-                format!("PowerUp{}LocYY", first_slot + 1)
-            } else {
-                format!("{key}Y")
-            };
-            let z_key = if first_slot < 3 {
-                format!("PowerUp{}LocZZ", first_slot + 1)
-            } else {
-                format!("{key}ZAdjust")
-            };
-            let sort_key = if first_slot < 3 {
-                format!("PowerUp{}YSort", first_slot + 1)
-            } else {
-                format!("{key}YSort")
-            };
+            let x_key = format!("{key}X");
+            let y_key = format!("{key}Y");
+            let z_key = format!("{key}ZAdjust");
+            let sort_key = format!("{key}YSort");
             let x: i32 = section.read_int(&x_key, 0);
             let y: i32 = section.read_int(&y_key, 0);
             let y_sort: i32 = section.read_int(&sort_key, 0);
@@ -2265,6 +2270,33 @@ fn parse_building_anim_variant(anim_type: String, ini: &IniFile) -> BuildingAnim
         start_frame: anim_section.read_int("Start", 0) as u16,
         ping_pong: anim_section.read_bool("PingPong", false),
         anim_type,
+    }
+}
+
+fn power_up_config(
+    slot: u8,
+    record: &crate::rules::building_upgrade::BuildingPowerUpArt,
+    variant: impl Fn(&str) -> BuildingAnimVariantConfig,
+) -> BuildingAnimConfig {
+    let normal = variant(record.normal_name());
+    let [x, y, z_adjust] = record.location();
+    BuildingAnimConfig {
+        native_slot: slot,
+        anim_type: normal.anim_type,
+        damaged_variant: record.damaged_name().map(variant),
+        garrisoned_variant: None,
+        kind: BuildingAnimKind::Special,
+        is_primary: true,
+        x,
+        y,
+        y_sort: record.y_sort(),
+        z_adjust,
+        loop_start: normal.loop_start,
+        loop_end: normal.loop_end,
+        loop_count: normal.loop_count,
+        rate: normal.rate,
+        start_frame: normal.start_frame,
+        ping_pong: normal.ping_pong,
     }
 }
 

@@ -144,7 +144,7 @@ fn scene(rules: &RuleSet, input: &Value) -> (Simulation, u64, u64) {
     sim.resolve_type_handles(rules);
     sim.session
         .set_binary_frame_for_test(int(&input["birth_frame"]) as u32);
-    sim.power_states.clear();
+    sim.power_states.map_mut_for_test().clear();
     if input["retained_target"].as_bool().unwrap() {
         assert!(super::install_entity_attack_target_for_test(
             &mut sim.substrate.entities,
@@ -157,7 +157,7 @@ fn scene(rules: &RuleSet, input: &Value) -> (Simulation, u64, u64) {
         .get_mut(source)
         .unwrap()
         .set_gunner_selection_for_test(int(&input["current_weapon_number"]), 0);
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     (sim, source, target)
 }
 
@@ -249,7 +249,7 @@ fn retail_birth_fields_match_native_with_documented_flh_residual() {
         let (mut sim, source, target) = scene(&rules, input);
         restore_rng(&mut sim, &row["rng_before"]);
         sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
-        let stable_before = sim.substrate.next_stable_object_id;
+        let stable_before = sim.next_stable_object_id();
         electric_bolt::fired(
             &mut sim,
             &rules,
@@ -285,7 +285,7 @@ fn retail_birth_fields_match_native_with_documented_flh_residual() {
             "{name} Spark ctor count"
         );
         assert_eq!(
-            sim.substrate.next_stable_object_id - stable_before,
+            sim.next_stable_object_id() - stable_before,
             native_calls.len() as u64,
             "{name} EBolt has no stable simulation object"
         );

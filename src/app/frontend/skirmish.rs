@@ -734,6 +734,7 @@ mod tests {
                     side: None,
                     player_control: None,
                     iq: 0,
+                    ui_name: None,
                     allies: 0,
                     base_plan: Default::default(),
                 },
@@ -744,6 +745,7 @@ mod tests {
                     side: Some("Allies".to_string()),
                     player_control: Some(true),
                     iq: 0,
+                    ui_name: None,
                     allies: 0,
                     base_plan: Default::default(),
                 },
@@ -1357,7 +1359,7 @@ mod tests {
         sim.houses_mut_for_test()
             .register(HouseState::new(observer, 0, None, false, 10_000, 10));
 
-        apply_skirmish_ai_opening_credits(&mut sim, &rules);
+        apply_skirmish_ai_opening_credits(sim.houses_mut_for_test(), &rules);
 
         let credits = |owner: &str| {
             crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
@@ -1401,12 +1403,12 @@ mod tests {
             .set_credits_for_test(12_345);
 
         rules.general.multiplayer_ai_cm = Vec::new();
-        apply_skirmish_ai_opening_credits(&mut sim, &rules);
+        apply_skirmish_ai_opening_credits(sim.houses_mut_for_test(), &rules);
         assert_eq!(sim.houses()[&ai].economy().credits(), 12_345);
 
         // 7 * 0.01 * 12345 = 864.15... -> 864 under chop.
         rules.general.multiplayer_ai_cm = vec![7, 0, 0];
-        apply_skirmish_ai_opening_credits(&mut sim, &rules);
+        apply_skirmish_ai_opening_credits(sim.houses_mut_for_test(), &rules);
         assert_eq!(sim.houses()[&ai].economy().credits(), 12_345 + 864);
     }
 
@@ -2295,7 +2297,7 @@ mod tests {
         );
         assert_eq!(result.spawned_mcvs, 2);
 
-        apply_skirmish_ai_opening_credits(&mut sim, &rules);
+        apply_skirmish_ai_opening_credits(sim.houses_mut_for_test(), &rules);
 
         let credits = |owner: &str| {
             crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())

@@ -166,14 +166,42 @@ pub enum BridgeDirection {
     Low,
 }
 
+impl BridgeDirection {
+    /// The direction of a bridge overlay class: BRIDGE1/BRIDGEB1 (24/237) run
+    /// EW, BRIDGE2/BRIDGEB2 (25/238) NS, and every other bridge overlay is low.
+    pub fn from_overlay_id(overlay_id: u8) -> Self {
+        match overlay_id {
+            24 | 237 => Self::EastWest,
+            25 | 238 => Self::NorthSouth,
+            _ => Self::Low,
+        }
+    }
+}
+
+/// The deck a bridge overlay identity projects onto its cell. OverlayGrid owns
+/// the identity itself.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct BridgeLayer {
-    pub overlay_id: u8,
-    pub overlay_name: String,
     /// Bridge deck height level (ground level + offset).
     pub deck_level: u8,
     /// Bridge direction — determines height offset and rendering.
     pub direction: BridgeDirection,
+}
+
+impl BridgeLayer {
+    /// A high deck sits four levels above `level` (HighBridgeHeight=4); a low
+    /// deck sits at ground level.
+    pub fn for_overlay(overlay_id: u8, level: u8) -> Self {
+        let direction = BridgeDirection::from_overlay_id(overlay_id);
+        let deck_level = match direction {
+            BridgeDirection::Low => level,
+            BridgeDirection::EastWest | BridgeDirection::NorthSouth => level.saturating_add(4),
+        };
+        Self {
+            deck_level,
+            direction,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -308,6 +336,17 @@ impl ResolvedTerrainCell {
 
     pub fn bridge_deck_level_if_any(&self) -> Option<u8> {
         self.has_bridge_deck.then_some(self.bridge_deck_level)
+    }
+
+    /// The deck level of a high bridge; low bridges (LOBRDG/LOBRDB) sit at
+    /// ground level and answer `None`.
+    pub fn high_bridge_deck_level(&self) -> Option<u8> {
+        self.bridge_deck_level_if_any().filter(|_| {
+            !self
+                .bridge_layer
+                .as_ref()
+                .is_some_and(|layer| layer.direction == BridgeDirection::Low)
+        })
     }
 
     pub fn bridge_flags(&self) -> u32 {
@@ -1328,7 +1367,12 @@ impl ResolvedTerrainGrid {
     }
 }
 
-impl crate::map::terrain::TacticalBridgeLookup for ResolvedTerrainGrid {
+impl crate::map::terrain::TacticalCellLookup for ResolvedTerrainGrid {
+    fn cell_level(&self, rx: u16, ry: u16) -> Option<u8> {
+        // Original6D6753 reads the current candidate, not a load-time level.
+        self.cell(rx, ry).map(|cell| cell.level)
+    }
+
     fn bridge_cell(&self, rx: u16, ry: u16) -> Option<crate::map::terrain::TacticalBridgeCell> {
         let facts = &self.cell(rx, ry)?.bridge_facts;
         // Original6D6760/6D6793 reads raw100/800, independent of inferred

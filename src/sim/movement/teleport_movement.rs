@@ -22,10 +22,14 @@
 //! - Part of sim/ — depends on sim/game_entity, sim/entity_store, sim/locomotor.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::GeneralRules;
 use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::components::DriveCoord;
+use crate::sim::pathfinding::PathGrid;
+use crate::sim::world::ObjectSubstrate;
+use std::sync::Arc;
 
 const TELEPORT_WARP_DRAW_FLAGS: u32 = 0x600;
 
@@ -64,7 +68,7 @@ impl crate::sim::world::Simulation {
         if let Some(name) = name {
             let sound_id = self.interner.intern(&name);
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::ChronoTeleport { sound_id, rx, ry });
+                .emit(crate::sim::world::SimSoundEvent::ChronoTeleport { sound_id, rx, ry });
         }
     }
 
@@ -609,14 +613,31 @@ impl crate::sim::world::Simulation {
         // (0x007181F9). The Chrono Warp's fresh Teleport has no Marked
         // coordinate, so its Unit drops the destination it was given.
         if latched && !infantry {
-            self.object_raw_receiver_at(id, previous, false);
-            self.object_raw_receiver_at(
+            Self::object_raw_receiver_at(
+                &mut self.substrate,
+                &self.path_grid,
+                &self.resolved_terrain,
+                id,
+                previous,
+                false,
+            );
+            Self::object_raw_receiver_at(
+                &mut self.substrate,
+                &self.path_grid,
+                &self.resolved_terrain,
                 id,
                 marked.unwrap_or(DriveCoord { x: 0, y: 0, z: 0 }),
                 true,
             );
             if let Some(marked) = marked {
-                self.object_raw_receiver_at(id, marked, true);
+                Self::object_raw_receiver_at(
+                    &mut self.substrate,
+                    &self.path_grid,
+                    &self.resolved_terrain,
+                    id,
+                    marked,
+                    true,
+                );
                 if let Some(runtime) = self
                     .substrate
                     .entities
@@ -628,7 +649,14 @@ impl crate::sim::world::Simulation {
                 }
                 return Ok(true);
             }
-            self.object_raw_receiver_at(id, physical, true);
+            Self::object_raw_receiver_at(
+                &mut self.substrate,
+                &self.path_grid,
+                &self.resolved_terrain,
+                id,
+                physical,
+                true,
+            );
             self.assign_null_destination(id, Some(rules), registry, effects);
             return Ok(false);
         }
@@ -650,7 +678,14 @@ impl crate::sim::world::Simulation {
             return Err("Teleport resolution requires map cells".into());
         }
         let resolution = (|| -> Result<Option<DriveCoord>, String> {
-            self.object_raw_receiver_at(id, previous, false);
+            Self::object_raw_receiver_at(
+                &mut self.substrate,
+                &self.path_grid,
+                &self.resolved_terrain,
+                id,
+                previous,
+                false,
+            );
             let terrain = self.resolved_terrain.as_ref().unwrap();
             let cells = NativeCellQuery::canonical(terrain);
             let cell = cells.lookup_world(requested.x, requested.y);
@@ -677,7 +712,8 @@ impl crate::sim::world::Simulation {
             // existing Mission authority; a queued Attack can become current
             // here after51AA40's earlier current-mission Stop decision.
             if self.mission_ready_to_commence(id, rules) {
-                self.mission_commence_exact(id, self.session.binary_frame())
+                self.substrate
+                    .mission_commence_exact(id, self.session.binary_frame())
                     .map_err(|error| format!("Teleport resolver Commence: {error}"))?;
             }
             // 718CA0..718DE3: Enter/Eaten/Capture/Patrol permit preferred
@@ -792,13 +828,27 @@ impl crate::sim::world::Simulation {
         let Some(resolved) = resolved else {
             // Original719286..7192AE restores the physical raw receiver
             // before returning false;7181F9 then calls the class NULL arm.
-            self.object_raw_receiver_at(id, physical, true);
+            Self::object_raw_receiver_at(
+                &mut self.substrate,
+                &self.path_grid,
+                &self.resolved_terrain,
+                id,
+                physical,
+                true,
+            );
             self.assign_null_destination(id, Some(rules), registry, effects);
             return Ok(false);
         };
         // 0x00719270..0x00719276: the tail PUTs at Marked; Move_To arms it
         // (0x007181DB).
-        self.object_raw_receiver_at(id, resolved, true);
+        Self::object_raw_receiver_at(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
+            id,
+            resolved,
+            true,
+        );
         Ok(arm_teleport(
             self.substrate.entities.get_mut(id).unwrap(),
             resolved,
@@ -903,7 +953,10 @@ impl crate::sim::world::Simulation {
         if cell == (0, 0) {
             return Ok(marked);
         }
-        self.object_raw_receiver_at(
+        Self::object_raw_receiver_at(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
             id,
             marked.unwrap_or(super::foot_coordinate::NULL_COORD),
             false,
@@ -920,7 +973,14 @@ impl crate::sim::world::Simulation {
         let mut resolved =
             DriveCoord::from(crate::sim::cell_kernel::cell_center(own_cell.into(), 0));
         resolved.z = super::ground_pose::query_ground_height(&cells, resolved)?;
-        self.object_raw_receiver_at(id, resolved, true);
+        Self::object_raw_receiver_at(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
+            id,
+            resolved,
+            true,
+        );
         Ok(Some(resolved))
     }
 }
@@ -957,14 +1017,19 @@ impl crate::sim::world::Simulation {
     /// Head_To_Coord, which is the owner's Location (`0x0055ACA0`). For an
     /// infantryman that is what clears his sub-cell: Infantry Mark clears none
     /// (`0x0047EAFE`).
-    pub(crate) fn release_teleport_occupation_before_foot_limbo(&mut self, id: u64) {
-        let Some(coord) = self.substrate.entities.get(id).and_then(|entity| {
+    pub(crate) fn release_teleport_occupation_before_foot_limbo(
+        substrate: &mut ObjectSubstrate,
+        path_grid: &Option<Arc<PathGrid>>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+    ) {
+        let Some(coord) = substrate.entities.get(id).and_then(|entity| {
             (!entity.lifecycle.in_limbo() && teleport_process_active(entity))
                 .then(|| super::ground_pose::position_world_coord(&entity.position))
         }) else {
             return;
         };
-        self.object_raw_receiver_at(id, coord, false);
+        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, coord, false);
     }
 }
 

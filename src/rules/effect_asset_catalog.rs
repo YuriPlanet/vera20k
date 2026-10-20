@@ -270,9 +270,18 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     if let Some(name) = rules.general.parachute_shp.as_deref() {
         insert(name);
     }
+    // Techno70F1D0 attaches [General] Behind= to an obscured object. Its
+    // AnimClass must have physical frame bounds before the AI can create it.
+    if let Some(name) = rules.general.behind.as_deref() {
+        insert(name);
+    }
     // `[General] WarpOut=`: the teleport locomotor constructs it at both ends
     // of a relocation (`sim::movement::teleport_movement`).
     insert(&rules.general.warp_out.name);
+    // `[General] MoveFlash=`: the marker a Move click on a Cell constructs
+    // there (`FootClass::ClickedAction_Cell`, `0x004D7F8A`;
+    // `Simulation::spawn_move_flash`).
+    insert(&rules.general.move_flash.name);
     // `SuperClass::Launch` invoke animations (`sim::superweapon`).
     insert(&rules.general.iron_curtain_invoke_anim);
     insert(&rules.general.force_shield_invoke_anim);
@@ -631,7 +640,7 @@ mod anim_class_root_tests {
     #[test]
     fn roots_cover_teleport_superweapon_and_lightning_producers() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nWarpOut=MYWARP\nIronCurtainInvokeAnim=MYIRON\n\
+            "[General]\nBehind=MYBEHIND\nWarpOut=MYWARP\nIronCurtainInvokeAnim=MYIRON\n\
              ForceShieldInvokeAnim=MYSHIELD\nIonBlast=MYRING\n\
              DominatorFirstAnim=MYHEAD\nDominatorSecondAnim=MYLOC\n\
              WeatherConClouds=MYCLOUD1,MYCLOUD2\nWeatherConBolts=MYBOLT\n\
@@ -641,8 +650,8 @@ mod anim_class_root_tests {
         .expect("rules");
         let roots = anim_class_roots(&rules);
         for name in [
-            "MYWARP", "MYIRON", "MYSHIELD", "MYRING", "MYCLOUD1", "MYCLOUD2", "MYBOLT", "MYHEAD",
-            "MYLOC", "MYMIND", "MYPERMA",
+            "MYBEHIND", "MYWARP", "MYIRON", "MYSHIELD", "MYRING", "MYCLOUD1", "MYCLOUD2", "MYBOLT",
+            "MYHEAD", "MYLOC", "MYMIND", "MYPERMA",
         ] {
             assert!(
                 roots.iter().any(|root| root == name),

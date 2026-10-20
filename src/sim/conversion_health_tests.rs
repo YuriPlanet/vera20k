@@ -265,7 +265,7 @@ fn mcv_building_slots_wait_for_completion_and_use_converted_health() {
     let mut expected_rng = sim.scenario_rng.clone();
     let constructor_word = expected_rng.next_u32() as u16;
     let before_rng = expected_rng.state();
-    let destination_id = sim.substrate.next_stable_object_id;
+    let destination_id = sim.next_stable_object_id();
     assert!(sim.deploy_mcv(
         source,
         &rules,
@@ -285,7 +285,7 @@ fn mcv_building_slots_wait_for_completion_and_use_converted_health() {
             .all(Option::is_none)
     );
     assert_eq!(sim.substrate.anims.len(), 0);
-    assert_eq!(sim.substrate.next_stable_object_id, destination_id + 1);
+    assert_eq!(sim.next_stable_object_id(), destination_id + 1);
     assert_eq!(sim.scenario_rng.state(), before_rng);
     // Drive the actual simulation completion producer.
     for _ in 0..31 {

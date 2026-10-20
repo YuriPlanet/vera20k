@@ -1,6 +1,7 @@
-//! LZO1X decompressor for IsoMapPack5 terrain data in RA2 .map files.
+//! LZO1X decompressor for IsoMapPack5 terrain data in RA2 .map files, and
+//! the chunk writer for the LAN `Preview.bin`.
 //!
-//! Implements decompression only (no compression needed). The algorithm is a
+//! Decompression is a full LZO1X decoder; compression writes literal runs only. The algorithm is a
 //! variant of LZ77 that uses a state machine driven by command bytes. Each
 //! command specifies either a literal run (copy bytes from input) or a match
 //! copy (back-reference into already-decompressed output).
@@ -229,6 +230,45 @@ pub fn decompress_chunks(data: &[u8]) -> Result<Vec<u8>, LzoError> {
     Ok(output)
 }
 
+/// Write `data` as `LZOPipe(0, block_size)` does (`0x0055C350`, flushed by
+/// `0x0055C5E0`): blocks of at most `block_size` bytes, each behind
+/// `[u16 compressed_len][u16 uncompressed_len]`.
+///
+/// RESIDUAL: native compresses each block with LZO1X-1 (`0x0055BB90`); this
+/// writes valid LZO1X literal runs, which decode to the same bytes but are
+/// larger.
+pub fn compress_chunks(data: &[u8], block_size: usize) -> Vec<u8> {
+    let mut out = Vec::with_capacity(data.len() + data.len() / block_size.max(1) * 8 + 8);
+    for block in data.chunks(block_size.max(1)) {
+        let stream = literal_stream(block);
+        out.extend_from_slice(&(stream.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(block.len() as u16).to_le_bytes());
+        out.extend_from_slice(&stream);
+    }
+    out
+}
+
+/// One LZO1X stream holding `block` as a single literal run, encoded the way
+/// LZO1X-1 encodes its final run at the stream start, then the end marker.
+fn literal_stream(block: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(block.len() + 40);
+    let t = block.len();
+    if t > 0 && t <= 238 {
+        out.push(17 + t as u8);
+    } else if t > 238 {
+        out.push(0);
+        let mut tt = t - 18;
+        while tt > 255 {
+            tt -= 255;
+            out.push(0);
+        }
+        out.push(tt as u8);
+    }
+    out.extend_from_slice(block);
+    out.extend_from_slice(&[0x11, 0x00, 0x00]);
+    out
+}
+
 // --- Internal helpers ---
 
 /// Read a single byte, advancing the position.
@@ -326,6 +366,21 @@ mod tests {
         let written: usize = lzo1x_decompress(&input, &mut output).expect("Should decompress");
         assert_eq!(written, 5);
         assert_eq!(&output[..5], b"Hello");
+    }
+
+    #[test]
+    fn written_chunks_decode_back_at_every_run_length_encoding() {
+        for len in [
+            1, 2, 3, 4, 18, 19, 238, 239, 255, 529, 0x2000, 0x2001, 20_000,
+        ] {
+            let data: Vec<u8> = (0..len).map(|i| (i * 7 + i / 3) as u8).collect();
+            let chunks = compress_chunks(&data, 0x2000);
+            assert_eq!(decompress_chunks(&chunks).expect("decodes"), data, "{len}");
+            // Every block but the last is a full 0x2000 bytes.
+            let uncompressed = u16::from_le_bytes([chunks[2], chunks[3]]) as usize;
+            assert_eq!(uncompressed, len.min(0x2000));
+        }
+        assert!(compress_chunks(&[], 0x2000).is_empty());
     }
 
     #[test]

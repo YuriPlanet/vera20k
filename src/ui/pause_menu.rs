@@ -15,6 +15,7 @@
 //! | 3 | abort-mission confirm | the menu's Abort Mission button | see below |
 //! | 5 | Game Controls / Options | the menu's Options button | back to 1 |
 //! | 8 | Diplomacy (dialog 0x73) | the sidebar Diplomacy button, Tab | Return: 0 |
+//! | 9 | mission restate briefing (dialog 0x10C) | the sidebar Diplomacy button in campaign and Cooperative | Return: 0 |
 //!
 //! Two re-entry rules matter to the player and are reproduced here:
 //!
@@ -33,8 +34,9 @@
 //!
 //! The full-screen B6 abort shell has a secondary action that is mode
 //! dependent: campaign labels it `GUI:Restart` (restart the scenario),
-//! multiplayer with two or more live human players labels it `GUI:Observe`, and
-//! **offline skirmish hides it outright**. What is left in skirmish is one
+//! multiplayer with two or more live human players labels it `GUI:Observe`
+//! (EVENT_DESTRUCT for the local House, then keep watching; Leave there also
+//! destructs before EXIT), and **offline skirmish hides it outright**. What is left in skirmish is one
 //! action button captioned `GUI:Leave` and Resume Mission. Callback4F18B0
 //! accepts Resume686 and IDOK1; IDCANCEL2 is ignored, so Escape stays in B6.
 //! Confirming Leave queues an
@@ -56,8 +58,7 @@
 /// restricted to the values a stock offline skirmish can reach.
 ///
 /// States deliberately absent: the surrender-and-be-scored state (gated on a
-/// WOL-only mode), the replay state, the campaign mission-restate state, the
-/// multiplayer objectives state.
+/// WOL-only mode), the replay state, the multiplayer objectives state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InGameMenuState {
     /// No modal is open — the mission runs. (gamemd: 0)
@@ -75,6 +76,8 @@ pub enum InGameMenuState {
     Keyboard,
     /// The Diplomacy dialog 0x73. (gamemd: 8)
     Diplomacy,
+    /// The mission restate briefing, dialog 0x10C. (gamemd: 9)
+    MissionBriefing,
     /// Native558DD0 browser nested beneath B5. Its mode has no independent
     /// scenario-state number: native keeps the parent hidden during this call.
     SavedGame(crate::ui::skirmish_shell::SavedSeedMode),
@@ -108,7 +111,8 @@ impl InGameMenuState {
             // The 0x73 proc resolves its command by GetDlgCtrlID(lParam)
             // (0x006581A7). IDCANCEL names no child window, so the id is 0:
             // neither Return 0x423 nor in its box tables. Escape is ignored.
-            Self::SavedGame(_) | Self::Sound | Self::Diplomacy => self,
+            // The 0x10C proc keys Return the same way (0x0065F710).
+            Self::SavedGame(_) | Self::Sound | Self::Diplomacy | Self::MissionBriefing => self,
             Self::Keyboard => Self::Options,
         }
     }
@@ -133,6 +137,10 @@ pub enum AbortConfirmAction {
     Leave,
     /// Campaign Restart — B6 result 5 (`0x004F196B`).
     Restart,
+    /// LAN/WOL Leave while Observe is offered — B6 result 3.
+    LeaveDestruct,
+    /// LAN/WOL Observe — B6 result 4.
+    Observe,
 }
 
 /// What the app layer must do once a modal reports the player's choice.
@@ -142,8 +150,14 @@ pub enum ModalOutcome {
     Stay,
     /// Move the in-scenario state variable to this value.
     Enter(InGameMenuState),
-    /// End the running match by the graceful-exit route.
-    LeaveMatch,
+    /// End the running match by the graceful-exit route. `destruct` first
+    /// queues EVENT_DESTRUCT for the local House: the state machine's
+    /// result-3 arm (`0x0048CA34..0x0048CAA8`) queues it and falls into the
+    /// result-2 EXIT (`0x6471A0`).
+    LeaveMatch { destruct: bool },
+    /// Queue EVENT_DESTRUCT for the local House and keep watching: the
+    /// result-4 arm (`0x0048CAB2`) clears the admission latch without EXIT.
+    Observe,
     /// Raise the scenario restart request: the state machine's result-5 arm
     /// (`0x0048CB2E`) sets `0x008B41C0` and the modal state returns to 0.
     RestartScenario,
@@ -158,8 +172,10 @@ pub fn resolve_abort_action(action: AbortConfirmAction) -> ModalOutcome {
     match action {
         AbortConfirmAction::None => ModalOutcome::Stay,
         AbortConfirmAction::Cancel => ModalOutcome::Enter(InGameMenuState::Closed),
-        AbortConfirmAction::Leave => ModalOutcome::LeaveMatch,
+        AbortConfirmAction::Leave => ModalOutcome::LeaveMatch { destruct: false },
+        AbortConfirmAction::LeaveDestruct => ModalOutcome::LeaveMatch { destruct: true },
         AbortConfirmAction::Restart => ModalOutcome::RestartScenario,
+        AbortConfirmAction::Observe => ModalOutcome::Observe,
     }
 }
 
@@ -175,16 +191,16 @@ mod tests {
         assert!(InGameMenuState::AbortConfirm.is_open());
         assert!(InGameMenuState::Options.is_open());
         assert!(InGameMenuState::Diplomacy.is_open());
+        assert!(InGameMenuState::MissionBriefing.is_open());
     }
 
-    /// Dialog 0x73 has no cancel path: only Return closes it.
+    /// Dialogs 0x73 and 0x10C have no cancel path: only Return closes them.
     #[test]
-    fn escape_keeps_the_diplomacy_dialog_open() {
-        assert_eq!(
-            InGameMenuState::Diplomacy.on_escape(),
-            InGameMenuState::Diplomacy
-        );
-        assert!(escape_belongs_to_modal_machine(InGameMenuState::Diplomacy));
+    fn escape_keeps_diplomacy_and_the_briefing_open() {
+        for state in [InGameMenuState::Diplomacy, InGameMenuState::MissionBriefing] {
+            assert_eq!(state.on_escape(), state);
+            assert!(escape_belongs_to_modal_machine(state));
+        }
     }
 
     /// Doing nothing in the abort dialog leaves the modal where it was.
@@ -222,7 +238,21 @@ mod tests {
     fn confirm_abort_leaves_the_match() {
         assert_eq!(
             resolve_abort_action(AbortConfirmAction::Leave),
-            ModalOutcome::LeaveMatch
+            ModalOutcome::LeaveMatch { destruct: false }
+        );
+    }
+
+    /// Network Leave with Observe offered destructs before EXIT; Observe
+    /// only destructs.
+    #[test]
+    fn network_leave_and_observe_destruct_the_local_house() {
+        assert_eq!(
+            resolve_abort_action(AbortConfirmAction::LeaveDestruct),
+            ModalOutcome::LeaveMatch { destruct: true }
+        );
+        assert_eq!(
+            resolve_abort_action(AbortConfirmAction::Observe),
+            ModalOutcome::Observe
         );
     }
 

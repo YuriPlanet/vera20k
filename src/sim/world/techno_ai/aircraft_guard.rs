@@ -119,7 +119,7 @@ impl Simulation {
             }
             let owner = unit.owner();
             if crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &self.interner,
                 house,
                 owner,
@@ -187,7 +187,7 @@ impl GuardHost for WorldGuard<'_> {
     }
 
     fn queue(&mut self, mission: MissionType) {
-        crate::sim::aircraft::queue_mission(self.sim, self.id, mission);
+        crate::sim::aircraft::queue_mission(&mut self.sim.substrate, self.id, mission);
     }
 
     fn rate(&mut self) -> i32 {

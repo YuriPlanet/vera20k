@@ -219,6 +219,17 @@ pub(crate) fn post_selection_navigation_text(state: &mut AppState, text: &str) {
 pub(crate) enum HudMessage {
     LowPower,
     SuperWeapon(&'static str),
+    /// MPlayer_Defeated's line for a non-observer House (`0x004FC271`,
+    /// `0x004FC34F`).
+    PlayerDefeated(crate::sim::intern::InternedId),
+    /// MakeAlly's `TXT_HAS_ALLIED` or MakeEnemy's `TXT_AT_WAR` (owner,
+    /// other) in the owner's HouseType colour (`0x004F9D4E..0x004F9DFC`,
+    /// `0x004FA0E4..0x004FA175`).
+    Alliance {
+        owner: crate::sim::intern::InternedId,
+        other: crate::sim::intern::InternedId,
+        formed: bool,
+    },
 }
 
 impl HudMessage {
@@ -226,6 +237,9 @@ impl HudMessage {
         match self {
             Self::LowPower => "TXT_LOW_POWER", // original House4F8D4A
             Self::SuperWeapon(key) => key,
+            Self::PlayerDefeated(_) => "TXT_PLAYER_DEFEATED",
+            Self::Alliance { formed: true, .. } => "TXT_HAS_ALLIED",
+            Self::Alliance { formed: false, .. } => "TXT_AT_WAR",
         }
     }
 
@@ -233,7 +247,9 @@ impl HudMessage {
         match self {
             // House4F8D20..31 uses the same MessageDelay*900/ftol as
             // TAction11; these are 16 ms clock buckets, never speed normalized.
-            Self::LowPower => message_delay_timeout_ms(rules.general.message_delay_minutes),
+            Self::LowPower | Self::PlayerDefeated(_) | Self::Alliance { .. } => {
+                message_delay_timeout_ms(rules.general.message_delay_minutes)
+            }
             Self::SuperWeapon(_) => Some(SUPER_WEAPON_MESSAGE_TIMEOUT_MS),
         }
     }
@@ -264,6 +280,19 @@ fn message_delay_timeout_ms(delay: crate::util::native_x87::NativeF64Bits) -> Op
 /// The callers' text flags still share the existing bitmap-text lane; this
 /// transport does not establish native glyph/style raster equivalence.
 pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
+    if let HudMessage::PlayerDefeated(house) = message {
+        post_house_line(state, message.csf_key(), house, HouseLineColor::Player);
+        return;
+    }
+    if let HudMessage::Alliance { owner, other, .. } = message {
+        post_house_names_line(
+            state,
+            message.csf_key(),
+            &[owner, other],
+            HouseLineColor::Country,
+        );
+        return;
+    }
     let Some(rules) = state.rules() else {
         return;
     };
@@ -276,29 +305,84 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
     post_localized_message(state, &post);
 }
 
-/// Loading timeout684596 -> DestroyConnection5DA750 reason1. Keep native
-/// MessageDelay/color/list ownership; the departed House remains in Simulation.
-pub(crate) fn post_connection_lost(state: &mut AppState, owner: &str, display_name: &str) {
+/// The colour of a House-named line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HouseLineColor {
+    /// The player's colour scheme: MPlayer_Defeated (House+0x16054 remote,
+    /// Session+0x15C local, which VERA reads as the House's own scheme).
+    Player,
+    /// The HouseType's `Color=` scheme `[[House+0x34]+0xC0]`:
+    /// DestroyConnection (`0x005DA827..0x005DA834`).
+    Country,
+}
+
+/// A House-named line: the CSF template formatted with House+0x1602A, for
+/// MessageDelay*900 buckets, silent 0. DestroyConnection5DA750 posts
+/// TXT_LEFT_GAME/TXT_CONNECTION_LOST (name read at 5DA772); MPlayer_Defeated
+/// posts TXT_PLAYER_DEFEATED (4FC271..4FC2DB local, 4FC34F..4FC3AD remote).
+pub(crate) fn post_house_line(
+    state: &mut AppState,
+    key: &str,
+    house: crate::sim::intern::InternedId,
+    color: HouseLineColor,
+) {
+    post_house_names_line(state, key, &[house], color);
+}
+
+/// [`post_house_line`] with one `%s` per House, coloured by the first.
+fn post_house_names_line(
+    state: &mut AppState,
+    key: &str,
+    houses: &[crate::sim::intern::InternedId],
+    color: HouseLineColor,
+) {
+    let Some(names) = houses
+        .iter()
+        .map(|&house| crate::app::presentation::house_ui::house_ui_name(state, house))
+        .collect::<Option<Vec<String>>>()
+    else {
+        return;
+    };
+    let Some(&house) = houses.first() else {
+        return;
+    };
+    let Some(sim) = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|runtime| &runtime.simulation)
+    else {
+        return;
+    };
+    let owner = sim.interner().resolve(house).to_string();
+    let country = sim
+        .houses()
+        .get(&house)
+        .and_then(|state| state.country())
+        .map(|country| sim.interner().resolve(country).to_string());
     let Some(rules) = state.rules() else {
         return;
     };
-    let rgb = house_message_rgb(
-        Some(owner),
-        &state.match_state.match_presentation.house_color_map,
-        Some(&rules.color_schemes),
-    );
+    let rgb = match color {
+        HouseLineColor::Player => house_message_rgb(
+            Some(&owner),
+            &state.match_state.match_presentation.house_color_map,
+            Some(&rules.color_schemes),
+        ),
+        HouseLineColor::Country => {
+            // HouseType+0xC0 holds 2*entry+1 (ReadColor 0x474A90).
+            let scheme = country.map_or(0, |country| rules.country_color_scheme(&country));
+            country_message_rgb(scheme, &rules.color_schemes)
+        }
+    };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    let template = state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| csf.text("TXT_CONNECTION_LOST").into_owned())
-        .unwrap_or_else(|| "TXT_CONNECTION_LOST".to_string());
-    let text = crate::assets::csf_file::format_csf(
-        &template,
-        &[crate::assets::csf_file::CsfArg::Str(display_name)],
-    );
-    post_localized_message(
+    let template = crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned();
+    let args: Vec<crate::assets::csf_file::CsfArg<'_>> = names
+        .iter()
+        .map(|name| crate::assets::csf_file::CsfArg::Str(name))
+        .collect();
+    let text = crate::assets::csf_file::format_csf(&template, &args);
+    post_resolved_message(
         state,
         &crate::ui::messages::MessagePost {
             prefix: None,
@@ -310,13 +394,87 @@ pub(crate) fn post_connection_lost(state: &mut AppState, owner: &str, display_na
     );
 }
 
+/// MapPlayerColorToScheme `0x0069A310` of a player's Session colour: VERA
+/// reads it as the House's own scheme, as MPlayer_Defeated's lines do.
+pub(crate) fn player_line_rgb(state: &AppState, owner: crate::sim::intern::InternedId) -> [f32; 3] {
+    let owner = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|runtime| runtime.simulation.interner().resolve(owner).to_string());
+    house_message_rgb(
+        owner.as_deref(),
+        &state.match_state.match_presentation.house_color_map,
+        state.rules().map(|rules| rules.color_schemes.as_slice()),
+    )
+}
+
+/// A chat line: Add_Message with the sender's name as prefix, style 4046,
+/// MessageDelay*900 buckets and silent 0, so IncomingMessage plays once
+/// (`0x0055F0A8..0x0055F104` echo, `0x0048D93A..0x0048D98D` receive).
+pub(crate) fn post_chat_line(state: &mut AppState, name: &str, text: &str, rgb: [f32; 3]) {
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    post_resolved_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: Some(name),
+            text,
+            rgb,
+            timeout_ms,
+            silent: false,
+        },
+    );
+}
+
+/// The observer gate's silent `TXT_OBSERVER_CANT_SEND` row in the "Grey"
+/// scheme (`0x004E12D0` with `0x00822728`), flags 0x16, MessageDelay*900
+/// (`0x0055EED0..0x0055EF2C`).
+pub(crate) fn post_observer_refusal(state: &mut AppState) {
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let rgb = crate::rules::color_scheme::scheme_entry_by_name(&rules.color_schemes, "Grey")
+        .and_then(|entry| u8::try_from(entry).ok())
+        .map_or(MESSAGE_RGB_SYSTEM, |entry| {
+            crate::rules::house_colors::house_text_rgb(
+                &rules.color_schemes,
+                crate::rules::house_colors::HouseColorIndex(entry),
+            )
+            .map(|channel| f32::from(channel) / 255.0)
+        });
+    post_localized_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: "TXT_OBSERVER_CANT_SEND",
+            rgb,
+            timeout_ms,
+            silent: true,
+        },
+    );
+}
+
+/// Post a row whose `text` is a CSF key.
 fn post_localized_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_>) {
+    post_message(state, post, true);
+}
+
+/// Post a row whose `text` is already formatted from its CSF template.
+fn post_resolved_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_>) {
+    post_message(state, post, false);
+}
+
+fn post_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_>, localize: bool) {
     sync_view(state);
     let now = message_now_ms(state);
     let font = &state.renderer.bit_font;
     let outcome = add_localized_message(
         &mut state.match_state.match_presentation.message_list,
-        state.process_assets.csf.as_ref(),
+        state.process_assets.csf.as_ref().filter(|_| localize),
         post,
         now,
         &|s| font.text_width(s) as i32,
@@ -334,6 +492,23 @@ fn post_localized_message(state: &mut AppState, post: &crate::ui::messages::Mess
 /// Super prints53AE42/53B452 and House4F8D5C. Native caller-null fallback3
 /// is [Colors] entry1; TextLabel72A4D6's invalid-index fallback is scheme0.
 /// Source: tools/procedural_drawing_oracle/house_color.md, message consumer.
+/// A runtime scheme index through TextLabel's invalid-index fallback to
+/// scheme 0 (`0x0072A4D6`).
+fn country_message_rgb(
+    scheme: i32,
+    schemes: &[crate::rules::color_scheme::ColorSchemeEntry],
+) -> [f32; 3] {
+    let entry = u8::try_from(scheme / 2)
+        .ok()
+        .filter(|entry| usize::from(*entry) < schemes.len())
+        .unwrap_or(0);
+    crate::rules::house_colors::house_text_rgb(
+        schemes,
+        crate::rules::house_colors::HouseColorIndex(entry),
+    )
+    .map(|channel| f32::from(channel) / 255.0)
+}
+
 fn house_message_rgb(
     local_owner: Option<&str>,
     house_colors: &crate::map::houses::HouseColorMap,
@@ -381,6 +556,15 @@ pub(crate) fn update(state: &mut AppState) -> Option<u64> {
 }
 
 fn sync_view(state: &mut AppState) {
+    let typing = state
+        .frontend
+        .multiplayer_shell_runtime
+        .scroll_text(state.match_state.session_mode());
+    state
+        .match_state
+        .match_presentation
+        .message_list
+        .set_typing(typing);
     // The list spans the tactical viewport: the frame left of the sidebar.
     let tactical_w = crate::app::input::camera::tactical_viewport_size(state).0 as i32;
     state.match_state.match_presentation.message_list.set_view(
@@ -431,7 +615,12 @@ fn message_instances(
     let x = list.x() as f32;
     let mut fills = Vec::new();
     let mut texts = Vec::new();
-    for m in list.messages() {
+    // Draw 0x005D49A0 paints the edit label first, whole: its reveal flag
+    // is never set and the chat cursor character 0 draws no caret.
+    let edit = list
+        .edit_line()
+        .map(|edit| crate::ui::messages::Message::edit_row(&edit));
+    for m in edit.iter().chain(list.messages()) {
         // Message rows are screen-space, but `draw_pooled_ui` binds the
         // live world camera and the shader subtracts it. Add that camera
         // back here so scrolling cannot displace the HUD text.

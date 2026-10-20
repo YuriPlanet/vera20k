@@ -54,7 +54,7 @@ fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 0, 10));
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let xyz: Vec<_> = before["xyz"]
         .as_array()
         .unwrap()
@@ -162,7 +162,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
     assert_rng(sim, &step["before"], context);
     sim.session
         .set_binary_frame_for_test(step["frame"].as_u64().unwrap() as u32);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     let body_before = sim
         .substrate
         .entities

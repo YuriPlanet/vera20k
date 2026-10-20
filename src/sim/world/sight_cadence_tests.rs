@@ -986,7 +986,7 @@ fn a_source_event_keeps_one_notification_admission_across_logical_planes() {
         ));
     // Supplied direct alliance prestate; the test exercises source event
     // admission, not the separate diplomacy producer.
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("AMERICANS".into())
         .or_default()
         .insert("ALLIANCE".into());
@@ -1109,7 +1109,7 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
             // Derive the LOS cache through its actual existing terrain reader.
             // Full Rust map vs sparse native crop is bounded to these receivers.
             sim.path_grid = Some(std::sync::Arc::new(
-                PathGrid::from_resolved_terrain_with_bridges(terrain),
+                PathGrid::from_resolved_terrain_with_bridges(terrain, sim.overlay_grid.as_ref()),
             ));
         }
         let before_view = serde_json::to_value(&sim.fog.by_owner()[&local]).unwrap();
@@ -1433,7 +1433,14 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
             compare_stage(sim);
             for (border_origin, radius) in [(local.unwrap(), 6), (origin, 4)] {
                 let (_, trace) = trace_reveal_calls(|| {
-                    sim.refresh_sight_border(viewer, border_origin, radius, context)
+                    Simulation::refresh_sight_border(
+                        &mut sim.fog,
+                        &sim.resolved_terrain,
+                        viewer,
+                        border_origin,
+                        radius,
+                        context,
+                    )
                 });
                 let border = native["borders"]
                     .as_array()
@@ -1682,7 +1689,7 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
     assert_eq!(tank_sight.radius, 7);
     assert!(!sim.fog.sight_is_latched(standing, americans));
 
-    sim.make_ally(russians, americans, &rules, None, FrameEffects::default());
+    sim.make_ally(russians, americans, &rules, None, FrameEffects::default(), false);
     // RESIDUAL (`Simulation::admit_allied_building_sight`): native's latch
     // (`+0x250`), set by the plant's Unlimbo, makes this `UpdateReveal`
     // return (`0x0070B0B1`); VERA opens it here.
@@ -1712,7 +1719,7 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
     assert!(sim.fog.sight_is_latched(plant, americans));
     assert!(sim.fog.is_cell_visible(americans, origin.0, origin.1));
 
-    sim.make_enemy(russians, americans, &rules);
+    sim.make_enemy(russians, americans, &rules, false);
     assert!(
         !sim.fog.sight_is_latched(plant, americans),
         "0x004F9FD8's release precedes the bit write"
@@ -1720,7 +1727,7 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
     assert!(!sim.fog.is_cell_visible(americans, origin.0, origin.1));
     assert!(sim.fog.sight_is_latched(plant, russians));
 
-    sim.make_ally(russians, americans, &rules, None, FrameEffects::default());
+    sim.make_ally(russians, americans, &rules, None, FrameEffects::default(), false);
     assert!(
         sim.fog.sight_is_latched(plant, americans),
         "0x004ADDE4 passes UpdateReveal's latch test"

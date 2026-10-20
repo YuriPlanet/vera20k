@@ -8,7 +8,6 @@
 //! Native command dispatch, full placement and paid Drive ticks remain excluded.
 //! No supplied CanEnter answers or synthetic bridge flags.
 use super::*;
-use crate::map::resolved_terrain::NativeCellQuery;
 use crate::sim::movement::infantry_entry::InfantryEntryArgs;
 use crate::sim::movement::locomotor::MovementLayer;
 
@@ -115,7 +114,6 @@ fn load_hills() -> crate::headless_scenario::HeadlessScenario {
         }
         let cell = terrain.cell(x, y).expect("native-selected Hills cell");
         let identity = terrain.native_cell_identity((x as i16, y as i16));
-        let query = NativeCellQuery::canonical(terrain);
         assert_eq!(
             i64::from(cell.final_tile_index),
             row["tile"].as_i64().unwrap(),
@@ -151,13 +149,14 @@ fn load_hills() -> crate::headless_scenario::HeadlessScenario {
             row["flags"].as_u64().unwrap(),
             "flags {x},{y}"
         );
+        let live = scenario.sim().cell_overlay(identity);
         assert_eq!(
-            i64::from(query.overlay_identity(identity)),
+            live.overlay_id.map_or(-1, i64::from),
             row["overlay"].as_i64().unwrap(),
             "overlay {x},{y}"
         );
         assert_eq!(
-            u64::from(terrain.native_cell_state(identity)),
+            u64::from(live.overlay_data),
             row["state"].as_u64().unwrap(),
             "frame {x},{y}"
         );
@@ -683,7 +682,8 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
         } = &mut scenario.runtime;
         let frame = sim.session.binary_frame();
         for id in [peer, mover] {
-            sim.mission_assign_exact(id, MissionId::from_known(MissionType::Move), frame)
+            sim.substrate
+                .mission_assign_exact(id, MissionId::from_known(MissionType::Move), frame)
                 .unwrap();
             let actor = sim.substrate.entities.get(id).unwrap();
             assert!(!actor.on_bridge());
@@ -872,7 +872,7 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
                 interner: &sim.interner,
                 grid: &grid,
                 terrain: sim.resolved_terrain.as_ref(),
-                playfield_bounds: sim.playfield_bounds,
+                playfield_bounds: sim.playfield_bounds(),
             }
             .reading(&sim.substrate.entities, &sim.substrate.raw_cell_occupation);
             let search = context.build(
@@ -922,7 +922,7 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
                 z: case["height"].as_i64().unwrap() as i32 * 104,
             },
             urgency,
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
         )
         .unwrap();
         assert_eq!(

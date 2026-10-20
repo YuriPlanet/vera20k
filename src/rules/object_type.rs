@@ -1141,6 +1141,12 @@ pub struct ObjectType {
     pub hover_attack: bool,
     /// Whether this unit stays airborne by default / doesn't land (BalloonHover=).
     pub balloon_hover: bool,
+    /// `TargetLaser=` (TechnoType+0xC90; the constructor stores 0 at
+    /// `0x0071139B`, ReadINI `0x00714C8D..0x00714CA1` reads the key string at
+    /// `0x00843898`). A human player's shot starts the firer's 15-frame laser
+    /// timer (`Fire_At 0x006FF48D..0x006FF4C9`); only `UnitClass::Draw_It`
+    /// draws it. Stock sets it on the Apocalypse.
+    pub target_laser: bool,
     /// `IsSimpleDeployer=` (`UnitTypeClass+0xE13`, key string `0x00845DFC`).
     /// The Jumpjet cruise reads it on a Unit owner at arrival
     /// (`State3_Translate 0x0054C1FE`).
@@ -1892,6 +1898,8 @@ pub struct ObjectType {
     /// Immutable projection of the native BuildingType light-field reader.
     /// The process registry owns retained integer defaults across Rules passes.
     building_light: crate::rules::building_light::BuildingLightRules,
+    /// Retained Rules-reader inputs for attached building upgrades.
+    building_upgrade: crate::rules::building_upgrade::BuildingUpgradeRules,
     /// `HasSpotlight=` — owns a map-presence-bound BuildingLight child.
     pub has_spotlight: bool,
 
@@ -2084,6 +2092,17 @@ impl ObjectType {
         light: crate::rules::building_light::BuildingLightRules,
     ) {
         self.building_light = light;
+    }
+
+    pub fn building_upgrade(&self) -> &crate::rules::building_upgrade::BuildingUpgradeRules {
+        &self.building_upgrade
+    }
+
+    pub(crate) fn project_building_upgrade(
+        &mut self,
+        upgrade: crate::rules::building_upgrade::BuildingUpgradeRules,
+    ) {
+        self.building_upgrade = upgrade;
     }
 
     pub(crate) const fn carries_crate(&self) -> bool {
@@ -2970,6 +2989,7 @@ impl ObjectType {
             move_to_shroud: section.read_bool("MoveToShroud", category != ObjectCategory::Aircraft),
             hover_attack: section.read_bool("HoverAttack", false),
             balloon_hover: section.read_bool("BalloonHover", false),
+            target_laser: section.read_bool("TargetLaser", false),
             is_simple_deployer: section.read_bool("IsSimpleDeployer", false),
             small_visceroid: category == ObjectCategory::Vehicle
                 && section.read_bool("SmallVisceroid", false),
@@ -3249,6 +3269,7 @@ impl ObjectType {
             // Rules' ordered processor publishes the retained reader result.
             // Merged text cannot reproduce missing-key /1000 truncation.
             building_light: Default::default(),
+            building_upgrade: Default::default(),
             has_spotlight: section.read_bool("HasSpotlight", false),
 
             // TechnoType particle effects. The Type references start null

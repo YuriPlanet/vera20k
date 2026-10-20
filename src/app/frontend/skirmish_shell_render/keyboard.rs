@@ -2,7 +2,7 @@
 use super::chrome::*;
 #[cfg(test)]
 use super::controls::frame_segments;
-use super::controls::{ControlPaint, paint_control, push_group_or_plain_frame};
+use super::controls::{ControlPaint, group_box_geometry, paint_control, push_group_or_plain_frame};
 use super::in_game_shell::{self, InGameShellFrame, ShellFrameArt, ShellFrameOverlay};
 use super::text::{localized_label, rect_to_text_rect};
 use super::{
@@ -230,16 +230,15 @@ pub(crate) fn render_keyboard_shell(
         )
     };
     let group_caption = localized_label(state, "GUI:Description", "Description");
-    let group_top = (font.cell_height() * glyph_scale).round() as i32 / 2;
+    let (group_frame, group_caption_rect) = group_box_geometry(
+        layout.group,
+        (font.cell_height() * glyph_scale).round() as i32,
+        font.cell_height() as i32,
+    );
     push_group_or_plain_frame(
         &mut controls,
         atlas,
-        RectPx::new(
-            layout.group.x,
-            layout.group.y + group_top,
-            layout.group.w,
-            layout.group.h - group_top,
-        ),
+        group_frame,
         Some(font.text_width(&group_caption) as i32),
         false,
     );
@@ -330,12 +329,7 @@ pub(crate) fn render_keyboard_shell(
     texts.push(text(
         font,
         &group_caption,
-        RectPx::new(
-            layout.group.x + 10,
-            layout.group.y,
-            layout.group.w - 10,
-            font.cell_height() as i32,
-        ),
+        group_caption_rect,
         ShellAlign::NONE,
         SHELL_CONTROL_TEXT_DEPTH,
     ));

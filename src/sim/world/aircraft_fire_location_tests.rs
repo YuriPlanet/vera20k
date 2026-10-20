@@ -47,7 +47,7 @@ fn insert(
     entity.lifecycle.set_object_alive_for_test(marked);
     entity.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(entity);
-    sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(id + 1);
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
 }
 
 fn fixture(input: &Value) -> (Simulation, RuleSet) {
@@ -467,7 +467,7 @@ fn aircraft_reengagement_reserves_in_logic_order_and_ignores_inactive_objects() 
             other.set_stable_id_for_test(id);
             sim.substrate.entities.insert(other);
         }
-        sim.substrate.next_stable_object_id = 10;
+        sim.set_next_stable_object_id_for_test(10);
         sim.set_logic_order_for_test(order.clone());
         crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules);
         let first = sim.substrate.entities.get(order[0]).unwrap();

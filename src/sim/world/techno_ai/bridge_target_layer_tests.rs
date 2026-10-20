@@ -113,7 +113,8 @@ fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
         entity.passive_scan.set_last_target_scan_frame_for_test(0);
         entity.position.set_exact_z_leptons_for_test(Some(624));
         sim.substrate.entities.insert(entity);
-        sim.mission_assign_exact(id, MissionId::from_known(MissionType::Guard), 0)
+        sim.substrate
+            .mission_assign_exact(id, MissionId::from_known(MissionType::Guard), 0)
             .unwrap();
     }
     sim.resolve_type_handles(rules);
@@ -567,6 +568,18 @@ pub(super) fn retail_hills_collapsed_scene(
         .get_or_register_for_test(enemy, || {
             let mut house = HouseState::new(enemy, 0, None, true, 0, 10);
             house.initialize_scenario_name("Russians");
+            // The synthetic House is only the acquisition-entry boundary the
+            // passive-scan steps below consume; it must sit the match out.
+            // Its one FV dies inside this fixture, so without MultiplayPassive
+            // the defeat gate (4F8E92..4F8F77) reads the House empty,
+            // MPlayer_Defeated (4FC3DE..4FC6B7) completes the match at the
+            // local house's win, and the savour expiry (4F85BE) later turns
+            // every frame tail terminal — after which the pending-delete
+            // drain (Main_Tick 55DE9F -> 725C70) no longer runs and a
+            // hut-consumed Engineer could never leave storage in its repair
+            // frame. MultiplayPassive is the defeat gate's own skip for
+            // houses that do not participate in the match result.
+            house.make_multiplay_passive();
             house
         });
     if !scenario.runtime.simulation.houses.order().contains(&enemy) {}
@@ -580,6 +593,7 @@ pub(super) fn retail_hills_collapsed_scene(
         let runtime = &mut scenario.runtime;
         runtime
             .simulation
+            .substrate
             .mission_assign_exact(
                 source,
                 MissionId::from_known(MissionType::Guard),

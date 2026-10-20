@@ -63,7 +63,7 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
         actor.mission_leaf.set_infantry_doing_verified(0).unwrap();
         ids.push(id);
     }
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.session.set_binary_frame_for_test(0xffff_fffe);
     let record = sim.encode_cheer_record(owner).unwrap();
     assert_eq!(

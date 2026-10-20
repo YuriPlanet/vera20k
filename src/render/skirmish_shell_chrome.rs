@@ -2,10 +2,13 @@
 //!
 //! Packs the shared native shell art into one GPU texture. Screen-specific
 //! entries require active caller evidence and are selected by that screen.
-//! Skirmish setup intentionally uses RA2's MNSCRNS/MNSCRNL backgrounds
-//! through SHELL.PAL as a presentation preference.
-//! User-requested YR parity exception: preserve this RA2 background during
-//! future parity work unless the user explicitly asks to change it.
+//! Skirmish setup and the WOL Custom Match setup dialogs C2/C9 intentionally
+//! use RA2's MNSCRNS/MNSCRNL backgrounds through SHELL.PAL as a presentation
+//! preference; LAN setup BC/BD keeps YR's Cooperative setup art.
+//! User-requested YR parity exception: preserve these RA2 backgrounds during
+//! future parity work unless the user explicitly asks to change them.
+//! Nothing in this atlas follows the YR Loading & Menu Movie option; that
+//! option switches only the startup splash and the menu movie.
 
 use std::collections::HashMap;
 
@@ -46,13 +49,21 @@ const TRACKBAR_FRAME_BORDER: i32 = 2;
 /// one pixel wider and taller than the template conversion
 /// (`ui::shell::geom::child_window`): Skirmish `0x102` and the Options audio
 /// sliders 129x22, Generate Map's Players 226x22, the Options plain sliders
-/// 181x22. The in-game B8 and BBB sliders keep their 263x21 and 192x21.
-pub const TRACKBAR_FRAMES: [(i32, i32, i32); 5] = [
+/// 181x22, the shell's Sound Options `0xD6` volumes 261x22. The in-game B8
+/// and BBB sliders keep their 263x21 and 192x21. The network setup dialogs
+/// BC/BD/C2/C9 place their speed, credits and units sliders at 129x21 and the
+/// co-op difficulty slider at 266x22, or 266x21 on WOL's host C2
+/// (`0x0060B950` placement, `tools/storage_oracle/lan_lobby.json`).
+pub const TRACKBAR_FRAMES: [(i32, i32, i32); 9] = [
     (129, 22, 50),
     (226, 22, 50),
     (263, 21, 50),
     (181, 22, 0),
     (192, 21, 0),
+    (261, 22, 50),
+    (129, 21, 50),
+    (266, 22, 0),
+    (266, 21, 0),
 ];
 const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
     "usai.pcx", "japi.pcx", "frai.pcx", "geri.pcx", "gbri.pcx", "djbi.pcx", "arbi.pcx", "lati.pcx",
@@ -219,13 +230,16 @@ impl SkirmishShellChromeAtlas {
     /// at800; small MNSCRNS uses that same setup palette. Native72CF90 frees
     /// the setup pair on return. This retained atlas shares app-owned assets
     /// and does not change the intentional RA2 offline-skirmish selection.
+    ///
+    /// User-requested exception: 60CF00 gives WOL C2/C9 the same 72D030 setup
+    /// art as BC/BD, but VERA paints them with BB's generic RA2 MNSCRNS/MNSCRNL
+    /// through SHELL.PAL, matching the offline Skirmish screen.
     pub fn lan_background(&self, dialog_id: u16, width: u32) -> Option<SkirmishShellChromeEntry> {
         match (dialog_id, width) {
-            (0xBB, 640) => self.generic_background_640_mnscrns_shell,
-            (0xBB, _) => self.generic_background_large_mnscrnl_shell,
-            // 60CF00 gives WOL C2/C9 the same 72D030 setup art as BC/BD.
-            (0xBC | 0xBD | 0xC2 | 0xC9, 640) => self.lan_setup_backgrounds[0],
-            (0xBC | 0xBD | 0xC2 | 0xC9, 800) => self.lan_setup_backgrounds[1],
+            (0xBB | 0xC2 | 0xC9, 640) => self.generic_background_640_mnscrns_shell,
+            (0xBB | 0xC2 | 0xC9, _) => self.generic_background_large_mnscrnl_shell,
+            (0xBC | 0xBD, 640) => self.lan_setup_backgrounds[0],
+            (0xBC | 0xBD, 800) => self.lan_setup_backgrounds[1],
             _ => None,
         }
     }

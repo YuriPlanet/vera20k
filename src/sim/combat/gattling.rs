@@ -432,7 +432,7 @@ impl crate::sim::world::Simulation {
                 // driver endpoint and handle clear, before Report's65C780.
                 // Source: tools/input_oracle/gattling_loop.json.
                 self.sound_events
-                    .push(crate::sim::world::SimSoundEvent::GattlingLoopStop { owner });
+                    .emit(crate::sim::world::SimSoundEvent::GattlingLoopStop { owner });
                 frame_effects.flush_sound(self, Some(rules));
             },
             || main_draws.next_u32(),
@@ -446,7 +446,7 @@ impl crate::sim::world::Simulation {
                 .and_then(|weapon| weapon.report_item(report.item as usize))
         {
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::GattlingLoop {
+                .emit(crate::sim::world::SimSoundEvent::GattlingLoop {
                     owner,
                     sound_id: sound.to_owned(),
                     world,
@@ -476,7 +476,7 @@ impl crate::sim::world::Simulation {
             // including an already cleared handle. The sound owner validates
             // Type0/stale handles. Source: gattling_loop.json's Unit release.
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
+                .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
                     owner: gattling_sound_owner(id),
                 });
             frame_effects.flush_sound(self, Some(rules));
@@ -500,7 +500,7 @@ impl crate::sim::world::Simulation {
             // TechnoLimbo6F6C6B releases4A4 before6F6C76 clears the latch.
             // Nested cleanup retains the frame rules even when it needs none.
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
+                .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
                     owner: gattling_sound_owner(id),
                 });
             context.effects().flush_sound(self, context.rules());

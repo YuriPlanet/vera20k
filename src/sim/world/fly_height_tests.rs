@@ -58,7 +58,7 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
         .cell_mut_for_test(10, 10)
         .unwrap()
         .slope_type = integer("slope", 0) as u8;
-    assert_eq!(sim.allocate_stable_id(), 1);
+    assert_eq!(sim.substrate.allocate_stable_id(), 1);
     let category = if input["kind"] == "unit" {
         EntityCategory::Unit
     } else {
@@ -89,7 +89,7 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     ));
     sim.remove_entity_occupancy(1);
     if flag("loaded") {
-        assert_eq!(sim.allocate_stable_id(), 2);
+        assert_eq!(sim.substrate.allocate_stable_id(), 2);
         insert_entity(&mut sim, 2, EntityCategory::Infantry);
         sim.substrate.entities.get_mut(2).unwrap().passenger_role =
             PassengerRole::inside_for_test(1, false);
@@ -340,7 +340,7 @@ fn landing_base_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     let mut slots = crate::sim::radio::contacts::Contacts::with_capacity(contacts.len());
     let mut holes = Vec::new();
     for contact in contacts {
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         slots.insert(id).unwrap();
         let Some(kind) = contact.as_str() else {
             holes.push(id);
@@ -874,7 +874,7 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
         if !row["input"]["marked"].as_bool().unwrap_or(false) {
             sim.remove_entity_occupancy(1);
         }
-        let peer = sim.allocate_stable_id();
+        let peer = sim.substrate.allocate_stable_id();
         insert_entity(&mut sim, peer, EntityCategory::Aircraft);
         let owner = sim.substrate.entities.get(1).unwrap();
         let (position, on_bridge, loco) =
@@ -944,7 +944,7 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
     assert_eq!(rows.len(), 64);
     for row in rows {
         let (mut sim, rules) = takeoff_fixture(&row);
-        let peer = sim.allocate_stable_id();
+        let peer = sim.substrate.allocate_stable_id();
         insert_entity(&mut sim, peer, EntityCategory::Aircraft);
         let owner = sim.substrate.entities.get(1).unwrap();
         let (position, on_bridge, loco) =

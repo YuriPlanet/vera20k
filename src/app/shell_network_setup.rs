@@ -35,6 +35,23 @@ pub(crate) enum NetworkSetupRequest {
     PrepareMapForHandoff {
         received_budget: i32,
     },
+    /// The guest's preview request, type `0x1B` (`0x005E7586..0x005E759D`):
+    /// sent once per material map change it cannot verify.
+    RequestPreview,
+    /// The host's `'W'` start staging, type `0x17` to every guest
+    /// (`0x005E3720`).
+    PublishStartStaging(String),
+    /// The guest's second `0x10` at GO, for a random map's `RandMap.img`.
+    RequestRandomMapImage,
+    /// The host's preview offer, type `0x19` to every guest (`0x005E8133`).
+    OfferPreview,
+    /// The host's `SendFileToClients("Preview.bin")` once every guest has
+    /// acknowledged the offer (`0x005E8471..0x005E847E`).
+    SendPreviewFile,
+    /// The guest's answer to an offer, type `0x1A` (`0x005E7920`).
+    AcknowledgePreview,
+    /// The guest's `0x10` for the offered `Preview.bin` (`0x00693B70`).
+    RequestPreviewFile,
     PlayerChoices {
         row: u8,
         slot: crate::skirmish_launch::SkirmishLocalSlot,
@@ -88,9 +105,34 @@ pub(crate) struct NetworkSetupProtocol {
     accept_eligible: bool,
     go_deadline: Option<Instant>,
     map_transfer_pending: bool,
+    /// A random map's `RandMap.Sed` has arrived; its `RandMap.img` is the
+    /// second receive (`0x005DDA5D..0x005DDA68`).
+    awaiting_random_map_image: bool,
     transfer_progress: Option<(u32, u32)>,
     return_after_notice: bool,
+    /// The host's offer: the guests that answered and the 1800-bucket wait
+    /// (`0x005E81D0..0x005E8326`).
+    preview_offer: Option<PreviewOffer>,
+    /// A guest's offered `Preview.bin` is being received.
+    awaiting_preview_file: bool,
+    /// The guest verified the host's map locally at its last change, so its
+    /// preview is the local map's.
+    local_map_verified: bool,
+    /// The guest's `[0xAC1154]` from the host's `Preview.bin`, numbered so
+    /// the renderer rebuilds its texture once per arrival.
+    received_preview: Option<(u32, crate::map::preview::DecodedPreview)>,
+    received_preview_count: u32,
     requests: Vec<NetworkSetupRequest>,
+}
+
+/// The host's offer as sent: the guests it went to (the node count is fixed
+/// at the send, `0xA8DA84`, and acks match by sender, `0x005E82D0`), and the
+/// preview the `'W'` described.
+struct PreviewOffer {
+    guests: Vec<String>,
+    acknowledged: Vec<String>,
+    preview: crate::map::preview::DecodedPreview,
+    deadline: Instant,
 }
 
 impl NetworkSetupProtocol {
@@ -106,8 +148,14 @@ impl NetworkSetupProtocol {
             accept_eligible: false,
             go_deadline: None,
             map_transfer_pending: false,
+            awaiting_random_map_image: false,
             transfer_progress: None,
             return_after_notice: false,
+            preview_offer: None,
+            awaiting_preview_file: false,
+            local_map_verified: false,
+            received_preview: None,
+            received_preview_count: 0,
             requests: if wol_host {
                 // C2 0x497: advertisement 78F000, then one ping per user.
                 vec![
@@ -139,6 +187,22 @@ impl NetworkSetupProtocol {
     pub(crate) fn transfer_progress(&self) -> Option<(u32, u32)> {
         self.transfer_progress
     }
+
+    /// The guest's preview when its map did not verify: the host's
+    /// `Preview.bin`, with its arrival number.
+    pub(crate) fn received_preview(&self) -> Option<(u32, &crate::map::preview::DecodedPreview)> {
+        self.received_preview
+            .as_ref()
+            .map(|(count, preview)| (*count, preview))
+    }
+
+    pub(crate) fn local_map_verified(&self) -> bool {
+        self.local_map_verified
+    }
+
+    fn drop_preview_offer(&mut self) {
+        self.preview_offer = None;
+    }
 }
 
 /// The setup dialog the admitted session shows: GameMode4 is WOL C2/C9.
@@ -159,7 +223,7 @@ pub(crate) fn dialog(state: &AppState) -> SetupDialog {
     let session = &state.match_state.session;
     SetupDialog {
         host: session.host(),
-        flavor: if session.mode() == SessionMode::Wol {
+        flavor: if state.match_state.session_mode() == SessionMode::Wol {
             SetupFlavor::Wol
         } else {
             SetupFlavor::Lan
@@ -485,13 +549,13 @@ pub(crate) fn commit_back(state: &mut AppState) {
     open_service_lobby(state, dialog);
 }
 
-/// PrepareSession after a network match. LAN builds a new BB; WOL re-runs
-/// the lobby runner with postmatch set (`WOL__RunMain 0x77B44B`), which
-/// rejoins the previous chat lobby.
+/// PrepareSession after a network match. LAN builds a new BB; WOL enters
+/// `WOL_Main` again, whose lobby runner runs with postmatch set
+/// (`0x77B44B`) and rejoins the previous chat lobby.
 pub(crate) fn return_after_match(state: &mut AppState) {
     let dialog = leave_setup(state);
     if dialog.wol() {
-        crate::app::shell_wol::open_lobby(state, true);
+        crate::app::shell_wol::reenter_after_match(state);
     } else {
         App::open_lan_lobby(state);
     }

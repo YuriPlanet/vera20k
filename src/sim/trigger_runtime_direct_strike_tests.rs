@@ -81,13 +81,13 @@ fn chemical_strike_uses_original_edge_origins_and_fixed_unowned_launch() {
         ((17, 31), [6272, 9856, 0]),
     ] {
         let (rules, mut sim, _) = world_with(rules(false), 64, &[]);
-        sim.playfield_bounds = Some(PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
             base: 32,
             off_fc: 2,
             off_100: 2,
             off_104: 28,
             off_108: 28,
-        });
+        }));
         waypoint(&mut sim, cell);
         let before = rng(&sim);
         assert!(run(&mut sim, &rules, 96));

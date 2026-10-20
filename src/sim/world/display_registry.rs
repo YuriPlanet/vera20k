@@ -14,7 +14,10 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::intern::StringInterner;
 use crate::sim::movement::ground_pose::{building_render_order_parts, position_world_coord};
+use crate::sim::terrain_object::TerrainObjectStore;
+use crate::sim::world::ObjectSubstrate;
 
 /// Foot4DB7E0 / Aircraft41ADC0 dispatch to the active locomotor. Fly4CFCF0
 /// reads physical GetHeight, Jumpjet54B8D0 additionally reads structural
@@ -169,39 +172,26 @@ impl GroundSortKeys for GroundSortView<'_> {
 }
 
 impl Simulation {
-    pub fn submit_object_display(&mut self, id: u64, layer: DisplayLayer, rules: Option<&RuleSet>) {
+    pub(crate) fn submit_object_display(
+        world_interner: &StringInterner,
+        terrain_objects: &TerrainObjectStore,
+        substrate: &mut ObjectSubstrate,
+        id: u64,
+        layer: DisplayLayer,
+        rules: Option<&RuleSet>,
+    ) {
         if layer == DisplayLayer::GROUND {
-            self.forget_changed_ground_keys(rules);
+            substrate.forget_changed_ground_keys(rules);
         }
         let view = GroundSortView {
-            entities: &self.substrate.entities,
-            anims: &self.substrate.anims,
-            particles: &self.substrate.particle_systems,
-            terrain: self.terrain_objects.objects(),
-            interner: &self.interner,
+            entities: &substrate.entities,
+            anims: &substrate.anims,
+            particles: &substrate.particle_systems,
+            terrain: terrain_objects.objects(),
+            interner: &*world_interner,
             rules,
         };
-        self.substrate.display.submit(id, Some(layer), &view);
-    }
-
-    /// Forget the kept Ground keys whose inputs the entity and anim stores
-    /// handed out mutably since the last Ground scan, and all of them when
-    /// the rules differ from those they were read under.
-    fn forget_changed_ground_keys(&mut self, rules: Option<&RuleSet>) {
-        let context = ReadContext {
-            rules: rules.map(RuleSet::serial),
-        };
-        let entities = self
-            .substrate
-            .entities
-            .take_touched(crate::sim::entity_store::TouchReader::GroundKeys);
-        let anims = self
-            .substrate
-            .anims
-            .take_touched(crate::sim::anim_class::AnimTouchReader::GroundKeys);
-        self.substrate
-            .display
-            .forget_changed_ground_keys(context, [entities, anims]);
+        substrate.display.submit(id, Some(layer), &view);
     }
 
     pub(super) fn submit_entity_display(
@@ -218,7 +208,14 @@ impl Simulation {
             terrain.or(self.resolved_terrain.as_ref()),
             rules.map(|rules| (rules, &self.interner)),
         );
-        self.submit_object_display(id, layer, rules);
+        Self::submit_object_display(
+            &self.interner,
+            &self.terrain_objects,
+            &mut self.substrate,
+            id,
+            layer,
+            rules,
+        );
     }
 
     pub(crate) fn entity_display_layer(
@@ -266,17 +263,41 @@ impl Simulation {
         }
     }
 
-    pub(super) fn sort_display_ground(&mut self, rules: Option<&RuleSet>) {
-        self.forget_changed_ground_keys(rules);
+    pub(super) fn sort_display_ground(
+        world_interner: &StringInterner,
+        terrain_objects: &TerrainObjectStore,
+        substrate: &mut ObjectSubstrate,
+        rules: Option<&RuleSet>,
+    ) {
+        substrate.forget_changed_ground_keys(rules);
         let view = GroundSortView {
-            entities: &self.substrate.entities,
-            anims: &self.substrate.anims,
-            particles: &self.substrate.particle_systems,
-            terrain: self.terrain_objects.objects(),
-            interner: &self.interner,
+            entities: &substrate.entities,
+            anims: &substrate.anims,
+            particles: &substrate.particle_systems,
+            terrain: terrain_objects.objects(),
+            interner: world_interner,
             rules,
         };
-        self.substrate.display.sort_ground_pass(&view);
+        substrate.display.sort_ground_pass(&view);
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// Forget the kept Ground keys whose inputs the entity and anim stores
+    /// handed out mutably since the last Ground scan, and all of them when
+    /// the rules differ from those they were read under.
+    fn forget_changed_ground_keys(&mut self, rules: Option<&RuleSet>) {
+        let context = ReadContext {
+            rules: rules.map(RuleSet::serial),
+        };
+        let entities = self
+            .entities
+            .take_touched(crate::sim::entity_store::TouchReader::GroundKeys);
+        let anims = self
+            .anims
+            .take_touched(crate::sim::anim_class::AnimTouchReader::GroundKeys);
+        self.display
+            .forget_changed_ground_keys(context, [entities, anims]);
     }
 }
 
@@ -332,8 +353,15 @@ mod tests {
                 expected,
                 "{name}"
             );
-            sim.entities_mut().insert(entity);
-            sim.submit_object_display(id, DisplayLayer::GROUND, Some(&rules));
+            sim.substrate.entities.insert(entity);
+            Simulation::submit_object_display(
+                &sim.interner,
+                &sim.terrain_objects,
+                &mut sim.substrate,
+                id,
+                DisplayLayer::GROUND,
+                Some(&rules),
+            );
         }
         assert_eq!(
             sim.display_layers().members(DisplayLayer::GROUND),
@@ -465,7 +493,7 @@ mod tests {
         let spark = sim.interner.intern("SPARK");
         let mut units = Vec::new();
         for index in 0..5u16 {
-            let id = sim.allocate_stable_id();
+            let id = sim.substrate.allocate_stable_id();
             let (category, type_ref) = if index == 4 {
                 (EntityCategory::Structure, gate_type)
             } else {
@@ -487,8 +515,15 @@ mod tests {
             );
             entity.position.set_sub_x_for_test(SimFixed::from_num(128));
             entity.position.set_sub_y_for_test(SimFixed::from_num(128));
-            sim.entities_mut().insert(entity);
-            sim.submit_object_display(id, DisplayLayer::GROUND, Some(&rules));
+            sim.substrate.entities.insert(entity);
+            Simulation::submit_object_display(
+                &sim.interner,
+                &sim.terrain_objects,
+                &mut sim.substrate,
+                id,
+                DisplayLayer::GROUND,
+                Some(&rules),
+            );
             units.push(id);
         }
         let mut anims = Vec::new();
@@ -587,7 +622,12 @@ mod tests {
                 _ => {
                     let scan_rules = (next(3) != 0).then_some(&rules);
                     let mut expected = copy(&sim.substrate.display);
-                    sim.sort_display_ground(scan_rules);
+                    Simulation::sort_display_ground(
+                        &sim.interner,
+                        &sim.terrain_objects,
+                        &mut sim.substrate,
+                        scan_rules,
+                    );
                     expected.sort_ground_pass(&|id| live(&sim, scan_rules, id));
                     assert_eq!(
                         sim.substrate.display.members(DisplayLayer::GROUND),

@@ -3,6 +3,64 @@ use crate::render::vxl_raster::VxlSprite;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::voxel_frame_catalog::draws_turret_parts;
 
+#[test]
+fn retail_jumpjet_unit_demand_includes_native_shadow_stencils() {
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules};
+    let Some(battle) = retail_battle_rules() else {
+        return;
+    };
+    let (_, assets) = retail_assets().expect("retail assets for the loaded rules");
+    let object = battle.rules.object("ZEP").expect("retail Kirov");
+    assert_eq!(
+        object.locomotor,
+        crate::rules::locomotor_type::LocomotorKind::Jumpjet
+    );
+    assert!(object.considered_aircraft);
+    assert!(!object.no_shadow);
+    assert_eq!(object.voxel_shadow_index(), 0);
+    let demand = UnitAtlasDemand {
+        air: BTreeSet::from(["ZEP".to_string()]),
+        ..Default::default()
+    };
+    let (keys, _) = needed_unit_keys(&demand, &assets, Some(&battle.rules));
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/unit_shadow.json",
+    ))
+    .unwrap();
+    let model = UnitModel::load(&assets, "ZEP", Some(&battle.rules)).unwrap();
+    for case in fixture["retail"]["cases"].as_array().unwrap() {
+        let caller = &fixture["callers"][case["caller"].as_u64().unwrap() as usize];
+        assert!(caller["draw_admitted"].as_bool().unwrap());
+        assert!(!caller["body_mask_present"].as_bool().unwrap());
+        let key = UnitSpriteKey {
+            type_id: "ZEP".into(),
+            turret_index: 0,
+            facing: vxl_raster::voxel_facing_step_u16(
+                caller["input"]["primary"].as_u64().unwrap() as u16
+            ) * 8,
+            layer: VxlLayer::Shadow,
+            frame: 0,
+            slope_type: caller["input"]["slope"].as_u64().unwrap_or(0) as u8,
+            barrel_pitch: 0,
+        };
+        assert!(keys.contains(&key), "Unit73C5C4 requires {key:?}");
+        let mut grounded = key.clone();
+        grounded.frame |= GROUNDED_SHADOW_FRAME_FLAG;
+        assert!(
+            keys.contains(&grounded),
+            "ground mask must not occupy the flight stencil"
+        );
+        let (_, bounds) = model
+            .render(&key, None, None, &mut None)
+            .expect("native Kirov shadow");
+        let rect = &case["rect"];
+        assert_eq!(
+            bounds,
+            Some([0, 1, 4, 5].map(|i| rect[i].as_i64().unwrap() as i32))
+        );
+    }
+}
+
 /// Aircraft DrawIt4148A0 reaches the shared Foot shadow owner. An ordinary
 /// retail Harrier therefore needs a shadow resident alongside its body.
 #[test]
@@ -334,6 +392,7 @@ fn incremental_repack_plan_retains_old_unloading_referent() {
         offset_x: 0.0,
         offset_y: 0.0,
         native_draw_bounds: Some([-4, -4, 14, 12]),
+        shadow_center: None,
     };
     // CMON is CMIN's stock UnloadingClass referent. It may be absent from the
     // current live-key collector but must remain in the rendered cache.

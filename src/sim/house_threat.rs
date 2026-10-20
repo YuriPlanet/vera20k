@@ -11,7 +11,10 @@
 use crate::map::entities::EntityCategory;
 use crate::map::houses::is_allied_with;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::house_diplomacy::HouseAlliances;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
+use crate::sim::intern::StringInterner;
 use crate::sim::world::Simulation;
 
 /// Techno `+0x508`, the threat this object last published to its enemies'
@@ -176,13 +179,20 @@ impl Simulation {
 
     /// Cell481870: each receiver excludes the source House and its directional
     /// allies. Unlike509400's rebuild, this applies to every concrete class.
-    fn cell_update_spatial_threat(&mut self, source: InternedId, cell: (i16, i16), delta: i32) {
-        let source_name = self.interner.resolve(source);
-        for (&owner, house) in &mut self.houses {
+    fn cell_update_spatial_threat(
+        interner: &StringInterner,
+        house_alliances: &HouseAlliances,
+        houses: &mut Houses,
+        source: InternedId,
+        cell: (i16, i16),
+        delta: i32,
+    ) {
+        let source_name = interner.resolve(source);
+        for (&owner, house) in &mut *houses {
             if owner == source
                 || is_allied_with(
-                    &self.house_alliances,
-                    self.interner.resolve(owner),
+                    house_alliances.as_map(),
+                    interner.resolve(owner),
                     source_name,
                 )
             {
@@ -201,7 +211,14 @@ impl Simulation {
         let actor = self.substrate.entities.get_mut(id).unwrap();
         let owner = actor.owner();
         actor.cached_spatial_threat.publish(value);
-        self.cell_update_spatial_threat(owner, cell, value);
+        Self::cell_update_spatial_threat(
+            &self.interner,
+            &self.house_alliances,
+            &mut self.houses,
+            owner,
+            cell,
+            value,
+        );
     }
 
     fn remove_spatial_threat_at(&mut self, id: u64, cell: (i16, i16)) {
@@ -210,7 +227,14 @@ impl Simulation {
         let value = actor
             .cached_spatial_threat()
             .expect("required native Techno+508 read before an admitted threat publication");
-        self.cell_update_spatial_threat(owner, cell, value.wrapping_neg());
+        Self::cell_update_spatial_threat(
+            &self.interner,
+            &self.house_alliances,
+            &mut self.houses,
+            owner,
+            cell,
+            value.wrapping_neg(),
+        );
         self.substrate
             .entities
             .get_mut(id)
@@ -389,7 +413,7 @@ impl Simulation {
                     || actor.owner() == owner
                     || (controlled
                         && is_allied_with(
-                            &self.house_alliances,
+                            self.house_alliances.as_map(),
                             self.interner.resolve(owner),
                             self.interner.resolve(actor.owner()),
                         ))

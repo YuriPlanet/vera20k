@@ -127,13 +127,13 @@ pub(crate) fn launch(
         target_rx,
         target_ry,
     );
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx: target_rx,
         ry: target_ry,
     });
-    sim.sound_events.push(SimSoundEvent::RadarEvent {
+    sim.sound_events.emit(SimSoundEvent::RadarEvent {
         radar: RadarEventRequest::new(RadarEventType::ImpactSilent, target_rx, target_ry),
     });
 
@@ -354,7 +354,8 @@ fn receive_strength_as_c4(
     frame_effects: FrameEffects<'_>,
 ) {
     let Some(event) = super::strength_receiver_event(
-        sim,
+        &mut sim.interner,
+        &sim.substrate,
         rules,
         id,
         &rules.bridge_warheads.c4_name,

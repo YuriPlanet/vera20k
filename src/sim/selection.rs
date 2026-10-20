@@ -20,8 +20,9 @@
 /// selection. `ObjectClass::Select @ 0x005F4520` sets it ([`Self::select`]);
 /// `ObjectClass::Deselect @ 0x005F44A0` clears it ([`Self::deselect`]).
 /// `Command::Select` commits it through `apply_selection_snapshot`; Limbo,
-/// Destroy, a Temporal erase, a power-down, a lift, a bunker install and the
-/// crew and parasite paths call Select or Deselect too. VERA keeps the
+/// Destroy, a Temporal erase, a power-down, a lift, a bunker install, the
+/// crew and parasite paths and a non-player object's cloak call Select or
+/// Deselect too. VERA keeps the
 /// current-objects vector as the app's selection ledger (input order and
 /// pending commands), which it reconciles with this byte after the frame.
 /// Combat reads it for selected-unit effects.

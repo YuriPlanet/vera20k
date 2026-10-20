@@ -125,7 +125,7 @@ fn load_campaign(
 /// Drive real frames until the map-authored Harvest mission has dispatched.
 fn dispatch(runtime: &mut crate::sim::runtime::SimRuntime, miner: u64) -> Option<(u16, u16)> {
     use crate::sim::components::NavTargetRef;
-    runtime.simulation.session.publish_started();
+    runtime.simulation.session_mut_for_test().publish_started();
     for _ in 0..8 {
         runtime
             .advance_frame(
@@ -149,8 +149,8 @@ fn dispatch(runtime: &mut crate::sim::runtime::SimRuntime, miner: u64) -> Option
 
 fn miner(runtime: &crate::sim::runtime::SimRuntime) -> u64 {
     let sim = &runtime.simulation;
-    let current = sim.session.current_house().unwrap();
-    let cmin = sim.interner.get("CMIN").unwrap();
+    let current = sim.session().current_house().unwrap();
+    let cmin = sim.interner().get("CMIN").unwrap();
     let id = sim
         .entities()
         .values()
@@ -172,7 +172,7 @@ fn miner(runtime: &crate::sim::runtime::SimRuntime) -> u64 {
 fn keep_ore(runtime: &mut crate::sim::runtime::SimRuntime, keep: impl Fn(u16, u16) -> bool) {
     let sim = &mut runtime.simulation;
     let registry = &runtime.resources.overlay_registry;
-    let grid = sim.overlay_grid.as_mut().unwrap();
+    let mut grid = sim.take_overlay_grid_for_load().unwrap();
     let remove: Vec<_> = grid
         .iter_occupied()
         .filter(|(x, y, cell)| {
@@ -185,8 +185,13 @@ fn keep_ore(runtime: &mut crate::sim::runtime::SimRuntime, keep: impl Fn(u16, u1
         .collect();
     for (x, y) in remove {
         grid.clear_overlay(x, y);
-        grid.recalculate_runtime_cell(sim.resolved_terrain.as_mut().unwrap(), registry, (x, y));
+        grid.recalculate_runtime_cell(
+            sim.resolved_terrain_mut_for_test().as_mut().unwrap(),
+            registry,
+            (x, y),
+        );
     }
+    sim.install_overlay_grid_for_load(grid);
 }
 
 #[test]
@@ -235,16 +240,19 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
     keep_ore(&mut probe, |x, y| {
         x.abs_diff(52) >= 10 || y.abs_diff(93) >= 10
     });
-    let owner = probe.simulation.session.current_house().unwrap();
-    probe.simulation.fog.reveal_all_for_owner(owner);
+    let owner = probe.simulation.session().current_house().unwrap();
+    probe
+        .simulation
+        .fog_mut_for_test()
+        .reveal_all_for_owner(owner);
     let target = dispatch(&mut probe, id).expect("ALL05 must offer reachable distant ore");
     eprintln!("retail campaign miner selected reachable control cell {target:?}");
     let computer_owner = probe
         .simulation
-        .houses
+        .houses()
         .iter()
         .find(|(_, house)| !house.is_human() && !house.multiplay_passive())
-        .map(|(&owner, _)| probe.simulation.interner.resolve(owner).to_owned())
+        .map(|(&owner, _)| probe.simulation.interner().resolve(owner).to_owned())
         .expect("ALL05 has a computer House");
     for (mode, visible, computer, expected) in [
         (ScenarioGameMode::Campaign, false, false, None),
@@ -262,28 +270,28 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
         let id = miner(&runtime);
         keep_ore(&mut runtime, |x, y| (x, y) == target);
         let sim = &mut runtime.simulation;
-        sim.session.set_game_mode(mode);
-        let owner = sim.session.current_house().unwrap();
+        sim.session_mut_for_test().set_game_mode(mode);
+        let owner = sim.session().current_house().unwrap();
         let miner_owner = sim.entities().get(id).unwrap().owner();
         assert_eq!(miner_owner == owner, !computer);
-        let refinery = sim.interner.get("GAREFN").unwrap();
+        let refinery = sim.interner().get("GAREFN").unwrap();
         assert!(
             sim.entities()
                 .values()
                 .any(|entity| entity.owner() == miner_owner && entity.type_ref() == refinery)
         );
         if computer {
-            assert!(!sim.houses[&miner_owner].is_human());
+            assert!(!sim.houses()[&miner_owner].is_human());
         }
-        sim.fog.reset_explored_for_owner(owner);
+        sim.fog_mut_for_test().reset_explored_for_owner(owner);
         if visible {
-            sim.fog.reveal_all_for_owner(owner);
+            sim.fog_mut_for_test().reveal_all_for_owner(owner);
         }
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
-            sim.resolved_terrain.as_ref().unwrap(),
+            sim.resolved_terrain().unwrap(),
         );
         assert_eq!(
-            crate::sim::vision::cell_is_shrouded(&sim.fog, &cells, owner, target),
+            crate::sim::vision::cell_is_shrouded(sim.fog(), &cells, owner, target),
             !visible
         );
         assert_eq!(

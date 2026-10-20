@@ -155,7 +155,7 @@ pub(crate) fn dispatch_mission(
         Some(MissionType::Move) => {
             let state = handler_state(entity);
             let (next, delay) = sim.aircraft_move(id, state, rules, registry, ctx.effects);
-            write_state(sim, id, state, next);
+            write_state(&mut sim.substrate, id, state, next);
             delay
         }
         Some(MissionType::Attack) => {
@@ -171,7 +171,7 @@ pub(crate) fn dispatch_mission(
                     ctx.effects,
                 ));
             };
-            write_state(sim, id, state, next);
+            write_state(&mut sim.substrate, id, state, next);
             delay
         }
         Some(MissionType::Guard | MissionType::Sticky) => {
@@ -234,8 +234,12 @@ fn nav_com_absent(sim: &Simulation, id: u64) -> bool {
 }
 
 /// `Queue_Mission(mission, 0)` (vt+0x1E8 = `0x0041BA90`) of the aircraft `id`.
-pub(crate) fn queue_mission(sim: &mut Simulation, id: u64, mission: MissionType) {
-    if let Some(plane) = sim.substrate.entities.get_mut(id) {
+pub(crate) fn queue_mission(
+    substrate: &mut crate::sim::world::ObjectSubstrate,
+    id: u64,
+    mission: MissionType,
+) {
+    if let Some(plane) = substrate.entities.get_mut(id) {
         crate::sim::mission::authority::queue_entity_mission_deferred(
             plane,
             MissionId::from_known(mission),
@@ -249,9 +253,9 @@ pub(crate) fn queue_mission(sim: &mut Simulation, id: u64, mission: MissionType)
 /// zeroes it. The stores are the handlers' own: Mission_Move_NonCarryall
 /// (`0x004166E0`) at `0x0041675D..0x00416AB6`, Mission_Attack (`0x00417FE0`)
 /// at `0x0041801B..0x00418D17`.
-fn write_state(sim: &mut Simulation, id: u64, read: u8, next: u8) {
+fn write_state(substrate: &mut crate::sim::world::ObjectSubstrate, id: u64, read: u8, next: u8) {
     if next != read
-        && let Some(entity) = sim.substrate.entities.get_mut(id)
+        && let Some(entity) = substrate.entities.get_mut(id)
     {
         entity.mission.set_handler_state(u32::from(next));
     }
@@ -282,6 +286,13 @@ fn attack_visit(
         // State 2 (`0x00418D1D`) is the epilogue alone. Mission_Attack runs
         // as the Attack mission's handler, so its epilogue reads Attack's
         // Rate.
-        state => (state, sim.mission_rate_epilogue(rules, MissionType::Attack)),
+        state => (
+            state,
+            crate::sim::mission::authority::rate_epilogue(
+                rules,
+                MissionType::Attack,
+                &mut sim.scenario_rng,
+            ),
+        ),
     })
 }

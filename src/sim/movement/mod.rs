@@ -41,8 +41,6 @@ use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::sim::cell_rect::PlayfieldBounds;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::entity_store::EntityStore;
-#[cfg(any(test, feature = "test-support"))]
-use crate::sim::lifecycle_request::LifecycleRequest;
 use crate::sim::pathfinding::PathGrid;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
@@ -62,6 +60,8 @@ mod foot_coordinate;
 pub(crate) mod foot_mark;
 mod foot_path;
 pub(crate) use drive_locomotion::drive_do_turn;
+#[cfg(test)]
+pub(crate) mod approach_oracle_seam;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use foot_path::FindPathResult;
 pub(crate) use foot_path::FootPathOutcome;
@@ -213,7 +213,6 @@ impl MovementTickStats {
 pub(crate) fn tick_movement(
     entities: &mut EntityStore,
     interner: &mut crate::sim::intern::StringInterner,
-    lifecycle_requests: &mut Vec<LifecycleRequest>,
 ) {
     let empty_alliances: HouseAllianceMap = HouseAllianceMap::new();
     let mut rng: SimRng = SimRng::new(0);
@@ -226,7 +225,6 @@ pub(crate) fn tick_movement(
         &mut rng,
         0, // sim_tick not available in test-only wrapper
         interner,
-        lifecycle_requests,
     );
 }
 
@@ -240,7 +238,6 @@ pub(crate) fn tick_movement_with_grid(
     rng: &mut SimRng,
     sim_tick: u64,
     interner: &mut crate::sim::intern::StringInterner,
-    lifecycle_requests: &mut Vec<LifecycleRequest>,
 ) -> MovementTickStats {
     let mut sound_events: Vec<crate::sim::world::SimSoundEvent> = Vec::new();
     let mut raw_cell_occupation = crate::sim::occupancy::RawCellOccupationGrid::new();
@@ -261,7 +258,6 @@ pub(crate) fn tick_movement_with_grid(
         interner,
         None, // No RuleSet in legacy wrapper — crush sounds suppressed
         &mut sound_events,
-        lifecycle_requests,
     )
 }
 

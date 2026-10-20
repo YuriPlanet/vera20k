@@ -69,7 +69,7 @@ fn fixture(building_name: &str, damaged: bool) -> (Simulation, RuleSet, u64, Spr
     }
     rules.install_art_data(art);
     let mut sim = Simulation::new();
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate_mut_for_test().allocate_stable_id();
     let mut building = GameEntity::test_default_of_category(
         id,
         building_name,
@@ -143,7 +143,7 @@ fn bunker_slot_emitter_interleaves_front_and_back_around_the_unit() {
             .anim_slots();
         let back = slots[11].unwrap();
         let front = slots[10].unwrap();
-        let unit = sim.allocate_stable_id();
+        let unit = sim.substrate_mut_for_test().allocate_stable_id();
         let identities = [back, unit, front];
         let native_order: Vec<_> = golden["orders"][0]["order"]
             .as_array()

@@ -170,10 +170,11 @@ fn all_five_original_stop_controls_only_mark_alive_same_cell_systems() {
                 )
                 .unwrap();
             if !alive {
-                sim.particle_systems_mut().enter_limbo(id);
+                sim.substrate.particle_systems.enter_limbo(id);
             }
             if done {
-                sim.particle_systems_mut()
+                sim.substrate
+                    .particle_systems
                     .get_mut(id)
                     .unwrap()
                     .mark_done_spawning();

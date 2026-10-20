@@ -58,9 +58,10 @@
 //!   `local_player_defeated` names the ported readers). The borrowed client
 //!   boundary leaves planning (`0x00637A10`), supplies its2B event to the same
 //!   frame's dispatcher and rejects re-entry (`0x00731A50`). Remaining UI:
-//!   beacons deleted (`0x00431410`), beacon mode left (`0x004AC960`), and the
-//!   bytes `0x00A8D108..0x00A8D10F` that Taunt and dialog `0x73` read set and
-//!   that dialog refreshed (`0x004FC239..0x004FC25D`). The command bar is
+//!   beacons deleted (`0x00431410`), and beacon mode left (`0x004AC960`). The
+//!   chat-mask set (`0x00A8D108..0x00A8D10F`, `0x004FC23E`) is the app's
+//!   `input::chat` owner, run from the PlayerDefeated line; dialog 0x73
+//!   reads the mask whenever it draws (`0x004FC239..0x004FC25D` refresh). The command bar is
 //!   saved/closed6D1660 but restored4FC591→6D1610 on the common sole-human
 //!   terminal path, so its retained open state is unchanged. Wider multiplayer
 //!   close/restore paths remain outside this chain. Session+300 already guards
@@ -103,6 +104,15 @@ impl Simulation {
             .is_some_and(|house| house.flag_to_die(self.session.binary_frame() as i32))
     }
 
+    /// `0x005E2BA0`: the human (`+0x1EC`), undefeated (`+0x1F5`) Houses other
+    /// than `owner`.
+    pub(crate) fn other_undefeated_humans(&self, owner: InternedId) -> usize {
+        self.houses
+            .iter()
+            .filter(|(id, house)| **id != owner && house.is_human() && !house.is_defeated())
+            .count()
+    }
+
     /// The house rung with its defeat pass: see [`Self::house_rung`].
     #[cfg(any(test, feature = "test-support"))]
     pub(super) fn check_defeat(
@@ -141,10 +151,10 @@ impl Simulation {
                     crate::sim::production::construction_options_for_owner(self, rules, owner)
                 {
                     self.lifecycle_outputs
-                        .push(super::LifecycleOutput::SidebarConstructionOption { owner, type_id });
+                        .emit(super::LifecycleOutput::SidebarConstructionOption { owner, type_id });
                 }
                 self.lifecycle_outputs
-                    .push(super::LifecycleOutput::SidebarRecalculated { owner });
+                    .emit(super::LifecycleOutput::SidebarRecalculated { owner });
             }
             // Strip recalculation precedes4F92F6/4F92FD's Super
             // revoke/grant passes. Carry generated ABANDON events
@@ -350,8 +360,7 @@ impl Simulation {
                 .leave_local_planning(self, context.rules());
             self.reveal_entire_map(Some(owner), context);
             self.power_states
-                .entry(owner)
-                .or_default()
+                .house_mut(owner)
                 .set_tactical_map_available();
             commit
         } else {
@@ -362,7 +371,7 @@ impl Simulation {
         };
         if self.session.observer_house() != Some(owner) {
             self.sound_events
-                .push(SimSoundEvent::PlayerDefeated { house: owner });
+                .emit(SimSoundEvent::PlayerDefeated { house: owner });
         }
         self.complete_multiplayer_after_defeat(context.rules(), context.effects());
         planning_commit
@@ -398,7 +407,7 @@ impl Simulation {
             alive.iter().all(|right| {
                 left == right
                     || crate::map::houses::are_houses_mutually_allied(
-                        &self.house_alliances,
+                        self.house_alliances.as_map(),
                         self.interner.resolve(*left),
                         self.interner.resolve(*right),
                     )
@@ -549,7 +558,7 @@ impl Simulation {
             return;
         }
         self.sound_events
-            .push(SimSoundEvent::MatchOutcome { owner, kind });
+            .emit(SimSoundEvent::MatchOutcome { owner, kind });
         //752700 is reached synchronously before the Flag call returns.
         effects.flush_sound(self, rules);
     }

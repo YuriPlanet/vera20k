@@ -152,7 +152,7 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
         1,
         crate::sim::world::FrameEffects::empty(),
     );
-    let requests = std::mem::take(sim.sound_events_mut_for_test());
+    let requests = sim.take_sound_events_for_test();
     sound_dispatch::dispatch_sim_sound_events(
         requests,
         &sim,
@@ -180,7 +180,7 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
         true,
     );
     assert!(sim.entities().get(1).is_none());
-    let destruction = std::mem::take(sim.sound_events_mut_for_test());
+    let destruction = sim.take_sound_events_for_test();
     sound_dispatch::dispatch_sim_sound_events(
         destruction,
         &sim,

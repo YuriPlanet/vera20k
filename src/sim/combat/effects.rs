@@ -75,7 +75,8 @@ pub enum SmudgeSpawnRequest {
     BuildingSurvivor { cell_rx: u16, cell_ry: u16 },
 }
 
-/// Hookless compatibility record for one admitted per-cell tiberium reduction.
+/// One admitted per-cell tiberium reduction: the inline dispatch's request,
+/// and the record the callback-disabled receiver fixture defers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TiberiumReductionRequest {
     pub rx: u16,
@@ -140,6 +141,9 @@ pub(crate) struct DeathEffects {
     pub(crate) wall_mutations: Vec<WallMutation>,
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) cell_target_detaches: Vec<combat_aoe::CellTargetDetach>,
+    /// The receiver fixture's deferred reductions. Production reduces each
+    /// admitted cell inline, before the cell's damage.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) tiberium_reduction_requests: Vec<TiberiumReductionRequest>,
     pub(crate) death_sounds: Vec<(String, u16, u16)>,
     pub(crate) smudge_spawn_requests: Vec<SmudgeSpawnRequest>,
@@ -190,6 +194,7 @@ impl DeathEffects {
         #[cfg(any(test, feature = "test-support"))]
         self.cell_target_detaches
             .append(&mut other.cell_target_detaches);
+        #[cfg(any(test, feature = "test-support"))]
         self.tiberium_reduction_requests
             .append(&mut other.tiberium_reduction_requests);
         self.death_sounds.append(&mut other.death_sounds);

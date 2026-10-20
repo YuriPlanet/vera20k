@@ -59,6 +59,7 @@ pub mod shell_surface_present;
 pub mod shell_text;
 pub mod shell_text_reveal;
 pub mod shell_transition_pass;
+pub(crate) mod shell_ui_style_assets;
 pub mod shroud_buffer;
 #[cfg(test)]
 mod shroud_gpu_tests;
@@ -80,6 +81,7 @@ pub mod terrain_instances;
 pub mod tile_atlas;
 pub mod unit_atlas;
 pub mod unit_pose_cache;
+pub(crate) mod unit_shadow;
 pub mod upscale_pass;
 #[cfg(test)]
 mod voxel_parity_tests;

@@ -97,7 +97,7 @@ impl<'a> SimView<'a> {
 
     /// The houses' ally graph, which fog and visibility questions ask.
     pub fn house_alliances(&self) -> &'a crate::map::houses::HouseAllianceMap {
-        &self.simulation.house_alliances
+        self.simulation.house_alliances.as_map()
     }
 
     pub fn houses(&self) -> &'a crate::sim::houses::Houses {
@@ -127,8 +127,8 @@ impl<'a> SimView<'a> {
     /// acknowledges this exact generation only after a completed update.
     pub fn radar_terrain_dirty(&self) -> (&'a [(u16, u16)], u64) {
         (
-            &self.simulation.radar_terrain_dirty_cells,
-            self.simulation.radar_terrain_dirty_generation,
+            self.simulation.dirty_cells.radar(),
+            self.simulation.dirty_cells.radar_generation(),
         )
     }
 
@@ -136,16 +136,19 @@ impl<'a> SimView<'a> {
     /// successful trigger-action-40 writers that rebuilt radar/scroll state.
     pub fn playfield_authority(&self) -> (Option<crate::map::playfield::PlayfieldBounds>, u64) {
         (
-            self.simulation.playfield_bounds,
-            self.simulation.playfield_revision,
+            self.simulation.playfield_bounds(),
+            self.simulation.playfield_revision(),
         )
     }
 }
 
 impl SimRuntime {
-    /// Clear the exact radar-terrain batch a completed presentation update read.
+    /// Clear the exact radar-terrain batch a completed presentation update read
+    /// ([`DirtyCells::acknowledge_radar`](crate::sim::dirty_cells::DirtyCells::acknowledge_radar)).
+    /// The marks are presentation handoff state, so this consumption cannot
+    /// mutate lockstep state.
     pub fn acknowledge_radar_terrain_dirty(&mut self, generation: u64) -> bool {
-        self.simulation.acknowledge_radar_terrain_dirty(generation)
+        self.simulation.dirty_cells.acknowledge_radar(generation)
     }
 
     /// One Ordinary-lane frame for side binaries (parity-digest, sim-bench):
@@ -544,7 +547,8 @@ pub fn spawn_terrain_tile_animations(
                 )
             });
         assert!(
-            sim.set_terrain_anim_z_adjust_after_construction(id, tile.z_adjust),
+            sim.substrate
+                .set_terrain_anim_z_adjust_after_construction(id, tile.z_adjust),
             "terrain animation {id} disappeared before its producer ZAdjust write"
         );
         spawned.push(id);
@@ -668,13 +672,7 @@ where
     // Wire the cliff/slope coefficients from [General] into the live World config;
     // it otherwise holds compiled vanilla defaults and never sees a modded INI.
     if let Some(rules) = rules {
-        sim.terrain_speed_config =
-            crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::from_general(
-                rules.general.tracked_uphill,
-                rules.general.tracked_downhill,
-                rules.general.wheeled_uphill,
-                rules.general.wheeled_downhill,
-            );
+        sim.install_terrain_speed_rules(&rules.general);
     }
     // Normal loading first clips/normalizes LocalSize through
     // `MapClass::Set_Clipped_LocalSize @ 0x00567230`; every playfield consumer
@@ -695,11 +693,9 @@ where
             (map_data.header.width as i32, map_data.header.height as i32),
         ),
     );
-    if let Some(rules) = rules {
-        sim.resolve_rule_animation_lists(rules);
-    } else {
-        sim.bridge_explosions.clear();
-        sim.metallic_debris.clear();
+    match rules {
+        Some(rules) => sim.resolve_rule_animation_lists(rules),
+        None => sim.clear_rule_animation_lists(),
     }
     // gamemd `TerrainClass::Read_Map_Section` runs while the map sections are
     // walked, ahead of `[Units]`/`[Aircraft]`/`[Infantry]`/`[Structures]`: every
@@ -1012,7 +1008,7 @@ where
         terrain.width(),
         terrain.height(),
     ));
-    sim.flush_smudge_dirty();
+    Simulation::flush_smudge_dirty(&mut sim.smudge_grid, &mut sim.dirty_cells);
 
     let removed = sim.scalar_delete_load_terrain_anims();
     if removed > 0 {
@@ -1070,7 +1066,7 @@ where
             debug_assert!(written);
         }
     }
-    sim.authored_tiberium_value_total = Some(tiberium_value_total);
+    sim.record_authored_tiberium_value_total(tiberium_value_total);
     let bridge_destroyable = map_data
         .special_flags
         .effective_destroyable_bridges(bridge_destroyability_mode);
@@ -1141,7 +1137,12 @@ pub fn finalize_constructed_scenario(
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count
     // is rules-owned; presentation atlases retain only body-frame ranges.
-    let seeded_terrain = crate::sim::terrain_spawn::seed_terrain_spawner_animation(sim, rules);
+    let seeded_terrain = crate::sim::terrain_spawn::seed_terrain_spawner_animation(
+        &sim.interner,
+        &mut sim.terrain_objects,
+        &sim.session,
+        rules,
+    );
     if seeded_terrain > 0 {
         log::info!(
             "Seeded {} ore-spawning terrain objects (TIBTRE)",
@@ -1196,7 +1197,7 @@ pub fn finalize_constructed_scenario(
             grid_width,
             grid_height,
         ));
-        sim.flush_smudge_dirty();
+        Simulation::flush_smudge_dirty(&mut sim.smudge_grid, &mut sim.dirty_cells);
         log::info!(
             "Smudge grid initialized: {}x{}, {} entries",
             grid_width,
@@ -1222,7 +1223,7 @@ pub fn finalize_constructed_scenario(
             skirmish_session,
             campaign_new_game_map,
         });
-    sim.discard_lighting_events();
+    sim.lighting_sources.discard_pending();
     output
 }
 #[test]

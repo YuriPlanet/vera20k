@@ -202,6 +202,7 @@ fn overlay_display_identity(
 /// Borrowed inputs to the one retained dynamic-effect traversal. App startup,
 /// platform windows and unrelated presentation resources are not draw inputs.
 pub(crate) struct DisplayEffectInputs<'a> {
+    pub interpolation: Option<&'a crate::app::presentation::interpolation::RenderInterpolation>,
     pub sim: &'a crate::sim::world::Simulation,
     pub rules: &'a crate::rules::ruleset::RuleSet,
     pub camera: [f32; 2],
@@ -364,7 +365,23 @@ pub(crate) fn build_display_effect_instances(
         let Some(anim_coord) = sim.anim_absolute_coord(anim.stable_id()) else {
             continue;
         };
-        let (center_x, center_y, rx, ry, _, lift_px) = anim_world_render_coords(anim_coord);
+        let (mut center_x, mut center_y, rx, ry, _, mut lift_px) =
+            anim_world_render_coords(anim_coord);
+        if let Some(interpolation) = input.interpolation {
+            use crate::app::presentation::interpolation::{PointKind, PointPose};
+            let sample = interpolation.sample_point(
+                PointKind::Anim,
+                stable_id,
+                PointPose::new(
+                    [anim_coord.x, anim_coord.y, anim_coord.z],
+                    anim.type_id().index(),
+                    anim.owner_entity(),
+                ),
+                sim.session().binary_frame(),
+            );
+            [center_x, center_y] = sample.screen;
+            lift_px = sample.lift.round() as i32;
+        }
         if !in_view(
             center_x, center_y, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0,
         ) {
@@ -623,7 +640,6 @@ struct CellOverlayInputs<'a> {
     interner: Option<&'a crate::sim::intern::StringInterner>,
     tiberium_types: Option<&'a crate::rules::tiberium_type::TiberiumTypeRegistry>,
     terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    heights: &'a std::collections::BTreeMap<(u16, u16), u8>,
     lighting: &'a crate::map::lighting::CellLightGrid,
     camera: [f32; 2],
     viewport: [f32; 2],
@@ -719,10 +735,9 @@ fn build_cell_overlay_instances(
         };
 
         let z: u8 = input
-            .heights
-            .get(&(entry.rx, entry.ry))
-            .copied()
-            .unwrap_or(0);
+            .terrain
+            .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
+            .map_or(0, |cell| cell.level);
         let (screen_x, screen_y) = terrain::iso_to_screen(entry.rx, entry.ry, z);
         let live_flags = input
             .terrain
@@ -875,7 +890,6 @@ pub(crate) fn build_overlay_instances(
                 .sim_runtime
                 .as_ref()
                 .and_then(|runtime| runtime.simulation.resolved_terrain()),
-            heights: state.height_map(),
             lighting: state.match_state.match_presentation.lighting.grid(),
             camera: [cam_x, cam_y],
             viewport: [sw, sh],
@@ -1066,21 +1080,60 @@ fn native_terrain_instances(
     })
 }
 
-/// Attach native magnetic destination edits to retained Display parents.
-/// Sonic's existing outline fallback remains a separate presentation residual.
+/// Sample the upstream polygon without rebuilding its native shape. History
+/// uses world-projected points, so camera movement never becomes wave motion.
+fn sample_weapon_wave_draw(
+    mut draw: crate::render::wave_geometry::WaveDraw,
+    id: u64,
+    cache: &crate::app::presentation::interpolation::RenderInterpolation,
+    frame: u32,
+    camera: [i32; 2],
+) -> crate::render::wave_geometry::WaveDraw {
+    use crate::app::presentation::interpolation::{PointKind, PointPose};
+    use crate::render::wave_geometry::WavePolygon;
+    let sample = |index, p: [i32; 2]| {
+        let [x, y, _] = cache
+            .sample_draw_point(
+                PointKind::Wave(index),
+                id,
+                PointPose::new([p[0], p[1], 0], 0, None),
+                frame,
+            )
+            .coord;
+        [x - camera[0], y - camera[1]]
+    };
+    let points: &mut [[i32; 2]] = match &mut draw.polygon {
+        WavePolygon::Magnetic(points) => points,
+        WavePolygon::Sonic(points) => points,
+    };
+    for (i, p) in points.iter_mut().enumerate() {
+        *p = sample(i as u8, *p);
+    }
+    draw.source_point = sample(6, draw.source_point);
+    draw.source_z = cache
+        .sample_draw_point(
+            PointKind::Wave(7),
+            id,
+            PointPose::new([0, 0, draw.source_z], 0, None),
+            frame,
+        )
+        .coord[2];
+    draw
+}
+
+/// Attach native Sonic/magnetic destination edits to retained Display parents.
 pub(crate) fn build_weapon_wave_instances(
     state: &AppState,
     objects: &mut Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance>,
     order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
-) -> Vec<SpriteInstance> {
-    let mut instances = Vec::new();
+) {
     let Some(sim) = state
         .match_state
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation)
     else {
-        return instances;
+        return;
     };
     let observer = crate::app::input::commands::preferred_local_owner(state)
         .as_deref()
@@ -1090,9 +1143,11 @@ pub(crate) fn build_weapon_wave_instances(
         state.match_state.input.camera_y,
     ]
     .map(|value| value.floor() as i32);
+    let cache = &state.match_state.match_presentation.interpolation;
     for (id, draw) in
-        crate::app::presentation::fire_effects::build_magnetic_wave_draws(sim, observer, camera)
+        crate::app::presentation::fire_effects::build_weapon_wave_draws(sim, observer, [0, 0])
     {
+        let draw = sample_weapon_wave_draw(draw, id, cache, sim.session().binary_frame(), camera);
         use crate::app::presentation::render::draw_plan_lowering::{
             ObjectBodyDraw, PlannedObjectInstance,
         };
@@ -1101,25 +1156,14 @@ pub(crate) fn build_weapon_wave_instances(
         };
         let mut planned = PlannedObjectInstance::object(parent, Vec::new());
         planned.body_draw = Some(ObjectBodyDraw::Surface(
-            crate::render::surface_line::SurfaceDraw::MagneticWave(draw),
+            crate::render::surface_line::SurfaceDraw::Wave(draw),
         ));
         objects.push(planned);
-    }
-    for wave in crate::app::presentation::fire_effects::build_weapon_wave_visuals(sim, observer) {
-        let projected: Vec<[f32; 2]> = wave
-            .polygon
-            .into_iter()
-            .map(|[x, y]| [x as f32, y as f32])
-            .collect();
-        instances.extend(crate::render::wave_geometry::build_wave_instances(
-            &projected, wave.tint, 1.0, 0.00045,
-        ));
     }
     // Live BuildingLightRuntime producers are intentionally not lowered here:
     // native DrawExtras first uses SpotlightClass type 16's zero-blend
     // shape-blitter/light-mask path, which this renderer does not yet expose.
     // A white quad or alpha approximation would invent visible behavior.
-    instances
 }
 
 /// Emit one sprite instance per active parachute anim, anchored at the
@@ -1150,6 +1194,7 @@ pub(crate) fn build_parachute_instances(
     input: &DisplayEffectInputs<'_>,
     ground_objects: &mut [crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance],
     body_depths: &super::shp::ParachuteBodyDepths,
+    interpolation: Option<&crate::app::presentation::interpolation::RenderInterpolation>,
 ) {
     /// Depth epsilon — chute sorts slightly above the GI body. Half of the
     /// per-Z bias used in `compute_sprite_depth_params`. Increase if
@@ -1205,7 +1250,13 @@ pub(crate) fn build_parachute_instances(
         };
         // Draw the chute exactly where the body is drawn, so it follows the
         // airborne GI rather than the ground beneath it.
-        let (gx, gy) = crate::render::locomotor_visual::screen_position(entity);
+        let (gx, gy) = interpolation.map_or_else(
+            || crate::render::locomotor_visual::screen_position(entity),
+            |interpolation| {
+                let pose = interpolation.sample_entity(entity, sim.session().binary_frame());
+                (pose.screen[0], pose.screen[1])
+            },
+        );
         if !in_view(gx, gy, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0) {
             continue;
         }
@@ -1294,6 +1345,67 @@ mod terrain_render_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn render_interpolation_preserves_both_native_wave_shapes_and_camera_independence() {
+        use crate::app::presentation::interpolation::RenderInterpolation;
+        use crate::render::wave_geometry::{WaveClipPath, WaveDraw, WavePolygon};
+        use crate::sim::world::Simulation;
+        let six = [
+            [100, 200],
+            [104, 198],
+            [112, 206],
+            [110, 208],
+            [106, 210],
+            [102, 205],
+        ];
+        for polygon in [
+            WavePolygon::Magnetic(std::array::from_fn(|i| six[i])),
+            WavePolygon::Sonic(six),
+        ] {
+            let old = WaveDraw {
+                polygon,
+                source_point: [101, 201],
+                source_z: 0,
+                phase: 3,
+                direction: 2,
+                clip_path: WaveClipPath::Fast,
+            };
+            let mut sim = Simulation::new();
+            sim.session_mut_for_test().set_binary_frame_for_test(1);
+            let mut cache = RenderInterpolation::new(true);
+            cache.observe(&sim, 0, Some(32.), false);
+            super::sample_weapon_wave_draw(old, 7, &cache, 1, [7, 11]);
+            let mut current = old;
+            let points: &mut [[i32; 2]] = match &mut current.polygon {
+                WavePolygon::Magnetic(points) => points,
+                WavePolygon::Sonic(points) => points,
+            };
+            for point in points {
+                point[0] += 12;
+                point[1] += 8;
+            }
+            current.source_point = [113, 209];
+            current.source_z = 104;
+            current.phase = 4;
+            sim.session_mut_for_test().set_binary_frame_for_test(2);
+            cache.observe(&sim, 32, Some(32.), false);
+            super::sample_weapon_wave_draw(current, 7, &cache, 2, [30, -4]);
+            cache.observe(&sim, 48, Some(32.), false);
+            let mid = super::sample_weapon_wave_draw(current, 7, &cache, 2, [30, -4]);
+            for (actual, previous) in mid.polygon.points().iter().zip(old.polygon.points()) {
+                assert_eq!(*actual, [previous[0] + 6 - 30, previous[1] + 4 + 4]);
+            }
+            assert_eq!(mid.source_point, [101 + 6 - 30, 201 + 4 + 4]);
+            assert_eq!(mid.source_z, 52);
+            assert_eq!(mid.phase, 4, "native lifetime is not interpolated");
+            assert_eq!(mid.direction, current.direction);
+            assert_eq!(mid.clip_path, current.clip_path);
+            cache.set_enabled(false);
+            let exact = super::sample_weapon_wave_draw(current, 7, &cache, 2, [0, 0]);
+            assert_eq!(exact, current, "OFF must preserve native geometry exactly");
+        }
+    }
+
     /// The sprite is projected from the anim's exact Z. Half a level up lands
     /// between the two level rows; the old level-byte projection drew it on the
     /// lower row, and drew a 104-frame level-1 coordinate on row 0.

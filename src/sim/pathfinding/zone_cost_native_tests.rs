@@ -256,7 +256,7 @@ fn simulation() -> (Simulation, RuleSet, u64) {
     sim.resolve_type_handles(&rules);
     sim.zone_grid = Some(zones);
     sim.install_resolved_terrain_for_new_map(terrain);
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut actor =
         crate::sim::game_entity::GameEntity::test_default(id, "FV", "Americans", 87, 48);
     actor.set_type_ref_for_test(sim.interner.intern("FV"));

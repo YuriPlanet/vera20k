@@ -101,7 +101,7 @@ pub(crate) fn fired(
         world,
         &world.interner,
         world.resolved_terrain.as_ref(),
-        Some(&world.house_alliances),
+        Some(world.house_alliances.as_map()),
     ) else {
         return;
     };
@@ -160,7 +160,7 @@ pub(crate) fn create(
     let phase = world.main_rng.next_range_i32_inclusive(0, 256);
     world
         .lifecycle_outputs
-        .push(crate::sim::world::LifecycleOutput::ElectricBoltCreated(
+        .emit(crate::sim::world::LifecycleOutput::ElectricBoltCreated(
             ElectricBoltBirth {
                 frame: world.session.binary_frame() as i32,
                 from,

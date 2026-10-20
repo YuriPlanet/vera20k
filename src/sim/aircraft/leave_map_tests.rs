@@ -85,14 +85,14 @@ fn world(row: &Value) -> Simulation {
     sim.substrate.entities.insert(plane);
     sim.interner = crate::sim::intern::test_interner();
     let playfield = &row["playfield"];
-    sim.playfield_bounds = Some(PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
         base: int(&playfield["base"]),
         off_fc: int(&playfield["off_fc"]),
         off_100: int(&playfield["off_100"]),
         off_104: int(&playfield["off_104"]),
         off_108: int(&playfield["off_108"]),
-    });
-    sim.playfield_size_height = Some(int(&row["size_height"]));
+    }));
+    sim.set_playfield_size_height_for_test(Some(int(&row["size_height"])));
     if !row["team"].is_null() {
         // A team with no script action: `0x006EC300` answers false.
         crate::sim::team_script_vm::join_team_for_test(&mut sim, &[1], false, false);

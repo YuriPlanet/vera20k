@@ -372,6 +372,18 @@ impl LoadingRequest {
         self
     }
 
+    /// A guest's random-map start staging from the host's `'W'`; the guest
+    /// has no setup preview of its own.
+    pub(crate) fn with_start_staging(
+        mut self,
+        staging: Option<crate::app::shell_random_map::AcceptedRmgStartStaging>,
+    ) -> Self {
+        if staging.is_some() {
+            self.accepted_rmg_start_staging = staging;
+        }
+        self
+    }
+
     #[cfg(test)]
     fn random_map_preview(&self) -> Option<&crate::map::rmg::GeneratedMap> {
         self.random_map_preview.as_ref()
@@ -757,7 +769,7 @@ pub(crate) fn accept_network_loading_progress(
     source_index: usize,
     percent: i32,
 ) -> bool {
-    if !state.match_state.session.mode().is_network()
+    if !state.match_state.session_mode().is_network()
         || !state
             .match_state
             .session
@@ -983,6 +995,8 @@ pub(crate) fn clear_loading_state(state: &mut AppState) {
 }
 
 fn reset_loading_presentation(state: &mut AppState) {
+    state.match_state.match_presentation.interpolation.clear();
+    state.renderer.fps_overlay.set_simulation_readout(None);
     state.frontend.loading_screen_atlas = None;
     state.frontend.loading_progress = LoadingProgressState::standard_skirmish();
 }
@@ -1130,6 +1144,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
                 &state.renderer.depth_view,
                 &state.renderer.batch_renderer,
                 &state.renderer.bit_font,
+                &state.renderer.fps_overlay,
                 native,
                 8,
                 render_size,
@@ -1156,6 +1171,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
             native_rules_owner.consume_outgoing_scenario_rules(
                 runtime.simulation.retire_object_type_tech_levels(),
                 runtime.simulation.retire_ambient_change_inputs(),
+                runtime.simulation.retire_building_upgrade_art_names(),
             )?;
         }
         let load_result = {
@@ -1178,6 +1194,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
                         depth_view: &state.renderer.depth_view,
                         batch: &state.renderer.batch_renderer,
                         font: &state.renderer.bit_font,
+                        fps_overlay: &state.renderer.fps_overlay,
                         progress: &mut native.progress,
                         progress_row: &native.progress_row,
                         atlas,
@@ -1218,6 +1235,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
                         &state.renderer.depth_view,
                         &state.renderer.batch_renderer,
                         &state.renderer.bit_font,
+                        &state.renderer.fps_overlay,
                         native,
                         terminal_raw_percent,
                         render_size,
@@ -2010,8 +2028,8 @@ pub(crate) fn after_loading_frame_presented(state: &mut AppState) {
             );
             log::debug!(target: "vera20k::loading_attempt", "install_begin");
             super::transitions::finish_fresh_scenario_read(state, *result);
-            for (owner, display) in disconnected {
-                crate::app::input::messages::post_connection_lost(state, &owner, &display);
+            for destroyed in disconnected {
+                crate::app::match_runtime::network_match::post_connection_line(state, destroyed);
             }
             log::debug!(target: "vera20k::loading_attempt", "install_end screen={:?} assets_available={} accepted={}", state.frontend.screen, state.process_assets.is_available(), state.match_state.startup.accepted().is_some());
         }
@@ -2019,31 +2037,26 @@ pub(crate) fn after_loading_frame_presented(state: &mut AppState) {
     }
 }
 
-/// Native684536 ->5DA750 at frame0. Source membership changes independently
-/// of the immutable launch and its already constructed House array.
+/// Native684536 ->5DA750(index, 1) at frame0. Source membership changes
+/// independently of the immutable launch and its already constructed House
+/// array; the lines post once the scenario is installed.
 fn apply_network_loading_disconnects(
     session: &mut crate::app::match_runtime::session::MatchSession,
     result: &mut MapLoadResult,
     indices: &[usize],
-) -> Vec<(String, String)> {
-    let Some(launch) = result.scenario.startup.launch_session() else {
+) -> Vec<crate::app::match_runtime::network_match::ConnectionDestroyed> {
+    use crate::app::match_runtime::network_match::{ConnectionError, destroy_connection};
+    let Some(sim) = result.scenario.simulation.as_mut() else {
+        // No House array to consult: the connections still drop.
+        for &index in indices {
+            session.disconnect_network_participant(index, 1);
+        }
         return Vec::new();
     };
-    let slots = crate::sim::scenario_bootstrap::normalized_launch_slots(launch);
-    let mut disconnected = Vec::new();
-    for &index in indices {
-        if session.disconnect_network_loading_participant(index)
-            && let Some(slot) = slots
-                .iter()
-                .find(|slot| slot.source_human_index == Some(index))
-            && let Some(sim) = result.scenario.simulation.as_mut()
-            && let Some(owner) = sim.interner().get(&slot.owner_name)
-        {
-            sim.flag_house_to_die(owner);
-            disconnected.push((slot.owner_name.clone(), launch.humans[index].name.clone()));
-        }
-    }
-    disconnected
+    indices
+        .iter()
+        .filter_map(|&index| destroy_connection(session, sim, index, ConnectionError::Lost))
+        .collect()
 }
 
 fn fail_loading(state: &mut AppState, policy: LoadingFailurePolicy, err: anyhow::Error) {
@@ -2130,6 +2143,12 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) {
             &mut encoder,
             &output.texture,
         )?;
+        state.renderer.fps_overlay.encode(
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+            &mut encoder,
+            &output.texture,
+        );
         state
             .renderer
             .gpu
@@ -2147,9 +2166,12 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) {
 /// the first game frame (`0x00683E07..0x00683E1C`, again at
 /// `0x0052EAA1..0x0052EAEB`); the tactical install runs under it.
 pub(crate) fn present_game_mode_blank(state: &AppState) {
-    if let Err(err) =
-        render::present_blank(&state.renderer.gpu, &state.renderer.shell_surface_presenter)
-    {
+    if let Err(err) = render::present_blank(
+        &state.renderer.gpu,
+        &state.renderer.shell_surface_presenter,
+        &state.renderer.batch_renderer,
+        &state.renderer.fps_overlay,
+    ) {
         log::warn!("Game-mode blank frame failed: {err:#}");
     }
 }
@@ -2225,6 +2247,7 @@ fn advance_and_present_native_progress(
     depth_view: &wgpu::TextureView,
     batch: &BatchRenderer,
     font: &BitFont,
+    fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
     native: &mut NativeLoadingScreenState,
     raw_percent: u32,
     render_size: [u32; 2],
@@ -2244,6 +2267,7 @@ fn advance_and_present_native_progress(
         depth_view,
         batch,
         font,
+        fps_overlay,
         atlas,
         native.composition.as_ref(),
         native.campaign_presentation.as_ref(),
@@ -2271,6 +2295,7 @@ struct RenderingProgressSink<'a> {
     depth_view: &'a wgpu::TextureView,
     batch: &'a BatchRenderer,
     font: &'a BitFont,
+    fps_overlay: &'a crate::app::diagnostics::fps_overlay::FpsOverlay,
     progress: &'a mut LoadingProgressState,
     progress_row: &'a LoadingProgressRowSnapshot,
     atlas: &'a LoadingScreenAtlas,
@@ -2294,6 +2319,7 @@ impl LoadingProgressSink for RenderingProgressSink<'_> {
                 self.depth_view,
                 self.batch,
                 self.font,
+                self.fps_overlay,
                 self.atlas,
                 self.composition,
                 self.campaign_presentation,

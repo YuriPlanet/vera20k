@@ -384,14 +384,15 @@ fn sensor_callback_reassigns_admitted_targeters_in_forward_techno_registration_o
             .passive_scan
             .acquired()
     );
-    assert!(
-        sim.substrate
-            .entities
-            .get(excluded)
-            .unwrap()
-            .passive_scan
-            .acquired(),
-        "an unrelated owner without sensor coverage is not collected"
+    let excluded = sim.substrate.entities.get(excluded).unwrap();
+    assert_eq!(
+        (
+            excluded.attack_target.target(),
+            excluded.passive_scan.acquired()
+        ),
+        (None, false),
+        "an unrelated owner without sensor coverage is not collected: \
+         StartCloaking's Detach_All(false) drops its target for good"
     );
     assert!(matches!(
         sim.sound_events.as_slice(),
@@ -992,4 +993,148 @@ fn completing_the_cloak_scatters_only_a_computer_owned_unit() {
         nav(&sim, computer),
         "the computer's sub scatters on completion"
     );
+}
+
+#[test]
+fn a_non_player_object_leaves_the_selection_as_it_cloaks_and_while_unsensed() {
+    // Skirmish: Americans are the player, Russians another human house, so
+    // neither sub scatters on completion.
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nCloakingStages=9\nCloakDelay=.02\n\
+         [VehicleTypes]\n0=SUB\n\
+         [SUB]\nStrength=600\nSpeed=4\nCloakable=yes\nCloakingSpeed=1\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .expect("ground cloak rules");
+    let mut sim = Simulation::with_seed(0xC10A_C003);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    for (name, side) in [("Americans", 0), ("Russians", 1)] {
+        let house = sim.interner.intern(name);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                house, side, None, true, 0, 10,
+            ));
+    }
+    let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
+    let player = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(player));
+    let own = sim
+        .spawn_object_at_height("SUB", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let enemy = sim
+        .spawn_object_at_height("SUB", "Russians", 20, 20, 0, 0, &rules)
+        .unwrap();
+    // The player senses the enemy's cell throughout the cloak.
+    sim.fog.increment_sensor_at(player, 20, 20);
+    let state = |sim: &Simulation, id| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .cloak
+            .as_ref()
+            .unwrap()
+            .state()
+    };
+    let selected = |sim: &Simulation, id| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .selection
+            .is_selected()
+    };
+    let select = |sim: &mut Simulation, id| {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .selection
+            .set_selected_for_test(true);
+    };
+    select(&mut sim, own);
+    select(&mut sim, enemy);
+    sim.lifecycle_outputs.clear_for_test();
+    sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
+    assert_eq!((state(&sim, own), state(&sim, enemy)), (1, 1));
+    for id in [own, enemy] {
+        assert!(
+            sim.lifecycle_outputs
+                .as_slice()
+                .contains(&crate::sim::world::LifecycleOutput::FollowReleased { stable_id: id }),
+            "Detach_All (0x005F5306) hands the follow camera back from either sub"
+        );
+    }
+    assert!(selected(&sim, own), "the player's own sub stays selected");
+    assert!(
+        !selected(&sim, enemy),
+        "StartCloaking (0x00703819) deselects another house's object, sensed or not"
+    );
+
+    select(&mut sim, enemy);
+    for _ in 0..30 {
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
+        if state(&sim, enemy) == 2 {
+            break;
+        }
+    }
+    assert_eq!(state(&sim, enemy), 2);
+    sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
+    assert!(
+        selected(&sim, enemy),
+        "the completion's Detach_All and the AI's sensor callback keep a sensed object"
+    );
+
+    sim.fog.decrement_sensor_at_unconditional(player, 20, 20);
+    sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
+    assert!(
+        !selected(&sim, enemy),
+        "the AI's sensor callback (0x006FA9D2) deselects it once unsensed"
+    );
+    assert!(selected(&sim, own));
+}
+
+#[test]
+fn a_dive_breaks_contact_zero_only_with_a_house_its_owner_is_not_allied_with() {
+    for (partner_owner, kept) in [("Soviet", true), ("Americans", false)] {
+        let (mut sim, rules, cloaker) = spawned_sub();
+        let cell = sim
+            .substrate
+            .entities
+            .get(cloaker)
+            .map(|entity| (entity.position.rx(), entity.position.ry()))
+            .unwrap();
+        let partner = sim
+            .spawn_object_at_height("RANKED", partner_owner, cell.0 + 2, cell.1, 0, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(cloaker)
+            .unwrap()
+            .mark_live_contact_with(partner);
+        sim.substrate
+            .entities
+            .get_mut(partner)
+            .unwrap()
+            .mark_live_contact_with(cloaker);
+
+        tick_stock_cloak_producer(
+            &mut sim,
+            cloaker,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+
+        let cloaker = sim.substrate.entities.get(cloaker).unwrap();
+        assert_eq!(cloaker.cloak.as_ref().unwrap().state(), 1);
+        assert_eq!(
+            cloaker.has_live_contact_with(partner),
+            kept,
+            "{partner_owner}: FootClass::Detach_All(false) (0x004D9762) sends OVER_OUT only to a non-ally"
+        );
+    }
 }

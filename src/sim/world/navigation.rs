@@ -13,6 +13,7 @@ use crate::sim::bridge_state::BridgeRuntimeState;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
+use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
 
@@ -97,6 +98,8 @@ pub(super) fn structure_blocked_among(
 pub(super) struct NavigationCaches<'a> {
     pub(super) zones: &'a mut Option<ZoneGrid>,
     pub(super) path: &'a mut Option<Arc<PathGrid>>,
+    /// The live overlay surface the path projection reads for bridge sprites.
+    pub(super) overlays: Option<&'a OverlayGrid>,
     /// Current operation's world bounds; this borrowed view is never retained.
     pub(super) playfield_bounds: Option<crate::map::playfield::PlayfieldBounds>,
 }
@@ -120,8 +123,12 @@ impl NavigationCaches<'_> {
             if path.width() != terrain.width() || path.height() != terrain.height() {
                 return Err("path dimensions differ from terrain".into());
             }
-            if !path.resolved_cell_is_current(cell, structure_blocked)
-                && !Arc::make_mut(path).refresh_resolved_cell(cell, structure_blocked)
+            if !path.resolved_cell_is_current(cell, self.overlays, structure_blocked)
+                && !Arc::make_mut(path).refresh_resolved_cell(
+                    cell,
+                    self.overlays,
+                    structure_blocked,
+                )
             {
                 return Err("current path cell could not be published".into());
             }
@@ -138,7 +145,7 @@ impl NavigationCaches<'_> {
         interner: &StringInterner,
         rules: &RuleSet,
     ) -> Result<BTreeSet<(u16, u16)>, String> {
-        let mut grid = PathGrid::from_resolved_terrain_with_bridges(terrain);
+        let mut grid = PathGrid::from_resolved_terrain_with_bridges(terrain, self.overlays);
 
         let structure_cells = structure_movement_cells(entities, interner, rules);
         for &(x, y) in &structure_cells {
@@ -219,7 +226,7 @@ impl NavigationCaches<'_> {
             visit_structure_movement_cells(entities, interner, rules, |marked| {
                 structure_blocked |= marked == coord;
             });
-            if !Arc::make_mut(path).refresh_resolved_cell(cell, structure_blocked) {
+            if !Arc::make_mut(path).refresh_resolved_cell(cell, self.overlays, structure_blocked) {
                 return Err("current path cell could not be published".into());
             }
         }

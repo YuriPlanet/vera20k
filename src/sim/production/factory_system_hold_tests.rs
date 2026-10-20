@@ -120,7 +120,11 @@ impl PaidHead {
         };
         // JoinedFixture's declared retained House power input. This is not an
         // assessment or an online/factory answer; the real rate owner reads it.
-        let power = sim.power_states.entry(owner).or_default();
+        let power = sim
+            .power_states
+            .map_mut_for_test()
+            .entry(owner)
+            .or_default();
         power.set_total_output_for_test(99);
         power.set_total_drain_for_test(0);
         assert!(sim.recheck_house_tech_tree(owner, rules).is_empty());
@@ -311,7 +315,7 @@ impl PaidHead {
                 ))
             }
             "original_start_next_queued" => {
-                let next_id = sim.substrate.next_stable_object_id;
+                let next_id = sim.next_stable_object_id();
                 factory_lifecycle::start_next_queued(
                     sim,
                     rules,
@@ -337,7 +341,7 @@ impl PaidHead {
             }
             "external_spend_wallet" => {
                 let money = crate::sim::credit_income::available_money(sim, self.owner);
-                crate::sim::credit_income::spend_money(sim, self.owner, money);
+                crate::sim::credit_income::spend_money(&mut sim.houses, self.owner, money);
             }
             other => panic!("unconsumed original phase {other}"),
         }
@@ -359,7 +363,7 @@ impl PaidHead {
             );
             assert_eq!(self.head(), phase["before"]["factory"], "{label} before");
             let before_rng = self.rng();
-            let before_id = self.runtime.simulation.substrate.next_stable_object_id;
+            let before_id = self.runtime.simulation.next_stable_object_id();
             let held_before = self
                 .runtime
                 .simulation
@@ -389,7 +393,7 @@ impl PaidHead {
                 "{label} held identity",
             );
             assert_eq!(
-                sim.substrate.next_stable_object_id - before_id,
+                sim.next_stable_object_id() - before_id,
                 phase["identity_delta"].as_u64().unwrap(),
                 "{label} constructor identity count",
             );

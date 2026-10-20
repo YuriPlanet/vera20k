@@ -124,7 +124,7 @@ fn fixture() -> (Simulation, RuleSet, InternedId) {
         ));
     sim.session.set_current_house_for_test(Some(owner));
     for actor in 1..=3 {
-        assert_eq!(sim.allocate_stable_id(), actor);
+        assert_eq!(sim.substrate.allocate_stable_id(), actor);
         crate::sim::world::lifecycle_tests::insert_entity(
             &mut sim,
             actor,
@@ -1509,11 +1509,11 @@ fn delete_handoff_uses_first_member_successor_and_invalidates_retained_node() {
     append(&mut sim, &rules, owner, 2, (16, 15));
     append(&mut sim, &rules, owner, 1, (12, 15));
     append(&mut sim, &rules, owner, 1, (20, 15));
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     let delete = sim.encode_plan_node_delete_record(owner, (12, 15)).unwrap();
     apply(&mut sim, &rules, delete);
     assert_eq!(
-        sim.lifecycle_outputs,
+        sim.lifecycle_outputs.as_slice(),
         vec![LifecycleOutput::PlanningNodeDeleted {
             owner,
             node_id: 0,
@@ -1528,11 +1528,11 @@ fn delete_handoff_uses_first_member_successor_and_invalidates_retained_node() {
             .highlighted_node,
         Some(1)
     );
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     let delete = sim.encode_plan_node_delete_record(owner, (16, 15)).unwrap();
     apply(&mut sim, &rules, delete);
     assert_eq!(
-        sim.lifecycle_outputs,
+        sim.lifecycle_outputs.as_slice(),
         vec![LifecycleOutput::PlanningNodeDeleted {
             owner,
             node_id: 1,
@@ -1591,7 +1591,7 @@ fn press_refusals_and_hover_follow_the_selected_paths() {
         (4, EntityCategory::Aircraft),
         (5, EntityCategory::Structure),
     ] {
-        assert_eq!(sim.allocate_stable_id(), id);
+        assert_eq!(sim.substrate.allocate_stable_id(), id);
         crate::sim::world::lifecycle_tests::insert_entity(&mut sim, id, category);
     }
     for cell in [(12, 15), (16, 15), (20, 15), (24, 15)] {

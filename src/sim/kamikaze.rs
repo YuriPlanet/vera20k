@@ -70,6 +70,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::{FrameEffects, Simulation};
 use crate::util::lepton::lepton_to_cell_packed;
@@ -340,9 +341,12 @@ impl Simulation {
 
     /// The `{Frame, 2}` restart the Launching pass and ClearAllTargets write
     /// after their Push.
-    pub(crate) fn kamikaze_restart_after_push(&mut self) {
-        let frame = self.session.binary_frame();
-        self.kamikaze.restart_after_push(frame);
+    pub(crate) fn kamikaze_restart_after_push(
+        session: &ScenarioSession,
+        kamikaze: &mut KamikazeTracker,
+    ) {
+        let frame = session.binary_frame();
+        kamikaze.restart_after_push(frame);
     }
 
     /// Update (`0x0054E4D0`), from LogicClass::AI after the BombList.

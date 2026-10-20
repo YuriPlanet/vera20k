@@ -72,7 +72,14 @@ impl Simulation {
     /// the rows the scenario read gave them.
     pub fn restore_campaign_carry_over(&mut self, record: &CampaignCarryOver, rules: &RuleSet) {
         for (index, &set) in record.globals.iter().enumerate() {
-            self.set_trigger_variable(true, index as i32, set);
+            Self::set_trigger_variable(
+                &self.session,
+                &mut self.scenario_rng,
+                &mut self.trigger_runtime,
+                true,
+                index as i32,
+                set,
+            );
         }
         let Some(player) = self.session.current_house() else {
             return;

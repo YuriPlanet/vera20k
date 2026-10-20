@@ -148,7 +148,9 @@ pub(crate) struct FacingUpdate {
 /// still rotating → re-arm the latch and stop; target still held → stop;
 /// otherwise the idle return, gated on
 /// `frame - LastFireFrame(+0x120) >= GuardAreaTargetingDelay(Rules+0xE04) + 5`
-/// (41 frames in stock) and suppressed while the unit is bunkered (`+0x2E4`).
+/// (41 frames in stock) and suppressed while the unit is bunkered (`+0x2E4`)
+/// or is a deployed (`+0x6E0`) `IsSimpleDeployer=` type (`0x00736B60..0x00736B78`),
+/// such as a deployed Siege Chopper, which holds its last aim.
 /// The destination is the MOVE DESTINATION when a NavCom is set, else the hull
 /// heading. The latch VALUE is committed by `apply_unit_facing` rather than
 /// here, because native's store sits between this arm's two `Set` calls — see
@@ -160,18 +162,19 @@ pub(crate) struct FacingUpdate {
 /// Native execution of this arm pair frame by frame:
 /// `tools/spatial_oracle/turret_cadence.py`.
 ///
-/// RESIDUAL (GSI-08.14) — three idle-hold inputs have no VERA analogue and are
-/// therefore not gated: the per-weapon-slot lock byte `WeaponStruct+0x18`
-/// (`0x00736A02`/`0x00736B96`; executed: with a target it aims the turret at
-/// the hull's current facing instead of the target, and its idle return
-/// ignores the NavCom; zero stock authors for the adjacent
-/// `WeaponXTurretLocked` art key), the locomotor-piggyback flag
-/// `+0x6AD` (`0x00736BB1`) and the simple-deployer byte `+0x6E0`
-/// (`0x00736B70`, paired with `IsSimpleDeployer=`). Trigger: a piggybacked or
-/// mid-deploy simple deployer losing its target. Player effect: its turret
-/// returns to the hull where retail holds the last aim. Frequency: six stock
-/// `IsSimpleDeployer=` types, and only during the deploy transition.
-/// Downstream risk: none — each is a pure suppression.
+/// RESIDUAL (GSI-08.14) — two Facing_Update inputs have no VERA analogue:
+/// - The per-weapon-slot lock byte `WeaponStruct+0x18` (`0x00736A02`,
+///   `0x00736B96`). Executed: with a target it aims the turret at the hull's
+///   current facing instead of the target, and its idle return ignores the
+///   NavCom. Trigger: a turret-locked weapon slot. Frequency: none in retail;
+///   no stock type authors the adjacent `WeaponXTurretLocked` art key.
+///   Downstream risk: the aim feeds the fire-facing gate, so a modded locked
+///   weapon would fire on VERA's aim, not native's.
+/// - The locomotor-piggyback flag `+0x6AD` (`0x00736BB1`). Trigger: a
+///   piggybacked unit losing its target while it has a NavCom. Player effect:
+///   its turret turns toward the move destination where retail holds the
+///   last aim. Frequency: low; only while the flag is set, with a NavCom
+///   and no target. Downstream risk: none, a pure suppression.
 ///
 /// Recoil's separate presentation state (+3D8/+3F8) is owned by
 /// `game_entity::voxel_recoil`; it does not change aim or consume RNG.
@@ -249,9 +252,12 @@ pub(crate) fn facing_update(
                 i64::from(r.general.guard_area_targeting_delay)
             }) + NATIVE_IDLE_TURRET_DWELL_BIAS;
             let dwell_elapsed = i64::from(binary_frame) - entity.last_fire_frame.frame() >= dwell;
-            // `+0x2E4` — a tank riding a Battle Bunker holds its aim forever.
+            // `+0x2E4` — a tank riding a Battle Bunker holds its aim forever,
+            // as does a deployed simple deployer (`0x00736B60..0x00736B78`).
             let bunkered = entity.bunker.link().installed_in().is_some();
-            if dwell_elapsed && !bunkered {
+            let deployed_simple_deployer =
+                obj.is_some_and(|obj| obj.is_simple_deployer) && entity.is_fully_deployed();
+            if dwell_elapsed && !bunkered && !deployed_simple_deployer {
                 out.turret_destination = Some(match nav_destination_facing(entity, world) {
                     Some(nav) => nav,
                     None => entity.body_facing_current(binary_frame),

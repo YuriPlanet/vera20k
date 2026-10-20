@@ -140,14 +140,24 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.persistence.options_profile.original_shape = original_shape;
         App::sync_zoom_pass(self);
     }
-    fn store_ra2_look(&mut self, ra2_look: bool) {
+    fn store_yr_original_style(&mut self, yr_original_style: bool) {
         // The menu movie's session identity carries the choice, so its next
-        // paint loads the other game's copy; the splash follows next launch.
-        self.persistence.options_profile.ra2_look = ra2_look;
+        // paint loads the selected game copy; the splash follows next launch.
+        // The Skirmish atlas carries the same profile value; it is rebuilt
+        // (or built) now, before another shell screen can paint.
+        self.persistence.options_profile.yr_original_style = yr_original_style;
+        let _ = App::ensure_skirmish_shell_chrome(self);
     }
     fn store_shift_queue(&mut self, shift_queue: bool) {
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
+    }
+    fn store_render_interpolation(&mut self, enabled: bool) {
+        self.persistence.options_profile.render_interpolation = enabled;
+        self.match_state
+            .match_presentation
+            .interpolation
+            .set_enabled(enabled);
     }
     fn store_wol_test_service(&mut self, wol_test_service: bool) {
         // The next Internet visit picks its provider from it.
@@ -660,6 +670,7 @@ impl App {
         }
         crate::app::match_runtime::sim_tick::flush_replay_log(state);
         Self::capture_returned_multiplayer_scenario(state);
+        Self::persist_returned_session_toggles(state);
         state.match_state.startup.clear();
         state.match_state.scenario_elapsed_clock.reset();
         state.frontend.score_page = None;
@@ -1402,6 +1413,16 @@ impl App {
             ShellExitThen::WolLobbyHide => crate::app::shell_wol::lobby::commit_hide(state),
             ShellExitThen::WolCreateAccepted { observe } => {
                 crate::app::shell_wol::lobby::commit_create(state, observe)
+            }
+            ShellExitThen::WolOptionsOpen => crate::app::shell_wol::options::commit_open(state),
+            ShellExitThen::WolOptionsClose(staged) => {
+                crate::app::shell_wol::options::commit_close(state, staged)
+            }
+            ShellExitThen::WolSoundOptionsOpen => {
+                crate::app::shell_wol::options::commit_open_sound(state)
+            }
+            ShellExitThen::WolSoundOptionsBack => {
+                crate::app::shell_wol::options::commit_sound_back(state)
             }
         }
     }

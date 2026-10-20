@@ -517,7 +517,7 @@ fn live_world_navigation_and_sentinel_repair_match_native_hierarchy_graphs() {
         let bounds = hierarchy_native_bounds(input);
         let path = PathGrid::from_resolved_terrain(&terrain);
         let mut sim = crate::sim::world::Simulation::with_seed(0x584550);
-        sim.playfield_bounds = Some(bounds);
+        sim.set_playfield_bounds_for_test(Some(bounds));
         sim.bridge_state = Some(
             crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain_with_map_size(
                 &terrain,

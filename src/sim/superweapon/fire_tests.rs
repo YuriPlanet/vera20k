@@ -76,7 +76,7 @@ fn sim(rules: &RuleSet, human: bool, levels: &[((u16, u16), u8)]) -> Simulation 
             .map_or(0, |&(_, level)| level),
         ..test_terrain_cell(x, y)
     }));
-    sim.playfield_bounds = Some(test_playfield_bounds());
+    sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
     crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, ("fire sim", levels.to_vec()));
     sim
 }
@@ -116,6 +116,7 @@ fn click_fire_matches_native() {
         instance.charge_start_tick = int(&row["start"]);
         instance.charge_duration = int(&row["left"]);
         sim.super_weapons
+            .map_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(sw_type_id, instance);
@@ -142,6 +143,8 @@ fn click_fire_matches_native() {
             (33, 44),
             None,
             crate::sim::world::FrameEffects::default(),
+            None,
+            false,
         );
         let events = row["events"].as_array().unwrap();
         let called = |name: &str| events.iter().any(|event| event[0] == name);

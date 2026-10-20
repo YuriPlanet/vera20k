@@ -48,7 +48,10 @@ pub struct GameOptions {
     pub shroud: bool,
     /// Ore/gems regenerate on the map. Rules+0x14B0.
     pub tiberium_grows: bool,
-    /// Engineers capture at reduced HP only. Rules+0x14B4.
+    /// The MultiEngineer option, Session `0x00A8B26C` (Rules+0x14B4 until a
+    /// setup dialog sets it, `0x0052D1DD`; the skirmish dialog clears it,
+    /// `0x006AD8A4`). With it an Engineer damages a hostile building above
+    /// `ConditionRed=` instead of capturing it (`0x00519DA9`).
     pub multi_engineer: bool,
     /// Harvesters immune to enemy fire. Rules+0x14B3.
     pub harvester_truce: bool,

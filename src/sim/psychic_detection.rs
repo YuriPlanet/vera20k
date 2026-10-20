@@ -75,7 +75,7 @@ impl Simulation {
         };
         if sites.is_empty()
             || crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &self.interner,
                 viewer,
                 entity.owner(),

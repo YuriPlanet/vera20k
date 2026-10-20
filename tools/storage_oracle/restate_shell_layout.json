@@ -1,0 +1,113 @@
+{
+  "cases": [
+    {
+      "control_id": 1767,
+      "dialog_id": 268,
+      "height": 480,
+      "rect": [
+        12,
+        13,
+        452,
+        431
+      ],
+      "resource_rect": [
+        92,
+        73,
+        452,
+        431
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1767,
+      "dialog_id": 268,
+      "height": 600,
+      "rect": [
+        92,
+        73,
+        452,
+        431
+      ],
+      "resource_rect": [
+        92,
+        73,
+        452,
+        431
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1767,
+      "dialog_id": 268,
+      "height": 768,
+      "rect": [
+        204,
+        157,
+        452,
+        431
+      ],
+      "resource_rect": [
+        92,
+        73,
+        452,
+        431
+      ],
+      "width": 1024
+    }
+  ],
+  "controls": [
+    {
+      "caption": "GUI:Return",
+      "class": "Button",
+      "control_id": 1059,
+      "dlu_rect": [
+        424,
+        346,
+        109,
+        23
+      ],
+      "help": "STT:BriefingButtonReturn",
+      "style": 1342177291
+    },
+    {
+      "caption": "GUI:Blank",
+      "class": "Static",
+      "control_id": 1767,
+      "dlu_rect": [
+        61,
+        45,
+        301,
+        265
+      ],
+      "help": "STT:BriefingLabelContent",
+      "style": 1342177280
+    },
+    {
+      "caption": "GUI:Briefing",
+      "class": "Static",
+      "control_id": 1684,
+      "dlu_rect": [
+        424,
+        1,
+        108,
+        10
+      ],
+      "help": null,
+      "style": 1342308353
+    },
+    {
+      "caption": "GUI:Blank",
+      "class": "Static",
+      "control_id": 1685,
+      "dlu_rect": [
+        5,
+        353,
+        303,
+        12
+      ],
+      "help": null,
+      "style": 1342177792
+    }
+  ],
+  "source": "unicorn/gamemd.exe"
+}

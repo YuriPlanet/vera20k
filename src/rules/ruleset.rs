@@ -670,6 +670,11 @@ pub struct GeneralRules {
     /// `sim::house_diplomacy`). Retail RULESMD says no; the Battle mode's
     /// MPBATTLEMD layers yes over it.
     pub allies_allowed: bool,
+    /// `[MultiplayerDialogSettings] AllyChangeAllowed=` (`Rules+0x14BB`,
+    /// ReadBool at `0x00672175` over the constructor's 1, `0x00667202` /
+    /// `0x006672F9`). Only the two ALLY producers read it (`0x00731840`,
+    /// `0x007318F0`). Retail RULESMD says yes; Team Game's MPTEAMMD says no.
+    pub ally_change_allowed: bool,
     /// `[AI] CompEasyBonus=`: Rules+17E3 starts true in constructor667727.
     /// ReadAI673CFD..673D1D uses ReadBool5295F0 with the retained byte,
     /// after AirstripLimit and before Paranoid, independently of General.
@@ -2331,6 +2336,7 @@ impl Default for GeneralRules {
             reveal_by_height: true,
             ally_reveal: true,
             allies_allowed: false,
+            ally_change_allowed: true,
             comp_easy_bonus: true,
             paranoid: true,
             tunnel_speed: SimFixed::from_num(6.0_f32),
@@ -3180,6 +3186,9 @@ impl GeneralRules {
         let allies_allowed = ini
             .section_or_empty("MultiplayerDialogSettings")
             .read_bool("AlliesAllowed", defaults.allies_allowed);
+        let ally_change_allowed = ini
+            .section_or_empty("MultiplayerDialogSettings")
+            .read_bool("AllyChangeAllowed", defaults.ally_change_allowed);
         let attack_delay = ai.read_double("AttackDelay", defaults.attack_delay);
         let path_delay = ai.read_double("PathDelay", defaults.path_delay);
         let blockage_path_delay_ticks =
@@ -3220,6 +3229,7 @@ impl GeneralRules {
                 bomb_attach_sound,
                 ally_reveal,
                 allies_allowed,
+                ally_change_allowed,
                 paranoid,
                 psychic_reveal_activate_sound,
                 psychic_reveal_radius,
@@ -3412,6 +3422,7 @@ impl GeneralRules {
             reveal_by_height: general.read_bool("RevealByHeight", true),
             ally_reveal,
             allies_allowed,
+            ally_change_allowed,
             comp_easy_bonus: defaults.comp_easy_bonus,
             paranoid,
             tunnel_speed: SimFixed::from_num(general.read_double("TunnelSpeed", 6.0) as f32),
@@ -4313,8 +4324,8 @@ impl RuleSet {
         rules.combat_damage.splash_list = splash.to_vec();
         rules.combat_damage.death_weapon =
             processed.combat_damage_death_weapon().map(str::to_owned);
-        for (name, conventional, em_effect, anim_list, debris_types) in
-            processed.warhead_anim_states()
+        for (name, conventional, em_effect, anim_list, debris_types, verses) in
+            processed.warhead_read_states()
         {
             if let Some(warhead) = rules
                 .warheads
@@ -4325,6 +4336,7 @@ impl RuleSet {
                 warhead.em_effect = em_effect;
                 warhead.anim_list = anim_list.to_vec();
                 warhead.debris_types = debris_types.to_vec();
+                warhead.verses_f64 = verses.map(|value| f64::from_bits(value.bits()));
             }
         }
         (
@@ -4356,7 +4368,7 @@ impl RuleSet {
                 .or_default() += 1;
         }
         let mut warhead_name_counts = HashMap::<String, usize>::new();
-        for (name, ..) in processed.warhead_anim_states() {
+        for (name, ..) in processed.warhead_read_states() {
             *warhead_name_counts
                 .entry(name.to_ascii_uppercase())
                 .or_default() += 1;
@@ -4529,6 +4541,15 @@ impl RuleSet {
                 .find(|o| o.category == ObjectCategory::Building && o.id == name)
             {
                 building.project_building_light(light);
+            }
+        }
+        for (name, upgrade) in processed.building_upgrade_states() {
+            if let Some(building) = rules
+                .object_list
+                .iter_mut()
+                .find(|o| o.category == ObjectCategory::Building && o.id == name)
+            {
+                building.project_building_upgrade(upgrade.clone());
             }
         }
         for (name, offset) in processed.building_target_coord_offsets() {
@@ -5721,10 +5742,15 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // v27: add retained Spotlight rules/flags alongside the repair
-        // service inputs introduced in v26.
-        b"rules-simulation-config-v27".hash(&mut hasher);
+        // v29: BuildingType upgrade inputs retain prior Rules-pass values.
+        b"rules-simulation-config-v29".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        self.object_list
+            .iter()
+            .filter(|object| object.category == ObjectCategory::Building)
+            .map(|object| (object.id.to_ascii_uppercase(), object.building_upgrade()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         // UnitType747734 retains CarriesCrate across later absent/invalid
         // keys; equal current source text can still mean different cargo.
         self.object_list
@@ -6113,7 +6139,12 @@ impl RuleSet {
             .map(|(name, wh)| {
                 (
                     name.to_ascii_uppercase(),
-                    (wh.conventional, wh.em_effect, &wh.anim_list),
+                    (
+                        wh.conventional,
+                        wh.em_effect,
+                        &wh.anim_list,
+                        wh.verses_f64.map(f64::to_bits),
+                    ),
                 )
             })
             .collect::<BTreeMap<_, _>>()
@@ -6388,7 +6419,16 @@ impl RuleSet {
             let mut slots = self
                 .art_registry
                 .resolve_metadata_entry(&object.id, &object.image)
-                .map(|entry| entry.building_anims.iter().collect::<Vec<_>>())
+                .map(|entry| {
+                    entry
+                        .building_anims
+                        .iter()
+                        //0..2 are immutable asset declarations here. The
+                        // consumed PowerUp records live on BuildingUpgradeRules
+                        // and are hashed once with that retained Type state.
+                        .filter(|config| config.native_slot >= 3)
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             slots.sort_by_key(|config| config.native_slot);
             slots.hash(hasher);
@@ -6595,7 +6635,7 @@ impl RuleSet {
 
     /// House ctor4F5E5A copies Country+C0 to its current color. A registered
     /// Country whose entire section was absent retains the ctor's0.
-    pub(crate) fn country_color_scheme(&self, country: &str) -> i32 {
+    pub fn country_color_scheme(&self, country: &str) -> i32 {
         self.country_rules(country)
             .map_or(0, |fields| fields.color_scheme)
     }
@@ -11280,6 +11320,14 @@ Projectile=Invisible
             make("[UNUSED]\nGateStages=99\n").simulation_config_hash(),
             original.simulation_config_hash(),
             "missing metadata and explicit constructor defaults are equivalent"
+        );
+        assert_eq!(
+            make(&format!(
+                "[BODY]\n{defaults}PowerUp1Anim=UNCONSUMED\nPowerUp1LocXX=123\n"
+            ))
+            .simulation_config_hash(),
+            original.simulation_config_hash(),
+            "flat PowerUp declarations cannot replace the retained Type inputs"
         );
         for changed in [
             "GateStages=-1\n",

@@ -133,7 +133,7 @@ fn retail_deso_attack_emits_a_copied_straight_radiation_beam() {
         },
         Some(rules),
     ));
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..32 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
@@ -216,7 +216,7 @@ fn retail_cleg_first_attack_emits_a_copied_chrono_beam() {
         },
         Some(rules)
     ));
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..32 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
@@ -465,9 +465,9 @@ fn assert_native_births(
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
         let id_before = sim.native_unique_ids.as_ref().unwrap().current_raw();
-        let stable_before = sim.substrate.next_stable_object_id;
+        let stable_before = sim.next_stable_object_id();
         let logic_before = sim.live_object_order_snapshot();
-        sim.lifecycle_outputs.clear();
+        sim.lifecycle_outputs.clear_for_test();
         super::radiation_beam::create(
             &mut sim,
             &rules,
@@ -537,7 +537,8 @@ fn assert_native_births(
             "{name} no Abstract ID"
         );
         assert_eq!(
-            sim.substrate.next_stable_object_id, stable_before,
+            sim.next_stable_object_id(),
+            stable_before,
             "{name} no simulation object allocation"
         );
         assert_eq!(

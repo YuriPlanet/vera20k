@@ -100,7 +100,7 @@ pub fn launch(
     let config = sim.sight_reveal_config(Some(rules));
     let viewers = vision::direct_reveal_viewers(
         &sim.fog,
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         owner,
         &config,
         &sim.interner,
@@ -119,7 +119,7 @@ pub fn launch(
             sim.session.current_house(),
         );
     }
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx: target_rx,

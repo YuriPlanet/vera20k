@@ -109,7 +109,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         if self.sim.native_unique_ids.is_none() {
             return Err(SimulationAuthoredLoadError::MissingNativeIdentity);
         }
-        let stable_id = self.sim.allocate_stable_id();
+        let stable_id = self.sim.substrate.allocate_stable_id();
         let (objects, cursor) = (
             &mut self.sim.load_objects,
             self.sim
@@ -156,9 +156,9 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         };
         match kind {
             MapLoadDirtyKind::BaseMarkTactical | MapLoadDirtyKind::WallTactical => {
-                self.sim.tactical_dirty_cells.push(coord);
+                self.sim.dirty_cells.mark_tactical(coord);
             }
-            MapLoadDirtyKind::WallRadar => self.sim.mark_radar_terrain_dirty_cells([coord]),
+            MapLoadDirtyKind::WallRadar => self.sim.dirty_cells.mark_radar([coord]),
         }
         Ok(())
     }
@@ -208,6 +208,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         )?;
         let applied = self
             .sim
+            .substrate
             .set_terrain_anim_z_adjust_after_construction(id, request.z_adjust);
         debug_assert!(applied);
         Ok(())

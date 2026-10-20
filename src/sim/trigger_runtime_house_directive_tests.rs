@@ -177,17 +177,17 @@ fn house_directive_make_ally_runs_both_directions_and_preserves_native_receipt()
         true
     ));
     assert!(crate::map::houses::is_allied_with(
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         "H0",
         "H1"
     ));
     assert!(crate::map::houses::is_allied_with(
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         "H1",
         "H0"
     ));
     assert!(!crate::map::houses::is_allied_with(
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         "H0",
         "H2"
     ));
@@ -222,7 +222,7 @@ fn house_directive_make_ally_runs_both_directions_and_preserves_native_receipt()
         true
     ));
     assert!(!crate::map::houses::is_allied_with(
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         "H0",
         "H2"
     ));
@@ -540,7 +540,7 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
         houses[1]
     );
     // A scripted cell wins over the quarry and bypasses the ground +2 offset.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.houses
         .get_mut(&houses[0])
         .unwrap()
@@ -562,7 +562,7 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
         .unwrap()
         .clear_preferred_super_weapon_target();
     sim.destroy_team(team, &rules, FrameEffects::default());
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     crate::sim::superweapon::chronosphere_tests::charge_super(&mut sim, houses[0], "REVEAL");
     let rng = sim.rng_state();
     crate::sim::superweapon::ai_fire::try_fire(

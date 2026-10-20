@@ -351,14 +351,14 @@ fn install_refinery_test_terrain_on(
     sim: &mut Simulation,
     override_cell: impl FnMut(&mut ResolvedTerrainCell),
 ) {
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -100,
         off_100: -100,
         off_104: 200,
         off_108: 200,
-    });
-    sim.playfield_size_height = Some(64);
+    }));
+    sim.set_playfield_size_height_for_test(Some(64));
     let terrain = resolved_clear_grid_with_override(64, 64, override_cell);
     sim.zone_grid = Some(
         crate::sim::pathfinding::zone_map::ZoneGrid::build_with_terrain(
@@ -561,11 +561,14 @@ fn modded_refinery_rules(foundation: &str, free_unit: Option<&str>) -> RuleSet {
 fn mark_allied(sim: &mut Simulation, a: &str, b: &str) {
     let a = a.to_ascii_uppercase();
     let b = b.to_ascii_uppercase();
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry(a.clone())
         .or_default()
         .insert(b.clone());
-    sim.house_alliances.entry(b).or_default().insert(a);
+    sim.house_alliances_mut_for_test()
+        .entry(b)
+        .or_default()
+        .insert(a);
 }
 
 fn ready_building(sim: &mut Simulation, rules: &RuleSet, owner: &str, type_id: &str) {
@@ -713,6 +716,111 @@ fn a_completed_building_waits_in_its_factory_for_placement() {
     );
     assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, crate::sim::world::SimSoundEvent::BuildingComplete { owner } if *owner == americans)).count(), 1);
     assert_eq!(sim.scenario_rng.logical_state(), rng);
+}
+
+/// HousePlace4FB22E continues completion/C/abandon/score even when ordinary
+/// Building Unlimbo4408DF installs and UnInit's its temporary product.
+#[test]
+fn installed_upgrade_consumes_factory_product_but_keeps_host_and_placement_tail() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[Countries]\n0=Americans\n1=Soviet\n\
+             [BuildingTypes]\n0=GACNST\n1=POWER\n2=UPGRADE\n\
+             [GACNST]\nOwner=Americans,Soviet\nFactory=BuildingType\nStrength=1000\n\
+             [POWER]\nOwner=Americans,Soviet\nStrength=1000\nUpgrades=1\nPower=100\nBaseNormal=no\n\
+             [UPGRADE]\nOwner=Americans,Soviet\nStrength=100\nCost=600\nPower=50\nPowersUpBuilding=POWER\n\
+             [Clear]\nBuildable=yes\n",
+        ),
+        &IniFile::from_str(
+            "[GACNST]\nFoundation=1x1\n[POWER]\nFoundation=1x1\n[UPGRADE]\nFoundation=1x1\n",
+        ),
+    )
+    .unwrap();
+    let mut sim = placement_sim();
+    spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
+    // A remote non-BaseNormal host tests the special Display+1180 gate,
+    // independently of the ordinary Cell clear-to-build result.
+    spawn_structure(&mut sim, &rules, 2, "Americans", "POWER", 40, 40);
+    spawn_structure(&mut sim, &rules, 3, "Soviet", "POWER", 42, 40);
+    sim.substrate.entities.get_mut(2).unwrap().health.set(200);
+    let owner = sim.interner.get("Americans").unwrap();
+    let upgrade_type = sim.interner.intern("UPGRADE");
+    ready_building(&mut sim, &rules, "Americans", "UPGRADE");
+    let held = super::lifecycle_tests::held_id(&sim, owner, ProductionCategory::Building);
+    let rng = sim.scenario_rng.logical_state();
+    let built = sim.houses[&owner].stats().built();
+    assert!(!place_building(
+        &mut sim,
+        &rules,
+        "Americans",
+        "UPGRADE",
+        (42, 40),
+        None,
+    ));
+    assert_eq!(
+        super::lifecycle_tests::held_id(&sim, owner, ProductionCategory::Building),
+        held,
+        "a refused host keeps the same paid factory object for retry"
+    );
+    let preview = preview_at(&sim, &rules, "Americans", "UPGRADE", (40, 40), None);
+    assert!(preview.valid && preview.in_build_area);
+    assert!(
+        preview.cells[0].valid,
+        "the per-cell upgrade preview admits its host"
+    );
+    let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(
+        sim.resolved_terrain.as_ref().unwrap(),
+    );
+    let object = rules.object("UPGRADE").unwrap();
+    assert!(
+        !crate::sim::build_site::is_clear_to_build(
+            &sim,
+            &rules,
+            None,
+            cells.lookup((40, 40)),
+            crate::sim::build_site::building_speed_type(object),
+            Some(object),
+            Some(owner),
+            Some(&cells),
+            None,
+        ),
+        "the independent ordinary cell query still rejects occupied ground"
+    );
+    let no_host = preview_at(&sim, &rules, "Americans", "UPGRADE", (12, 10), None);
+    assert!(
+        no_host.in_build_area && no_host.valid,
+        "Display keeps its ordinary proximity gate"
+    );
+    assert!(
+        !no_host.cells[0].valid,
+        "an upgrade cannot paint clear ground as an admitted host"
+    );
+    assert!(place_building(
+        &mut sim,
+        &rules,
+        "Americans",
+        "UPGRADE",
+        (40, 40),
+        None,
+    ));
+    let host = sim.substrate.entities.get(2).unwrap();
+    assert!(host.is_object_alive() && !host.lifecycle.in_limbo());
+    assert_eq!(host.health.current(), 1000);
+    assert_eq!(host.building_upgrades().count(), 1);
+    assert_eq!(
+        host.building_upgrades().types(),
+        &[Some(upgrade_type), None, None]
+    );
+    let consumed = sim.substrate.entities.get(held).unwrap();
+    assert!(!consumed.is_object_alive() && consumed.lifecycle.in_limbo());
+    assert!(ready_buildings_for_owner(&sim, &rules, "Americans").is_empty());
+    assert_eq!(sim.houses[&owner].stats().built(), built + 1);
+    assert_eq!(building_placed_owners(&sim), vec![owner]);
+    assert_eq!(
+        sim.scenario_rng.logical_state(),
+        rng,
+        "installation has no additional constructor draw"
+    );
 }
 
 /// Place_Production admits only what `FactoryClass::IsComplete @ 0x004CA130`
@@ -985,7 +1093,7 @@ fn stock_gapowr_placement_restores_power_and_radar_during_buildup() {
     assert_eq!(outage.total_drain(), 50);
     assert!(outage.is_low_power());
     assert!(
-        !has_active_radar(&sim.power_states, americans),
+        !has_active_radar(sim.power_states.as_map(), americans),
         "stock American radar must be offline during house low power"
     );
 
@@ -1031,7 +1139,7 @@ fn stock_gapowr_placement_restores_power_and_radar_during_buildup() {
     assert_eq!(recovered.total_drain(), 50);
     assert!(!recovered.is_low_power());
     assert!(
-        has_active_radar(&sim.power_states, americans),
+        has_active_radar(sim.power_states.as_map(), americans),
         "existing stock American radar should recover while GAPOWR is building up"
     );
 }
@@ -1529,7 +1637,7 @@ fn placement_command_rejects_marked_ground_mobiles_until_they_are_unmarked() {
         let americans = sim.interner.get("Americans").expect("owner interned");
         let gapowr = sim.interner.get("GAPOWR").expect("type interned");
         let entities_before = sim.substrate.entities.len();
-        let next_id_before = sim.substrate.next_stable_object_id;
+        let next_id_before = sim.next_stable_object_id();
         let occupancy_generation_before = sim.substrate.occupancy.generation();
         let rejected = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
         let tick = sim.advance_tick(&[rejected], Some(&rules), Some(&grid), None, 67);
@@ -1549,7 +1657,7 @@ fn placement_command_rejects_marked_ground_mobiles_until_they_are_unmarked() {
             "rejected placement must emit EVA_CannotDeployHere for {blocker_type}"
         );
         assert_eq!(sim.substrate.entities.len(), entities_before);
-        assert_eq!(sim.substrate.next_stable_object_id, next_id_before);
+        assert_eq!(sim.next_stable_object_id(), next_id_before);
         assert_eq!(
             sim.substrate.occupancy.generation(),
             occupancy_generation_before,
@@ -1614,7 +1722,7 @@ fn placement_command_rejects_nonblocking_overlay_and_preserves_ready_building() 
     let americans = sim.interner.get("Americans").expect("owner interned");
     let gapowr = sim.interner.get("GAPOWR").expect("type interned");
     let entities_before = sim.substrate.entities.len();
-    let next_id_before = sim.substrate.next_stable_object_id;
+    let next_id_before = sim.next_stable_object_id();
     let occupancy_generation_before = sim.substrate.occupancy.generation();
     let rejected = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
     let tick = sim.advance_tick(&[rejected], Some(&rules), Some(&grid), None, 67);
@@ -1622,7 +1730,7 @@ fn placement_command_rejects_nonblocking_overlay_and_preserves_ready_building() 
     assert_eq!(tick.executed_commands, 1);
     assert!(!tick.spawned_entities);
     assert_eq!(sim.substrate.entities.len(), entities_before);
-    assert_eq!(sim.substrate.next_stable_object_id, next_id_before);
+    assert_eq!(sim.next_stable_object_id(), next_id_before);
     assert_eq!(
         sim.substrate.occupancy.generation(),
         occupancy_generation_before
@@ -2037,9 +2145,7 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
         expected
     );
 
-    sim.tactical_dirty_cells.clear();
-    sim.radar_terrain_dirty_cells.clear();
-    sim.radar_terrain_dirty_generation = 0;
+    sim.dirty_cells = Default::default();
 
     let placed = place_building(
         &mut sim,
@@ -2114,7 +2220,8 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
         ]);
     }
     assert_eq!(
-        sim.tactical_dirty_cells, expected_tactical,
+        sim.dirty_cells.tactical_for_test(),
+        expected_tactical,
         "each clicked/filler Mark must finish its N/E/S/W/self tactical sequence before the next stamp"
     );
     for (rx, ry) in std::iter::once(origin).chain(expected.iter().copied()) {
@@ -2313,9 +2420,7 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
         .expect("construction yard listener")
         .attack_target
         .set_for_test(Some(TargetKind::Cell(13, 10)));
-    sim.tactical_dirty_cells.clear();
-    sim.radar_terrain_dirty_cells.clear();
-    sim.radar_terrain_dirty_generation = 0;
+    sim.dirty_cells = Default::default();
 
     let placed = place_building(
         &mut sim,
@@ -2361,10 +2466,11 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
     // existing N/E/S/W/self visits; radar belongs to connectivity only.
     let mut expected_tactical = vec![(12, 10)];
     expected_tactical.extend_from_slice(&expected_dirty);
-    assert_eq!(sim.tactical_dirty_cells, expected_tactical);
-    assert_eq!(sim.radar_terrain_dirty_cells, expected_dirty);
+    assert_eq!(sim.dirty_cells.tactical_for_test(), expected_tactical);
+    assert_eq!(sim.dirty_cells.radar(), expected_dirty);
     assert_eq!(
-        sim.radar_terrain_dirty_generation, 5,
+        sim.dirty_cells.radar_generation(),
+        5,
         "each first-unique native radar callback is published at its inline visit"
     );
     let live_path = sim
@@ -2554,6 +2660,7 @@ fn owned_wall_replacement_rechecks_building_admission_after_removal() {
             None,
             None,
             Some(&cells),
+            None,
         ),
         "Overlay Track admission alone would still accept the exposed ground"
     );
@@ -2676,6 +2783,7 @@ fn placement_preview_keeps_shared_dummy_unchanged_across_unallocated_foundation_
         (63, 10),
         sim.interner.get("Americans"),
         None,
+        None,
     ));
     assert_eq!(dummy.snapshot().coord, (64, 11));
 }
@@ -2720,6 +2828,7 @@ fn place_ready_building_rejects_native_gap_restamp_cells() {
         rules.object("GAPOWR").unwrap(),
         (12, 10),
         Some(americans),
+        None,
         None,
     ));
     let records = [crate::sim::bridge_state::BridgeEndpointRecord {
@@ -2807,15 +2916,16 @@ fn place_ready_building_rejects_destroyed_bridge_over_blocked_ground() {
             cell.bridge_deck_level = 3;
             // A legacy deck whose +44 bridge identity 47E040 has destroyed:
             // state 0, bit0x100 clear, bit0x400 set.
-            cell.bridge_facts.overlay_id = Some(0x18);
             cell.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_DESTROYED_OR_RAMP;
-            cell.bridge_facts.state_byte = 0;
         }
     });
     sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(&resolved, true, 5),
     );
     sim.resolved_terrain = Some(resolved);
+    let deck = sim.overlay_cell_mut_for_test(12, 10);
+    deck.overlay_id = Some(0x18);
+    deck.overlay_data = 0;
 
     let preview = preview_at(&sim, &rules, "Americans", "GAPOWR", (12, 10), None);
     assert_eq!(preview.reason, Some(BuildingPlacementError::BlockedTerrain));
@@ -3758,7 +3868,7 @@ fn stock_yuri_cloning_vat_duplicates_a_successfully_placed_infantry() {
     );
     let mut low_power = crate::sim::power_system::PowerState::default();
     low_power.set_is_low_power_for_test(true);
-    sim.power_states.insert(owner, low_power);
+    sim.power_states.map_mut_for_test().insert(owner, low_power);
 
     assert!(super::dispatch_production_changes_for_tests(
         &mut sim,

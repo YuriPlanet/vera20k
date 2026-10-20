@@ -145,7 +145,7 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
     let weapon_id = sim.intern(&weapon.id);
     let warhead_id = sim.intern(weapon.warhead.as_deref().unwrap());
     let projectile_type = sim.intern(weapon.projectile.as_deref().unwrap());
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate_mut_for_test().allocate_stable_id();
     sim.projectiles_mut_for_test().spawn(
         id,
         ProjectileSpawn {
@@ -356,7 +356,7 @@ fn original_ifv_dragon_frame_getter_matches_retained_flights_and_all_directions(
     let mut sim = Simulation::with_seed(31);
     let weapon_id = sim.intern(&weapon.id);
     let warhead = sim.intern(weapon.warhead.as_deref().unwrap());
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate_mut_for_test().allocate_stable_id();
     let rows = corpus["frames"].as_array().unwrap();
     assert_eq!(rows.len(), 166);
     let origin = coord(&rows[0]["position"]);

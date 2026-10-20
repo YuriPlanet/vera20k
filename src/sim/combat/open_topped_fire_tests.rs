@@ -88,7 +88,7 @@ fn retail_dustbowl_battle_fortress_boarded(riders: u16) -> Fortress {
         ("RUSSIANS", "PLAYER"),
         ("PLAYER", "RUSSIANS"),
     ] {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(house.to_string())
             .or_default()
             .insert(ally.to_string());
@@ -816,7 +816,7 @@ fn retail_battle_fortress_chrono_rider_freezes_releases_and_erases() {
     .unwrap();
     assert_eq!(
         control["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     let native_stop = &control["rows"][0]["output"]["after_stop"];
     for release_by_moving in [true, false] {

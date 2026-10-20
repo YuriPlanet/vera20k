@@ -78,7 +78,7 @@ fn fixture(row: &Value, kind: &crate::rules::projectile_type::ProjectileType) ->
     *terrain.cell_mut_for_test(cell_xy.0, cell_xy.1).unwrap() = cell;
     sim.install_resolved_terrain_for_new_map(terrain);
     let warhead = sim.intern("FIXTURE_UNUSED_WARHEAD");
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate_mut_for_test().allocate_stable_id();
     sim.admit_projectile(
         id,
         ProjectileSpawn {

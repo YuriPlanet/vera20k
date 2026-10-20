@@ -42,8 +42,8 @@ fn consequence_rules() -> RuleSet {
 fn consequence_world() -> (Simulation, u64, u64) {
     let mut sim = Simulation::with_seed(17);
     sim.input_delay_ticks = 0;
-    let attacker = sim.allocate_stable_id();
-    let victim = sim.allocate_stable_id();
+    let attacker = sim.substrate.allocate_stable_id();
+    let victim = sim.substrate.allocate_stable_id();
     for (id, kind, owner, rx, hp) in [
         (attacker, "TESLA", "Americans", 5, 300),
         (victim, "TARGET", "Soviet", 8, 10),
@@ -159,7 +159,7 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
         .native_unique_id();
     assert_eq!(death_native, debris_native.wrapping_add(1));
     assert_eq!(destroy_native, death_native.wrapping_add(1));
-    let next_id = sim.allocate_stable_id();
+    let next_id = sim.substrate.allocate_stable_id();
     assert_eq!(next_id, ids[2] + 1);
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
     assert_eq!(delivered_ids(&sim), ids[..3]);
@@ -175,7 +175,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
     use crate::sim::passenger::{PassengerCargo, PassengerRole};
     let rules = consequence_rules();
     let (mut sim, attacker, carrier) = consequence_world();
-    let passenger = sim.allocate_stable_id();
+    let passenger = sim.substrate.allocate_stable_id();
     let mut entity = GameEntity::test_default(passenger, "TARGET", "Soviet", 8, 5);
     entity.passenger_role = PassengerRole::inside_for_test(carrier, false);
     sim.substrate.entities.insert(entity);
@@ -216,7 +216,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
 fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
     let rules = consequence_rules();
     let (mut sim, attacker, victim) = consequence_world();
-    let projectile = sim.allocate_stable_id();
+    let projectile = sim.substrate.allocate_stable_id();
     let impact = ProjectileCoord::new(8 * 256 + 128, 5 * 256 + 128, 0);
     let mut spawn = super::lifecycle_tests::gsi_05_02_projectile(attacker, Some(0));
     spawn.origin = impact;

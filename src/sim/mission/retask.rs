@@ -99,7 +99,9 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.set_archive_target(None);
         }
-        let _ = self.mission_assign_exact(id, MissionId::from_known(MissionType::Guard), now);
+        let _ =
+            self.substrate
+                .mission_assign_exact(id, MissionId::from_known(MissionType::Guard), now);
     }
 
     /// Retask `id` onto a fresh `mission`: queue the mission through the
@@ -177,7 +179,7 @@ impl Simulation {
         // Retain the existing miner adapter after radio Break, before Queue.
         // Both ordinary and planned Harvest use this same event prefix.
         if mission == MissionType::Harvest {
-            crate::sim::miner::clear_unload_latch(self, id);
+            crate::sim::miner::clear_unload_latch(&mut self.substrate, id);
         }
         self.queue_order_mission(id, queued);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -193,28 +195,7 @@ impl Simulation {
         {
             self.reset_slave_manager(id, rules, frame_effects);
         }
-        self.megamission_foot_clears(id, mission);
-    }
-
-    /// The MEGAMISSION event's Foot arm after its Slave Manager reset: the
-    /// ArchiveTarget clears through TechnoClass70C610 (`0x004C7448..
-    /// 0x004C7451`) and the navigation list empties (`0x004C7453`).
-    /// Event4C7446 tests the Foot receiver; non-Foot actors skip these
-    /// calls. Raw mission11 (`0x004C73EF` reads the event's own byte) uses
-    /// AreaGuard's separate Archive assignment at4C7430.
-    pub(crate) fn megamission_foot_clears(&mut self, id: u64, mission: MissionType) {
-        if mission != MissionType::AreaGuard
-            && let Some(entity) = self.substrate.entities.get_mut(id)
-            && matches!(
-                entity.category(),
-                crate::map::entities::EntityCategory::Unit
-                    | crate::map::entities::EntityCategory::Infantry
-                    | crate::map::entities::EntityCategory::Aircraft
-            )
-        {
-            entity.set_archive_target(None);
-            entity.navigation.clear_nav_list();
-        }
+        self.substrate.megamission_foot_clears(id, mission);
     }
 
     /// The ore-miner arm of the Stop command.
@@ -252,6 +233,29 @@ impl Simulation {
             now,
             &EntityReadyInputProvider,
         );
-        let _ = self.mission_commence_exact(id, now);
+        let _ = self.substrate.mission_commence_exact(id, now);
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// The MEGAMISSION event's Foot arm after its Slave Manager reset: the
+    /// ArchiveTarget clears through TechnoClass70C610 (`0x004C7448..
+    /// 0x004C7451`) and the navigation list empties (`0x004C7453`).
+    /// Event4C7446 tests the Foot receiver; non-Foot actors skip these
+    /// calls. Raw mission11 (`0x004C73EF` reads the event's own byte) uses
+    /// AreaGuard's separate Archive assignment at4C7430.
+    pub(crate) fn megamission_foot_clears(&mut self, id: u64, mission: MissionType) {
+        if mission != MissionType::AreaGuard
+            && let Some(entity) = self.entities.get_mut(id)
+            && matches!(
+                entity.category(),
+                crate::map::entities::EntityCategory::Unit
+                    | crate::map::entities::EntityCategory::Infantry
+                    | crate::map::entities::EntityCategory::Aircraft
+            )
+        {
+            entity.set_archive_target(None);
+            entity.navigation.clear_nav_list();
+        }
     }
 }

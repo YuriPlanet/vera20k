@@ -70,6 +70,7 @@ fn retail_guard_cursor_and_click_share_alliance_admission() {
             Some(&registry),
             OrderModifier::GuardArea,
             true,
+            false,
         );
         let command = object_attack_click_command(
             &sim,
@@ -144,6 +145,7 @@ fn retail_weapon_cursors_keep_native_attack_and_sabotage_commands() {
             Some(&registry),
             OrderModifier::ForceFire,
             false,
+            false,
         );
         assert_eq!(cursor_id_for_feedback(feedback), Some(expected), "{name}");
         let dispatch = attack_branch_orders(
@@ -206,6 +208,7 @@ fn retail_engineer_forced_attack_keeps_native_no_move_override() {
         Some(&retail.rules),
         Some(&registry),
         OrderModifier::ForceFire,
+        false,
         false,
     );
     assert_eq!(cursor_id_for_feedback(feedback), Some(CursorId::NoMove));
@@ -318,6 +321,7 @@ fn a_deployed_gi_answers_nomove_beyond_his_deployed_range() {
             Some(rules),
             Some(&registry),
             OrderModifier::Normal,
+            false,
             false,
         ))
     };

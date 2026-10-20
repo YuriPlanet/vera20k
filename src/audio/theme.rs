@@ -237,19 +237,15 @@ impl ThemeRuntime {
         if self.catalog_loaded {
             return;
         }
-        if let Some(bytes) = assets.get_ref(THEME_INI_NAME)
-            && let Ok(ini) = IniFile::from_bytes(bytes)
-        {
-            self.entries = catalog_from_ini(&ini);
+        if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, THEME_INI_NAME) {
+            self.entries = catalog_from_ini(&selected.ini);
         }
         scan_catalog_availability(&mut self.entries, assets);
 
         // Read RA2 independently: merging INIs would let its INTRO, SCORE,
         // LOADING and CREDITS sections replace the YR lifecycle themes.
-        if let Some(bytes) = assets.get_ref(RA2_THEME_INI_NAME)
-            && let Ok(ini) = IniFile::from_bytes(bytes)
-        {
-            let mut ra2_entries = catalog_from_ini(&ini);
+        if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, RA2_THEME_INI_NAME) {
+            let mut ra2_entries = catalog_from_ini(&selected.ini);
             scan_catalog_availability(&mut ra2_entries, assets);
             for entry in ra2_entries {
                 if entry.normal
@@ -545,7 +541,25 @@ impl ThemeRuntime {
             action = action.then(self.queue_song(THEME_HOLD, gates, physical, wall_ms));
         }
         let saved_shuffle = std::mem::replace(&mut self.shuffle, true);
+        action = action.then(self.wol_lobby_music_rule(lobby_music, gates, physical, wall_ms));
+        (action, saved_shuffle)
+    }
+
+    /// The music half of `0x0077E110`, also WOL Options' Play Music preview
+    /// (`0x0078EBC0` case `0x5F8`): with lobby music, `Stop(0)` and
+    /// `Queue(-2)` when no stream plays or INTRO (current, else pending) is
+    /// still the song; otherwise the current song stays. Without it,
+    /// `Queue(-3)`.
+    pub(crate) fn wol_lobby_music_rule(
+        &mut self,
+        lobby_music: bool,
+        gates: ThemeGates,
+        physical: MusicOutputState,
+        wall_ms: u64,
+    ) -> ThemeAction {
+        let mut action = ThemeAction::default();
         if lobby_music {
+            let intro = self.from_name(MENU_THEME_SECTION);
             let (playing, settled) = self.still_playing(physical, wall_ms);
             action = action.then(settled);
             if !playing || self.current_song() == intro {
@@ -555,7 +569,7 @@ impl ThemeRuntime {
         } else {
             action = action.then(self.queue_song(THEME_HOLD, gates, physical, wall_ms));
         }
-        (action, saved_shuffle)
+        action
     }
 
     /// Every `WOL_Main` exit restores the saved shuffle flag
@@ -1065,6 +1079,27 @@ mod tests {
         let (action, _) = theme.enter_wol_lobby(false, gates(true), MusicOutputState::Playing, 100);
         assert!(!action.stop_output);
         assert_eq!(theme.slots().pending, THEME_HOLD);
+    }
+
+    #[test]
+    fn wol_music_rule_keeps_a_playing_song_and_holds_without_lobby_music() {
+        // 0x0077E110 and WOL Options' Play Music preview (0x0078EBC0 0x5F8).
+        let mut theme = stock_runtime();
+        let mut ok = |stem: &str| prepared(stem);
+        theme.play_song(1, gates(true), MusicOutputState::Idle, 0, &mut ok);
+        let action = theme.wol_lobby_music_rule(true, gates(true), MusicOutputState::Playing, 100);
+        assert!(!action.stop_output, "a playing non-INTRO song stays");
+        assert_eq!(theme.current_song(), 1);
+        let action = theme.wol_lobby_music_rule(false, gates(true), MusicOutputState::Playing, 200);
+        assert!(!action.stop_output);
+        assert_eq!(theme.slots().pending, THEME_HOLD, "Queue(-3)");
+        // Checked again while the song still plays: nothing changes.
+        theme.wol_lobby_music_rule(true, gates(true), MusicOutputState::Playing, 300);
+        assert_eq!(theme.current_song(), 1);
+        // No stream plays: Stop(0), then Queue(-2).
+        let action = theme.wol_lobby_music_rule(true, gates(true), MusicOutputState::Idle, 400);
+        assert!(action.stop_output);
+        assert_eq!(theme.slots().pending, THEME_AUTO);
     }
 
     #[test]

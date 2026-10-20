@@ -1,36 +1,12 @@
-//! Mutation authority for runtime terrain projections and authored overlay mirrors.
+//! Mutation authority for runtime terrain projections.
 //! Grid storage and its derived land/blocking/zone metadata never escape mutably
-//! in production. Authored identity/data passes remain separate literal writes.
+//! in production.
 
 use super::{ResolvedTerrainGrid, overlay_reduced_zone_type, recalc_zone_type, zone_class};
 use crate::rules::overlay_types::{OverlayTypeFlags, retained_overlay_land};
 use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
 
 impl ResolvedTerrainGrid {
-    // Authored loading writes identity and state in separate native passes.
-    // These are literal mirrors, deliberately not runtime Recalc transactions.
-    pub(in crate::map) fn mirror_authored_overlay_identity(
-        &mut self,
-        index: usize,
-        id: Option<u8>,
-    ) {
-        self.cells[index].bridge_facts.overlay_id = id;
-    }
-
-    pub(in crate::map) fn mirror_authored_overlay_state(&mut self, index: usize, state: u8) {
-        self.cells[index].bridge_facts.state_byte = state;
-    }
-
-    pub(in crate::map) fn mirror_authored_overlay_pair(
-        &mut self,
-        index: usize,
-        id: Option<u8>,
-        state: u8,
-    ) {
-        self.mirror_authored_overlay_identity(index, id);
-        self.mirror_authored_overlay_state(index, state);
-    }
-
     /// Commit the overlay-derived Land, blocking and Zone projection together.
     /// Literal overlay storage/removal belongs to OverlayGrid. `land_flags` may
     /// retain the removed Tiberium's Land branch on a slope, as in RecalcAttributes

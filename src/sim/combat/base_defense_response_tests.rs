@@ -78,14 +78,14 @@ fn with_clear_map(sim: &mut Simulation) {
     sim.resolved_terrain = Some(terrain);
     sim.session.set_map_width_for_test(8);
     sim.session.set_map_height_for_test(8);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
         base: 8,
         off_fc: 0,
         off_100: 0,
         off_104: 8,
         off_108: 8,
-    });
-    sim.playfield_size_height = Some(8);
+    }));
+    sim.set_playfield_size_height_for_test(Some(8));
 }
 
 fn response_defender(id: u64, type_name: &str, x: u16) -> GameEntity {
@@ -500,9 +500,10 @@ fn run_native_bridge_response_seams(victim_is_slave: bool) {
         let terrain = native::terrain(input);
         sim.zone_grid = Some(native::zones(&terrain, row));
         sim.resolved_terrain = Some(terrain);
-        sim.playfield_bounds =
-            Some(crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8));
-        sim.playfield_size_height = Some(8);
+        sim.set_playfield_bounds_for_test(Some(
+            crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8),
+        ));
+        sim.set_playfield_size_height_for_test(Some(8));
         sim.substrate
             .entities
             .insert(native::candidate(&row["victim"], 1, "VICTIM"));
@@ -610,9 +611,10 @@ fn retail_bridge_base_response_runs_through_the_protected_damage_receiver() {
             cell.bridge_facts.raw_flags = supplied["flags"].as_u64().unwrap() as u32;
         }
         sim.zone_grid = Some(native::zones(terrain, row));
-        sim.playfield_bounds =
-            Some(crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8));
-        sim.playfield_size_height = Some(8);
+        sim.set_playfield_bounds_for_test(Some(
+            crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8),
+        ));
+        sim.set_playfield_size_height_for_test(Some(8));
         for (id, input) in [(victim, &row["victim"]), (defender, &row["input"])] {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             let xyz = native::coord(&input["current"]);

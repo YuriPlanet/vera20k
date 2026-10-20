@@ -106,11 +106,6 @@ pub(crate) fn build_shp_instances(
     let ignore_visibility = state.match_state.sandbox_full_visibility;
     let art_reg: Option<&crate::rules::art_data::ArtRegistry> =
         state.rules().map(|rules| rules.art());
-    let terrain = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .and_then(|rt| rt.view().resolved_terrain());
     let canopy_owners = super::overlays::parachute_canopy_owners(state, sim);
 
     // Drawing borrows live map fields but uses its own small Dummy identity,
@@ -142,16 +137,21 @@ pub(crate) fn build_shp_instances(
         // lifted anchor. See `locomotor_visual::BUILDING_ART_LIFT_PX`. The screen
         // cull reads only that anchor, and the admission work below only reads,
         // so an object off the screen skips it.
+        // One fresh sample for this read-only entity draw. Reuse it for the
+        // anchor, infantry direction and building gun instead of reading the
+        // complete pose again for each field. Never retain it across draws.
+        let render_pose = crate::app::presentation::interpolation::pose(
+            state,
+            entity,
+            sim.session().binary_frame(),
+        );
         let (sx, sy) = {
-            let anchor = crate::render::locomotor_visual::screen_position(entity);
+            let [x, y] = render_pose.screen;
             if entity.category() == EntityCategory::Structure {
-                crate::render::locomotor_visual::building_art_anchor(anchor.0, anchor.1)
+                crate::render::locomotor_visual::building_art_anchor(x, y)
             } else {
                 // Infantry DrawIt519524/51958A uses the signed Foot+6B4 lift.
-                (
-                    anchor.0,
-                    anchor.1 - f32::from(entity.ion_blast_lift_pixels()),
-                )
+                (x, y - render_pose.visual_lift)
             }
         };
         if !in_view(sx, sy, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0) {
@@ -250,11 +250,11 @@ pub(crate) fn build_shp_instances(
                     .is_some()
             })
         {
-            if let Some(frame) = resolve_object_shp_frame(
+            if let Some(frame) = resolve_object_shp_frame_with_facing(
                 state,
                 sim.interner().resolve(entity.type_ref()),
                 entity,
-                sim.session().binary_frame(),
+                render_pose.body,
                 cells.as_ref(),
             ) {
                 emit_unit_terrain_body(
@@ -263,7 +263,7 @@ pub(crate) fn build_shp_instances(
                     type_str,
                     frame,
                     [sx, sy],
-                    draw_state,
+                    draw_decision,
                     cells.as_ref(),
                     ground_order,
                     ground_objects,
@@ -371,11 +371,11 @@ pub(crate) fn build_shp_instances(
                     (frame, None)
                 }
                 _ => {
-                    let Some(frame) = resolve_object_shp_frame(
+                    let Some(frame) = resolve_object_shp_frame_with_facing(
                         state,
                         type_str,
                         entity,
-                        sim.session().binary_frame(),
+                        render_pose.body,
                         cells.as_ref(),
                     ) else {
                         continue;
@@ -479,7 +479,7 @@ pub(crate) fn build_shp_instances(
             parachute_body_depths.insert(entity.stable_id(), depth);
         }
         let extra_light = state.rules().map_or(0, |rules| {
-            crate::app::presentation::lighting::body_extra_light(entity, rules, sim, terrain)
+            crate::app::presentation::lighting::body_extra_light(entity, rules, sim, cells.as_ref())
         });
         let tint = shp_body_tint(
             state.match_state.match_presentation.lighting.grid(),
@@ -650,34 +650,59 @@ pub(crate) fn build_shp_instances(
                 if !is_building_up
                     && !is_building_down
                     && let Some(body_entry) = entry
-                    && let Some(shadow) = building_embedded_shadow_piece(
+                    && let Some(shadow) = embedded_shp_shadow_piece(
                         atlas,
                         state.rules().and_then(|rules| rules.object(type_str)),
                         entity,
+                        cells.as_ref(),
                         &body_key,
                         body_entry,
                         instance,
                         draw_decision,
+                        body_policy,
                     )
                 {
-                    building_pieces.push(shadow);
+                    building_pieces.push(PlannedBuildingPieceInstance {
+                        kind: BuildingPieceKind::Shadow,
+                        z_bias: 0,
+                        policy: body_policy,
+                        target: shadow.target,
+                        instance: shadow.instance,
+                    });
                 }
             }
         } else if let Some((target, instance)) = body {
             let shadow = (entity.category() == EntityCategory::Infantry)
                 .then(|| infantry_air_shadow_piece(atlas, entity, cells.as_ref(), [sx, sy], depth))
                 .flatten();
-            ground_objects.push(PlannedObjectInstance::object(
-                parent,
-                shadow
-                    .into_iter()
-                    .chain(std::iter::once(ObjectPieceInstance {
-                        target,
-                        render_z: parent.policy.render_z,
-                        instance,
-                    }))
-                    .collect(),
-            ));
+            let mut pieces: Vec<_> = shadow.into_iter().collect();
+            pieces.push(ObjectPieceInstance {
+                target,
+                render_z: parent.policy.render_z,
+                instance,
+            });
+            // Unit73CE5E/73CEAD -> Foot41C090 -> Techno705E00 draws
+            // the embedded stencil after the body. Infantry's separate
+            // INFSHDW draw above remains before its body.
+            if entity.category() == EntityCategory::Unit
+                && let Some(body_entry) = entry
+                && let Some(shadow) = embedded_shp_shadow_piece(
+                    atlas,
+                    state
+                        .rules()
+                        .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules)),
+                    entity,
+                    cells.as_ref(),
+                    &body_key,
+                    body_entry,
+                    instance,
+                    draw_decision,
+                    parent.policy,
+                )
+            {
+                pieces.push(shadow);
+            }
+            ground_objects.push(PlannedObjectInstance::object(parent, pieces));
         }
 
         // Emit building animation overlays and bib — but NOT during build-up/down.
@@ -760,12 +785,10 @@ pub(crate) fn build_shp_instances(
                         .barrel_image_pitches
                         .borrow_mut(),
                     type_str,
-                    entity.body_facing_current(sim.session().binary_frame()),
-                    entity
-                        .barrel_elevation()
-                        .current(sim.session().binary_frame()),
+                    render_pose.body,
+                    render_pose.barrel,
                     entity.turret_anim_frame.frame(),
-                    entity.voxel_recoil(),
+                    render_pose.recoil,
                     turret_offset,
                     sx,
                     sy,
@@ -791,26 +814,42 @@ pub(crate) fn build_shp_instances(
     }
 }
 
-/// The common embedded second-half shadow owner used by BuildingClass's
-/// `TechnoClass_DrawSHP @ 0x00705E00` path. Its caller passes the actual body
+/// Techno705E00's embedded-shadow admission, also used when a Unit draws
+/// a TerrainType image. Unit GetHeight5F5F40 must be zero (70600C..70603F);
+/// the existing isolated query includes live ramp and OnBridge height.
+fn embedded_shp_shadow_admitted(
+    object: Option<&crate::rules::object_type::ObjectType>,
+    entity: &crate::sim::game_entity::GameEntity,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    decision: crate::render::draw_state::DrawDecision,
+) -> bool {
+    matches!(decision.native_visual_state, 0 | 1)
+        && !object.is_some_and(|object| object.no_shadow)
+        && (entity.category() != EntityCategory::Unit
+            || crate::sim::movement::air_movement::queried_flight_height(entity, cells) == 0)
+}
+
+/// The common embedded second-half shadow owner used by Building and Unit
+/// `TechnoClass_DrawSHP @ 0x00705E00` paths. Its caller passes the actual body
 /// frame key/entry/instance and the same admitted native visual-state result;
 /// this function does not infer a second frame, anchor, or visibility decision.
 ///
 /// Native draws body frame `n`, then `n + frame_count/2` when its visual state
 /// is 0/1 and `NoShadow=` is false. The darken blitter uses the shadow frame's
-/// non-zero SHP indices as a mask, reads/writes Z, and has no BUILDNGZ input.
-pub(crate) fn building_embedded_shadow_piece(
+/// non-zero SHP indices as a mask and has no BUILDNGZ input. The caller's
+/// Z policy survives: Unit2E01 only reads Z; Building6E01 reads/writes it.
+pub(crate) fn embedded_shp_shadow_piece(
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
     object: Option<&crate::rules::object_type::ObjectType>,
     entity: &crate::sim::game_entity::GameEntity,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     body_key: &ShpSpriteKey,
     body_entry: &crate::render::sprite_atlas::ShpSpriteEntry,
     body_instance: SpriteInstance,
     decision: crate::render::draw_state::DrawDecision,
-) -> Option<PlannedBuildingPieceInstance> {
-    if !matches!(decision.native_visual_state, 0 | 1)
-        || object.is_some_and(|object| object.no_shadow)
-    {
+    policy: BlitPolicy,
+) -> Option<ObjectPieceInstance> {
+    if !embedded_shp_shadow_admitted(object, entity, cells, decision) {
         return None;
     }
     let frame_count = atlas.object_shp_frame_count(&body_key.type_id)?;
@@ -843,18 +882,27 @@ pub(crate) fn building_embedded_shadow_piece(
     instance.uv_origin = shadow_entry.uv_origin;
     instance.uv_size = shadow_entry.uv_size;
     instance.source_palette = shadow_entry.source_palette;
+    // Both ordinary shadow arms clear body translucency and use intensity
+    // 1000/colour word0 (706490..7064AC,706568..70657F).
+    instance.draw_state = DrawState::default();
+    instance.palette_light = instance
+        .palette_light
+        .with_brightness(1000)
+        .with_colour_word(0);
+    instance.alpha = 1.0;
     // Techno70647A/70649E (and70654F/706576 for visual state1) combine
     // both -2 terms before CC_Draw_Shape: -4 - AdjustForZ(Location.Z).
     instance.z_adjust = lifted_z_adjust(lift_px, -4);
     instance.z_gradient = pack_z_gradient(ZGradient::Flat, false);
     instance.zshape_origin = [0.0, 0.0];
 
-    Some(PlannedBuildingPieceInstance {
-        kind: BuildingPieceKind::Shadow,
-        z_bias: 0,
-        // flags 0x6E01 select the existing opaque, strict-Z read/write shadow
-        // destination edit (0x004990E0 / 0x00497390).
-        policy: BlitPolicy::opaque(SpriteEncoding::Plain),
+    // RESIDUAL: Carryall child drawing raises this point another 14 pixels
+    // when Techno+424 is set (706481/706559, Aircraft pickup store417297).
+    // That rendering belongs to the existing unported Aircraft Carryall
+    // mechanism; retail Carryall is on VehicleType HIND. Ordinary ground
+    // Units use constructor6F2FF3's zero, without render-owned carryall state.
+    Some(ObjectPieceInstance {
+        render_z: policy.render_z,
         target: ObjectTexture::SpriteAtlasEdit(
             shadow_entry.page as usize,
             crate::render::terrain_draw::TerrainPiece::Shadow,
@@ -1204,11 +1252,16 @@ fn emit_factory_under_door(
         target: ObjectTexture::ShpPage(entry.page as usize),
         instance,
     });
-    if let Some(mut shadow) =
-        building_embedded_shadow_piece(atlas, object, entity, &key, entry, instance, decision)
-    {
-        shadow.kind = BuildingPieceKind::UnderDoor;
-        pieces.push(shadow);
+    if let Some(shadow) = embedded_shp_shadow_piece(
+        atlas, object, entity, None, &key, entry, instance, decision, policy,
+    ) {
+        pieces.push(PlannedBuildingPieceInstance {
+            kind: BuildingPieceKind::UnderDoor,
+            z_bias: 0,
+            policy,
+            target: shadow.target,
+            instance: shadow.instance,
+        });
     }
 }
 
@@ -1311,7 +1364,6 @@ pub(crate) fn build_building_anim_instances(
     };
     let sim = &runtime.simulation;
     let grid = state.match_state.match_presentation.lighting.grid();
-    let terrain = runtime.view().resolved_terrain();
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let local_owner_id = local_owner
         .as_deref()
@@ -1382,8 +1434,12 @@ pub(crate) fn build_building_anim_instances(
         let draw_state = material.state;
         let cell = (building.position.rx(), building.position.ry());
         let tint = grid.building_body_tint_at(cell);
-        let extra_light =
-            crate::app::presentation::lighting::body_extra_light(building, rules, sim, terrain);
+        let extra_light = crate::app::presentation::lighting::body_extra_light(
+            building,
+            rules,
+            sim,
+            cells.as_ref(),
+        );
         let selected_palette =
             crate::app::presentation::lighting::body_palette_light(grid, cell, extra_light);
         emit_building_anims(
@@ -1666,12 +1722,13 @@ fn emit_unit_terrain_body(
     type_id: &str,
     frame: u16,
     point: [f32; 2],
-    draw_state: DrawState,
+    decision: crate::render::draw_state::DrawDecision,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     order: &NativeDisplayOrder,
     output: &mut Vec<PlannedObjectInstance>,
 ) {
     use crate::render::terrain_draw::TerrainPiece;
+    let draw_state = decision.state;
     let Some(atlas) = state.match_state.match_presentation.overlay_atlas.as_ref() else {
         return;
     };
@@ -1709,16 +1766,15 @@ fn emit_unit_terrain_body(
     let bridge_fudge = super::foot_depth::shp_unit_bridge_fudge(state, entity);
     let body_z =
         super::foot_depth::shp_z_adjust(state, entity) - if bridge_fudge { 16.0 } else { 0.0 };
-    let world_z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, None);
-    let shadow_z = crate::util::native_x87::adjust_for_z_standard(world_z)
-        .wrapping_neg()
-        .wrapping_sub(4) as f32;
-    // Techno70600C..70603F suppresses the SHP stencil above ground. Borrow
-    // the shared Object5F5F40/Map578080 owners with an isolated render query.
-    let grounded = crate::sim::movement::ground_pose::query_ground_height(cells, physical)
-        .is_ok_and(|ground| {
-            crate::sim::movement::ground_pose::height_at_z(world_z, ground, entity.on_bridge()) == 0
-        });
+    let shadow_z = lifted_z_adjust(crate::render::locomotor_visual::screen_lift_px(entity), -4);
+    let shadow_admitted = embedded_shp_shadow_admitted(
+        state
+            .rules()
+            .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules)),
+        entity,
+        Some(cells),
+        decision,
+    );
     let mut pieces = Vec::with_capacity(2);
     for (piece, sprite, z_adjust, gradient, material) in [
         (
@@ -1741,13 +1797,7 @@ fn emit_unit_terrain_body(
             DrawState::default(),
         ),
     ] {
-        if piece == TerrainPiece::Shadow
-            && (!grounded
-                || state
-                    .rules()
-                    .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
-                    .is_some_and(|object| object.no_shadow))
-        {
+        if piece == TerrainPiece::Shadow && !shadow_admitted {
             continue;
         }
         pieces.push(ObjectPieceInstance {
@@ -1783,7 +1833,20 @@ pub(crate) fn resolve_object_shp_frame(
     binary_frame: u32,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> Option<u16> {
-    let facing = entity.body_facing_byte(binary_frame);
+    let facing = crate::app::presentation::interpolation::pose(state, entity, binary_frame).body;
+    resolve_object_shp_frame_with_facing(state, type_id, entity, facing, cells)
+}
+
+/// The draw already owns a fresh pose. Other callers still use the wrapper
+/// above, which reads its own sample and retains same-frame mutation checks.
+fn resolve_object_shp_frame_with_facing(
+    state: &AppState,
+    type_id: &str,
+    entity: &crate::sim::game_entity::GameEntity,
+    facing: u16,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+) -> Option<u16> {
+    let facing = (facing >> 8) as u8;
     // Pass raw facing (not canonical) to resolve_shp_frame so the
     // facing-to-index division works correctly for any facing count
     // (6, 8, 10, etc.). The absolute frame index encodes the direction.
@@ -1958,3 +2021,7 @@ mod factory_door_tests;
 #[cfg(test)]
 #[path = "infantry_air_shadow_tests.rs"]
 mod infantry_air_shadow_tests;
+
+#[cfg(test)]
+#[path = "embedded_shadow_tests.rs"]
+mod embedded_shadow_tests;

@@ -69,7 +69,7 @@ fn meteor_constructors_match_native_draws_float_stores_and_integer_placement() {
     assert_eq!(golden()["schema"], 1);
     assert_eq!(
         golden()["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     let rows = golden()["constructors"].as_array().unwrap();
     assert_eq!(rows.len(), 8);

@@ -58,7 +58,8 @@ impl Simulation {
             &EntityReadyInputProvider,
         )
         .map_err(|error| error.to_string())?;
-        self.mission_commence_exact(id, self.session.binary_frame())
+        self.substrate
+            .mission_commence_exact(id, self.session.binary_frame())
             .map_err(|error| error.to_string())?;
         Ok(450)
     }
@@ -261,7 +262,7 @@ impl Simulation {
             .get_mut(id)
             .expect("same Unit")
             .retain_deploy_anim(anim);
-        self.set_anim_house_remap(anim, remap_house);
+        self.substrate.anims.set_anim_house_remap(anim, remap_house);
         Ok(anim)
     }
 }

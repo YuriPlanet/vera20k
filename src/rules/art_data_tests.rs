@@ -241,8 +241,12 @@ fn test_resolve_metadata_entry_prefers_rules_image_section() {
         .resolve_metadata_entry("AMRADR", "GAAIRC")
         .expect("AMRADR should use GAAIRC art metadata");
     assert_eq!(entry.bib_shape.as_deref(), Some("GAAIRCBB"));
-    assert_eq!(entry.building_anims.len(), 1);
-    assert_eq!(entry.building_anims[0].anim_type, "GAAIRC_A");
+    let active = entry
+        .building_anims
+        .iter()
+        .find(|config| config.native_slot == 3)
+        .unwrap();
+    assert_eq!(active.anim_type, "GAAIRC_A");
 }
 
 #[test]
@@ -303,29 +307,85 @@ fn test_parse_building_anims() {
     );
     let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
     let entry: &ArtEntry = reg.get("CAOILD").expect("CAOILD exists");
-    assert_eq!(entry.building_anims.len(), 2);
-
-    assert_eq!(entry.building_anims[0].anim_type, "CAOILD_A");
+    let active = entry
+        .building_anims
+        .iter()
+        .find(|config| config.native_slot == 3)
+        .unwrap();
+    let flag = entry
+        .building_anims
+        .iter()
+        .find(|config| config.native_slot == 4)
+        .unwrap();
+    assert_eq!(active.anim_type, "CAOILD_A");
     assert_eq!(
-        entry.building_anims[0]
+        active
             .damaged_variant
             .as_ref()
             .map(|v| v.anim_type.as_str()),
         Some("CAOILD_AD")
     );
     assert_eq!(
-        entry.building_anims[0]
+        active
             .garrisoned_variant
             .as_ref()
             .map(|v| v.anim_type.as_str()),
         Some("CAOILD_AG")
     );
-    assert_eq!(entry.building_anims[0].y_sort, 362);
-    assert_eq!(entry.building_anims[0].z_adjust, 0);
+    assert_eq!(active.y_sort, 362);
+    assert_eq!(active.z_adjust, 0);
 
-    assert_eq!(entry.building_anims[1].anim_type, "CAOILD_F");
-    assert_eq!(entry.building_anims[1].y_sort, 0);
-    assert_eq!(entry.building_anims[1].z_adjust, -50);
+    assert_eq!(flag.anim_type, "CAOILD_F");
+    assert_eq!(flag.y_sort, 0);
+    assert_eq!(flag.z_adjust, -50);
+}
+
+#[test]
+fn unnamed_power_up_slots_preserve_offsets_for_install_supplied_images() {
+    let ini = IniFile::from_str(
+        "[HOST]\nPowerUp1LocXX=-24\nPowerUp1LocYY=-12\n\
+         PowerUp1LocZZ=-42\nPowerUp1YSort=50\nPowerUp2LocXX=17\n",
+    );
+    let art = ArtRegistry::from_ini(&ini);
+    let entry = art.get("HOST").unwrap();
+    assert_eq!(entry.building_anims.len(), 3);
+    for slot in 0..3 {
+        let config = entry
+            .building_anims
+            .iter()
+            .find(|config| config.native_slot == slot)
+            .unwrap();
+        assert!(config.anim_type.is_empty());
+        assert!(config.damaged_variant.is_none());
+        assert!(config.garrisoned_variant.is_none());
+    }
+    let first = &entry.building_anims[0];
+    assert_eq!(
+        (first.x, first.y, first.z_adjust, first.y_sort),
+        (-24, -12, -42, 50)
+    );
+    assert_eq!(entry.building_anims[1].x, 17);
+    let third = &entry.building_anims[2];
+    assert_eq!(
+        (third.x, third.y, third.z_adjust, third.y_sort),
+        (0, 0, 0, 0)
+    );
+    assert!(art.building_anim_roots().is_empty());
+}
+
+#[test]
+fn power_up_config_uses_the_retained_record_without_an_art_section() {
+    use crate::rules::building_upgrade::BuildingPowerUpArt;
+    let art = ArtRegistry::empty();
+    let config = art.building_power_up_config(2, &BuildingPowerUpArt::default());
+    assert_eq!(config.native_slot, 2);
+    assert!(config.anim_type.is_empty());
+    assert!(config.damaged_variant.is_none());
+    assert!(config.garrisoned_variant.is_none());
+    assert_eq!(
+        (config.x, config.y, config.z_adjust, config.y_sort),
+        (0, 0, 0, 0)
+    );
 }
 
 #[test]
@@ -346,7 +406,7 @@ fn parses_all_four_special_anim_suffixes_in_document_order() {
     let specials: Vec<&str> = entry
         .building_anims
         .iter()
-        .filter(|a| matches!(a.kind, BuildingAnimKind::Special))
+        .filter(|a| matches!(a.kind, BuildingAnimKind::Special) && a.native_slot >= 3)
         .map(|a| a.anim_type.as_str())
         .collect();
     assert_eq!(
@@ -359,7 +419,7 @@ fn parses_all_four_special_anim_suffixes_in_document_order() {
     let primaries: Vec<bool> = entry
         .building_anims
         .iter()
-        .filter(|a| matches!(a.kind, BuildingAnimKind::Special))
+        .filter(|a| matches!(a.kind, BuildingAnimKind::Special) && a.native_slot >= 3)
         .map(|a| a.is_primary)
         .collect();
     assert_eq!(primaries, vec![true, false, false, false]);
@@ -368,7 +428,7 @@ fn parses_all_four_special_anim_suffixes_in_document_order() {
     let four = entry
         .building_anims
         .iter()
-        .filter(|a| matches!(a.kind, BuildingAnimKind::Special))
+        .filter(|a| matches!(a.kind, BuildingAnimKind::Special) && a.native_slot >= 3)
         .nth(3)
         .unwrap();
     assert_eq!(
@@ -401,7 +461,11 @@ fn damaged_active_anim_variant_uses_own_frame_metadata() {
     );
     let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
     let entry: &ArtEntry = reg.get("CASEAT02").expect("CASEAT02 exists");
-    let anim = &entry.building_anims[0];
+    let anim = entry
+        .building_anims
+        .iter()
+        .find(|config| config.native_slot == 3)
+        .unwrap();
     let damaged = anim.damaged_variant.as_ref().expect("damaged variant");
 
     assert_eq!(anim.anim_type, "CASEAT02_A");

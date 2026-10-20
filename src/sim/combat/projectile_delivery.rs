@@ -376,7 +376,13 @@ pub(crate) fn admit_fired_bullet(
     );
     let spawn = delivery.spawn(&world.substrate.entities, rules, projectile_type, bullet);
     world.admit_projectile(bullet_id, spawn);
-    world.construct_bullet_scheme(bullet_id, rules);
+    Simulation::construct_bullet_scheme(
+        &world.interner,
+        &world.substrate,
+        &mut world.projectiles,
+        bullet_id,
+        rules,
+    );
     #[cfg(test)]
     if let Some(fixture) = world.receiver_fixture.as_mut() {
         fixture
@@ -386,7 +392,7 @@ pub(crate) fn admit_fired_bullet(
     if delivery.inviso {
         let on_bridge = bullet.target_on_bridge;
         let placement = inviso_fire_placement(
-            world,
+            &mut world.scenario_rng,
             rules,
             delivery.collision.flak_scatter,
             weapon,
@@ -409,7 +415,7 @@ pub(crate) fn admit_fired_bullet(
 /// SpawnShrapnel's Fire leaves its children on their target
 /// (`Simulation::admit_projectile_spawns`).
 fn inviso_fire_placement(
-    world: &mut Simulation,
+    scenario_rng: &mut crate::sim::rng::SimRng,
     rules: &RuleSet,
     flak_scatter: bool,
     weapon: &WeaponType,
@@ -424,6 +430,6 @@ fn inviso_fire_placement(
         target,
         rules.combat_damage.ballistic_scatter,
         weapon.range_leptons,
-        &mut world.scenario_rng,
+        &mut *scenario_rng,
     )
 }

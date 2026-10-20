@@ -917,7 +917,13 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
         // Boarding retains the locomotor head. A later carrier teardown calls
         // UnInit/Limbo again; native Foot's early in-limbo gate preserves the
         // raw bit another mover has since written at that old head.
-        sim.track_raw_mark_at(supplied, true);
+        crate::sim::world::Simulation::track_raw_mark_at(
+            &mut sim.substrate,
+            &sim.path_grid,
+            &sim.resolved_terrain,
+            supplied,
+            true,
+        );
         sim.apply_lifecycle_request(LifecycleRequest::Uninit {
             stable_id: 1,
             reason: UninitReason::Crush,
@@ -1992,8 +1998,8 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         let bounds = crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
             16, -16, -16, 64, 64,
         );
-        sim.playfield_bounds = Some(bounds);
-        sim.playfield_size_height = Some(16);
+        sim.set_playfield_bounds_for_test(Some(bounds));
+        sim.set_playfield_size_height_for_test(Some(16));
         sim.session.set_map_width_for_test(16);
         sim.session.set_map_height_for_test(16);
         let terrain = test_flat_ground_grid(32);
@@ -2282,7 +2288,7 @@ fn idle_base_fixture(category: EntityCategory) -> Simulation {
     actor.lifecycle.set_in_limbo_for_test(false);
     actor.lifecycle.set_cell_marked_for_test(false);
     sim.substrate.entities.insert(actor);
-    sim.substrate.next_stable_object_id = 2;
+    sim.set_next_stable_object_id_for_test(2);
     sim
 }
 

@@ -32,7 +32,7 @@ fn arena(rules: &RuleSet) -> Simulation {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x4D5690);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.input_delay_ticks = 0;
+    sim.set_input_delay_ticks(0);
     sim.session.set_binary_frame_for_test(1);
     sim
 }
@@ -44,9 +44,10 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, cell: (
 
 fn start_mission(sim: &mut Simulation, id: u64, mission: MissionType) {
     let now = sim.session.binary_frame();
-    sim.mission_assign_exact(id, MissionId::from_known(mission), now)
+    sim.substrate
+        .mission_assign_exact(id, MissionId::from_known(mission), now)
         .unwrap();
-    let _ = sim.mission_commence_exact(id, now);
+    let _ = sim.substrate.mission_commence_exact(id, now);
 }
 
 fn target(sim: &mut Simulation, id: u64, target: u64) {

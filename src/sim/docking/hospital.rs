@@ -82,7 +82,7 @@ pub(super) fn mission_repair(
             {
                 //44B939/50B6F0: player-house gate covers radar/EVA AND HealCrateSound;
                 //EVA itself is further gated by the app's radar admission.
-                sim.sound_events.push(SimSoundEvent::UnitRepaired {
+                sim.sound_events.emit(SimSoundEvent::UnitRepaired {
                     owner: building.owner(),
                     radar: crate::sim::radar::RadarEventRequest::new(
                         crate::sim::radar::RadarEventType::UnitRepaired,
@@ -93,7 +93,7 @@ pub(super) fn mission_repair(
                 if let Some(sound_id) = rules.crate_rules.heal_crate_sound.clone() {
                     let coordinate =
                         crate::sim::movement::ground_pose::position_world_coord(&building.position);
-                    sim.sound_events.push(SimSoundEvent::voc_at_world_coord(
+                    sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
                         sound_id,
                         crate::sim::anim_class::AnimWorldCoord {
                             x: coordinate.x,

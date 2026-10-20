@@ -370,7 +370,7 @@ fn production_frame_orders_laser_update_before_delayed_support_birth() {
         ai_counter: 0,
         dispatch_timer: MissionDispatchTimer::from_raw(200, 100),
     });
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     let frame = sim
         .advance_app_frame(
             &[],
@@ -450,7 +450,7 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
             .spawn_object("GAPOWR", "Russians", target_x, 48, 0, rules)
             .unwrap();
         sim.resolve_type_handles(rules);
-        sim.power_states.clear();
+        sim.power_states.map_mut_for_test().clear();
         sim.session.set_binary_frame_for_test(200);
         let source = sim.substrate.entities.get_mut(tower).unwrap();
         source
@@ -475,7 +475,7 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
             ai_counter: 0,
             dispatch_timer: MissionDispatchTimer::from_raw(200, 100),
         });
-        sim.lifecycle_outputs.clear();
+        sim.lifecycle_outputs.clear_for_test();
         let frame = sim
             .advance_app_frame(
                 &[],

@@ -16,10 +16,13 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::intern::StringInterner;
 use crate::sim::movement::ground_pose::position_world_coord;
 use crate::sim::movement::rocket_movement::{self, RocketHost};
 use crate::sim::projectile::ProjectileCoord;
+use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
 use crate::util::retail_trig::TrigTable;
 
 struct RocketProcessHost<'a> {
@@ -124,13 +127,18 @@ impl RocketHost for RocketProcessHost<'_> {
         self.owner().air_tracker_cell()
     }
     fn tracker_add(&mut self) {
-        self.sim.aircraft_tracker_add(self.id);
+        Simulation::aircraft_tracker_add(&self.sim.session, &mut self.sim.substrate, self.id);
     }
     fn tracker_update(&mut self, cell: (i16, i16)) {
-        self.sim.aircraft_tracker_update_cell(self.id, cell);
+        Simulation::aircraft_tracker_update_cell(
+            &self.sim.session,
+            &mut self.sim.substrate,
+            self.id,
+            cell,
+        );
     }
     fn tracker_remove(&mut self) {
-        self.sim.aircraft_tracker_remove(self.id);
+        self.sim.substrate.aircraft_tracker_remove(self.id);
     }
     fn is_alive(&self) -> bool {
         self.owner().is_object_alive()
@@ -169,7 +177,7 @@ impl RocketHost for RocketProcessHost<'_> {
             return;
         };
         let event = super::SimSoundEvent::voc_at(sound, &owner.position);
-        self.sim.sound_events.push(event);
+        self.sim.sound_events.emit(event);
     }
     fn structural_bridge_floor(&self) -> Option<i32> {
         let terrain = self.sim.resolved_terrain.as_ref()?;
@@ -200,7 +208,7 @@ impl RocketHost for RocketProcessHost<'_> {
         let warhead_ref = self.sim.interner.intern(warhead);
         self.sim
             .combat_light_requests
-            .push(crate::sim::combat::CombatLightRequest::Impact {
+            .emit(crate::sim::combat::CombatLightRequest::Impact {
                 target_id: None,
                 damage,
                 warhead_ref,
@@ -243,14 +251,21 @@ pub(crate) struct RocketProcessOutcome {
 impl Simulation {
     /// Rocket Move_To (`0x006632E0`) for the Foot destination setter's
     /// locomotor dispatch.
-    pub(crate) fn rocket_move_to(&mut self, id: u64, to: DriveCoord, rules: &RuleSet) {
-        let frame = self.session.binary_frame();
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
+    pub(crate) fn rocket_move_to(
+        interner: &StringInterner,
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        id: u64,
+        to: DriveCoord,
+        rules: &RuleSet,
+    ) {
+        let frame = session.binary_frame();
+        let Some(entity) = substrate.entities.get_mut(id) else {
             return;
         };
         let (block, _) = rules
             .missile_spawn
-            .rocket_block(self.interner.resolve(entity.type_ref()));
+            .rocket_block(interner.resolve(entity.type_ref()));
         if let Some(rocket) = entity
             .locomotor
             .as_mut()

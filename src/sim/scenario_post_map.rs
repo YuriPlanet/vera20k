@@ -90,7 +90,10 @@ impl Simulation {
             {
                 skirmish_order[1] = Some(ScenarioPostMapStep::AiOpeningCredits);
             }
-            crate::sim::scenario_bootstrap::apply_skirmish_ai_opening_credits(self, input.rules);
+            crate::sim::scenario_bootstrap::apply_skirmish_ai_opening_credits(
+                &mut self.houses,
+                input.rules,
+            );
             #[cfg(any(test, feature = "test-support"))]
             {
                 skirmish_order[2] = Some(ScenarioPostMapStep::LaunchAlliances);
@@ -198,7 +201,7 @@ impl Simulation {
         // ReadScenario684ACE completes684C30 before684C05..684C1B captures
         // each House's initial Technos. Saved-world restore never enters this
         // fresh-only owner and therefore retains, rather than recaptures, them.
-        self.retain_initial_house_technos();
+        Self::retain_initial_house_technos(&self.substrate, &mut self.houses);
 
         ScenarioPostMapOutput {
             navigation_published,
@@ -226,7 +229,8 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return false;
         };
-        let (Some(bounds), Some(size_height)) = (self.playfield_bounds, self.playfield_size_height)
+        let (Some(bounds), Some(size_height)) =
+            (self.playfield_bounds(), self.playfield_size_height())
         else {
             return false;
         };
@@ -438,16 +442,16 @@ mod tests {
             Some(&ini),
         );
         assert!(crate::map::houses::is_allied_with(
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             "A",
             "B"
         ));
         assert!(!crate::map::houses::is_allied_with(
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             "B",
             "A"
         ));
-        let alliances = sim.house_alliances.clone();
+        let alliances = sim.house_alliances.as_map().clone();
         let order = sim.houses.order().to_vec();
         let house_ids: Vec<_> = order
             .iter()
@@ -461,7 +465,7 @@ mod tests {
             &overlays,
             &absent_late_roster,
         ));
-        assert_eq!(sim.house_alliances, alliances);
+        assert_eq!(sim.house_alliances.as_map(), &alliances);
         assert_eq!(sim.houses.order(), order);
         assert_eq!(
             order

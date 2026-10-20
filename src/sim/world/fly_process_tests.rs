@@ -136,7 +136,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     sim.scenario_rng = SimRng::new(31);
     sim.session.set_binary_frame_for_test(frame);
     let [x, y] = ints(&input["cell"], [60, 64]);
-    assert_eq!(sim.allocate_stable_id(), AIRCRAFT);
+    assert_eq!(sim.substrate.allocate_stable_id(), AIRCRAFT);
     insert_entity(&mut sim, AIRCRAFT, EntityCategory::Aircraft);
     let entity = sim.substrate.entities.get_mut(AIRCRAFT).unwrap();
     entity.lifecycle.set_object_alive_for_test(true);
@@ -215,7 +215,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         input["target_speed"].as_f64().unwrap_or(1.0),
     ));
     fly.set_current_speed_for_test(SimFixed::from_num(input["speed"].as_f64().unwrap_or(1.0)));
-    sim.aircraft_tracker_add(AIRCRAFT);
+    Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, AIRCRAFT);
     sim.add_entity_occupancy(AIRCRAFT);
     sim.submit_entity_display(AIRCRAFT, Some(&rules), None);
 

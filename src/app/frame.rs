@@ -117,6 +117,17 @@ impl App {
             && state.match_state.scenario_outcome.is_none()
         {
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+            // Wait_For_Players runs inside the frame's network service, ahead
+            // of the frame it holds back.
+            if crate::app::match_runtime::network_match::service_wait(state, now_ms)
+                == crate::app::match_runtime::network_match::WaitPass::Leave
+            {
+                // Result 8 clears GameActive without an EXIT event, so
+                // Main_Game returns past the router without 0x00686570's
+                // EVA and fades (0x0064806C..0x006482A6, 0x0055D347).
+                Self::return_to_main_menu(state);
+                return false;
+            }
             sim_tick::advance_in_game_runtime(state, now_ms);
             // EventClass EXIT is dispatched at the simulation tail. Consume
             // its terminal edge before any outcome route can claim teardown.
@@ -206,6 +217,7 @@ impl App {
             session.drive_before_render(state)?;
         }
         state.diag.frame_timer.sample(Instant::now());
+        crate::app::presentation::interpolation::prepare(state, tactical_capture.is_some());
         let tooltip_ms = crate::app::input::tooltips::update(state);
         // The message clock has to observe the focus freeze exactly as it
         // observes a modal pause: a banner on screen when the player Alt+Tabs
@@ -243,6 +255,7 @@ impl App {
                 &state.renderer.batch_renderer,
                 &state.renderer.shell_surface_presenter,
                 &state.renderer.depth_view,
+                &state.renderer.fps_overlay,
                 splash,
             )?;
             state
@@ -329,7 +342,9 @@ impl App {
         let mut game_render_output: Option<crate::app::presentation::render::GameRenderOutput> =
             None;
 
-        if state.match_state.match_presentation.in_game_menu.is_open() {
+        if state.match_state.match_presentation.in_game_menu.is_open()
+            || state.match_state.network_wait.dialog_open()
+        {
             Self::ensure_skirmish_shell_chrome(state);
         }
         Self::update_saved_game_browser(state, false);
@@ -541,6 +556,10 @@ impl App {
                     }
                 }
             }
+            GameScreen::InGame if crate::app::frontend::skirmish_shell_render::connection_shell_drawable(state) => {
+                // 0xEA is pushed over whatever the game shows.
+                crate::app::frontend::skirmish_shell_render::render_connection_shell(state, &mut encoder, &output.texture)?;
+            }
             GameScreen::InGame if crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(state) => {
                 // 621FCE -> 72F540 clears and paints a complete active-game shell.
                 // No battlefield commands share this encoder/camera upload.
@@ -555,6 +574,8 @@ impl App {
                     crate::app::frontend::skirmish_shell_render::render_sound_shell(state, &mut encoder, &output.texture)?;
                 } else if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::Diplomacy {
                     crate::app::frontend::skirmish_shell_render::render_diplomacy_shell(state, &mut encoder, &output.texture)?;
+                } else if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::MissionBriefing {
+                    crate::app::frontend::skirmish_shell_render::render_restate_shell(state, &mut encoder, &output.texture)?;
                 } else if matches!(state.match_state.match_presentation.in_game_menu, crate::ui::pause_menu::InGameMenuState::SavedGame(_)) {
                     crate::app::frontend::skirmish_shell_render::render_saved_game_shell(state, &mut encoder, &output.texture)?;
                 } else {
@@ -671,6 +692,12 @@ impl App {
         }
         #[cfg(target_os = "ios")]
         crate::app::ios_hud_render::render(state, &mut encoder, &view);
+        state.renderer.fps_overlay.encode(
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+            &mut encoder,
+            &output.texture,
+        );
         Self::show_os_cursor_only_without_game_cursor(state, game_render_output.is_some());
 
         let entry_sequence_identity = match shell_capture.as_deref_mut() {

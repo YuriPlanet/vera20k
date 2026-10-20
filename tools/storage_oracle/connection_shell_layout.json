@@ -1,0 +1,1239 @@
+{
+  "cases": [
+    {
+      "control_id": 1617,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        31,
+        320,
+        417,
+        114
+      ],
+      "resource_rect": [
+        111,
+        380,
+        417,
+        114
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1617,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        111,
+        380,
+        417,
+        114
+      ],
+      "resource_rect": [
+        111,
+        380,
+        417,
+        114
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1617,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        223,
+        464,
+        417,
+        114
+      ],
+      "resource_rect": [
+        111,
+        380,
+        417,
+        114
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1600,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        31,
+        20,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        80,
+        125,
+        24
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1600,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        111,
+        80,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        80,
+        125,
+        24
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1600,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        223,
+        164,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        80,
+        125,
+        24
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1601,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        31,
+        85,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        145,
+        125,
+        24
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1601,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        111,
+        145,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        145,
+        125,
+        24
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1601,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        223,
+        229,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        145,
+        125,
+        24
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1602,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        31,
+        52,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        112,
+        125,
+        24
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1602,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        111,
+        112,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        112,
+        125,
+        24
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1602,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        223,
+        196,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        112,
+        125,
+        24
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1603,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        31,
+        117,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        177,
+        125,
+        24
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1603,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        111,
+        177,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        177,
+        125,
+        24
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1603,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        223,
+        261,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        177,
+        125,
+        24
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1604,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        31,
+        150,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        210,
+        125,
+        24
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1604,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        111,
+        210,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        210,
+        125,
+        24
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1604,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        223,
+        294,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        210,
+        125,
+        24
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1605,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        31,
+        182,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        242,
+        125,
+        24
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1605,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        111,
+        242,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        242,
+        125,
+        24
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1605,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        223,
+        326,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        242,
+        125,
+        24
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1606,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        31,
+        215,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        275,
+        125,
+        24
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1606,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        111,
+        275,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        275,
+        125,
+        24
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1606,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        223,
+        359,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        275,
+        125,
+        24
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1607,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        31,
+        247,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        307,
+        125,
+        24
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1607,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        111,
+        307,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        307,
+        125,
+        24
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1607,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        223,
+        391,
+        125,
+        24
+      ],
+      "resource_rect": [
+        111,
+        307,
+        125,
+        24
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1608,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        216,
+        20,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        80,
+        233,
+        23
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1608,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        296,
+        80,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        80,
+        233,
+        23
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1608,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        408,
+        164,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        80,
+        233,
+        23
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1609,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        216,
+        52,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        112,
+        233,
+        23
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1609,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        296,
+        112,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        112,
+        233,
+        23
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1609,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        408,
+        196,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        112,
+        233,
+        23
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1610,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        216,
+        85,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        145,
+        233,
+        23
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1610,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        296,
+        145,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        145,
+        233,
+        23
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1610,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        408,
+        229,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        145,
+        233,
+        23
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1611,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        216,
+        117,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        177,
+        233,
+        23
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1611,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        296,
+        177,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        177,
+        233,
+        23
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1611,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        408,
+        261,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        177,
+        233,
+        23
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1612,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        216,
+        150,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        210,
+        233,
+        23
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1612,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        296,
+        210,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        210,
+        233,
+        23
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1612,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        408,
+        294,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        210,
+        233,
+        23
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1613,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        216,
+        182,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        242,
+        233,
+        23
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1613,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        296,
+        242,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        242,
+        233,
+        23
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1613,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        408,
+        326,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        242,
+        233,
+        23
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1614,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        216,
+        215,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        275,
+        233,
+        23
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1614,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        296,
+        275,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        275,
+        233,
+        23
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1614,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        408,
+        359,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        275,
+        233,
+        23
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1615,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        216,
+        247,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        307,
+        233,
+        23
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1615,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        296,
+        307,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        307,
+        233,
+        23
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1615,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        408,
+        391,
+        233,
+        23
+      ],
+      "resource_rect": [
+        296,
+        307,
+        233,
+        23
+      ],
+      "width": 1024
+    },
+    {
+      "control_id": 1616,
+      "dialog_id": 234,
+      "height": 480,
+      "rect": [
+        31,
+        296,
+        417,
+        16
+      ],
+      "resource_rect": [
+        111,
+        356,
+        417,
+        16
+      ],
+      "width": 640
+    },
+    {
+      "control_id": 1616,
+      "dialog_id": 234,
+      "height": 600,
+      "rect": [
+        111,
+        356,
+        417,
+        16
+      ],
+      "resource_rect": [
+        111,
+        356,
+        417,
+        16
+      ],
+      "width": 800
+    },
+    {
+      "control_id": 1616,
+      "dialog_id": 234,
+      "height": 768,
+      "rect": [
+        223,
+        440,
+        417,
+        16
+      ],
+      "resource_rect": [
+        111,
+        356,
+        417,
+        16
+      ],
+      "width": 1024
+    }
+  ],
+  "controls": [
+    {
+      "caption": "GUI:LeaveGame",
+      "class": "Button",
+      "control_id": 2,
+      "dlu_rect": [
+        425,
+        346,
+        108,
+        23
+      ],
+      "help": "STT:ReconnectButtonLeaveGame",
+      "style": 1342242827
+    },
+    {
+      "caption": "",
+      "class": "ListBox",
+      "control_id": 1617,
+      "dlu_rect": [
+        74,
+        234,
+        278,
+        70
+      ],
+      "help": "STT:ReconnectEditInfo",
+      "style": 1342194000
+    },
+    {
+      "caption": "GUI:Player1",
+      "class": "Button",
+      "control_id": 1600,
+      "dlu_rect": [
+        74,
+        49,
+        83,
+        15
+      ],
+      "help": "STT:ReconnectButtonPlayer",
+      "style": 1342242827
+    },
+    {
+      "caption": "GUI:Player3",
+      "class": "Button",
+      "control_id": 1601,
+      "dlu_rect": [
+        74,
+        89,
+        83,
+        15
+      ],
+      "help": "STT:ReconnectButtonPlayer",
+      "style": 1342242827
+    },
+    {
+      "caption": "GUI:Player2",
+      "class": "Button",
+      "control_id": 1602,
+      "dlu_rect": [
+        74,
+        69,
+        83,
+        15
+      ],
+      "help": "STT:ReconnectButtonPlayer",
+      "style": 1342242827
+    },
+    {
+      "caption": "GUI:Player4",
+      "class": "Button",
+      "control_id": 1603,
+      "dlu_rect": [
+        74,
+        109,
+        83,
+        15
+      ],
+      "help": "STT:ReconnectButtonPlayer",
+      "style": 1342242827
+    },
+    {
+      "caption": "GUI:Player5",
+      "class": "Button",
+      "control_id": 1604,
+      "dlu_rect": [
+        74,
+        129,
+        83,
+        15
+      ],
+      "help": "STT:ReconnectButtonPlayer",
+      "style": 1342242827
+    },
+    {
+      "caption": "GUI:Player6",
+      "class": "Button",
+      "control_id": 1605,
+      "dlu_rect": [
+        74,
+        149,
+        83,
+        15
+      ],
+      "help": "STT:ReconnectButtonPlayer",
+      "style": 1342242827
+    },
+    {
+      "caption": "GUI:Player7",
+      "class": "Button",
+      "control_id": 1606,
+      "dlu_rect": [
+        74,
+        169,
+        83,
+        15
+      ],
+      "help": "STT:ReconnectButtonPlayer",
+      "style": 1342242827
+    },
+    {
+      "caption": "GUI:Player8",
+      "class": "Button",
+      "control_id": 1607,
+      "dlu_rect": [
+        74,
+        189,
+        83,
+        15
+      ],
+      "help": "STT:ReconnectButtonPlayer",
+      "style": 1342242827
+    },
+    {
+      "caption": "",
+      "class": "Button",
+      "control_id": 1608,
+      "dlu_rect": [
+        197,
+        49,
+        155,
+        14
+      ],
+      "help": "STT:ReconnectProgressPlayer",
+      "style": 1073741831
+    },
+    {
+      "caption": "",
+      "class": "Button",
+      "control_id": 1609,
+      "dlu_rect": [
+        197,
+        69,
+        155,
+        14
+      ],
+      "help": "STT:ReconnectProgressPlayer",
+      "style": 1073741831
+    },
+    {
+      "caption": "",
+      "class": "Button",
+      "control_id": 1610,
+      "dlu_rect": [
+        197,
+        89,
+        155,
+        14
+      ],
+      "help": "STT:ReconnectProgressPlayer",
+      "style": 1073741831
+    },
+    {
+      "caption": "",
+      "class": "Button",
+      "control_id": 1611,
+      "dlu_rect": [
+        197,
+        109,
+        155,
+        14
+      ],
+      "help": "STT:ReconnectProgressPlayer",
+      "style": 1073741831
+    },
+    {
+      "caption": "",
+      "class": "Button",
+      "control_id": 1612,
+      "dlu_rect": [
+        197,
+        129,
+        155,
+        14
+      ],
+      "help": "STT:ReconnectProgressPlayer",
+      "style": 1073741831
+    },
+    {
+      "caption": "",
+      "class": "Button",
+      "control_id": 1613,
+      "dlu_rect": [
+        197,
+        149,
+        155,
+        14
+      ],
+      "help": "STT:ReconnectProgressPlayer",
+      "style": 1073741831
+    },
+    {
+      "caption": "",
+      "class": "Button",
+      "control_id": 1614,
+      "dlu_rect": [
+        197,
+        169,
+        155,
+        14
+      ],
+      "help": "STT:ReconnectProgressPlayer",
+      "style": 1073741831
+    },
+    {
+      "caption": "",
+      "class": "Button",
+      "control_id": 1615,
+      "dlu_rect": [
+        197,
+        189,
+        155,
+        14
+      ],
+      "help": "STT:ReconnectProgressPlayer",
+      "style": 1073741831
+    },
+    {
+      "caption": "GUI:TimeRemaining",
+      "class": "Static",
+      "control_id": 1616,
+      "dlu_rect": [
+        74,
+        219,
+        278,
+        10
+      ],
+      "help": "STT:ReconnectLabelTime",
+      "style": 1342177280
+    },
+    {
+      "caption": "GUI:Blank",
+      "class": "Static",
+      "control_id": 1685,
+      "dlu_rect": [
+        2,
+        355,
+        303,
+        12
+      ],
+      "help": null,
+      "style": 1342177792
+    }
+  ],
+  "source": "unicorn/gamemd.exe"
+}

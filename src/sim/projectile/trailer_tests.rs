@@ -81,7 +81,7 @@ fn projectile_trailer_launch_placement_matches_original_bullet_fire() {
                 u64::from_str_radix(row["velocity"]["bits"][axis].as_str().unwrap(), 16).unwrap(),
             )
         }));
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         sim.admit_projectile(id, shot);
         let bullet = sim.projectiles.get(id).unwrap();
         assert_eq!(bullet.position, point(&row["location"]), "{}", row["name"]);

@@ -69,7 +69,7 @@ fn insert_structure(sim: &mut Simulation, id: u64, type_name: &str, cell: (u16, 
         5,
         false,
     );
-    sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(id + 1);
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(id);
 }
@@ -92,7 +92,7 @@ fn event_8_springs_on_the_first_logic_poll_and_plays_action_99_at_the_waypoint()
             if sound_id == "TestAmbient" && *coordinate == WAYPOINT_COORD
     ));
     // Repeat 0: the Tag is gone, so later polls play nothing.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     poll(&mut sim);
     assert!(sim.sound_events.is_empty());
 }
@@ -125,13 +125,13 @@ fn action_99_gives_the_waypoint_building_its_custom_sound_for_object_ai_to_play(
 
     // ObjectClass::AI skips both handles while the object is in Limbo, and
     // Limbo detaches the custom handle but keeps +0x64.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.object_conceal(40);
     assert!(matches!(
         sim.sound_events.as_slice(),
         [SimSoundEvent::ObjectSoundDetached { owner }] if *owner == custom_sound_owner(40)
     ));
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.object_ai_sounds(40, None, FrameEffects::default());
     assert!(sim.sound_events.is_empty());
     assert!(sim.object_custom_sounds.contains_key(&40));
@@ -188,7 +188,7 @@ fn action_99_takes_the_cell_terrain_without_a_building_and_its_uninit_detaches()
     ));
 
     // The tree's UnInit Limbo detaches its handle.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     assert!(sim.retire_non_entity_object(41, crate::sim::world::UninitContext::default()));
     assert!(matches!(
         sim.sound_events.as_slice(),
@@ -214,7 +214,7 @@ fn action_116_clears_the_first_building_instead_of_terrain_or_coordinate_request
         Some("CowAmbient")
     );
     // Object AI can no longer recreate +50; Terrain's independent handle survives.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.object_ai_sounds(40, None, FrameEffects::default());
     assert!(sim.sound_events.is_empty());
     sim.object_ai_sounds(41, None, FrameEffects::default());
@@ -264,7 +264,7 @@ fn a_type_ambient_sound_plays_every_visit_and_limbo_hard_stops_it() {
     sim.add_entity_occupancy(50);
     let world = Simulation::movement_sound_world(sim.substrate.entities.get(50).unwrap());
     for _ in 0..2 {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.object_ai_sounds(50, Some(&rules), FrameEffects::default());
         assert!(matches!(
             sim.sound_events.as_slice(),
@@ -274,7 +274,7 @@ fn a_type_ambient_sound_plays_every_visit_and_limbo_hard_stops_it() {
     }
     // A type without AmbientSound plays nothing.
     insert_structure(&mut sim, 51, "CAWASH18", (8, 8));
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.object_ai_sounds(51, Some(&rules), FrameEffects::default());
     assert!(sim.sound_events.is_empty());
 

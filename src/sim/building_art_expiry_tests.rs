@@ -161,8 +161,8 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
     let building = case["building"].as_str().unwrap();
-    let id = sim.allocate_stable_id();
-    let contact = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
+    let contact = sim.substrate.allocate_stable_id();
     let mut actor =
         GameEntity::test_default_of_category(contact, "HTNK", "A", 10, 10, EntityCategory::Unit);
     actor.set_type_ref_for_test(sim.interner.intern("HTNK"));
@@ -237,7 +237,7 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     }
     if case["unmatched"] == true {
         entity.building_art.anim_slots[usize::from(slot)] = None;
-        sim.rebuild_building_anim_slot_indices();
+        sim.substrate.rebuild_building_anim_slot_indices();
     }
     (sim, rules, id, expired)
 }

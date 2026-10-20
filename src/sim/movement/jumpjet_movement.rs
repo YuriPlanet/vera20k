@@ -488,7 +488,14 @@ impl WorldOrderHost<'_> {
 
 impl JumpjetOrderHost for WorldOrderHost<'_> {
     fn withdraw_landing(&mut self, destination: DriveCoord) {
-        self.sim.object_raw_receiver_at(self.id, destination, false);
+        Simulation::object_raw_receiver_at(
+            &mut self.sim.substrate,
+            &self.sim.path_grid,
+            &self.sim.resolved_terrain,
+            self.id,
+            destination,
+            false,
+        );
     }
     fn owner_kind(&self) -> FlightOwnerKind {
         FlightOwnerKind::of(self.owner().category())
@@ -619,7 +626,14 @@ impl Simulation {
         let current = super::ground_pose::position_world_coord(&entity.position);
         self.with_jumpjet_process(id, |runtime, sim| {
             runtime.mark_all_occupation_bits_remove(current, |head| {
-                sim.object_raw_receiver_at(id, head, false);
+                Self::object_raw_receiver_at(
+                    &mut sim.substrate,
+                    &sim.path_grid,
+                    &sim.resolved_terrain,
+                    id,
+                    head,
+                    false,
+                );
             });
         });
     }

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -30,5 +30,5 @@
     "state_b": "0x0071F9C0"
   },
   "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --loss-threshold-events",
-  "payload_sha256": "7af299c649fa07020703d74c9cfacdf11e7fa26ca5146bc9ec81bcc300e0348a"
+  "payload_sha256": "888c5b7d306a61cec9da55bd6fef9223a787f811654f86bb11cab51973cae42a"
 }

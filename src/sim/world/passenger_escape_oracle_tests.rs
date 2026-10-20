@@ -155,7 +155,7 @@ fn scene(input: &Value) -> Scene {
         ));
     if input["foreign_allied"] == true {
         for (a, b) in [("AMERICANS", "FOREIGN"), ("FOREIGN", "AMERICANS")] {
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .entry(a.to_string())
                 .or_default()
                 .insert(b.to_string());

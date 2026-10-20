@@ -72,7 +72,7 @@ fn fixture_frame_with_sight(
     world.fog = std::mem::take(fog);
     world.substrate.entities = entities.clone();
     world.interner = interner.clone();
-    world.house_alliances = alliances.clone();
+    *world.house_alliances_mut_for_test() = alliances.clone();
     world.resolved_terrain = terrain.cloned();
     world.path_grid = path_grid.cloned().map(std::sync::Arc::new);
     let context = crate::sim::world::UninitContext::new(rules, None);
@@ -1517,7 +1517,7 @@ fn shroud_current_sight_provenance_changes_future_conceal_and_hash() {
     assert_ne!(sim.state_hash(), sight_hash);
     apply_gap_generators(
         &mut sim.fog,
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         &[(gapper, 10, 10, 3)],
         &sim.interner,
     );
@@ -1525,7 +1525,7 @@ fn shroud_current_sight_provenance_changes_future_conceal_and_hash() {
     sim.fog = sight;
     apply_gap_generators(
         &mut sim.fog,
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         &[(gapper, 10, 10, 3)],
         &sim.interner,
     );

@@ -434,7 +434,7 @@ fn rally_entry(
         cell,
         in_playfield: crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
             (i32::from(cell.0), i32::from(cell.1)),
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
             sim.resolved_terrain.as_ref(),
             None,
         ),
@@ -766,7 +766,7 @@ fn densest_spread_cell<'a>(
         && best_cell != NO_CELL
         && crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
             (i32::from(best_cell.0), i32::from(best_cell.1)),
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
             Some(terrain),
             None,
         ))
@@ -797,7 +797,7 @@ fn hostile_and_low(
 ) -> bool {
     object.owner() != owner
         && !is_allied_with(
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             sim.interner.resolve(owner),
             sim.interner.resolve(object.owner()),
         )

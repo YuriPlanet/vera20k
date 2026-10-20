@@ -154,6 +154,31 @@ pub(crate) fn render_diplomacy_shell(
             );
         }
     }
+    if let Some(checked) = view.taunts {
+        paint_control(
+            &mut controls,
+            &control_chrome,
+            ControlPaint::StatefulCheckbox {
+                face: if checked {
+                    CheckboxFace::Checked
+                } else {
+                    CheckboxFace::Unchecked
+                },
+                disabled: false,
+                rect: layout.taunts,
+            },
+            ShellScale::RETAIL,
+        );
+        // The checkbox proc draws its caption 26 px right of the box,
+        // vertically centred (0x0061663A..0x00616674).
+        text(
+            &mut texts,
+            &localized_label(state, "GUI:TauntsOn", "Taunts On"),
+            crate::ui::skirmish_shell::checkbox_text_rect(layout.taunts, ShellScale::RETAIL),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+        );
+    }
     if let Some(mode_name) = &view.mode_name {
         text(
             &mut texts,

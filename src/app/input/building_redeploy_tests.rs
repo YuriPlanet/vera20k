@@ -250,8 +250,6 @@ fn click(
         cell,
         modifier,
         force_move_key,
-        true,
-        false,
     )
 }
 

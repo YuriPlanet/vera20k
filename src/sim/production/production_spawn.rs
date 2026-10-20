@@ -248,7 +248,7 @@ pub(super) fn naval_exit_cell(
             &sim.substrate.occupancy,
             &sim.substrate.entities,
             sim.resolved_terrain.as_ref(),
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
         )
     {
         return Some(candidate);
@@ -581,7 +581,7 @@ mod tests {
             cell.base_speed_costs.hover = Some(50);
         }
         sim.resolved_terrain = Some(terrain);
-        sim.playfield_bounds = Some(test_playfield_bounds());
+        sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
         sim
     }
 

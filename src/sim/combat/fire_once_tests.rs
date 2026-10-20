@@ -91,7 +91,8 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, Vec<u64>, [u64; 2], Opt
                     rules,
                 )
                 .unwrap();
-            sim.mission_assign_exact(id, MissionId::from_raw(integer(&before["mission"])), 0)
+            sim.substrate
+                .mission_assign_exact(id, MissionId::from_raw(integer(&before["mission"])), 0)
                 .unwrap();
             assert_eq!(before["queued_mission"], -1);
             assert_eq!(before["burst"], 0);

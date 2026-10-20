@@ -250,6 +250,115 @@ pub(crate) fn emote_echo(nickname: &str, text: &[u16]) -> Vec<u16> {
     line
 }
 
+/// The chat sink's (`CChatEventSink`, vtable `0x007F76B4`) colors of
+/// received lines (table `0x007EEF28`, BGR-ordered like the echoes).
+pub(crate) const PUBLIC_COLOR: u32 = 0xF0F0;
+pub(crate) const OPERATOR_COLOR: u32 = 0xFFFF00;
+/// The page sink's white (`[0x007EEF40]`).
+pub(crate) const PAGE_COLOR: u32 = 0xFF_FFFF;
+
+/// The sender record a sink receives (`User*`): flags `+0x00`, name
+/// `+0x24`, clan `+0x2E`.
+pub(crate) struct WolSender<'a> {
+    pub(crate) operator: bool,
+    pub(crate) name: &'a str,
+    pub(crate) clan: &'a str,
+}
+
+/// The `[WOnline]` display filters the sinks read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WolDisplayFilters {
+    /// `DisplayLatin` `[0xB779C0]` and `DisplayAsian` `[0xB779DC]`.
+    pub(crate) latin: bool,
+    pub(crate) asian: bool,
+    /// `DisplayBuddies` `[0xB76AF0]` and `DisplayClan` `[0xB73AD0]`.
+    pub(crate) buddies: bool,
+    pub(crate) clan: bool,
+}
+
+/// The language gate inlined in every chat, action and page sink (its
+/// out-of-line copy is `0x0077D2E0`): an operator, or a running setup
+/// C2/C9, always passes; otherwise Latin-1 text (`0x007B7D90`: every unit
+/// below 0x100) needs DisplayLatin and any other text DisplayAsian.
+pub(crate) fn language_gate(
+    sender: &WolSender,
+    setup_open: bool,
+    text: &[u16],
+    filters: WolDisplayFilters,
+) -> bool {
+    if sender.operator || setup_open {
+        return true;
+    }
+    if text.iter().all(|unit| *unit < 0x100) {
+        filters.latin
+    } else {
+        filters.asian
+    }
+}
+
+/// `0x0077D4C0`: with DisplayBuddies or DisplayClan on and the lobby
+/// `0x113` in the shell stack, a sender passes when its clan (`+0x2E`)
+/// equals the local user's (`strcmpi`; two empty clans are equal) or, with
+/// DisplayBuddies, when its name equals a buddy's byte for byte. Without a
+/// local record in the channel's users (`0xB77908`) everything passes.
+pub(crate) fn buddy_clan_gate(
+    sender: &WolSender,
+    local_clan: Option<&str>,
+    buddies: &[String],
+    filters: WolDisplayFilters,
+    lobby_open: bool,
+) -> bool {
+    if !(filters.buddies || filters.clan) || !lobby_open {
+        return true;
+    }
+    let Some(local_clan) = local_clan else {
+        return true;
+    };
+    let clan_match = sender.clan.eq_ignore_ascii_case(local_clan);
+    let buddy_match = buddies.iter().any(|buddy| buddy == sender.name);
+    match (filters.buddies, filters.clan) {
+        (true, true) => clan_match || buddy_match,
+        (true, false) => buddy_match,
+        _ => clan_match,
+    }
+}
+
+/// A received chat or action line and its color: public `"[%hs] : %s"`
+/// (`0x0084AFB0`, operator yellow), private `"%hs : %s"` (`0x0084AFC8`,
+/// operator yellow), public and private actions `"%hs %s"` (`0x0084B224`)
+/// in the echo colors (`0x007A8DA0`, `0x007A8FC0`, `0x007AB170`,
+/// `0x007AAFB0` and their UTF-16 forms).
+pub(crate) fn received_line(
+    sender: &WolSender,
+    text: &[u16],
+    private: bool,
+    action: bool,
+) -> (Vec<u16>, u32) {
+    let (prefix, color) = match (action, private) {
+        (true, false) => (format!("{} ", sender.name), EMOTE_COLOR),
+        (true, true) => (format!("{} ", sender.name), PRIVATE_EMOTE_COLOR),
+        (false, false) => (
+            format!("[{}] : ", sender.name),
+            if sender.operator {
+                OPERATOR_COLOR
+            } else {
+                PUBLIC_COLOR
+            },
+        ),
+        (false, true) => (
+            format!("{} : ", sender.name),
+            if sender.operator {
+                OPERATOR_COLOR
+            } else {
+                PRIVATE_COLOR
+            },
+        ),
+    };
+    let mut line: Vec<u16> = prefix.encode_utf16().collect();
+    line.extend_from_slice(text);
+    (line, color)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,6 +374,117 @@ mod tests {
             reply_short: w("/r"),
             online: w("/locate"),
         }
+    }
+
+    const ALL: WolDisplayFilters = WolDisplayFilters {
+        latin: true,
+        asian: true,
+        buddies: false,
+        clan: false,
+    };
+
+    fn sender<'a>(name: &'a str, clan: &'a str, operator: bool) -> WolSender<'a> {
+        WolSender {
+            operator,
+            name,
+            clan,
+        }
+    }
+
+    #[test]
+    fn the_language_gate_reads_the_text_unless_an_operator_or_setup() {
+        let latin = WolDisplayFilters {
+            asian: false,
+            ..ALL
+        };
+        let asian = WolDisplayFilters {
+            latin: false,
+            ..ALL
+        };
+        let user = sender("Boris", "", false);
+        // U+00FF is still Latin-1; U+0100 is not.
+        assert!(language_gate(&user, false, &w("caf\u{e9} \u{ff}"), latin));
+        assert!(!language_gate(&user, false, &w("\u{100}"), latin));
+        assert!(language_gate(&user, false, &w("\u{4f60}"), asian));
+        assert!(!language_gate(&user, false, &w("hi"), asian));
+        assert!(language_gate(
+            &sender("Tanya", "", true),
+            false,
+            &w("hi"),
+            asian
+        ));
+        assert!(language_gate(&user, true, &w("hi"), asian));
+    }
+
+    #[test]
+    fn the_buddy_and_clan_gate_follows_0x77d4c0() {
+        let clan = WolDisplayFilters { clan: true, ..ALL };
+        let buddies = WolDisplayFilters {
+            buddies: true,
+            ..ALL
+        };
+        let both = WolDisplayFilters {
+            buddies: true,
+            clan: true,
+            ..ALL
+        };
+        let friend = ["Boris".to_owned()];
+        let boris = sender("Boris", "RED", false);
+        let tanya = sender("Tanya", "", false);
+        // Off, outside the lobby, or without a local record: everything passes.
+        assert!(buddy_clan_gate(&boris, Some("BLUE"), &[], ALL, true));
+        assert!(buddy_clan_gate(&boris, Some("BLUE"), &[], clan, false));
+        assert!(buddy_clan_gate(&boris, None, &[], both, true));
+        // Clan names compare without case; two empty clans are equal.
+        assert!(buddy_clan_gate(&boris, Some("red"), &[], clan, true));
+        assert!(!buddy_clan_gate(&boris, Some("BLUE"), &[], clan, true));
+        assert!(buddy_clan_gate(&tanya, Some(""), &[], clan, true));
+        // Buddy names compare byte for byte.
+        assert!(buddy_clan_gate(&boris, Some(""), &friend, buddies, true));
+        assert!(!buddy_clan_gate(
+            &sender("boris", "", false),
+            Some(""),
+            &friend,
+            buddies,
+            true
+        ));
+        // With no buddies, DisplayBuddies alone hides every sender.
+        assert!(!buddy_clan_gate(&tanya, Some(""), &[], buddies, true));
+        // Both: the clan match or the buddy match.
+        assert!(buddy_clan_gate(&tanya, Some(""), &[], both, true));
+        assert!(buddy_clan_gate(&boris, Some("BLUE"), &friend, both, true));
+        assert!(!buddy_clan_gate(&boris, Some("BLUE"), &[], both, true));
+    }
+
+    #[test]
+    fn received_lines_take_their_sink_format_and_color() {
+        let text = w("hi");
+        let user = sender("Boris", "", false);
+        let operator = sender("Tanya", "", true);
+        assert_eq!(
+            received_line(&user, &text, false, false),
+            (w("[Boris] : hi"), PUBLIC_COLOR)
+        );
+        assert_eq!(
+            received_line(&operator, &text, false, false),
+            (w("[Tanya] : hi"), OPERATOR_COLOR)
+        );
+        assert_eq!(
+            received_line(&user, &text, true, false),
+            (w("Boris : hi"), PRIVATE_COLOR)
+        );
+        assert_eq!(
+            received_line(&operator, &text, true, false),
+            (w("Tanya : hi"), OPERATOR_COLOR)
+        );
+        assert_eq!(
+            received_line(&operator, &text, false, true),
+            (w("Tanya hi"), EMOTE_COLOR)
+        );
+        assert_eq!(
+            received_line(&user, &text, true, true),
+            (w("Boris hi"), PRIVATE_EMOTE_COLOR)
+        );
     }
 
     #[test]

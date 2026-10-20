@@ -90,7 +90,7 @@ fn rules(input: &Value) -> RuleSet {
 /// land speeds for a vehicle's Unlimbo, and the block reads only the source's
 /// class, house and position.
 fn enemy(sim: &mut Simulation, kind: &str, category: EntityCategory, cell: (u16, u16)) -> u64 {
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut entity = GameEntity::test_default(id, kind, "Russians", cell.0, cell.1);
     entity.set_owner_for_test(sim.intern("Russians"));
     entity.set_type_ref_for_test(sim.intern(kind));
@@ -123,7 +123,7 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, u64, Option<u64>) {
             .register(HouseState::new(id, 0, Some(id), human, 5000, 10));
     }
     if input["allied"].as_bool().unwrap_or(false) {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry("AMERICANS".into())
             .or_default()
             .insert("RUSSIANS".into());
@@ -148,7 +148,9 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, u64, Option<u64>) {
         let mut power_state = crate::sim::power_system::PowerState::default();
         power_state.set_total_drain_for_test(100);
         power_state.set_is_low_power_for_test(true);
-        sim.power_states.insert(owner, power_state);
+        sim.power_states
+            .map_mut_for_test()
+            .insert(owner, power_state);
     }
     sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
     let entity = sim.substrate.entities.get_mut(building).unwrap();

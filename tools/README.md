@@ -219,8 +219,12 @@ This does not restore lost symbols or claim complete debugging support.
 
 Mach-O inspection reads every N_OSO/N_AST reference directly from every symbol
 table/universal slice, including missing inputs that dsymutil's debug-map output
-omits. ELF embedded DWARF uses GNU `readelf`; external/split debug information,
-thin archives and PE/PDB dependency closure remain unsupported and stop trimming.
+omits. ELF embedded DWARF uses GNU `readelf`. PE32/PE32+ images without a debug
+directory are checked directly; embedded PE DWARF uses GNU `objdump`. Both DWARF
+readers disable link following and debuginfod servers. PE debug directories
+(including CodeView/PDB and legacy DBG),
+external/split/compressed DWARF and thin archives remain unsupported and stop
+trimming. PE executables and PDBs remain protected, with no new deletion candidacy.
 Malformed inputs, links, unknown formats and inspector failures still block deletion.
 
 Inspection results and preserved SHA checks are reused only while executable

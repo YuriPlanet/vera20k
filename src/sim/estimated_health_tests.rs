@@ -150,7 +150,7 @@ fn save_restore_preserves_negative_reservations_and_ai_continuation() {
     use crate::sim::snapshot::GameSnapshot;
 
     let mut sim = Simulation::new();
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut entity = GameEntity::test_default(id, "E1", "Americans", 5, 5);
     entity.set_category_for_test(EntityCategory::Infantry);
     entity.lifecycle.set_in_limbo_for_test(false);

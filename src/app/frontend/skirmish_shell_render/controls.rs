@@ -73,6 +73,22 @@ pub(super) fn frame_segments(
     out
 }
 
+/// Original61E700's group window split: the frame starts half the drawn
+/// font cell below the window top, and the caption sits 10px in on that top
+/// line, one authored cell tall. Returns (frame, caption) for
+/// [`push_group_or_plain_frame`] and the caption text.
+pub(super) fn group_box_geometry(
+    group: RectPx,
+    drawn_cell_height: i32,
+    cell_height: i32,
+) -> (RectPx, RectPx) {
+    let top = drawn_cell_height / 2;
+    (
+        RectPx::new(group.x, group.y + top, group.w, group.h - top),
+        RectPx::new(group.x + 10, group.y, group.w - 10, cell_height),
+    )
+}
+
 pub(super) fn push_group_or_plain_frame(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
@@ -1141,6 +1157,26 @@ mod tests {
                     .trackbars
                     .map(|(id, rect)| (id.plaque_reserve() > 0, rect)),
             );
+            windows.extend(
+                crate::ui::shell::sound::ShellSoundLayout::new(width as i32, height as i32)
+                    .sliders
+                    .map(|rect| (true, rect)),
+            );
+            use crate::ui::multiplayer_setup::{
+                DIFFICULTY, MultiplayerSetupLayout, SetupDialog, SetupFlavor,
+            };
+            for dialog in [SetupFlavor::Lan, SetupFlavor::Wol]
+                .into_iter()
+                .flat_map(|flavor| [false, true].map(|host| SetupDialog { host, flavor }))
+            {
+                let layout =
+                    MultiplayerSetupLayout::new(dialog, width as i32, height as i32, false);
+                windows.extend(
+                    layout
+                        .trackbars
+                        .map(|(id, rect)| (id != DIFFICULTY, layout.page.scale.base_rect(rect))),
+                );
+            }
             for (plaque, rect) in windows {
                 assert!(
                     trackbar_frame_slot(plaque, rect.w, rect.h).is_some(),

@@ -1204,7 +1204,25 @@ use crate::util::save_codec;
 // DisabledDisguiseDetectionPercent=.
 // 449 -> 450: the retained `[Basic]` section carries Scenario+0x1440 `Lose`,
 // the movie campaign defeat plays before its retry prompt.
-const SNAPSHOT_VERSION: u32 = 450;
+// 450 -> 451: HouseState retains House+0x1602A's UI name source (handle,
+// TXT_COMPUTER, map UIName= key or the type's UIName).
+// 451 -> 452: dynamic terrain cell records no longer carry a copy of the
+// cell's overlay identity and state byte, in its bridge facts or its bridge
+// layer; OverlayGrid alone holds them.
+// 452 -> 453: GameEntity retains a building's NoSurvivor byte (+0x6E0) for the
+// second SpawnSurvivors of a building that outlives its killing blow.
+// 453 -> 454: HouseState retains House+0x248, the executed-EXIT flag.
+// 454 -> 455: BunkerState gains WallsUp (UpdateBunker state 5) before Occupied.
+// 455 -> 456: retain paid two-stage selection sequences and one-use tickets
+// on Super instances, plus ticketed completion/cancellation command variants.
+// Positional bincode cannot default the new per-instance fields in v455 saves.
+// 456 -> 457: the retained type registry stores Warhead+0xA0 after each
+// reached ReadINI, including its per-layer literal default; its positional
+// payload and the effective rules configuration hash change.
+// 457 -> 458: retained upgrade rules, host-owned installed type slots and
+// scenario-owned mutable BuildingType upgrade animation names. Temporary
+// upgrade objects no longer retain a competing authored-building identity.
+const SNAPSHOT_VERSION: u32 = 458;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1421,6 +1439,8 @@ pub enum SnapshotError {
 pub enum SnapshotRestoreError {
     #[error("invalid UnitDelivery snapshot state: {0}")]
     InvalidUnitDelivery(&'static str),
+    #[error("invalid paid two-stage selection: {0}")]
+    InvalidPaidSuperWeaponSelection(&'static str),
     #[error("invalid detached Particle {object_id}: {reason}")]
     InvalidDetachedParticleState {
         object_id: u64,
@@ -2685,7 +2705,7 @@ fn restore_object_references(
             )?;
         }
     }
-    for (&owner_id, &wave_id) in &sim.active_wave_links {
+    for (owner_id, wave_id) in sim.active_wave_links() {
         require_resolved_reference(
             entity_ids.contains(&owner_id),
             "ActiveWaveLinks",
@@ -2705,7 +2725,7 @@ fn restore_object_references(
         )?;
     }
 
-    for &object_id in sim.object_custom_sounds.keys() {
+    for object_id in sim.custom_sound_objects() {
         require_object_reference(
             &entity_ids,
             sim.terrain_objects.objects(),
@@ -2770,6 +2790,8 @@ impl Simulation {
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
     pub fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+        self.validate_paid_super_weapon_selections()
+            .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
         self.unit_deliveries
             .validate(self)
             .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
@@ -3048,13 +3070,13 @@ impl Simulation {
         // and bite timers: a bite is due at once and suppression is dropped.
         let frame = self.session.binary_frame();
         for id in self.substrate.entities.keys_sorted() {
-            self.restore_move_sound_state_after_load(id);
+            self.substrate.restore_move_sound_state_after_load(id);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.parasite.restart_timers_after_load(frame);
             }
         }
         self.rebuild_logic_membership();
-        self.rebuild_building_anim_slot_indices();
+        self.substrate.rebuild_building_anim_slot_indices();
         self.rebuild_bomb_carriers();
         // The kamikaze tracker's Load (`0x0054E7B0`) follows its Clear.
         self.kamikaze
@@ -3073,8 +3095,9 @@ impl Simulation {
     /// The full row-major sweep is required because OverlayGrid's dirty queues
     /// are transient: a saved cell may have been cleared since map load, so an
     /// occupied-only replay would leave the original map overlay's passability
-    /// behind. Bridge cell state needs no separate pass: CellClass is its only
-    /// owner and returns through the dynamic terrain cells above.
+    /// behind. Bridge cell state needs no separate pass: its flags return
+    /// through the dynamic terrain cells above, and its overlay identity and
+    /// state byte through OverlayGrid.
     pub fn restore_map_authority_after_snapshot_load(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,
@@ -3183,7 +3206,7 @@ impl Simulation {
         // The app-supplied terrain template is the immutable load-time map.
         // Action 40's mutable LocalSize is serialized on Simulation, so replay
         // its CellClass-derived cache before overlay and zone reconstruction.
-        if let Some(bounds) = self.playfield_bounds {
+        if let Some(bounds) = self.playfield_bounds() {
             let _ = self
                 .resolved_terrain
                 .as_mut()
@@ -3288,7 +3311,7 @@ impl Simulation {
         let mut native_rect = self.ore_growth_state.native_rect();
         if native_rect == (0, 0)
             && let (Some(bounds), Some(height)) =
-                (self.playfield_bounds, self.playfield_size_height)
+                (self.playfield_bounds(), self.playfield_size_height())
         {
             native_rect = (
                 u16::try_from(bounds.base).unwrap_or(0),
@@ -3417,7 +3440,7 @@ mod tests {
         }
 
         fn add_marked_unit(sim: &mut Simulation, cell: (u16, u16), on_bridge: bool) {
-            let stable_id = sim.allocate_stable_id();
+            let stable_id = sim.substrate.allocate_stable_id();
             let owner = sim.interner.intern("Americans");
             let type_ref = sim.interner.intern("TESTUNIT");
             let mut entity = GameEntity::new_at_frame_zero_for_test(
@@ -3446,7 +3469,7 @@ mod tests {
         }
 
         fn add_live_terrain_object(sim: &mut Simulation, cell: (u16, u16)) {
-            let stable_id = sim.allocate_stable_id();
+            let stable_id = sim.substrate.allocate_stable_id();
             let type_ref = sim.interner.intern("TREE01");
             sim.terrain_objects
                 .objects_mut_for_test()
@@ -3981,14 +4004,14 @@ mod tests {
         let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
         let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
         let mut sim = Simulation::new();
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 2,
             off_fc: -8,
             off_100: -8,
             off_104: 16,
             off_108: 16,
-        });
-        sim.playfield_size_height = Some(2);
+        }));
+        sim.set_playfield_size_height_for_test(Some(2));
         sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
         sim.overlay_grid.as_mut().unwrap().place_overlay(2, 2, 0, 0);
         sim.install_resolved_terrain_for_new_map(flat_terrain(4, 4));
@@ -4355,7 +4378,7 @@ mod tests {
     fn signed_actual_and_estimated_health_survive_save_restore_independently() {
         for (actual, estimated) in [(-7, 100_000), (100_000, -19), (i32::MIN, i32::MAX)] {
             let mut sim = Simulation::new();
-            assert_eq!(sim.allocate_stable_id(), 1);
+            assert_eq!(sim.substrate.allocate_stable_id(), 1);
             let mut entity =
                 crate::sim::game_entity::GameEntity::test_default(1, "SIGNED", "Americans", 0, 0);
             entity.set_type_ref_for_test(sim.intern("SIGNED"));
@@ -4432,8 +4455,11 @@ mod tests {
         let native_total = row["total_size_i32"].as_i64().unwrap() as i32;
 
         let mut sim = Simulation::new();
-        let carrier_id = sim.allocate_stable_id();
-        let passenger_ids = [sim.allocate_stable_id(), sim.allocate_stable_id()];
+        let carrier_id = sim.substrate.allocate_stable_id();
+        let passenger_ids = [
+            sim.substrate.allocate_stable_id(),
+            sim.substrate.allocate_stable_id(),
+        ];
         let mut cargo = PassengerCargo::new(2, 1.25);
         cargo.board_forced_chain(&passenger_ids.into_iter().zip(sizes).collect::<Vec<_>>());
         assert_eq!(cargo.total_size(), native_total);
@@ -4773,7 +4799,6 @@ mod tests {
         );
 
         let mut sound_events = Vec::new();
-        let mut lifecycle_requests = Vec::new();
         crate::sim::movement::tick_movement_with_grids(
             &mut restored.substrate.entities,
             Some(&[1]),
@@ -4791,7 +4816,6 @@ mod tests {
             &mut restored.interner,
             None,
             &mut sound_events,
-            &mut lifecycle_requests,
         );
         assert_eq!(
             restored
@@ -4812,13 +4836,20 @@ mod tests {
     }
 
     #[test]
-    fn techno_constructor_word_and_upgrade_link_roundtrip_without_a_draw_and_hash() {
+    fn techno_constructor_word_and_installed_upgrades_roundtrip_without_a_draw_and_hash() {
         let mut sim = Simulation::new();
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(1, "UP1", "Americans", 4, 5);
         entity.set_techno_ctor_random_word_for_test(0xA55A);
-        entity.link_structure_upgrade(77, 2);
+        let upgrade_type = sim.interner.intern("UP1");
+        entity.set_building_upgrades_for_test(3, [None, None, Some(upgrade_type)]);
         sim.substrate.entities.insert(entity);
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[BuildingTypes]\n0=UP1\n[UP1]\nUpgrades=3\n",
+            ))
+            .unwrap();
+        sim.set_building_upgrade_art_name(upgrade_type, 0, "ART_UP", &rules);
         // Native load resets Scenario RNG to Seed(0); align the source before
         // comparing persistence/hash state unrelated to that separate rule.
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
@@ -4830,27 +4861,30 @@ mod tests {
         let restored_entity = restored.substrate.entities.get(1).unwrap();
         assert_eq!(restored.scenario_rng.logical_state(), source_rng);
         assert_eq!(restored_entity.techno_ctor_random_word(), 0xA55A);
+        assert_eq!(restored_entity.building_upgrades().count(), 3);
         assert_eq!(
-            restored_entity.structure_upgrade_link(),
-            Some(crate::sim::game_entity::StructureUpgradeLink::for_test(
-                77, 2
-            ))
+            restored_entity.building_upgrades().types(),
+            &[None, None, Some(upgrade_type)]
         );
         assert_eq!(restored.state_hash(), source_hash);
+        assert_eq!(
+            restored.building_upgrade_art_names().name(upgrade_type, 0),
+            Some("ART_UP")
+        );
 
         let mut changed_word = GameSnapshot::load(&bytes).unwrap().sim;
         let entity = changed_word.substrate.entities.get_mut(1).unwrap();
         entity.set_techno_ctor_random_word_for_test(entity.techno_ctor_random_word() ^ 1);
         assert_ne!(changed_word.state_hash(), source_hash);
 
-        let mut changed_link = restored;
-        changed_link
+        let mut changed_upgrade = restored;
+        changed_upgrade
             .substrate
             .entities
             .get_mut(1)
             .unwrap()
-            .link_structure_upgrade(77, 1);
-        assert_ne!(changed_link.state_hash(), source_hash);
+            .set_building_upgrades_for_test(2, [None, Some(upgrade_type), None]);
+        assert_ne!(changed_upgrade.state_hash(), source_hash);
     }
 
     #[test]
@@ -5402,7 +5436,7 @@ mod tests {
         let type_ref = sim.interner.intern("DLPH");
         let mut owner_ids = Vec::new();
         for ordinal in 1..=3 {
-            let stable_id = sim.allocate_stable_id();
+            let stable_id = sim.substrate.allocate_stable_id();
             owner_ids.push(stable_id);
             let mut entity = GameEntity::new_at_frame_zero_for_test(
                 stable_id,
@@ -5426,7 +5460,7 @@ mod tests {
                 .expect("owner Logic registration");
         }
 
-        let active_id = sim.allocate_stable_id();
+        let active_id = sim.substrate.allocate_stable_id();
         let active_target = crate::sim::combat::TargetKind::Cell(8, 2);
         let active_source = ProjectileCoord::new(256, 512, 0);
         let active_endpoint = ProjectileCoord::new(2048, 512, 0);
@@ -5466,9 +5500,9 @@ mod tests {
         );
         let moved_edges = active.edge_geometry();
         sim.admit_wave(active_id, active);
-        sim.active_wave_links.insert(owner_ids[0], active_id);
+        sim.link_active_wave_for_test(owner_ids[0], active_id);
 
-        let inactive_id = sim.allocate_stable_id();
+        let inactive_id = sim.substrate.allocate_stable_id();
         let mut inactive = Wave::new_owned(
             0,
             owner_ids[1],
@@ -5483,9 +5517,9 @@ mod tests {
         inactive.set_direction_octant_for_test(6);
         inactive.replace_recorded_cells(vec![WaveRecordedCell::real(7, 2)]);
         sim.admit_wave(inactive_id, inactive);
-        sim.active_wave_links.insert(owner_ids[1], inactive_id);
+        sim.link_active_wave_for_test(owner_ids[1], inactive_id);
 
-        let dummy_id = sim.allocate_stable_id();
+        let dummy_id = sim.substrate.allocate_stable_id();
         let mut dummy = Wave::new_owned(
             0,
             owner_ids[2],
@@ -5498,7 +5532,7 @@ mod tests {
         dummy.set_direction_octant_for_test(2);
         dummy.replace_recorded_cells(vec![WaveRecordedCell::shared_dummy()]);
         sim.admit_wave(dummy_id, dummy);
-        sim.active_wave_links.insert(owner_ids[2], dummy_id);
+        sim.link_active_wave_for_test(owner_ids[2], dummy_id);
 
         let expected_hash = sim.state_hash();
         let bytes = GameSnapshot::save(&sim, 0, 0, "wave-state.map", 0);
@@ -5508,7 +5542,10 @@ mod tests {
             .expect("Wave identities restore structurally");
 
         assert_eq!(restored.state_hash(), expected_hash);
-        assert_eq!(restored.active_wave_links, sim.active_wave_links);
+        assert_eq!(
+            restored.active_wave_links().collect::<Vec<_>>(),
+            sim.active_wave_links().collect::<Vec<_>>()
+        );
         assert_eq!(restored.waves.get(active_id), sim.waves.get(active_id));
         assert_eq!(
             restored.waves.get(active_id).unwrap().direction_octant(),
@@ -5575,7 +5612,7 @@ mod tests {
                     }
                 }
                 4 => {
-                    let second = sim.allocate_stable_id();
+                    let second = sim.substrate.allocate_stable_id();
                     let mut entity = sim.substrate.entities.get(owner).unwrap().clone();
                     entity.set_stable_id_for_test(second);
                     sim.substrate.entities.insert(entity);
@@ -5976,7 +6013,7 @@ mod tests {
             restored.pending_command_snapshot(),
             sim.pending_command_snapshot()
         );
-        assert!(!restored.quit_requested);
+        assert!(!restored.quit_requested());
         assert_eq!(restored.take_executed_exit_owner(), None);
         assert_eq!(restored.state_hash(), expected_hash);
     }
@@ -6098,7 +6135,7 @@ mod tests {
             .get_mut(&owner)
             .expect("house")
             .supply_allow_win_tag_state(0, crate::sim::timer::CdTimer::started(100, 90));
-        original.sound_events.push(SimSoundEvent::MatchOutcome {
+        original.sound_events.emit(SimSoundEvent::MatchOutcome {
             owner,
             kind: HouseOutcomeKind::Victory,
         });
@@ -6314,7 +6351,7 @@ mod tests {
         sim.fog.reveal_all_for_owner(owner);
         crate::sim::vision::apply_gap_generators(
             &mut sim.fog,
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             &[(gapper, 6, 6, 2)],
             &sim.interner,
         );
@@ -6347,7 +6384,7 @@ mod tests {
         use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
 
         let mut sim = Simulation::new();
-        let entity_id = sim.allocate_stable_id();
+        let entity_id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "Americans", 5, 7);
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.lifecycle.set_cell_marked_for_test(false);
@@ -6468,7 +6505,7 @@ mod tests {
     fn gsi_04_07_damage_v60_air_spatial_armor_berserk_hostile_hit_iq_smoke_capture_anger_and_delay_roundtrip_hash()
      {
         let mut sim = Simulation::new();
-        let entity_id = sim.allocate_stable_id();
+        let entity_id = sim.substrate.allocate_stable_id();
         let mut aircraft = crate::sim::game_entity::GameEntity::test_default(
             entity_id,
             "ORCA",
@@ -6530,7 +6567,7 @@ mod tests {
             system.set_target_coords_for_test(glam::IVec3::ZERO);
             system
         });
-        sim.substrate.next_stable_object_id = 5;
+        sim.set_next_stable_object_id_for_test(5);
         let owner = sim.interner.intern("ComputerIQ");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 51);
         house.set_current_iq_for_test(2);
@@ -6801,11 +6838,11 @@ mod tests {
     fn air_slot_snapshot_roundtrip_preserves_the_cell_holders() {
         let empty_hash = Simulation::new().state_hash();
         let mut sim = Simulation::new();
-        assert!(sim.set_cell_air_slot((17, 23), Some(41)));
-        assert!(sim.set_cell_air_slot((2, 31), Some(99)));
+        assert!(sim.substrate.set_cell_air_slot((17, 23), Some(41)));
+        assert!(sim.substrate.set_cell_air_slot((2, 31), Some(99)));
         // `0x00487D70` refuses a claim while another object holds the slot,
         // which is what keeps one hovering Jumpjet per cell.
-        assert!(!sim.set_cell_air_slot((17, 23), Some(42)));
+        assert!(!sim.substrate.set_cell_air_slot((17, 23), Some(42)));
         assert_eq!(sim.substrate.air_slots.holder(17, 23), Some(41));
         let expected_hash = sim.state_hash();
         assert_ne!(
@@ -6859,7 +6896,7 @@ mod tests {
         let mut sim = Simulation::with_seed(0);
         sim.session.set_map_width_for_test(40);
         sim.session.set_map_height_for_test(40);
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         let owner = sim.intern("Americans");
         let type_ref = sim.intern("SHAD");
         let entity = GameEntity::new_at_frame_zero_for_test(
@@ -6878,9 +6915,9 @@ mod tests {
         );
         sim.substrate.entities.insert(entity);
         sim.add_entity_occupancy(id);
-        sim.aircraft_tracker_add(id);
-        assert!(sim.set_cell_air_slot((10, 10), Some(id)));
-        assert!(sim.set_cell_air_slot((11, 10), Some(id)));
+        Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, id);
+        assert!(sim.substrate.set_cell_air_slot((10, 10), Some(id)));
+        assert!(sim.substrate.set_cell_air_slot((11, 10), Some(id)));
         let retained = sim.substrate.entities.get(id).unwrap().clone();
         let expected_hash = sim.state_hash();
 
@@ -6917,8 +6954,8 @@ mod tests {
         assert_eq!(restored.state_hash(), expected_hash);
 
         for owner in [Some(id), None] {
-            assert!(sim.set_cell_air_slot((11, 10), owner));
-            assert!(restored.set_cell_air_slot((11, 10), owner));
+            assert!(sim.substrate.set_cell_air_slot((11, 10), owner));
+            assert!(restored.substrate.set_cell_air_slot((11, 10), owner));
             assert_eq!(restored.substrate.air_slots.holder(11, 10), None);
             let actor = restored.substrate.entities.get(id).unwrap();
             assert_eq!(actor.air_tracker_cell(), (10, 10));
@@ -6945,8 +6982,8 @@ mod tests {
         );
         assert_eq!(stale.substrate.air_slots.holder(11, 10), None);
         assert_eq!(stale.state_hash(), restored.state_hash());
-        assert!(stale.set_cell_air_slot((12, 10), Some(id)));
-        assert!(stale.set_cell_air_slot((12, 10), None));
+        assert!(stale.substrate.set_cell_air_slot((12, 10), Some(id)));
+        assert!(stale.substrate.set_cell_air_slot((12, 10), None));
         assert_eq!(
             stale.substrate.entities.get(id).unwrap().air_slot_cell(),
             (0, 0)
@@ -6972,7 +7009,7 @@ mod tests {
         let owner = sim.intern("Americans");
         let type_ref = sim.intern("SHAD");
         for rx in [10, 12] {
-            let id = sim.allocate_stable_id();
+            let id = sim.substrate.allocate_stable_id();
             let entity = GameEntity::new_at_frame_zero_for_test(
                 id,
                 rx,
@@ -6990,9 +7027,9 @@ mod tests {
             sim.substrate.entities.insert(entity);
             sim.add_entity_occupancy(id);
         }
-        sim.aircraft_tracker_add(1);
-        assert!(sim.set_cell_air_slot((10, 10), Some(1)));
-        assert!(sim.set_cell_air_slot((12, 10), Some(2)));
+        Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
+        assert!(sim.substrate.set_cell_air_slot((10, 10), Some(1)));
+        assert!(sim.substrate.set_cell_air_slot((12, 10), Some(2)));
         let foreign_cache = sim.substrate.entities.get(2).unwrap().air_slot_cell();
         sim.uninit(1);
         let retired_hash = sim.state_hash();
@@ -7051,7 +7088,7 @@ mod tests {
             sim.fog
                 .draw_objects_cloaked(Some(source_owner), source_owner, 7, 3, 3)
         );
-        let entity_id = sim.allocate_stable_id();
+        let entity_id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             entity_id,
             3,
@@ -7117,7 +7154,7 @@ mod tests {
         let mut sim = Simulation::new();
         sim.session.set_map_width_for_test(32);
         sim.session.set_map_height_for_test(32);
-        let entity_id = sim.allocate_stable_id();
+        let entity_id = sim.substrate.allocate_stable_id();
         let mut building = GameEntity::test_default_of_category(
             entity_id,
             "GAREFN",
@@ -7195,7 +7232,7 @@ mod tests {
         use crate::sim::game_entity::GameEntity;
 
         let mut sim = Simulation::new();
-        let entity_id = sim.allocate_stable_id();
+        let entity_id = sim.substrate.allocate_stable_id();
         let conyard = GameEntity::test_default_of_category(
             entity_id,
             "GACNST",
@@ -7246,7 +7283,7 @@ mod tests {
             .base_reservation_mut()
             .append_perimeter_cell_if_absent(u32::from(3u16) | (u32::from(4u16) << 16));
         sim.houses.register(house);
-        let entity_id = sim.allocate_stable_id();
+        let entity_id = sim.substrate.allocate_stable_id();
         let mut building = crate::sim::game_entity::GameEntity::test_default_of_category(
             entity_id,
             "GAPOWR",
@@ -7365,7 +7402,7 @@ mod tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("AMERICANS");
         let type_ref = sim.interner.intern("MTNK");
-        let entity_id = sim.allocate_stable_id();
+        let entity_id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "AMERICANS", 2, 2);
         entity.set_owner_for_test(owner);
         entity.set_type_ref_for_test(type_ref);
@@ -7568,7 +7605,7 @@ mod tests {
         let owner = sim.interner.intern("AMERICANS");
         let type_ref = sim.interner.intern("MTNK");
 
-        let entity_id = sim.allocate_stable_id();
+        let entity_id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "AMERICANS", 5, 6);
         entity.set_owner_for_test(owner);
         entity.set_type_ref_for_test(type_ref);
@@ -7581,7 +7618,7 @@ mod tests {
         sim.substrate.entities.insert(entity);
         sim.add_entity_occupancy(entity_id);
 
-        let particle_id = sim.allocate_stable_id();
+        let particle_id = sim.substrate.allocate_stable_id();
         sim.substrate.particle_systems.insert({
             let mut system =
                 ParticleSystem::test_fixture(particle_id, ParticleSystemTypeId(0), IVec3::ZERO);
@@ -7675,7 +7712,7 @@ mod tests {
         use glam::IVec3;
 
         let mut sim = Simulation::new();
-        let entity_id = sim.allocate_stable_id();
+        let entity_id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "AMERICANS", 5, 6);
         entity.pending_c4_detonation.set_for_test(Some(
             crate::sim::c4_plant::PendingC4Detonation::new(
@@ -7685,7 +7722,7 @@ mod tests {
         ));
         sim.substrate.entities.insert(entity);
 
-        let particle_id = sim.allocate_stable_id();
+        let particle_id = sim.substrate.allocate_stable_id();
         sim.substrate.particle_systems.insert({
             let mut system =
                 ParticleSystem::test_fixture(particle_id, ParticleSystemTypeId(0), IVec3::ZERO);
@@ -7786,7 +7823,7 @@ mod tests {
         sim.session.set_map_height_for_test(4);
         let mut terrain = flat_terrain(4, 4);
         terrain.cell_mut_for_test(1, 1).unwrap().level = 2;
-        let tree_id = sim.allocate_stable_id();
+        let tree_id = sim.substrate.allocate_stable_id();
         let tree = TerrainObjectState::new(
             tree_id,
             sim.interner.intern("TREE01"),
@@ -7813,7 +7850,7 @@ mod tests {
         sim.resolved_terrain = Some(terrain);
         assert!(sim.register_terrain_object(tree_id, Some(&rules)));
 
-        let projectile_id = sim.allocate_stable_id();
+        let projectile_id = sim.substrate.allocate_stable_id();
         let mut spawn = gsi_17_03_projectile(RAD_NO_ATTACKER, ProjectileTarget::Terrain(tree_id));
         spawn.initial_target_position = coordinate;
         spawn.payload = crate::sim::projectile::ProjectilePayload::new(
@@ -7932,7 +7969,7 @@ mod tests {
         for wrong_kind in [false, true] {
             let (mut sim, _, _, projectile_id) = terrain_target_snapshot_fixture();
             let target_id = if wrong_kind {
-                let id = sim.allocate_stable_id();
+                let id = sim.substrate.allocate_stable_id();
                 sim.substrate.entities.insert(GameEntity::test_default(
                     id,
                     "DUMMY",
@@ -7979,7 +8016,7 @@ mod tests {
         for case in ["techno", "terrain", "projectile", "missing"] {
             let (mut sim, _, tree_id, projectile_id) = terrain_target_snapshot_fixture();
             let spawn = |sim: &mut Simulation| {
-                let id = sim.allocate_stable_id();
+                let id = sim.substrate.allocate_stable_id();
                 sim.substrate.entities.insert(GameEntity::test_default(
                     id,
                     "DUMMY",
@@ -8077,9 +8114,9 @@ mod tests {
         use crate::sim::timer::CdTimer;
 
         let mut sim = Simulation::new();
-        let parent = sim.allocate_stable_id();
-        let child = sim.allocate_stable_id();
-        let target = sim.allocate_stable_id();
+        let parent = sim.substrate.allocate_stable_id();
+        let child = sim.substrate.allocate_stable_id();
+        let target = sim.substrate.allocate_stable_id();
 
         let mut parent_entity = GameEntity::test_default(parent, "CARRIER", "AMERICANS", 1, 1);
         parent_entity.pending_c4_detonation.set_for_test(Some(
@@ -8124,7 +8161,7 @@ mod tests {
         sim.register_live_object(child);
         sim.register_live_object(target);
 
-        let projectile = sim.allocate_stable_id();
+        let projectile = sim.substrate.allocate_stable_id();
         sim.admit_projectile(
             projectile,
             gsi_17_03_projectile(target, ProjectileTarget::Entity(target)),
@@ -8290,7 +8327,7 @@ mod tests {
         projectile.set_source_id_for_test(RAD_NO_ATTACKER);
         projectile.set_target_for_test(ProjectileTarget::Cell { rx: 11, ry: 12 });
 
-        let null_target_projectile = sim.allocate_stable_id();
+        let null_target_projectile = sim.substrate.allocate_stable_id();
         sim.admit_projectile(
             null_target_projectile,
             gsi_17_03_projectile(RAD_NO_ATTACKER, ProjectileTarget::None),
@@ -8337,7 +8374,7 @@ mod tests {
             live.state_hash(),
             "the fallback cell's two raw planes are future-affecting"
         );
-        let projectile_id = live.allocate_stable_id();
+        let projectile_id = live.substrate.allocate_stable_id();
         live.admit_projectile(
             projectile_id,
             gsi_17_03_projectile(RAD_NO_ATTACKER, ProjectileTarget::DummyCell),
@@ -8735,7 +8772,7 @@ mod tests {
         let owner = sim.interner.intern("AMERICANS");
         let type_ref = sim.interner.intern("TEST");
         sim.interner.intern("VMove");
-        let entity_id = sim.allocate_stable_id();
+        let entity_id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "TEST", "AMERICANS", 7, 9);
         entity.set_owner_for_test(owner);
         entity.set_type_ref_for_test(type_ref);
@@ -9228,7 +9265,7 @@ mod tests {
                 terrain.occupation_bits(),
             );
         }
-        sim.substrate.next_stable_object_id = spawner_id + 1;
+        sim.set_next_stable_object_id_for_test(spawner_id + 1);
         sim.terrain_objects.animations_mut_for_test().insert(
             spawner_cell,
             TerrainAnimationState::new(
@@ -9322,7 +9359,7 @@ mod tests {
                 .spawning_cells()
                 .contains(&spawner_cell)
         );
-        assert_eq!(restored.substrate.next_stable_object_id, spawner_id + 1);
+        assert_eq!(restored.next_stable_object_id(), spawner_id + 1);
         let reconciled = restored
             .resolved_terrain
             .as_ref()
@@ -9360,7 +9397,10 @@ mod tests {
             0
         );
 
-        let path = PathGrid::from_resolved_terrain_with_bridges(reconciled);
+        let path = PathGrid::from_resolved_terrain_with_bridges(
+            reconciled,
+            restored.overlay_grid.as_ref(),
+        );
         assert!(path.is_walkable(destroyed_cell.0, destroyed_cell.1));
         assert!(!path.is_walkable(damaged_cell.0, damaged_cell.1));
         assert!(!path.is_walkable(spawner_cell.0, spawner_cell.1));
@@ -9440,9 +9480,11 @@ mod tests {
 
         let path_a = PathGrid::from_resolved_terrain_with_bridges(
             a.resolved_terrain.as_ref().expect("terrain restored"),
+            a.overlay_grid.as_ref(),
         );
         let path_b = PathGrid::from_resolved_terrain_with_bridges(
             b.resolved_terrain.as_ref().expect("terrain restored"),
+            b.overlay_grid.as_ref(),
         );
         assert_eq!(path_a, path_b);
 
@@ -9496,7 +9538,7 @@ mod tests {
         // `place_spawned` resolves the owner against `sim.interner`; re-intern so
         // the id is valid there (test_default uses the thread-local test interner).
         ge.set_owner_for_test(sim.interner.intern("Americans"));
-        let id = sim.create_limbo(ge);
+        let id = Simulation::create_limbo(&mut sim.substrate, &mut sim.houses, ge);
 
         let e = sim.substrate.entities.get(id).expect("entity in store");
         assert!(
@@ -9549,7 +9591,7 @@ mod tests {
         use crate::sim::game_entity::GameEntity;
         let mut sim = Simulation::new();
         for _ in 0..3 {
-            let id = sim.allocate_stable_id();
+            let id = sim.substrate.allocate_stable_id();
             let mut entity = GameEntity::test_default(id, "E1", "Americans", 5, 5);
             entity.set_category_for_test(EntityCategory::Infantry);
             entity.lifecycle.set_in_limbo_for_test(false);
@@ -10052,6 +10094,14 @@ mod tests {
         // 447 -> 448: retained Unit firing counter through parasite release.
         // 448 -> 449: the disguise firing blink and its rules keys.
         // 449 -> 450: the retained `[Basic]` Lose movie.
-        assert_eq!(super::SNAPSHOT_VERSION, 450);
+        // 450 -> 451: the House UI name source.
+        // 451 -> 452: terrain records drop their overlay identity/state copy.
+        // 452 -> 453: a building's NoSurvivor byte.
+        // 453 -> 454: the House left-game flag.
+        // 454 -> 455: BunkerState::WallsUp.
+        // 455 -> 456: saved paid two-stage selections and ticketed commands.
+        // 456 -> 457: retained per-pass Warhead Verses table.
+        // 457 -> 458: host-owned installed upgrades and shared type art.
+        assert_eq!(super::SNAPSHOT_VERSION, 458);
     }
 }

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "MultiEngineer Engineer damage: HealthRatio above ConditionRed and the ftol damage, 0x519DB6..0x519E82/0x519EAA",
+  "assumptions": [
+    "PC53/chop with masked exceptions; the original HealthRatio 0x5F5C60, BuildingClass vt+0x84/+0x88 and _ftol 0x7C5F00 execute unchanged.",
+    "ConditionRed is a supplied raw binary64 at Rules+0x1708; values other than 25% do not claim retail data.",
+    "The GameMode/MultiEngineer gates and the ReceiveDamage(C4Warhead) call are instruction evidence, not executed."
+  ],
+  "substitutions": [
+    "Only data-shaped Building/type/Rules, stack/register state and ambient FPCW; no original instruction patches or callbacks."
+  ],
+  "entry_points": {
+    "multi_engineer_damage": "0x00519DB6"
+  },
+  "original_code": {
+    "00519DB6..00519EAA": {
+      "hex": "8bcfe8a3be0d008b15e0718800dc9a08170000dfe0f6c4410f85d60000008b078bcfff9084000000db80a00000008b0de0718800dc8908170000dc0d38177e00e805c12a008b576c8bcf2bd08b0789542454db442454dd5c242cff90840000008b1de0718800db80a0000000dd8308170000dc0d38177e00dc2d18177e00dc0d38177e00dec9dc5c242cdfe0f6c40174328b178bcfff92840000008b1de0718800db80a0000000dd8308170000dc0d38177e00dc2d18177e00dc0d38177e00dec9eb04dd44242ce87ec02a006a00894424288b8ba80f00008b076a006a0156518d5424386a00528bcfff906c010000e966010000",
+      "sha256": "3705f1a385517c349037caf432ee70672abd2865710f221d60c7dbce8b56590e"
+    }
+  },
+  "instruction_evidence_not_executed": {
+    "00519D82..00519DB6": {
+      "hex": "8b078bcf32dbff502c83f806750c8b8f200500008a9972150000a138b2a80085c00f8401010000a06cb2a80084c00f84f4000000",
+      "sha256": "8787155ca012f24d55903faf291e6338e6890a0a946dbe2186553890c275c389"
+    },
+    "00519E82..00519EAA": {
+      "hex": "6a00894424288b8ba80f00008b076a006a0156518d5424386a00528bcfff906c010000e966010000",
+      "sha256": "068b9e03e21c88002adc519951425220acada9c2f86286adb792c8b14e68bce0"
+    }
+  },
+  "native_data": {
+    "007E3F40": "70326f00",
+    "007E3F44": "e09e4500",
+    "007E1738": "000000000000e03f",
+    "007E1718": "000000000000f03f"
+  },
+  "replay_command": "python -m tools.spatial_oracle.multi_engineer_damage",
+  "payload_sha256": "5f2f10688efd11e42f2ad6b8256bf764ed654082542555ebe9f398c7aa86c1b2"
+}

@@ -8,6 +8,8 @@
 use super::GameEntity;
 use crate::map::entities::EntityCategory;
 use crate::sim::occupancy::air_spatial_bucket_index;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 const NATIVE_NULL_CELL: (i16, i16) = (0, 0);
@@ -98,8 +100,12 @@ impl Simulation {
     /// AircraftTracker::Add4134A0 appends the current Cell's bucket and invokes
     /// Foot's virtual+2F8 callback41C160 at4134CA, retaining that Cell in+560.
     /// BeginTakeoff4CF9B9 and Jumpjet State0 call this for an untracked Foot.
-    pub(crate) fn aircraft_tracker_add(&mut self, id: u64) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    pub(crate) fn aircraft_tracker_add(
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        id: u64,
+    ) {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         if entity.foot_air.air_spatial_bucket.is_some() {
@@ -109,79 +115,81 @@ impl Simulation {
         let bucket = air_spatial_bucket_index(
             entity.position.rx(),
             entity.position.ry(),
-            self.session.map_width(),
-            self.session.map_height(),
+            session.map_width(),
+            session.map_height(),
         );
-        let order = self.substrate.next_air_tracker_order.next();
-        let entities = &mut self.substrate.entities;
+        let order = substrate.next_air_tracker_order.next();
+        let entities = &mut substrate.entities;
         entities.get_mut(id).unwrap().retain_air_tracker_cell(cell);
         entities.set_air_membership(id, Some(bucket), order);
-    }
-
-    /// AircraftTracker::Remove4135D0 removes membership and invokes41C160 at
-    /// 413601 with NativeNull8B3D88. Slot notification+564 is independent.
-    pub(crate) fn aircraft_tracker_remove(&mut self, id: u64) {
-        let entities = &mut self.substrate.entities;
-        if let Some(entity) = entities.get_mut(id) {
-            entity.retain_air_tracker_cell(NATIVE_NULL_CELL);
-            entities.set_air_membership(id, None, 0);
-        }
     }
 
     /// AircraftTracker::Update4138C0 invokes41C160 at4138DA before its bucket
     /// comparison41399A. A within-bucket Cell crossing changes+560 while
     /// retaining the vector order; a bucket crossing appends at the new tail.
-    pub(crate) fn aircraft_tracker_update_cell(&mut self, id: u64, new_cell: (i16, i16)) {
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
+    pub(crate) fn aircraft_tracker_update_cell(
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        id: u64,
+        new_cell: (i16, i16),
+    ) {
+        let Some(entity) = substrate.entities.get_mut(id) else {
             return;
         };
         entity.retain_air_tracker_cell(new_cell);
         let bucket = air_spatial_bucket_index(
             new_cell.0 as u16,
             new_cell.1 as u16,
-            self.session.map_width(),
-            self.session.map_height(),
+            session.map_width(),
+            session.map_height(),
         );
         if entity.foot_air.air_spatial_bucket == Some(bucket) {
             return;
         }
-        let order = self.substrate.next_air_tracker_order.next();
-        self.substrate
+        let order = substrate.next_air_tracker_order.next();
+        substrate
             .entities
             .set_air_membership(id, Some(bucket), order);
     }
+}
 
+impl crate::sim::world::ObjectSubstrate {
+    /// AircraftTracker::Remove4135D0 removes membership and invokes41C160 at
+    /// 413601 with NativeNull8B3D88. Slot notification+564 is independent.
+    pub(crate) fn aircraft_tracker_remove(&mut self, id: u64) {
+        let entities = &mut self.entities;
+        if let Some(entity) = entities.get_mut(id) {
+            entity.retain_air_tracker_cell(NATIVE_NULL_CELL);
+            entities.set_air_membership(id, None, 0);
+        }
+    }
     /// CellClass::SetAltObject487D70. A foreign claim returns AL0 unchanged.
     /// A successful claim writes Cell+E0 at487DC8, then directly notifies the
     /// Foot at487DD9. Release notifies the prior Foot at487DA5 before clearing
     /// Cell+E0 at487DAA; an empty release performs no notification.
     pub(crate) fn set_cell_air_slot(&mut self, cell: (i16, i16), owner: Option<u64>) -> bool {
-        let held = self
-            .substrate
-            .air_slots
-            .holder(cell.0 as u16, cell.1 as u16);
+        let held = self.air_slots.holder(cell.0 as u16, cell.1 as u16);
         if let Some(owner) = owner {
             if held.is_some_and(|held| held != owner) {
                 return false;
             }
-            self.substrate.air_slots.set_holder(cell, Some(owner));
+            self.air_slots.set_holder(cell, Some(owner));
             self.notify_foot_air_slot(owner, cell);
         } else {
             if let Some(held) = held {
                 self.notify_foot_air_slot(held, NATIVE_NULL_CELL);
             }
-            self.substrate.air_slots.set_holder(cell, None);
+            self.air_slots.set_holder(cell, None);
         }
         true
     }
-
     /// Concrete Foot4E00B0, called only for the native Foot flag+14&4.
     /// Native old/new Cells are dwords, including NativeNull(0,0). For a
     /// non-null replacement4E00EC..4E0104 directly clears the old matching
     /// Cell+E0; it does not recurse through Cell487D70. Consequently a
     /// repeated same-owner claim clears its newly written slot and retains+564.
     fn notify_foot_air_slot(&mut self, id: u64, new_cell: (i16, i16)) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let Some(entity) = self.entities.get(id) else {
             return;
         };
         if entity.category == EntityCategory::Structure {
@@ -190,22 +198,12 @@ impl Simulation {
         let old_cell = entity.foot_air.air_slot_cell;
         if old_cell != NATIVE_NULL_CELL
             && new_cell != NATIVE_NULL_CELL
-            && self
-                .substrate
-                .air_slots
-                .holder(old_cell.0 as u16, old_cell.1 as u16)
-                == Some(id)
+            && self.air_slots.holder(old_cell.0 as u16, old_cell.1 as u16) == Some(id)
         {
-            self.substrate.air_slots.set_holder(old_cell, None);
+            self.air_slots.set_holder(old_cell, None);
         }
-        self.substrate
-            .entities
-            .get_mut(id)
-            .unwrap()
-            .foot_air
-            .air_slot_cell = new_cell;
+        self.entities.get_mut(id).unwrap().foot_air.air_slot_cell = new_cell;
     }
-
     /// Foot destructor's selected cache block4D3632..4D366E, with EBX0 from
     /// original XOR4D3595. If the remembered non-null Cell still holds this
     /// Foot,4D3668 directly clears its+E0. Neither487D70/4E00B0 nor a+564
@@ -213,7 +211,7 @@ impl Simulation {
     /// Native corpus: jumpjet_states.json/unit_uninit_live_slot; this block's
     /// execution does not establish the whole destructor or deferred drain.
     pub(crate) fn clear_foot_air_slot_at_destruction(&mut self, id: u64) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+        let Some(entity) = self.entities.get(id) else {
             return;
         };
         if entity.category == EntityCategory::Structure {
@@ -221,13 +219,9 @@ impl Simulation {
         }
         let cell = entity.foot_air.air_slot_cell;
         if cell != NATIVE_NULL_CELL
-            && self
-                .substrate
-                .air_slots
-                .holder(cell.0 as u16, cell.1 as u16)
-                == Some(id)
+            && self.air_slots.holder(cell.0 as u16, cell.1 as u16) == Some(id)
         {
-            self.substrate.air_slots.set_holder(cell, None);
+            self.air_slots.set_holder(cell, None);
         }
     }
 }
@@ -253,8 +247,8 @@ mod tests {
         }
         // The native fixture starts with the foreign Foot already tracked and
         // holding Cell12,10; both independent caches are retained at12,10.
-        sim.aircraft_tracker_add(2);
-        assert!(sim.set_cell_air_slot((12, 10), Some(2)));
+        Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 2);
+        assert!(sim.substrate.set_cell_air_slot((12, 10), Some(2)));
         sim
     }
 
@@ -265,7 +259,7 @@ mod tests {
     #[test]
     fn native_tracker_crossings_preserve_or_append_vector_order() {
         let mut sim = native_control_world();
-        sim.aircraft_tracker_add(1);
+        Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
         let actor_order = sim
             .substrate
             .entities
@@ -287,22 +281,22 @@ mod tests {
             Some(106)
         );
 
-        sim.aircraft_tracker_update_cell(1, (11, 10));
+        Simulation::aircraft_tracker_update_cell(&sim.session, &mut sim.substrate, 1, (11, 10));
         let actor = sim.substrate.entities.get(1).unwrap();
         assert_eq!(actor.air_tracker_cell(), (11, 10));
         assert_eq!(actor.air_spatial_enter_order(), actor_order);
-        sim.aircraft_tracker_update_cell(1, (12, 10));
+        Simulation::aircraft_tracker_update_cell(&sim.session, &mut sim.substrate, 1, (12, 10));
         let actor = sim.substrate.entities.get(1).unwrap();
         assert_eq!(actor.air_spatial_bucket(), Some(106));
         assert!(actor.air_spatial_enter_order() > foreign_order);
         let crossed_order = actor.air_spatial_enter_order();
         for cell in [(13, 10), (13, 11)] {
-            sim.aircraft_tracker_update_cell(1, cell);
+            Simulation::aircraft_tracker_update_cell(&sim.session, &mut sim.substrate, 1, cell);
             let actor = sim.substrate.entities.get(1).unwrap();
             assert_eq!(actor.air_tracker_cell(), cell);
             assert_eq!(actor.air_spatial_enter_order(), crossed_order);
         }
-        sim.aircraft_tracker_remove(1);
+        sim.substrate.aircraft_tracker_remove(1);
         let actor = sim.substrate.entities.get(1).unwrap();
         assert_eq!(actor.air_tracker_cell(), NATIVE_NULL_CELL);
         assert_eq!(actor.air_spatial_bucket(), None);
@@ -318,35 +312,35 @@ mod tests {
     #[test]
     fn native_slot_claim_refusal_replacement_same_owner_and_release() {
         let mut sim = native_control_world();
-        sim.aircraft_tracker_add(1);
-        assert!(!sim.set_cell_air_slot((12, 10), Some(1)));
+        Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
+        assert!(!sim.substrate.set_cell_air_slot((12, 10), Some(1)));
         assert_eq!(sim.substrate.air_slots.holder(12, 10), Some(2));
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().air_slot_cell(),
             NATIVE_NULL_CELL
         );
-        assert!(sim.set_cell_air_slot((10, 10), Some(1)));
-        assert!(sim.set_cell_air_slot((11, 10), Some(1)));
+        assert!(sim.substrate.set_cell_air_slot((10, 10), Some(1)));
+        assert!(sim.substrate.set_cell_air_slot((11, 10), Some(1)));
         assert_eq!(sim.substrate.air_slots.holder(10, 10), None);
         assert_eq!(sim.substrate.air_slots.holder(11, 10), Some(1));
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().air_slot_cell(),
             (11, 10)
         );
-        assert!(sim.set_cell_air_slot((11, 10), Some(1)));
+        assert!(sim.substrate.set_cell_air_slot((11, 10), Some(1)));
         assert_eq!(sim.substrate.air_slots.holder(11, 10), None);
-        assert!(sim.set_cell_air_slot((11, 10), None));
+        assert!(sim.substrate.set_cell_air_slot((11, 10), None));
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().air_slot_cell(),
             (11, 10)
         );
-        assert!(sim.set_cell_air_slot((12, 10), None));
-        assert!(sim.set_cell_air_slot((12, 10), Some(1)));
+        assert!(sim.substrate.set_cell_air_slot((12, 10), None));
+        assert!(sim.substrate.set_cell_air_slot((12, 10), Some(1)));
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().air_slot_cell(),
             (12, 10)
         );
-        assert!(sim.set_cell_air_slot((12, 10), None));
+        assert!(sim.substrate.set_cell_air_slot((12, 10), None));
         assert_eq!(sim.substrate.air_slots.holder(12, 10), None);
         let actor = sim.substrate.entities.get(1).unwrap();
         assert_eq!(actor.air_slot_cell(), NATIVE_NULL_CELL);
@@ -398,8 +392,8 @@ mod tests {
         };
 
         let mut sim = native_control_world();
-        sim.aircraft_tracker_add(1);
-        assert!(sim.set_cell_air_slot((10, 10), Some(1)));
+        Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
+        assert!(sim.substrate.set_cell_air_slot((10, 10), Some(1)));
         sim.uninit(1);
         let retired = after("unit_uninit");
         let actor = sim.substrate.entities.get(1).unwrap();
@@ -412,7 +406,7 @@ mod tests {
         assert_eq!(slot(retired, [10, 10]), "0x20000000");
         assert_eq!(sim.substrate.air_slots.holder(10, 10), Some(1));
 
-        sim.clear_foot_air_slot_at_destruction(1);
+        sim.substrate.clear_foot_air_slot_at_destruction(1);
         let destroyed = after("foot_destructor_slot_block");
         let actor = sim.substrate.entities.get(1).unwrap();
         assert_eq!(actor.air_tracker_cell(), cell(&destroyed["tracker_cell"]));
@@ -427,14 +421,14 @@ mod tests {
     #[test]
     fn destructor_cached_cell_preserves_a_foreign_holder_and_stale_cache() {
         let mut sim = native_control_world();
-        assert!(sim.set_cell_air_slot((10, 10), Some(1)));
+        assert!(sim.substrate.set_cell_air_slot((10, 10), Some(1)));
         // Executed same-owner claim leaves the old+564 Cell with an empty E0;
         // another Foot can now claim it while the first keeps that stale Cell.
-        assert!(sim.set_cell_air_slot((10, 10), Some(1)));
-        assert!(sim.set_cell_air_slot((10, 10), Some(2)));
+        assert!(sim.substrate.set_cell_air_slot((10, 10), Some(1)));
+        assert!(sim.substrate.set_cell_air_slot((10, 10), Some(2)));
         sim.uninit(1);
         let foreign_before = sim.substrate.entities.get(2).unwrap().air_slot_cell();
-        sim.clear_foot_air_slot_at_destruction(1);
+        sim.substrate.clear_foot_air_slot_at_destruction(1);
         assert_eq!(sim.substrate.air_slots.holder(10, 10), Some(2));
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().air_slot_cell(),

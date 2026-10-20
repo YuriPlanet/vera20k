@@ -319,14 +319,54 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
         super::commit_back(state);
         return;
     }
+    // The host's random map keeps the start staging its generator wrote
+    // (Scenario +0x1140, 0x0059647B..0x00596565), as skirmish's does. A
+    // guest's comes from the host's last 'W' (Scenario +0x11C0); without
+    // one it has none, and the load is refused.
+    // RESIDUAL: a native guest without a 'W' assigns starts from whatever
+    // Scenario +0x11C0 last held.
+    let selected = state
+        .match_state
+        .session
+        .network_setup()
+        .and_then(|launch| launch.selected_map_file.clone());
+    let (accepted_random_map, guest_staging) = if state.match_state.session.host() {
+        (
+            state
+                .frontend
+                .random_map_retention
+                .take_acceptance_for_loading(selected.as_deref()),
+            None,
+        )
+    } else {
+        let random_map = selected.as_deref().is_some_and(|file| {
+            file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
+        });
+        let staging = state.frontend.multiplayer_shell_runtime.start_staging();
+        (
+            None,
+            (random_map && staging.defined_cells().next().is_some()).then(|| {
+                crate::app::shell_random_map::AcceptedRmgStartStaging::from_scenario_staging(
+                    &staging,
+                )
+            }),
+        )
+    };
     match state.match_state.session.freeze_network_start(agreed_seed) {
         Ok(startup) => {
+            if state.match_state.session_mode()
+                == crate::app::match_runtime::session::SessionMode::Wol
+            {
+                crate::app::shell_wol::match_started(state);
+            }
             state.frontend.multiplayer_setup = None;
             state.frontend.network_setup_protocol = None;
             state.frontend.skirmish_preview_texture = None;
             crate::app::loading::pump::begin_loading(
                 state,
-                crate::app::loading::pump::LoadingRequest::network(startup),
+                crate::app::loading::pump::LoadingRequest::network(startup)
+                    .with_accepted_random_map(accepted_random_map)
+                    .with_start_staging(guest_staging),
             );
         }
         Err(error) => {

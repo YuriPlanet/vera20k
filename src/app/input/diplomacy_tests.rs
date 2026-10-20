@@ -58,8 +58,14 @@ fn fixture() -> Fixture {
     let mut house = |name: &str, country: &str, human: bool| {
         let name = sim.intern(name);
         let country = sim.intern(country);
-        sim.houses_mut_for_test()
-            .register(HouseState::new(name, 0, Some(country), human, 0, 10));
+        let mut state = HouseState::new(name, 0, Some(country), human, 0, 10);
+        // CreateHouses' UI names: the human's handle, TXT_COMPUTER for AI.
+        state.set_ui_name_for_test(if human {
+            crate::sim::house_state::HouseUiName::handle("[New Player]")
+        } else {
+            crate::sim::house_state::HouseUiName::Computer
+        });
+        sim.houses_mut_for_test().register(state);
         name
     };
     let first_ai = house("Computer1", "Americans", false);
@@ -88,6 +94,7 @@ const SKIRMISH: DiplomacyRules = DiplomacyRules {
     quick_coop: false,
     local_inactive: false,
     game_mode_nonzero: true,
+    listeners: [true; 8],
 };
 
 fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
@@ -96,7 +103,7 @@ fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
         &fixture.rules,
         switches,
         &HouseUiSources {
-            handle: Some("[New Player]"),
+            csf: None,
             computer: "Computer",
             schemes: &fixture.schemes,
             colors: &fixture.colors,
@@ -270,6 +277,35 @@ fn human_rows_enable_allies_until_the_local_player_is_inactive() {
     let row = inactive.rows[2].as_ref().unwrap();
     assert!(!row.allies.unwrap().enabled);
     assert!(!row.chat.unwrap().enabled);
+    // The box shows the chat-mask byte of the row's House, and stays
+    // checked once the local player is out (0x00657F8E..0x00657FCC).
+    let index = fixture.sim.houses().index_of(first_ai).unwrap();
+    let mut listeners = [true; 8];
+    listeners[index] = false;
+    let muted = DiplomacyRules {
+        listeners,
+        ..SKIRMISH
+    };
+    assert!(
+        !rows(&fixture, muted).rows[2]
+            .as_ref()
+            .unwrap()
+            .chat
+            .unwrap()
+            .checked
+    );
+    let muted_inactive = DiplomacyRules {
+        local_inactive: true,
+        ..muted
+    };
+    assert!(
+        rows(&fixture, muted_inactive).rows[2]
+            .as_ref()
+            .unwrap()
+            .chat
+            .unwrap()
+            .checked
+    );
 }
 
 /// Retail layering through the production reader: RULESMD says
@@ -295,6 +331,12 @@ fn retail_allies_allowed_layers_by_mode_and_rows_take_the_playable_countries() {
     assert!(!layered(None).general.allies_allowed);
     assert!(layered(Some("mpbattlemd.ini")).general.allies_allowed);
     assert!(!layered(Some("mpfreeforallmd.ini")).general.allies_allowed);
+    // AllyChangeAllowed: RULESMD yes, kept by Battle; Team Game says no, so
+    // both ALLY producers refuse there (0x00731877, 0x00731989).
+    assert!(layered(None).general.ally_change_allowed);
+    assert!(layered(Some("mpbattlemd.ini")).general.ally_change_allowed);
+    let team = layered(Some("mpteammd.ini"));
+    assert!(team.general.allies_allowed && !team.general.ally_change_allowed);
     let rules = layered(Some("mpbattlemd.ini"));
     for country in [
         "Americans",

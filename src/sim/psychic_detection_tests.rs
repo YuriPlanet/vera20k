@@ -43,7 +43,7 @@ fn a_psychic_sensor_senses_an_enemy_target_or_destination_in_range() {
     assert!(!detected(&sim));
 
     set(&mut sim, near, None);
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("AMERICANS".into())
         .or_default()
         .insert("RUSSIANS".into());

@@ -88,14 +88,10 @@ pub(crate) fn remove_crate_overlay_from_cell(
 
 fn clear_crate_overlay_fields(sim: &mut Simulation, cell_ref: CrateMarkCellRef) -> bool {
     match cell_ref {
-        CrateMarkCellRef::Real(rx, ry) => {
-            let (Some(grid), Some(terrain)) =
-                (sim.overlay_grid.as_mut(), sim.resolved_terrain.as_mut())
-            else {
-                return false;
-            };
-            grid.clear_crate_mark_fields(terrain, rx, ry)
-        }
+        CrateMarkCellRef::Real(rx, ry) => sim
+            .overlay_grid
+            .as_mut()
+            .is_some_and(|grid| grid.clear_crate_mark_fields(rx, ry)),
         CrateMarkCellRef::Dummy(dummy) => {
             dummy.set_overlay_fields(None, 0);
             true
@@ -283,8 +279,8 @@ mod tests {
                 ),
             );
             sim.session.set_binary_frame_for_test(100);
-            sim.playfield_bounds.as_mut().unwrap().base = 10;
-            sim.playfield_size_height = Some(10);
+            sim.playfield_bounds_mut_for_test().as_mut().unwrap().base = 10;
+            sim.set_playfield_size_height_for_test(Some(10));
             let mut rules = crate_ruleset("");
             if input["different_image"] == true {
                 rules.crate_rules.wood_crate_img = Some("SILVER".into());

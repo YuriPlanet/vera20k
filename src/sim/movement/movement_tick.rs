@@ -23,8 +23,6 @@ use crate::rules::locomotor_type::{LocomotorKind, MovementZone};
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::entity_store::{EntityStore, TouchReader};
 use crate::sim::infantry;
-#[cfg(any(test, feature = "test-support"))]
-use crate::sim::lifecycle_request::LifecycleRequest;
 use crate::sim::pathfinding::PathGrid;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
@@ -801,7 +799,6 @@ pub(crate) fn tick_movement_with_grids(
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     sound_events: &mut Vec<crate::sim::world::SimSoundEvent>,
-    lifecycle_requests: &mut Vec<LifecycleRequest>,
 ) -> MovementTickStats {
     // This adapter owns only fixture assembly and result transfer. Runtime
     // state is moved, not mirrored; every entity reaches the production host.
@@ -813,25 +810,17 @@ pub(crate) fn tick_movement_with_grids(
     sim.scenario_rng = rng.clone();
     sim.session.set_tick_for_test(sim_tick);
     sim.session.set_binary_frame_for_test(native_frame);
-    sim.house_alliances = alliances.clone();
+    *sim.house_alliances_mut_for_test() = alliances.clone();
     sim.path_grid = path_grid.cloned().map(std::sync::Arc::new);
     sim.zone_grid = zone_grid.cloned();
     sim.resolved_terrain = resolved_terrain.cloned();
-    sim.playfield_bounds = playfield_bounds;
-    sim.terrain_speed_config = terrain_speed_config.clone();
+    sim.set_playfield_bounds_for_test(playfield_bounds);
+    sim.set_terrain_speed_config_for_test(terrain_speed_config.clone());
     let order = live_order
         .map(<[u64]>::to_vec)
         .unwrap_or_else(|| sim.substrate.entities.keys_sorted());
     let mut stats = MovementTickStats::default();
     for id in order {
-        // The full object turn applies these lifecycle requests before the
-        // next object. Component fixtures retain them for inspection, so an
-        // already requested victim must not receive another movement visit.
-        if sim.pending_lifecycle_requests.iter().any(|request| {
-            matches!(request, LifecycleRequest::Uninit { stable_id, .. } if *stable_id == id)
-        }) {
-            continue;
-        }
         stats.merge(
             sim.process_ground_locomotor_stats_for_test(id, rules, None)
                 .expect("fixture reached an unsupported production movement receiver"),
@@ -842,8 +831,7 @@ pub(crate) fn tick_movement_with_grids(
     *raw_cell_occupation = sim.substrate.raw_cell_occupation;
     *interner = sim.interner;
     *rng = sim.scenario_rng;
-    sound_events.append(&mut sim.sound_events);
-    lifecycle_requests.append(&mut sim.pending_lifecycle_requests);
+    sound_events.extend(sim.sound_events.take_for_test());
     stats
 }
 
@@ -901,7 +889,7 @@ impl PendingMovementPass {
         let grids = PassGrids {
             path_grid: sim.path_grid.as_deref(),
             resolved_terrain: sim.resolved_terrain.as_ref(),
-            playfield_bounds: sim.playfield_bounds,
+            playfield_bounds: sim.playfield_bounds(),
         };
         let (entity_id, entry) = match reentry {
             MoverReentry::FootPath(request) => (

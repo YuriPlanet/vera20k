@@ -384,7 +384,7 @@ fn diagnose_rejected_order(
             "zone_grid: {}, resolved_terrain: {}, playfield_bounds: {:?}",
             sim.zone_grid.is_some(),
             sim.resolved_terrain.is_some(),
-            sim.playfield_bounds.is_some(),
+            sim.playfield_bounds().is_some(),
         );
         if let Some(zones) = sim
             .zone_grid
@@ -1174,10 +1174,10 @@ fn print_low_inventory(terrain: &ResolvedTerrainGrid, grid: &PathGrid, span: &Lo
             "appr"
         };
         println!(
-            "  {role} {cell:?}: overlay={:?} lvl={} rt_deck_lvl={} rt_has_deck={} rt_bridge_walkable={} \
+            "  {role} {cell:?}: layer={:?} lvl={} rt_deck_lvl={} rt_has_deck={} rt_bridge_walkable={} \
              tube={:?} tube_src={:?} yr_land={} land={} base_land={} base_blocked={} water={} zone={} \
              | path: gw={} bw={} struct={} trans={} lowtube={} g_lvl={} deck_lvl={}",
-            rt.bridge_layer.as_ref().map(|b| b.overlay_id),
+            rt.bridge_layer.as_ref().map(|b| b.direction),
             rt.level,
             rt.bridge_deck_level,
             rt.has_bridge_deck,
@@ -2493,11 +2493,11 @@ fn tank_cannot_cross_a_destroyed_shrapnel_low_bridge() {
         let destroyed: std::collections::BTreeSet<(u16, u16)> = (0..terrain.height())
             .flat_map(|y| (0..terrain.width()).map(move |x| (x, y)))
             .filter(|(x, y)| {
-                terrain.cell(*x, *y).is_some_and(|c| {
-                    c.bridge_layer
-                        .as_ref()
-                        .is_some_and(|b| DESTROYED_LOW_OVERLAYS.contains(&b.overlay_id))
-                })
+                sim.overlay_grid()
+                    .expect("headless load keeps the overlay grid")
+                    .cell(*x, *y)
+                    .overlay_id
+                    .is_some_and(|id| DESTROYED_LOW_OVERLAYS.contains(&id))
             })
             .collect();
         assert!(

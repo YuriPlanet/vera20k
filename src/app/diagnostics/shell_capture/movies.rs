@@ -1413,6 +1413,7 @@ impl MoviesCapture {
                 CampaignStartTarget::Restart(RestartTarget::AbortRestarted) => "abort-restarted",
                 CampaignStartTarget::Restart(RestartTarget::DefeatPrompt) => "defeat-replay-prompt",
                 CampaignStartTarget::Restart(RestartTarget::DefeatReplayed) => "defeat-replayed",
+                CampaignStartTarget::Restart(RestartTarget::Restate) => "restate",
             });
             manifest["runtime"] = match target {
                 CampaignStartTarget::LoadingFirst => Value::Null,

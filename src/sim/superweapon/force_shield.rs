@@ -79,11 +79,7 @@ pub fn launch(
 
     // `0x006CD135..0x006CD162`: the countdown and where its sound plays.
     let deck = super::deck_coords(sim, (target_rx, target_ry));
-    if let Some(instance) = sim
-        .super_weapons
-        .get_mut(&owner)
-        .and_then(|weapons| weapons.get_mut(&sw_type))
-    {
+    if let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type) {
         instance.arm_fade(
             general
                 .force_shield_duration
@@ -98,8 +94,7 @@ pub fn launch(
     // still be lazy. The setter takes the signed duration.
     if sim.houses.contains_key(&owner) {
         sim.power_states
-            .entry(owner)
-            .or_default()
+            .house_mut(owner)
             .start_blackout(frame, general.force_shield_blackout_duration);
     }
 
@@ -115,7 +110,7 @@ pub fn launch(
         .filter(|building| building.category() == EntityCategory::Structure)
         .map(|building| {
             let allied = is_allied_with(
-                &sim.house_alliances,
+                sim.house_alliances.as_map(),
                 sim.interner.resolve(building.owner()),
                 launcher,
             );
@@ -138,7 +133,7 @@ pub fn launch(
         }
     }
 
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx: target_rx,

@@ -10,7 +10,7 @@ use crate::render::skirmish_shell_chrome::ControlChrome;
 use crate::ui::shell::descriptor::ControlKind;
 use crate::ui::shell::geom::{self, ShellScale};
 use crate::ui::shell::in_game_options::{
-    build_in_game_options_descriptor, control, speed_value_label_key,
+    build_in_game_options_descriptor, control, control_shown, speed_value_label_key,
 };
 use crate::ui::shell::in_game_options_state::{
     InGameOptionsState, plain_trackbar_thumb_left, speed_slider_pos,
@@ -33,7 +33,7 @@ pub(crate) fn build_in_game_options_instances(
     let laid = layout_pass_in_game_options(&desc, screen_w, screen_h, anchor);
     let mut out = Vec::new();
     for (c, l) in desc.controls.iter().zip(laid.iter()) {
-        if !c.visible {
+        if !control_shown(c, state.game_speed_hidden) {
             continue;
         }
         let rect = l.rect;
@@ -131,7 +131,7 @@ fn in_game_options_static_draws(
     let laid = layout_pass_in_game_options(&desc, screen_w, screen_h, anchor);
     let mut out = Vec::new();
     for (c, l) in desc.controls.iter().zip(laid.iter()) {
-        if !c.visible
+        if !control_shown(c, state.game_speed_hidden)
             || !matches!(
                 c.kind,
                 ControlKind::Static | ControlKind::Checkbox | ControlKind::Button
@@ -139,18 +139,13 @@ fn in_game_options_static_draws(
         {
             continue;
         }
-        // The two value labels (0x671/0x672) swap to the slider-position CSF key
-        // once their slider has been dragged this open; before that (and for every
-        // other static) they keep their template caption key (the gamemd quirk).
+        // The two value labels (0x671/0x672) show their slider-position CSF key
+        // from the open; every other static keeps its template caption key.
         let key = match c.id {
-            control::GAME_SPEED_VALUE => speed_value_label_key(
-                speed_slider_pos(state.game_speed),
-                state.game_speed_label_dragged,
-            ),
-            control::SCROLL_RATE_VALUE => speed_value_label_key(
-                speed_slider_pos(state.scroll_rate),
-                state.scroll_rate_label_dragged,
-            ),
+            control::GAME_SPEED_VALUE => speed_value_label_key(speed_slider_pos(state.game_speed)),
+            control::SCROLL_RATE_VALUE => {
+                speed_value_label_key(speed_slider_pos(state.scroll_rate))
+            }
             _ => match c.csf_key {
                 Some(key) => key,
                 None => continue,
@@ -216,7 +211,7 @@ fn options_static_fallback(key: &str) -> &'static str {
         "GUI:ShowHidden" => "Show Hidden Objects",
         "GUI:Tooltips" => "Tooltips",
         "GUI:Faster" => "Faster",
-        // Slider value labels (after first drag) when the CSF table is absent.
+        // Slider value labels when the CSF table is absent.
         "TXT_SLOWEST" => "Slowest",
         "TXT_SLOWER" => "Slower",
         "TXT_SLOW" => "Slow",
@@ -363,9 +358,8 @@ mod tests {
             find(control::GAME_SPEED_CAPTION).rect,
             geom::dlu_rect(61, 99, 78, 15)
         );
-        // The value labels paint the template default ("Faster") at open until the
-        // slider is dragged (the gamemd quirk; see the dragged-swap test below).
-        assert_eq!(find(control::GAME_SPEED_VALUE).text, "Faster");
+        // Default GameSpeed 3 opens at position 3.
+        assert_eq!(find(control::GAME_SPEED_VALUE).text, "Medium");
     }
 
     #[test]
@@ -404,27 +398,38 @@ mod tests {
     }
 
     #[test]
-    fn dragged_gamespeed_slider_swaps_value_label_to_position_word() {
-        // Once the GameSpeed slider is dragged this open, its value label swaps
-        // from the template "Faster" to the slider-position CSF word. game_speed=3
-        // -> slider pos 3 -> TXT_MEDIUM ("Medium" via the no-CSF fallback). The
-        // ScrollRate label is independent and stays "Faster" (not dragged).
+    fn value_labels_show_the_slider_position_word_from_open() {
+        // Init's range/position notifications set both labels before any drag.
+        // game_speed=3 -> pos 3 -> TXT_MEDIUM; scroll_rate=0 -> pos 6 -> TXT_FASTEST
+        // (English words via the no-CSF fallback).
         let state = InGameOptionsState {
             game_speed: 3,
-            game_speed_label_dragged: true,
+            scroll_rate: 0,
             ..Default::default()
         };
         let draws = in_game_options_static_draws(None, 800, 600, test_anchor(), &state);
         let find = |id: u16| draws.iter().find(|d| d.id == id).unwrap();
-        assert_ne!(find(control::GAME_SPEED_VALUE).text, "Faster");
         assert_eq!(find(control::GAME_SPEED_VALUE).text, "Medium");
-        assert_eq!(find(control::SCROLL_RATE_VALUE).text, "Faster");
+        assert_eq!(find(control::SCROLL_RATE_VALUE).text, "Fastest");
+    }
+
+    #[test]
+    fn hidden_gamespeed_row_paints_no_caption_or_label() {
+        let state = InGameOptionsState {
+            game_speed_hidden: true,
+            ..Default::default()
+        };
+        let draws = in_game_options_static_draws(None, 800, 600, test_anchor(), &state);
+        let ids: Vec<u16> = draws.iter().map(|d| d.id).collect();
+        assert!(!ids.contains(&control::GAME_SPEED_CAPTION));
+        assert!(!ids.contains(&control::GAME_SPEED_VALUE));
+        assert!(ids.contains(&control::SCROLL_RATE_VALUE));
     }
 
     #[test]
     fn text_instances_emit_glyphs_from_bit_font_atlas_path() {
-        // Smoke test the glyph delegation: a font carrying the letters of "Faster"
-        // (the value-label fallback) yields glyph instances. The detailed layout
+        // Smoke test the glyph delegation: a font carrying a few letters of the
+        // fallback captions yields glyph instances. The detailed layout
         // math lives in shell_text/bit_font unit tests.
         use crate::render::bit_font::tests::make_test_font;
         let font = make_test_font(

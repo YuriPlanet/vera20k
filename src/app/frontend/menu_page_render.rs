@@ -220,6 +220,8 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::WolWelcome => crate::ui::wol_shell::WOL_WELCOME_PAGE.title_key,
         ShellSlideKind::WolLogin => crate::ui::wol_login::PAGE.title_key,
         ShellSlideKind::WolLobby => crate::ui::wol_shell::WOL_LOBBY_TITLE_KEY,
+        ShellSlideKind::WolOptions => crate::ui::wol_options::PAGE.title_key,
+        ShellSlideKind::WolSoundOptions => crate::ui::shell::sound::SHELL_SOUND_PAGE.title_key,
         ShellSlideKind::Keyboard => crate::ui::shell::keyboard::KEYBOARD_PAGE.title_key,
         ShellSlideKind::NetworkOptions => crate::ui::network_options::PAGE.title_key,
         ShellSlideKind::LanLobby => crate::ui::lan_shell::PAGE.title_key,

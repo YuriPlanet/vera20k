@@ -68,6 +68,10 @@ pub(crate) enum ShellSlideKind {
     WolLogin,
     /// Dialog 0x113 — Westwood Online custom-match lobby.
     WolLobby,
+    /// Dialog 0x2BC — Westwood Online Options, over the hidden lobby.
+    WolOptions,
+    /// Dialog 0xD6 — the shell's Sound Options, run from WOL Options.
+    WolSoundOptions,
     /// Dialog 0xA3 — Options' Keyboard page (front-end parent only).
     Keyboard,
     /// Dialog D7, Options' Network child.
@@ -102,6 +106,8 @@ impl ShellSlideKind {
             ShellSlideKind::WolWelcome => 0x010E,
             ShellSlideKind::WolLogin => 0x010F,
             ShellSlideKind::WolLobby => 0x0113,
+            ShellSlideKind::WolOptions => 0x02BC,
+            ShellSlideKind::WolSoundOptions => 0x00D6,
             ShellSlideKind::Keyboard => 0x00A3,
             ShellSlideKind::NetworkOptions => 0x00D7,
             ShellSlideKind::LanLobby => 0xBB,
@@ -239,6 +245,14 @@ pub(crate) enum ShellExitThen {
     WolCreateAccepted {
         observe: bool,
     },
+    /// `0x113` Options (`0x61F`): the lobby slides out and `0x2BC` opens.
+    WolOptionsOpen,
+    /// `0x2BC` closed with OK (the staged values) or Cancel (`None`).
+    WolOptionsClose(Option<crate::ui::wol_options::WolPreferences>),
+    /// `0x2BC` Sound Options (`0x63A`): it slides out and `0xD6` runs.
+    WolSoundOptionsOpen,
+    /// `0xD6` Back (`0x686`): `0x2BC` shows again.
+    WolSoundOptionsBack,
 }
 
 impl ShellExitThen {
@@ -268,9 +282,12 @@ impl ShellExitThen {
             Self::RandomMapUse | Self::RandomMapCancel => ShellSlideKind::RandomMap,
             Self::WolBack | Self::WolAction(_) => ShellSlideKind::WolWelcome,
             Self::WolLoginClose(_) => ShellSlideKind::WolLogin,
-            Self::WolLobbyBack | Self::WolLobbyHide | Self::WolCreateAccepted { .. } => {
-                ShellSlideKind::WolLobby
-            }
+            Self::WolLobbyBack
+            | Self::WolLobbyHide
+            | Self::WolCreateAccepted { .. }
+            | Self::WolOptionsOpen => ShellSlideKind::WolLobby,
+            Self::WolOptionsClose(_) | Self::WolSoundOptionsOpen => ShellSlideKind::WolOptions,
+            Self::WolSoundOptionsBack => ShellSlideKind::WolSoundOptions,
             Self::ScoreContinue => ShellSlideKind::Score,
             Self::CampaignScoreContinue => ShellSlideKind::CampaignScore,
         }
@@ -553,6 +570,8 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::WolWelcome
             | ShellSlideKind::WolLogin
             | ShellSlideKind::WolLobby
+            | ShellSlideKind::WolOptions
+            | ShellSlideKind::WolSoundOptions
             | ShellSlideKind::Keyboard
             | ShellSlideKind::NetworkOptions
             | ShellSlideKind::LanLobby => ShellWaveCompletion::MenuPage,
@@ -779,6 +798,17 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             _ => return None,
         }
     } else if state.frontend.shell_route.wol_lobby() {
+        // 0x2BC and its 0xD6 run over the hidden lobby.
+        if let Some(crate::app::shell_wol::WolPage::Options(page)) =
+            state.frontend.wol.as_ref().map(|visit| &visit.page)
+        {
+            let kind = if page.sound.is_some() {
+                ShellSlideKind::WolSoundOptions
+            } else {
+                ShellSlideKind::WolOptions
+            };
+            return crate::ui::shell::slide::is_slide_eligible(kind.dialog_id()).then_some(kind);
+        }
         // 0x113 is created hidden and hidden again for a game join.
         if !state
             .frontend
@@ -971,7 +1001,11 @@ pub(crate) fn render_shell_first_paint_slide(
                 destination,
             )?
         }
-        ShellSlideKind::WolWelcome | ShellSlideKind::WolLogin | ShellSlideKind::WolLobby => {
+        ShellSlideKind::WolWelcome
+        | ShellSlideKind::WolLogin
+        | ShellSlideKind::WolLobby
+        | ShellSlideKind::WolOptions
+        | ShellSlideKind::WolSoundOptions => {
             crate::app::frontend::wol_welcome_render::render_wol_page(state, encoder, destination)?
         }
         ShellSlideKind::Options => {

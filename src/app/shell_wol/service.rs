@@ -105,6 +105,10 @@ pub(crate) enum WolServiceRequest {
     Chat { line: WolChatLine, to: Vec<String> },
     /// `0x0077E300`: an action line, private to `to` when any.
     Emote { text: Vec<u16>, to: Vec<String> },
+    /// `0x0077E110`: API+0x7C with `[WOnline] LangFilter`.
+    SetLangFilter(i32),
+    /// `0x0077E110`: API+0x68 with AllowFind and AllowPage.
+    SetFindPage { find: i32, page: i32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,10 +143,34 @@ pub(crate) enum WolServiceEvent {
     ChannelLeft,
     /// The create result and the channel's users.
     Created(Result<Vec<WolMember>, u32>),
-    /// The page sink `0x007A9220`: sender and text.
+    /// The page sinks `0x007A9200`/`0x007A9550`: sender and text.
     Page {
-        from: String,
+        from: WolMember,
         text: Vec<u16>,
+    },
+    /// A chat or action line from another user: the chat sinks
+    /// `0x007A8DA0` (public), `0x007A8FC0` (private), `0x007AB170` (public
+    /// action), `0x007AAFB0` (private action) and their UTF-16 forms.
+    Message {
+        from: WolMember,
+        text: Vec<u16>,
+        private: bool,
+        action: bool,
+    },
+    /// The find sink `0x007A9970`: the channel the located user is in, or
+    /// the result code.
+    Located(Result<WolChannel, u32>),
+    /// A user's ladder rank (`CNetUtilEventSink+0x10`, the table
+    /// `[0xB77E0C]`).
+    LadderRank {
+        name: String,
+        rank: i32,
+    },
+    /// A user's locale (`CChatEventSink+0x84`/`+0x8C`, the table
+    /// `0xB76530`).
+    UserLocale {
+        name: String,
+        locale: i32,
     },
 }
 
@@ -264,9 +292,13 @@ impl WolVisit {
                     return WolStep::Welcome;
                 }
                 // 0x00786390 resets the WOL globals (0x00780110), including
-                // [0xB77AD0] and the selected record.
+                // [0xB77AD0], the selected record and the ladder and locale
+                // tables.
+                self.api = true;
                 self.last_error = None;
                 self.selected_server = 0;
+                self.ladder_ranks.clear();
+                self.locales.clear();
                 self.requests.push(WolServiceRequest::ListCredentials);
                 self.requests
                     .push(WolServiceRequest::FetchServers { flags: 0x2900 });
@@ -420,6 +452,29 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             super::lobby::page_received(state, from, text);
             return;
         }
+        WolServiceEvent::Message {
+            from,
+            text,
+            private,
+            action,
+        } => {
+            super::lobby::message_received(state, from, text, private, action);
+            return;
+        }
+        WolServiceEvent::Located(result) => {
+            super::lobby::located(state, result);
+            return;
+        }
+        WolServiceEvent::LadderRank { name, rank } => {
+            let visit = state.frontend.wol.as_mut().expect("checked");
+            visit.ladder_ranks.insert(name.to_ascii_lowercase(), rank);
+            return;
+        }
+        WolServiceEvent::UserLocale { name, locale } => {
+            let visit = state.frontend.wol.as_mut().expect("checked");
+            visit.locales.insert(name.to_ascii_lowercase(), locale);
+            return;
+        }
         event @ (WolServiceEvent::Channels { .. }
         | WolServiceEvent::Joined(_)
         | WolServiceEvent::UserJoined(_)
@@ -531,7 +586,10 @@ fn accept_login(state: &mut AppState) {
             .multiplayer_shell_runtime
             .persist_local_preferences();
     }
-    // wolinfoMD.ini is absent from retail: no auto-login query 0x112.
+    // The login flow returned 1: the mode-loop pass (0x0077B402) applies
+    // before the lobby runner. wolinfoMD.ini is absent from retail: no
+    // auto-login query 0x112.
+    super::apply_wol_preferences(state);
     super::open_lobby(state, false);
 }
 
@@ -656,10 +714,13 @@ mod tests {
     #[test]
     fn server_list_needs_both_events_in_either_order() {
         let mut visit = visit();
+        assert!(!visit.api);
         assert_eq!(
             visit.reduce(WolServiceEvent::Api(WolApiStatus::Available)),
             WolStep::Wait("TXT_FETCHING_SERVLIST")
         );
+        // [0xAC116C] stays set for the rest of the visit (0x0077E110's gate).
+        assert!(visit.api);
         assert_eq!(
             visit.take_service_requests(),
             [

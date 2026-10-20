@@ -135,7 +135,10 @@ pub(crate) fn build_terrain_cost_overlay_instances(
 
     for ry in 0..height {
         for rx in 0..width {
-            let z: u8 = state.height_map().get(&(rx, ry)).copied().unwrap_or(0);
+            let z: u8 = state
+                .resolved_terrain()
+                .and_then(|terrain| terrain.cell(rx, ry))
+                .map_or(0, |cell| cell.level);
             let (sx, sy) = terrain::iso_to_screen(rx, ry, z);
 
             if !in_view(sx, sy, TILE_WIDTH, TILE_HEIGHT, cam_x, cam_y, sw, sh, 60.0) {
@@ -169,49 +172,33 @@ pub(crate) fn build_heightmap_overlay_instances(
     sw: f32,
     sh: f32,
 ) -> Vec<SpriteInstance> {
-    if state.height_map().is_empty() {
+    let Some(terrain) = state.resolved_terrain() else {
         return Vec::new();
-    }
+    };
     let cam_x: f32 = state.match_state.input.camera_x;
     let cam_y: f32 = state.match_state.input.camera_y;
     let mut instances: Vec<SpriteInstance> = Vec::with_capacity(2048);
 
     // Find max z for normalization.
-    let max_z: u8 = state
-        .height_map()
-        .values()
-        .copied()
+    let max_z: u8 = terrain
+        .cells()
+        .iter()
+        .map(|cell| cell.level)
         .max()
         .unwrap_or(1)
         .max(1);
 
-    // One-shot diagnostic: log bridge_height_map size on first call.
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static LOGGED: AtomicBool = AtomicBool::new(false);
-    if !LOGGED.swap(true, Ordering::Relaxed) {
-        let bridge_count = state.bridge_height_map().len();
-        let sample: Vec<_> = state.bridge_height_map().iter().take(10).collect();
-        log::info!(
-            "HeightmapOverlay: bridge_height_map has {} entries, height_map has {} entries. Sample: {:?}",
-            bridge_count,
-            state.height_map().len(),
-            sample,
-        );
-    }
-
-    for (&(rx, ry), &z) in state.height_map() {
+    for cell in terrain.cells() {
+        let (rx, ry, z) = (cell.rx, cell.ry, cell.level);
         // Bridge cells: render at deck height so the overlay aligns with the bridge surface.
-        let render_z: u8 = state
-            .bridge_height_map()
-            .get(&(rx, ry))
-            .copied()
-            .unwrap_or(z);
+        let deck = cell.high_bridge_deck_level();
+        let render_z = deck.unwrap_or(z);
         let (sx, sy) = terrain::iso_to_screen(rx, ry, render_z);
         if !in_view(sx, sy, TILE_WIDTH, TILE_HEIGHT, cam_x, cam_y, sw, sh, 60.0) {
             continue;
         }
 
-        let is_bridge = state.bridge_height_map().contains_key(&(rx, ry));
+        let is_bridge = deck.is_some();
         let tint: [f32; 3] = if is_bridge {
             // Solid blue for bridge deck cells — high alpha so the bridge
             // structure doesn't show through the overlay.
@@ -297,10 +284,9 @@ pub(crate) fn build_cell_grid_overlay_instances(
     // diamond outline uses the exact same formula as overlay rendering.
     for entry in state.match_state.match_presentation.overlays.iter() {
         let z: u8 = state
-            .height_map()
-            .get(&(entry.rx, entry.ry))
-            .copied()
-            .unwrap_or(0);
+            .resolved_terrain()
+            .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
+            .map_or(0, |cell| cell.level);
         let (sx, sy) = terrain::iso_to_screen(entry.rx, entry.ry, z);
         if !in_view(sx, sy, TILE_WIDTH, TILE_HEIGHT, cam_x, cam_y, sw, sh, 60.0) {
             continue;
@@ -367,7 +353,10 @@ pub(crate) fn build_path_overlay_instances(
             .map(|(x, y)| (x as u16, y as u16))
             .collect();
         for (i, &(px, py)) in path.iter().enumerate() {
-            let z: u8 = state.height_map().get(&(px, py)).copied().unwrap_or(0);
+            let z: u8 = state
+                .resolved_terrain()
+                .and_then(|terrain| terrain.cell(px, py))
+                .map_or(0, |cell| cell.level);
             let (sx, sy) = terrain::iso_to_screen(px, py, z);
             if !in_view(sx, sy, TILE_WIDTH, TILE_HEIGHT, cam_x, cam_y, sw, sh, 60.0) {
                 continue;
@@ -395,10 +384,9 @@ pub(crate) fn build_path_overlay_instances(
             let last = path.last().copied().unwrap_or((0, 0));
             if goal != last {
                 let z: u8 = state
-                    .height_map()
-                    .get(&(goal.0, goal.1))
-                    .copied()
-                    .unwrap_or(0);
+                    .resolved_terrain()
+                    .and_then(|terrain| terrain.cell(goal.0, goal.1))
+                    .map_or(0, |cell| cell.level);
                 let (sx, sy) = terrain::iso_to_screen(goal.0, goal.1, z);
                 if in_view(sx, sy, TILE_WIDTH, TILE_HEIGHT, cam_x, cam_y, sw, sh, 60.0) {
                     instances.push(SpriteInstance {
@@ -705,7 +693,10 @@ pub(crate) fn build_foot_path_overlay_instances(
         // Waypoints keep their cells so units sharing a cell share a label.
         let mut points: Vec<((u16, u16), [f32; 2])> = Vec::with_capacity(path.len());
         for &(px, py) in &path {
-            let z: u8 = state.height_map().get(&(px, py)).copied().unwrap_or(0);
+            let z: u8 = state
+                .resolved_terrain()
+                .and_then(|terrain| terrain.cell(px, py))
+                .map_or(0, |cell| cell.level);
             let (sx, sy) = terrain::iso_to_screen(px, py, z);
             points.push(((px, py), cell_center(sx, sy)));
         }

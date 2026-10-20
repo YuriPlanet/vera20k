@@ -73,6 +73,7 @@ fn native_generated_shadow_geometry_and_body_mask() {
                 sprite.width,
                 [sprite.offset_x as i32, sprite.offset_y as i32],
                 &body,
+                [0, 0],
             )
             .unwrap();
         }
@@ -151,6 +152,89 @@ fn native_aircraft_shadow_half_viewer_selected_section_and_slope() {
     }
     assert!(render(&vxl, Some(&hva), &Default::default(), -1, true).is_none());
     assert!(render(&vxl, Some(&hva), &Default::default(), 4, true).is_none());
+}
+
+fn unit_shadow_params(caller: &Value) -> VxlRenderParams {
+    VxlRenderParams {
+        facing: super::super::voxel_facing_step_u16(
+            caller["input"]["primary"].as_u64().unwrap() as u16
+        ) * 8,
+        slope_type: caller["input"]["slope"].as_u64().unwrap_or(0) as u8,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn native_jumpjet_unit_shadow_low_flight_mask_offsets() {
+    let fixture = crate::test_fixture::json("tools/voxel_oracle/unit_shadow.json");
+    let data = &fixture["generated"];
+    let vxl = VxlFile::from_bytes(&bytes(data["vxl"].as_str().unwrap())).unwrap();
+    let hva = HvaFile::from_bytes(&bytes(data["hva"].as_str().unwrap())).unwrap();
+    let body = bytes(data["body"].as_str().unwrap());
+    for case in data["cases"].as_array().unwrap() {
+        let caller = &fixture["callers"][case["caller"].as_u64().unwrap() as usize];
+        let mut sprite = render(&vxl, Some(&hva), &unit_shadow_params(caller), 0, true).unwrap();
+        if caller["body_mask_present"].as_bool().unwrap() {
+            let fractional_center =
+                center(&vxl, Some(&hva), &unit_shadow_params(caller), 0, true).unwrap();
+            let sample_offset = body_sample_offset(
+                fractional_center,
+                std::array::from_fn(|i| {
+                    caller["renderer"]["mask_offset"][i].as_i64().unwrap() as i32
+                }),
+            )
+            .unwrap();
+            assert_eq!(
+                std::array::from_fn::<_, 2, _>(|i| ftol(load(fractional_center[i]).unwrap())
+                    .unwrap()
+                    + sample_offset[i]),
+                std::array::from_fn(|i| case["quad_origin_after"][i].as_i64().unwrap() as i32),
+                "native final body-sample origin"
+            );
+            mask_body(
+                &mut sprite.palette_indices,
+                sprite.width,
+                [sprite.offset_x as i32, sprite.offset_y as i32],
+                &body,
+                sample_offset,
+            )
+            .unwrap();
+        }
+        check(
+            &sprite,
+            case,
+            &format!("Unit native caller {}", case["caller"]),
+        );
+    }
+    assert_eq!(data["cases"].as_array().unwrap().len(), 7);
+}
+
+#[test]
+fn retail_kirov_shadow_matches_original_unit_caller_and_stencil() {
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let fixture = crate::test_fixture::json("tools/voxel_oracle/unit_shadow.json");
+    let data = &fixture["retail"];
+    for name in ["ZEP.VXL", "ZEP.HVA", "VOXELS.VPL"] {
+        assert_eq!(
+            crate::util::sha256::sha256_hex(assets.get_ref(name).unwrap()),
+            data["sha256"][name].as_str().unwrap(),
+            "{name}"
+        );
+    }
+    let vxl = VxlFile::from_bytes(assets.get_ref("ZEP.VXL").unwrap()).unwrap();
+    let hva = HvaFile::from_bytes(assets.get_ref("ZEP.HVA").unwrap()).unwrap();
+    for case in data["cases"].as_array().unwrap() {
+        let caller = &fixture["callers"][case["caller"].as_u64().unwrap() as usize];
+        let sprite = render(&vxl, Some(&hva), &unit_shadow_params(caller), 0, true).unwrap();
+        check(
+            &sprite,
+            case,
+            &format!("retail Unit ZEP caller {}", case["caller"]),
+        );
+    }
+    assert_eq!(data["cases"].as_array().unwrap().len(), 4);
 }
 
 #[test]
@@ -273,6 +357,7 @@ fn stock_shadow_geometry_and_native_composed_body_masks() {
                     sprite.width,
                     [sprite.offset_x as i32, sprite.offset_y as i32],
                     &body,
+                    [0, 0],
                 )
                 .unwrap();
             }

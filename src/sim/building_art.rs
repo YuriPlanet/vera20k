@@ -372,7 +372,7 @@ impl Simulation {
                 self.reveal_sight_to_current_house(id, rules);
             }
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::RadarEvent {
+                .emit(crate::sim::world::SimSoundEvent::RadarEvent {
                     radar: crate::sim::radar::RadarEventRequest::new(
                         crate::sim::radar::RadarEventType::ConstructionComplete,
                         cell.0,
@@ -386,16 +386,23 @@ impl Simulation {
         }
         //446A77 invalidates retained House power and radar on every reached
         //opening (including capture), before publishing placement at446A84.
-        self.invalidate_house_power(owner, true);
+        Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.building_art.actually_placed = true;
         }
         self.add_building_sensor_array_if_powered(id, rules, registry);
-        self.announce_super_weapon_building_complete(id, rules);
+        Self::announce_super_weapon_building_complete(
+            &mut self.interner,
+            &self.substrate,
+            &mut self.sound_events,
+            id,
+            rules,
+        );
         if !captured && !scenario_initialization {
-            self.mission_spawned_entities |= crate::sim::production::spawn_building_free_unit(
-                self, id, rules, registry, effects,
-            );
+            if crate::sim::production::spawn_building_free_unit(self, id, rules, registry, effects)
+            {
+                self.note_mission_spawned_entities();
+            }
         }
     }
     fn building_anim_config(
@@ -407,13 +414,52 @@ impl Simulation {
         let entity = self.substrate.entities.get(id)?;
         let name = self.interner.resolve(entity.type_ref());
         let object = rules.object(name)?;
-        rules
-            .art()
-            .resolve_metadata_entry(name, &object.image)?
-            .building_anims
-            .iter()
-            .find(|config| config.native_slot == slot)
-            .cloned()
+        let mut config = if let Some(record) = object.building_upgrade().power_up_art(slot) {
+            // PowerUp records belong to the retained BuildingType, including
+            // constructor defaults when no ART section was ever reached.
+            rules.art().building_power_up_config(slot, record)
+        } else {
+            rules
+                .art()
+                .resolve_metadata_entry(name, &object.image)?
+                .building_anims
+                .iter()
+                .find(|config| config.native_slot == slot)
+                .cloned()?
+        };
+        if let Some(normal_name) = self
+            .building_upgrade_art_names()
+            .name(entity.type_ref(), slot)
+        {
+            config.anim_type = normal_name.to_owned();
+        }
+        Some(config)
+    }
+
+    /// PowerUp451420..4514EC restores normal occupied slots, retires recovered
+    /// smoke, then fills missing ActiveAnim3..6 through the same slot owner.
+    /// EstimatedHealth and Building's later House health sample stay unchanged.
+    pub(crate) fn restore_building_art_after_power_up(&mut self, id: u64, rules: &RuleSet) {
+        self.set_building_damage_state(id, false, rules);
+        if let Some(entity) = self.substrate.entities.get(id)
+            && let Some(object) = self.object_type(entity.type_ref(), rules)
+            && entity
+                .health
+                .compare_ratio(object.strength, rules.general.condition_yellow)
+                == Greater
+        {
+            self.substrate.retire_attached_damage_smoke(id);
+        }
+        for slot in 3..=6 {
+            if self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.building_art.anim_slots[slot].is_none())
+            {
+                self.set_building_anim_slot(id, slot as u8, false, false, 0, rules);
+            }
+        }
     }
 
     /// Original451EE0: store retained flag before ascending occupied-slot visits.
@@ -638,7 +684,7 @@ impl Simulation {
         let Some(rules) = rules else {
             // Rules-less teardown is the defensive destructor route; ordinary
             // Anim AI and service destruction always carry the live RuleSet.
-            self.clear_building_anim_reference(expired);
+            self.substrate.clear_building_anim_reference(expired);
             return;
         };
         let Some(entity) = self.substrate.entities.get(owner) else {
@@ -701,7 +747,7 @@ impl Simulation {
             .cargo()
             .is_some_and(|cargo| !cargo.passengers().is_empty());
         let delayed_fire = self.building_anim_delayed_fire(owner, rules);
-        self.clear_building_anim_reference(expired);
+        self.substrate.clear_building_anim_reference(expired);
         let next = match slot {
             10 if unit_repair => Some((if servicing { 11 } else { 18 }, false)),
             10 if delayed_fire && completed => Some((3, garrisoned)),
@@ -714,32 +760,31 @@ impl Simulation {
             self.set_building_anim_slot(owner, slot, damaged, garrisoned, 0, rules);
         }
     }
+}
 
+impl crate::sim::world::ObjectSubstrate {
     /// Clear the source slot and its derived reverse index without generating
     /// a successor. Scalar deletion and defensive final removal use this owner.
     pub(crate) fn clear_building_anim_reference(&mut self, id: u64) {
         let slot = self
-            .substrate
             .anims
             .get_mut(id)
             .and_then(|anim| anim.take_building_slot());
         if let Some((owner, slot)) = slot
-            && let Some(entity) = self.substrate.entities.get_mut(owner)
+            && let Some(entity) = self.entities.get_mut(owner)
             && entity.building_art.anim_slots[usize::from(slot)] == Some(id)
         {
             entity.building_art.anim_slots[usize::from(slot)] = None;
         }
     }
-
     /// Rebuild an index, never infer slot selection from HP or animation names.
     /// VERA-only: the Anims' load-time reverse slot indexes, from Building+55C
     /// and the damage-fire slots (+5C8), their source of truth.
     pub(crate) fn rebuild_building_anim_slot_indices(&mut self) {
-        for anim in self.substrate.anims.values_mut() {
+        for anim in self.anims.values_mut() {
             anim.clear_slot_indexes();
         }
         let slots: Vec<_> = self
-            .substrate
             .entities
             .values()
             .flat_map(|entity| {
@@ -752,17 +797,15 @@ impl Simulation {
             })
             .collect();
         for (id, owner, slot) in slots {
-            self.substrate
-                .anims
+            self.anims
                 .get_mut(id)
                 .expect("snapshot admission validated every unique Building slot Anim")
                 .index_building_slot(owner, slot);
         }
-        for entity in self.substrate.entities.values() {
+        for entity in self.entities.values() {
             for (slot, id) in entity.damage_fires.anim_ids().iter().enumerate() {
                 if let Some(id) = id {
-                    self.substrate
-                        .anims
+                    self.anims
                         .get_mut(*id)
                         .expect("snapshot admission validated every unique damage-fire Anim")
                         .index_damage_fire_slot(entity.stable_id(), slot as u8);
@@ -1031,7 +1074,7 @@ pub(crate) fn slot_test_fixture() -> (Simulation, RuleSet, u64) {
     }
     rules.install_art_data(art);
     let mut sim = Simulation::new();
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut entity = GameEntity::test_default_of_category(
         id,
         "B",
@@ -1051,6 +1094,33 @@ pub(crate) fn slot_test_fixture() -> (Simulation, RuleSet, u64) {
 #[cfg(test)]
 mod slot_tests {
     use super::*;
+
+    #[test]
+    fn installed_normal_name_allocates_with_constructor_metadata_when_host_has_no_art_section() {
+        use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
+        let (mut sim, _, id) = slot_test_fixture();
+        let art_ini = IniFile::from_str("[N]\nLoopCount=-1\nRate=150\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=B\n[B]\nStrength=100\nUpgrades=1\n[Animations]\n0=N\n",
+            ),
+            &art_ini,
+        )
+        .unwrap();
+        let mut art = ArtRegistry::from_ini(&art_ini);
+        art.bind_anim_frame_count_for_test("N", 40);
+        assert!(art.get("B").is_none());
+        rules.install_art_data(art);
+        let ty = sim.entities().get(id).unwrap().type_ref();
+        sim.set_building_upgrade_art_name(ty, 0, "N", &rules);
+        let anim = sim
+            .set_building_anim_slot(id, 0, false, false, 0, &rules)
+            .expect(
+                "PowerUp uses the retained constructor record, without requiring an ART section",
+            );
+        assert_eq!(sim.anim(anim).unwrap().building_slot(), Some((id, 0)));
+        assert_eq!(sim.interner.resolve(sim.anim(anim).unwrap().type_id()), "N");
+    }
 
     #[test]
     fn bunker_and_active_slot_sort_adjustments_match_original_read_and_copy() {
@@ -1100,7 +1170,7 @@ mod slot_tests {
             for damaged in [false, true] {
                 let mut sim = Simulation::new();
                 let name = row["building"].as_str().unwrap();
-                let id = sim.allocate_stable_id();
+                let id = sim.substrate.allocate_stable_id();
                 let mut building = GameEntity::test_default_of_category(
                     id,
                     name,
@@ -1169,7 +1239,13 @@ mod slot_tests {
                 height: 480,
             },
         );
-        let config = &mut rules.art_entry_mut_for_test("B").unwrap().building_anims[0];
+        let config = rules
+            .art_entry_mut_for_test("B")
+            .unwrap()
+            .building_anims
+            .iter_mut()
+            .find(|config| config.native_slot == 3)
+            .unwrap();
         config.x = 640;
         config.y = 0;
         let first = sim
@@ -1182,7 +1258,7 @@ mod slot_tests {
         let timer = sim.anim(replaced).unwrap().runtime().frame_timer;
         // This synthetic owner has never been marked; enter through the real
         // coordinate commit and verify its already retained slot moves in place.
-        let entity = sim.entities_mut().get_mut(id).unwrap();
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.lifecycle.set_in_limbo_for_test(true);
         entity.lifecycle.set_cell_marked_for_test(false);
         let outcome = sim.try_reveal_entity_with_context(
@@ -1501,7 +1577,8 @@ mod slot_tests {
             crate::sim::world::FrameEffects::default(),
         );
         let old = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
-        sim.entities_mut()
+        sim.substrate
+            .entities
             .get_mut(id)
             .unwrap()
             .health
@@ -1551,12 +1628,25 @@ mod native_slot_tests {
             let has_old = input["has_old"].as_bool().unwrap();
             let old_frame = input["old_frame"].as_i64().unwrap() as i32;
             let reverse = input["new_frame"] == 23;
-            let (mut sim, mut rules, id) = slot_test_fixture();
-            let mut art = ArtRegistry::from_ini(&IniFile::from_str(&format!(
-                "[B]\nActiveAnim=N\n[N]\nLoopCount=-1\nRate=300\nLoopEnd=24\nReverse={}\n",
+            let (mut sim, _, id) = slot_test_fixture();
+            let art_ini = IniFile::from_str(&format!(
+                "[B]\nActiveAnim=N\nPowerUp1Anim=N\nPowerUp2Anim=N\nPowerUp3Anim=N\n\
+                 [N]\nLoopCount=-1\nRate=300\nLoopEnd=24\nReverse={}\n",
                 if reverse { "yes" } else { "no" }
-            )));
+            ));
+            let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+                &IniFile::from_str(
+                    "[BuildingTypes]\n0=B\n[B]\nStrength=100\nUpgrades=3\n[Animations]\n0=N\n",
+                ),
+                &art_ini,
+            )
+            .unwrap();
+            let mut art = ArtRegistry::from_ini(&art_ini);
             art.bind_anim_frame_count_for_test("N", 40);
+            art.get_mut("B")
+                .unwrap()
+                .building_anims
+                .retain(|config| config.native_slot == 3);
             art.get_mut("B").unwrap().building_anims[0].native_slot = slot;
             rules.install_art_data(art);
             let old = if has_old {
@@ -1620,15 +1710,30 @@ mod native_slot_tests {
         {
             let (mut sim, _, id) = slot_test_fixture();
             let input = &row["input"];
-            let mut text = String::from("[B]\nActiveAnim=OLD\n[OLD]\nLoopCount=-1\n");
+            let mut text = String::from("[B]\nActiveAnim=OLD\n");
+            // Slots0..2 are retained native BuildingType records. Supply the
+            // same raw priors to that reader, not only the legacy ART view.
+            for slot in input["slots"].as_array().unwrap() {
+                let n = slot["slot"].as_u64().unwrap() as usize;
+                if n < 3 {
+                    if slot["normal"] == true {
+                        text.push_str(&format!("PowerUp{}Anim=N{n:02}\n", n + 1));
+                    }
+                    if slot["damaged"] == true {
+                        text.push_str(&format!("PowerUp{}DamagedAnim=D{n:02}\n", n + 1));
+                    }
+                }
+            }
+            text.push_str("[OLD]\nLoopCount=-1\n");
             for slot in 0..21 {
                 text.push_str(&format!(
                     "[N{slot:02}]\nLoopCount=-1\n[D{slot:02}]\nLoopCount=-1\n"
                 ));
             }
             let mut art = ArtRegistry::from_ini(&IniFile::from_str(&text));
-            let mut registry =
-                String::from("[BuildingTypes]\n0=B\n[B]\nStrength=100\n[Animations]\n0=OLD\n");
+            let mut registry = String::from(
+                "[BuildingTypes]\n0=B\n[B]\nStrength=100\nUpgrades=3\n[Animations]\n0=OLD\n",
+            );
             for slot in 0..21 {
                 registry.push_str(&format!(
                     "{}=N{slot:02}\n{}=D{slot:02}\n",
@@ -1647,7 +1752,14 @@ mod native_slot_tests {
             {
                 art.bind_anim_frame_count_for_test(&name, 200);
             }
-            let template = art.get("B").unwrap().building_anims[0].clone();
+            let template = art
+                .get("B")
+                .unwrap()
+                .building_anims
+                .iter()
+                .find(|config| config.native_slot == 3)
+                .unwrap()
+                .clone();
             let mut configs = Vec::new();
             for slot in input["slots"].as_array().unwrap() {
                 let n = slot["slot"].as_u64().unwrap() as usize;

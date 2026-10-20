@@ -850,7 +850,7 @@ mod tests {
         let first = prepare_campaign_startup(&campaigns, "SOV1", 0, None, None, &mut clock)
             .expect("campaign admission");
         let mut won = crate::sim::world::Simulation::new();
-        won.set_trigger_variable(true, 3, true);
+        won.set_trigger_variable_for_test(true, 3, true);
         let record = won.save_campaign_carry_over();
         let second = first.next_mission("SOV02SMD.MAP".into(), 2, 0, 1, record, &mut clock);
         clock.value = 77;

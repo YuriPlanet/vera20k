@@ -144,7 +144,7 @@ fn a_computer_houses_opening_shows_the_current_house_its_sight_until_it_dies() {
     assert_eq!(sim.state_hash(), hash);
 
     // DestructionEffects step 5 takes the sight back; the cells stay explored.
-    sim.building_destruction_anims(&rules, id, &mut Vec::new(), |_, _| {});
+    sim.building_destruction_effects(&rules, id, false, &mut Vec::new(), |_, _| {});
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     for &(x, y) in &cells {
         assert!(sim.fog.is_cell_revealed(americans, x, y), "{x},{y}");
@@ -168,7 +168,7 @@ fn captures_keep_the_sight_and_a_shroud_reset_shows_it_again() {
 
     // ChangeOwner's ReReveal(0, 0, 0, 0) keeps it; the reopening for another
     // computer house raises the radar event alone.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.change_owner_with_rules(id, confederation, &rules, None, FrameEffects::default());
     assert_eq!(
         sim.substrate.entities.get(id).unwrap().owner(),
@@ -189,13 +189,13 @@ fn captures_keep_the_sight_and_a_shroud_reset_shows_it_again() {
     assert_eq!(sim.fog.alternate_sight_admissions_for_test(), &admitted);
 
     // The human's capture raises no radar event and keeps the sight too.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.change_owner_with_rules(id, americans, &rules, None, FrameEffects::default());
     assert!(radar_events(&sim).is_empty());
     assert_eq!(sim.fog.alternate_sight_admissions_for_test(), &admitted);
 
     // A human's building skips step 5; its Limbo takes the sight back.
-    sim.building_destruction_anims(&rules, id, &mut Vec::new(), |_, _| {});
+    sim.building_destruction_effects(&rules, id, false, &mut Vec::new(), |_, _| {});
     assert_eq!(sim.fog.alternate_sight_admissions_for_test(), &admitted);
     sim.techno_limbo_with_context(id, UninitContext::new(Some(&rules), None));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
@@ -216,7 +216,7 @@ fn an_allys_building_shows_both_sights_and_takes_both_back() {
     let Some((rules, mut sim, americans)) = world() else {
         return;
     };
-    sim.house_alliances = crate::map::houses::HouseAllianceMap::from([
+    *sim.house_alliances_mut_for_test() = crate::map::houses::HouseAllianceMap::from([
         (
             "AMERICANS".to_string(),
             std::collections::BTreeSet::from(["RUSSIANS".to_string()]),
@@ -242,7 +242,7 @@ fn an_allys_building_shows_both_sights_and_takes_both_back() {
         assert!(sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
         assert_eq!(counter(&sim, americans, (x, y)), -1, "{x},{y}");
     }
-    sim.building_destruction_anims(&rules, id, &mut Vec::new(), |_, _| {});
+    sim.building_destruction_effects(&rules, id, false, &mut Vec::new(), |_, _| {});
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     assert!(
         !sim.fog
@@ -334,7 +334,7 @@ fn a_sold_allys_building_leaves_its_shared_sight_counted() {
     let Some((rules, mut sim, americans)) = world() else {
         return;
     };
-    sim.house_alliances = crate::map::houses::HouseAllianceMap::from([
+    *sim.house_alliances_mut_for_test() = crate::map::houses::HouseAllianceMap::from([
         (
             "AMERICANS".to_string(),
             std::collections::BTreeSet::from(["RUSSIANS".to_string()]),
@@ -444,7 +444,7 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
         assert_eq!(counter(&sim, americans, cell), -2, "{cell:?}");
     }
 
-    sim.building_destruction_anims(&rules, id, &mut Vec::new(), |_, _| {});
+    sim.building_destruction_effects(&rules, id, false, &mut Vec::new(), |_, _| {});
     sim.techno_limbo_with_context(id, UninitContext::new(Some(&rules), None));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     for &(x, y) in &cells {

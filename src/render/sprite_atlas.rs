@@ -978,6 +978,8 @@ fn sprite_palette_for_key(
 
 /// Every sprite key one object (type, house colour) can be drawn with: a
 /// structure's body, source-bound raw Infantry records, or a generic layout.
+/// Return Structure/Unit body keys for paired shadows without scanning the
+/// complete atlas key set for every newly admitted type and house colour.
 fn insert_object_keys(
     needed: &mut HashSet<ShpSpriteKey>,
     type_str: &str,
@@ -985,15 +987,20 @@ fn insert_object_keys(
     color_idx: HouseColorIndex,
     rules: Option<&RuleSet>,
     infantry_frames: Option<&[u16]>,
-) {
+) -> Vec<ShpSpriteKey> {
+    let mut body_keys = Vec::new();
     let mut insert = |frame: u16| {
-        needed.insert(ShpSpriteKey {
+        let key = ShpSpriteKey {
             palette_context: ShpPaletteContext::Legacy,
             type_id: type_str.to_string(),
             facing: 0,
             frame,
             house_color: color_idx,
-        });
+        };
+        if matches!(category, EntityCategory::Structure | EntityCategory::Unit) {
+            body_keys.push(key.clone());
+        }
+        needed.insert(key);
     };
     match category {
         EntityCategory::Infantry => {
@@ -1102,6 +1109,7 @@ fn insert_object_keys(
             }
         }
     }
+    body_keys
 }
 
 /// Frames an InfantryType's signed records can select in this actual SHP.
@@ -1149,7 +1157,7 @@ fn infantry_asset_frames(
 /// still supplies the Infantry source and signed record bank.
 ///
 /// Return decoded object sources for the render pass to consume, so each
-/// Infantry type's frame membership and each Structure's shadow frames are
+/// Infantry type's frame membership and each Structure/Unit's shadow frames are
 /// computed from its resolved SHP once per refresh, independent of house colour.
 fn insert_new_object_keys<'a>(
     needed: &mut HashSet<ShpSpriteKey>,
@@ -1221,7 +1229,7 @@ fn insert_new_object_keys<'a>(
         } else {
             None
         };
-        insert_object_keys(
+        let body_keys = insert_object_keys(
             needed,
             type_str,
             category,
@@ -1230,7 +1238,7 @@ fn insert_new_object_keys<'a>(
             infantry_frames,
         );
 
-        if category == EntityCategory::Structure {
+        if matches!(category, EntityCategory::Structure | EntityCategory::Unit) {
             // Resolve the actual theater/rules-selected object source once and
             // retain it for rendering. Its physical frame count establishes
             // the embedded shadow half; Type.Image text alone does not.
@@ -1250,24 +1258,18 @@ fn insert_new_object_keys<'a>(
                 .and_then(|source| u16::try_from(source.shp.frames.len()).ok())
             {
                 let shadow_start = raw_count / 2;
-                for body_frame in 0..=3 {
-                    let body_key = ShpSpriteKey {
-                        palette_context: ShpPaletteContext::Legacy,
-                        type_id: type_str.clone(),
-                        facing: 0,
-                        frame: body_frame,
-                        house_color: *color_idx,
-                    };
-                    if needed.contains(&body_key) {
-                        let shadow_frame = shadow_start + body_frame;
-                        if shadow_frame < raw_count {
-                            needed.insert(ShpSpriteKey {
-                                frame: shadow_frame,
-                                ..body_key
-                            });
-                        }
-                    }
-                }
+                // Techno7064C2..7064CD adds half the physical SHP count
+                // to the selected body frame. Include every admitted Unit
+                // pose, not just Structure's first four body frames.
+                needed.extend(
+                    body_keys
+                        .into_iter()
+                        .filter(|key| key.frame < shadow_start)
+                        .map(|body_key| ShpSpriteKey {
+                            frame: body_key.frame + shadow_start,
+                            ..body_key
+                        }),
+                );
             }
         }
     }
@@ -1907,7 +1909,7 @@ pub fn build_sprite_atlas(
                     .map(String::as_str)
             };
             // Object key collection already decoded this exact source for
-            // Infantry admission or Structure shadow-frame registration.
+            // Infantry admission or Structure/Unit shadow-frame registration.
             // Reuse it instead of decoding the same file a second time.
             let mut loaded = (!projectile)
                 .then(|| object_sources.remove(&key.type_id))

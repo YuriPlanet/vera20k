@@ -223,13 +223,13 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
         rules = world_rules;
         let russians = sim.interner.intern("Russians");
         if americans_list_russians {
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .entry("AMERICANS".to_string())
                 .or_default()
                 .insert("RUSSIANS".to_string());
         } else {
             // The Russians' own list does not reach the Americans' buildings.
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .entry("RUSSIANS".to_string())
                 .or_default()
                 .insert("AMERICANS".to_string());
@@ -277,7 +277,7 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
         };
         let mut heard = Vec::new();
         while sim.session.binary_frame() < launch_frame + 430 {
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
             let frame = sim.session.binary_frame();
             step(&mut sim, &rules);
             if fading(&sim) > 0 {
@@ -344,6 +344,7 @@ fn a_grant_keeps_the_countdown_and_releases_the_anim() {
     instance.arm_fade(100, [10368, 10368, 416]);
     instance.placement_anim = Some(anim);
     sim.super_weapons
+        .map_mut_for_test()
         .entry(russians)
         .or_default()
         .insert(sw_type, instance);

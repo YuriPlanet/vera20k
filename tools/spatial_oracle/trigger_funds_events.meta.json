@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -41,5 +41,5 @@
     "house_pointer_expired": "0x004FB9B0"
   },
   "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --funds-events",
-  "payload_sha256": "2ecc574c371899f53e9b848eb5702275dea3caaa031f03017107219f4d085efe"
+  "payload_sha256": "a2c03d61af4f455f2fe3069b313fcd45924253922778a938a3b573ab57269321"
 }

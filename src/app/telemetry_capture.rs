@@ -284,10 +284,9 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
         crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(state);
 
     let cursor_elevation = state
-        .height_map()
-        .get(&(cursor_rx, cursor_ry))
-        .copied()
-        .unwrap_or(0);
+        .resolved_terrain()
+        .and_then(|terrain| terrain.cell(cursor_rx, cursor_ry))
+        .map_or(0, |cell| cell.level);
     let cursor_walkable = path_grid.map(|grid| grid.is_walkable(cursor_rx, cursor_ry));
 
     let land_rows = sim

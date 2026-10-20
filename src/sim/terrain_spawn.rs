@@ -27,6 +27,8 @@ use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::ore_growth::OreGrowthState;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::terrain_object::{TerrainObjectState, mark_terrain_raw_occupation};
 use crate::sim::tiberium::{
     NewTiberiumAdmission, PlaceTiberiumContext, TiberiumPlacement, TiberiumPlacementObjectContext,
@@ -145,9 +147,7 @@ pub struct TerrainSpawnContext<'a> {
     pub ore_growth_state: Option<&'a mut OreGrowthState>,
     growth_enabled: bool,
     spread_enabled: bool,
-    pub radar_dirty_cells: Option<&'a mut Vec<(u16, u16)>>,
-    pub radar_dirty_generation: Option<&'a mut u64>,
-    pub tactical_dirty_cells: Option<&'a mut Vec<(u16, u16)>>,
+    pub dirty_cells: Option<&'a mut crate::sim::dirty_cells::DirtyCells>,
     pub binary_frame: u32,
     pub spawning_terrain_cells: Option<&'a BTreeSet<(u16, u16)>>,
     pub entities: Option<&'a EntityStore>,
@@ -171,9 +171,7 @@ impl<'a> TerrainSpawnContext<'a> {
             ore_growth_state: None,
             growth_enabled: true,
             spread_enabled: true,
-            radar_dirty_cells: None,
-            radar_dirty_generation: None,
-            tactical_dirty_cells: None,
+            dirty_cells: None,
             binary_frame: 0,
             spawning_terrain_cells: None,
             entities: None,
@@ -212,13 +210,9 @@ impl<'a> TerrainSpawnContext<'a> {
 
     pub fn with_dirty_tracking(
         mut self,
-        radar_dirty_cells: &'a mut Vec<(u16, u16)>,
-        radar_dirty_generation: &'a mut u64,
-        tactical_dirty_cells: &'a mut Vec<(u16, u16)>,
+        dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     ) -> Self {
-        self.radar_dirty_cells = Some(radar_dirty_cells);
-        self.radar_dirty_generation = Some(radar_dirty_generation);
-        self.tactical_dirty_cells = Some(tactical_dirty_cells);
+        self.dirty_cells = Some(dirty_cells);
         self
     }
 
@@ -327,9 +321,7 @@ fn tick_terrain_spawner_one_inner(
         binary_frame: ctx.binary_frame,
         growth_enabled: ctx.growth_enabled,
         spread_enabled: ctx.spread_enabled,
-        radar_dirty_cells: ctx.radar_dirty_cells.as_deref_mut(),
-        radar_dirty_generation: ctx.radar_dirty_generation.as_deref_mut(),
-        tactical_dirty_cells: ctx.tactical_dirty_cells.as_deref_mut(),
+        dirty_cells: ctx.dirty_cells.as_deref_mut(),
     };
     spread_tiberium(&mut placement, cell, true)
 }
@@ -386,11 +378,7 @@ pub(crate) fn tick_terrain_object_ai(
                 sim.ore_growth_config.grows(),
                 sim.ore_growth_config.spreads(),
             )
-            .with_dirty_tracking(
-                &mut sim.radar_terrain_dirty_cells,
-                &mut sim.radar_terrain_dirty_generation,
-                &mut sim.tactical_dirty_cells,
-            )
+            .with_dirty_tracking(&mut sim.dirty_cells)
             .with_spawning_terrain_cells(spawning_cells)
             .with_live_object_context(
                 &sim.substrate.entities,
@@ -408,7 +396,10 @@ pub(crate) fn tick_terrain_object_ai(
     if let (Some(cell), Some(registry)) = (placed_cell, overlay_registry) {
         sim.publish_tiberium_cells(rules, registry, &[cell]);
     }
-    sim.publish_overlay_constructions(
+    crate::sim::world::Simulation::publish_overlay_constructions(
+        &mut sim.native_unique_ids,
+        &mut sim.load_objects,
+        &mut sim.substrate,
         placed.and_then(TiberiumPlacement::into_overlay_construction),
     );
 }
@@ -546,7 +537,7 @@ fn construct_terrain_objects_inner(
         // TerrainClass construction reaches AbstractClass::Create_ID
         // @ 0x00410230, which draws from ScenarioClass::NextUniqueID
         // @ 0x0068BCB0 just like every other modeled runtime object.
-        let stable_id = sim.allocate_stable_id();
+        let stable_id = sim.substrate.allocate_stable_id();
         let native_unique_id = authored_overlay_registry
             .map(|_| sim.next_native_load_id())
             .transpose()?;
@@ -607,13 +598,14 @@ fn construct_terrain_objects_inner(
 ///
 /// Returns the number of animated live terrain objects indexed.
 pub fn seed_terrain_spawner_animation(
-    sim: &mut crate::sim::world::Simulation,
+    interner: &StringInterner,
+    terrain_objects: &mut TerrainObjectStore,
+    session: &ScenarioSession,
     rules: &crate::rules::ruleset::RuleSet,
 ) -> usize {
-    sim.terrain_objects.clear_animations();
+    terrain_objects.clear_animations();
 
-    let candidates: Vec<(u64, (u16, u16), InternedId)> = sim
-        .terrain_objects
+    let candidates: Vec<(u64, (u16, u16), InternedId)> = terrain_objects
         .objects()
         .values()
         .filter(|terrain| terrain.is_live())
@@ -624,10 +616,10 @@ pub fn seed_terrain_spawner_animation(
     for (stable_id, cell, type_ref) in candidates {
         // Two entries can name the same cell; only the object the cell index
         // points at owns that cell's spawner.
-        if sim.terrain_objects.cell_index().get(&cell) != Some(&stable_id) {
+        if terrain_objects.cell_index().get(&cell) != Some(&stable_id) {
             continue;
         }
-        let name = sim.interner.resolve(type_ref).to_string();
+        let name = interner.resolve(type_ref).to_string();
         let Some(t) = rules.terrain_object_type_case_insensitive(&name) else {
             continue;
         };
@@ -635,14 +627,14 @@ pub fn seed_terrain_spawner_animation(
             continue;
         }
         let frame_count = rules.terrain_spawner_frame_count(&name).unwrap_or(0);
-        sim.terrain_objects.seed_animation(
+        terrain_objects.seed_animation(
             cell,
             TerrainAnimationState::new(
                 type_ref,
                 t.animation_probability,
                 t.animation_rate,
                 frame_count,
-                sim.session.binary_frame(),
+                session.binary_frame(),
             ),
         );
         seeded += 1;
@@ -662,7 +654,7 @@ pub fn seed_terrain_animations(
     snow_theater: bool,
 ) -> usize {
     construct_terrain_objects(sim, terrain_objects, rules, snow_theater);
-    seed_terrain_spawner_animation(sim, rules)
+    seed_terrain_spawner_animation(&sim.interner, &mut sim.terrain_objects, &sim.session, rules)
 }
 
 #[cfg(test)]
@@ -956,7 +948,7 @@ mod tests {
         assert_eq!((terrain_objects[0].rx, terrain_objects[0].ry), (10, 5));
 
         let mut sim = Simulation::new();
-        let attacker_id = sim.allocate_stable_id();
+        let attacker_id = sim.substrate.allocate_stable_id();
         let mut attacker = GameEntity::test_default(attacker_id, "MTNK", "Americans", 5, 5);
         attacker.health = Health::new(300);
         let owner_id = attacker.owner();
@@ -965,7 +957,7 @@ mod tests {
         // handles resolve through the Simulation that will execute the order.
         sim.interner = crate::sim::intern::test_interner();
 
-        sim.input_delay_ticks = 0;
+        sim.set_input_delay_ticks(0);
         sim.resolved_terrain = Some(resolved_grid(64, 64));
         sim.substrate.entities.insert(attacker);
         assert!(matches!(

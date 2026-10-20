@@ -23,6 +23,7 @@ mod building_after_destruction;
 mod building_after_destruction_tests;
 pub(crate) mod building_anim;
 mod building_scatter;
+mod building_upgrade_art;
 mod camera_home;
 mod cell_content;
 mod crash;
@@ -32,12 +33,15 @@ pub use disk_laser::DiskLaserObservation;
 mod disk_laser_tests;
 #[cfg(test)]
 pub(crate) mod entry_test_fixture;
+mod frame_channel;
 mod frame_effects;
 mod object_entry;
 mod sinking;
 mod time_warp;
 mod trigger_chrono;
 mod type_tech_levels;
+mod unit_repair_seek;
+pub(crate) use frame_channel::FrameChannel;
 pub use frame_effects::{FrameEffects, LocalDefeatBoundary, SoundBoundary};
 pub(crate) use type_tech_levels::TypeTechLevels;
 #[cfg(test)]
@@ -99,7 +103,7 @@ mod playfield_membership;
 mod rally_cell_input;
 mod rocket_flight;
 pub use frame_error::FrameAdvanceError;
-pub use world_orders::BuildingClickAction;
+pub use world_orders::{EntryBaseAction, EntryClickAction};
 pub(crate) use world_orders::CapturedInfantryType;
 pub use world_orders::EngineerBuildingAction;
 pub use world_orders::UnitRepairAction;
@@ -201,8 +205,8 @@ pub(crate) use logic_vector::{LogicMembership, LogicVector};
 pub(crate) use object_entry::{EntryFacts, FootEntryReceiver};
 #[cfg(any(test, feature = "test-support"))]
 pub use substrate::DeferredDeleteQueue;
-pub use substrate::EnterOrderCounter;
 pub(crate) use substrate::{DeferredDeleteTicket, ObjectKind, ObjectSubstrate};
+pub use substrate::{EnterOrderCounter, StableIdCursor};
 pub(crate) use world_spawn::{CrushableFacts, MoverFacts, TypeFacts};
 pub use world_spawn::{GeneratedTechnoInitError, GeneratedTechnoInitTable};
 
@@ -225,14 +229,17 @@ use crate::sim::bridge_state::BridgeRuntimeState;
 use crate::sim::combat::combat_weapon::WeaponSlot;
 use crate::sim::command::CommandEnvelope;
 use crate::sim::components::{AnimClassSpawnDescriptor, DriveCoord, Position};
+use crate::sim::dirty_cells::DirtyCells;
 use crate::sim::entity_store::EntityStore;
+use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::house_state::HouseState;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
-use crate::sim::lifecycle_request::LifecycleRequest;
+use crate::sim::intern::StringInterner;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::overlay_grid::{
-    WallDamageTransactionHost, WallDirtyStep, WallPointerTarget,
+    OverlayGrid, WallDamageTransactionHost, WallDirtyStep, WallPointerTarget,
     damage_wall_overlay_with_runtime_host, recalc_overlay_passability,
 };
 use crate::sim::passenger;
@@ -242,8 +249,10 @@ use crate::sim::pathfinding::zone_incremental::{
     PackedZoneCoord, ZoneRepairKind, repair_zone_cell,
 };
 use crate::sim::pathfinding::zone_map::ZoneGrid;
+use crate::sim::power_system::PowerStates;
 use crate::sim::power_system::{self, PowerState};
 use crate::sim::production::{self, ProductionState};
+use crate::sim::projectile::ProjectileStore;
 use crate::sim::projectile::{
     Projectile, ProjectileBridgeCrossing, ProjectileCollisionResponse, ProjectileCoord,
     projectile_bridge_crossing,
@@ -251,11 +260,13 @@ use crate::sim::projectile::{
 use crate::sim::radar::{RadarEventRequest, RadarEventType};
 use crate::sim::rng::{MainRng, SimRng, SimRngLogicalState, SimRngLogicalView};
 use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::smudge_grid::SmudgeGrid;
 use crate::sim::team_script_vm::TeamScriptVm;
 use crate::sim::tiberium::TiberiumPlacementObjectContext;
 use crate::sim::trigger_runtime::{TriggerEffect, TriggerRuntime};
 use crate::sim::vision::{self, FogState};
 use crate::util::fixed_math::SimFixed;
+use crate::sim::native_identity::NativeUniqueIdCursor;
 
 /// Test fixtures' seed. Real launches negotiate a per-match seed through
 /// `ScenarioDescriptor`, and only test builds can construct with this value.
@@ -396,6 +407,34 @@ pub(crate) enum HouseAiActivationOrderTestEvent {
     HouseAngerDecay(InternedId),
     HouseActivation(InternedId),
     DefeatProcessed,
+}
+
+/// The alliance voices MakeAlly and MakeEnemy queue for the local House.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AllianceEva {
+    /// `EVA_AllianceFormed` (`0x008247E4`): the local House is one of the
+    /// pair or allied with both.
+    Formed,
+    /// `EVA_EnemyAllianceFormed` (`0x008247CC`): any other client.
+    EnemyFormed,
+    /// `EVA_RequestingAlliance` (`0x008247B4`): the local House asked.
+    Requesting,
+    /// `EVA_AllianceRequested` (`0x0082479C`): the local House was asked.
+    Requested,
+    /// `EVA_AllianceBroken` (`0x00824808`).
+    Broken,
+}
+
+impl AllianceEva {
+    pub fn event(self) -> &'static str {
+        match self {
+            Self::Formed => "EVA_AllianceFormed",
+            Self::EnemyFormed => "EVA_EnemyAllianceFormed",
+            Self::Requesting => "EVA_RequestingAlliance",
+            Self::Requested => "EVA_AllianceRequested",
+            Self::Broken => "EVA_AllianceBroken",
+        }
+    }
 }
 
 /// A sound event produced during simulation (combat, death, production).
@@ -652,8 +691,8 @@ pub enum SimSoundEvent {
     /// (`0x00449CC1..0x00449CE5`, once the pack-up animation has set
     /// `+0x6DD`): `TechnoClass+0x41A` (owner is the local player) and no
     /// `UndeploysInto=` (`Type+0x408`) — an undeploying building stays
-    /// silent. The upgrade-sale arm (`0x0044AB22..0x0044AB36`) is dormant in
-    /// retail data. App plays `EVA_StructureSold`.
+    /// silent. Each removed upgrade uses the same event at
+    /// `0x0044AB22..0x0044AB36`. App plays `EVA_StructureSold`.
     StructureSold { owner: InternedId },
     /// A sale order's click (`BuildingClass::Sell_Back @ 0x00447110`:
     /// `VocClass::PlayAtPos` of `[AudioVisual] GenericClick=`) for the
@@ -742,14 +781,23 @@ pub enum SimSoundEvent {
         owner: InternedId,
         sw_type: InternedId,
     },
-    /// `HouseClass::MPlayer_Defeated @ 0x004FC0B0`, non-local branch
-    /// (`0x004FC30C..0x004FC3BC`): a house whose type is not
-    /// `MultiplayPassive` (`0x004FC30F`) was defeated. Native also skips the
-    /// line for the observer house (`0x004FC343 CMP ESI,[0xAC1198]`), which
-    /// VERA does not model. App plays `EVA_PlayerDefeated` when `house` is
-    /// not the local player (the local defeat is `EVA_YouHaveLost` via
-    /// [`SimSoundEvent::MatchOutcome`]).
+    /// `HouseClass::MPlayer_Defeated @ 0x004FC0B0` defeated a non-observer
+    /// House (`0x004FC26F` local, `0x004FC34D` remote; a remote
+    /// `MultiplayPassive` House never gets here, `0x004FC317`). The app posts
+    /// `TXT_PLAYER_DEFEATED` with the House's UI name and plays
+    /// `EVA_YouHaveLost` for the local House, `EVA_PlayerDefeated` otherwise.
     PlayerDefeated { house: InternedId },
+    /// MakeAlly or MakeEnemy changed `owner`'s alliance with `other` outside
+    /// initialization (`sim::house_diplomacy`). With `line`, the app posts
+    /// `TXT_HAS_ALLIED` / `TXT_AT_WAR` (owner, other) in the owner's
+    /// HouseType colour; `eva` is the local client's voice, if any.
+    AllianceChanged {
+        owner: InternedId,
+        other: InternedId,
+        formed: bool,
+        line: bool,
+        eva: Option<AllianceEva>,
+    },
     /// A superweapon fired. `sw_type` is the interned `[SuperWeaponTypes]`
     /// section name of the launched weapon — the discriminator the app layer
     /// needs to pick the cue, and the same object gamemd switches on.
@@ -1032,11 +1080,15 @@ pub struct Simulation {
     /// Runtime TechnoType+634 writes; RuleSet remains the frozen read projection.
     #[serde(default)]
     type_tech_levels: TypeTechLevels,
+    /// Runtime BuildingType normal PowerUp animation names (44099B..4409C4).
+    /// Shared by all instances of the type; the upgrade/art owner mutates it.
+    #[serde(default)]
+    building_upgrade_art_names: crate::sim::building_upgrades::BuildingUpgradeArtNames,
     /// Pre-resolved `[CombatDamage]` warhead handles (F04). Built by
     /// `resolve_type_handles` beside the type table; rebuilt from rules on
     /// load. NOT serialized, NOT hashed. `None` until resolved.
     #[serde(skip)]
-    pub(crate) rule_handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
+    rule_handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
     /// Factories, the enqueue stamp and the primary-factory flags.
     pub(crate) production: ProductionState,
     /// Live terrain objects and their cell, animation and spawner indexes.
@@ -1109,19 +1161,14 @@ pub struct Simulation {
     /// reader is proved; cell-array teardown (a new Simulation) resets it and
     /// generated loads leave it `None`.
     #[serde(skip, default)]
-    pub(crate) authored_tiberium_value_total: Option<i32>,
-    /// `DAT_00A8ED78` analogue for this fresh load: the GasCloudSys
-    /// `ParticleSystemClass` has been constructed by a post-load setup
-    /// (`FUN_00684C30`) since `Clear_Scene` nulled it. A generated launch
-    /// constructs it inside the synthetic `Full_Init`'s setup before any
-    /// generator constructor; the later post-`Post_Map_Init` setup then skips.
+    authored_tiberium_value_total: Option<i32>,
     #[serde(skip, default)]
-    pub(crate) post_load_particle_system_constructed: bool,
+    pub(crate) post_load_particle_system_constructed: crate::sim::ore_twinkle::PostLoadGasCloud,
     /// Successful raw `[Tubes]` constructor bindings from this fresh map read.
     /// Kept separate from resolved topology so its later owning transaction
     /// can consume the already-assigned IDs without recounting filtered facts.
     #[serde(skip, default)]
-    pub(crate) native_map_tubes: crate::map::tubes::NativeMapTubesState,
+    pub(crate) native_map_tubes: crate::map::tubes::NativeMapTubes,
     /// Shared authored/runtime OverlayClass registry/deferred-delete owner. These
     /// records survive saves so global deferred tickets keep their registry
     /// identities. Their queue order is hashed by the shared deletion owner.
@@ -1132,7 +1179,7 @@ pub struct Simulation {
     /// written by `sim::house_diplomacy`: the scenario's install, then
     /// MakeAlly and MakeEnemy. A write during the object or fog pass must
     /// also forget [`Self::reveal_viewers`], as those writers do.
-    pub(crate) house_alliances: HouseAllianceMap,
+    pub(crate) house_alliances: crate::sim::house_diplomacy::HouseAlliances,
     /// Object substrate — the active-object order plus the monotonic id and
     /// enter-order counters. The single owner the lifecycle contract
     /// (reveal/conceal/unlimbo/uninit) mutates; entity storage and the
@@ -1141,17 +1188,18 @@ pub struct Simulation {
     /// Ordered release-visible handoffs produced by lifecycle transactions.
     /// The app drains these without feeding them back into simulation.
     #[serde(skip)]
-    pub(crate) lifecycle_outputs: Vec<LifecycleOutput>,
+    pub(crate) lifecycle_outputs: FrameChannel<LifecycleOutput>,
     /// Derived presentation interest for the next admitted frame. The app
     /// copies only pending voice owners; this is never a second voice latch.
     /// `advance_app_frame` clears it on success and error, and restore starts
     /// empty. Neither snapshots nor world hashes include this transient set.
     #[serde(skip)]
     unit_voice_visit_interest: std::collections::BTreeSet<u64>,
-    /// Conversion receipts drained into the same tick's navigation/app outputs.
-    /// Derived frame output, not gameplay state; saves occur at frame boundaries.
+    /// A mission or production step placed objects this frame; the frame tail
+    /// folds it into the tick's `spawned_entities`. Derived frame output, not
+    /// gameplay state; saves occur at frame boundaries.
     #[serde(skip)]
-    pub(crate) mission_spawned_entities: bool,
+    mission_spawned_entities: bool,
     /// Ordered occupied-cell identities finalized at the authoritative frame
     /// boundary. The app drains these into its render-only overlay list.
     #[serde(skip)]
@@ -1161,13 +1209,8 @@ pub struct Simulation {
     /// occupied upserts.
     #[serde(skip)]
     frame_overlay_removals: Vec<(u16, u16)>,
-    /// One-shot raw post-match score result. Serialized and hashed so a save at
-    /// the outcome wait cannot repeat its Scenario RNG draws after load.
-    pub(super) terminal_score_snapshot: Option<crate::sim::score::TerminalScoreSnapshot>,
-    /// Reusable movement-to-world lifecycle request buffer. Requests are applied
-    /// immediately after the movement call returns.
-    #[serde(skip)]
-    pub(crate) pending_lifecycle_requests: Vec<LifecycleRequest>,
+    /// One-shot raw post-match score result.
+    pub(super) terminal_score_snapshot: crate::sim::score::TerminalScore,
     /// Internal order proof; release builds carry no ledger or recording branch.
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
@@ -1190,19 +1233,19 @@ pub struct Simulation {
     /// Sound events produced during the current tick and moved into the owned
     /// app-frame output batch.
     #[serde(skip)]
-    pub(crate) sound_events: Vec<SimSoundEvent>,
+    pub(crate) sound_events: FrameChannel<SimSoundEvent>,
     #[serde(skip)]
     pub(crate) lighting_sources: crate::sim::light_sources::LightingSources,
     /// Fire events produced during combat and moved into the app-frame output
     /// for muzzle flash rendering and future projectile origin computation.
     #[serde(skip)]
-    pub(crate) fire_events: Vec<SimFireEvent>,
+    pub(crate) fire_events: FrameChannel<SimFireEvent>,
     /// Native IC/ForceShield impact combat-light requests emitted in receiver
     /// order during the current master frame. The native object has no owner
     /// and is distinct from AnimClass/ParticleSystemClass, so this remains a
     /// dedicated presentation handoff rather than fabricated world state.
     #[serde(skip)]
-    pub(crate) combat_light_requests: Vec<crate::sim::combat::CombatLightRequest>,
+    pub(crate) combat_light_requests: FrameChannel<crate::sim::combat::CombatLightRequest>,
     /// Persistent ordinary shots. This is authoritative save/hash state, not
     /// the render-side fire-event approximation.
     #[serde(default)]
@@ -1214,24 +1257,21 @@ pub struct Simulation {
     /// id. The native link is installed even for a constructor-short Wave and
     /// is cleared only by exact pointer-expiry cleanup.
     #[serde(default)]
-    pub(crate) active_wave_links: BTreeMap<u64, u64>,
+    active_wave_links: BTreeMap<u64, u64>,
     /// `ObjectClass+0x64`: the custom sound trigger action 99 gave an object
     /// (a Building or Terrain), keyed by stable id. Absent is the
     /// constructor's -1. Only `object_sound` writes it; the object's
     /// destruction removes it.
     #[serde(default)]
-    pub(crate) object_custom_sounds: BTreeMap<u64, String>,
-    /// Hookless-test adapter retained for old fixture callsites. Production
-    /// combat and superweapons commit smudges inline, so this remains empty and
-    /// never persists across ticks.
-    #[serde(skip)]
-    pub(crate) pending_smudge_requests: Vec<crate::sim::combat::SmudgeSpawnRequest>,
-    /// Bale deposit events emitted during refinery dock unloading and consumed
-    /// by the authoritative frame tail for SpecialAnim and particle creation.
+    object_custom_sounds: BTreeMap<u64, String>,
+    /// Test observation of each refinery unload gate. The dock commits the
+    /// gate's smoke and SpecialAnim itself; the frame tail drops these.
+    #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
     pub(crate) bale_events: Vec<crate::sim::components::BaleDepositEvent>,
-    /// Tank-bunker wall-anim events — walls rising on install / falling on
-    /// teardown. Consumed by the authoritative frame tail before hashing.
+    /// Test observation of each tank-bunker wall rise or fall. The bunker link
+    /// sets the wall anim slots itself; the frame tail drops these.
+    #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
     pub(crate) bunker_wall_events: Vec<crate::sim::components::BunkerWallAnimEvent>,
     /// Resolved TeamClass/ScriptType runtime; scenario INI parsing remains a
@@ -1338,53 +1378,36 @@ pub struct Simulation {
     /// validator's final playfield-corner test (the engine diamond, not a
     /// rectangle). `None` only in headless tests with no map loaded.
     #[serde(default)]
-    pub(crate) playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
+    playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
     /// Immutable signed `[Map] Size=` height retained for later LocalSize
     /// normalization. The live predicate needs only Size width, but action 40
     /// can rewrite the four LocalSize dwords repeatedly during a scenario.
     #[serde(default)]
-    pub(crate) playfield_size_height: Option<i32>,
+    playfield_size_height: Option<i32>,
     /// Monotonic visible-area writer generation. Every successful trigger
     /// action 0x28 advances it, even when two writers normalize to the same
     /// bounds. Presentation consumes this as the global radar/scroll rebuild
     /// edge; cell-local bridge dirtiness is deliberately a separate channel.
     #[serde(default)]
-    pub(crate) playfield_revision: u64,
+    playfield_revision: u64,
     /// Interned projection of RuleSet's ordered BridgeExplosions references.
     /// Rebuilt at map binding and snapshot restoration; not serialized authority.
     #[serde(skip)]
-    pub(crate) bridge_explosions: Vec<InternedId>,
+    bridge_explosions: Vec<InternedId>,
     /// Interned projection of RuleSet's ordered MetallicDebris references,
     /// including unread types without an SHP. Rebuilt at map binding and
     /// snapshot restoration so per-cell selection needs no string interning.
     #[serde(skip)]
-    pub(crate) metallic_debris: Vec<InternedId>,
-    /// Runtime terrain cells whose radar/minimap terrain pixel needs refresh.
-    /// Presentation reads this generation and acknowledges the exact batch
-    /// only after its radar update completes. The list is de-duplicated within
-    /// that pending update window, then cleared so the same cell can re-arm.
+    metallic_debris: Vec<InternedId>,
+    /// Radar and tactical redraw marks for runtime cell changes.
     #[serde(skip)]
-    pub(crate) radar_terrain_dirty_cells: Vec<(u16, u16)>,
-    #[serde(skip)]
-    pub(crate) radar_terrain_dirty_generation: u64,
-    /// Derived index of `radar_terrain_dirty_cells` for
-    /// [`Self::mark_radar_terrain_dirty_cells`], with the list length and
-    /// generation it was built for. Every other writer pushes (changing the
-    /// length) and bumps the generation it is given
-    /// ([`mark_wall_radar_dirty_cell`]); the only clear empties the list. A
-    /// mismatch of either rebuilds the index from the list.
-    #[serde(skip)]
-    radar_terrain_dirty_index: (BTreeSet<(u16, u16)>, usize, u64),
-    /// Runtime cell rects dirtied by tiberium mutation side effects.
-    #[serde(skip)]
-    pub(crate) tactical_dirty_cells: Vec<(u16, u16)>,
-    /// Per-player power state (output, drain, low-power flag, spy blackout timer).
-    /// Updated each tick by `power_system::tick_power_states()`.
-    pub(crate) power_states: BTreeMap<InternedId, PowerState>,
+    pub(crate) dirty_cells: crate::sim::dirty_cells::DirtyCells,
+    /// Per-player power state (output, drain, low-power flag, spy blackout timer),
+    /// assessed by each House's own update.
+    pub(crate) power_states: crate::sim::power_system::PowerStates,
     /// Per-owner superweapon instances. Outer key = owner, inner key = SW type ID.
     /// Deterministic iteration via nested BTreeMap.
-    pub(crate) super_weapons:
-        BTreeMap<InternedId, BTreeMap<InternedId, crate::sim::superweapon::SuperWeaponInstance>>,
+    pub(crate) super_weapons: crate::sim::superweapon::SuperWeapons,
     /// The Lightning Storm's globals (one at a time).
     pub(crate) lightning_storm: crate::sim::superweapon::lightning_storm::LightningStorm,
     /// The Psychic Dominator's globals (one at a time).
@@ -1403,21 +1426,26 @@ pub struct Simulation {
     /// Per-cell terrain speed modifier config (slope climb/descend).
     /// Built from [General] rules at map load.
     #[serde(skip)]
-    pub(crate) terrain_speed_config: terrain_speed::TerrainSpeedConfig,
+    terrain_speed_config: terrain_speed::TerrainSpeedConfig,
     /// Negotiated lockstep ahead window. Offline producers stamp the current
     /// raw issue ordinal; a network transfer owner overwrites that stamp with
     /// `send_current + MaxAhead` before synchronized dispatch.
-    pub(crate) input_delay_ticks: u64,
+    input_delay_ticks: u64,
     /// Native Main_Tick termination gates outside House state. These are
     /// front-end connection/session facts, so they are transient and un-hashed.
     #[serde(skip)]
-    pub(crate) quit_requested: bool,
+    quit_requested: bool,
     /// One-shot owner-tagged edge raised only when a due native EXIT command
     /// executes at the EventClass tail. App teardown consumes and clears it.
     #[serde(skip)]
     executed_exit_owner: Option<InternedId>,
+    /// Remote senders of executed EXIT events this frame, in execution
+    /// order: the app runs DestroyConnection(house, 0) for each
+    /// (`0x0064C9B1`) and drains them.
     #[serde(skip)]
-    pub(crate) connection_lost: bool,
+    departed_owners: Vec<InternedId>,
+    #[serde(skip)]
+    connection_lost: bool,
     /// Checksum computed by this frame's multiplayer tail, handed to the
     /// frame output. Transient per frame.
     #[serde(skip)]
@@ -1453,17 +1481,6 @@ impl Default for Simulation {
     }
 }
 
-pub(crate) fn mark_wall_radar_dirty_cell(
-    cells: &mut Vec<(u16, u16)>,
-    generation: &mut u64,
-    cell: (u16, u16),
-) {
-    if !cells.contains(&cell) {
-        cells.push(cell);
-        *generation = (*generation).wrapping_add(1);
-    }
-}
-
 fn dispatch_tiberium_reduction_inline(
     request: &crate::sim::combat::TiberiumReductionRequest,
     rules: &RuleSet,
@@ -1476,9 +1493,7 @@ fn dispatch_tiberium_reduction_inline(
     live_objects: Option<crate::sim::tiberium::NativeCellObjectView<'_>>,
     binary_frame: u32,
     spread_enabled: bool,
-    radar_dirty_cells: &mut Vec<(u16, u16)>,
-    radar_dirty_generation: &mut u64,
-    tactical_dirty_cells: &mut Vec<(u16, u16)>,
+    dirty_cells: &mut crate::sim::dirty_cells::DirtyCells,
 ) {
     let mut context = crate::sim::tiberium::ReduceTiberiumContext {
         overlay_grid,
@@ -1491,9 +1506,7 @@ fn dispatch_tiberium_reduction_inline(
         rng: Some(scenario_rng),
         binary_frame,
         spread_enabled,
-        radar_dirty_cells: Some(radar_dirty_cells),
-        radar_dirty_generation: Some(radar_dirty_generation),
-        tactical_dirty_cells: Some(tactical_dirty_cells),
+        dirty_cells: Some(dirty_cells),
     };
     let _ = crate::sim::tiberium::reduce_tiberium(
         &mut context,
@@ -1516,9 +1529,7 @@ pub(crate) struct SimulationAreaDamageCellPrelude<'a> {
     terrain_object_cells: &'a BTreeMap<(u16, u16), u64>,
     binary_frame: u32,
     spread_enabled: bool,
-    radar_dirty_cells: &'a mut Vec<(u16, u16)>,
-    radar_dirty_generation: &'a mut u64,
-    tactical_dirty_cells: &'a mut Vec<(u16, u16)>,
+    dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     zone_grid: &'a mut Option<ZoneGrid>,
     path_grid: &'a mut Option<Arc<PathGrid>>,
     bridge_state: Option<&'a BridgeRuntimeState>,
@@ -1566,26 +1577,21 @@ impl crate::sim::combat::combat_aoe::AoECellPrelude for SimulationAreaDamageCell
             }),
             self.binary_frame,
             self.spread_enabled,
-            self.radar_dirty_cells,
-            self.radar_dirty_generation,
-            self.tactical_dirty_cells,
+            self.dirty_cells,
         );
     }
 
     fn wall_dirty_step(&mut self, step: WallDirtyStep, packed_coord: (u16, u16)) {
         match step {
-            WallDirtyStep::Tactical => self.tactical_dirty_cells.push(packed_coord),
-            WallDirtyStep::Radar => mark_wall_radar_dirty_cell(
-                self.radar_dirty_cells,
-                self.radar_dirty_generation,
-                packed_coord,
-            ),
+            WallDirtyStep::Tactical => self.dirty_cells.mark_tactical(packed_coord),
+            WallDirtyStep::Radar => self.dirty_cells.mark_radar([packed_coord]),
         }
     }
 
     fn wall_navigation_step(
         &mut self,
         terrain: &ResolvedTerrainGrid,
+        overlays: &OverlayGrid,
         cell: (u16, u16),
         navigation_changed: bool,
         repair: ZoneRepairKind,
@@ -1594,6 +1600,7 @@ impl crate::sim::combat::combat_aoe::AoECellPrelude for SimulationAreaDamageCell
             self.zone_grid,
             self.path_grid,
             terrain,
+            overlays,
             self.bridge_state,
             self.playfield_bounds,
             cell,
@@ -1614,9 +1621,7 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
     terrain_object_cells: &'a BTreeMap<(u16, u16), u64>,
     binary_frame: u32,
     spread_enabled: bool,
-    radar_dirty_cells: &'a mut Vec<(u16, u16)>,
-    radar_dirty_generation: &'a mut u64,
-    tactical_dirty_cells: &'a mut Vec<(u16, u16)>,
+    dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     zone_grid: &'a mut Option<ZoneGrid>,
     path_grid: &'a mut Option<Arc<PathGrid>>,
     bridge_state: Option<&'a BridgeRuntimeState>,
@@ -1634,9 +1639,7 @@ pub(crate) fn simulation_area_damage_cell_prelude<'a>(
         terrain_object_cells,
         binary_frame,
         spread_enabled,
-        radar_dirty_cells,
-        radar_dirty_generation,
-        tactical_dirty_cells,
+        dirty_cells,
         zone_grid,
         path_grid,
         bridge_state,
@@ -1648,6 +1651,7 @@ pub(crate) fn repair_wall_damage_navigation_authorities(
     zone_grid: &mut Option<ZoneGrid>,
     path_grid: &mut Option<Arc<PathGrid>>,
     terrain: &ResolvedTerrainGrid,
+    overlays: &OverlayGrid,
     bridge_state: Option<&BridgeRuntimeState>,
     playfield_bounds: Option<PlayfieldBounds>,
     cell: (u16, u16),
@@ -1661,15 +1665,16 @@ pub(crate) fn repair_wall_damage_navigation_authorities(
         .filter(|grid| grid.width() == terrain.width() && grid.height() == terrain.height());
     match installed {
         Some(grid) if navigation_changed => {
-            let refreshed = terrain
-                .cell(cell.0, cell.1)
-                .is_some_and(|resolved| Arc::make_mut(grid).refresh_resolved_cell(resolved, false));
+            let refreshed = terrain.cell(cell.0, cell.1).is_some_and(|resolved| {
+                Arc::make_mut(grid).refresh_resolved_cell(resolved, Some(overlays), false)
+            });
             debug_assert!(refreshed, "wall Recalc cell must be inside the map");
         }
         Some(_) => {}
         None => {
             *path_grid = Some(Arc::new(PathGrid::from_resolved_terrain_with_bridges(
                 terrain,
+                Some(overlays),
             )));
         }
     }
@@ -1742,9 +1747,7 @@ pub(crate) struct SimulationWallRuntimeHost<'a> {
         &'a BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) detach_trace: &'a mut Vec<crate::sim::combat::combat_aoe::CellTargetDetach>,
-    pub(crate) radar_dirty_cells: &'a mut Vec<(u16, u16)>,
-    pub(crate) radar_dirty_generation: &'a mut u64,
-    pub(crate) tactical_dirty_cells: &'a mut Vec<(u16, u16)>,
+    pub(crate) dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     pub(crate) zone_grid: &'a mut Option<ZoneGrid>,
     pub(crate) path_grid: &'a mut Option<Arc<PathGrid>>,
     pub(crate) bridge_state: Option<&'a BridgeRuntimeState>,
@@ -1754,18 +1757,15 @@ pub(crate) struct SimulationWallRuntimeHost<'a> {
 impl WallDamageTransactionHost for SimulationWallRuntimeHost<'_> {
     fn dirty_step(&mut self, step: WallDirtyStep, packed_coord: (u16, u16)) {
         match step {
-            WallDirtyStep::Tactical => self.tactical_dirty_cells.push(packed_coord),
-            WallDirtyStep::Radar => mark_wall_radar_dirty_cell(
-                self.radar_dirty_cells,
-                self.radar_dirty_generation,
-                packed_coord,
-            ),
+            WallDirtyStep::Tactical => self.dirty_cells.mark_tactical(packed_coord),
+            WallDirtyStep::Radar => self.dirty_cells.mark_radar([packed_coord]),
         }
     }
 
     fn navigation_step(
         &mut self,
         terrain: &ResolvedTerrainGrid,
+        overlays: &OverlayGrid,
         cell: (u16, u16),
         navigation_changed: bool,
         repair: ZoneRepairKind,
@@ -1774,6 +1774,7 @@ impl WallDamageTransactionHost for SimulationWallRuntimeHost<'_> {
             self.zone_grid,
             self.path_grid,
             terrain,
+            overlays,
             self.bridge_state,
             self.playfield_bounds,
             cell,
@@ -1812,9 +1813,7 @@ fn dispatch_smudge_inline(
     terrain_object_cells: &BTreeMap<(u16, u16), u64>,
     binary_frame: u32,
     spread_enabled: bool,
-    radar_dirty_cells: &mut Vec<(u16, u16)>,
-    radar_dirty_generation: &mut u64,
-    tactical_dirty_cells: &mut Vec<(u16, u16)>,
+    dirty_cells: &mut crate::sim::dirty_cells::DirtyCells,
     construction: &mut crate::sim::smudge_grid::SmudgeConstruction<'_>,
 ) {
     let (Some(smudge_grid), Some(overlay_grid), Some(terrain)) =
@@ -1834,9 +1833,7 @@ fn dispatch_smudge_inline(
         )),
         binary_frame,
         spread_enabled,
-        radar_dirty_cells,
-        radar_dirty_generation,
-        tactical_dirty_cells,
+        dirty_cells,
     };
     crate::sim::combat::smudge_dispatch::dispatch_smudge_request(
         request,
@@ -1981,7 +1978,7 @@ impl Simulation {
                     self.kill_passengers(stable_id, attacker, uninit_context);
                 }
                 //44264C precedes the recursive destruction effects.
-                self.set_building_light_active(stable_id, false);
+                self.lighting_sources.set_building_light_active(stable_id, false);
             }
             crate::sim::combat::FatalLifecycleStage::AfterDeathEffects => {
                 if !matches!(category, EntityCategory::Unit | EntityCategory::Structure) {
@@ -2088,7 +2085,11 @@ impl Simulation {
         #[cfg(test)]
         if let crate::sim::combat::world_fire::FireVisit::Building { id, shot } = &visit
             && crate::sim::combat::receiver_fixture::substitute_building_fire(
-                self, *id, *shot, rules,
+                &self.session,
+                &mut self.substrate,
+                *id,
+                *shot,
+                rules,
             )
         {
             return damage_consequences::DamageCommitReceipt {
@@ -2241,7 +2242,7 @@ impl Simulation {
         mut wave: crate::sim::wave::Wave,
         rules: &RuleSet,
     ) {
-        let stable_id = self.allocate_stable_id();
+        let stable_id = self.substrate.allocate_stable_id();
         if !wave.constructor_distance_is_live() {
             // Constructor UnInit precedes registration and unique identity,
             // but FireAt stores the returned dead pointer. The stable id only
@@ -2356,7 +2357,7 @@ impl Simulation {
         // (0x00469C93 -> 0x00422702/0x00424D5A) accesses the live smudge map
         // before returning. Keep that authority resident through recursion.
         // Evidence: active gamemd.exe bodies and caller instructions.
-        let house_alliances = self.house_alliances.clone();
+        let house_alliances = self.house_alliances.as_map().clone();
         let current_tick = u64::from(self.session.binary_frame());
         let scenario_no_damage = self.session.no_damage();
         let mut effects = crate::sim::combat::DeathEffects::default();
@@ -2554,9 +2555,7 @@ impl Simulation {
                                 target_terrain_objects: self.terrain_objects.objects(),
                                 #[cfg(any(test, feature = "test-support"))]
                                 detach_trace: &mut effects.cell_target_detaches,
-                                radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
-                                radar_dirty_generation: &mut self.radar_terrain_dirty_generation,
-                                tactical_dirty_cells: &mut self.tactical_dirty_cells,
+                                dirty_cells: &mut self.dirty_cells,
                                 zone_grid: &mut self.zone_grid,
                                 path_grid: &mut self.path_grid,
                                 bridge_state: self.bridge_state.as_ref(),
@@ -2617,15 +2616,11 @@ impl Simulation {
                                 #[cfg(any(test, feature = "test-support"))]
                                 &mut effects.cell_target_detaches,
                             );
-                            self.mark_radar_terrain_dirty_cells([coord]);
+                            self.dirty_cells.mark_radar([coord]);
                         }
-                        {
-                            for &coord in &mutation.original_footprint {
-                                if !self.tactical_dirty_cells.contains(&coord) {
-                                    self.tactical_dirty_cells.push(coord);
-                                }
-                            }
-                        };
+                        for &coord in &mutation.original_footprint {
+                            self.dirty_cells.mark_tactical_once(coord);
+                        }
 
                         // Resolve the three types in native order, then make
                         // two row-major attempts at each of the 15 grid cells.
@@ -2912,7 +2907,7 @@ impl Simulation {
             } else {
                 RadarEventType::BaseUnderAttack
             };
-            self.sound_events.push(SimSoundEvent::UnderAttack {
+            self.sound_events.emit(SimSoundEvent::UnderAttack {
                 rx: event.rx,
                 ry: event.ry,
                 owner: event.owner,
@@ -2942,14 +2937,14 @@ impl Simulation {
                             .get(&listener)
                             .is_some_and(|house| house.is_human())
                         && crate::map::houses::is_allied_with(
-                            &self.house_alliances,
+                            self.house_alliances.as_map(),
                             &victim_name,
                             self.interner.resolve(listener),
                         )
                 })
                 .collect();
             for listener in listeners {
-                self.sound_events.push(SimSoundEvent::AllyUnderAttack {
+                self.sound_events.emit(SimSoundEvent::AllyUnderAttack {
                     owner: listener,
                     radar: RadarEventRequest::new(
                         RadarEventType::AllyUnderAttack,
@@ -2975,7 +2970,7 @@ impl Simulation {
             if !self.owner_is_human(event.owner) {
                 continue;
             }
-            self.sound_events.push(SimSoundEvent::UnitLost {
+            self.sound_events.emit(SimSoundEvent::UnitLost {
                 owner: event.owner,
                 radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
             });
@@ -3130,11 +3125,11 @@ impl Simulation {
     }
 
     pub fn house_alliances(&self) -> &HouseAllianceMap {
-        &self.house_alliances
+        self.house_alliances.as_map()
     }
 
     pub fn sound_events(&self) -> &[SimSoundEvent] {
-        &self.sound_events
+        self.sound_events.as_slice()
     }
 
     pub fn lighting_sources(&self) -> &crate::sim::light_sources::LightingSources {
@@ -3142,7 +3137,7 @@ impl Simulation {
     }
 
     pub fn fire_events(&self) -> &[SimFireEvent] {
-        &self.fire_events
+        self.fire_events.as_slice()
     }
 
     pub fn projectiles(&self) -> &crate::sim::projectile::ProjectileStore {
@@ -3214,22 +3209,22 @@ impl Simulation {
     }
 
     pub fn radar_terrain_dirty_cells(&self) -> &[(u16, u16)] {
-        &self.radar_terrain_dirty_cells
+        self.dirty_cells.radar()
     }
 
     pub fn radar_terrain_dirty_generation(&self) -> u64 {
-        self.radar_terrain_dirty_generation
+        self.dirty_cells.radar_generation()
     }
 
     pub fn power_states(&self) -> &BTreeMap<InternedId, PowerState> {
-        &self.power_states
+        self.power_states.as_map()
     }
 
     pub fn super_weapons(
         &self,
     ) -> &BTreeMap<InternedId, BTreeMap<InternedId, crate::sim::superweapon::SuperWeaponInstance>>
     {
-        &self.super_weapons
+        self.super_weapons.as_map()
     }
 
     pub fn lightning_storm(&self) -> &crate::sim::superweapon::lightning_storm::LightningStorm {
@@ -3244,6 +3239,49 @@ impl Simulation {
 
     pub fn terrain_speed_config(&self) -> &terrain_speed::TerrainSpeedConfig {
         &self.terrain_speed_config
+    }
+
+    /// Wire the cliff/slope coefficients from `[General]` into the live
+    /// config; it otherwise holds the compiled vanilla defaults.
+    pub(crate) fn install_terrain_speed_rules(
+        &mut self,
+        general: &crate::rules::ruleset::GeneralRules,
+    ) {
+        self.terrain_speed_config = terrain_speed::TerrainSpeedConfig::from_general(
+            general.tracked_uphill,
+            general.tracked_downhill,
+            general.wheeled_uphill,
+            general.wheeled_downhill,
+        );
+    }
+
+    /// The authored `Full_Init`'s `InitCellAttributes(0)` value-only total,
+    /// recorded once by the authored map install.
+    pub(crate) fn record_authored_tiberium_value_total(&mut self, total: i32) {
+        self.authored_tiberium_value_total = Some(total);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn authored_tiberium_value_total(&self) -> Option<i32> {
+        self.authored_tiberium_value_total
+    }
+
+    /// A mission or production step placed new objects this frame; the frame
+    /// tail folds it into the tick's `spawned_entities`.
+    pub(crate) fn note_mission_spawned_entities(&mut self) {
+        self.mission_spawned_entities = true;
+    }
+
+    /// Every Techno+324 Wave link, by owner.
+    pub(crate) fn active_wave_links(&self) -> impl Iterator<Item = (u64, u64)> + '_ {
+        self.active_wave_links
+            .iter()
+            .map(|(&owner, &wave)| (owner, wave))
+    }
+
+    /// Objects holding a custom sound loop.
+    pub(crate) fn custom_sound_objects(&self) -> impl Iterator<Item = u64> + '_ {
+        self.object_custom_sounds.keys().copied()
     }
 
     pub fn input_delay_ticks(&self) -> u64 {
@@ -3268,7 +3306,7 @@ impl Simulation {
     }
 
     pub fn next_stable_object_id(&self) -> u64 {
-        self.substrate.next_stable_object_id
+        self.substrate.next_stable_object_id.peek()
     }
 
     // App and harness entry points into sub-owners. Each runs the sub-owner's
@@ -3343,6 +3381,81 @@ impl Simulation {
         self.overlay_grid = Some(grid);
     }
 
+    // Client-crate fixtures for operations that take their owners.
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn bomb_defuse_for_test(&mut self, carrier: u64) {
+        Self::bomb_defuse(&mut self.substrate, &mut self.bombs, carrier);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn suspend_production_for_test(
+        &mut self,
+        owner: &str,
+        category: crate::sim::production::ProductionCategory,
+    ) -> bool {
+        crate::sim::production::suspend_production(
+            &self.interner,
+            &mut self.production,
+            &self.session,
+            owner,
+            category,
+        )
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_trigger_variable_for_test(&mut self, global: bool, index: i32, set: bool) -> bool {
+        Self::set_trigger_variable(
+            &self.session,
+            &mut self.scenario_rng,
+            &mut self.trigger_runtime,
+            global,
+            index,
+            set,
+        )
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn submit_object_display_for_test(
+        &mut self,
+        id: u64,
+        layer: display_layers::DisplayLayer,
+        rules: Option<&RuleSet>,
+    ) {
+        Self::submit_object_display(
+            &self.interner,
+            &self.terrain_objects,
+            &mut self.substrate,
+            id,
+            layer,
+            rules,
+        );
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn apply_runtime_bridge_mark_stamp_for_test(
+        &mut self,
+        stamp: crate::map::bridge_facts::BridgeFlagStamp,
+        family: crate::map::bridge_facts::BridgeStampFamily,
+    ) {
+        Self::apply_runtime_bridge_mark_stamp(
+            &mut self.resolved_terrain,
+            &mut self.real_cell_bridge_flags_0x1180,
+            stamp,
+            family,
+        );
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn pause_scenario_for_test(&mut self, duration: i32) -> Vec<TriggerEffect> {
+        self.session.pause_scenario(duration)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn expire_scenario_pause_for_test(&mut self) -> Vec<TriggerEffect> {
+        self.session.expire_scenario_pause()
+    }
+
     // Client-crate fixtures; in-crate tests use the fields.
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3356,10 +3469,33 @@ impl Simulation {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub fn substrate_mut_for_test(&mut self) -> &mut ObjectSubstrate {
+        &mut self.substrate
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn overlay_grid_mut_for_test(
         &mut self,
     ) -> &mut Option<crate::sim::overlay_grid::OverlayGrid> {
         &mut self.overlay_grid
+    }
+
+    /// One live overlay cell for a fixture, over an empty grid sized to the
+    /// terrain when none is installed yet.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn overlay_cell_mut_for_test(
+        &mut self,
+        rx: u16,
+        ry: u16,
+    ) -> &mut crate::sim::overlay_grid::OverlayCell {
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .expect("an overlay fixture needs terrain");
+        let (width, height) = (terrain.width(), terrain.height());
+        self.overlay_grid
+            .get_or_insert_with(|| OverlayGrid::new(width, height))
+            .cell_mut_for_test(rx, ry)
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3374,7 +3510,7 @@ impl Simulation {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn house_alliances_mut_for_test(&mut self) -> &mut HouseAllianceMap {
-        &mut self.house_alliances
+        self.house_alliances.as_map_mut_for_test()
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3387,12 +3523,12 @@ impl Simulation {
         &mut self,
     ) -> &mut BTreeMap<InternedId, BTreeMap<InternedId, crate::sim::superweapon::SuperWeaponInstance>>
     {
-        &mut self.super_weapons
+        self.super_weapons.map_mut_for_test()
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn sound_events_mut_for_test(&mut self) -> &mut Vec<SimSoundEvent> {
-        &mut self.sound_events
+    pub fn take_sound_events_for_test(&mut self) -> Vec<SimSoundEvent> {
+        self.sound_events.take_for_test()
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3406,7 +3542,19 @@ impl Simulation {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn power_states_mut_for_test(&mut self) -> &mut BTreeMap<InternedId, PowerState> {
-        &mut self.power_states
+        self.power_states.map_mut_for_test()
+    }
+
+    /// The power fixture's assessment of every House from the live buildings.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn assess_power_for_test(&mut self, rules: &RuleSet) {
+        crate::sim::power_system::tick_power_states(
+            &mut self.power_states,
+            &mut self.substrate.entities,
+            rules,
+            &self.interner,
+            self.session.binary_frame(),
+        );
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3426,6 +3574,57 @@ impl Simulation {
         &mut self,
     ) -> &mut Option<crate::sim::cell_rect::PlayfieldBounds> {
         &mut self.playfield_bounds
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_playfield_bounds_for_test(
+        &mut self,
+        bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
+    ) {
+        self.playfield_bounds = bounds;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_playfield_size_height_for_test(&mut self, height: Option<i32>) {
+        self.playfield_size_height = height;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn playfield_size_height_mut_for_test(&mut self) -> &mut Option<i32> {
+        &mut self.playfield_size_height
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_rule_handles_for_test(
+        &mut self,
+        handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
+    ) {
+        self.rule_handles = handles;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_quit_requested_for_test(&mut self, requested: bool) {
+        self.quit_requested = requested;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_connection_lost_for_test(&mut self, lost: bool) {
+        self.connection_lost = lost;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_terrain_speed_config_for_test(&mut self, config: terrain_speed::TerrainSpeedConfig) {
+        self.terrain_speed_config = config;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn link_active_wave_for_test(&mut self, owner: u64, wave: u64) {
+        self.active_wave_links.insert(owner, wave);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn waves_mut_for_test(&mut self) -> &mut crate::sim::wave::WaveStore {
+        &mut self.waves
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3485,8 +3684,8 @@ impl Simulation {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn fire_events_mut_for_test(&mut self) -> &mut Vec<SimFireEvent> {
-        &mut self.fire_events
+    pub fn clear_fire_events_for_test(&mut self) {
+        self.fire_events.clear_for_test();
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3502,8 +3701,8 @@ impl Simulation {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn next_stable_object_id_mut_for_test(&mut self) -> &mut u64 {
-        &mut self.substrate.next_stable_object_id
+    pub fn set_next_stable_object_id_for_test(&mut self, next: u64) {
+        self.substrate.next_stable_object_id.set_for_test(next);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3563,25 +3762,24 @@ impl Simulation {
     /// High-bridge anchor construction uses the same literal setter as bridge
     /// damage/repair, but it additionally creates the family/anchor relations
     /// from which Rust derives live bridge topology.
-    pub fn apply_runtime_bridge_mark_stamp(
-        &mut self,
+    pub(crate) fn apply_runtime_bridge_mark_stamp(
+        resolved_terrain: &mut Option<ResolvedTerrainGrid>,
+        real_cell_bridge_flags_0x1180: &mut RealCellBridgeFlags0x1180,
         stamp: crate::map::bridge_facts::BridgeFlagStamp,
         family: crate::map::bridge_facts::BridgeStampFamily,
     ) {
-        let Some(terrain) = self.resolved_terrain.as_ref() else {
+        let Some(terrain) = resolved_terrain.as_ref() else {
             return;
         };
-        if !terrain.bridge_flag_authority_matches_shape(&self.real_cell_bridge_flags_0x1180) {
-            self.real_cell_bridge_flags_0x1180 = terrain.capture_real_cell_bridge_flags_0x1180();
+        if !terrain.bridge_flag_authority_matches_shape(real_cell_bridge_flags_0x1180) {
+            *real_cell_bridge_flags_0x1180 = terrain.capture_real_cell_bridge_flags_0x1180();
         }
-        let updates = self
-            .resolved_terrain
+        let updates = resolved_terrain
             .as_mut()
             .expect("terrain presence checked before runtime bridge Mark setter")
             .apply_runtime_bridge_mark_stamp(stamp, family);
         for (index, flags) in updates {
-            self.real_cell_bridge_flags_0x1180
-                .set_allocated_cell(index, flags);
+            real_cell_bridge_flags_0x1180.set_allocated_cell(index, flags);
         }
     }
 
@@ -3723,6 +3921,12 @@ impl Simulation {
             .collect();
     }
 
+    /// Without rules there are no bridge-explosion or metallic-debris types.
+    pub(crate) fn clear_rule_animation_lists(&mut self) {
+        self.bridge_explosions.clear();
+        self.metallic_debris.clear();
+    }
+
     /// Pre-resolved rule handles for combat comparisons.
     ///
     /// # Panics
@@ -3733,6 +3937,13 @@ impl Simulation {
             "Simulation::resolve_type_handles must run at sim init \
              before combat reads warhead handles",
         )
+    }
+
+    /// The rule handles, or `None` before `resolve_type_handles` has run.
+    pub(crate) fn resolved_rule_handles(
+        &self,
+    ) -> Option<crate::sim::type_handle_table::ResolvedRuleHandles> {
+        self.rule_handles
     }
 
     /// Resolve an entity's type to its `ObjectType` through the interner's
@@ -3811,19 +4022,18 @@ impl Simulation {
             mapgen_rng: SimRng::new(0),
             native_unique_ids: None,
             authored_tiberium_value_total: None,
-            post_load_particle_system_constructed: false,
-            native_map_tubes: crate::map::tubes::NativeMapTubesState::default(),
+            post_load_particle_system_constructed: Default::default(),
+            native_map_tubes: crate::map::tubes::NativeMapTubes::default(),
             load_objects: LoadObjectLifecycle::default(),
             fog: FogState::default(),
-            house_alliances: HouseAllianceMap::default(),
+            house_alliances: Default::default(),
             substrate: ObjectSubstrate::new(),
-            lifecycle_outputs: Vec::new(),
+            lifecycle_outputs: FrameChannel::default(),
             unit_voice_visit_interest: Default::default(),
             mission_spawned_entities: false,
             frame_overlay_updates: Vec::new(),
             frame_overlay_removals: Vec::new(),
-            terminal_score_snapshot: None,
-            pending_lifecycle_requests: Vec::new(),
+            terminal_score_snapshot: Default::default(),
             #[cfg(any(test, feature = "test-support"))]
             lifecycle_test_events: Vec::new(),
             #[cfg(test)]
@@ -3833,16 +4043,17 @@ impl Simulation {
             master_frame_test_trace: Vec::new(),
             #[cfg(any(test, feature = "test-support"))]
             house_ai_activation_order_test_trace: Vec::new(),
-            sound_events: Vec::new(),
+            sound_events: FrameChannel::default(),
             lighting_sources: crate::sim::light_sources::LightingSources::default(),
-            fire_events: Vec::new(),
-            combat_light_requests: Vec::new(),
+            fire_events: FrameChannel::default(),
+            combat_light_requests: FrameChannel::default(),
             projectiles: crate::sim::projectile::ProjectileStore::new(),
             waves: crate::sim::wave::WaveStore::new(),
             active_wave_links: BTreeMap::new(),
             object_custom_sounds: BTreeMap::new(),
-            pending_smudge_requests: Vec::new(),
+            #[cfg(any(test, feature = "test-support"))]
             bale_events: Vec::new(),
+            #[cfg(any(test, feature = "test-support"))]
             bunker_wall_events: Vec::new(),
             team_script_vm: TeamScriptVm::default(),
             houses: crate::sim::houses::Houses::default(),
@@ -3869,12 +4080,10 @@ impl Simulation {
             playfield_revision: 0,
             bridge_explosions: Vec::new(),
             metallic_debris: Vec::new(),
-            radar_terrain_dirty_cells: Vec::new(),
-            radar_terrain_dirty_generation: 0,
-            radar_terrain_dirty_index: Default::default(),
-            tactical_dirty_cells: Vec::new(),
-            power_states: BTreeMap::new(),
-            super_weapons: BTreeMap::new(),
+            dirty_cells: Default::default(),
+            power_states: Default::default(),
+            building_upgrade_art_names: Default::default(),
+            super_weapons: Default::default(),
             lightning_storm: Default::default(),
             psychic_dominator: Default::default(),
             unit_deliveries: Default::default(),
@@ -3883,6 +4092,7 @@ impl Simulation {
             input_delay_ticks: u64::from(crate::util::config::default_input_delay_ticks()),
             quit_requested: false,
             executed_exit_owner: None,
+            departed_owners: Vec::new(),
             connection_lost: false,
             frame_sync_checksum: None,
             state_hash_interval: every_frame(),
@@ -3977,13 +4187,7 @@ impl Simulation {
         &self.substrate.display
     }
 
-    /// Mutable entity-store access inside the crate. The client reads through
-    /// `entities()` and never holds a mutable object.
-    pub(crate) fn entities_mut(&mut self) -> &mut EntityStore {
-        &mut self.substrate.entities
-    }
-
-    /// Client-crate fixtures; in-crate code uses `entities_mut`.
+    /// Client-crate fixtures; in-crate code uses the substrate's entity store.
     #[cfg(any(test, feature = "test-support"))]
     pub fn entities_mut_for_test(&mut self) -> &mut EntityStore {
         &mut self.substrate.entities
@@ -4003,45 +4207,25 @@ impl Simulation {
         self.interner.resolve(id)
     }
 
-    /// Append each cell not yet in the pending radar-terrain batch. A
-    /// whole-map reveal marks every cell, so membership goes through the
-    /// derived index rather than a scan of the list.
-    pub fn mark_radar_terrain_dirty_cells<I>(&mut self, cells: I)
-    where
-        I: IntoIterator<Item = (u16, u16)>,
-    {
-        let built_for = (
-            self.radar_terrain_dirty_cells.len(),
-            self.radar_terrain_dirty_generation,
-        );
-        let index = &mut self.radar_terrain_dirty_index;
-        if (index.1, index.2) != built_for {
-            index.0 = self.radar_terrain_dirty_cells.iter().copied().collect();
-        }
-        let mut changed = false;
-        for cell in cells {
-            if index.0.insert(cell) {
-                self.radar_terrain_dirty_cells.push(cell);
-                changed = true;
-            }
-        }
-        if changed {
-            self.radar_terrain_dirty_generation =
-                self.radar_terrain_dirty_generation.wrapping_add(1);
-        }
-        index.1 = self.radar_terrain_dirty_cells.len();
-        index.2 = self.radar_terrain_dirty_generation;
+    /// Client-crate fixture for a pending radar batch.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn mark_radar_terrain_dirty_for_test(
+        &mut self,
+        cells: impl IntoIterator<Item = (u16, u16)>,
+    ) {
+        self.dirty_cells.mark_radar(cells);
     }
 
-    pub(crate) fn flush_smudge_dirty(&mut self) {
-        let dirty = self
-            .smudge_grid
+    pub(crate) fn flush_smudge_dirty(
+        smudge_grid: &mut Option<SmudgeGrid>,
+        dirty_cells: &mut DirtyCells,
+    ) {
+        let dirty = smudge_grid
             .as_mut()
             .map(crate::sim::smudge_grid::SmudgeGrid::drain_dirty)
             .unwrap_or_default();
         for cell in dirty {
-            self.tactical_dirty_cells.push(cell);
-            self.mark_radar_terrain_dirty_cells([cell]);
+            dirty_cells.mark_cell(cell);
         }
     }
 
@@ -4077,9 +4261,7 @@ impl Simulation {
             self.terrain_objects.cell_index(),
             binary_frame,
             spread_enabled,
-            &mut self.radar_terrain_dirty_cells,
-            &mut self.radar_terrain_dirty_generation,
-            &mut self.tactical_dirty_cells,
+            &mut self.dirty_cells,
             &mut construction,
         );
         if let Some(id) = construction.constructed_id() {
@@ -4090,7 +4272,7 @@ impl Simulation {
                 lifecycle::UninitContext::new(Some(rules), overlay_registry),
             );
         }
-        self.flush_smudge_dirty();
+        Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
     }
 
     /// Execute59 at6DE313 uses +90 as a waypoint, not the +44 tail or an
@@ -4148,9 +4330,7 @@ impl Simulation {
             rng: Some(&mut self.scenario_rng),
             binary_frame: self.session.binary_frame(),
             spread_enabled: self.ore_growth_config.spreads(),
-            radar_dirty_cells: Some(&mut self.radar_terrain_dirty_cells),
-            radar_dirty_generation: Some(&mut self.radar_terrain_dirty_generation),
-            tactical_dirty_cells: Some(&mut self.tactical_dirty_cells),
+            dirty_cells: Some(&mut self.dirty_cells),
         };
         crate::sim::tiberium::reduce_tiberium(&mut ctx, cell, amount.into())
     }
@@ -4315,9 +4495,7 @@ impl Simulation {
                     self.ore_growth_config.grows(),
                     self.ore_growth_config.spreads(),
                     self.ore_growth_config.tiberium_grows_flag(),
-                    Some(&mut self.radar_terrain_dirty_cells),
-                    Some(&mut self.radar_terrain_dirty_generation),
-                    Some(&mut self.tactical_dirty_cells),
+                    Some(&mut self.dirty_cells),
                 );
                 let spread = self.ore_growth_state.tick_native_spread_driver(
                     grid,
@@ -4330,9 +4508,7 @@ impl Simulation {
                     self.session.binary_frame(),
                     self.ore_growth_config.grows(),
                     self.ore_growth_config.spreads(),
-                    Some(&mut self.radar_terrain_dirty_cells),
-                    Some(&mut self.radar_terrain_dirty_generation),
-                    Some(&mut self.tactical_dirty_cells),
+                    Some(&mut self.dirty_cells),
                 );
                 // Original Place487190 -> Overlay Mark5FC570 -> Recalc47D2B0
                 // publishes LandType before Logic55B4DC returns to live-object
@@ -4348,7 +4524,12 @@ impl Simulation {
                 // their ordered registry/ID effects before live-object AI;
                 // Scenario IDs and retirement order are preserved independently
                 // of the intervening Scenario RNG and queue mutations.
-                self.publish_overlay_constructions(spread.into_overlay_constructions());
+                Self::publish_overlay_constructions(
+                    &mut self.native_unique_ids,
+                    &mut self.load_objects,
+                    &mut self.substrate,
+                    spread.into_overlay_constructions(),
+                );
             }
         }
     }
@@ -4375,21 +4556,20 @@ impl Simulation {
     }
 
     pub(crate) fn publish_overlay_constructions(
-        &mut self,
+        native_unique_ids: &mut Option<NativeUniqueIdCursor>,
+        load_objects: &mut LoadObjectLifecycle,
+        substrate: &mut ObjectSubstrate,
         receipts: impl IntoIterator<Item = OverlayConstructionReceipt>,
     ) {
         for receipt in receipts {
-            let stable_id = self.allocate_stable_id();
-            let handle = self
-                .load_objects
+            let stable_id = substrate.allocate_stable_id();
+            let handle = load_objects
                 .construct_overlay(stable_id, receipt.cell(), || {
-                    crate::sim::native_identity::NativeUniqueIdCursor::assign_runtime(
-                        &mut self.native_unique_ids,
-                    )
+                    NativeUniqueIdCursor::assign_runtime(native_unique_ids)
                 })
                 .expect("runtime Overlay constructor must join its owned registries");
-            self.load_objects
-                .finish_cell_construction(handle, receipt, &mut self.substrate.pending_delete)
+            load_objects
+                .finish_cell_construction(handle, receipt, &mut substrate.pending_delete)
                 .expect("runtime Overlay constructor must finish its owned lifecycle");
         }
     }
@@ -4530,23 +4710,6 @@ impl Simulation {
         true
     }
 
-    /// Acknowledge one completed radar-terrain presentation update.
-    ///
-    /// Active `RadarClass` dirty processing at `0x00655250` drains and clears
-    /// its retained cell list after the update. The generation guard prevents
-    /// a stale client acknowledgement from clearing a newer producer batch.
-    /// Both fields are presentation handoff state (`serde(skip)` and omitted
-    /// from `state_hash`), so this consumption cannot mutate lockstep state.
-    pub(crate) fn acknowledge_radar_terrain_dirty(&mut self, generation: u64) -> bool {
-        if generation != self.radar_terrain_dirty_generation
-            || self.radar_terrain_dirty_cells.is_empty()
-        {
-            return false;
-        }
-        self.radar_terrain_dirty_cells.clear();
-        true
-    }
-
     fn poll_triggers_for_master_frame(
         &mut self,
         rules: Option<&RuleSet>,
@@ -4605,18 +4768,6 @@ impl Simulation {
         self.house_ai_activation_order_test_trace.push(event);
     }
 
-    /// Shared identity source for every modeled runtime `AbstractClass` analogue.
-    ///
-    /// `AbstractClass::Create_ID @ 0x00410230` delegates to
-    /// `ScenarioClass::NextUniqueID @ 0x0068BCB0`; individual stores therefore
-    /// must not own independent counters.
-    pub fn allocate_stable_id(&mut self) -> u64 {
-        ObjectSubstrate::allocate_stable_id(
-            &mut self.substrate.next_stable_object_id,
-            &self.substrate.entities,
-        )
-    }
-
     /// CreateBullet46B050 without Fire: consumes one native constructor ID,
     /// retains the independent construction fields and joins Object expiry
     /// listeners through the existing store, but not Logic or Display.
@@ -4630,7 +4781,7 @@ impl Simulation {
         let native_id = crate::sim::native_identity::NativeUniqueIdCursor::assign_runtime(
             &mut self.native_unique_ids,
         );
-        let id = self.allocate_stable_id();
+        let id = self.substrate.allocate_stable_id();
         self.projectiles.construct(
             id,
             native_id,
@@ -4639,7 +4790,13 @@ impl Simulation {
             target,
             payload,
         );
-        self.construct_bullet_scheme(id, rules);
+        Self::construct_bullet_scheme(
+            &self.interner,
+            &self.substrate,
+            &mut self.projectiles,
+            id,
+            rules,
+        );
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::UnfiredProjectileConstructed {
             stable_id: id,
@@ -4678,7 +4835,7 @@ impl Simulation {
         debug_assert!(registered);
         if let Some(style) = spawn.line_trail {
             self.lifecycle_outputs
-                .push(LifecycleOutput::LineTrailConstructed { stable_id, style });
+                .emit(LifecycleOutput::LineTrailConstructed { stable_id, style });
         }
         stable_id
     }
@@ -4687,20 +4844,26 @@ impl Simulation {
     /// `FirersPalette=` BulletType (`+0x2A9`) whose Owner (`+0xB0`) exists
     /// keeps the Owner's House colour scheme at `+0x114`; every other bullet
     /// keeps -1. Runs after each admission and re-Construct.
-    pub(crate) fn construct_bullet_scheme(&mut self, bullet: u64, rules: &RuleSet) {
-        let Some(projectile) = self.projectiles.get(bullet) else {
+    pub(crate) fn construct_bullet_scheme(
+        interner: &StringInterner,
+        substrate: &ObjectSubstrate,
+        projectiles: &mut ProjectileStore,
+        bullet: u64,
+        rules: &RuleSet,
+    ) {
+        let Some(projectile) = projectiles.get(bullet) else {
             return;
         };
         let firers_palette = projectile
             .payload()
             .projectile_type()
-            .and_then(|id| rules.projectile(self.interner.resolve(id)))
+            .and_then(|id| rules.projectile(interner.resolve(id)))
             .is_some_and(|kind| kind.firers_palette);
         let house = firers_palette
-            .then(|| self.substrate.entities.get(projectile.source_id()))
+            .then(|| substrate.entities.get(projectile.source_id()))
             .flatten()
             .map(|owner| owner.owner());
-        self.projectiles.set_firer_house(bullet, house);
+        projectiles.set_firer_house(bullet, house);
     }
 
     /// Admit the bullets a detonation spawned (`BulletClass::SpawnShrapnel
@@ -4727,7 +4890,7 @@ impl Simulation {
         rules: &RuleSet,
     ) {
         for projectile in spawns {
-            let stable_id = self.allocate_stable_id();
+            let stable_id = self.substrate.allocate_stable_id();
             let inviso = projectile
                 .payload
                 .projectile_type()
@@ -4735,7 +4898,13 @@ impl Simulation {
                 .is_some_and(|kind| kind.inviso);
             let placement = projectile.initial_target_position;
             self.admit_projectile(stable_id, projectile);
-            self.construct_bullet_scheme(stable_id, rules);
+            Self::construct_bullet_scheme(
+                &self.interner,
+                &self.substrate,
+                &mut self.projectiles,
+                stable_id,
+                rules,
+            );
             #[cfg(test)]
             if let Some(fixture) = self.receiver_fixture.as_mut() {
                 fixture
@@ -5085,7 +5254,7 @@ impl Simulation {
         admit_inline: bool,
         packets: &mut Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
-        let stable_id = self.allocate_stable_id();
+        let stable_id = self.substrate.allocate_stable_id();
         let native_unique_id = self.next_native_runtime_id();
         let object = crate::sim::voxel_anim::spawn_debris_piece(
             stable_id,
@@ -5129,15 +5298,15 @@ impl Simulation {
     /// Apply `house_tracking`'s Add_Tracking or Remove_Tracking for an object
     /// on its owner's house.
     pub(crate) fn update_house_tracking(
-        &mut self,
+        substrate: &mut ObjectSubstrate,
+        houses: &mut Houses,
         stable_id: u64,
         update: fn(
             &mut crate::sim::house_tracking::HouseTracking,
             &mut crate::sim::game_entity::GameEntity,
         ),
     ) {
-        let Some(owner) = self
-            .substrate
+        let Some(owner) = substrate
             .entities
             .get(stable_id)
             .map(crate::sim::game_entity::GameEntity::owner)
@@ -5145,8 +5314,8 @@ impl Simulation {
             return;
         };
         if let (Some(entity), Some(house)) = (
-            self.substrate.entities.get_mut(stable_id),
-            self.houses.get_mut(&owner),
+            substrate.entities.get_mut(stable_id),
+            houses.get_mut(&owner),
         ) {
             update(house.tracking_mut(), entity);
         }
@@ -5240,11 +5409,15 @@ impl Simulation {
     /// house, priced with that house's current `Cost_Of` factors. It counts
     /// no powered center and invalidates no power; the first GrandOpening
     /// owns that invalidation.
-    pub(crate) fn house_added_to_game(&mut self, stable_id: u64) {
-        let Some(entity) = self.substrate.entities.get(stable_id) else {
+    pub(crate) fn house_added_to_game(
+        substrate: &ObjectSubstrate,
+        houses: &mut Houses,
+        stable_id: u64,
+    ) {
+        let Some(entity) = substrate.entities.get(stable_id) else {
             return;
         };
-        if let Some(house) = self.houses.get_mut(&entity.owner()) {
+        if let Some(house) = houses.get_mut(&entity.owner()) {
             let factors = house.cost_factors();
             house.tracking_mut().added_to_game(entity, &factors);
         }
@@ -5282,39 +5455,38 @@ impl Simulation {
             house.tracking_mut().removed_from_game(entity, &factors);
         }
         if structure {
-            self.invalidate_house_power(owner, false);
+            Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
         }
     }
 
     /// Private retained House dirty bytes, shared by their represented native
     /// writers. An absent House cannot acquire derived state from a callback.
-    pub(crate) fn invalidate_house_power(&mut self, owner: InternedId, radar: bool) {
-        if self.houses.contains_key(&owner) {
-            self.power_states
-                .entry(owner)
-                .or_default()
-                .invalidate(radar);
-        }
-    }
-
-    /// Inline native House+1FC writers request the existing House tail;
-    /// power/radar dirty bytes remain with their distinct PowerState owner.
-    pub(crate) fn request_house_tech_tree_recheck(&mut self, owner: InternedId) {
-        if let Some(house) = self.houses.get_mut(&owner) {
-            house.request_tech_recheck();
+    pub(crate) fn invalidate_house_power(
+        houses: &Houses,
+        power_states: &mut PowerStates,
+        owner: InternedId,
+        radar: bool,
+    ) {
+        if houses.contains_key(&owner) {
+            power_states.house_mut(owner).invalidate(radar);
         }
     }
 
     /// BuildingAI440042..44006C samples live health before the common Techno
     /// tail. Repair701410 itself leaves both House dirty bytes untouched.
-    pub(super) fn sample_building_health_for_house_update(&mut self, id: u64) {
-        let owner = self.substrate.entities.get_mut(id).and_then(|entity| {
+    pub(super) fn sample_building_health_for_house_update(
+        substrate: &mut ObjectSubstrate,
+        houses: &Houses,
+        power_states: &mut PowerStates,
+        id: u64,
+    ) {
+        let owner = substrate.entities.get_mut(id).and_then(|entity| {
             entity
                 .sample_building_health_for_power()
                 .then_some(entity.owner())
         });
         if let Some(owner) = owner {
-            self.invalidate_house_power(owner, true);
+            Self::invalidate_house_power(houses, power_states, owner, true);
         }
     }
 
@@ -5327,7 +5499,7 @@ impl Simulation {
         }
         #[cfg(feature = "debug-tools")]
         let debug_full_power = self.debug_flags_for(owner).infinite_power;
-        let state = self.power_states.entry(owner).or_default();
+        let state = self.power_states.house_mut(owner);
         #[cfg(feature = "debug-tools")]
         state.set_debug_full_power(debug_full_power);
         #[cfg(feature = "debug-tools")]
@@ -5406,16 +5578,19 @@ impl Simulation {
     ///
     /// gamemd-derived: House pointer expiry around `0x004FBA1D` and
     /// `BuildingClass::ChangeOwner @ 0x00448260`.
-    pub(crate) fn remove_build_const_from_owner(&mut self, stable_id: u64) {
-        let Some((owner, eligible)) = self
-            .substrate
+    pub(crate) fn remove_build_const_from_owner(
+        substrate: &ObjectSubstrate,
+        houses: &mut Houses,
+        stable_id: u64,
+    ) {
+        let Some((owner, eligible)) = substrate
             .entities
             .get(stable_id)
             .map(|entity| (entity.owner(), entity.type_facts.build_const_eligible()))
         else {
             return;
         };
-        if eligible && let Some(house) = self.houses.get_mut(&owner) {
+        if eligible && let Some(house) = houses.get_mut(&owner) {
             house.remove_build_const(stable_id);
         }
     }
@@ -5510,7 +5685,7 @@ impl Simulation {
                 .object_type(entity.type_ref(), rules)
                 .is_some_and(|object| object.can_be_occupied)
         {
-            self.bomb_defuse(stable_id);
+            Self::bomb_defuse(&mut self.substrate, &mut self.bombs, stable_id);
         }
         if category == EntityCategory::Structure {
             //448260: gap removal precedes ordinary sight release and owner
@@ -5568,10 +5743,10 @@ impl Simulation {
         // this pointer from the old House BuildConst vector before delegating
         // the Techno owner swap, then appends it to the new House tail.
         if build_const_eligible {
-            self.remove_build_const_from_owner(stable_id);
+            Self::remove_build_const_from_owner(&self.substrate, &mut self.houses, stable_id);
         }
         if category == EntityCategory::Structure {
-            self.leave_house_base_lists(stable_id, old_owner);
+            self.houses.leave_house_base_lists(stable_id, old_owner);
         }
         // Original7014DB/7014E9 dispatch the class target and destination
         // setters, then70151A clears Archive and70156E queues Guard. All run
@@ -5655,7 +5830,9 @@ impl Simulation {
                 house.economy_mut().add_score(cost);
             }
         }
-        self.update_house_tracking(
+        Self::update_house_tracking(
+            &mut self.substrate,
+            &mut self.houses,
             stable_id,
             crate::sim::house_tracking::HouseTracking::remove_tracking,
         );
@@ -5705,7 +5882,8 @@ impl Simulation {
             self.spatial_threat_after_owner_change(stable_id, spatial_threat_cell, rules);
         }
         if category == EntityCategory::Structure {
-            self.move_house_base_tracking(stable_id, old_owner, new_owner);
+            self.houses
+                .move_house_base_tracking(stable_id, old_owner, new_owner);
         }
         // `BuildingClass::ChangeOwner @ 0x00448723` marks every transferred
         // building HasBeenCaptured (+0x6E3); survivors read it at death. Its
@@ -5777,7 +5955,7 @@ impl Simulation {
         }
         // Techno701757..70178E: Added_To_Game on the new house (not in limbo).
         if on_map {
-            self.house_added_to_game(stable_id);
+            Self::house_added_to_game(&self.substrate, &mut self.houses, stable_id);
         }
         // TechnoChangeOwner7017A0 clears only the trigger-held original
         // House; the controlling House+2CC survives an ordinary capture.
@@ -5875,8 +6053,8 @@ impl Simulation {
         // or prerequisites.
         //44936E/449379: both houses' retained1FC asks their next House tail.
         if category == EntityCategory::Structure {
-            self.request_house_tech_tree_recheck(old_owner);
-            self.request_house_tech_tree_recheck(new_owner);
+            self.houses.request_house_tech_tree_recheck(old_owner);
+            self.houses.request_house_tech_tree_recheck(new_owner);
         }
     }
 
@@ -6132,7 +6310,7 @@ impl Simulation {
                 || e.mission.queued().known() == Some(MissionType::Rescue)
         });
         if rescue {
-            let _ = self.mission_assign_exact(
+            let _ = self.substrate.mission_assign_exact(
                 stable_id,
                 MissionId::from_known(MissionType::Guard),
                 now,
@@ -6152,12 +6330,6 @@ impl Simulation {
         self.assign_null_destination(stable_id, Some(rules), None, effects);
         let _ = self.assign_target_represented(stable_id, None, Some(rules), None, effects);
         enter_idle_mode(self, stable_id, rules, None, effects);
-    }
-
-    /// Legacy non-lifecycle contact scrub retained only for separately classified
-    /// failure paths. Reveal/Conceal/UnInit must use synchronous radio authority.
-    pub(crate) fn clear_radio_contacts_for(&mut self, stable_id: u64) {
-        self.substrate.entities.clear_radio_contacts_for(stable_id);
     }
 
     /// Restore externally-derived cache fields after validated snapshot
@@ -6280,6 +6452,7 @@ impl Simulation {
         let result = navigation::NavigationCaches {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
+            overlays: self.overlay_grid.as_ref(),
             playfield_bounds: self.playfield_bounds,
         }
         .rebuild_dynamic(
@@ -6412,6 +6585,7 @@ impl Simulation {
         let mut caches = navigation::NavigationCaches {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
+            overlays: self.overlay_grid.as_ref(),
             playfield_bounds: self.playfield_bounds,
         };
         let published = cells.iter().try_for_each(|&coord| {
@@ -6442,6 +6616,7 @@ impl Simulation {
         navigation::NavigationCaches {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
+            overlays: self.overlay_grid.as_ref(),
             playfield_bounds: self.playfield_bounds,
         }
         .rebuild_zones(path_grid, terrain, self.bridge_state.as_ref());
@@ -6457,6 +6632,7 @@ impl Simulation {
         navigation::NavigationCaches {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
+            overlays: self.overlay_grid.as_ref(),
             playfield_bounds: self.playfield_bounds,
         }
         .rebuild_zones_full(path_grid, terrain, self.bridge_state.as_ref());
@@ -6542,9 +6718,7 @@ impl Simulation {
             target_terrain_objects: self.terrain_objects.objects(),
             #[cfg(any(test, feature = "test-support"))]
             detach_trace: &mut cell_target_detaches,
-            radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
-            radar_dirty_generation: &mut self.radar_terrain_dirty_generation,
-            tactical_dirty_cells: &mut self.tactical_dirty_cells,
+            dirty_cells: &mut self.dirty_cells,
             zone_grid: &mut self.zone_grid,
             path_grid: &mut self.path_grid,
             bridge_state: self.bridge_state.as_ref(),
@@ -6614,25 +6788,28 @@ impl Simulation {
                     continue;
                 }
                 effects.gap_generators.entry(viewer).or_default().push(
-                    vision::GapGeneratorSource {
-                        stable_id: entity.stable_id(),
-                        owner: entity.owner(),
-                        rx: entity.position.rx(),
-                        ry: entity.position.ry(),
-                        radius: deposit.radius(),
-                    },
+                    gap_generator::building_gap_source(
+                        entity,
+                        deposit.radius(),
+                        self.resolved_terrain.as_ref(),
+                    ),
                 );
             }
         }
         effects
     }
 
-    fn apply_active_vision_structures(&mut self, effects: &ActiveVisionStructures) {
+    fn apply_active_vision_structures(
+        interner: &StringInterner,
+        fog: &mut FogState,
+        house_alliances: &HouseAlliances,
+        effects: &ActiveVisionStructures,
+    ) {
         vision::materialize_gap_generator_sources(
-            &mut self.fog,
-            &self.house_alliances,
+            fog,
+            house_alliances.as_map(),
             &effects.gap_generators,
-            &self.interner,
+            interner,
         );
     }
 
@@ -6673,7 +6850,7 @@ impl Simulation {
                         &rules.general.spy_sat_deactivation_sound
                     };
                     if let Some(sound_id) = sound {
-                        self.sound_events.push(SimSoundEvent::VocCentered {
+                        self.sound_events.emit(SimSoundEvent::VocCentered {
                             sound_id: sound_id.clone(),
                         });
                     }
@@ -6681,7 +6858,12 @@ impl Simulation {
             }
         }
         let effects = self.collect_active_vision_structures(rules);
-        self.apply_active_vision_structures(&effects);
+        Self::apply_active_vision_structures(
+            &self.interner,
+            &mut self.fog,
+            &self.house_alliances,
+            &effects,
+        );
     }
 
     /// Early mechanisms inside one reached House update.
@@ -6728,7 +6910,12 @@ impl Simulation {
         // Apply SpySat and Gap Generator effects if rules are available.
         if let Some(rules) = rules {
             let effects = self.collect_active_vision_structures(rules);
-            self.apply_active_vision_structures(&effects);
+            Self::apply_active_vision_structures(
+                &self.interner,
+                &mut self.fog,
+                &self.house_alliances,
+                &effects,
+            );
         }
 
         // Diagnostic: log fog grid stats on first tick to debug coverage issues.
@@ -6785,12 +6972,13 @@ impl Simulation {
     /// lives here; the listener gates (local player, `IsAlliedWith(PlayerPtr)`,
     /// `[0xA8B538]`, `GameMode`, `AuxBuilding` ownership) are the app's.
     pub(crate) fn announce_super_weapon_building_complete(
-        &mut self,
+        interner: &mut StringInterner,
+        substrate: &ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
         stable_id: u64,
         rules: &RuleSet,
     ) {
-        let Some((owner, type_ref)) = self
-            .substrate
+        let Some((owner, type_ref)) = substrate
             .entities
             .get(stable_id)
             .filter(|e| e.category() == EntityCategory::Structure && !e.death.is_dying())
@@ -6798,16 +6986,14 @@ impl Simulation {
         else {
             return;
         };
-        let Some(section) = self
-            .interner
+        let Some(section) = interner
             .object_type(type_ref, rules)
             .and_then(|obj| obj.super_weapon.clone())
         else {
             return;
         };
-        let sw_type = self.interner.intern(&section);
-        self.sound_events
-            .push(SimSoundEvent::SuperWeaponDetected { owner, sw_type });
+        let sw_type = interner.intern(&section);
+        sound_events.emit(SimSoundEvent::SuperWeaponDetected { owner, sw_type });
     }
 
     /// The Selling mission's visit in the building's own LogicVector slot
@@ -7210,7 +7396,7 @@ impl Simulation {
     fn record_unit_voice_visit(&mut self, owner: u64) {
         if self.unit_voice_visit_interest.contains(&owner) {
             self.sound_events
-                .push(SimSoundEvent::UnitVoiceVisit { owner });
+                .emit(SimSoundEvent::UnitVoiceVisit { owner });
         }
     }
 
@@ -7229,16 +7415,16 @@ impl Simulation {
         // light-vector facts and the next admitted frame clears the producer
         // buffer before combat runs.
         let combat_lights = if tick.frame_committed {
-            std::mem::take(&mut self.combat_light_requests)
+            self.combat_light_requests.take()
         } else {
             Vec::new()
         };
-        let lifecycle_outputs = std::mem::take(&mut self.lifecycle_outputs);
+        let lifecycle_outputs = self.lifecycle_outputs.take();
         let multiplayer_checksum = self.frame_sync_checksum.take();
         let overlay_updates = std::mem::take(&mut self.frame_overlay_updates);
         let overlay_removals = std::mem::take(&mut self.frame_overlay_removals);
-        let fire_events = std::mem::take(&mut self.fire_events);
-        let sound_events = std::mem::take(&mut self.sound_events);
+        let fire_events = self.fire_events.take();
+        let sound_events = self.sound_events.take();
         let sound_events_delivered = effects.delivered_sound_events();
         assert!(sound_events_delivered <= sound_events.len());
         SimFrameOutput {
@@ -7296,7 +7482,7 @@ impl Simulation {
             .with_overlay_registry(overlay_registry);
         // A failed earlier frame never reached collection; drop its value.
         self.frame_sync_checksum = None;
-        self.combat_light_requests.clear();
+        self.combat_light_requests.discard();
         let animation_sequences = rules.map(RuleSet::animation_sequences);
         // The wrapping native frame counter is committed LATE (end of this fn,
         // beside self.session.tick) so every phase sees the same pre-increment
@@ -7331,9 +7517,14 @@ impl Simulation {
         };
 
         // MainTick55DBC8 precedes Logic55DC9E (including trigger polling).
-        self.sort_display_ground(rules);
+        Self::sort_display_ground(
+            &self.interner,
+            &self.terrain_objects,
+            &mut self.substrate,
+            rules,
+        );
 
-        self.lifecycle_outputs.push(LifecycleOutput::LogicVisit);
+        self.lifecycle_outputs.emit(LifecycleOutput::LogicVisit);
         profile_phase!(COMMANDS_ADMIT);
 
         // YR LogicClass::Update establishes trigger state before visiting the
@@ -7380,7 +7571,7 @@ impl Simulation {
             // Logic55B5A1..55B5BD: reverse Disk AI before LaserUpdate and
             // ordinary object visits. FireAt births below wait until next tick.
             bridge_state_changed |= self.tick_disk_lasers(rules, overlay_registry, effects);
-            self.lifecycle_outputs.push(LifecycleOutput::LaserUpdate {
+            self.lifecycle_outputs.emit(LifecycleOutput::LaserUpdate {
                 frame: self.session.binary_frame() as i32,
             });
             profile_phase!(BOMBS);
@@ -7456,7 +7647,7 @@ impl Simulation {
             // harvest, a crate pickup and a destroyed wall happen in a Foot
             // turn or a damage commit.
             self.finish_terrain_navigation_changes(rules, &[]);
-            self.flush_smudge_dirty();
+            Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
             profile_phase!(COMBAT);
             // Retaliation is not a phase: every receiver issues its Mission
             // Override inline (`TechnoClass::ReceiveDamage 0x00702A43`), and
@@ -7525,12 +7716,8 @@ impl Simulation {
                 HouseAiActivationOrderTestEvent::ProductionCompleted,
             );
             profile_phase!(PRODUCTION);
-            crate::sim::docking::bunker_install::tick_bunker_install(
-                self,
-                rules,
-                overlay_registry,
-                effects,
-            );
+            // Empty since the tank-bunker install runs in the bunker's Repair
+            // mission; the slot stays in the ledger's fixed phase list.
             profile_phase!(DOCKS);
         }
 
@@ -7588,6 +7775,7 @@ impl Simulation {
                 binary_frame,
             );
         }
+        #[cfg(any(test, feature = "test-support"))]
         building_anim::finalize(self);
         profile_phase!(ANIMS);
         #[cfg(debug_assertions)]
@@ -7630,6 +7818,24 @@ impl Simulation {
                 bridge_state_changed,
             },
         })
+    }
+}
+
+impl crate::sim::houses::Houses {
+    /// Inline native House+1FC writers request the existing House tail;
+    /// power/radar dirty bytes remain with their distinct PowerState owner.
+    pub(crate) fn request_house_tech_tree_recheck(&mut self, owner: InternedId) {
+        if let Some(house) = self.get_mut(&owner) {
+            house.request_tech_recheck();
+        }
+    }
+}
+
+impl ObjectSubstrate {
+    /// Legacy non-lifecycle contact scrub retained only for separately classified
+    /// failure paths. Reveal/Conceal/UnInit must use synchronous radio authority.
+    pub(crate) fn clear_radio_contacts_for(&mut self, stable_id: u64) {
+        self.entities.clear_radio_contacts_for(stable_id);
     }
 }
 

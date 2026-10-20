@@ -2,6 +2,8 @@
 //! This module and its temporary world transfers do not exist in production.
 
 use super::*;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 use std::collections::BTreeMap;
 
@@ -94,7 +96,8 @@ pub(crate) fn with_building_fire_stub<T>(
 }
 
 pub(crate) fn substitute_building_fire(
-    world: &mut Simulation,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
     id: u64,
     shot: BuildingShot,
     rules: &RuleSet,
@@ -104,18 +107,17 @@ pub(crate) fn substitute_building_fire(
             return false;
         };
         let multiplier = if matches!(shot, BuildingShot::Delayed { .. }) {
-            world.take_support_bonus(id, rules)
+            substrate.take_support_bonus(id, rules)
         } else {
             crate::sim::projectile::ProjectilePayload::UNSCALED
         };
         if let Some(rof) = stub.rearm {
-            world
-                .substrate
+            substrate
                 .entities
                 .get_mut(id)
                 .unwrap()
                 .rearm_timer
-                .start(world.session.binary_frame() as i32, rof);
+                .start(session.binary_frame() as i32, rof);
         }
         stub.calls.push((id, shot, multiplier));
         true
@@ -256,13 +258,14 @@ fn with_world<R>(
     world.substrate.occupancy = std::mem::take(occupancy);
     // Bullets and anims a fixture shot creates take ids past its hand-placed
     // objects, as `ScenarioClass::NextUniqueID` would give them.
-    world.substrate.next_stable_object_id = world
+    let next_stable_object_id = world
         .substrate
         .entities
         .keys_sorted()
         .last()
         .map_or(1, |&id| id + 1)
-        .max(world.substrate.next_stable_object_id);
+        .max(world.next_stable_object_id());
+    world.set_next_stable_object_id_for_test(next_stable_object_id);
     world.interner = std::mem::take(interner);
     if let Some(houses) = houses.as_deref_mut() {
         world.houses = std::mem::take(houses);
@@ -274,7 +277,7 @@ fn with_world<R>(
     world.overlay_grid = overlay_grid.as_deref().cloned();
     world.resolved_terrain = terrain.as_deref().cloned();
     if let Some(events) = sound_sink.as_deref_mut() {
-        world.sound_events = std::mem::take(events);
+        world.sound_events.emit_all(std::mem::take(events));
     }
     let mut run = world_receiver::ReceiverRun::default();
     if let Some(handled) = handled_deaths.as_deref_mut() {
@@ -346,7 +349,7 @@ fn with_world<R>(
         *grid = world.resolved_terrain.expect("supplied terrain retained");
     }
     if let Some(events) = sound_sink {
-        *events = world.sound_events;
+        *events = world.sound_events.take_for_test();
     }
     result
 }
@@ -549,8 +552,8 @@ pub(crate) fn commit_damage_events(
         Some(handled_deaths),
         inline_hooks.as_deref_mut(),
         |world, run| {
-            world.rule_handles = handles;
-            world.house_alliances = alliances.clone();
+            world.set_rule_handles_for_test(handles);
+            *world.house_alliances_mut_for_test() = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
             world.session.set_binary_frame_for_test(current_tick as u32);
             world_receiver::commit_entities(
@@ -601,8 +604,8 @@ pub(crate) fn commit_area_damage_receivers(
         Some(handled_deaths),
         inline_hooks.as_deref_mut(),
         |world, run| {
-            world.rule_handles = handles;
-            world.house_alliances = alliances.clone();
+            world.set_rule_handles_for_test(handles);
+            *world.house_alliances_mut_for_test() = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
             world.session.set_binary_frame_for_test(current_tick as u32);
             world_receiver::commit_area(world, run, receivers, rules, overlay_registry)
@@ -646,8 +649,8 @@ pub(crate) fn handle_entity_deaths(
         Some(handled_deaths),
         inline_hooks.as_deref_mut(),
         |world, run| {
-            world.rule_handles = handles;
-            world.house_alliances = alliances.clone();
+            world.set_rule_handles_for_test(handles);
+            *world.house_alliances_mut_for_test() = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
             world.session.set_no_damage_for_test(scenario_no_damage);
             world.session.set_binary_frame_for_test(current_tick as u32);
@@ -699,14 +702,14 @@ pub(crate) fn emit_projectile_detonations(
         None,
         inline_hooks.as_deref_mut(),
         |world, run| {
-            world.rule_handles = handles;
+            world.set_rule_handles_for_test(handles);
             world.session.set_no_damage_for_test(scenario_no_damage);
             world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
             if let Some(view) = terrain_objects {
                 *world.terrain_objects.objects_mut_for_test() = view.objects.clone();
                 *world.terrain_objects.cell_index_mut_for_test() = view.cells.clone();
             }
-            world.house_alliances = house_alliances.clone();
+            *world.house_alliances_mut_for_test() = house_alliances.clone();
             world.bridge_state = bridge_state.cloned();
             world_receiver::commit_projectile_detonations_inline(
                 world,
@@ -759,7 +762,7 @@ pub(crate) fn resolve_attacker_fire(
         None,
         inline_hooks.as_deref_mut(),
         |world, _run| {
-            world.rule_handles = handles;
+            world.set_rule_handles_for_test(handles);
             world.session.set_no_damage_for_test(scenario_no_damage);
             world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
             if let Some(view) = terrain_objects {
@@ -830,12 +833,12 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
         None,
         inline_hooks,
         |world, run| {
-            world.rule_handles = handles;
-            world.house_alliances = alliances.clone();
+            world.set_rule_handles_for_test(handles);
+            *world.house_alliances_mut_for_test() = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
             world.session.set_no_damage_for_test(scenario_no_damage);
             world.session.set_binary_frame_for_test(binary_frame);
-            world.power_states = power_states.clone();
+            *world.power_states.map_mut_for_test() = power_states.clone();
             world.bridge_state = bridge_state.cloned();
             if let Some(fog) = fog {
                 world.fog = fog.clone();
@@ -847,7 +850,9 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                 .as_mut()
                 .unwrap()
                 .require_playfield_membership = require_playfield_membership;
-            world.active_wave_links = active_wave_owners.iter().map(|&owner| (owner, 0)).collect();
+            for &owner in active_wave_owners {
+                world.link_active_wave_for_test(owner, 0);
+            }
             if let Some(radiation) = radiation.as_deref() {
                 world.radiation = radiation.clone();
             }
@@ -866,7 +871,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                     })
                 })
                 .collect();
-            let first_tail_id = world.substrate.next_stable_object_id;
+            let first_tail_id = world.next_stable_object_id();
             for id in buildings {
                 // A hand-built object switched to Structure keeps its first
                 // category's leaf; construction gives a building its own.
@@ -892,7 +897,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
             );
             result
                 .consequences
-                .prepend_live_fire_events_for_test(std::mem::take(&mut world.fire_events));
+                .prepend_live_fire_events_for_test(world.fire_events.take_for_test());
             // The same frame's tail: the shots' bullets take their first AI
             // (an Inviso one detonates). Bullets still in flight are handed
             // back as their admission records.
@@ -907,7 +912,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
             {
                 if world.receiver_fixture.as_ref().unwrap().sound_enabled {
                     for (die_sound_id, rx, ry) in effects.death_sounds.drain(..) {
-                        world.sound_events.push(SimSoundEvent::EntityDied {
+                        world.sound_events.emit(SimSoundEvent::EntityDied {
                             die_sound_id,
                             rx,
                             ry,

@@ -113,7 +113,7 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
             &mut world.interner,
         );
         let target = ProjectileTarget::Cell { rx: 10, ry: 20 };
-        let id = world.allocate_stable_id();
+        let id = world.substrate.allocate_stable_id();
         world.admit_projectile(
             id,
             ProjectileSpawn {

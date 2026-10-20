@@ -302,7 +302,10 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
         .unwrap();
     // Supply the AIR registration boundary. This check is about the map's
     // display cursor, not an emulated aircraft/locomotor transition.
-    sim.submit_object_display(
+    crate::sim::world::Simulation::submit_object_display(
+        &sim.interner,
+        &sim.terrain_objects,
+        &mut sim.substrate,
         air,
         crate::sim::world::display_layers::DisplayLayer::AIR,
         Some(&rules),

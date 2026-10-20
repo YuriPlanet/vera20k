@@ -361,7 +361,10 @@ impl SidebarProjectionState {
                 item.super_weapon_section
                     .as_deref()
                     .and_then(|name| rules.super_weapon(name))
-                    .is_some_and(|sw| sw.money_amount != 0)
+                    .is_some_and(|sw| {
+                        sw.money_amount != 0
+                            || crate::sim::superweapon::financial_type(rules, sw).money_amount != 0
+                    })
             })
             .then(|| crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner));
         for item in &mut view.items {
@@ -370,9 +373,10 @@ impl SidebarProjectionState {
             if item.is_superweapon {
                 if let Some(views) = &paid_supers
                     && let Some(section) = item.super_weapon_section.as_deref()
-                    && rules
-                        .super_weapon(section)
-                        .is_some_and(|sw| sw.money_amount != 0)
+                    && rules.super_weapon(section).is_some_and(|sw| {
+                        sw.money_amount != 0
+                            || crate::sim::superweapon::financial_type(rules, sw).money_amount != 0
+                    })
                 {
                     item.enabled = views
                         .iter()
@@ -1545,6 +1549,8 @@ mod tests {
             menu_open: false,
             session_mode: SessionMode::Skirmish,
             pacer_timing_admits: true,
+            network_wait: false,
+            network_dialog_open: false,
         };
         let baseline = decide_runtime_pass(admitting);
         assert!(baseline.run_sim);
@@ -1595,6 +1601,14 @@ mod tests {
                     ..admitting
                 },
             ),
+            (
+                // Wait_For_Players blocks the frame.
+                "network wait",
+                RuntimePassInputs {
+                    network_wait: true,
+                    ..admitting
+                },
+            ),
         ] {
             let decision = decide_runtime_pass(inputs);
             assert!(!decision.run_sim, "{case} must not run the simulation");
@@ -1618,6 +1632,29 @@ mod tests {
         assert!(decision.admitted_by_pacer);
         assert!(!decision.scroll_input, "a deactivated window never scrolls");
         assert!(credits_step(background, true));
+
+        // Before 0xEA opens, the wait loop still services tactical input and
+        // draws (0x006497EC); once it is open it does neither.
+        let waiting = RuntimePassInputs {
+            session_mode: SessionMode::Lan,
+            network_wait: true,
+            ..admitting
+        };
+        let decision = decide_runtime_pass(waiting);
+        assert!(decision.tactical_mutation && decision.scroll_input);
+        let decision = decide_runtime_pass(RuntimePassInputs {
+            network_dialog_open: true,
+            ..waiting
+        });
+        assert!(!decision.run_sim && !decision.tactical_mutation && !decision.scroll_input);
+        assert!(
+            !decide_runtime_pass(RuntimePassInputs {
+                exact_step: true,
+                ..waiting
+            })
+            .run_sim,
+            "an exact step cannot pass a network wait"
+        );
 
         // A committed network-modal frame keeps the world advancing but must
         // not step displayed credits.

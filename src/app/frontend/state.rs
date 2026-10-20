@@ -130,8 +130,16 @@ pub(crate) struct FrontendState {
     pub(crate) wol_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// `0x113`'s background and list art (`0x0072CD60`).
     pub(crate) wol_lobby_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// WOL Options `0x2BC`'s art (`0x0072BAC0`) and its Sound Options
+    /// `0xD6`'s (`0x0072B8E0`).
+    pub(crate) wol_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    pub(crate) wol_sound_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// The custom lobby's process globals (sorts, lobby number, filters).
     pub(crate) wol_lobby_globals: crate::app::shell_wol::lobby::WolLobbyGlobals,
+    /// The live `[WOnline]` globals (`[0xB76234]`..`[0xB73AD0]`): each WOL
+    /// entry copies the profile's (`0x0077DED0`); the chat filter words and
+    /// WOL Options' OK change them.
+    pub(crate) wol_preferences: crate::ui::wol_options::WolPreferences,
     /// Single Player's Load Saved Game `0xB7` while its route shows.
     pub(crate) load_saved_game:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,

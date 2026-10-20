@@ -750,9 +750,8 @@ pub(crate) fn tactical_centre_cell(state: &AppState) -> (u16, u16) {
     crate::app::match_runtime::sim_tick::world_point_to_cell(
         world_x,
         world_y,
-        state.height_map(),
         state.sim_view().and_then(|view| {
-            crate::app::match_runtime::sim_tick::tactical_bridge_cells(view.simulation())
+            crate::app::match_runtime::sim_tick::tactical_cells(view.simulation())
         }),
     )
 }
@@ -1362,11 +1361,15 @@ pub(crate) fn advance_camera_ai(state: &mut AppState, mouse: (f32, f32), frame: 
     );
     let admission = CameraAiFrame {
         frame,
-        scenario_started: state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .is_some_and(|runtime| runtime.simulation.session().started()),
+        // The restate briefing zeroes g_ScenarioStarted while it is open
+        // (0x0065F537), on the opening peer only.
+        scenario_started: state.match_state.match_presentation.in_game_menu
+            != crate::ui::pause_menu::InGameMenuState::MissionBriefing
+            && state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.simulation.session().started()),
         // The ordinary app currently admits the offline session route with
         // native replay flags0. Native playback bit2 is covered by the shared
         // owner controls; a production playback host remains a separate gap.
@@ -1752,11 +1755,22 @@ pub(crate) fn toggle_follow_target(state: &mut AppState) {
 ///
 /// The pair is cleared from two lifecycle points — `ObjectClass__Detach_All`
 /// 0x005F5306 and `ObjectClass__Deselect` 0x005F4513 — so the camera is handed
-/// back when the followed object dies or leaves the selection.
-pub(crate) fn update_follow_camera(state: &mut AppState) {
+/// back when the followed object dies, leaves the selection, or runs
+/// Detach_All in this Logic visit while it lives on (a cloaking submarine,
+/// [`LifecycleOutput::FollowReleased`] in `outputs`).
+///
+/// [`LifecycleOutput::FollowReleased`]: crate::sim::world::LifecycleOutput::FollowReleased
+pub(crate) fn update_follow_camera(
+    state: &mut AppState,
+    outputs: &[crate::sim::world::LifecycleOutput],
+) {
     let Some(id) = state.match_state.input.follow_target else {
         return;
     };
+    if outputs.contains(&crate::sim::world::LifecycleOutput::FollowReleased { stable_id: id }) {
+        state.match_state.input.follow_target = None;
+        return;
+    }
     let coord = state
         .match_state
         .sim_runtime
@@ -1790,7 +1804,10 @@ fn entity_lepton_coord(
 }
 
 pub(crate) fn center_camera_on_cell(state: &mut AppState, rx: u16, ry: u16) {
-    let z = state.height_map().get(&(rx, ry)).copied().unwrap_or(0);
+    let z = state
+        .resolved_terrain()
+        .and_then(|terrain| terrain.cell(rx, ry))
+        .map_or(0, |cell| cell.level);
     let world = cell_centre_world_point(rx, ry, z);
     let sw = state.render_width() as f32;
     let sh = state.render_height() as f32;

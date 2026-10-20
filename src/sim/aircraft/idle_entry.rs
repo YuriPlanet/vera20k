@@ -456,6 +456,7 @@ impl IdleHost for WorldIdle<'_> {
     fn commence(&mut self) {
         let now = self.sim.session.binary_frame();
         self.sim
+            .substrate
             .mission_commence_exact(self.id, now)
             .expect("idle-mode aircraft");
     }
@@ -553,7 +554,7 @@ impl IdleHost for WorldIdle<'_> {
     }
 
     fn queue(&mut self, mission: MissionType) {
-        super::queue_mission(self.sim, self.id, mission);
+        super::queue_mission(&mut self.sim.substrate, self.id, mission);
     }
 
     fn ready(&mut self) -> bool {

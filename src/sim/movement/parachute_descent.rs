@@ -19,7 +19,9 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use crate::sim::entity_store::EntityStore;
+use crate::sim::intern::StringInterner;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
 
 /// Begin parachute descent for an entity at world Z `drop_z` (leptons).
 /// Returns `true` on success.
@@ -84,7 +86,7 @@ impl crate::sim::world::Simulation {
                 registry,
                 effects,
             )?;
-            self.wind_down_parachute_anim(rules, id);
+            Self::wind_down_parachute_anim(&self.interner, &mut self.substrate, rules, id);
             //5F3FA4..5F3FFA: PerCell can Limbo the object. The landing
             // frame updates and retains FallRate only after that callback.
             if let Some(entity) = self.substrate.entities.get_mut(id)
@@ -110,7 +112,14 @@ impl crate::sim::world::Simulation {
             && let Some(layer) = new_layer
         {
             //5F4001..5F400E: resubmit only when the live layer changed.
-            self.submit_object_display(id, layer, Some(rules));
+            Self::submit_object_display(
+                &self.interner,
+                &self.terrain_objects,
+                &mut self.substrate,
+                id,
+                layer,
+                Some(rules),
+            );
         }
         if let Some(health) = self
             .substrate
@@ -196,7 +205,9 @@ impl crate::sim::world::Simulation {
                 // Anim+0xD4 (`ObjectClass::Paradrop @ 0x005F5940`,
                 // `0x005F5AFE..0x005F5B19`). Freeze the same house selection
                 // on the attached canopy after construction.
-                self.set_anim_house_remap(anim_id, owner_house);
+                self.substrate
+                    .anims
+                    .set_anim_house_remap(anim_id, owner_house);
                 Some(anim_id)
             }
             Err(error) => {
@@ -220,17 +231,18 @@ impl crate::sim::world::Simulation {
     /// 20..39, so that is about a hundred frames of the canopy collapsing on
     /// the landed object.
     pub(crate) fn wind_down_parachute_anim(
-        &mut self,
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
         rules: &crate::rules::ruleset::RuleSet,
         owner_id: u64,
     ) {
         let Some(type_name) = rules.general.parachute_shp.as_deref() else {
             return;
         };
-        let Some(type_id) = self.interner.get(type_name) else {
+        let Some(type_id) = interner.get(type_name) else {
             return;
         };
-        for anim in self.substrate.anims.values_mut() {
+        for anim in substrate.anims.values_mut() {
             if anim.owner_entity() == Some(owner_id) && anim.type_id() == type_id {
                 anim.end_loops();
             }
@@ -337,7 +349,7 @@ mod canopy_tests {
 
         let mut sim = Simulation::new();
         sim.interner = crate::sim::intern::test_interner();
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         sim.substrate
             .entities
             .insert(GameEntity::test_default(id, "E1", "Americans", 10, 11));
@@ -410,7 +422,12 @@ mod canopy_tests {
         let anim_id = sim.attach_parachute_anim(&rules, id).expect("canopy");
         assert_eq!(sim.anim(anim_id).unwrap().runtime().loop_remaining, u8::MAX);
 
-        sim.wind_down_parachute_anim(&rules, id);
+        crate::sim::world::Simulation::wind_down_parachute_anim(
+            &sim.interner,
+            &mut sim.substrate,
+            &rules,
+            id,
+        );
 
         let anim = sim.anim(anim_id).expect("still in the store");
         assert_eq!(anim.runtime().loop_remaining, 0);
@@ -423,7 +440,12 @@ mod canopy_tests {
         let (mut sim, mut rules, id) = fixture();
         rules.general.parachute_shp = None;
         assert_eq!(sim.attach_parachute_anim(&rules, id), None);
-        sim.wind_down_parachute_anim(&rules, id);
+        crate::sim::world::Simulation::wind_down_parachute_anim(
+            &sim.interner,
+            &mut sim.substrate,
+            &rules,
+            id,
+        );
         assert_eq!(sim.substrate.anims.iter().count(), 0);
     }
 }

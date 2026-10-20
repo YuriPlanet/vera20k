@@ -78,9 +78,9 @@ impl Simulation {
         let world = Self::movement_sound_world(entity);
         let owner = working_sound_owner(id);
         self.sound_events
-            .push(SimSoundEvent::ObjectSoundDetached { owner });
+            .emit(SimSoundEvent::ObjectSoundDetached { owner });
         if let Some(sound_id) = sound.clone() {
-            self.sound_events.push(SimSoundEvent::AnimationStarted {
+            self.sound_events.emit(SimSoundEvent::AnimationStarted {
                 anim_id: owner,
                 sound_id,
                 world,
@@ -113,7 +113,7 @@ impl Simulation {
                 object.working_sound.is_some() || object.not_working_sound.is_some()
             });
         if authored {
-            self.sound_events.push(SimSoundEvent::ObjectSoundReleased {
+            self.sound_events.emit(SimSoundEvent::ObjectSoundReleased {
                 owner: working_sound_owner(id),
             });
         }

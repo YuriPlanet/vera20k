@@ -47,6 +47,7 @@ fn generated_houses(rules: &RuleSet, native: &Value) -> Simulation {
                 is_human: house["generated_kind"] == "human",
                 observer: false,
                 source_human_index: None,
+                handle: None,
                 difficulty: HouseDifficulty::Normal,
             }
         })

@@ -131,13 +131,15 @@ def _inspection_revision() -> str:
     # Successful references depend only on the executable and inspector. Their
     # existence/identity is checked afresh each pass, including missing paths.
     files = [Path(__file__), Path(__file__).with_name('_cargo_macho.py'),
+             Path(__file__).with_name('_cargo_pe.py'),
              Path(__file__).with_name('cargo_run.py')]
     digest = hashlib.sha256()
     for path in files:
         if path.exists():
             digest.update(path.read_bytes())
-    tool = shutil.which('readelf')
-    digest.update(repr((sys.platform, tool, _identity(Path(tool).resolve()) if tool else None)).encode())
+    for name in ('readelf', 'objdump'):
+        tool = shutil.which(name)
+        digest.update(repr((sys.platform, name, tool, _identity(Path(tool).resolve()) if tool else None)).encode())
     return digest.hexdigest()
 
 
@@ -501,12 +503,12 @@ MACH = {b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xfe\xed\xfa\xcf',
         b'\xca\xfe\xba\xbf', b'\xbf\xba\xfe\xca'}
 
 
-def _stream(command: list[str], consume):
+def _stream(command: list[str], consume, *, env=None):
     # Large lib-test debug maps can exceed 70MiB; don't buffer symbols. Stderr
     # may exceed a pipe buffer too. Zero status alone does not prove completeness.
     with tempfile.TemporaryFile(mode='w+t', encoding='utf-8') as diagnostic:
         with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=diagnostic,
-                              text=True, encoding='utf-8', errors='strict') as child:
+                              text=True, encoding='utf-8', errors='strict', env=env) as child:
             assert child.stdout is not None
             try:
                 result = consume(child.stdout)
@@ -524,11 +526,38 @@ def _stream(command: list[str], consume):
         return result
 
 
+def _embedded_dwarf(binary: Path, tool_name: str, option: str, *, required=False):
+    # GNU binutils 2.38 lacks do-not-use-debuginfod. No link following plus an
+    # empty server list keeps inspection local on both old and new versions.
+    # https://sourceware.org/binutils/docs/binutils/readelf.html
+    # https://sourceware.org/binutils/docs/binutils/objdump.html
+    tool = shutil.which(tool_name)
+    if not tool:
+        raise ValueError(f'DWARF dependency inspection requires GNU {tool_name}')
+    def dwarf(lines):
+        found_header = False
+        for line in lines:
+            found_header |= 'Contents of the .debug_info section:' in line or 'Contents of the .debug_types section:' in line
+            if any(name in line for name in ('DW_AT_dwo_name', 'DW_AT_GNU_dwo_name',
+                                             'DW_AT_GNU_dwo_id', 'DW_UT_skeleton',
+                                             'DW_UT_split_compile', 'DW_UT_split_type')):
+                raise ValueError('Unsupported split-DWARF dependency closure')
+        if required and not found_header:
+            raise ValueError('Unrecognized PE DWARF inspection')
+    env = dict(os.environ, DEBUGINFOD_URLS='', LC_ALL='C')
+    _stream([tool, option + 'info,no-follow-links', str(binary)], dwarf, env=env)
+
+
 def _dependencies(binary: Path) -> set[Path]:
     magic = _magic(binary)
     if magic in MACH:
         from tools._cargo_macho import dependencies
         return dependencies(binary)
+    if magic[:2] == b'MZ':
+        from tools._cargo_pe import embedded_dwarf
+        if embedded_dwarf(binary):
+            _embedded_dwarf(binary, 'objdump', '--dwarf=', required=True)
+        return set()
     if magic == b'\x7fELF':
         # GNU readelf supports this complete DWARF/link inspection. llvm-readelf
         # does not expose --debug-dump=info; do not infer compatible options.
@@ -547,14 +576,8 @@ def _dependencies(binary: Path) -> set[Path]:
             if not found_header:
                 raise ValueError('Unrecognized ELF section inspection')
         _stream([tool, '--wide', '--sections', str(binary)], sections)
-        def dwarf(lines):
-            for line in lines:
-                if any(name in line for name in ('DW_AT_dwo_name', 'DW_AT_GNU_dwo_name', 'DW_AT_GNU_dwo_id')):
-                    raise ValueError('Unsupported split-DWARF dependency closure')
-        _stream([tool, '--debug-dump=info,no-follow-links,do-not-use-debuginfod', str(binary)], dwarf)
+        _embedded_dwarf(binary, 'readelf', '--debug-dump=')
         return set()  # Embedded DWARF needs no original compiler object.
-    # PE FASTLINK can require object files beyond its PDB. Do not pretend that
-    # merely retaining *.pdb establishes closure (MSVC /DEBUG documentation).
     raise ValueError(f'Unsupported executable debug dependency format: {binary}')
 
 

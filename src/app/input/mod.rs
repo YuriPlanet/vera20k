@@ -3,10 +3,13 @@
 //! in-game options input, tooltips, and messages.
 
 pub(crate) mod camera;
+pub(crate) mod chat;
 pub(crate) mod commands;
 pub(crate) mod context_order;
 pub(crate) mod cursor;
+pub(crate) mod connection;
 pub(crate) mod diplomacy;
+pub(crate) mod restate;
 pub(crate) mod dispatch;
 pub(crate) mod entity_pick;
 pub(crate) mod gadget_input;
@@ -18,6 +21,7 @@ pub(crate) mod planning_mode;
 pub(crate) mod sidebar_eva;
 pub(crate) mod state;
 pub(crate) mod superweapon_cameo;
+pub(crate) mod taunt;
 pub(crate) mod tooltips;
 pub(crate) mod transport_orders;
 

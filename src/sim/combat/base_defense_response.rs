@@ -442,7 +442,7 @@ pub(crate) fn respond_to_base_attack(
     let current_frame = world.session.binary_frame() as i32;
 
     if is_allied_with(
-        &world.house_alliances,
+        world.house_alliances.as_map(),
         interner.resolve(victim_owner),
         interner.resolve(attacker_owner),
     ) || world
@@ -473,8 +473,8 @@ pub(crate) fn respond_to_base_attack(
     if budget > 0
         && (world.zone_grid.is_none()
             || world.resolved_terrain.is_none()
-            || world.playfield_bounds.is_none()
-            || world.playfield_size_height.is_none())
+            || world.playfield_bounds().is_none()
+            || world.playfield_size_height().is_none())
     {
         return;
     }
@@ -565,11 +565,11 @@ pub(crate) fn respond_to_base_attack(
                 continue;
             };
             let bounds = sim
-                .playfield_bounds
+                .playfield_bounds()
                 .expect("positive scan validated bounds");
             let size = (
                 bounds.base,
-                sim.playfield_size_height
+                sim.playfield_size_height()
                     .expect("positive scan validated Size"),
             );
             if !sim

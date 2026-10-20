@@ -81,7 +81,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
     let positions = [(10, 10), (14, 14)];
     let mut body_ids = Vec::with_capacity(2);
     for (owner, (rx, ry)) in owner_ids.iter().copied().zip(positions) {
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate_mut_for_test().allocate_stable_id();
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             id,
             rx,
@@ -129,7 +129,10 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         let anim_id = sim
             .spawn_anim_at_world(&rules, descriptor, canopy_coord)
             .expect("retail canopy anim");
-        assert!(sim.set_anim_house_remap(anim_id, owner));
+        assert!(
+            sim.anims_mut_for_test()
+                .set_anim_house_remap(anim_id, owner)
+        );
         anim_ids.push(anim_id);
     }
     for ((&anim_id, &owner), &color) in anim_ids.iter().zip(&owner_ids).zip(&scheme_colors) {
@@ -219,6 +222,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
     let lighting = CellLightGrid::new();
     let hidden = BTreeSet::new();
     let input = DisplayEffectInputs {
+        interpolation: None,
         sim: &sim,
         rules: &rules,
         camera: view_camera,
@@ -247,7 +251,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         })
         .collect();
     let body_depths = HashMap::from([(body_ids[0], 0.5), (body_ids[1], 0.5)]);
-    build_parachute_instances(&input, &mut parents, &body_depths);
+    build_parachute_instances(&input, &mut parents, &body_depths, None);
 
     let mut canopy_instances = Vec::with_capacity(2);
     for ((&id, (key, entry)), parent) in body_ids.iter().zip(&keys_and_entries).zip(&parents) {

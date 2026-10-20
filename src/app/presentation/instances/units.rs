@@ -146,32 +146,37 @@ fn locomotor_render_slope_state(
     entity: &crate::sim::game_entity::GameEntity,
     display_binary_frame: u32,
 ) -> Option<UnitRenderSlopeState> {
-    crate::sim::movement::slope_transition::state_for_entity(entity).map(|slope_state| {
-        match slope_state.render_phase(display_binary_frame) {
-            crate::sim::movement::slope_transition::SlopeRenderPhase::Stable(slope) => {
-                UnitRenderSlopeState::Stable(clamp_slope_for_render(slope))
-            }
-            crate::sim::movement::slope_transition::SlopeRenderPhase::Transition {
-                from_slope,
-                to_slope,
-                phase_num,
-                phase_den,
-            } => {
-                let from_slope = clamp_slope_for_render(from_slope);
-                let to_slope = clamp_slope_for_render(to_slope);
-                if from_slope == to_slope {
-                    UnitRenderSlopeState::Stable(to_slope)
-                } else {
-                    UnitRenderSlopeState::Transition {
-                        from_slope,
-                        to_slope,
-                        phase_num,
-                        phase_den,
-                    }
+    crate::sim::movement::slope_transition::state_for_entity(entity)
+        .map(|state| render_slope_phase(state.render_phase(display_binary_frame)))
+}
+
+fn render_slope_phase(
+    phase: crate::sim::movement::slope_transition::SlopeRenderPhase,
+) -> UnitRenderSlopeState {
+    match phase {
+        crate::sim::movement::slope_transition::SlopeRenderPhase::Stable(slope) => {
+            UnitRenderSlopeState::Stable(clamp_slope_for_render(slope))
+        }
+        crate::sim::movement::slope_transition::SlopeRenderPhase::Transition {
+            from_slope,
+            to_slope,
+            phase_num,
+            phase_den,
+        } => {
+            let from_slope = clamp_slope_for_render(from_slope);
+            let to_slope = clamp_slope_for_render(to_slope);
+            if from_slope == to_slope {
+                UnitRenderSlopeState::Stable(to_slope)
+            } else {
+                UnitRenderSlopeState::Transition {
+                    from_slope,
+                    to_slope,
+                    phase_num,
+                    phase_den,
                 }
             }
         }
-    })
+    }
 }
 
 /// Presentation follows the just-committed simulation frame. Drive/Ship
@@ -242,6 +247,7 @@ pub(crate) fn build_unit_instances(
         .sim_runtime
         .as_ref()
         .and_then(|rt| rt.view().resolved_terrain());
+    let light_cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
     state
         .match_state
         .match_presentation
@@ -249,6 +255,8 @@ pub(crate) fn build_unit_instances(
         .borrow_mut()
         .retain(|id| sim.entities().contains(id));
 
+    let surface_view = crate::app::presentation::render::tactical_surface_line_viewport(state);
+    let laser_palette = std::cell::OnceCell::new();
     let encounter_order = super::helpers::tactical_entity_encounter_order(sim);
     for stable_id in encounter_order {
         let Some(entity) = sim.entities().get(stable_id) else {
@@ -268,8 +276,9 @@ pub(crate) fn build_unit_instances(
         } else {
             [sw, sh]
         };
-        let aircraft_shadow = aircraft_shadow_pose(state, entity);
-        let Some([sx, sy]) = unit_draw_anchor(
+        let (aircraft_shadow, shadow_render_pose) = aircraft_draw_sample(state, entity)
+            .map_or((None, None), |sample| (sample.shadow, Some(sample.pose)));
+        let Some([sx, _sy]) = unit_draw_anchor(
             entity,
             [cam_x, cam_y],
             viewport,
@@ -277,6 +286,16 @@ pub(crate) fn build_unit_instances(
         ) else {
             continue;
         };
+        let render_pose = shadow_render_pose.unwrap_or_else(|| {
+            crate::app::presentation::interpolation::pose(
+                state,
+                entity,
+                sim.session().binary_frame(),
+            )
+        });
+        let native_anchor = crate::render::locomotor_visual::screen_position(entity);
+        let sx = sx + render_pose.screen[0] - native_anchor.0;
+        let sy = render_pose.screen[1] - render_pose.visual_lift;
         // Common visibility, passenger, limbo, and DrawState admission is shared below.
         let pos = &entity.position;
         let owner_str = sim.interner().resolve(entity.owner());
@@ -287,7 +306,7 @@ pub(crate) fn build_unit_instances(
             local_owner_id,
             state.rules(),
         );
-        let Some((type_name, body)) = unit_body_draw(
+        let Some((type_name, mut body)) = unit_body_draw(
             entity,
             sim.interner(),
             state.rules(),
@@ -297,6 +316,23 @@ pub(crate) fn build_unit_instances(
         ) else {
             continue;
         };
+        // Interpolate continuous attitude, including the last interval back
+        // to level. Native admission/type/model choice is left unchanged.
+        let tilt_crash = state
+            .rules()
+            .and_then(|r| sim.interner().object_type(entity.type_ref(), r))
+            .is_some_and(|o| o.tilt_crash_jumpjet);
+        if let Some(tilt) = body_pose_with_angles(
+            entity,
+            band,
+            tilt_crash,
+            render_pose.angles,
+            render_pose.rocket_pitch,
+        ) {
+            body = BodyDraw::Pose(tilt);
+        } else if matches!(body, BodyDraw::Pose(_)) {
+            body = BodyDraw::Composite;
+        }
         let no_shadow = state
             .rules()
             .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
@@ -335,11 +371,19 @@ pub(crate) fn build_unit_instances(
         // Render slope comes from the locomotor's cached previous/current
         // slope during gamemd's 3-frame transition, then falls back to the
         // stable terrain slope path.
-        let slope_state = unit_render_slope_state(state, entity, display_binary_frame, band);
+        let slope_state = render_pose
+            .slope
+            .map(render_slope_phase)
+            .unwrap_or_else(|| unit_render_slope_state(state, entity, display_binary_frame, band));
         let interp_z = pos.z();
         let draw_state = draw_decision.state;
         let extra_light = state.rules().map_or(0, |rules| {
-            crate::app::presentation::lighting::body_extra_light(entity, rules, sim, terrain)
+            crate::app::presentation::lighting::body_extra_light(
+                entity,
+                rules,
+                sim,
+                light_cells.as_ref(),
+            )
         });
         let tint = vxl_body_tint(
             state.match_state.match_presentation.lighting.grid(),
@@ -435,8 +479,17 @@ pub(crate) fn build_unit_instances(
         }
 
         // Sampled at the turret's frame, so the two sprites cannot disagree.
-        let body_facing = body_draw_facing(entity, sim.session().binary_frame());
-        let ground_pose = ground_pose(entity, slope_state, sim.session().binary_frame());
+        let body_facing = (render_pose.body >> 8) as u8;
+        let mut ground_pose = ground_pose_with_angles(
+            entity,
+            slope_state,
+            sim.session().binary_frame(),
+            render_pose.angles,
+        );
+        if let Some(ground_pose) = ground_pose.as_mut() {
+            ground_pose.body_facing =
+                crate::render::vxl_raster::voxel_facing_step_u16(render_pose.body) * 8;
+        }
         if let BodyDraw::Pose(tilt) = body {
             let key = UnitSpriteKey {
                 type_id: type_str.to_string(),
@@ -462,15 +515,10 @@ pub(crate) fn build_unit_instances(
         } else if ground_pose.is_some() || matches!(body, BodyDraw::Turret { .. }) {
             let (turret_facing, barrel_elevation) = match body {
                 BodyDraw::Turret {
-                    turret,
-                    barrel_elevation,
-                } => (turret, barrel_elevation),
-                _ => (
-                    entity.body_facing_current(sim.session().binary_frame()),
-                    entity
-                        .barrel_elevation()
-                        .current(sim.session().binary_frame()),
-                ),
+                    turret: _,
+                    barrel_elevation: _,
+                } => (render_pose.turret, render_pose.barrel),
+                _ => (render_pose.body, render_pose.barrel),
             };
             // Turret unit: emit body, turret, and barrel as separate sprites.
             emit_turret_unit_sprites(
@@ -593,6 +641,19 @@ pub(crate) fn build_unit_instances(
             }
         }
 
+        emit_jumpjet_unit_shadow(
+            state,
+            atlas,
+            entity,
+            type_str,
+            anim_frame,
+            [center_x, center_y],
+            no_shadow,
+            draw_state,
+            band,
+            &mut pieces,
+        );
+
         // OREGATH is an SHP sprite from sprite_atlas, but remains an owned piece
         // of its harvester's Ground slot so atlas identity cannot re-sort it.
         if let Some(frame) = harvest_overlay_frame(state.rules(), sim, entity, display_binary_frame)
@@ -600,7 +661,13 @@ pub(crate) fn build_unit_instances(
                 state,
                 entity,
                 frame,
-                harvest_arm_screen_position(entity, sim.session().binary_frame()),
+                {
+                    let arm = harvest_arm_screen_position(entity, sim.session().binary_frame());
+                    (
+                        arm.0 + render_pose.screen[0] - native_anchor.0,
+                        arm.1 + render_pose.screen[1] - native_anchor.1,
+                    )
+                },
                 pos.z(),
                 tint,
                 palette_light.brightness(),
@@ -620,7 +687,29 @@ pub(crate) fn build_unit_instances(
                 crate::render::tactical_draw_plan::SpriteEncoding::Voxel,
             );
             if let Some(parent) = parent {
-                objects.push(PlannedObjectInstance::object(parent, pieces));
+                let mut planned = PlannedObjectInstance::object(parent, pieces);
+                if let Some(rules) = state.rules() {
+                    planned.tail_draws = crate::app::presentation::target_lines::target_laser_draws(
+                        entity,
+                        sim,
+                        rules,
+                        || {
+                            laser_palette
+                                .get_or_init(|| {
+                                    state
+                                        .process_assets
+                                        .manager()
+                                        .and_then(|assets| assets.get_ref("palette.pal"))
+                                        .and_then(|bytes| {
+                                            crate::assets::pal_file::Palette::from_bytes(bytes).ok()
+                                        })
+                                })
+                                .as_ref()
+                        },
+                        surface_view,
+                    );
+                }
+                objects.push(planned);
             }
         }
     }
@@ -799,15 +888,32 @@ fn body_pose(
     band: EntityDrawBand,
     tilt_crash_jumpjet: bool,
 ) -> Option<crate::render::unit_atlas::PoseTilt> {
+    let angles = entity
+        .rocking
+        .as_ref()
+        .map_or([0.; 2], |r| r.angles_native());
+    let pitch = entity
+        .locomotor
+        .as_ref()
+        .and_then(|l| l.rocket_runtime())
+        .map_or(0., |r| r.draw_pitch());
+    body_pose_with_angles(entity, band, tilt_crash_jumpjet, angles, pitch)
+}
+
+fn body_pose_with_angles(
+    entity: &crate::sim::game_entity::GameEntity,
+    band: EntityDrawBand,
+    tilt_crash_jumpjet: bool,
+    angles: [f32; 2],
+    pitch: f32,
+) -> Option<crate::render::unit_atlas::PoseTilt> {
     use crate::render::unit_atlas::PoseTilt;
     use crate::rules::locomotor_type::LocomotorKind;
     let locomotor = entity.locomotor.as_ref()?;
-    if let Some(rocket) = locomotor.rocket_runtime() {
-        let pitch = rocket.draw_pitch();
+    if locomotor.rocket_runtime().is_some() {
         return (pitch != 0.0).then_some(PoseTilt::Rocket(pitch));
     }
-    let rocking = entity.rocking.as_ref()?;
-    let angles = rocking.angles_native();
+    entity.rocking.as_ref()?;
     match locomotor.active_kind() {
         LocomotorKind::Fly if entity.crash.is_crashing() && band != EntityDrawBand::Ground => {
             Some(PoseTilt::Fly(angles))
@@ -821,32 +927,31 @@ fn body_pose(
     }
 }
 
-/// Fly DrawMatrix4CF632/4CF659 reads SecondaryFacing for both its cache key
-/// and rotation, like its separate ShadowMatrix. PrimaryFacing may already
-/// point elsewhere while the plane turns. Other locomotors keep their owner.
-fn body_draw_facing(entity: &crate::sim::game_entity::GameEntity, binary_frame: u32) -> u8 {
-    if entity
-        .locomotor
-        .as_ref()
-        .is_some_and(|loco| loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Fly)
-    {
-        let facing = entity.barrel_facing.as_ref().map_or_else(
-            || entity.body_facing_current(binary_frame),
-            |facing| facing.current(binary_frame),
-        );
-        crate::render::vxl_raster::voxel_facing_step_u16(facing) * 8
-    } else {
-        entity.body_facing_byte(binary_frame)
-    }
-}
-
 /// Drive4AFFB0..4AFFE8 / Ship69F6C0..69F6F8 key dynamic draws for an unsettled slope or either
 /// qualifying angle. Model loading stays with UnitModel; no ART boolean is
 /// used as evidence that a VXL loaded. Read-only: no RNG/timer/detach writes.
+#[cfg(test)]
 fn ground_pose(
     entity: &crate::sim::game_entity::GameEntity,
     slope: UnitRenderSlopeState,
     binary_frame: u32,
+) -> Option<crate::render::vxl_raster::GroundPose> {
+    ground_pose_with_angles(
+        entity,
+        slope,
+        binary_frame,
+        entity
+            .rocking
+            .as_ref()
+            .map_or([0.; 2], |r| r.angles_native()),
+    )
+}
+
+fn ground_pose_with_angles(
+    entity: &crate::sim::game_entity::GameEntity,
+    slope: UnitRenderSlopeState,
+    binary_frame: u32,
+    angles: [f32; 2],
 ) -> Option<crate::render::vxl_raster::GroundPose> {
     if !matches!(
         entity.locomotor.as_ref()?.active_kind(),
@@ -855,10 +960,6 @@ fn ground_pose(
     ) {
         return None;
     }
-    let angles = entity
-        .rocking
-        .as_ref()
-        .map_or([0.; 2], |rocking| rocking.angles_native());
     (matches!(slope, UnitRenderSlopeState::Transition { .. })
         || crate::map::voxel_pose::voxel_tilt_applies(angles))
     .then_some(crate::render::vxl_raster::GroundPose {
@@ -872,8 +973,8 @@ fn ground_pose(
 }
 
 /// One posed body drawn on this frame's pose page. It joins its display
-/// layer in emission order like an atlas body; aircraft cast no VERA shadow
-/// (recorded on the draw passes).
+/// layer in emission order like an atlas body. The concrete Unit and Aircraft
+/// callers emit their shadow separately in native order.
 fn emit_pose_sprite(
     state: &AppState,
     pieces: &mut Vec<ObjectPieceInstance>,
@@ -1142,8 +1243,15 @@ fn unit_shadow_admitted(
 ) -> bool {
     entity.category() == EntityCategory::Unit
         && !entity.sinking.is_active()
-        && band == EntityDrawBand::Ground
+        && (band == EntityDrawBand::Ground || has_jumpjet_unit_shadow(entity))
         && techno_shadow_admitted(entity, no_shadow)
+}
+
+fn has_jumpjet_unit_shadow(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    entity.category() == EntityCategory::Unit
+        && entity.locomotor.as_ref().is_some_and(|l| {
+            l.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+        })
 }
 
 fn techno_shadow_admitted(entity: &crate::sim::game_entity::GameEntity, no_shadow: bool) -> bool {
@@ -1182,7 +1290,7 @@ fn emit_unit_shadow_sprite(
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
     // Original Unit73C1D2 also skips its shadow suffix while sinking +3CD.
-    if !unit_shadow_admitted(entity, no_shadow, band) {
+    if !unit_shadow_admitted(entity, no_shadow, band) || has_jumpjet_unit_shadow(entity) {
         return;
     }
     let key = UnitSpriteKey {
@@ -1200,6 +1308,7 @@ fn emit_unit_shadow_sprite(
     };
     emit_shadow_stencil(
         entry,
+        UnitTextureSource::Stable(entry.page),
         [center_x, center_y],
         depth,
         voxel_adjust,
@@ -1212,6 +1321,7 @@ fn emit_unit_shadow_sprite(
 /// body mask, so its immutable atlas entry also serves pitched/rolled bodies.
 fn emit_shadow_stencil(
     entry: UnitSpriteEntry,
+    source: UnitTextureSource,
     anchor: [f32; 2],
     depth: f32,
     voxel_adjust: f32,
@@ -1235,13 +1345,148 @@ fn emit_shadow_stencil(
         z_gradient: VOXEL_Z_GRADIENT,
         ..Default::default()
     };
-    push_unit_sprite(UnitTextureSource::Stable(entry.page), sprite, pieces);
+    push_unit_sprite(source, sprite, pieces);
 }
 
-fn aircraft_shadow_pose(
+/// The original Unit suffix follows stable, split-gun and posed bodies alike.
+/// Its composed mask reads those exact pieces; a high-flight stencil is
+/// unmasked, and positive low flight uses the existing frame-local pages.
+fn emit_jumpjet_unit_shadow(
+    state: &AppState,
+    atlas: &crate::render::unit_atlas::UnitAtlas,
+    entity: &crate::sim::game_entity::GameEntity,
+    type_id: &str,
+    frame: u32,
+    body_anchor: [f32; 2],
+    no_shadow: bool,
+    draw_state: DrawState,
+    band: EntityDrawBand,
+    pieces: &mut Vec<ObjectPieceInstance>,
+) {
+    use crate::render::unit_shadow::{UnitShadowContext, UnitShadowMask};
+    if !has_jumpjet_unit_shadow(entity)
+        || !unit_shadow_admitted(entity, no_shadow, band)
+        || pieces.is_empty()
+    {
+        return;
+    }
+    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        return;
+    };
+    let view = runtime.view();
+    let Some(terrain) = view.resolved_terrain() else {
+        return;
+    };
+    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    let Some(mut pose) = crate::render::unit_shadow::pose(
+        UnitShadowContext {
+            xyz: [
+                xy[0],
+                xy[1],
+                crate::sim::movement::ground_pose::object_world_z_leptons(entity, Some(terrain)),
+            ],
+            on_bridge: entity.on_bridge(),
+            marked: entity.lifecycle.cell_marked(),
+            primary_facing: entity.body_facing_current(view.session().binary_frame()),
+        },
+        |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
+    ) else {
+        return;
+    };
+    pose.anchor[1] -= f32::from(entity.ion_blast_lift_pixels());
+    let key = UnitSpriteKey {
+        type_id: type_id.to_owned(),
+        turret_index: 0,
+        facing: pose.facing,
+        layer: VxlLayer::Shadow,
+        frame: if pose.mask == UnitShadowMask::Retained {
+            frame | crate::render::unit_atlas::GROUNDED_SHADOW_FRAME_FLAG
+        } else {
+            frame
+        },
+        slope_type: pose.slope,
+        barrel_pitch: 0,
+    };
+    let Some(entry) = atlas
+        .get(&key)
+        .filter(|e| e.native_draw_bounds.is_some())
+        .copied()
+    else {
+        return;
+    };
+    let (entry, source) = if pose.mask == UnitShadowMask::None {
+        (entry, UnitTextureSource::Stable(entry.page))
+    } else {
+        let parts: Vec<_> = pieces
+            .iter()
+            .filter_map(|piece| {
+                let (page, posed) = match piece.target {
+                    ObjectTexture::UnitAtlasPage(page) => (page, false),
+                    ObjectTexture::UnitPosePage(page) => (page, true),
+                    _ => return None,
+                };
+                let sprite = &piece.instance;
+                Some(crate::render::unit_atlas::UnitShadowPart {
+                    entry: UnitSpriteEntry {
+                        uv_origin: sprite.uv_origin,
+                        uv_size: sprite.uv_size,
+                        pixel_size: sprite.size,
+                        offset_x: 0.,
+                        offset_y: 0.,
+                        native_draw_bounds: None,
+                        page,
+                    },
+                    point: [
+                        128 + (sprite.position[0] - body_anchor[0]) as i32,
+                        128 + (sprite.position[1] - body_anchor[1]) as i32,
+                    ],
+                    posed,
+                })
+            })
+            .collect();
+        let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
+        if pose.mask == UnitShadowMask::Retained {
+            if !atlas.prepare_native_shadow_with(&state.renderer.gpu.queue, &key, |body| {
+                cache.stamp_shadow_parts(atlas, &parts, body)
+            }) {
+                return;
+            }
+            (entry, UnitTextureSource::Stable(entry.page))
+        } else {
+            let Some(entry) = cache.render_unit_shadow(atlas, &key, pose.mask_offset, &parts)
+            else {
+                return;
+            };
+            (entry, UnitTextureSource::Pose(entry.page))
+        }
+    };
+    let depth = body_sort_depth(
+        state,
+        entity,
+        pose.anchor[1] + entry.offset_y + entry.pixel_size[1],
+        entity.position.z(),
+    );
+    let z_adjust = super::foot_depth::unit_z_adjust(state, entity, true, None);
+    emit_shadow_stencil(
+        entry,
+        source,
+        pose.anchor,
+        depth,
+        z_adjust as f32,
+        draw_state,
+        pieces,
+    );
+}
+
+struct AircraftDrawSample {
+    shadow: Option<crate::render::aircraft_shadow::AircraftShadowPose>,
+    pose: crate::app::presentation::interpolation::RenderPose,
+}
+
+fn aircraft_draw_sample(
     state: &AppState,
     entity: &crate::sim::game_entity::GameEntity,
-) -> Option<crate::render::aircraft_shadow::AircraftShadowPose> {
+) -> Option<AircraftDrawSample> {
     if entity.category() != EntityCategory::Aircraft || entity.sinking.is_active() {
         return None;
     }
@@ -1256,25 +1501,38 @@ fn aircraft_shadow_pose(
     let terrain = view.resolved_terrain()?;
     let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     let frame = view.session().binary_frame();
-    let primary = entity.body_facing_current(frame);
-    crate::render::aircraft_shadow::pose(
-        crate::render::aircraft_shadow::AircraftShadowContext {
-            xyz: [
+    let (sampled, xyz) = state
+        .match_state
+        .match_presentation
+        .interpolation
+        .sample_entity_and_coord(
+            entity,
+            frame,
+            [
                 xy[0],
                 xy[1],
                 crate::sim::movement::ground_pose::object_world_z_leptons(entity, Some(terrain)),
             ],
-            on_bridge: entity.on_bridge(),
-            locomotor: entity.locomotor.as_ref()?.active_kind(),
-            is_dropship: object.is_dropship(),
-            primary_facing: primary,
-            secondary_facing: entity
-                .barrel_facing
-                .as_ref()
-                .map_or(primary, |facing| facing.current(frame)),
-        },
-        |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
-    )
+        );
+    // Keep the pose even if this locomotor has no shadow. The old path had
+    // already read it here; a later admitted body need not request it again.
+    let shadow = entity.locomotor.as_ref().and_then(|locomotor| {
+        crate::render::aircraft_shadow::pose(
+            crate::render::aircraft_shadow::AircraftShadowContext {
+                xyz,
+                on_bridge: entity.on_bridge(),
+                locomotor: locomotor.active_kind(),
+                is_dropship: object.is_dropship(),
+                primary_facing: sampled.body,
+                secondary_facing: sampled.turret,
+            },
+            |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
+        )
+    });
+    Some(AircraftDrawSample {
+        shadow,
+        pose: sampled,
+    })
 }
 
 fn emit_aircraft_shadow_sprite(
@@ -1311,6 +1569,7 @@ fn emit_aircraft_shadow_sprite(
     let z_adjust = super::foot_depth::unit_z_adjust(state, entity, false, Some(pose.world_z));
     emit_shadow_stencil(
         entry,
+        UnitTextureSource::Stable(entry.page),
         pose.anchor,
         depth,
         z_adjust as f32,
@@ -1991,6 +2250,37 @@ mod tests {
     }
 
     #[test]
+    fn jumpjet_unit_shadow_admission_matches_original_gates_across_bands() {
+        let fixture = crate::test_fixture::json("tools/voxel_oracle/unit_shadow.json");
+        for row in fixture["callers"].as_array().unwrap() {
+            let mut entity = GameEntity::test_default(1, "ZEP", "Russians", 10, 10);
+            entity.set_category_for_test(EntityCategory::Unit);
+            entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
+            let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
+            cloak.set_state_for_test(row["input"]["cloak"].as_i64().unwrap_or(0) as i32);
+            entity.cloak = Some(cloak);
+            if row["input"]["sinking"].as_bool().unwrap_or(false) {
+                continue;
+            }
+            for band in [
+                EntityDrawBand::Ground,
+                EntityDrawBand::Air,
+                EntityDrawBand::Top,
+            ] {
+                assert_eq!(
+                    unit_shadow_admitted(
+                        &entity,
+                        row["input"]["no_shadow"].as_bool().unwrap_or(false),
+                        band
+                    ),
+                    row["draw_admitted"].as_bool().unwrap(),
+                    "{row}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn vehicle_shadow_active_locomotor_selects_native_or_legacy_companion() {
         let mut entity = GameEntity::test_default(1, "GENERATED", "Americans", 0, 0);
         entity.set_category_for_test(EntityCategory::Unit);
@@ -2069,7 +2359,13 @@ mod tests {
                 .as_mut()
                 .unwrap()
                 .snap(input["secondary"].as_u64().unwrap() as u16, 0);
-            assert_eq!(body_draw_facing(&entity, 0), native_key as u8, "{input}");
+            assert_eq!(
+                crate::render::vxl_raster::voxel_facing_step_u16(
+                    crate::app::presentation::interpolation::body_draw_facing(&entity, 0)
+                ) * 8,
+                native_key as u8,
+                "{input}"
+            );
             compared += 1;
         }
         assert_eq!(compared, 4);
@@ -2303,10 +2599,7 @@ mod tests {
             display_binary_frame_for_committed_session(restored.session().binary_frame());
         assert_eq!(display_binary_frame, 50);
         assert_eq!(
-            locomotor_render_slope_state(
-                restored.entities().get(1).unwrap(),
-                display_binary_frame,
-            ),
+            locomotor_render_slope_state(restored.entities().get(1).unwrap(), display_binary_frame,),
             Some(UnitRenderSlopeState::Transition {
                 from_slope: 4,
                 to_slope: 9,
@@ -2367,5 +2660,4 @@ mod tests {
         assert_eq!(no_spawn_alt_type_id("V3", false, Some(&in_flight)), None);
         assert_eq!(no_spawn_alt_type_id("V3", true, None), None);
     }
-
 }

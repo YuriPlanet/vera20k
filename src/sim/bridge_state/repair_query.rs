@@ -4,6 +4,7 @@
 
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::NativeCellQuery;
+use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::zone_build::find_high_bridge_record;
 
 use super::{BridgeEndpointRecord, ordinary, ramp_repair::Family};
@@ -25,10 +26,29 @@ enum Selection {
     },
 }
 
+/// CellClass+44 of a cell `query` looked up: OverlayGrid's for a real cell,
+/// the query's own fallback for the dummy.
+fn overlay_identity(
+    query: &NativeCellQuery<'_>,
+    overlays: Option<&OverlayGrid>,
+    cell: NativeCellIdentity,
+) -> i32 {
+    match cell {
+        NativeCellIdentity::Real(_) => {
+            let (x, y) = query.coord(cell);
+            overlays
+                .and_then(|grid| grid.cell(x as u16, y as u16).overlay_id)
+                .map_or(-1, i32::from)
+        }
+        NativeCellIdentity::Dummy => query.dummy_overlay_identity(),
+    }
+}
+
 /// Entire587410 Boolean (AL), including Y-major last-match selection and
 /// tile-before-overlay precedence. No RNG draws, timers, detach or rebuild.
 pub(crate) fn can_repair(
     query: &NativeCellQuery<'_>,
+    overlays: Option<&OverlayGrid>,
     records: &[BridgeEndpointRecord],
     center: (i16, i16),
 ) -> bool {
@@ -59,7 +79,7 @@ pub(crate) fn can_repair(
             }
             // Original performs these repeated GetCell calls even on misses.
             let cell = query.lookup(coord);
-            if ordinary::member(query.overlay_identity(cell), Family::Low) {
+            if ordinary::member(overlay_identity(query, overlays, cell), Family::Low) {
                 selected = Some(Selection::Overlay {
                     cell: query.lookup(coord),
                     family: Family::Low,
@@ -67,7 +87,7 @@ pub(crate) fn can_repair(
                 continue;
             }
             let cell = query.lookup(coord);
-            if ordinary::member(query.overlay_identity(cell), Family::High) {
+            if ordinary::member(overlay_identity(query, overlays, cell), Family::High) {
                 selected = Some(Selection::Overlay {
                     cell: query.lookup(coord),
                     family: Family::High,
@@ -78,7 +98,7 @@ pub(crate) fn can_repair(
     match selected {
         None => false,
         Some(Selection::Tile { cell, offset }) => walk_records(query, records, cell, offset),
-        Some(Selection::Overlay { cell, family }) => walk_overlays(query, cell, family),
+        Some(Selection::Overlay { cell, family }) => walk_overlays(query, overlays, cell, family),
     }
 }
 
@@ -131,8 +151,13 @@ fn walk_records(
     false
 }
 
-fn walk_overlays(query: &NativeCellQuery<'_>, seed: NativeCellIdentity, family: Family) -> bool {
-    let overlay = query.overlay_identity(seed);
+fn walk_overlays(
+    query: &NativeCellQuery<'_>,
+    overlays: Option<&OverlayGrid>,
+    seed: NativeCellIdentity,
+    family: Family,
+) -> bool {
+    let overlay = overlay_identity(query, overlays, seed);
     let along_x = ordinary::axis(overlay, family) == Some(super::Axis::NS);
     let first = if along_x { 6 } else { 4 };
     for direction in [first, (first + 4) & 7] {
@@ -141,11 +166,11 @@ fn walk_overlays(query: &NativeCellQuery<'_>, seed: NativeCellIdentity, family: 
         let mut coord = query.coord(seed);
         loop {
             let cell = query.lookup(coord);
-            if !ordinary::member(query.overlay_identity(cell), family) {
+            if !ordinary::member(overlay_identity(query, overlays, cell), family) {
                 break;
             }
             let cell = query.lookup(coord);
-            let overlay = query.overlay_identity(cell);
+            let overlay = overlay_identity(query, overlays, cell);
             let terminals = match family {
                 Family::Low => [100, 101],
                 Family::High => [231, 232],

@@ -60,6 +60,7 @@ pub(super) fn prepare_powered_mover(
                         (rx as i16, ry as i16),
                         Some(owner),
                         None,
+                        None,
                     )
                 })
                 .unwrap_or_else(|| panic!("no legal site away from the bridge for {name}"));

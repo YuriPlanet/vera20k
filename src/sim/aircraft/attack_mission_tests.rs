@@ -485,12 +485,17 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
             .register(crate::sim::house_state::HouseState::new(
                 owner, 0, None, human, 0, 1,
             ));
-        sim.playfield_bounds = Some(bounds);
+        sim.set_playfield_bounds_for_test(Some(bounds));
         if airfield {
             // Find_Docking_Bay walks the house's buildings and its tracked
             // counts, which construction fills.
             sim.append_house_base_building_for_test(2);
-            sim.update_house_tracking(2, crate::sim::house_tracking::HouseTracking::add_tracking);
+            Simulation::update_house_tracking(
+                &mut sim.substrate,
+                &mut sim.houses,
+                2,
+                crate::sim::house_tracking::HouseTracking::add_tracking,
+            );
         }
         plane.set_category_for_test(EntityCategory::Aircraft);
         // The RadioClass constructor's one contact slot (`0x0065A764`).

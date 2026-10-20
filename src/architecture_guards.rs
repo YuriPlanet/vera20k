@@ -14,7 +14,7 @@
 //! The ui rule also forbids the retired skirmish_scenarios root. These checks
 //! preserve the current layout rather than describing future migration work.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -829,4 +829,1090 @@ fn macro_arguments<'a>(source: &'a str, code: &str, start: usize) -> &'a str {
         }
     }
     panic!("unclosed argument list at byte {start}")
+}
+
+/// The simulation's composition roots: structs of owner slots.
+const ROOTS: &[(&str, &str)] = &[
+    ("sim/world/mod.rs", "Simulation"),
+    ("sim/world/substrate.rs", "ObjectSubstrate"),
+    ("sim/game_entity.rs", "GameEntity"),
+];
+
+/// Each non-private slot of the simulation's composition roots is typed as an
+/// owner: a struct whose fields are all private, so other modules change its
+/// state only through its operations. A raw container, primitive, enum or
+/// open struct in a root slot would let any module write that state directly.
+/// `Option`, `Box`, `Arc` and `Rc` wrappers are looked through.
+#[test]
+fn composition_root_slots_are_owner_types() {
+    // Root slots that are not owner structs, each with its reason.
+    const PINNED: &[(&str, &str, &str)] = &[
+        (
+            "Simulation",
+            "substrate",
+            "the object root, whose own slots are checked as ObjectSubstrate",
+        ),
+        (
+            "GameEntity",
+            "mission_leaf",
+            "an enum of owner leaves, built once at entity construction; only fixtures replace it",
+        ),
+    ];
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let files = source_files(&src_root);
+    // Parsed from the blanked source: `strip_test_items` works per line and
+    // does not end a gated struct field, so `cfg(test)` items and fields are
+    // dropped here instead.
+    let mut structs: BTreeMap<String, Vec<Vec<FieldDecl>>> = BTreeMap::new();
+    for file in files.iter().filter(|file| file.production.is_some()) {
+        for (name, fields) in struct_definitions(&file.blanked) {
+            structs.entry(name).or_default().push(fields);
+        }
+    }
+    let mut violations = Vec::new();
+    let mut pins_used = BTreeSet::new();
+    for &(rel, root) in ROOTS {
+        let file = files
+            .iter()
+            .find(|file| file.rel == rel)
+            .unwrap_or_else(|| panic!("{rel} exists"));
+        let (_, fields) = struct_definitions(&file.blanked)
+            .into_iter()
+            .find(|(name, _)| name == root)
+            .unwrap_or_else(|| panic!("struct {root} in {rel}"));
+        for field in fields.iter().filter(|field| field.non_private) {
+            if PINNED
+                .iter()
+                .any(|&(pinned_root, slot, _)| pinned_root == root && slot == field.name)
+            {
+                pins_used.insert((root, field.name.clone()));
+                continue;
+            }
+            if let Err(why) = owner_type_verdict(&structs, &field.ty) {
+                violations.push(format!("{root}.{}: `{}` {why}", field.name, field.ty));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "composition-root slots that are not owner types: {violations:#?}\n\
+         Give the state an owner struct with private fields and rule-named \
+         operations, or pin the slot here with its reason."
+    );
+    let stale: Vec<_> = PINNED
+        .iter()
+        .filter(|&&(root, slot, _)| !pins_used.contains(&(root, slot.to_string())))
+        .collect();
+    assert!(stale.is_empty(), "stale PINNED entr(ies): {stale:?}");
+}
+
+#[test]
+fn slot_type_scan_reads_wrappers_tuples_and_visibility() {
+    let code = "pub struct A<T> where T: Copy { pub(crate) x: Option<Arc<B>>, #[serde(skip)] y: Vec<(u8, u16)>,\n\
+                #[cfg(test)] pub z: u8 }\n\
+                struct B(pub u8, C);\n\
+                pub(crate) struct C;\n\
+                #[cfg(any(test, feature = \"x\"))]\n\
+                struct D<P, Q> { pub open: P, q: Q }\n\
+                #[cfg(test)]\n\
+                mod tests { struct E { pub open: u8 } }\n";
+    let defs = struct_definitions(code);
+    let names: Vec<_> = defs.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["A", "B", "C"]);
+    let a = &defs[0].1;
+    assert_eq!(a.len(), 2, "the cfg(test) field is not a production slot");
+    assert_eq!((a[0].non_private, a[0].name.as_str()), (true, "x"));
+    assert_eq!(
+        (a[1].non_private, a[1].ty.as_str()),
+        (false, "Vec<(u8, u16)>")
+    );
+    assert_eq!(slot_base_type(&a[0].ty), "B");
+    assert!(defs[1].1[0].non_private && !defs[1].1[1].non_private);
+    assert!(defs[2].1.is_empty());
+    let structs: BTreeMap<String, Vec<Vec<FieldDecl>>> = defs
+        .into_iter()
+        .map(|(name, fields)| (name, vec![fields]))
+        .collect();
+    assert!(owner_type_verdict(&structs, "Option<C>").is_ok());
+    assert!(owner_type_verdict(&structs, "crate::x::B").is_err());
+    assert!(owner_type_verdict(&structs, "BTreeMap<u8, C>").is_err());
+    assert!(owner_type_verdict(&structs, "SomeEnum").is_err());
+}
+
+struct FieldDecl {
+    non_private: bool,
+    name: String,
+    ty: String,
+}
+
+/// Whether a slot of type `ty` is an owner struct, or why not.
+fn owner_type_verdict(
+    structs: &BTreeMap<String, Vec<Vec<FieldDecl>>>,
+    ty: &str,
+) -> Result<(), String> {
+    const RAW: &[&str] = &[
+        "Vec", "VecDeque", "BTreeMap", "BTreeSet", "HashMap", "HashSet", "String", "bool", "char",
+        "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
+        "f32", "f64",
+    ];
+    let base = slot_base_type(ty);
+    if base.is_empty() || base.starts_with(['(', '[', '&']) || RAW.contains(&base) {
+        return Err("is a raw value or container".to_string());
+    }
+    let Some(definitions) = structs.get(base) else {
+        return Err("is not a struct (an enum, alias or foreign type)".to_string());
+    };
+    let open: Vec<&str> = definitions
+        .iter()
+        .flatten()
+        .filter(|field| field.non_private)
+        .map(|field| field.name.as_str())
+        .collect();
+    if open.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("has non-private fields {open:?}"))
+    }
+}
+
+/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc` and paths.
+fn slot_base_type(ty: &str) -> &str {
+    let mut ty = ty.trim();
+    loop {
+        let (path, generics) = ty.find('<').map_or((ty, ""), |at| ty.split_at(at));
+        let last = path.rsplit("::").next().unwrap_or(path).trim();
+        if ["Option", "Box", "Arc", "Rc"].contains(&last)
+            && generics.starts_with('<')
+            && generics.ends_with('>')
+        {
+            ty = generics[1..generics.len() - 1].trim();
+        } else {
+            return last;
+        }
+    }
+}
+
+/// Every production `struct` item in blanked `code`, with its production
+/// fields in order. Tuple fields are named by position; unit structs have
+/// none. Items and fields gated on `cfg(test)` or `cfg(any(test, ..))` are
+/// skipped.
+fn struct_definitions(code: &str) -> Vec<(String, Vec<FieldDecl>)> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let gated = cfg_test_items(code);
+    let mut out = Vec::new();
+    for (at, _) in code.match_indices("struct") {
+        let end = at + "struct".len();
+        if gated.iter().any(|&(start, stop)| start <= at && at < stop)
+            || (at > 0 && is_ident(bytes[at - 1]))
+            || !bytes.get(end).is_some_and(u8::is_ascii_whitespace)
+        {
+            continue;
+        }
+        let name_start = end + code[end..].len() - code[end..].trim_start().len();
+        let name_len = code[name_start..]
+            .bytes()
+            .take_while(|&b| is_ident(b))
+            .count();
+        if name_len == 0 {
+            continue;
+        }
+        let name = &code[name_start..name_start + name_len];
+        // The body opens at the first `{`, `(` or `;` outside the generics.
+        let mut depth = 0i32;
+        let mut open = None;
+        let mut prev = 0u8;
+        for (offset, b) in code[name_start + name_len..].bytes().enumerate() {
+            match b {
+                b'<' => depth += 1,
+                b'>' if prev != b'-' => depth -= 1,
+                b'{' | b'(' | b';' if depth == 0 => {
+                    open = Some((name_start + name_len + offset, b));
+                    break;
+                }
+                _ => {}
+            }
+            prev = b;
+        }
+        let Some((open_at, open_byte)) = open else {
+            continue;
+        };
+        if open_byte == b';' {
+            out.push((name.to_string(), Vec::new()));
+            continue;
+        }
+        let close_byte = if open_byte == b'{' { b'}' } else { b')' };
+        let mut nesting = 0i32;
+        let mut close_at = None;
+        for (offset, b) in code[open_at..].bytes().enumerate() {
+            if b == open_byte {
+                nesting += 1;
+            } else if b == close_byte {
+                nesting -= 1;
+                if nesting == 0 {
+                    close_at = Some(open_at + offset);
+                    break;
+                }
+            }
+        }
+        let Some(close_at) = close_at else {
+            continue;
+        };
+        let named = open_byte == b'{';
+        let fields = split_top_level(&code[open_at + 1..close_at])
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, part)| parse_field_decl(part, named, index))
+            .collect();
+        out.push((name.to_string(), fields));
+    }
+    out
+}
+
+/// `text` split at commas outside brackets, braces, parentheses and generics.
+fn split_top_level(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0;
+    let mut prev = 0u8;
+    for (at, b) in text.bytes().enumerate() {
+        match b {
+            b'(' | b'[' | b'{' | b'<' => depth += 1,
+            b'>' if prev == b'-' => {}
+            b')' | b']' | b'}' | b'>' => depth -= 1,
+            b',' if depth == 0 => {
+                parts.push(&text[start..at]);
+                start = at + 1;
+            }
+            _ => {}
+        }
+        prev = b;
+    }
+    parts.push(&text[start..]);
+    parts
+}
+
+fn parse_field_decl(part: &str, named: bool, index: usize) -> Option<FieldDecl> {
+    let mut rest = part.trim();
+    // Attributes such as `#[serde(skip)]` precede the field.
+    while let Some(after) = rest.strip_prefix("#[") {
+        let mut depth = 1i32;
+        let close = after.bytes().position(|b| {
+            match b {
+                b'[' => depth += 1,
+                b']' => depth -= 1,
+                _ => {}
+            }
+            depth == 0
+        })?;
+        if is_cfg_test(&after[..close]) {
+            return None;
+        }
+        rest = after[close + 1..].trim_start();
+    }
+    if rest.is_empty() {
+        return None;
+    }
+    let non_private = rest.starts_with("pub") && rest[3..].starts_with([' ', '\t', '\n', '(']);
+    if non_private {
+        rest = rest[3..].trim_start();
+        if rest.starts_with('(') {
+            rest = rest[rest.find(')')? + 1..].trim_start();
+        }
+    }
+    let (name, ty) = if named {
+        let (name, ty) = rest.split_once(':')?;
+        (name.trim().to_string(), ty)
+    } else {
+        (index.to_string(), rest)
+    };
+    Some(FieldDecl {
+        non_private,
+        name,
+        ty: ty.split_whitespace().collect::<Vec<_>>().join(" "),
+    })
+}
+
+/// Whether an attribute's contents gate on tests.
+fn is_cfg_test(attribute: &str) -> bool {
+    ["cfg(test", "cfg(any(test", "cfg(all(test"]
+        .iter()
+        .any(|gate| attribute.trim_start().starts_with(gate))
+}
+
+/// Byte ranges of the items in blanked `code` gated on tests: from the
+/// attribute to the item's `;` or `,`, or to the close of its block.
+fn cfg_test_items(code: &str) -> Vec<(usize, usize)> {
+    let mut items = Vec::new();
+    for (at, _) in code.match_indices("#[") {
+        let Some(close) = code[at..].find(']') else {
+            continue;
+        };
+        if !is_cfg_test(&code[at + 2..at + close]) {
+            continue;
+        }
+        let start = at + close + 1;
+        let mut depth = 0i32;
+        let mut prev = 0u8;
+        for (offset, b) in code[start..].bytes().enumerate() {
+            match b {
+                b'(' | b'[' | b'<' => depth += 1,
+                b'>' if prev == b'-' => {}
+                b')' | b']' | b'>' => depth -= 1,
+                b';' | b',' if depth == 0 => {
+                    items.push((at, start + offset));
+                    break;
+                }
+                b'{' if depth == 0 => {
+                    let mut nesting = 0i32;
+                    let block_end = code[start + offset..].bytes().position(|b| {
+                        match b {
+                            b'{' => nesting += 1,
+                            b'}' => nesting -= 1,
+                            _ => {}
+                        }
+                        nesting == 0
+                    });
+                    items.push((at, block_end.map_or(code.len(), |end| start + offset + end)));
+                    break;
+                }
+                b'}' if depth == 0 => break,
+                _ => {}
+            }
+            prev = b;
+        }
+    }
+    items
+}
+
+/// Holding a root reaches only owner operations. No function another module
+/// can call hands out mutable access to anything but an owner struct (one
+/// whose fields are all private), and no method is a plain one-field setter,
+/// except the pinned ones with their reasons. With
+/// `composition_root_slots_are_owner_types`, this is what stops a
+/// `&mut Simulation` signature from writing state past its owner: every slot
+/// is an owner, and no owner opens its state through a handout or a setter.
+/// Scans the engine's production code. Trait-impl and trait methods count as
+/// callable from anywhere; `&mut Self` from `&mut self` reaches nothing new,
+/// and a root's slots are checked by the guard above. A setter is a `set` or
+/// `set_*` method; a single store under a rule's name is an operation.
+#[test]
+fn mutable_handouts_and_setters_are_owner_operations() {
+    const ENGINE: &[&str] = &["sim/", "map/", "net/", "rules/", "util/"];
+    // (file, function, reason): mutable access to something other than an
+    // owner struct.
+    const RMG: &str =
+        "random-map generator scratch, consumed into map data before a scenario exists";
+    const PAYLOAD: &str =
+        "a command's payload bytes under construction, which the simulation decodes";
+    const CELL_MAP: &str =
+        "a generic cell-keyed container; every CellMap is a private field of its owner";
+    const LASER: &str = "LaserDraw 0x0054FE60 returns the new laser for its caller's postprocessing \
+                         (FireAt 0x006FF50A..0x006FF571); the caller finishes its own frame fact";
+    const PINNED_HANDOUTS: &[(&str, &str, &str)] = &[
+        ("map/rmg/grid.rs", "get_mut", RMG),
+        ("map/rmg/grid.rs", "ref_cell_mut", RMG),
+        ("map/rmg/grid.rs", "cell_native_mut", RMG),
+        ("map/rmg/scratch.rs", "get_mut", RMG),
+        ("map/rmg/scratch.rs", "cells_mut", RMG),
+        (
+            "map/tubes.rs",
+            "install_receipt",
+            "the map read builds the tube receipt in place once; binding takes it once",
+        ),
+        ("net/lockstep.rs", "payload_mut", PAYLOAD),
+        (
+            "rules/art_data.rs",
+            "get_mut",
+            "art rules installed at load: the registry fills SHP frame sizes into its own \
+             entries, and fixtures reach it through art_entry_mut_for_test",
+        ),
+        ("sim/command.rs", "payload_mut", PAYLOAD),
+        ("sim/cell_map.rs", "get_mut", CELL_MAP),
+        ("sim/cell_map.rs", "get_or_insert_with", CELL_MAP),
+        ("sim/cell_map.rs", "values_mut", CELL_MAP),
+        ("sim/combat/laser.rs", "create", LASER),
+        ("sim/combat/laser.rs", "construct", LASER),
+        (
+            "sim/pathfinding/zone_hierarchy.rs",
+            "cell_zone_ids_mut",
+            "the zone build writes a level's cell zone ids (zone_build/hierarchy.rs)",
+        ),
+        (
+            "sim/pathfinding/zone_hierarchy.rs",
+            "levels_mut",
+            "the zone build and bridge zone publication edit the levels; the handout drops \
+             the precheck memo first",
+        ),
+        (
+            "sim/pathfinding/zone_map.rs",
+            "base_topology_mut",
+            "zone repair rewrites base topology records in place, after the handout \
+             invalidates navigation history",
+        ),
+        (
+            "sim/world/frame_channel.rs",
+            "emit_and_finish",
+            "a producer finishes the fact it just emitted, before the frame tail reads the channel",
+        ),
+    ];
+    // (file, method, reason): `set`/`set_*` methods whose body stores one
+    // parameter. Each stores one native member; the decision to store it
+    // lives in the cited native caller, which the Rust caller ports.
+    const PINNED_SETTERS: &[(&str, &str, &str)] = &[
+        (
+            "rules/object_type.rs",
+            "set_voxel_shadow_index",
+            "runs only inside RuleSet's load",
+        ),
+        (
+            "rules/object_type.rs",
+            "set_secret_lab",
+            "runs only inside RuleSet's load",
+        ),
+        (
+            "sim/ai_base_building.rs",
+            "set_mode",
+            "AI_Manage_Build_Queue's mode: 2 for a harvester (0x004FE109), 1 for a building (0x004FE3AB)",
+        ),
+        (
+            "sim/ai_team_creation.rs",
+            "set_trigger_ratio",
+            "TAction 76 stores the signed +0x90 dword unchanged (0x006DF364)",
+        ),
+        (
+            "sim/ammo.rs",
+            "set_dock",
+            "the +0x6CC writers and PointerExpired's clear",
+        ),
+        (
+            "sim/combat/attack_target.rs",
+            "set",
+            "the TarCom class setter; callers port each native writer, such as \
+             PointerExpired's NULL store (0x00707A33)",
+        ),
+        (
+            "sim/combat/base_defense_response.rs",
+            "set_team_recruitable",
+            "TeamClass::Add_Member stores AreTeamMembersRecruitable into +0x422 (0x006EA500)",
+        ),
+        (
+            "sim/combat/base_defense_response.rs",
+            "set_archive_target",
+            "TechnoClass::Set_ArchiveTarget (0x0070C610)",
+        ),
+        (
+            "sim/combat/object_health.rs",
+            "set",
+            "the Strength store of the native death paths (Crush 0x007416A0, \
+             KillPassengers 0x00707CB0, KillOccupants 0x004585C0)",
+        ),
+        (
+            "sim/house_state.rs",
+            "set_alternate_base",
+            "trigger action 137 (0x0050DFE0) writes House+0x5494",
+        ),
+        (
+            "sim/house_state.rs",
+            "set_ui_name",
+            "House+0x1602A: CreateHouses (0x00688092, 0x00688252) and UIName= (0x00500C5D)",
+        ),
+        (
+            "sim/house_state.rs",
+            "set_aircraft_team_ratio",
+            "TAction 77 stores the signed Action+90 (0x006DF38E)",
+        ),
+        (
+            "sim/house_state.rs",
+            "set_infantry_team_ratio",
+            "TAction 78 stores the signed Action+90 (0x006DF3B8)",
+        ),
+        (
+            "sim/house_state.rs",
+            "set_unit_team_ratio",
+            "TAction 79 stores the signed Action+90 (0x006DF3E2)",
+        ),
+        (
+            "sim/house_state.rs",
+            "set_nuke_target",
+            "SuperClass::Launch's MultiMissile arm (0x006CDDC4)",
+        ),
+        (
+            "sim/house_state.rs",
+            "set_preferred_super_weapon_target_kind",
+            "TAction 35 stores the signed dword without clamping (0x006DE1F1)",
+        ),
+        (
+            "sim/house_state.rs",
+            "set_preferred_super_weapon_target",
+            "House 0x0050DA00, reached by TAction 135 (0x006E43E0)",
+        ),
+        (
+            "sim/house_state.rs",
+            "set_ai_triggers_active",
+            "TActions 74/75 store only House+1F2 (0x006DF2FA, 0x006DF339)",
+        ),
+        (
+            "sim/mission/state.rs",
+            "set_handler_state",
+            "the handler-state dword native mission handlers write while executing",
+        ),
+        (
+            "sim/movement/fly_height.rs",
+            "set_flight_level",
+            "Horizontal_Step's height target (0x004CF3F6, 0x004CF4B6, 0x004CF4CF)",
+        ),
+        (
+            "sim/movement/teleport_movement.rs",
+            "set_pending_state",
+            "Techno+280, published by the reinforcement (0x0065F29F)",
+        ),
+        (
+            "sim/movement/teleport_movement.rs",
+            "set_state",
+            "teleport +0x38, stored by the Process's warp states and TimerCheck \
+             (0x007197CC..0x00719BF0)",
+        ),
+        (
+            "sim/movement/teleport_movement.rs",
+            "set_destination",
+            "Techno+0x288, moved by the Process's blocked-landing search",
+        ),
+        (
+            "sim/movement/teleport_movement.rs",
+            "set_warping_in",
+            "Techno+0x271, cleared by TimerCheck's expiry and state 7",
+        ),
+        (
+            "sim/pathfinding/zone_map.rs",
+            "set_bridge_redirect",
+            "the zone grid's derived bridge redirect table, rebuilt at zone build and bridge repair",
+        ),
+        (
+            "sim/rocking/mod.rs",
+            "set_vel_sideways_native",
+            "Techno+330, written by CaptureManager (0x00471C78)",
+        ),
+        (
+            "sim/rocking/mod.rs",
+            "set_vel_forwards_native",
+            "Techno+334, replaced by Drive (0x004B19F7)",
+        ),
+        (
+            "sim/stage.rs",
+            "set_value",
+            "the unload resets the dump counter without restarting its clock (0x0073E3xx)",
+        ),
+        (
+            "sim/stage.rs",
+            "set_rate",
+            "Repair changes only the rate and keeps the timer (0x0044BCD6)",
+        ),
+        (
+            "sim/superweapon/mod.rs",
+            "set_recharge_time",
+            "SuperClass::SetRechargeTime (0x006CC280, TAction 132) changes only Super+24",
+        ),
+        (
+            "sim/world/mod.rs",
+            "set_input_delay_ticks",
+            "the match's configured input delay, installed by the app at match start",
+        ),
+    ];
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let files = source_files(&src_root);
+    let gated = test_gated_files(files);
+    let production = || {
+        files
+            .iter()
+            .filter(|file| file.production.is_some() && !gated.contains(&file.rel))
+    };
+    let mut structs: BTreeMap<String, Vec<Vec<FieldDecl>>> = BTreeMap::new();
+    for file in production() {
+        for (name, fields) in struct_definitions(&file.blanked) {
+            structs.entry(name).or_default().push(fields);
+        }
+    }
+    let mut handouts = Vec::new();
+    let mut setters = Vec::new();
+    let mut pins_used = BTreeSet::new();
+    let pinned = |pins: &[(&str, &str, &str)], rel: &str, name: &str| {
+        pins.iter()
+            .any(|&(file, function, _)| file == rel && function == name)
+    };
+    for file in production().filter(|file| ENGINE.iter().any(|dir| file.rel.starts_with(dir))) {
+        for item in fn_items(&file.blanked) {
+            if !item.callable_outside {
+                continue;
+            }
+            let open = mutable_targets(&item.ret).into_iter().find(|target| {
+                let base = slot_base_type(target);
+                !(base == "Self" && item.receiver_mut
+                    || target.starts_with("dyn ")
+                    || target.starts_with("impl ")
+                    || ROOTS.iter().any(|&(_, root)| root == base)
+                    || owner_type_verdict(&structs, target).is_ok())
+            });
+            if let Some(target) = open {
+                if pinned(PINNED_HANDOUTS, &file.rel, &item.name) {
+                    pins_used.insert(("handout", file.rel.clone(), item.name.clone()));
+                } else {
+                    handouts.push(format!(
+                        "{}: {} -> {} (`{target}`)",
+                        file.rel, item.name, item.ret
+                    ));
+                }
+            }
+            if item.plain_setter() {
+                if pinned(PINNED_SETTERS, &file.rel, &item.name) {
+                    pins_used.insert(("setter", file.rel.clone(), item.name.clone()));
+                } else {
+                    setters.push(format!("{}: {}", file.rel, item.name));
+                }
+            }
+        }
+    }
+    assert!(
+        handouts.is_empty() && setters.is_empty(),
+        "mutable handouts past an owner: {handouts:#?}\nplain setters: {setters:#?}\n\
+         Hand out the owner struct or a rule-named operation instead, or pin the \
+         function here with its reason."
+    );
+    let stale: Vec<_> = PINNED_HANDOUTS
+        .iter()
+        .map(|&(file, function, _)| ("handout", file, function))
+        .chain(
+            PINNED_SETTERS
+                .iter()
+                .map(|&(file, function, _)| ("setter", file, function)),
+        )
+        .filter(|&(kind, file, function)| {
+            !pins_used.contains(&(kind, file.to_string(), function.to_string()))
+        })
+        .collect();
+    assert!(stale.is_empty(), "stale pinned entr(ies): {stale:?}");
+}
+
+#[test]
+fn handout_scan_reads_visibility_returns_and_setters() {
+    let code = "pub struct Open { pub x: u8 }\n\
+                pub(crate) struct Owned { x: u8 }\n\
+                impl Owned {\n\
+                    pub(crate) fn owned(&mut self) -> &mut Owned { self }\n\
+                    pub fn open(&mut self) -> Option<&'_ mut Open> { None }\n\
+                    fn private(&mut self) -> &mut Open { todo!() }\n\
+                    pub const fn set_x(&mut self, value: u8) { self.x = value; }\n\
+                    pub fn store(&mut self, value: u8) -> u8 { self.x = value; value }\n\
+                    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Open> { todo!() }\n\
+                    pub fn fluent(&mut self) -> &mut Self { self }\n\
+                }\n\
+                impl std::ops::IndexMut<usize> for Owned {\n\
+                    fn index_mut(&mut self, i: usize) -> &mut u8 { &mut self.x }\n\
+                }\n\
+                #[cfg(test)]\n\
+                impl Owned { pub fn test_only(&mut self) -> &mut u8 { &mut self.x } }\n";
+    let items = fn_items(code);
+    let names: Vec<_> = items.iter().map(|item| item.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "owned",
+            "open",
+            "private",
+            "set_x",
+            "store",
+            "iter_mut",
+            "fluent",
+            "index_mut"
+        ]
+    );
+    let callable: Vec<_> = items.iter().map(|item| item.callable_outside).collect();
+    assert_eq!(callable, [true, true, false, true, true, true, true, true]);
+    assert_eq!(mutable_targets(&items[0].ret), ["Owned"]);
+    assert_eq!(mutable_targets(&items[1].ret), ["Open"]);
+    assert_eq!(mutable_targets(&items[5].ret), ["Open"]);
+    assert_eq!(mutable_targets(&items[6].ret), ["Self"]);
+    assert_eq!(mutable_targets(&items[7].ret), ["u8"]);
+    assert_eq!(
+        mutable_targets("impl Iterator<Item = (&K, &mut V)> + '_"),
+        ["V"]
+    );
+    let setters: Vec<_> = items.iter().map(FnItem::plain_setter).collect();
+    assert_eq!(
+        setters,
+        [false, false, false, true, false, false, false, false]
+    );
+    let gated_mod = "#[cfg(any(test, feature = \"x\"))]\nmod fixture;\nmod live;\n";
+    assert_eq!(gated_module_names(gated_mod), ["fixture"]);
+}
+
+/// One `fn` item as the handout guard reads it.
+struct FnItem {
+    name: String,
+    /// Non-private, or a method of a trait or trait impl.
+    callable_outside: bool,
+    /// The first parameter is `&mut self`.
+    receiver_mut: bool,
+    params: String,
+    /// The return type, empty for `()`.
+    ret: String,
+    body: Option<String>,
+}
+
+impl FnItem {
+    /// `&mut self` and one more parameter, and a body that only stores that
+    /// parameter in a field path of `self`.
+    fn plain_setter(&self) -> bool {
+        if self.name != "set" && !self.name.starts_with("set_") {
+            return false;
+        }
+        let params = split_top_level(&self.params);
+        let params: Vec<&str> = params
+            .iter()
+            .map(|part| part.trim())
+            .filter(|part| !part.is_empty())
+            .collect();
+        let (true, [_, value], Some(body)) = (self.receiver_mut, params.as_slice(), &self.body)
+        else {
+            return false;
+        };
+        let Some((value, _)) = value.split_once(':') else {
+            return false;
+        };
+        let value = value.trim().trim_start_matches("mut ").trim();
+        let statement = body.trim().trim_end_matches(';').trim();
+        let Some((lhs, rhs)) = statement.split_once('=') else {
+            return false;
+        };
+        let path = lhs.trim();
+        !rhs.starts_with('=')
+            && !path.ends_with(['+', '-', '*', '/', '|', '&', '^', '!', '<', '>'])
+            && rhs.trim() == value
+            && path.strip_prefix("self.").is_some_and(|fields| {
+                !fields.is_empty()
+                    && fields
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.')
+            })
+    }
+}
+
+/// Every `fn` item in blanked `code` outside test-gated items.
+fn fn_items(code: &str) -> Vec<FnItem> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let gated = cfg_test_items(code);
+    let trait_blocks = trait_blocks(code);
+    let mut out = Vec::new();
+    for (at, _) in code.match_indices("fn") {
+        let end = at + 2;
+        if (at > 0 && is_ident(bytes[at - 1]))
+            || !bytes.get(end).is_some_and(u8::is_ascii_whitespace)
+            || gated.iter().any(|&(start, stop)| start <= at && at < stop)
+        {
+            continue;
+        }
+        let name_start = end + code[end..].len() - code[end..].trim_start().len();
+        let name_len = code[name_start..]
+            .bytes()
+            .take_while(|&b| is_ident(b))
+            .count();
+        if name_len == 0 {
+            continue;
+        }
+        let name = &code[name_start..name_start + name_len];
+        let mut k = name_start + name_len;
+        k += code[k..].len() - code[k..].trim_start().len();
+        if code[k..].starts_with('<') {
+            let Some(close) = closing(code, k, b'<', b'>') else {
+                continue;
+            };
+            k = close + 1;
+            k += code[k..].len() - code[k..].trim_start().len();
+        }
+        if !code[k..].starts_with('(') {
+            continue;
+        }
+        let Some(params_end) = closing(code, k, b'(', b')') else {
+            continue;
+        };
+        let params = &code[k + 1..params_end];
+        // The signature ends at the first `{` or `;` outside brackets.
+        let mut depth = 0i32;
+        let mut prev = 0u8;
+        let mut tail_end = None;
+        for (offset, b) in code[params_end + 1..].bytes().enumerate() {
+            match b {
+                b'(' | b'[' | b'<' => depth += 1,
+                b'>' if prev == b'-' => {}
+                b')' | b']' | b'>' => depth -= 1,
+                b'{' | b';' if depth == 0 => {
+                    tail_end = Some(params_end + 1 + offset);
+                    break;
+                }
+                _ => {}
+            }
+            prev = b;
+        }
+        let Some(tail_end) = tail_end else {
+            continue;
+        };
+        let tail = code[params_end + 1..tail_end].trim();
+        let ret = tail.strip_prefix("->").map_or("", |ret| {
+            let ret = ret.trim();
+            ret.match_indices("where")
+                .find(|&(at, _)| {
+                    (at == 0 || !is_ident(ret.as_bytes()[at - 1]))
+                        && !ret.as_bytes().get(at + 5).is_some_and(|&b| is_ident(b))
+                })
+                .map_or(ret, |(at, _)| ret[..at].trim())
+        });
+        let body = (bytes[tail_end] == b'{')
+            .then(|| closing(code, tail_end, b'{', b'}'))
+            .flatten()
+            .map(|close| code[tail_end + 1..close].to_string());
+        let first = params.split(',').next().unwrap_or("").trim();
+        let receiver_mut = first.starts_with('&')
+            && first.ends_with("self")
+            && first
+                .split_whitespace()
+                .any(|word| word == "mut" || word.ends_with("mut"));
+        let in_trait = trait_blocks
+            .iter()
+            .any(|&(start, stop)| start < at && at < stop);
+        out.push(FnItem {
+            name: name.to_string(),
+            callable_outside: in_trait || visibility_precedes(code, at),
+            receiver_mut,
+            params: params.to_string(),
+            ret: ret.split_whitespace().collect::<Vec<_>>().join(" "),
+            body,
+        });
+    }
+    out
+}
+
+/// Whether a `pub` or `pub(..)` visibility opens the item whose `fn` keyword
+/// is at `at`, past `const`, `async`, `unsafe` and `extern` qualifiers.
+fn visibility_precedes(code: &str, at: usize) -> bool {
+    let mut head = code[..at].trim_end();
+    loop {
+        let stripped = ["const", "async", "unsafe", "extern"]
+            .iter()
+            .find_map(|keyword| {
+                head.strip_suffix(keyword)
+                    .filter(|rest| rest.is_empty() || rest.ends_with(|c: char| c.is_whitespace()))
+            });
+        match stripped {
+            Some(rest) => head = rest.trim_end(),
+            None => break,
+        }
+    }
+    let ident_end = |rest: &str| !rest.ends_with(|c: char| c.is_alphanumeric() || c == '_');
+    if let Some(rest) = head.strip_suffix("pub") {
+        return ident_end(rest);
+    }
+    if head.ends_with(')') {
+        if let Some(open) = head.rfind('(') {
+            if let Some(rest) = head[..open].trim_end().strip_suffix("pub") {
+                return ident_end(rest);
+            }
+        }
+    }
+    false
+}
+
+/// Byte ranges of `trait` definitions and `impl .. for ..` blocks in blanked
+/// `code`, whose methods any holder of the type can call.
+fn trait_blocks(code: &str) -> Vec<(usize, usize)> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut blocks = Vec::new();
+    for keyword in ["impl", "trait"] {
+        for (at, _) in code.match_indices(keyword) {
+            let end = at + keyword.len();
+            if (at > 0 && is_ident(bytes[at - 1]))
+                || !bytes
+                    .get(end)
+                    .is_some_and(|&b| b.is_ascii_whitespace() || b == b'<')
+            {
+                continue;
+            }
+            // The header runs to the first `{` or `;` outside generics. An
+            // `impl Trait` type in a signature closes an enclosing bracket
+            // first and is not a block.
+            let mut depth = 0i32;
+            let mut prev = 0u8;
+            let mut open = None;
+            for (offset, b) in code[end..].bytes().enumerate() {
+                match b {
+                    b'(' | b'[' | b'<' => depth += 1,
+                    b'>' if prev == b'-' => {}
+                    b')' | b']' | b'>' => {
+                        depth -= 1;
+                        if depth < 0 {
+                            break;
+                        }
+                    }
+                    b'{' | b';' if depth == 0 => {
+                        open = (b == b'{').then_some(end + offset);
+                        break;
+                    }
+                    _ => {}
+                }
+                prev = b;
+            }
+            let Some(open) = open else {
+                continue;
+            };
+            let header = &code[end..open];
+            let trait_impl =
+                keyword == "trait" || header.split_whitespace().any(|word| word == "for");
+            if trait_impl {
+                if let Some(close) = closing(code, open, b'{', b'}') {
+                    blocks.push((open, close));
+                }
+            }
+        }
+    }
+    blocks
+}
+
+/// The type of each mutable borrow a return type hands out: `&mut T` and
+/// `&'a mut T`, and the items of `IterMut`-style adapters and `RefMut`.
+fn mutable_targets(ret: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (at, _) in ret.match_indices('&') {
+        let mut rest = ret[at + 1..].trim_start();
+        if let Some(lifetime) = rest.strip_prefix('\'') {
+            let len = lifetime
+                .bytes()
+                .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
+                .count();
+            rest = lifetime[len..].trim_start();
+        }
+        let Some(after) = rest.strip_prefix("mut") else {
+            continue;
+        };
+        if after.starts_with(|c: char| c.is_whitespace()) {
+            out.push(leading_type(after.trim_start()).to_string());
+        }
+    }
+    for adapter in [
+        "IterMut<",
+        "ValuesMut<",
+        "RangeMut<",
+        "ChunksMut<",
+        "ChunksExactMut<",
+        "RefMut<",
+    ] {
+        for (at, _) in ret.match_indices(adapter) {
+            let open = at + adapter.len() - 1;
+            let Some(close) = closing(ret, open, b'<', b'>') else {
+                continue;
+            };
+            if let Some(item) = split_top_level(&ret[open + 1..close])
+                .into_iter()
+                .map(str::trim)
+                .filter(|arg| !arg.starts_with('\''))
+                .last()
+            {
+                out.push(item.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// The type expression at the start of `text`: up to a `,`, `>`, `)`, `]`
+/// or ` +` outside brackets.
+fn leading_type(text: &str) -> &str {
+    let mut depth = 0i32;
+    let mut prev = 0u8;
+    for (at, b) in text.bytes().enumerate() {
+        match b {
+            b'(' | b'[' | b'<' => depth += 1,
+            b'>' if prev == b'-' => {}
+            b')' | b']' | b'>' if depth == 0 => return text[..at].trim(),
+            b')' | b']' | b'>' => depth -= 1,
+            b',' | b'+' if depth == 0 => return text[..at].trim(),
+            _ => {}
+        }
+        prev = b;
+    }
+    text.trim()
+}
+
+/// The index of the byte closing the bracket that opens at `open`.
+fn closing(text: &str, open: usize, open_byte: u8, close_byte: u8) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut prev = 0u8;
+    for (offset, b) in text[open..].bytes().enumerate() {
+        if b == open_byte {
+            depth += 1;
+        } else if b == close_byte && !(close_byte == b'>' && prev == b'-') {
+            depth -= 1;
+            if depth == 0 {
+                return Some(open + offset);
+            }
+        }
+        prev = b;
+    }
+    None
+}
+
+/// Modules declared by a `mod name;` item gated on tests in blanked `code`.
+fn gated_module_names(code: &str) -> Vec<String> {
+    cfg_test_items(code)
+        .into_iter()
+        .filter_map(|(start, stop)| {
+            let item = code[start..=stop.min(code.len() - 1)].trim_end();
+            let item = item.strip_suffix(';')?;
+            let after = item.split("mod").nth(1)?;
+            let name = after.trim();
+            (!name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+                .then(|| name.to_string())
+        })
+        .collect()
+}
+
+/// Files of modules declared under a test gate, with their submodules: a
+/// `#[cfg(test)] mod x;` makes `x.rs` and everything under `x/` test code.
+fn test_gated_files(files: &[SourceFile]) -> BTreeSet<String> {
+    let mut gated_dirs = Vec::new();
+    let mut gated = BTreeSet::new();
+    for file in files {
+        let names = gated_module_names(&file.blanked);
+        if names.is_empty() {
+            continue;
+        }
+        let stem = file.rel.strip_suffix(".rs").unwrap_or(&file.rel);
+        let dir = if ["mod", "lib", "main"]
+            .iter()
+            .any(|root| stem == *root || stem.ends_with(&format!("/{root}")))
+        {
+            stem.rsplit_once('/').map_or("", |(dir, _)| dir).to_string()
+        } else {
+            stem.to_string()
+        };
+        for name in names {
+            let base = if dir.is_empty() {
+                name
+            } else {
+                format!("{dir}/{name}")
+            };
+            gated.insert(format!("{base}.rs"));
+            gated.insert(format!("{base}/mod.rs"));
+            gated_dirs.push(format!("{base}/"));
+        }
+    }
+    for file in files {
+        if gated_dirs
+            .iter()
+            .any(|dir| file.rel.starts_with(dir.as_str()))
+        {
+            gated.insert(file.rel.clone());
+        }
+    }
+    gated
 }

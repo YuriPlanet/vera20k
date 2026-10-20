@@ -1,0 +1,741 @@
+{
+  "dialogs": {
+    "0xbba": {
+      "cases": [],
+      "controls": [
+        {
+          "caption": "GUI:ResumeMission",
+          "class": "Button",
+          "control_id": 1670,
+          "dlu_rect": [
+            425,
+            346,
+            108,
+            23
+          ],
+          "help": "STT:IGMultiOptButtonResume",
+          "style": 1342177291
+        },
+        {
+          "caption": "GUI:AbortMission",
+          "class": "Button",
+          "control_id": 1314,
+          "dlu_rect": [
+            425,
+            149,
+            108,
+            23
+          ],
+          "help": "STT:IGMultiOptButtonAbort",
+          "style": 1342177291
+        },
+        {
+          "caption": "GUI:GameControls",
+          "class": "Button",
+          "control_id": 1313,
+          "dlu_rect": [
+            425,
+            122,
+            108,
+            23
+          ],
+          "help": "STT:IGMultiOptButtonControls",
+          "style": 1342177291
+        },
+        {
+          "caption": "GUI:GameOptions",
+          "class": "Static",
+          "control_id": 1684,
+          "dlu_rect": [
+            425,
+            1,
+            108,
+            10
+          ],
+          "help": null,
+          "style": 1342308353
+        },
+        {
+          "caption": "GUI:Blank",
+          "class": "Static",
+          "control_id": 1685,
+          "dlu_rect": [
+            2,
+            355,
+            303,
+            12
+          ],
+          "help": null,
+          "style": 1342177792
+        }
+      ]
+    },
+    "0xff": {
+      "cases": [
+        {
+          "control_id": 1321,
+          "dialog_id": 255,
+          "dlu_rect": [
+            134,
+            158,
+            140,
+            13
+          ],
+          "height": 480,
+          "rect": [
+            121,
+            197,
+            210,
+            21
+          ],
+          "resource_rect": [
+            201,
+            257,
+            210,
+            21
+          ],
+          "width": 640
+        },
+        {
+          "control_id": 1321,
+          "dialog_id": 255,
+          "dlu_rect": [
+            134,
+            158,
+            140,
+            13
+          ],
+          "height": 600,
+          "rect": [
+            201,
+            257,
+            210,
+            21
+          ],
+          "resource_rect": [
+            201,
+            257,
+            210,
+            21
+          ],
+          "width": 800
+        },
+        {
+          "control_id": 1321,
+          "dialog_id": 255,
+          "dlu_rect": [
+            134,
+            158,
+            140,
+            13
+          ],
+          "height": 768,
+          "rect": [
+            313,
+            341,
+            210,
+            21
+          ],
+          "resource_rect": [
+            201,
+            257,
+            210,
+            21
+          ],
+          "width": 1024
+        },
+        {
+          "control_id": 65535,
+          "dialog_id": 255,
+          "dlu_rect": [
+            61,
+            158,
+            67,
+            13
+          ],
+          "height": 480,
+          "rect": [
+            12,
+            197,
+            101,
+            21
+          ],
+          "resource_rect": [
+            92,
+            257,
+            101,
+            21
+          ],
+          "width": 640
+        },
+        {
+          "control_id": 65535,
+          "dialog_id": 255,
+          "dlu_rect": [
+            61,
+            158,
+            67,
+            13
+          ],
+          "height": 600,
+          "rect": [
+            92,
+            257,
+            101,
+            21
+          ],
+          "resource_rect": [
+            92,
+            257,
+            101,
+            21
+          ],
+          "width": 800
+        },
+        {
+          "control_id": 65535,
+          "dialog_id": 255,
+          "dlu_rect": [
+            61,
+            158,
+            67,
+            13
+          ],
+          "height": 768,
+          "rect": [
+            204,
+            341,
+            101,
+            21
+          ],
+          "resource_rect": [
+            92,
+            257,
+            101,
+            21
+          ],
+          "width": 1024
+        },
+        {
+          "control_id": 1649,
+          "dialog_id": 255,
+          "dlu_rect": [
+            278,
+            158,
+            78,
+            13
+          ],
+          "height": 480,
+          "rect": [
+            337,
+            197,
+            117,
+            21
+          ],
+          "resource_rect": [
+            417,
+            257,
+            117,
+            21
+          ],
+          "width": 640
+        },
+        {
+          "control_id": 1649,
+          "dialog_id": 255,
+          "dlu_rect": [
+            278,
+            158,
+            78,
+            13
+          ],
+          "height": 600,
+          "rect": [
+            417,
+            257,
+            117,
+            21
+          ],
+          "resource_rect": [
+            417,
+            257,
+            117,
+            21
+          ],
+          "width": 800
+        },
+        {
+          "control_id": 1649,
+          "dialog_id": 255,
+          "dlu_rect": [
+            278,
+            158,
+            78,
+            13
+          ],
+          "height": 768,
+          "rect": [
+            529,
+            341,
+            117,
+            21
+          ],
+          "resource_rect": [
+            417,
+            257,
+            117,
+            21
+          ],
+          "width": 1024
+        },
+        {
+          "control_id": 1007,
+          "dialog_id": 255,
+          "dlu_rect": [
+            134,
+            136,
+            140,
+            13
+          ],
+          "height": 480,
+          "rect": [
+            121,
+            161,
+            210,
+            21
+          ],
+          "resource_rect": [
+            201,
+            221,
+            210,
+            21
+          ],
+          "width": 640
+        },
+        {
+          "control_id": 1007,
+          "dialog_id": 255,
+          "dlu_rect": [
+            134,
+            136,
+            140,
+            13
+          ],
+          "height": 600,
+          "rect": [
+            201,
+            221,
+            210,
+            21
+          ],
+          "resource_rect": [
+            201,
+            221,
+            210,
+            21
+          ],
+          "width": 800
+        },
+        {
+          "control_id": 1007,
+          "dialog_id": 255,
+          "dlu_rect": [
+            134,
+            136,
+            140,
+            13
+          ],
+          "height": 768,
+          "rect": [
+            313,
+            305,
+            210,
+            21
+          ],
+          "resource_rect": [
+            201,
+            221,
+            210,
+            21
+          ],
+          "width": 1024
+        },
+        {
+          "control_id": 65535,
+          "dialog_id": 255,
+          "dlu_rect": [
+            61,
+            136,
+            67,
+            13
+          ],
+          "height": 480,
+          "rect": [
+            12,
+            161,
+            101,
+            21
+          ],
+          "resource_rect": [
+            92,
+            221,
+            101,
+            21
+          ],
+          "width": 640
+        },
+        {
+          "control_id": 65535,
+          "dialog_id": 255,
+          "dlu_rect": [
+            61,
+            136,
+            67,
+            13
+          ],
+          "height": 600,
+          "rect": [
+            92,
+            221,
+            101,
+            21
+          ],
+          "resource_rect": [
+            92,
+            221,
+            101,
+            21
+          ],
+          "width": 800
+        },
+        {
+          "control_id": 65535,
+          "dialog_id": 255,
+          "dlu_rect": [
+            61,
+            136,
+            67,
+            13
+          ],
+          "height": 768,
+          "rect": [
+            204,
+            305,
+            101,
+            21
+          ],
+          "resource_rect": [
+            92,
+            221,
+            101,
+            21
+          ],
+          "width": 1024
+        },
+        {
+          "control_id": 1650,
+          "dialog_id": 255,
+          "dlu_rect": [
+            278,
+            136,
+            78,
+            13
+          ],
+          "height": 480,
+          "rect": [
+            337,
+            161,
+            117,
+            21
+          ],
+          "resource_rect": [
+            417,
+            221,
+            117,
+            21
+          ],
+          "width": 640
+        },
+        {
+          "control_id": 1650,
+          "dialog_id": 255,
+          "dlu_rect": [
+            278,
+            136,
+            78,
+            13
+          ],
+          "height": 600,
+          "rect": [
+            417,
+            221,
+            117,
+            21
+          ],
+          "resource_rect": [
+            417,
+            221,
+            117,
+            21
+          ],
+          "width": 800
+        },
+        {
+          "control_id": 1650,
+          "dialog_id": 255,
+          "dlu_rect": [
+            278,
+            136,
+            78,
+            13
+          ],
+          "height": 768,
+          "rect": [
+            529,
+            305,
+            117,
+            21
+          ],
+          "resource_rect": [
+            417,
+            221,
+            117,
+            21
+          ],
+          "width": 1024
+        },
+        {
+          "control_id": 65535,
+          "dialog_id": 255,
+          "dlu_rect": [
+            58,
+            118,
+            301,
+            68
+          ],
+          "height": 480,
+          "rect": [
+            7,
+            132,
+            452,
+            111
+          ],
+          "resource_rect": [
+            87,
+            192,
+            452,
+            111
+          ],
+          "width": 640
+        },
+        {
+          "control_id": 65535,
+          "dialog_id": 255,
+          "dlu_rect": [
+            58,
+            118,
+            301,
+            68
+          ],
+          "height": 600,
+          "rect": [
+            87,
+            192,
+            452,
+            111
+          ],
+          "resource_rect": [
+            87,
+            192,
+            452,
+            111
+          ],
+          "width": 800
+        },
+        {
+          "control_id": 65535,
+          "dialog_id": 255,
+          "dlu_rect": [
+            58,
+            118,
+            301,
+            68
+          ],
+          "height": 768,
+          "rect": [
+            199,
+            276,
+            452,
+            111
+          ],
+          "resource_rect": [
+            87,
+            192,
+            452,
+            111
+          ],
+          "width": 1024
+        }
+      ],
+      "controls": [
+        {
+          "caption": "GUI:GameControls",
+          "class": "Button",
+          "control_id": 1313,
+          "dlu_rect": [
+            424,
+            128,
+            108,
+            23
+          ],
+          "help": "STT:OptionInternetGameControls",
+          "style": 1342177291
+        },
+        {
+          "caption": "GUI:ResumeMission",
+          "class": "Button",
+          "control_id": 1653,
+          "dlu_rect": [
+            425,
+            346,
+            108,
+            23
+          ],
+          "help": "STT:IGMultiOptButtonResume",
+          "style": 1342177291
+        },
+        {
+          "caption": "GUI:AbortMission",
+          "class": "Button",
+          "control_id": 1314,
+          "dlu_rect": [
+            424,
+            154,
+            108,
+            23
+          ],
+          "help": "STT:OptionInternetAbortMission",
+          "style": 1342177291
+        },
+        {
+          "caption": "GUI:OptionsInternet",
+          "class": "Static",
+          "control_id": 1684,
+          "dlu_rect": [
+            423,
+            4,
+            108,
+            11
+          ],
+          "help": null,
+          "style": 1342308353
+        },
+        {
+          "caption": "Slider1",
+          "class": "msctls_trackbar32",
+          "control_id": 1321,
+          "dlu_rect": [
+            134,
+            158,
+            140,
+            13
+          ],
+          "help": "STT:OptionInternetSpeedSlider",
+          "style": 1342177304
+        },
+        {
+          "caption": "GUI:GameSpeed",
+          "class": "Static",
+          "control_id": 65535,
+          "dlu_rect": [
+            61,
+            158,
+            67,
+            13
+          ],
+          "help": null,
+          "style": 1342177794
+        },
+        {
+          "caption": "GUI:Faster",
+          "class": "Static",
+          "control_id": 1649,
+          "dlu_rect": [
+            278,
+            158,
+            78,
+            13
+          ],
+          "help": null,
+          "style": 1342177792
+        },
+        {
+          "caption": "Slider1",
+          "class": "msctls_trackbar32",
+          "control_id": 1007,
+          "dlu_rect": [
+            134,
+            136,
+            140,
+            13
+          ],
+          "help": "STT:OptionInternetLatency",
+          "style": 1342177304
+        },
+        {
+          "caption": "GUI:Connection",
+          "class": "Static",
+          "control_id": 65535,
+          "dlu_rect": [
+            61,
+            136,
+            67,
+            13
+          ],
+          "help": null,
+          "style": 1342177794
+        },
+        {
+          "caption": "GUI:Better",
+          "class": "Static",
+          "control_id": 1650,
+          "dlu_rect": [
+            278,
+            136,
+            78,
+            13
+          ],
+          "help": null,
+          "style": 1342177792
+        },
+        {
+          "caption": "GUI:InternetGameControls",
+          "class": "Button",
+          "control_id": 65535,
+          "dlu_rect": [
+            58,
+            118,
+            301,
+            68
+          ],
+          "help": null,
+          "style": 1342177287
+        },
+        {
+          "caption": "GUI:Blank",
+          "class": "Static",
+          "control_id": 1685,
+          "dlu_rect": [
+            2,
+            353,
+            303,
+            12
+          ],
+          "help": null,
+          "style": 1342177792
+        }
+      ]
+    }
+  },
+  "source": "unicorn/gamemd.exe"
+}

@@ -84,6 +84,7 @@ use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::ground_pose::{object_get_coords, object_location};
 use crate::sim::projectile::ProjectileCoord;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// `BombListClass` (`0x0087F5D8`): the carriers of the live bombs and the
@@ -430,7 +431,7 @@ impl Simulation {
         // 0x00438FD7..0x0043901D: BombAttachSound at the target, only for the
         // player who owns the planter (+0x21C).
         if let Some(sound_id) = rules.general.bomb_attach_sound.clone() {
-            self.sound_events.push(SimSoundEvent::VocAt {
+            self.sound_events.emit(SimSoundEvent::VocAt {
                 sound_id,
                 audible_to: Some([planter_house, planter_house]),
                 rx: position.rx(),
@@ -443,9 +444,9 @@ impl Simulation {
     }
 
     /// `BombClass::Defuse @ 0x004389B0`: the carrier's bomb is gone, silently.
-    pub fn bomb_defuse(&mut self, carrier: u64) {
-        if self.bombs.carriers.remove(&carrier)
-            && let Some(entity) = self.substrate.entities.get_mut(carrier)
+    pub(crate) fn bomb_defuse(substrate: &mut ObjectSubstrate, bombs: &mut BombList, carrier: u64) {
+        if bombs.carriers.remove(&carrier)
+            && let Some(entity) = substrate.entities.get_mut(carrier)
         {
             entity.bomb = None;
         }
@@ -453,10 +454,13 @@ impl Simulation {
 
     /// `BombListClass::PointerGotInvalid @ 0x00439150`: bombs planted by the
     /// expired object lose their source.
-    pub(crate) fn bomb_planter_expired(&mut self, expired: u64) {
-        for &carrier in &self.bombs.carriers {
-            if let Some(bomb) = self
-                .substrate
+    pub(crate) fn bomb_planter_expired(
+        substrate: &mut ObjectSubstrate,
+        bombs: &BombList,
+        expired: u64,
+    ) {
+        for &carrier in &bombs.carriers {
+            if let Some(bomb) = substrate
                 .entities
                 .get_mut(carrier)
                 .and_then(|entity| entity.bomb.as_mut())

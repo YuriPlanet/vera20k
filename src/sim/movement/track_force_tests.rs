@@ -9,7 +9,7 @@
 use super::*;
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::sim::docking::bunker_install::{BunkerRuntime, BunkerState, tick_bunker_install};
+use crate::sim::docking::bunker_install::{BunkerRuntime, BunkerState, update_bunker};
 use crate::sim::docking::bunker_link::BunkerLink;
 use crate::sim::movement::{DriveLocomotionRuntime, FacingClass, ShipLocomotionRuntime};
 use crate::util::fixed_math::SimFixed;
@@ -314,10 +314,11 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
             runtime
         });
         sim.substrate.entities.insert(building);
-        tick_bunker_install(
+        update_bunker(
             &mut sim,
             &rules,
             None,
+            2,
             crate::sim::world::FrameEffects::default(),
         );
         let entity = sim.substrate.entities.get(UNIT).unwrap();

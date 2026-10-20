@@ -73,7 +73,7 @@ fn insert(sim: &mut Simulation, id: u64, owner: InternedId, name: &str, x: u16, 
         );
         entity.locomotor = Some(loco);
     }
-    sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(id + 1);
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(id);
     // Unlimbo's House+0x68 append, which the SpySat scan walks.
@@ -193,7 +193,11 @@ fn gap_operational_original_gate_and_native_order_corpus() {
                 ai_counter: 0,
                 dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
             });
-        let power = sim.power_states.entry(owner).or_default();
+        let power = sim
+            .power_states
+            .map_mut_for_test()
+            .entry(owner)
+            .or_default();
         power.set_total_output_for_test(v["output"].as_i64().unwrap() as i32);
         power.set_total_drain_for_test(v["drain"].as_i64().unwrap() as i32);
         power.set_is_low_power_for_test(!power.has_full_power());
@@ -584,4 +588,49 @@ pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, In
     assert!(!sim.fog.is_cell_revealed(c, 16, 16));
     views.push((sim.fog.clone(), b, c));
     views
+}
+
+/// CreateGap centres its circle on the Location shifted for its height
+/// (`0x006FB1CB..0x006FB254`), as does DestroyGap: four levels up, the disc
+/// sits two Cells north of the generator's own Cell. The view rebuild keeps
+/// that disc for the hostile viewer and the owner's friendly gap fog alike,
+/// and taking the generator offline removes it.
+#[test]
+fn a_raised_gap_generator_centres_its_circle_by_its_height() {
+    let (mut sim, rules, a, b, _) = fixture();
+    insert(&mut sim, 1, a, "GAGAP", 16, 16);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(4 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS));
+    insert(&mut sim, 2, a, "POWER", 20, 16);
+    power(&mut sim, &rules);
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    let disc = |sim: &Simulation| {
+        (
+            sim.fog.is_cell_gap_covered(b, 4, 14),
+            sim.fog.is_cell_gap_covered(b, 24, 14),
+            sim.fog.is_cell_gap_covered(b, 26, 16),
+            sim.fog.is_cell_gap_covered(b, 16, 16),
+        )
+    };
+    assert_eq!(
+        disc(&sim),
+        (true, true, false, true),
+        "radius 10 around (14, 14), not (16, 16)"
+    );
+    refresh(&mut sim, &rules);
+    assert_eq!(disc(&sim), (true, true, false, true));
+    assert_eq!(
+        (
+            sim.fog.is_cell_gap_fog(a, 4, 14),
+            sim.fog.is_cell_gap_fog(a, 26, 16)
+        ),
+        (true, false),
+        "the owner's friendly gap fog takes the same disc"
+    );
+    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
+    assert_eq!(disc(&sim), (false, false, false, false));
 }

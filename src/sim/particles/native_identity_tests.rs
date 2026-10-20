@@ -263,23 +263,30 @@ fn original_spark_birth_and_first_live_visit_preserve_ids_rng_and_particle_state
 #[test]
 fn stored_system_and_child_native_ids_each_affect_authoritative_hash() {
     let mut sim = Simulation::new();
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut system = ParticleSystem::test_fixture(id, ParticleSystemTypeId(0), IVec3::ZERO);
     system
         .particles
         .push(Particle::test_fixture(ParticleTypeId(0), IVec3::ZERO));
-    sim.particle_systems_mut().insert(system);
+    sim.substrate.particle_systems.insert(system);
     let original = sim.state_hash();
-    sim.particle_systems_mut()
+    sim.substrate
+        .particle_systems
         .get_mut(id)
         .unwrap()
         .native_unique_id = 17;
     assert_ne!(sim.state_hash(), original);
-    sim.particle_systems_mut()
+    sim.substrate
+        .particle_systems
         .get_mut(id)
         .unwrap()
         .native_unique_id = 0;
     assert_eq!(sim.state_hash(), original);
-    sim.particle_systems_mut().get_mut(id).unwrap().particles[0].native_unique_id = 17;
+    sim.substrate
+        .particle_systems
+        .get_mut(id)
+        .unwrap()
+        .particles[0]
+        .native_unique_id = 17;
     assert_ne!(sim.state_hash(), original);
 }

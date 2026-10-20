@@ -108,6 +108,7 @@ pub mod art_data;
 pub mod bridge_warheads;
 pub mod building_light;
 pub mod building_rubble;
+pub mod building_upgrade;
 pub mod buildup_asset_catalog;
 pub mod campaign_loading;
 #[cfg(test)]
@@ -166,6 +167,8 @@ pub mod voxel_anim_type;
 pub mod voxel_asset_catalog;
 pub mod voxel_frame_catalog;
 pub mod warhead_type;
+#[cfg(test)]
+mod warhead_verses_tests;
 pub mod weapon_type;
 
 #[cfg(any(test, feature = "test-support"))]

@@ -73,7 +73,7 @@ impl Simulation {
             NativeF64Bits::from_bits(0x4059_0000_0000_0000),
             NativeF64Bits::from_bits(0),
         ]);
-        let stable_id = self.allocate_stable_id();
+        let stable_id = self.substrate.allocate_stable_id();
         let native_id = self.next_native_runtime_id();
         if let Some(bullet) = FiredBullet::launched(
             self,
@@ -144,7 +144,7 @@ impl Simulation {
             false,
         )
         .with_installed_weapon(Some(self.interner.intern(&weapon.id)));
-        let stable_id = self.allocate_stable_id();
+        let stable_id = self.substrate.allocate_stable_id();
         let native_id = self.next_native_runtime_id();
         if let Some(owner) = warning_house {
             //43B5E0 uses the target Cell's GetCoords, not this producer's

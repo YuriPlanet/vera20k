@@ -618,6 +618,10 @@ impl Simulation {
         // map-read continuation. This is independent of Rust stable handles.
         self.native_unique_ids.hash(hasher);
         self.hash_type_tech_levels(hasher);
+        if !self.building_upgrade_art_names().is_empty() {
+            b"building-upgrade-type-art-v458".hash(hasher);
+            self.building_upgrade_art_names().hash(hasher);
+        }
         self.substrate.next_stable_object_id.hash(hasher);
         self.substrate.next_air_tracker_order.hash(hasher);
         // YR LogicClass trigger latches are save/lockstep state, even though
@@ -841,7 +845,7 @@ impl Simulation {
     }
 
     fn hash_terminal_score_snapshot(&self, hasher: &mut impl Hasher) {
-        let Some(snapshot) = self.terminal_score_snapshot.as_ref() else {
+        let Some(snapshot) = self.terminal_score_snapshot.snapshot() else {
             return;
         };
         b"terminal-score-v1".hash(hasher);
@@ -1225,7 +1229,7 @@ impl Simulation {
     /// Hash per-player power states for deterministic replay.
     fn hash_power_states(&self, hasher: &mut impl Hasher) {
         // BTreeMap<InternedId, _> iterates in deterministic sorted order.
-        for (owner_id, state) in &self.power_states {
+        for (owner_id, state) in self.power_states.iter() {
             owner_id.hash(hasher);
             state.total_output().hash(hasher);
             state.total_drain().hash(hasher);
@@ -1245,7 +1249,7 @@ impl Simulation {
     /// as its digest from [`Self::fog_digests`].
     fn hash_fog_and_alliances(&self, fog_digests: &[u64], hasher: &mut impl Hasher) {
         self.fog.hash_state(fog_digests, hasher);
-        for (owner, allies) in &self.house_alliances {
+        for (owner, allies) in self.house_alliances.as_map() {
             owner.hash(hasher);
             for ally in allies {
                 ally.hash(hasher);
@@ -1342,7 +1346,7 @@ impl Simulation {
     /// Hash per-house superweapon state and active lightning storm.
     fn hash_super_weapons(&self, hasher: &mut impl Hasher) {
         self.unit_deliveries.hash_state(hasher);
-        for (owner, weapons) in &self.super_weapons {
+        for (owner, weapons) in self.super_weapons.iter() {
             owner.hash(hasher);
             for (type_id, inst) in weapons {
                 type_id.hash(hasher);
@@ -1355,6 +1359,7 @@ impl Simulation {
                 inst.ready_tick().hash(hasher);
                 inst.hash_recharge_time(hasher);
                 inst.hash_grant_flags(hasher);
+                inst.hash_paid_selection(hasher);
                 if let Some(id) = inst.native_unique_id() {
                     b"super-native-identity-v1".hash(hasher);
                     id.hash(hasher);
@@ -1542,14 +1547,30 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         // survivor roll and skips the engineer roll at death.
         0x6e3_u32.hash(hasher);
     }
+    if entity.no_survivor.is_set() {
+        // Building+6E0 (CRC `0x00454407`): no survivor leaves the building
+        // that outlived its killing blow.
+        0x6e0_u32.hash(hasher);
+    }
     if let Some(production) = entity.secret_lab_fallback() {
         b"building-secret-production-v382".hash(hasher);
         production.hash(hasher);
     }
-    if entity.techno_ctor_random_word() != 0 || entity.structure_upgrade_link().is_some() {
+    if entity.techno_ctor_random_word() != 0 {
         b"techno-constructor-v1".hash(hasher);
         entity.techno_ctor_random_word().hash(hasher);
-        entity.structure_upgrade_link().hash(hasher);
+        // Preserve the previous no-upgrade hash stream.
+        Option::<u8>::None.hash(hasher);
+    }
+    if entity.building_upgrades().count() != 0
+        || entity
+            .building_upgrades()
+            .types()
+            .iter()
+            .any(Option::is_some)
+    {
+        b"building-installed-upgrades-v458".hash(hasher);
+        entity.building_upgrades().hash(hasher);
     }
     // One retained native+F8/+FC/+100/+108/+10C/+110 clock, shared
     // by Infantry, harvest/unload and Building animation receivers.
@@ -3396,9 +3417,9 @@ mod particle_hash_tests {
     }
 
     fn insert_system(sim: &mut Simulation, mut system: ParticleSystem) -> u64 {
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         system.set_stable_id_for_test(id);
-        sim.particle_systems_mut().insert(system);
+        sim.substrate.particle_systems.insert(system);
         sim.reveal_particle_system(id, None);
         id
     }
@@ -4151,8 +4172,8 @@ mod rocking_hash_tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
         let type_id = sim.interner.intern("HTNK");
-        let id = sim.substrate.next_stable_object_id;
-        sim.substrate.next_stable_object_id += 1;
+        let id = sim.next_stable_object_id();
+        sim.set_next_stable_object_id_for_test(sim.next_stable_object_id() + 1);
         let e = GameEntity::new_at_frame_zero_for_test(
             id,
             10,
@@ -4212,8 +4233,8 @@ mod c4_hash_tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
         let type_id = sim.interner.intern("GHOST");
-        let id = sim.substrate.next_stable_object_id;
-        sim.substrate.next_stable_object_id += 1;
+        let id = sim.next_stable_object_id();
+        sim.set_next_stable_object_id_for_test(sim.next_stable_object_id() + 1);
         let e = GameEntity::new_at_frame_zero_for_test(
             id,
             10,

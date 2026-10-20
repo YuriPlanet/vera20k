@@ -229,9 +229,9 @@ fn retail_layered_centre_removal_keeps_neighbors_and_uses_existing_spread_radar_
     let type_id = rules.tiberium_types.id_by_name("Riparius").unwrap();
     sim.ore_growth_state
         .mark_native_spread_bitmap_for_tests(type_id.0 as usize, center);
-    sim.radar_terrain_dirty_cells.clear();
-    sim.tactical_dirty_cells.clear();
-    let generation = sim.radar_terrain_dirty_generation;
+    sim.dirty_cells.clear_radar_for_test();
+    sim.dirty_cells.clear_tactical_for_test();
+    let generation = sim.dirty_cells.radar_generation();
     // Basic growth is disabled, but reduction and its SpecialFlags spread
     // registration retain their own native paths.
     assert!(run(
@@ -254,9 +254,9 @@ fn retail_layered_centre_removal_keeps_neighbors_and_uses_existing_spread_radar_
             .iter()
             .all(|cell| state.spread_bitmap.contains(cell))
     );
-    assert!(sim.radar_terrain_dirty_cells.contains(&center));
-    assert_eq!(sim.radar_terrain_dirty_generation, generation + 1);
-    assert!(sim.tactical_dirty_cells.contains(&center));
+    assert!(sim.dirty_cells.radar().contains(&center));
+    assert_eq!(sim.dirty_cells.radar_generation(), generation + 1);
+    assert!(sim.dirty_cells.tactical_for_test().contains(&center));
 }
 
 #[test]

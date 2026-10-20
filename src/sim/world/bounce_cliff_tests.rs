@@ -307,7 +307,7 @@ fn retail_hills_harv_death_admits_a_cliff_tyre_and_retires_its_display() {
     // This is a pre-death component seed, independent of native ctor Seed5.
     let mut sim = Simulation::with_seed(46);
     sim.install_resolved_terrain_for_new_map(terrain);
-    let miner = sim.allocate_stable_id();
+    let miner = sim.substrate.allocate_stable_id();
     sim.substrate
         .entities
         .insert(crate::sim::game_entity::GameEntity::test_default(

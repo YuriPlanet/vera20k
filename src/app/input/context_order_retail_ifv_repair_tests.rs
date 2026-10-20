@@ -174,6 +174,7 @@ fn retail_engineer_ifv_offers_normal_repair_cursor_on_damaged_friend() {
         None,
         crate::app::input::context_order::OrderModifier::Normal,
         false,
+        false,
     );
     assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
     assert_eq!(cursor_id_for_feedback(feedback), Some(CursorId::Repair));
@@ -223,6 +224,7 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
         Some(rules),
         None,
         crate::app::input::context_order::OrderModifier::Normal,
+        false,
         false,
     );
     assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));

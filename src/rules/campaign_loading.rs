@@ -9,6 +9,22 @@
 
 use crate::rules::ini_parser::IniFile;
 
+/// The CSF key the mission restate briefing shows
+/// (`ScenarioClass::ShowMissionRestateBriefing 0x0065F520`, Restate.cpp): the
+/// `Briefing` entry of the scenario file name's section, read with
+/// `ReadString(…, "", buf, 0x100)`, or `Brief:Error` when the section or key
+/// is absent (`FindEntryByNames 0x00526B10`). A missing MISSIONMD opens
+/// nothing; that is the caller's.
+pub fn restate_briefing_key(ini: &IniFile, filename: &str) -> String {
+    match ini
+        .section(filename)
+        .filter(|section| section.is_present("Briefing"))
+    {
+        Some(section) => section.read_string("Briefing", "", 0x100),
+        None => "Brief:Error".to_owned(),
+    }
+}
+
 /// One scenario's retained MISSION loading fields. Source selection and pass
 /// ordering belong to the scenario loader; this owner only applies that pass.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -108,7 +124,7 @@ impl CampaignLoadingMetadata {
 
 #[cfg(test)]
 mod tests {
-    use super::CampaignLoadingMetadata;
+    use super::{CampaignLoadingMetadata, restate_briefing_key};
     use crate::rules::ini_parser::IniFile;
     use serde_json::Value;
 
@@ -169,6 +185,29 @@ mod tests {
             metadata.apply_ini(&IniFile::from_str(&text), filename);
             assert_fields(&metadata, row);
         }
+    }
+
+    #[test]
+    fn retail_restate_briefings_read_their_section_key_or_fall_back_to_the_error_key() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let bytes = assets.get_ref("MISSIONMD.INI").expect("retail MISSIONMD");
+        let mission = IniFile::from_bytes(bytes).expect("retail MISSIONMD parses");
+        assert_eq!(
+            restate_briefing_key(&mission, "ALL01UMD.MAP"),
+            "Brief:ALL01md"
+        );
+        assert_eq!(
+            restate_briefing_key(&mission, "SOV07TMD.MAP"),
+            "Brief:Sov07md"
+        );
+        assert_eq!(
+            restate_briefing_key(&mission, "C1A01MD.MAP"),
+            "NAME:COOPDESC11"
+        );
+        // A map with no section, such as any skirmish map, shows the error key.
+        assert_eq!(restate_briefing_key(&mission, "XMP29U2.MAP"), "Brief:Error");
     }
 
     #[test]

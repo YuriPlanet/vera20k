@@ -161,7 +161,7 @@ fn snapshot_copy(
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(
         sim.resolved_terrain.as_ref().unwrap().clone(),
-        sim.terrain_speed_config.clone(),
+        sim.terrain_speed_config().clone(),
         rules,
     );
     restored

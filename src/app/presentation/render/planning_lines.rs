@@ -34,12 +34,90 @@ pub(super) fn build(
     let Some(viewer) = sim.session().current_house() else {
         return (out, highlights);
     };
-    let graph = sim.planning_draw_graph(
+    let mut graph = sim.planning_draw_graph(
         viewer,
         &crate::app::input::planning_mode::selected_in_order(state),
         crate::app::input::planning_mode::hover_native_screen(state),
         state.match_state.input.planning.highlighted_node(),
     );
+    // This is a disposable read projection. Node identity/membership and every
+    // actual command stay in the authoritative planning graph.
+    let cache = &state.match_state.match_presentation.interpolation;
+    let sample = |kind, id, owner, c: DriveCoord| {
+        use crate::app::presentation::interpolation::PointPose;
+        let [x, y, z] = cache
+            .sample_draw_point(
+                kind,
+                id,
+                PointPose::new([c.x, c.y, c.z], 0, owner),
+                sim.session().binary_frame(),
+            )
+            .coord;
+        DriveCoord { x, y, z }
+    };
+    use crate::app::presentation::interpolation::PointKind;
+    let mut projected_nodes = std::collections::HashMap::new();
+    for node in &mut graph.nodes {
+        let owner = node.members.first().copied();
+        let raw = node.coord;
+        node.coord = sample(PointKind::PlanningNode, node.id, owner, raw);
+        projected_nodes.insert((raw.x, raw.y, raw.z), node.coord);
+        for (i, line) in node
+            .incoming
+            .iter_mut()
+            .chain(node.loop_segment.iter_mut())
+            .enumerate()
+        {
+            line.source = sample(
+                PointKind::PlanningEdge((i * 2) as u16),
+                node.id,
+                owner,
+                line.source,
+            );
+            line.target = sample(
+                PointKind::PlanningEdge((i * 2 + 1) as u16),
+                node.id,
+                owner,
+                line.target,
+            );
+        }
+    }
+    for actor in &mut graph.actors {
+        let mut slot = 0;
+        for line in actor
+            .current_leg
+            .iter_mut()
+            .chain(actor.mega_leg.iter_mut())
+            .chain(actor.connection.iter_mut())
+        {
+            line.source = sample(
+                PointKind::PlanningActor(slot),
+                actor.actor_id,
+                Some(actor.actor_id),
+                line.source,
+            );
+            line.target = sample(
+                PointKind::PlanningActor(slot + 1),
+                actor.actor_id,
+                Some(actor.actor_id),
+                line.target,
+            );
+            slot += 2;
+        }
+        actor.marker_only = actor.marker_only.map(|c| {
+            sample(
+                PointKind::PlanningActor(6),
+                actor.actor_id,
+                Some(actor.actor_id),
+                c,
+            )
+        });
+    }
+    for coord in [&mut graph.hovered_coord, &mut graph.highlighted_coord] {
+        if let Some(c) = coord.as_mut() {
+            *c = projected_nodes.get(&(c.x, c.y, c.z)).copied().unwrap_or(*c);
+        }
+    }
     let phase = ((crate::app::input::tooltips::now_ms(state) as i32).wrapping_neg() >> 5) & 15;
     let color = |owner, bright| {
         let name = sim.interner().resolve(owner);

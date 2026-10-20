@@ -342,7 +342,7 @@ impl Probe {
     ) -> (Vec<SpriteInstance>, Vec<RenderZPolicy>) {
         let mut instances = Vec::new();
         let mut policies = Vec::new();
-        let heights = self.terrain.build_height_map();
+
         build_cell_overlay_instances(
             &CellOverlayInputs {
                 // Keep the initial map identities throughout; the production
@@ -356,7 +356,7 @@ impl Probe {
                 interner: None,
                 tiberium_types: Some(&scene.runtime.resources.rules.tiberium_types),
                 terrain: Some(&self.terrain),
-                heights: &heights,
+
                 lighting: self.lighting.grid(),
                 camera: view.camera_pos,
                 viewport: self.size.map(|value| value as f32),
@@ -397,7 +397,6 @@ impl Probe {
                 (Some(id), (x + 1 - center.0) as u8),
                 "{phase}"
             );
-            assert_eq!(cell.bridge_facts.overlay_id, live.overlay_id, "{phase}");
             assert!(
                 !cell.bridge_facts.has_structural_bridge(),
                 "ground-surface family"
@@ -1133,7 +1132,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
         );
     }
     let names = crate::render::overlay_assets::render_overlay_names(registry);
-    let heights = terrain.build_height_map();
+
     let convert = &packet["inputs"]["cell_convert"];
     assert_eq!(convert["rgb"], json!([1000, 1000, 1000]));
     assert_eq!(convert["cell_brightness"], json!([1000, 1000, 1000]));
@@ -1218,7 +1217,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
                 interner: Some(sim.interner()),
                 tiberium_types: Some(&rules.tiberium_types),
                 terrain: Some(terrain),
-                heights: &heights,
+
                 lighting: &lighting,
                 camera: view.camera_pos,
                 viewport: size.map(|v| v as f32),

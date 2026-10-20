@@ -74,7 +74,7 @@ pub(crate) fn request_gate_open_for_cell(
             continue;
         }
         if crate::map::houses::is_allied_with(
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             sim.interner.resolve(candidate.owner()),
             sim.interner.resolve(mover_owner),
         ) {
@@ -88,7 +88,9 @@ pub(crate) fn request_gate_open_for_cell(
             {
                 let now = sim.session.binary_frame();
                 let readiness = LiveReadyInputProvider { rules };
-                let _ = sim.mission_assign_exact(candidate_id, MissionId::NONE, now);
+                let _ = sim
+                    .substrate
+                    .mission_assign_exact(candidate_id, MissionId::NONE, now);
                 let _ = sim.mission_queue_exact(
                     candidate_id,
                     MissionId::from_known(MissionType::Open),
@@ -96,7 +98,7 @@ pub(crate) fn request_gate_open_for_cell(
                     now,
                     &readiness,
                 );
-                let _ = sim.mission_commence_exact(candidate_id, now);
+                let _ = sim.substrate.mission_commence_exact(candidate_id, now);
                 return false;
             }
             return candidate.is_open_gate();
@@ -167,7 +169,13 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
                     .get_or_insert_with(Default::default)
                     .hold_timer
                     .arm(now, hold_ticks);
-                return sim.mission_rate_epilogue_for(rules, id, MissionType::Open);
+                return Simulation::mission_rate_epilogue_for(
+                    &mut sim.scenario_rng,
+                    &sim.substrate,
+                    rules,
+                    id,
+                    MissionType::Open,
+                );
             }
             if phase == DoorPhase::Closing {
                 entity.reverse_door(now);
@@ -213,7 +221,13 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             } else if gate.hold_timer.due(now) {
                 entity.mission.set_handler_state(3);
             }
-            sim.mission_rate_epilogue_for(rules, id, MissionType::Open)
+            Simulation::mission_rate_epilogue_for(
+                &mut sim.scenario_rng,
+                &sim.substrate,
+                rules,
+                id,
+                MissionType::Open,
+            )
         }
         3 => {
             //44E5DA: Close, state4, no cadence RNG.
@@ -223,7 +237,13 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             0
         }
         //44E464: states above4 share the cadence exit44E4BA.
-        _ => sim.mission_rate_epilogue_for(rules, id, MissionType::Open),
+        _ => Simulation::mission_rate_epilogue_for(
+            &mut sim.scenario_rng,
+            &sim.substrate,
+            rules,
+            id,
+            MissionType::Open,
+        ),
     }
 }
 
@@ -517,7 +537,8 @@ mod tests {
         let setup = json!({"input": row["input"], "initial": {"hold": [100,180,180]}});
         let (mut sim, rules) = native_fixture(&setup);
         sim.building_enter_idle_mode(GATE, false, Some(&rules));
-        sim.mission_assign_exact(GATE, MissionId::from_known(MissionType::Guard), 100)
+        sim.substrate
+            .mission_assign_exact(GATE, MissionId::from_known(MissionType::Guard), 100)
             .unwrap();
         sim.substrate
             .entities

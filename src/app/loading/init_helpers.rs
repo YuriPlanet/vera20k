@@ -835,7 +835,7 @@ mod tests {
         let mut sim = Simulation::new();
         let owner = sim.intern("Neutral");
         let type_ref = sim.intern("MAP_OBJECT");
-        let map_object_id = sim.allocate_stable_id();
+        let map_object_id = sim.substrate_mut_for_test().allocate_stable_id();
         sim.entities_mut_for_test()
             .insert(GameEntity::new_at_frame_zero_for_test(
                 map_object_id,
@@ -898,7 +898,7 @@ mod tests {
             sim.sound_events(),
             [SimSoundEvent::AnimationStarted { anim_id, .. }] if *anim_id == ids[0]
         ));
-        assert_eq!(sim.sound_events_mut_for_test().drain(..).count(), 1);
+        assert_eq!(sim.take_sound_events_for_test().len(), 1);
         assert!(sim.sound_events().is_empty());
 
         // Native load resets Scenario RNG to Seed(0); isolate persistence of

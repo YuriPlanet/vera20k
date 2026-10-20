@@ -130,7 +130,14 @@ impl App {
             RetailOptionsLoad::from_ra2md,
         );
         let profile_screen = options_load.startup_shell_screen;
-        let options_profile = options_load.retained_profile;
+        let mut options_profile = options_load.retained_profile;
+        options_profile.render_interpolation =
+            crate::app::presentation::interpolation::startup_enabled(
+                options_profile.render_interpolation,
+                std::env::var("VERA20K_RENDER_INTERPOLATION")
+                    .ok()
+                    .as_deref(),
+            );
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
         let startup_audio =
@@ -224,6 +231,8 @@ impl App {
         terrain_draw_renderer.generate_ion_blast_frames(&gpu.device, &gpu.queue);
         let combat_light_renderer = crate::render::combat_light::CombatLightRenderer::new(&gpu);
         let mut bit_font = BitFont::fallback_5x7(&gpu.device, &gpu.queue, &batch_renderer);
+        let fps_overlay =
+            crate::app::diagnostics::fps_overlay::FpsOverlay::new(&gpu, &batch_renderer);
         let depth_view: wgpu::TextureView = gpu.create_depth_texture();
         let shell_surface_presenter =
             crate::render::shell_surface_present::ShellSurfacePresenter::new(&gpu)?;
@@ -305,7 +314,7 @@ impl App {
                         fnt,
                         gpu.config.width,
                         gpu.config.height,
-                        options_profile.ra2_look,
+                        options_profile.yr_original_style,
                     )
                     .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
                     .ok()
@@ -319,6 +328,7 @@ impl App {
                 &batch_renderer,
                 &shell_surface_presenter,
                 &depth_view,
+                &fps_overlay,
                 splash,
             ) {
                 Ok(()) => splash.mark_presented(Instant::now()),
@@ -547,10 +557,15 @@ impl App {
             ),
             match_state: crate::app::match_runtime::state::MatchState {
                 session: Default::default(),
+                network_wait: Default::default(),
                 startup: Default::default(),
                 sim_runtime: None,
                 input: crate::app::input::state::MatchInputState::new(hotkey_bindings),
                 match_presentation: crate::app::presentation::state::MatchPresentationState {
+                    interpolation:
+                        crate::app::presentation::interpolation::RenderInterpolation::new(
+                            options_profile.render_interpolation,
+                        ),
                     sinking_waterlines: Default::default(),
                     barrel_image_pitches: Default::default(),
                     building_zshape: None,
@@ -571,13 +586,19 @@ impl App {
                         0,
                     ),
                     message_clock: crate::ui::messages::PauseAwareClock::default(),
+                    chat: Default::default(),
                     in_game_menu: crate::ui::pause_menu::InGameMenuState::default(),
                     modal_latch: true,
                     pause_menu_has_saves: false,
                     pause_menu_interaction: Default::default(),
+                    pause_menu_template: Default::default(),
+                    internet_pause: Default::default(),
+                    abort_secondary: Default::default(),
                     sound_dialog: None,
                     abort_buttons: Default::default(),
                     diplomacy: Default::default(),
+                    restate: Default::default(),
+                    restate_text: String::new(),
                     saved_game_browser: None,
                     in_game_options: startup_in_game_options,
                     in_game_options_anchor: None,
@@ -606,8 +627,6 @@ impl App {
                     target_lines: startup_target_lines,
                     cached_overlay_instances: Vec::new(),
                     terrain_grid: None,
-                    height_map: BTreeMap::new(),
-                    bridge_height_map: BTreeMap::new(),
                     overlays: Default::default(),
                     terrain_objects: Vec::new(),
                     overlay_names: BTreeMap::new(),
@@ -724,7 +743,10 @@ impl App {
                 wol_welcome_art: None,
                 wol_login_art: None,
                 wol_lobby_art: None,
+                wol_options_art: None,
+                wol_sound_options_art: None,
                 wol_lobby_globals: Default::default(),
+                wol_preferences: Default::default(),
                 score_page: None,
                 campaign_score_page: None,
                 score_art: None,
@@ -739,6 +761,7 @@ impl App {
                 ios_hud: None,
                 #[cfg(target_os = "ios")]
                 ios_sidebar_art: None,
+                fps_overlay,
                 combat_light_renderer,
                 terrain_draw_renderer,
                 instance_pool: crate::render::batch::InstanceBufferPool::new(),

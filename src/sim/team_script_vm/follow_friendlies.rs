@@ -44,7 +44,7 @@ impl Simulation {
                     // 6EAF7E/6EB079: the CANDIDATE asks whether the team
                     // owner is allied. Do not turn this into a mutual test.
                     || !is_allied_with(
-                        &self.house_alliances,
+                        self.house_alliances.as_map(),
                         self.interner.resolve(candidate.owner()),
                         owner,
                     )

@@ -117,8 +117,8 @@ fn bound_saved_world(
         true,
     );
     // One video-owned and one ordinary trigger-owned untimed hold.
-    simulation.pause_scenario(0);
-    simulation.pause_scenario(0);
+    simulation.pause_scenario_for_test(0);
+    simulation.pause_scenario_for_test(0);
     simulation
         .session_mut_for_test()
         .set_map_name_for_test(name.into());

@@ -245,6 +245,9 @@ impl CaptureManagerState {
 /// without a second FLH, selection or timer owner. Colors use `owner`'s House.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CaptureLinkCoordinates {
+    /// Stable target identity lets presentation sample this endpoint without
+    /// guessing which overlapping actor supplied the coordinate.
+    pub victim: u64,
     pub from: crate::sim::components::DriveCoord,
     pub to: crate::sim::components::DriveCoord,
     pub owner: InternedId,
@@ -304,6 +307,7 @@ impl Simulation {
                     )
                     .coord;
                     Some(CaptureLinkCoordinates {
+                        victim: node.victim,
                         from: crate::sim::components::DriveCoord {
                             x: from.x,
                             y: from.y,
@@ -728,7 +732,7 @@ impl Simulation {
                 Some([firer_owner, target_owner]),
                 &target.position,
             );
-            self.sound_events.push(event);
+            self.sound_events.emit(event);
         }
     }
 
@@ -815,7 +819,8 @@ impl Simulation {
             target.mind_control.ring_anim = Some(anim_id);
         }
         if building {
-            self.set_anim_z_adjust(anim_id, BUILDING_RING_Z_ADJUST);
+            self.substrate
+                .set_anim_z_adjust(anim_id, BUILDING_RING_Z_ADJUST);
         }
     }
 
@@ -831,7 +836,7 @@ impl Simulation {
         };
         let hidden = entity.disguise.as_ref().is_some_and(|d| d.is_disguised())
             && !self.house_is_human_player(entity.owner());
-        self.set_anim_hidden(ring, hidden);
+        self.substrate.set_anim_hidden(ring, hidden);
     }
 
     /// `CaptureManagerClass::FreeUnit @ 0x00471FF0`: every node of `victim`,
@@ -878,7 +883,7 @@ impl Simulation {
                     .or_else(|| rules.mind_control.mind_cleared_sound.clone());
                 if let Some(sound) = sound {
                     let event = SimSoundEvent::voc_at(sound, &victim.position);
-                    self.sound_events.push(event);
+                    self.sound_events.emit(event);
                 }
             }
             self.change_owner_with_rules(victim_id, original_owner, rules, registry, frame_effects);
@@ -1160,7 +1165,7 @@ impl Simulation {
         if !sound_played {
             if let Some(sound) = rules.mind_control.overload_sound.clone() {
                 self.sound_events
-                    .push(SimSoundEvent::voc_at(sound, &position));
+                    .emit(SimSoundEvent::voc_at(sound, &position));
             }
             if let Some(manager) = self
                 .substrate

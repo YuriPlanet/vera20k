@@ -852,8 +852,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
             .enabled,
         "StripDraw6A95C8..6A95E9 sees an active request anywhere in the strip"
     );
-    assert!(crate::sim::production::suspend_production(
-        &mut sim,
+    assert!(sim.suspend_production_for_test(
         "Americans",
         crate::sim::production::ProductionCategory::Building,
     ));

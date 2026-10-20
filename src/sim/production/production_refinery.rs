@@ -258,7 +258,7 @@ fn refund_free_unit(sim: &mut Simulation, rules: &RuleSet, owner: &str, unit_typ
         ),
         _ => return 0,
     };
-    crate::sim::credit_income::add_credits(sim, owner_id, refund);
+    crate::sim::credit_income::add_credits(&mut sim.houses, owner_id, refund);
     refund
 }
 

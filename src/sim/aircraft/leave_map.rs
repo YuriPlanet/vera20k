@@ -61,7 +61,7 @@ impl Simulation {
             || object.fly_back
             || crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(cell.0), i32::from(cell.1)),
-                self.playfield_bounds,
+                self.playfield_bounds(),
                 terrain,
             );
         if (passes_playfield && self.map_cell_in_bounds(cell)) || !self.aircraft_may_leave_map(id) {

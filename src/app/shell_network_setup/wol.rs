@@ -99,7 +99,7 @@ pub(super) fn start_pending(state: &AppState) -> bool {
 
 /// `005E9850`: clear every acceptance but the host's and enable Accept on C9.
 pub(super) fn clear_guest_acceptance(state: &mut AppState) -> anyhow::Result<()> {
-    state.match_state.session.clear_wol_guest_readiness()?;
+    state.match_state.session.clear_guest_readiness()?;
     let host = state.match_state.session.host();
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut()
         && !host
@@ -208,6 +208,7 @@ pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
             ))
         }
     };
+    crate::app::shell_wol::chat_sent(state, &line);
     queue(state, NetworkSetupRequest::WolChat(line));
     if let Some((text, color)) = echo {
         crate::app::shell_lan::append_chat(state, LanChatLine { text, color });

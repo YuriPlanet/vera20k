@@ -239,7 +239,7 @@ fn fixture(row: &Value, rules: &RuleSet, type_name: &str) -> (Simulation, u64) {
         92,
         1,
     ));
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     if row["rng_before"].is_object() {
         sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone())
             .unwrap()

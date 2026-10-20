@@ -3,6 +3,7 @@
 //! in `app::match_diagnostics`.
 
 pub(crate) mod debug_overlays;
+pub(crate) mod fps_overlay;
 pub(crate) mod shell_capture;
 pub(crate) mod state;
 pub(crate) mod tactical_capture;

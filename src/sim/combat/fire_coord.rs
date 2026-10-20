@@ -1125,7 +1125,7 @@ mod tests {
     fn a_stored_firers_exact_height_carries_into_the_fire_coordinate() {
         let rules = rules();
         let mut world = Simulation::new();
-        let id = world.allocate_stable_id();
+        let id = world.substrate.allocate_stable_id();
         let mut gi =
             crate::sim::game_entity::GameEntity::test_default(id, "E1", "Americans", 10, 11);
         gi.position.set_exact_z_leptons_for_test(Some(333));

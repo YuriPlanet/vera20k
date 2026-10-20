@@ -379,6 +379,7 @@ fn process_owner_accepts_retired_values_before_its_existing_full_init_reset() {
                     )
                 }),
             [None; 2],
+            [],
         )
         .unwrap();
     assert!(

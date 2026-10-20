@@ -25,6 +25,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+use crate::app::presentation::interpolation::{PointKind, PointPose, PointSample};
 use glam::IVec3;
 
 use super::helpers::projection_admitted;
@@ -177,9 +178,16 @@ pub(crate) fn build_voxel_anim_instances(
             &presentation.house_color_map,
             presentation.lighting.grid(),
         );
-        if let Some(object) = voxel_anim_draw_instance(
+        let painted = presentation.interpolation.sample_point(
+            PointKind::Debris,
+            id,
+            PointPose::debris(piece),
+            sim.session().binary_frame(),
+        );
+        if let Some(object) = voxel_anim_draw_instance_sampled(
             id,
             piece,
+            painted,
             kind,
             palette,
             &view,
@@ -194,9 +202,32 @@ pub(crate) fn build_voxel_anim_instances(
 /// One piece's draw. Display membership is admission: storage alone never
 /// draws a piece. `render` rasterizes the model `image` names at the drawing
 /// matrix and places its body and shadow on the pose page.
+#[cfg(test)]
 fn voxel_anim_draw_instance(
     id: u64,
     piece: &VoxelAnimObject,
+    kind: &VoxelAnimType,
+    (remap_row, source_palette, palette_light): (u32, u32, PaletteLight),
+    view: &DebrisView<'_>,
+    order: &NativeDisplayOrder,
+    render: impl FnOnce(&str, i32, glam::Mat4) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)>,
+) -> Option<PlannedObjectInstance> {
+    voxel_anim_draw_instance_sampled(
+        id,
+        piece,
+        PointPose::debris(piece).current(),
+        kind,
+        (remap_row, source_palette, palette_light),
+        view,
+        order,
+        render,
+    )
+}
+
+fn voxel_anim_draw_instance_sampled(
+    id: u64,
+    _piece: &VoxelAnimObject,
+    painted: PointSample,
     kind: &VoxelAnimType,
     (remap_row, source_palette, palette_light): (u32, u32, PaletteLight),
     view: &DebrisView<'_>,
@@ -208,25 +239,22 @@ fn voxel_anim_draw_instance(
         // Module residual: the model is another type's, not `image`'s.
         return None;
     }
-    let location = piece.world_coord();
+    let location = painted.ivec3();
     let (ground_z, bridge) = super::foot_depth::floor_probe(view.terrain, location.x, location.y);
-    let geometry = geometry(location, ground_z, bridge);
+    let mut geometry = geometry(location, ground_z, bridge);
+    let raw = geometry.body.point;
+    geometry.body.point = painted.screen;
+    geometry.body.z_adjust = (-2. - painted.lift).round() as i32;
+    geometry.shadow.point[0] += painted.screen[0] - raw[0];
+    geometry.shadow.point[1] +=
+        painted.screen[1] - raw[1] + painted.lift - adjust_for_z_standard(location.z) as f32;
     // Object6D2140's padded projection admission precedes DrawIt.
     if !projection_admitted(geometry.body.point, view.camera, view.viewport) {
         return None;
     }
-    let matrix = piece
-        .bounce()
-        .drawing_matrix()
-        .ok()?
-        .map(|bits| f32::from_bits(bits.bits()));
-    let (body, shadow) = render(
-        &kind.image,
-        kind.voxel_index,
-        crate::render::vxl_raster::hva_to_mat4(&matrix, 1.0),
-    )?;
+    let (body, shadow) = render(&kind.image, kind.voxel_index, painted.rotation?)?;
     let depth = crate::render::native_z::depth_for_row(
-        geometry.body.point[1] + adjust_for_z_standard(location.z) as f32,
+        geometry.body.point[1] + painted.lift,
         view.axis.origin_y,
         view.axis.world_height,
     );

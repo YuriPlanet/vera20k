@@ -114,7 +114,7 @@ fn relocating_owner(category: EntityCategory, type_name: &str, target: (u16, u16
         0,
     )));
     sim.substrate.entities.insert(entity);
-    sim.substrate.next_stable_object_id = 2;
+    sim.set_next_stable_object_id_for_test(2);
     assert!(matches!(
         sim.reveal(1),
         super::super::RevealOutcome::Revealed { .. }
@@ -329,7 +329,7 @@ fn retail_cmin_teleport_preserves_departure_cell_through_guidance_and_snapshot()
     let mut sim = relocating_owner(EntityCategory::Unit, "CMIN", (9, 8));
     install_destination_cells(&mut sim, &rules);
     sim.session.set_binary_frame_for_test(1);
-    let bullet_id = sim.allocate_stable_id();
+    let bullet_id = sim.substrate.allocate_stable_id();
     let payload = ProjectilePayload::new(
         weapon.damage,
         sim.intern(weapon.warhead.as_deref().unwrap()),

@@ -368,10 +368,11 @@ fn supplied_world(
         }
         let foreign_slot = cell(&input["foreign_slot"]);
         assert!(
-            sim.set_cell_air_slot((foreign_slot.0 as i16, foreign_slot.1 as i16), Some(other),)
+            sim.substrate
+                .set_cell_air_slot((foreign_slot.0 as i16, foreign_slot.1 as i16), Some(other),)
         );
         if input["foreign_air_registered"].as_bool().unwrap_or(true) {
-            sim.aircraft_tracker_add(other);
+            Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, other);
         }
         other
     });
@@ -793,7 +794,7 @@ fn execute_step(
                 .with_phase_for_test(signed(&inputs["phase"]))
                 .with_flight_for_test(flight);
         }
-        "register_air" => sim.aircraft_tracker_add(actor),
+        "register_air" => Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, actor),
         "state1_decision" | "state3_decision" | "state4_decision" => {
             let frame = sim.session.binary_frame();
             let trig = TrigTable::embedded();

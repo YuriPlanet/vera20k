@@ -15,14 +15,14 @@
 //!   return path; VERA's shell resume route (`ShellRoute`) carries that
 //!   decision instead.
 //!
-//! Network entry retains LAN/WOL mode through accepted setup, immutable
-//! loading handoff and the service-lobby return. Simulation owns the same
-//! canonical mode enum inside its saved ScenarioSession; zero/nonzero tests
-//! are derived queries, never a second mode authority.
-//!
-//! The one GameMode branch inside the simulation frame, the `Queue_AI` route
-//! (`CommandQueueRoute`), reads the simulation's own saved mode, which the
-//! loader installs from this owner's mode.
+//! One value, one holder at a time. An installed world carries `GameMode` in
+//! its saved, hashed ScenarioSession (the simulation reads it there, and
+//! `Load_Game`'s restore arrives with it), so the world holds it from install
+//! until the shell writes it again. This owner holds it only before the
+//! first install, after a shell write, or once a world is dropped without a
+//! successor; [`super::state::MatchState::session_mode`] reads whichever
+//! holds it. A network visit's mode follows from the service it visits
+//! (`NetworkReturnContext`), so the visit stores no copy either.
 
 use crate::net::lockstep::MultiplayerChecksumHistory;
 use crate::skirmish_launch::{
@@ -37,6 +37,25 @@ pub(crate) enum NetworkReturnContext {
     LanLobby,
     /// The WOL custom lobby `0x113` (Custom Match, mode 4).
     Wol,
+}
+
+impl NetworkReturnContext {
+    /// The `GameMode` the main menu writes on entering this service:
+    /// `0x0052DD7F` Network -> 3 (LAN), `0x0052DD61` Internet -> 4 (WOL).
+    pub(crate) const fn session_mode(self) -> SessionMode {
+        match self {
+            Self::LanLobby => SessionMode::Lan,
+            Self::Wol => SessionMode::Wol,
+        }
+    }
+}
+
+/// Which side holds `GameMode` now (see the module docs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModeHolder {
+    Shell(SessionMode),
+    /// The installed world's ScenarioSession.
+    World,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,7 +148,26 @@ enum NetworkPhase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NetworkLoadingRequest {
     ReportProgress(i32),
-    Disconnect { source_index: usize, reason: i32 },
+    Disconnect {
+        source_index: usize,
+        reason: i32,
+    },
+    /// The kick proposal packet `0x1C` (0x0064AAE0) to every other node.
+    ProposeKick {
+        target_source: usize,
+    },
+    /// The in-battle chat packet `0x0C` (`0x0055EDBF..0x0055F04E`) to these
+    /// participants. The packet's name and colour are the local player's.
+    Chat {
+        recipients: Vec<usize>,
+        text: String,
+    },
+    /// The taunt packet `0x1D` (`0x00536350`) to these participants; `byte`
+    /// is `(country << 4) | n` at packet `+0x30`.
+    Taunt {
+        recipients: Vec<usize>,
+        byte: u8,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,17 +180,19 @@ struct NetworkSession {
     phase: NetworkPhase,
 }
 
-/// The live session: mode, human participant table, the local participant's
-/// index, whether this client owns the match setup (seed and player list),
-/// and the retail sync-checksum history the multiplayer queue fills.
+/// The live session: who holds `GameMode`, human participant table, the
+/// local participant's index, whether this client owns the match setup (seed
+/// and player list), and the retail sync-checksum history the multiplayer
+/// queue fills.
 ///
 /// Process start matches native: `GameMode` 0 with an empty participant list
-/// (`0x0077B532`). Fresh launches and saved-game restores are the only
-/// writers; the value persists after a match exactly as the native global
-/// does.
+/// (`0x0077B532`). The shell writes it at offline launch and network entry or
+/// exit; a world takes it at install or saved-game restore. It persists after
+/// a match exactly as the native global does: the finished world keeps
+/// holding it until the shell writes it again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MatchSession {
-    mode: SessionMode,
+    mode: ModeHolder,
     offline_player_name: Option<String>,
     network: Option<NetworkSession>,
     host: bool,
@@ -164,17 +204,74 @@ pub(crate) struct MatchSession {
     /// Process byte B07788, set by the first ReadMultiPlayerSettings call.
     /// It survives dialog, match and saved-game transitions.
     multiplayer_settings_initialized: bool,
+    /// LatencyFudge `0xA8DB9C`, a zero-initialized process global. LAN
+    /// start (`0x005DD2E4`/`0x005DD4A4`) writes 0, WOL Start Game Now
+    /// (`0x007950C9..0x0079510B`) 1 or 2, and EVENT_LATENCYFUDGE
+    /// (`0x004C7F4F`) the event value. FF reads it at init and Resume;
+    /// MaxAhead pacing is transport.
+    latency_fudge: i32,
+    /// FF Resume's two event limiters (`0xA8EE40` latency, `0xA8EE30`
+    /// speed): function statics that outlive every menu and match.
+    pause_event_limiters: PauseEventLimiters,
+}
+
+/// One native wall-clock countdown `{start, clock, duration}` in 16 ms
+/// buckets: `0x004F1B00` starts it, `0x004F1B20` reports the remainder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct WallBucketTimer {
+    start: Option<u32>,
+    duration: u32,
+}
+
+impl WallBucketTimer {
+    pub(crate) fn start(now_bucket: u32, duration: u32) -> Self {
+        Self {
+            start: Some(now_bucket),
+            duration,
+        }
+    }
+
+    /// `0x004F1B20`: a never-started timer returns its duration; otherwise
+    /// `duration - elapsed` while elapsed (wrapping) is below it, else 0.
+    pub(crate) fn remaining(self, now_bucket: u32) -> u32 {
+        match self.start {
+            None => self.duration,
+            Some(start) => {
+                let elapsed = now_bucket.wrapping_sub(start) as i32;
+                if elapsed < self.duration as i32 {
+                    (self.duration as i32 - elapsed) as u32
+                } else {
+                    0
+                }
+            }
+        }
+    }
+}
+
+/// The FF Resume rate limiters. Both statics are constructed on the
+/// callback's first WM_COMMAND (`0x004F1290..0x004F12D8`) as expired
+/// zero-duration timers; each accepted event restarts its own for 900.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct PauseEventLimiters {
+    pub(crate) latency: WallBucketTimer,
+    pub(crate) speed: WallBucketTimer,
+}
+
+impl PauseEventLimiters {
+    pub(crate) const COOLDOWN_BUCKETS: u32 = 900;
 }
 
 impl Default for MatchSession {
     fn default() -> Self {
         Self {
-            mode: SessionMode::Campaign,
+            mode: ModeHolder::Shell(SessionMode::Campaign),
             offline_player_name: None,
             network: None,
             host: false,
             checksum_history: MultiplayerChecksumHistory::new(),
             multiplayer_settings_initialized: false,
+            latency_fudge: 0,
+            pause_event_limiters: PauseEventLimiters::default(),
         }
     }
 }
@@ -200,31 +297,62 @@ impl MatchSession {
             !mode.is_network(),
             "offline launch cannot start a network session"
         );
-        self.mode = mode;
+        self.mode = ModeHolder::Shell(mode);
         self.offline_player_name = local_player_name;
         self.network = None;
         self.host = true;
     }
 
-    /// Load_Game67E4E8 restores the exact mode from the admitted saved session.
-    /// An existing service visit may retain its return context; loading never
-    /// fabricates a new network connection or participant admission.
+    /// Load_Game67E4E8 restores the exact mode from the admitted saved session,
+    /// whose restored world now holds it. An existing service visit of that
+    /// mode may retain its return context; loading never fabricates a new
+    /// network connection or participant admission.
     pub(crate) fn restore_from_save(&mut self, mode: SessionMode, local_player_name: Option<&str>) {
         if !mode.is_network() {
             self.begin_offline(mode, local_player_name.map(str::to_owned));
         } else {
-            if self.mode != mode {
+            if self.network_mode() != Some(mode) {
                 self.network = None;
             } else {
                 self.return_to_network_lobby();
             }
-            self.mode = mode;
             self.offline_player_name = local_player_name.map(str::to_owned);
+        }
+        self.mode = ModeHolder::World;
+    }
+
+    /// `GameMode` while the shell holds it; `None` while the installed world
+    /// does ([`super::state::MatchState::session_mode`] reads either).
+    pub(crate) fn shell_mode(&self) -> Option<SessionMode> {
+        match self.mode {
+            ModeHolder::Shell(mode) => Some(mode),
+            ModeHolder::World => None,
         }
     }
 
-    pub(crate) fn mode(&self) -> SessionMode {
-        self.mode
+    /// A fresh world built with the shell's `GameMode` takes it over at
+    /// install.
+    pub(crate) fn hand_mode_to_world(&mut self, world_mode: SessionMode) {
+        if let ModeHolder::Shell(mode) = self.mode {
+            debug_assert_eq!(
+                mode, world_mode,
+                "the loader builds the world with the shell's GameMode"
+            );
+        }
+        self.mode = ModeHolder::World;
+    }
+
+    /// A world dropped without a successor hands `GameMode` back.
+    pub(crate) fn retake_mode_from_world(&mut self, world_mode: SessionMode) {
+        if self.mode == ModeHolder::World {
+            self.mode = ModeHolder::Shell(world_mode);
+        }
+    }
+
+    /// The mode of the active service visit, if any.
+    fn network_mode(&self) -> Option<SessionMode> {
+        self.network_return_context()
+            .map(NetworkReturnContext::session_mode)
     }
 
     /// The local participant's handle; `None` for launches without one.
@@ -245,13 +373,8 @@ impl MatchSession {
     }
 
     /// Main menu writes GameMode3/4 before entering the service-dependent shell.
-    pub(crate) fn enter_network(
-        &mut self,
-        mode: SessionMode,
-        return_context: NetworkReturnContext,
-    ) {
-        assert!(mode.is_network(), "network shell requires LAN or WOL mode");
-        self.mode = mode;
+    pub(crate) fn enter_network(&mut self, return_context: NetworkReturnContext) {
+        self.mode = ModeHolder::Shell(return_context.session_mode());
         self.host = false;
         self.offline_player_name = None;
         self.network = Some(NetworkSession {
@@ -272,7 +395,7 @@ impl MatchSession {
         host: bool,
         observer_row: Option<u8>,
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(self.mode.is_network(), "no network visit is active");
+        anyhow::ensure!(self.network.is_some(), "no network visit is active");
         anyhow::ensure!(
             observer_row.is_none_or(|row| row < 8),
             "observer reservation is outside setup rows"
@@ -766,7 +889,6 @@ impl MatchSession {
             observer_row.is_none_or(|row| row < 8),
             "observer reservation is outside setup rows"
         );
-        let admitted_capacity = self.network_row_capacity(&incoming.mode, capacity);
         let Some(NetworkSession {
             phase:
                 NetworkPhase::Setup {
@@ -776,11 +898,14 @@ impl MatchSession {
                     observer_row: retained_observer_row,
                     ..
                 },
+            return_context,
             ..
         }) = self.network.as_mut()
         else {
             anyhow::bail!("network setup is not editable");
         };
+        let admitted_capacity =
+            row_capacity(return_context.session_mode(), &incoming.mode, capacity);
         anyhow::ensure!(
             launch.local_player_index == incoming.local_player_index
                 && launch.humans.len() == incoming.humans.len()
@@ -829,18 +954,9 @@ impl MatchSession {
         }
     }
 
-    /// 5EC3A0's admitted row capacity for a map of `capacity` players.
-    fn network_row_capacity(
-        &self,
-        mode: &crate::skirmish_launch::SkirmishLaunchMode,
-        capacity: i32,
-    ) -> i32 {
-        row_capacity(self.mode, mode, capacity)
-    }
-
-    /// 5EB060/5EC3A0 service row limit (LAN 8, WOL 6).
-    pub(crate) fn network_row_limit(&self) -> i32 {
-        row_limit(self.mode)
+    /// 5EB060/5EC3A0 service row limit (LAN 8, WOL 6) of the active visit.
+    pub(crate) fn network_row_limit(&self) -> Option<i32> {
+        self.network_mode().map(row_limit)
     }
 
     pub(crate) fn network_observer_row(&self) -> Option<u8> {
@@ -866,7 +982,6 @@ impl MatchSession {
             "map requires a valid participant capacity"
         );
         let mut candidate = self.clone();
-        let session_mode = self.mode;
         let (old_capacity, observer_row, host_extra, new_capacity) = {
             let Some(NetworkSession {
                 phase:
@@ -876,11 +991,13 @@ impl MatchSession {
                         observer_row,
                         ..
                     },
+                return_context,
                 ..
             }) = candidate.network.as_mut()
             else {
                 anyhow::bail!("network setup is not editable");
             };
+            let session_mode = return_context.session_mode();
             let changed = launch.mode != mode;
             if changed && mode.class.uses_cooperative_setup() {
                 *observer_row = None;
@@ -1082,17 +1199,14 @@ impl MatchSession {
         Ok(())
     }
 
-    /// WOL `005E9850` clears node+77 of every node not named `0xA8D610`, on
-    /// host option edits (C2 `0078F9C1`/`0078FA97`) and whenever a user joins
-    /// the game channel (`007A6625`). The host's Create copies its own name
-    /// there (`0x78A0A9`); a guest's join sink empties it (`0x7A620D`), so a
-    /// guest clears every node, its own included. LAN never does this: its
-    /// peers retract acceptance through packet A0.
-    pub(crate) fn clear_wol_guest_readiness(&mut self) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            self.mode == SessionMode::Wol,
-            "only WOL clears guest acceptance"
-        );
+    /// `005E9850` clears node+77 of every node not named `0xA8D610`. WOL
+    /// calls it on host option edits (C2 `0078F9C1`/`0078FA97`) and whenever a
+    /// user joins the game channel (`007A6625`). The host's Create copies its
+    /// own name there (`0x78A0A9`); a WOL guest's join sink empties it
+    /// (`0x7A620D`), so a guest clears every node, its own included. A LAN
+    /// host calls it on a guest's preview request `0x1B` (`0x005E014B`);
+    /// otherwise LAN peers retract acceptance through packet A0.
+    pub(crate) fn clear_guest_readiness(&mut self) -> anyhow::Result<()> {
         let Some(NetworkSession {
             phase: NetworkPhase::Setup {
                 launch, admission, ..
@@ -1166,7 +1280,23 @@ impl MatchSession {
             protocol,
             response_time,
         ));
+        self.latency_fudge = 0;
         Ok(())
+    }
+
+    pub(crate) fn latency_fudge(&self) -> i32 {
+        self.latency_fudge
+    }
+
+    /// EVENT_LATENCYFUDGE's write (`0x004C7F4F`). The event itself, its
+    /// broadcast and the remote-sender message `TXT_PLAYER_CHANGED_LATENCY`
+    /// (`0x004C7F7D`) travel through the transport, outside this owner.
+    pub(crate) fn set_latency_fudge(&mut self, value: i32) {
+        self.latency_fudge = value;
+    }
+
+    pub(crate) fn pause_event_limiters_mut(&mut self) -> &mut PauseEventLimiters {
+        &mut self.pause_event_limiters
     }
     /// WOL Start Game Now timing block (`0x794F6F..0x7951F0`): MaxAhead
     /// comes from the agreed game speed, identical for host and guest.
@@ -1178,7 +1308,7 @@ impl MatchSession {
         channel_owner: bool,
     ) -> anyhow::Result<()> {
         anyhow::ensure!(
-            self.mode == SessionMode::Wol,
+            self.network_mode() == Some(SessionMode::Wol),
             "WOL timing needs a WOL visit"
         );
         let network = self
@@ -1191,6 +1321,7 @@ impl MatchSession {
         let timing =
             crate::net::lockstep::wol_start_timing(launch.options.game_speed, pings, channel_owner);
         network.max_ahead_frames = Some(timing.max_ahead);
+        self.latency_fudge = timing.latency_fudge;
         Ok(())
     }
 
@@ -1259,7 +1390,7 @@ impl MatchSession {
         let startup = Arc::new(crate::app::match_bootstrap::PreparedNetworkStartup::new(
             launch,
             agreed_seed,
-            self.mode,
+            network.return_context.session_mode(),
             self.host,
             max_ahead_frames,
         ));
@@ -1291,7 +1422,7 @@ impl MatchSession {
             Arc::ptr_eq(admitted, startup),
             "loading must consume the admitted immutable start"
         );
-        assert_eq!(self.mode, startup.mode());
+        assert_eq!(self.network_mode(), Some(startup.mode()));
         assert_eq!(self.host, startup.host());
     }
 
@@ -1311,7 +1442,66 @@ impl MatchSession {
         }
     }
 
-    pub(crate) fn disconnect_network_loading_participant(&mut self, source_index: usize) -> bool {
+    /// 0x0064AAE0's kick proposal for participant `target_source`, sent to
+    /// every other connected node.
+    pub(crate) fn request_kick_proposal(&mut self, target_source: usize) {
+        if let Some(network) = self.network.as_mut()
+            && matches!(network.phase, NetworkPhase::Frozen { .. })
+        {
+            network
+                .loading_requests
+                .push(NetworkLoadingRequest::ProposeKick { target_source });
+        }
+    }
+
+    /// One in-battle chat packet to `recipients`.
+    pub(crate) fn request_chat(&mut self, recipients: Vec<usize>, text: String) {
+        if let Some(network) = self.network.as_mut()
+            && matches!(network.phase, NetworkPhase::Frozen { .. })
+        {
+            network
+                .loading_requests
+                .push(NetworkLoadingRequest::Chat { recipients, text });
+        }
+    }
+
+    pub(crate) fn request_taunt(&mut self, recipients: Vec<usize>, byte: u8) {
+        if let Some(network) = self.network.as_mut()
+            && matches!(network.phase, NetworkPhase::Frozen { .. })
+        {
+            network
+                .loading_requests
+                .push(NetworkLoadingRequest::Taunt { recipients, byte });
+        }
+    }
+
+    /// The frozen launch's owner key of network participant `source_index`.
+    pub(crate) fn network_source_owner(&self, source_index: usize) -> Option<String> {
+        let launch = self.network_setup()?;
+        crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
+            .into_iter()
+            .find(|slot| slot.source_human_index == Some(source_index))
+            .map(|slot| slot.owner_name)
+    }
+
+    /// The network participant whose House has owner key `owner`.
+    pub(crate) fn network_owner_source(&self, owner: &str) -> Option<usize> {
+        let launch = self.network_setup()?;
+        crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
+            .into_iter()
+            .find(|slot| slot.owner_name == owner)
+            .and_then(|slot| slot.source_human_index)
+    }
+
+    /// `IPXManager::Delete_Connection 0x00540F00` and the node removal of
+    /// DestroyConnection (`0x005DAA8A`, `--[0xA8B54C]`): the participant
+    /// leaves the live membership and the transport is asked to drop it.
+    /// False when it is the local player or no longer connected.
+    pub(crate) fn disconnect_network_participant(
+        &mut self,
+        source_index: usize,
+        reason: i32,
+    ) -> bool {
         let Some(network) = self.network.as_mut() else {
             return false;
         };
@@ -1329,7 +1519,7 @@ impl MatchSession {
             .loading_requests
             .push(NetworkLoadingRequest::Disconnect {
                 source_index,
-                reason: 1,
+                reason,
             });
         true
     }
@@ -1359,7 +1549,7 @@ impl MatchSession {
 
     pub(crate) fn leave_network(&mut self) {
         self.network = None;
-        self.mode = SessionMode::Campaign;
+        self.mode = ModeHolder::Shell(SessionMode::Campaign);
         self.host = false;
         self.offline_player_name = None;
     }
@@ -1491,7 +1681,7 @@ mod tests {
             (SessionMode::Wol, NetworkReturnContext::Wol),
         ] {
             let mut session = MatchSession::default();
-            session.enter_network(mode, context);
+            session.enter_network(context);
             session
                 .accept_network_setup(network_fixture(), false, Some(7))
                 .unwrap();
@@ -1511,12 +1701,12 @@ mod tests {
             assert_eq!(session.network_connected_source_indices(), &[0, 1]);
             session.report_network_loading_progress(100);
             assert!(
-                !session.disconnect_network_loading_participant(1),
+                !session.disconnect_network_participant(1, 1),
                 "local cannot time out itself"
             );
-            assert!(session.disconnect_network_loading_participant(0));
+            assert!(session.disconnect_network_participant(0, 1));
             assert!(
-                !session.disconnect_network_loading_participant(0),
+                !session.disconnect_network_participant(0, 1),
                 "disconnect is one-shot"
             );
             assert_eq!(session.network_connected_source_indices(), &[1]);
@@ -1548,9 +1738,9 @@ mod tests {
             );
             assert_eq!(session.return_to_network_lobby(), Some(context));
             assert!(session.network_setup().is_none());
-            assert_eq!(session.mode(), mode);
+            assert_eq!(session.shell_mode(), Some(mode));
             session.leave_network();
-            assert_eq!(session.mode(), SessionMode::Campaign);
+            assert_eq!(session.shell_mode(), Some(SessionMode::Campaign));
             assert!(session.network_return_context().is_none());
         }
     }
@@ -1558,7 +1748,7 @@ mod tests {
     #[test]
     fn host_changes_preserve_peer_ready_until_service_update_and_removal_reindexes_local() {
         let mut session = MatchSession::default();
-        session.enter_network(SessionMode::Lan, super::NetworkReturnContext::LanLobby);
+        session.enter_network(super::NetworkReturnContext::LanLobby);
         session
             .accept_network_setup(network_fixture(), true, Some(7))
             .unwrap();
@@ -1586,7 +1776,7 @@ mod tests {
     fn wol_caps_rows_at_six_clears_guest_acceptance_and_times_from_game_speed() {
         let wol_host = || {
             let mut session = MatchSession::default();
-            session.enter_network(SessionMode::Wol, super::NetworkReturnContext::Wol);
+            session.enter_network(super::NetworkReturnContext::Wol);
             let mut launch = network_fixture();
             launch.local_player_index = 0;
             session.accept_network_setup(launch, true, Some(7)).unwrap();
@@ -1600,22 +1790,22 @@ mod tests {
             .unwrap();
         // 5EC3A0 `0x5EC457`: WOL rows stop at six where LAN keeps eight.
         assert_eq!(session.network_setup_capacity(), Some(6));
-        assert_eq!(session.network_row_limit(), 6);
+        assert_eq!(session.network_row_limit(), Some(6));
         // 5E9850 keeps only the node named 0xA8D610: the host's own name on
         // the host, empty on a guest, which therefore clears its own too.
         session.set_network_player_ready(0, true).unwrap();
         session.set_network_player_ready(1, true).unwrap();
-        session.clear_wol_guest_readiness().unwrap();
+        session.clear_guest_readiness().unwrap();
         assert!(session.network_player_ready(0));
         assert!(!session.network_player_ready(1));
         let mut guest = MatchSession::default();
-        guest.enter_network(SessionMode::Wol, super::NetworkReturnContext::Wol);
+        guest.enter_network(super::NetworkReturnContext::Wol);
         let mut launch = network_fixture();
         launch.local_player_index = 0;
         guest.accept_network_setup(launch, false, Some(7)).unwrap();
         guest.set_network_player_ready(0, true).unwrap();
         guest.set_network_player_ready(1, true).unwrap();
-        guest.clear_wol_guest_readiness().unwrap();
+        guest.clear_guest_readiness().unwrap();
         assert!(!guest.network_player_ready(0) && !guest.network_player_ready(1));
         // Start Game Now: MaxAhead follows the agreed speed only.
         session.prepare_wol_timing([0; 8], true).unwrap();
@@ -1624,9 +1814,14 @@ mod tests {
             session.network_max_ahead_frames(),
             Some(crate::net::lockstep::wol_start_timing(speed, [0; 8], false).max_ahead)
         );
+        // The same block seeds LatencyFudge, which FF's Connection trackbar opens on.
+        assert_eq!(
+            session.latency_fudge(),
+            crate::net::lockstep::wol_start_timing(speed, [0; 8], true).latency_fudge
+        );
 
         let mut lan = MatchSession::default();
-        lan.enter_network(SessionMode::Lan, super::NetworkReturnContext::LanLobby);
+        lan.enter_network(super::NetworkReturnContext::LanLobby);
         let mut launch = network_fixture();
         launch.local_player_index = 0;
         lan.accept_network_setup(launch.clone(), true, Some(7))
@@ -1634,14 +1829,18 @@ mod tests {
         lan.select_network_map(launch.mode.clone(), file, 8)
             .unwrap();
         assert_eq!(lan.network_setup_capacity(), Some(8));
-        assert!(lan.clear_wol_guest_readiness().is_err());
+        // A LAN host's 0x1B arm keeps only its own acceptance.
+        lan.set_network_player_ready(0, true).unwrap();
+        lan.set_network_player_ready(1, true).unwrap();
+        lan.clear_guest_readiness().unwrap();
+        assert!(lan.network_player_ready(0) && !lan.network_player_ready(1));
         assert!(lan.prepare_wol_timing([0; 8], true).is_err());
     }
 
     #[test]
     fn kick_unbinds_row_but_departure_owns_source_roster_compaction() {
         let mut session = MatchSession::default();
-        session.enter_network(SessionMode::Lan, super::NetworkReturnContext::LanLobby);
+        session.enter_network(super::NetworkReturnContext::LanLobby);
         session
             .accept_network_setup(network_fixture(), true, Some(7))
             .unwrap();
@@ -1678,7 +1877,7 @@ mod tests {
     #[test]
     fn map_metadata_has_independent_verification_gate_and_transferred_filename_authority() {
         let mut session = MatchSession::default();
-        session.enter_network(SessionMode::Lan, super::NetworkReturnContext::LanLobby);
+        session.enter_network(super::NetworkReturnContext::LanLobby);
         let launch = network_fixture();
         session
             .accept_network_setup(launch.clone(), false, Some(7))
@@ -1793,7 +1992,7 @@ mod tests {
     #[test]
     fn host_packet_preserves_admission_and_rejects_source_identity_changes_atomically() {
         let mut session = MatchSession::default();
-        session.enter_network(SessionMode::Lan, super::NetworkReturnContext::LanLobby);
+        session.enter_network(super::NetworkReturnContext::LanLobby);
         session
             .accept_network_setup(network_fixture(), false, Some(7))
             .unwrap();
@@ -1834,7 +2033,7 @@ mod tests {
     fn mode_role_is_distinct_from_team_and_assignment_cannot_change_selected_start() {
         use crate::skirmish_launch::{LaunchHumanRole, LaunchStartPosition};
         let mut session = MatchSession::default();
-        session.enter_network(SessionMode::Lan, super::NetworkReturnContext::LanLobby);
+        session.enter_network(super::NetworkReturnContext::LanLobby);
         session
             .accept_network_setup(network_fixture(), true, Some(7))
             .unwrap();
@@ -1903,7 +2102,7 @@ mod tests {
     #[test]
     fn process_start_is_campaign_with_no_participants() {
         let session = MatchSession::default();
-        assert_eq!(session.mode(), SessionMode::Campaign);
+        assert_eq!(session.shell_mode(), Some(SessionMode::Campaign));
         assert_eq!(session.participant_count(), 0);
         assert_eq!(session.local_player_name(), None);
         assert!(!session.host());
@@ -1913,8 +2112,7 @@ mod tests {
     fn offline_skirmish_launch_seats_the_local_player_as_host() {
         let mut session = MatchSession::default();
         session.begin_offline(SessionMode::Skirmish, Some("Commander".to_owned()));
-        assert_eq!(session.mode(), SessionMode::Skirmish);
-        assert!(!session.mode().is_network());
+        assert_eq!(session.shell_mode(), Some(SessionMode::Skirmish));
         assert_eq!(session.participant_count(), 1);
         assert_eq!(session.local_player_name(), Some("Commander"));
         assert!(session.host());
@@ -1925,21 +2123,52 @@ mod tests {
         let mut session = MatchSession::default();
         session.begin_offline(SessionMode::Skirmish, Some("Commander".to_owned()));
         session.begin_offline(SessionMode::Campaign, None);
-        assert_eq!(session.mode(), SessionMode::Campaign);
+        assert_eq!(session.shell_mode(), Some(SessionMode::Campaign));
         assert_eq!(session.participant_count(), 0);
         assert_eq!(session.local_player_name(), None);
         assert!(session.host());
     }
 
     #[test]
-    fn saved_game_restore_follows_the_persisted_classification() {
+    fn saved_game_restore_hands_the_mode_to_the_restored_world() {
         let mut session = MatchSession::default();
         session.restore_from_save(SessionMode::Skirmish, Some("Saved"));
-        assert_eq!(session.mode(), SessionMode::Skirmish);
+        assert_eq!(session.shell_mode(), None, "the restored world holds it");
         assert_eq!(session.local_player_name(), Some("Saved"));
         session.restore_from_save(SessionMode::Campaign, None);
-        assert_eq!(session.mode(), SessionMode::Campaign);
+        assert_eq!(session.shell_mode(), None);
         assert_eq!(session.local_player_name(), None);
+    }
+
+    #[test]
+    fn restoring_a_save_keeps_only_a_visit_of_its_own_mode() {
+        use super::NetworkReturnContext;
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::LanLobby);
+        session.restore_from_save(SessionMode::Lan, None);
+        assert_eq!(
+            session.network_return_context(),
+            Some(NetworkReturnContext::LanLobby)
+        );
+        session.restore_from_save(SessionMode::Wol, None);
+        assert_eq!(session.network_return_context(), None);
+    }
+
+    #[test]
+    fn game_mode_has_one_holder_through_install_shell_writes_and_drop() {
+        let mut session = MatchSession::default();
+        session.begin_offline(SessionMode::Skirmish, Some("Commander".to_owned()));
+        session.hand_mode_to_world(SessionMode::Skirmish);
+        assert_eq!(session.shell_mode(), None);
+        // The finished world keeps holding it until the shell writes again.
+        session.enter_network(super::NetworkReturnContext::LanLobby);
+        assert_eq!(session.shell_mode(), Some(SessionMode::Lan));
+        // A load that drops the world without a successor hands it back.
+        session.hand_mode_to_world(SessionMode::Lan);
+        session.retake_mode_from_world(SessionMode::Lan);
+        assert_eq!(session.shell_mode(), Some(SessionMode::Lan));
+        session.retake_mode_from_world(SessionMode::Skirmish);
+        assert_eq!(session.shell_mode(), Some(SessionMode::Lan));
     }
 
     #[test]

@@ -115,19 +115,19 @@ impl Fixture {
         let rules = rules();
         let mut sim = Simulation::new();
         let span = i32::from(MAP);
-        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
             base: 0,
             off_fc: -span,
             off_100: -span,
             off_104: span * 2,
             off_108: span * 2,
-        });
+        }));
         sim.install_resolved_terrain_for_new_map(flat_terrain(water));
         let grid = PathGrid::test_all_passable(MAP, MAP);
         sim.install_fixture_path_grid(Some(&grid));
         // Hover's Find_Path and its zone precheck read the zone topology and
         // the Map Size.
-        sim.playfield_size_height = Some(i32::from(MAP));
+        sim.set_playfield_size_height_for_test(Some(i32::from(MAP)));
         let terrain = sim.resolved_terrain.as_ref().expect("fixture terrain");
         sim.zone_grid = Some(
             crate::sim::pathfinding::zone_map::ZoneGrid::build_with_terrain(
@@ -908,11 +908,21 @@ fn nighthawk_unloads_only_when_landed() {
     let mut fx = Fixture::new(|_, _| false);
     let shad = fx.spawn("SHAD", 20, 20, 0);
     let pax = fx.board(shad, 2);
-    fx.sim.set_object_height_unmarked(shad, 600);
+    Simulation::set_object_height_unmarked(
+        &mut fx.sim.substrate,
+        &fx.sim.resolved_terrain,
+        shad,
+        600,
+    );
     assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
     assert_eq!(fx.mission(shad), MissionId::from_known(MissionType::Unload));
     for _ in 0..30 {
-        fx.sim.set_object_height_unmarked(shad, 600);
+        Simulation::set_object_height_unmarked(
+            &mut fx.sim.substrate,
+            &fx.sim.resolved_terrain,
+            shad,
+            600,
+        );
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
         fx.sim
             .session
@@ -920,7 +930,12 @@ fn nighthawk_unloads_only_when_landed() {
     }
     assert_eq!(fx.cargo_ids(shad).len(), 2, "airborne: nothing leaves");
 
-    fx.sim.set_object_height_unmarked(shad, 0);
+    Simulation::set_object_height_unmarked(
+        &mut fx.sim.substrate,
+        &fx.sim.resolved_terrain,
+        shad,
+        0,
+    );
     let pitch = |fx: &mut Fixture, angle: SimFixed| {
         fx.sim
             .substrate
@@ -978,7 +993,12 @@ fn nighthawk_ejects_five_passengers_to_scanned_neighbours() {
     let mut fx = Fixture::new(|_, _| false);
     let shad = fx.spawn("SHAD", 20, 20, 0);
     let pax = fx.board(shad, 5);
-    fx.sim.set_object_height_unmarked(shad, 0);
+    Simulation::set_object_height_unmarked(
+        &mut fx.sim.substrate,
+        &fx.sim.resolved_terrain,
+        shad,
+        0,
+    );
     assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
 
     // (id, reveal frame, mission, destination) captured the tick each surfaces.
@@ -1321,13 +1341,14 @@ fn relaxed_pass_takes_an_exit_whose_far_cell_is_off_the_map() {
 #[test]
 fn vehicle_unload_scan_refuses_exits_outside_the_playfield() {
     let mut fx = Fixture::new(|_, _| false);
-    fx.sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
-        base: 0,
-        off_fc: -1,
-        off_100: -100,
-        off_104: 100,
-        off_108: 200,
-    });
+    fx.sim
+        .set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
+            base: 0,
+            off_fc: -1,
+            off_100: -100,
+            off_104: 100,
+            off_108: 200,
+        }));
     let bfrt = fx.spawn("BFRT", 20, 20, 0);
     let pax = fx.board(bfrt, 1);
     fx.sim
@@ -1354,13 +1375,14 @@ fn vehicle_unload_scan_refuses_exits_outside_the_playfield() {
 #[test]
 fn vehicle_passenger_off_the_playfield_exit_lands_on_raised_in_playfield_ground() {
     let mut fx = Fixture::new(|_, _| false);
-    fx.sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
-        base: 0,
-        off_fc: -1,
-        off_100: -100,
-        off_104: 100,
-        off_108: 200,
-    });
+    fx.sim
+        .set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
+            base: 0,
+            off_fc: -1,
+            off_100: -100,
+            off_104: 100,
+            off_108: 200,
+        }));
     let terrain = fx.sim.resolved_terrain.as_mut().unwrap();
     for (x, y) in [(19, 20), (20, 21)] {
         terrain.cell_mut_for_test(x, y).unwrap().level = 2;
@@ -1404,7 +1426,12 @@ fn vehicle_passenger_off_the_playfield_exit_lands_on_raised_in_playfield_ground(
 }
 
 fn set_altitude(fx: &mut Fixture, id: u64, altitude: i32) {
-    fx.sim.set_object_height_unmarked(id, altitude);
+    Simulation::set_object_height_unmarked(
+        &mut fx.sim.substrate,
+        &fx.sim.resolved_terrain,
+        id,
+        altitude,
+    );
 }
 
 fn handler_state(fx: &Fixture, id: u64) -> u32 {
@@ -1962,6 +1989,7 @@ fn turning_unload_uses_the_turret_latch_and_native_cadence() {
         fx.board(carrier, 2);
         fx.sim.session.set_binary_frame_for_test(100);
         fx.sim
+            .substrate
             .mission_assign_exact(carrier, MissionId::from_known(MissionType::Unload), 100)
             .unwrap();
         let entity = fx.sim.substrate.entities.get_mut(carrier).unwrap();
@@ -2074,7 +2102,7 @@ fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(
         fx.sim.resolved_terrain.as_ref().unwrap().clone(),
-        fx.sim.terrain_speed_config.clone(),
+        fx.sim.terrain_speed_config().clone(),
         &fx.rules,
     );
     assert!(restored.rebuild_dynamic_navigation(&fx.rules));
@@ -2083,7 +2111,7 @@ fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
     fx.sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     // Foot Load also clears the move-sound countdown, including idle Feet.
     for id in fx.sim.substrate.entities.keys_sorted() {
-        fx.sim.restore_move_sound_state_after_load(id);
+        fx.sim.substrate.restore_move_sound_state_after_load(id);
     }
     assert_eq!(
         restored.state_hash(),

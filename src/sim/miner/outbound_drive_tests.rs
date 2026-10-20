@@ -165,16 +165,16 @@ fn install_world(
     install_zones: bool,
 ) {
     let terrain = staged_terrain(oracle, ore_cells);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -64,
         off_100: -1,
         off_104: 128,
         off_108: 65,
-    });
+    }));
     // Map-load authority retains Size height beside the bounds (the shared
     // Foot zone precheck reads both).
-    sim.playfield_size_height = Some(i32::from(terrain.height()));
+    sim.set_playfield_size_height_for_test(Some(i32::from(terrain.height())));
     sim.resolved_terrain = Some(terrain);
     sim.overlay_grid = Some(OverlayGrid::new(GRID_SIZE, GRID_SIZE));
     for &(rx, ry) in ore_cells {
@@ -300,12 +300,14 @@ fn spawn_inert_dock_instance(sim: &mut Simulation) {
     if !sim.houses.contains_key(&owner_id) {
         seed_human_house(sim, "Americans");
     }
-    sim.update_house_tracking(
+    Simulation::update_house_tracking(
+        &mut sim.substrate,
+        &mut sim.houses,
         INERT_DOCK_ID,
         crate::sim::house_tracking::HouseTracking::add_tracking,
     );
-    if sim.substrate.next_stable_object_id <= INERT_DOCK_ID {
-        sim.substrate.next_stable_object_id = INERT_DOCK_ID + 1;
+    if sim.next_stable_object_id() <= INERT_DOCK_ID {
+        sim.set_next_stable_object_id_for_test(INERT_DOCK_ID + 1);
     }
 }
 

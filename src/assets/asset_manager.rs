@@ -301,19 +301,26 @@ const KNOWN_NESTED_MIX_NAMES: &[&str] = &[
 ];
 
 impl AssetManager {
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn from_loose_root_for_test(ra2_dir: &Path) -> Self {
-        let mut manager = Self {
+    /// Read-only INI tooling without a complete retail installation. No game
+    /// archives are implicitly registered; the probe may explicitly use the
+    /// existing load_all_disk_mixes widening. Not a gameplay constructor.
+    pub fn from_ini_probe_root(ra2_dir: &Path) -> Result<Self, AssetError> {
+        Ok(Self {
             archives: Vec::new(),
             archive_catalog: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
-            loose_files: Self::open_loose_root(ra2_dir).expect("open loose test root"),
+            loose_files: Self::open_loose_root(ra2_dir)?,
             audio_pair: SelectedAudioPair::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
-        };
+        })
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_loose_root_for_test(ra2_dir: &Path) -> Self {
+        let mut manager = Self::from_ini_probe_root(ra2_dir).expect("open loose test root");
         manager.select_audio_pair();
         manager
     }
@@ -815,6 +822,33 @@ impl AssetManager {
     /// Return the RA2 installation directory.
     pub fn ra2_dir(&self) -> &Path {
         &self.ra2_dir
+    }
+
+    /// `RawFile` on a relative path under the install directory, such as
+    /// `taunts\tauam01.wav`: Windows opens it whatever the case of each
+    /// component, so each one is matched exactly first, then without regard
+    /// to ASCII case. Read from disk at each call; not part of the startup
+    /// loose catalog, which holds top-level files only.
+    pub fn read_install_file(&self, relative: &str) -> Option<Vec<u8>> {
+        let mut path = self.ra2_dir.clone();
+        for component in relative.split(['\\', '/']).filter(|part| !part.is_empty()) {
+            let exact = path.join(component);
+            path = if exact.exists() {
+                exact
+            } else {
+                std::fs::read_dir(&path)
+                    .ok()?
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.path())
+                    .find(|candidate| {
+                        candidate
+                            .file_name()
+                            .and_then(OsStr::to_str)
+                            .is_some_and(|name| name.eq_ignore_ascii_case(component))
+                    })?
+            };
+        }
+        std::fs::read(&path).ok()
     }
 
     fn lookup_asset_entry(&self, name: &str) -> Option<(&NamedArchive, i32)> {
@@ -1474,6 +1508,28 @@ mod tests {
             manager.load_audio_index(),
             Err(AssetError::ParseError { .. })
         ));
+    }
+
+    #[test]
+    fn install_files_resolve_each_component_without_regard_to_case() {
+        let dir = TestDirectory::new("install-subdirectory");
+        std::fs::create_dir(dir.path().join("Taunts")).expect("subdirectory");
+        std::fs::write(dir.path().join("Taunts").join("TAUAM01.WAV"), b"am").expect("file");
+        std::fs::write(dir.path().join("Taunts").join("tauyu01.wav"), b"yu").expect("file");
+        let manager = empty_manager(dir.path());
+        assert_eq!(
+            manager.read_install_file("taunts\\tauam01.wav").as_deref(),
+            Some(&b"am"[..])
+        );
+        assert_eq!(
+            manager.read_install_file("TAUNTS/TAUYU01.WAV").as_deref(),
+            Some(&b"yu"[..])
+        );
+        assert_eq!(manager.read_install_file("taunts\\tauam02.wav"), None);
+        assert!(
+            !manager.contains("taunts\\tauam01.wav"),
+            "the startup loose catalog stays top-level"
+        );
     }
 
     #[test]

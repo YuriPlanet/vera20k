@@ -156,7 +156,7 @@ fn retail_transylv_ambient_action_reaches_native_fade_and_large_flash_request() 
     for row in history["rows"].as_array().unwrap() {
         sim.session
             .set_binary_frame_for_test(row["frame"].as_u64().unwrap() as u32);
-        sim.discard_lighting_events();
+        sim.lighting_sources.discard_pending();
         sim.tick_scenario_lighting_transition(&rules);
         let light = sim.session.lighting();
         assert_eq!(
@@ -345,6 +345,7 @@ fn retail_transylv_ambient_action_reaches_native_fade_and_large_flash_request() 
         .consume_outgoing_scenario_rules(
             sim.retire_object_type_tech_levels(),
             sim.session.lighting_mut().retire_ambient_change_inputs(),
+            sim.retire_building_upgrade_art_names(),
         )
         .unwrap();
     let next = owner
@@ -675,6 +676,7 @@ fn ambient_action_values_survive_save_and_transfer_to_retained_rules_at_retireme
                 .session
                 .lighting_mut()
                 .retire_ambient_change_inputs(),
+            restored.retire_building_upgrade_art_names(),
         )
         .unwrap();
     assert_eq!(

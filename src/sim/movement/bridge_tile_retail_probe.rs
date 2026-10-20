@@ -63,7 +63,7 @@ fn retail_middle_bridge_resident_recalc_admits_both_families() {
                             overlay,
                             level_override,
                             registry,
-                            sim.playfield_bounds,
+                            sim.playfield_bounds(),
                         )
                         .unwrap_or_else(|error| {
                             panic!("retail tile {target}/{sub}, level {level_override}: {error}")
@@ -120,17 +120,19 @@ fn retail_high_bridge_middle_tile_inputs() {
     let keys = terrain
         .high_bridge_rim_tiles()
         .expect("retail theater keys");
+    let overlays = sim.overlay_grid.as_ref().expect("live overlays");
     let cells: Vec<_> = terrain
         .iter()
         .map(|cell| {
+            let live = overlays.cell(cell.rx, cell.ry);
             json!([
                 cell.rx,
                 cell.ry,
                 cell.final_tile_index,
                 cell.final_sub_tile,
                 cell.bridge_facts.raw_flags,
-                cell.bridge_facts.overlay_id,
-                cell.bridge_facts.state_byte,
+                live.overlay_id,
+                live.overlay_data,
                 cell.bridge_facts
                     .native_anchor
                     .map(|anchor| terrain.native_cell_coord(anchor)),

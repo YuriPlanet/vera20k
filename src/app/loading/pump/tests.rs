@@ -55,7 +55,7 @@ pub(super) fn test_launch_session(country: LaunchCountry) -> SkirmishLaunchSessi
 fn failed_network_load_retries_its_shell_without_installing_an_offline_fallback() {
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
     let mut session = MatchSession::default();
-    session.enter_network(SessionMode::Lan, NetworkReturnContext::LanLobby);
+    session.enter_network(NetworkReturnContext::LanLobby);
     session
         .accept_network_setup(test_launch_session(LaunchCountry::America), true, Some(7))
         .unwrap();
@@ -71,7 +71,7 @@ fn failed_network_load_retries_its_shell_without_installing_an_offline_fallback(
         session.return_to_network_lobby(),
         Some(NetworkReturnContext::LanLobby)
     );
-    assert_eq!(session.mode(), SessionMode::Lan);
+    assert_eq!(session.shell_mode(), Some(SessionMode::Lan));
     assert!(session.network_setup().is_none());
 }
 
@@ -137,7 +137,7 @@ fn admitted_network_start_preserves_canonical_humans_and_host_seed_in_fresh_load
     launch.humans.push(guest);
     launch.local_player_index = 1;
     let mut session = MatchSession::default();
-    session.enter_network(SessionMode::Lan, NetworkReturnContext::LanLobby);
+    session.enter_network(NetworkReturnContext::LanLobby);
     session
         .accept_network_setup(launch, false, Some(7))
         .unwrap();
@@ -171,7 +171,7 @@ fn admitted_network_start_preserves_canonical_humans_and_host_seed_in_fresh_load
             .collect::<Vec<_>>(),
         vec![LoadingParticipantId::Human(0), LoadingParticipantId::Local]
     );
-    assert_eq!(session.mode(), SessionMode::Lan);
+    assert_eq!(session.shell_mode(), Some(SessionMode::Lan));
     assert!(!session.host());
 }
 
@@ -1900,7 +1900,7 @@ fn network_loading_wait_resends_rearms_on_regression_and_expires_before_completi
 
 #[test]
 fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_install() {
-    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};
     let mut launch = test_launch_session(LaunchCountry::America);
     launch.opponents.clear();
     launch.ai_player_count = 0;
@@ -1927,14 +1927,22 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
     let local = sim.interner().get("Player").unwrap();
     let peer = sim.interner().get("Remote").unwrap();
     let mut session = MatchSession::default();
-    session.enter_network(SessionMode::Lan, NetworkReturnContext::LanLobby);
+    session.enter_network(NetworkReturnContext::LanLobby);
     session.accept_network_setup(launch, true, Some(7)).unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
     let mut result = super::super::transitions::fallback_map_load_result();
     result.scenario.startup = session.freeze_network_start(1).unwrap();
     result.scenario.simulation = Some(sim);
     let notices = apply_network_loading_disconnects(&mut session, &mut result, &[1]);
-    assert_eq!(notices, vec![("Remote".into(), "Remote".into())]);
+    assert_eq!(
+        notices,
+        vec![
+            crate::app::match_runtime::network_match::ConnectionDestroyed {
+                owner: peer,
+                key: "TXT_CONNECTION_LOST",
+            }
+        ]
+    );
     assert_eq!(session.network_connected_source_indices(), &[0]);
     assert_eq!(
         result
@@ -1948,6 +1956,11 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
     );
     let sim = result.scenario.simulation.as_ref().unwrap();
     assert!(sim.houses()[&peer].is_to_die());
+    // DestroyConnection's line names the House by its own +0x1602A.
+    assert_eq!(
+        sim.houses()[&peer].ui_name(),
+        &crate::sim::house_state::HouseUiName::Handle("Remote".into())
+    );
     assert!(!sim.houses()[&local].is_to_die());
     assert_eq!(sim.session().current_house(), Some(local));
     assert!(apply_network_loading_disconnects(&mut session, &mut result, &[1]).is_empty());
@@ -1961,7 +1974,7 @@ mod campaign_miner;
 fn a_network_start_installs_its_mode_and_timing_into_the_scenario() {
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
     let mut session = MatchSession::default();
-    session.enter_network(SessionMode::Lan, NetworkReturnContext::LanLobby);
+    session.enter_network(NetworkReturnContext::LanLobby);
     session
         .accept_network_setup(test_launch_session(LaunchCountry::America), true, Some(7))
         .unwrap();

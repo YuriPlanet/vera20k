@@ -14,7 +14,7 @@ fn corpus() -> &'static Value {
     let corpus = crate::test_fixture::json("tools/spatial_oracle/trigger_damage_events.json");
     assert_eq!(
         corpus["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     assert_eq!(corpus["code_unchanged"], true);
     corpus
@@ -377,8 +377,8 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
     );
     sim.install_fixture_path_grid(Some(&path));
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.playfield_bounds = Some(bounds);
-    sim.playfield_size_height = Some(32);
+    sim.set_playfield_bounds_for_test(Some(bounds));
+    sim.set_playfield_size_height_for_test(Some(32));
     sim.session.set_map_width_for_test(64);
     sim.session.set_map_height_for_test(64);
     Some(RetailDamageScene {

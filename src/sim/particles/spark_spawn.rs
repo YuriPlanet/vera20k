@@ -236,7 +236,7 @@ pub(super) fn spark_spawn_pass(
             && !pst.one_frame_light
         {
             sim.combat_light_requests
-                .push(crate::sim::combat::CombatLightRequest::Spark {
+                .emit(crate::sim::combat::CombatLightRequest::Spark {
                     coord: crate::sim::projectile::ProjectileCoord::new(
                         sys.coords.x,
                         sys.coords.y,
@@ -365,7 +365,12 @@ where
         color_index: 0,
         color_accumulator: NativeF64Bits::POSITIVE_ZERO,
     });
-    sim.reveal_particle(particle.stable_id());
+    Simulation::reveal_particle(
+        &sim.interner,
+        &sim.terrain_objects,
+        &mut sim.substrate,
+        particle.stable_id(),
+    );
     Ok(particle)
 }
 

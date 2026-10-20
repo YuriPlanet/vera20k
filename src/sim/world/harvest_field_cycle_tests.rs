@@ -338,6 +338,7 @@ fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
             .spawn_object("E1", "Russians", 20, 15, 0, &s.rules)
             .unwrap();
         s.sim
+            .substrate
             .mission_assign_exact(
                 victim,
                 MissionId::from_known(MissionType::Sleep),

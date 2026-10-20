@@ -112,7 +112,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
             .as_u64()
             .map(|index| houses[index as usize]),
     );
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut building =
         GameEntity::test_default_of_category(id, "B", "", 10, 11, EntityCategory::Structure);
     building.set_type_ref_for_test(sim.interner.intern("B"));
@@ -124,7 +124,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
     let mut cargo = PassengerCargo::new(10, 1.0);
     cargo.garrison_fire_index = integer(&input["fire_index"]) as u8;
     for owner in input["occupant_owners"].as_array().unwrap() {
-        let passenger_id = sim.allocate_stable_id();
+        let passenger_id = sim.substrate.allocate_stable_id();
         let mut passenger = GameEntity::test_default_of_category(
             passenger_id,
             "E1",
@@ -159,7 +159,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
         .set_for_test(integer(&input["current_hp"]));
     sim.set_building_anim_slot(id, 3, false, false, 0, &rules)
         .unwrap();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     (sim, rules, id, houses)
 }
 
@@ -399,7 +399,7 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
     let old_anim = sim
         .set_building_anim_slot(id, 3, false, false, 0, &rules)
         .unwrap();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
 
     let building = sim.substrate.entities.get(id).unwrap();

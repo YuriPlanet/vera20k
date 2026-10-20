@@ -149,7 +149,7 @@ fn insert(sim: &mut Simulation, id: u64, name: &str, category: EntityCategory, p
     entity.lifecycle.set_object_alive_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(entity);
-    sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(id + 1);
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
 }
 
 /// The oracle's map: flat Clear 128x128 cells, MapSize width 64 and the raw
@@ -402,8 +402,13 @@ impl move_mission::MoveHost for RowHost<'_> {
     }
 
     fn epilogue(&mut self) -> i32 {
-        self.sim
-            .mission_rate_epilogue_for(self.rules, OWNER, MissionType::Move)
+        Simulation::mission_rate_epilogue_for(
+            &mut self.sim.scenario_rng,
+            &self.sim.substrate,
+            self.rules,
+            OWNER,
+            MissionType::Move,
+        )
     }
 }
 

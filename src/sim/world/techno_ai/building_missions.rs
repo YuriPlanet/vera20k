@@ -4,7 +4,7 @@
 //! - the ready check before the Techno AI (`0x0043FE27..0x0043FE54`) and the
 //!   one after it (`0x0043FF91..0x0043FFB4`): with `+0x6DD` set, a successful
 //!   Commence of the queued mission clears the byte
-//!   ([`Simulation::mission_building_ready_commence`]). The first also needs
+//!   ([`ObjectSubstrate::mission_building_ready_commence`](crate::sim::world::ObjectSubstrate::mission_building_ready_commence)). The first also needs
 //!   BState (`+0x534`) out of 0, the construction body. UpdateAnimation
 //!   (`0x004509D0`) steps the one body StageClass before these checks;
 //!   construction and sale consume its shared ready byte.
@@ -44,7 +44,7 @@
 //! A Prism tower (`[General] PrismType=`) never takes Mission_Attack's FireAt
 //! arm: it recruits one charged tower of its House per visit to beam at it,
 //! then arms its own delayed shot, whose damage grows with the count
-//! ([`prism_arm`], [`Simulation::take_support_bonus`]).
+//! ([`prism_arm`], [`ObjectSubstrate::take_support_bonus`](crate::sim::world::ObjectSubstrate::take_support_bonus)).
 //!
 //! Evidence: `tools/spatial_oracle/building_guard_attack.json`, replayed in
 //! the tests below: Mission_Guard's returns and Scenario draws per arm,
@@ -98,6 +98,9 @@ use crate::sim::combat::{BuildingShot, fire_coord};
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
 use crate::sim::projectile::ProjectilePayload;
+use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 /// A building's delayed fire (`BuildingClass+0x704` mode, `+0x714`
@@ -240,25 +243,30 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: Option<&Rul
 }
 
 ///43FE27's first check requires BState!=0;43FF91's second does not.
-pub(super) fn ready_commence(sim: &mut Simulation, id: u64, before_techno: bool) {
+pub(super) fn ready_commence(
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    id: u64,
+    before_techno: bool,
+) {
     if before_techno
-        && sim
-            .substrate
+        && substrate
             .entities
             .get(id)
             .is_none_or(|entity| entity.in_construction_bstate())
     {
         return;
     }
-    let _ = sim.mission_building_ready_commence(id, sim.session.binary_frame());
+    let _ = substrate.mission_building_ready_commence(id, session.binary_frame());
 }
 
-pub(super) fn apply_queued_body(sim: &mut Simulation, id: u64) {
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.apply_queued_building_body(
-            sim.session.binary_frame() as i32,
-            sim.session.game_options(),
-        );
+pub(super) fn apply_queued_body(
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    id: u64,
+) {
+    if let Some(entity) = substrate.entities.get_mut(id) {
+        entity.apply_queued_building_body(session.binary_frame() as i32, session.game_options());
     }
 }
 
@@ -359,7 +367,7 @@ fn mission_construction(
             let sound_id = sim.interner.intern(sound);
             if let Some(world) = sim.anim_owner_coords(id) {
                 sim.sound_events
-                    .push(crate::sim::world::SimSoundEvent::ObjectSoundStarted {
+                    .emit(crate::sim::world::SimSoundEvent::ObjectSoundStarted {
                         owner: id,
                         sound_id,
                         world,
@@ -395,7 +403,7 @@ fn mission_construction(
         //465AF0 clears the shared type's loaded Buildup cache in native; VERA
         //keeps immutable retail metadata, while drawing reads BState/Stage.
         sim.sound_events
-            .push(crate::sim::world::SimSoundEvent::ObjectSoundReleased { owner: id });
+            .emit(crate::sim::world::SimSoundEvent::ObjectSoundReleased { owner: id });
     }
     1
 }
@@ -537,14 +545,34 @@ fn mission_factory_unload(
                     now,
                     &LiveReadyInputProvider { rules },
                 );
+                use crate::rules::locomotor_type::LocomotorKind;
+                let active = sim
+                    .substrate
+                    .entities
+                    .get(product)
+                    .and_then(|unit| unit.locomotor.as_ref())
+                    .map(|loco| loco.active_kind());
+                //44DED8..44DF1A dispatch on the active locomotor's CLSID.
+                //44DF72..44DFA4: a Drive product runs track 0x42 out of the
+                //bay. 44DFAD..44E163: a Teleport one (the Chrono Miner; no
+                //retail type names TS Tunnel, 44DEEA's other arm) first takes
+                //a Drive piggyback over its Teleport, the Unit setter's own
+                //install, then runs the same track. Native ends a carried
+                //piggyback when Is_Piggybacking (IPiggyback vt+0x1C) holds,
+                //where the shared install asks Is_Ok_To_End; a product fresh
+                //from the factory carries none. The no-IPiggyback C4 arm
+                //(44E165) is dead: Drive implements it.
+                if active == Some(LocomotorKind::Teleport)
+                    && let Some(unit) = sim.substrate.entities.get_mut(product)
+                {
+                    crate::sim::movement::locomotor_owner::begin_drive_for_teleporter(unit, now);
+                }
                 let drive = sim
                     .substrate
                     .entities
                     .get(product)
                     .and_then(|unit| unit.locomotor.as_ref())
-                    .is_some_and(|loco| {
-                        loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
-                    });
+                    .is_some_and(|loco| loco.active_kind() == LocomotorKind::Drive);
                 if drive {
                     sim.force_track(
                         product,
@@ -555,10 +583,7 @@ fn mission_factory_unload(
                         ctx.effects,
                     );
                 } else {
-                    //44DF1C's normal non-Drive cell setter is represented.
-                    //Teleport (and the dormant TS Tunnel) take 44DFAD's
-                    //piggyback swap and lifetime cleanup, a separate retained
-                    //locomotor mechanism.
+                    //44DF1C: any other locomotor takes the Cell beyond the bay.
                     let cell = crate::sim::movement::war_factory_exit_cell(location);
                     sim.set_unit_destination(
                         product,
@@ -596,7 +621,13 @@ fn mission_factory_unload(
         }
         _ => {}
     }
-    sim.mission_rate_epilogue_for(rules, id, MissionType::Unload)
+    Simulation::mission_rate_epilogue_for(
+        &mut sim.scenario_rng,
+        &sim.substrate,
+        rules,
+        id,
+        MissionType::Unload,
+    )
 }
 
 ///Building449540: ask the head Cell's nearest object excluding the producer.
@@ -676,15 +707,15 @@ pub(crate) fn queue_and_commence(
     let now = sim.session.binary_frame();
     let readiness = LiveReadyInputProvider { rules };
     let _ = sim.mission_queue_exact(id, MissionId::from_known(mission), 0, now, &readiness);
-    let _ = sim.mission_commence_exact(id, now);
+    let _ = sim.substrate.mission_commence_exact(id, now);
 }
 
 /// `ftol(rate x 900) + RandomRanged(0, 2)` on the Scenario stream, the rate
 /// being the MissionControl entry of the building's current mission
 /// (`0x005B3A00`).
-fn rate_delay(sim: &mut Simulation, frames: i32, multiplier: i32) -> i32 {
+fn rate_delay(scenario_rng: &mut SimRng, frames: i32, multiplier: i32) -> i32 {
     let base = frames;
-    let jitter = sim.scenario_rng.next_range_u32_inclusive(0, 2) as i32;
+    let jitter = scenario_rng.next_range_u32_inclusive(0, 2) as i32;
     base.wrapping_mul(multiplier).wrapping_add(jitter)
 }
 
@@ -722,7 +753,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
         }
         // `0x004497AF..0x004497DA`: the AARate delay.
         let frames = rules.mission_control.aa_rate_frames(current);
-        return rate_delay(sim, frames, 1);
+        return rate_delay(&mut sim.scenario_rng, frames, 1);
     }
     if obj.has_stupid_guard_mode {
         return STUPID_GUARD_DELAY;
@@ -794,7 +825,11 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
     }
     // `0x004499BB..0x00449A36`: Rate for a depot, three times it otherwise.
     let frames = rules.mission_control.rate_frames(current);
-    rate_delay(sim, frames, if obj.unit_repair { 1 } else { 3 })
+    rate_delay(
+        &mut sim.scenario_rng,
+        frames,
+        if obj.unit_repair { 1 } else { 3 },
+    )
 }
 
 /// `BuildingClass::Mission_Attack` (`0x0044ACF0`).
@@ -855,7 +890,7 @@ fn attack_prelude(sim: &mut Simulation, id: u64, rules: &RuleSet) -> Option<(Tar
             None,
             crate::sim::world::FrameEffects::default(),
         );
-        clear_support_count(sim, id);
+        clear_support_count(&mut sim.substrate, id);
         //44AFA5..44AFB1: the warp-in readiness gate precedes705D60 ->6385C0.
         sim.planning_enter_idle(id);
         if !waits(sim, id) {
@@ -887,7 +922,7 @@ fn attack_arm(
             fire_arm(sim, id, rules, target, weapon, ctx, bridge_state_changed);
             // The tail every OK arm reaches (`0x0044B6D6..0x0044B724`).
             if !gattling_step(sim, id, rules, StageCall::Increase, ctx.effects) {
-                advance_turret_anim(sim, id);
+                advance_turret_anim(&mut sim.substrate, id);
             }
             1
         }
@@ -900,7 +935,7 @@ fn attack_arm(
                 ctx.overlay_registry,
                 ctx.effects,
             );
-            clear_support_count(sim, id);
+            clear_support_count(&mut sim.substrate, id);
             //44B0F3..44B0FF: retain the Wait queued by planned dispatch.
             sim.planning_enter_idle(id);
             if waits(sim, id) {
@@ -909,7 +944,7 @@ fn attack_arm(
             // `0x0044B113..0x0044B131`, before Commence zeroes the count.
             gattling_step(sim, id, rules, StageCall::Update, ctx.effects);
             queue_and_commence(sim, id, MissionType::Guard, rules);
-            clear_ai_counter(sim, id);
+            clear_ai_counter(&mut sim.substrate, id);
             1
         }
         // `0x0044B187` and `0x0044B1DE`: after Set_Desired, a Gattling type
@@ -920,7 +955,7 @@ fn attack_arm(
             if !gattling_step(sim, id, rules, StageCall::Increase, ctx.effects)
                 && code == FireError::Rearm
             {
-                advance_turret_anim(sim, id);
+                advance_turret_anim(&mut sim.substrate, id);
             }
             2
         }
@@ -930,7 +965,7 @@ fn attack_arm(
             crate::sim::combat::world_fire::start_uncloaking_to_fire(sim, rules, id);
             gattling_step(sim, id, rules, StageCall::Update, ctx.effects);
             aim_turret(sim, id, rules, target);
-            clear_ai_counter(sim, id);
+            clear_ai_counter(&mut sim.substrate, id);
             1
         }
         // `0x0044B24F`: a Gattling type decays (`0x0044B26C`); any other
@@ -942,7 +977,7 @@ fn attack_arm(
         // Codes 4, 7 and above 10 (`0x0044B14E`).
         FireError::Rotating | FireError::Moving | FireError::MustDeploy => {
             aim_turret(sim, id, rules, target);
-            clear_ai_counter(sim, id);
+            clear_ai_counter(&mut sim.substrate, id);
             1
         }
     }
@@ -992,8 +1027,8 @@ impl PrismSupport {
 }
 
 /// `+0x664 = 0`, the Prism support count, after both tails' SetTarget(0).
-fn clear_support_count(sim: &mut Simulation, id: u64) {
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+fn clear_support_count(substrate: &mut ObjectSubstrate, id: u64) {
+    if let Some(entity) = substrate.entities.get_mut(id) {
         entity.prism_support_count.reset();
     }
 }
@@ -1001,8 +1036,8 @@ fn clear_support_count(sim: &mut Simulation, id: u64) {
 /// `+0xC4 = 0`: Mission_Attack's zeroes (`0x0044B131`, `0x0044B174`,
 /// `0x0044B1CB`, `0x0044B222`, `0x0044B271`, `0x0044B2B1`, `0x0044B6F4`) and
 /// Mission_Guard's (`0x004496DF`).
-fn clear_ai_counter(sim: &mut Simulation, id: u64) {
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+fn clear_ai_counter(substrate: &mut ObjectSubstrate, id: u64) {
+    if let Some(entity) = substrate.entities.get_mut(id) {
         entity.mission.clear_ai_counter();
     }
 }
@@ -1042,15 +1077,15 @@ fn gattling_step(
         StageCall::Increase => sim.gattling_increase(id, rules, ticks, effects),
         StageCall::Update => sim.gattling_update(id, rules, ticks, effects),
     }
-    clear_ai_counter(sim, id);
+    clear_ai_counter(&mut sim.substrate, id);
     true
 }
 
 /// `+0x148 += 1`, the voxel turret's animation counter.
 /// `BuildingClass::Mission_Attack @ 0x0044ACF0` for a non-Gattling type: the OK tail
 /// (`0x0044B6D6..0x0044B724`) and REARM (`0x0044B235..0x0044B23C`).
-fn advance_turret_anim(sim: &mut Simulation, id: u64) {
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+fn advance_turret_anim(substrate: &mut ObjectSubstrate, id: u64) {
+    if let Some(entity) = substrate.entities.get_mut(id) {
         entity.turret_anim_frame.advance();
     }
 }
@@ -1067,7 +1102,7 @@ fn advance_turret_anim(sim: &mut Simulation, id: u64) {
 ///   the target), then `+0x148` again while the value is above 0
 ///   (`0x0043FF6C..0x0043FF8B`).
 pub(super) fn gattling_idle(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    if !super::ai_alive(sim, id) {
+    if !super::ai_alive(&sim.substrate, id) {
         return;
     }
     let Some(obj) = sim
@@ -1324,7 +1359,7 @@ fn prism_supporter(
 /// - A shot (mode 1, `0x0045045E..0x00450492`) needs a target and
 ///   GetFireError(target, `+0x708`, range) answering OK; then its FireAt at
 ///   that target commits synchronously through [`BuildingShot::Delayed`],
-///   whose bullet takes the support bonus ([`Simulation::take_support_bonus`]).
+///   whose bullet takes the support bonus ([`ObjectSubstrate::take_support_bonus`](crate::sim::world::ObjectSubstrate::take_support_bonus)).
 ///   Otherwise the shot is dropped and `+0x664` kept.
 /// - A support beam (mode 2, `0x0044ABD0`): construct the beam, then
 ///   `+0x664 = 0` (`0x0044ACCA`) and the downtime: the rearm timer
@@ -1502,25 +1537,6 @@ pub(super) fn range_drop(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: Ob
 }
 
 impl Simulation {
-    /// The bonus ProcessDelayedFire writes on the bullet its FireAt returned
-    /// (`0x00450496..0x004504CD`): a building with a support count (`+0x664`)
-    /// gives the bullet the [`support_multiplier`] of it (`+0x150`) and
-    /// restarts the count; with none the bullet keeps Construct's
-    /// [`ProjectilePayload::UNSCALED`]. The live receiver asks it for a
-    /// launched delayed shot only ([`BuildingShot::Delayed`]); FireAt's early
-    /// exits and a refused launch return no bullet and keep the count.
-    pub(crate) fn take_support_bonus(&mut self, id: u64, rules: &RuleSet) -> i32 {
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
-            return ProjectilePayload::UNSCALED;
-        };
-        let count = entity.prism_support_count.count();
-        if count == 0 {
-            return ProjectilePayload::UNSCALED;
-        }
-        entity.prism_support_count.reset();
-        support_multiplier(rules.general.prism_support.modifier, count)
-    }
-
     /// `BuildingClass::SetTarget` (vt+0x3C8, `0x00443B90`)'s admission of a
     /// requested target for a building: a Selling building (`+0xAC`) or one
     /// not operational (vt+0x350, `0x004555D0`) takes none; any other keeps a
@@ -1596,6 +1612,27 @@ impl Simulation {
             let _ = mission_attack(self, id, rules, ctx, &mut false);
         }
         process_delayed_fire(self, id, rules, ctx, &mut false);
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// The bonus ProcessDelayedFire writes on the bullet its FireAt returned
+    /// (`0x00450496..0x004504CD`): a building with a support count (`+0x664`)
+    /// gives the bullet the [`support_multiplier`] of it (`+0x150`) and
+    /// restarts the count; with none the bullet keeps Construct's
+    /// [`ProjectilePayload::UNSCALED`]. The live receiver asks it for a
+    /// launched delayed shot only ([`BuildingShot::Delayed`]); FireAt's early
+    /// exits and a refused launch return no bullet and keep the count.
+    pub(crate) fn take_support_bonus(&mut self, id: u64, rules: &RuleSet) -> i32 {
+        let Some(entity) = self.entities.get_mut(id) else {
+            return ProjectilePayload::UNSCALED;
+        };
+        let count = entity.prism_support_count.count();
+        if count == 0 {
+            return ProjectilePayload::UNSCALED;
+        }
+        entity.prism_support_count.reset();
+        support_multiplier(rules.general.prism_support.modifier, count)
     }
 }
 
