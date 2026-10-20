@@ -303,11 +303,9 @@ fn query_flight_predicate(
 }
 
 /// Shared Object virtual+50/+54 (5F6B60/5F6B90), after class overrides.
-pub(crate) fn object_flight_predicate(
-    marked: bool,
-    height: impl FnOnce() -> i32,
-    high: bool,
-) -> bool {
+/// Callers with a read-only terrain snapshot can supply its height without
+/// stamping the simulation's shared fallback Cell (presentation does this).
+pub fn object_flight_predicate(marked: bool, height: impl FnOnce() -> i32, high: bool) -> bool {
     // The original short-circuits before GetHeight; a map query can stamp the
     // shared fallback cell even when its numeric result would be discarded.
     marked && (height() >= crate::util::lepton::HIGH_FLIGHT_THRESHOLD_LEPTONS as i32) == high

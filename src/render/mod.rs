@@ -80,6 +80,7 @@ pub mod terrain_instances;
 pub mod tile_atlas;
 pub mod unit_atlas;
 pub mod unit_pose_cache;
+pub(crate) mod unit_shadow;
 pub mod upscale_pass;
 #[cfg(test)]
 mod voxel_parity_tests;
