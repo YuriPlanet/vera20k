@@ -567,7 +567,9 @@ impl Simulation {
     fn command_uses_frame_ingress(command: &Command) -> bool {
         matches!(
             command,
-            Command::SetGameSpeed { .. } | Command::Select { .. }
+            Command::SetGameSpeed { .. }
+                | Command::Select { .. }
+                | Command::GameSpeedChangeNotice { .. }
         )
     }
 
@@ -595,6 +597,13 @@ impl Simulation {
             }) {
                 match &command.payload {
                     Command::SetGameSpeed { speed } => {
+                        if self.houses.contains_key(&owner) {
+                            let _ = self.session.apply_in_game_speed(*speed);
+                        }
+                    }
+                    // 0x0D live notice applies the new GameSpeed setting at the
+                    // same master-frame ingress as the offline SetGameSpeed.
+                    Command::GameSpeedChangeNotice { speed } => {
                         if self.houses.contains_key(&owner) {
                             let _ = self.session.apply_in_game_speed(*speed);
                         }

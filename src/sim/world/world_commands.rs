@@ -18,8 +18,8 @@ use crate::sim::combat;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::combat::combat_aoe::CellTargetDetach;
 use crate::sim::command::{
-    COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, ExitRecord, MegaMissionOrder,
-    MegaMissionRecord, MegaMissionTarget, ScatterRecord, SellWallAtCellRecord,
+    COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, ExitRecord, GameSpeedNoticeRecord,
+    MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, ScatterRecord, SellWallAtCellRecord,
 };
 use crate::sim::mission::MissionType;
 use crate::sim::overlay_grid::{
@@ -681,6 +681,22 @@ impl Simulation {
                 .houses
                 .contains_key(&owner)
                 .then(|| CommandEnvelope::new(owner, execute_tick, Command::Destruct));
+        }
+
+        // Native opcode 0x0D (EventClass::Execute type-13 @ 0x004C794B): the
+        // payload dword at Event+7 is the new GameSpeed setting; the changer is
+        // the header house. It is SetGameSpeed's live-network twin.
+        if let Some(typed) = GameSpeedNoticeRecord::decode(record) {
+            let house_index = usize::try_from(typed.house_id).ok()?;
+            let owner = *self.houses.order().get(house_index)?;
+            let speed = u8::try_from(typed.speed).ok()?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::GameSpeedChangeNotice { speed },
+                )
+            });
         }
 
         let typed = SellWallAtCellRecord::decode(record)?;
@@ -1476,6 +1492,9 @@ impl Simulation {
             // ingress so early authoritative animation work sees the new rate.
             // Reaching the ordinary EventClass-shaped tail must not apply one.
             Command::SetGameSpeed { .. } => false,
+            // The 0x0D live notice is likewise consumed at master-frame ingress;
+            // reaching the EventClass-shaped tail must not apply it.
+            Command::GameSpeedChangeNotice { .. } => false,
             Command::Cheer => {
                 let (Some(owner), Some(rules)) = (self.interner.get(command_owner), rules) else {
                     return false;

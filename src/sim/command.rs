@@ -39,6 +39,48 @@ pub const CHEER_OPCODE: u8 = 0x2d;
 pub const MEGAMISSION_OPCODE: u8 = 0x04;
 /// Native selected-object Scatter event.
 pub const SCATTER_OPCODE: u8 = 0x07;
+/// Native `EventClass` opcode 0x0D: the live game-speed change notice. The
+/// type-13 entry (`0x004C794B`) writes the payload dword at Event+7 into the
+/// GameSpeed setting global `0x00A8EB60` (its `GameControls: GameSpeed = %d,
+/// ...` format @ `0x0082280C`); the changer is the header house. Offline Options
+/// reuses `SetGameSpeed`; this is that command's live-network twin.
+pub const GAME_SPEED_NOTICE_OPCODE: u8 = 0x0d;
+
+/// Payload of the native game-speed change notice (opcode `0x0D`). Native
+/// `EventClass::Execute` `0x004C6CB0` type-13 (`0x004C794B`) reads the setting
+/// dword at Event+7; the issuing/header house rides the record header, matching
+/// `GameControls: GameSpeed = %d` @ `0x0082280C`. It is `SetGameSpeed`'s
+/// live-network twin, kept for the separate EventClass-tail timing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GameSpeedNoticeRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub speed: i32,
+}
+
+impl GameSpeedNoticeRecord {
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        let mut payload = [0u8; 4];
+        payload.copy_from_slice(&self.speed.to_le_bytes());
+        CommandRecord::encode(
+            GAME_SPEED_NOTICE_OPCODE,
+            i32::from(self.house_id),
+            self.frame,
+            &payload,
+        )
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != GAME_SPEED_NOTICE_OPCODE {
+            return None;
+        }
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            speed: i32::from_le_bytes(record.payload()[..4].try_into().ok()?),
+        })
+    }
+}
 
 const MEGAMISSION_SOURCE_VALUE_OFFSET: usize = 0;
 const MEGAMISSION_SOURCE_KIND_OFFSET: usize = 4;
@@ -819,6 +861,12 @@ pub enum Command {
     /// (`EventClass::Execute 0x004C7B73`): Flag_To_Die when it is human.
     /// Appended to preserve existing serialized variant indices.
     RemovePlayer { house_index: i32 },
+    /// Live game-speed change notice (native opcode 0x0D): the payload dword at
+    /// Event+7 is the new GameSpeed setting (`0x00A8EB60`; format @
+    /// `0x0082280C`), issued by the header house. Offline Options reuses
+    /// `SetGameSpeed`; this is its live-network twin. Appended to preserve
+    /// existing serialized/replayed command variant indices.
+    GameSpeedChangeNotice { speed: u8 },
 }
 
 impl Command {

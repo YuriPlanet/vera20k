@@ -177,6 +177,62 @@ fn game_speed_transition_applies_at_ingress_before_triggers_and_hash() {
     ]));
 }
 
+#[test]
+fn game_speed_change_notice_decodes_and_applies_at_ingress() {
+    // Native opcode 0x0D (EventClass::Execute type-13 @ 0x004C794B): the payload
+    // dword at Event+7 is the new GameSpeed setting (0x00A8EB60); the changer is
+    // the header house. It is SetGameSpeed's live-network twin and applies at the
+    // same master-frame ingress, never at the EventClass-shaped tail.
+    let (mut sim, owner) = game_speed_command_sim();
+    let (mut control, _) = game_speed_command_sim();
+
+    // decode: a native 0x0D record for header house 0 (== owner) carrying speed 5.
+    let record = crate::sim::command::GameSpeedNoticeRecord {
+        house_id: 0,
+        frame: 1,
+        speed: 5,
+    }
+    .encode()
+    .expect("encode 0x0D notice");
+    let decoded = sim
+        .decode_native_command_record(&record, 1)
+        .expect("a 0x0D record decodes");
+    assert_eq!(decoded.owner, owner);
+    assert_eq!(decoded.payload, Command::GameSpeedChangeNotice { speed: 5 });
+
+    let command = CommandEnvelope::new(owner, 1, Command::GameSpeedChangeNotice { speed: 5 });
+    let result = sim
+        .advance_master_frame(
+            &[command],
+            None,
+            None,
+            67,
+            TickLane::Ordinary,
+            false,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .expect("fixture frame must complete")
+        .into_tick();
+    let control_result = control
+        .advance_master_frame(
+            &[],
+            None,
+            None,
+            67,
+            TickLane::Ordinary,
+            false,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .expect("fixture frame must complete")
+        .into_tick();
+
+    assert!(result.frame_committed);
+    assert_eq!(result.executed_commands, 1);
+    assert_eq!(sim.session.game_options().game_speed, 5);
+    assert_eq!(control.session.game_options().game_speed, 1);
+    assert_ne!(result.state_hash, control_result.state_hash);
+}
+
 /// A launch hashes every frame and a test world none until the caller asks.
 /// Then only a frame whose tick is a multiple of the interval hashes, and its
 /// hash is the state's.
