@@ -530,6 +530,7 @@ mod tests {
         for (name, powered, slots) in [
             ("NARADR", true, &[3][..]),
             ("NAPSIS", true, &[3][..]),
+            ("GASPYSAT", true, &[3][..]),
             ("NAINDP", true, &[18][..]),
             ("GAROBO", true, &[3][..]),
             ("GAAIRC", false, &[3, 4, 5][..]),
