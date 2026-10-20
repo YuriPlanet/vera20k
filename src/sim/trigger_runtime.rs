@@ -702,6 +702,47 @@ impl TriggerRuntime {
     pub(crate) fn has_live_trigger(&self, id: usize) -> bool {
         self.trigger(id).is_some()
     }
+
+    /// Map568CDB..568DCA's fresh InitCellAttributes line-marker subset.
+    /// The caller supplies its existing anti-diagonal final cell iterator and
+    /// the MapClass cell-array rect (`+0x124..+0x130`) the lines span.
+    /// Horizontal25 wins over vertical26 for a Tag carrying both. Flags
+    /// remain on cells after a later Tag detach, as the native writer does.
+    /// Steam gamemd; tools/spatial_oracle/tag_lifecycle --line-events.
+    pub(crate) fn initialize_cell_trigger_lines(
+        &self,
+        bounds: crate::sim::scenario_bootstrap::NativeStartBounds,
+        terrain: &mut ResolvedTerrainGrid,
+        cells: impl Iterator<Item = (i32, i32)>,
+    ) {
+        for (x, y) in cells {
+            let source = terrain.native_cell_identity((x as i16, y as i16));
+            let Some(tag) = self.cell_tags.get(&source).copied() else {
+                continue;
+            };
+            let Some(tag) = self.tag(tag) else {
+                continue;
+            };
+            let coord = terrain.native_cell_coord(source);
+            let (kind, count, flag) = if self.definitions.has_event(tag.type_index, 25) {
+                (25, bounds.width, 0x100000)
+            } else if self.definitions.has_event(tag.type_index, 26) {
+                (26, bounds.height, 0x200000)
+            } else {
+                continue;
+            };
+            for offset in 0..count {
+                let cell = if kind == 25 {
+                    (bounds.min_rx.wrapping_add(offset) as i16, coord.1)
+                } else {
+                    (coord.0, bounds.min_ry.wrapping_add(offset) as i16)
+                };
+                let identity = terrain.native_cell_identity(cell);
+                let flags = terrain.native_cell_flags(identity) | flag;
+                terrain.write_native_cell_flags(identity, flags);
+            }
+        }
+    }
     pub(crate) fn hash_state(&self, hasher: &mut impl Hasher) {
         // Definition ordinals, timers, active registration order, attachments
         // and the deferred queue affect later actions and are all retained.
@@ -1259,54 +1300,6 @@ impl Simulation {
             .as_ref()
             .expect("live CellTags require installed native map cell storage");
         NativeCellQuery::canonical(terrain).lookup(cell)
-    }
-
-    /// Map568CDB..568DCA's fresh InitCellAttributes line-marker subset.
-    /// The caller supplies its existing anti-diagonal final cell iterator.
-    /// Horizontal25 wins over vertical26 for a Tag carrying both. Flags
-    /// remain on cells after a later Tag detach, as the native writer does.
-    /// Steam gamemd; tools/spatial_oracle/tag_lifecycle --line-events.
-    pub(crate) fn initialize_cell_trigger_lines(
-        &self,
-        terrain: &mut crate::map::resolved_terrain::ResolvedTerrainGrid,
-        cells: impl Iterator<Item = (i32, i32)>,
-    ) {
-        let bounds = crate::sim::scenario_bootstrap::NativeStartBounds::from_session(self, terrain);
-        for (x, y) in cells {
-            let source = terrain.native_cell_identity((x as i16, y as i16));
-            let Some(tag) = self.trigger_runtime.cell_tags.get(&source).copied() else {
-                continue;
-            };
-            let Some(tag) = self.trigger_runtime.tag(tag) else {
-                continue;
-            };
-            let coord = terrain.native_cell_coord(source);
-            let (kind, count, flag) = if self
-                .trigger_runtime
-                .definitions
-                .has_event(tag.type_index, 25)
-            {
-                (25, bounds.width, 0x100000)
-            } else if self
-                .trigger_runtime
-                .definitions
-                .has_event(tag.type_index, 26)
-            {
-                (26, bounds.height, 0x200000)
-            } else {
-                continue;
-            };
-            for offset in 0..count {
-                let cell = if kind == 25 {
-                    (bounds.min_rx.wrapping_add(offset) as i16, coord.1)
-                } else {
-                    (coord.0, bounds.min_ry.wrapping_add(offset) as i16)
-                };
-                let identity = terrain.native_cell_identity(cell);
-                let flags = terrain.native_cell_flags(identity) | flag;
-                terrain.write_native_cell_flags(identity, flags);
-            }
-        }
     }
 
     /// Object+34 nonnull gate; dispatch itself owns Tag liveness.

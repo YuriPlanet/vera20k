@@ -132,19 +132,6 @@ pub(crate) fn fly_speed_facts(
     }
 }
 
-/// Spawn owns Aircraft initialization. Legacy/headless movers may lack the
-/// Secondary controller; initialize it once from the body's heading without
-/// replacing an existing live turn. The body's rate stands in for `ROT=`:
-/// the Aircraft constructor (`0x00413FD2..0x00414015`) gives both
-/// controllers that one value.
-pub fn ensure_fly_secondary_facing(entity: &mut crate::sim::game_entity::GameEntity) {
-    let initial = entity.body_facing.destination();
-    let body = &entity.body_facing;
-    entity
-        .barrel_facing
-        .get_or_insert_with(|| super::FacingClass::with_rate_of(initial, body));
-}
-
 /// Shared represented MoveTo/BeginTakeoff refusal gates. EMP still requires
 /// its missing native owner, and Foot+6A0 paralysis
 /// ([`FootParasite::is_paralyzed`](crate::sim::combat::parasite::FootParasite::is_paralyzed))

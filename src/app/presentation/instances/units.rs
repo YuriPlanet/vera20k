@@ -2353,7 +2353,7 @@ mod tests {
             entity
                 .body_facing
                 .snap(input["primary"].as_u64().unwrap() as u16, 0);
-            crate::sim::movement::air_movement::ensure_fly_secondary_facing(&mut entity);
+            entity.ensure_fly_secondary_facing();
             entity
                 .barrel_facing
                 .as_mut()
@@ -2379,7 +2379,7 @@ mod tests {
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 0, 0);
         entity.set_category_for_test(EntityCategory::Aircraft);
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
-        crate::sim::movement::air_movement::ensure_fly_secondary_facing(&mut entity);
+        entity.ensure_fly_secondary_facing();
         assert_eq!(
             body_draw(&entity, EntityDrawBand::Top, 0, false, false),
             BodyDraw::Composite

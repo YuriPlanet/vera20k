@@ -305,6 +305,24 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         top_panel: false,
         campaign_score: false,
     },
+    // The WOL persona questions 0x112 (Yes, then No) and 0xFE (OK, created
+    // disabled and still counted, then Cancel): executed slide records.
+    SlideDialogSpec {
+        dialog_id: 0x0112,
+        top_buttons: 1,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+        campaign_score: false,
+    },
+    SlideDialogSpec {
+        dialog_id: 0x00FE,
+        top_buttons: 1,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+        campaign_score: false,
+    },
     SlideDialogSpec {
         dialog_id: 0x00D6,
         top_buttons: 0,

@@ -2766,7 +2766,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .expect("admitted Fly callback");
-        air_movement::ensure_fly_secondary_facing(entity);
+        entity.ensure_fly_secondary_facing();
         let state = entity
             .locomotor
             .as_mut()

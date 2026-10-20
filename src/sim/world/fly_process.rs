@@ -167,7 +167,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return stats;
         };
-        air_movement::ensure_fly_secondary_facing(entity);
+        entity.ensure_fly_secondary_facing();
         let living = entity.health.current() > 0;
         let Some(state) = entity
             .locomotor
@@ -732,7 +732,7 @@ impl Simulation {
             entity.body_facing.set(primary, frame);
         }
         if let Some(secondary) = secondary {
-            air_movement::ensure_fly_secondary_facing(entity);
+            entity.ensure_fly_secondary_facing();
             if let Some(facing) = entity.barrel_facing.as_mut() {
                 facing.set(secondary, frame);
             }

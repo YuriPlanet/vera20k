@@ -58,14 +58,13 @@ pub(crate) fn combo_popup(login: &WolLoginState, layout: &WolLoginLayout) -> Opt
     ))
 }
 
-/// After `0x00787010` closed the server-list wait: `0x72C600` art, the
-/// empty backdrop and `UI__BeginDialog(0x10F)`.
+/// After `0x00787010`'s silent steps (`0x007873CC..0x0078741B`): `0x72C600`
+/// art, the empty backdrop and `UI__BeginDialog(0x10F)`. The nickname is the
+/// process global the flow prefilled.
 pub(super) fn open(state: &mut AppState) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    // The nickname stays the process global; LastValid and AutoLogin live in
-    // wolinfoMD.ini, which retail does not ship, so both read empty.
     let login = WolLoginState::open(&mut state.frontend.wol_account, &visit.credentials);
     visit.page = WolPage::Login(Box::new(login));
     open_login_art(state);
@@ -93,9 +92,18 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
             state,
             shell_transition::ShellExitThen::WolLoginClose(result),
         ),
-        WolLoginAction::Forget { slot, .. } => {
-            // AutoLogin/LastValid would be cleared here when they match; with
-            // no wolinfoMD.ini both are empty.
+        WolLoginAction::Forget { slot, nickname } => {
+            // 0x0079A6F0..0x0079A7B6: a lowered match clears AutoLogin, then
+            // LastValid.
+            if let Some(file) = super::persona::info_file(state) {
+                let name = nickname.to_ascii_lowercase();
+                if file.auto_login().to_ascii_lowercase() == name {
+                    file.set_auto_login("");
+                }
+                if file.last_valid().to_ascii_lowercase() == name {
+                    file.set_last_valid("");
+                }
+            }
             if let Some(visit) = state.frontend.wol.as_mut() {
                 visit.credentials.retain(|stored| stored.slot != slot);
             }

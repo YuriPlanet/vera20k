@@ -569,6 +569,24 @@ impl MultiplayerShellRuntime {
             .truncate(MULTIPLAYER_HANDLE_LIMIT_BYTES);
     }
 
+    /// `0x0069B760(side, 0)` and `0x0069B7E0(color, 0)`: with the draw flag
+    /// clear, -2 (Random) stores item data 0 with Ex -2 and any other value
+    /// is a concrete pick with Ex -1. The WOL connect applies the persona's
+    /// Country and Color this way (`0x00786938`, `0x0078694B`). The draw
+    /// branch (flag set) has no caller here.
+    pub(crate) fn set_side_and_color(&mut self, side: i32, color: i32) {
+        let pick = |value: i32| {
+            if value == RANDOM_ITEM_DATA {
+                (0, RANDOM_ITEM_DATA)
+            } else {
+                (value, CONCRETE_ITEM_DATA)
+            }
+        };
+        let preferences = &mut self.local_preferences;
+        (preferences.side, preferences.side_ex) = pick(side);
+        (preferences.color_index, preferences.color_ex) = pick(color);
+    }
+
     pub(crate) fn lan_observer(&self) -> bool {
         self.lan_observer_mode != 0
     }

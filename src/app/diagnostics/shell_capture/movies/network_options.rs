@@ -73,7 +73,7 @@ fn persisted_state(state: &AppState) -> Result<Value> {
         .as_ref()
         .context("D7 capture game config")?
         .paths
-        .ra2_dir
+        .settings_dir()
         .join("RA2MD.INI");
     let bytes =
         std::fs::read(&path).with_context(|| format!("read saved settings {}", path.display()))?;
@@ -217,7 +217,7 @@ impl MoviesCapture {
                     self.route.push(json!({"dialog": 0xd7, "frame": frame,
                         "action": "controlled service and prior-settings inputs",
                         "native_case": target.native_case(), "initial": initial,
-                        "cards": cards, "profile_directory": state.platform.game_config.as_ref().map(|config| &config.paths.ra2_dir)}));
+                        "cards": cards, "profile_directory": state.platform.game_config.as_ref().map(|config| config.paths.settings_dir())}));
                     self.phase = Phase::NetworkOptionsInput;
                 }
             }

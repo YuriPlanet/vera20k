@@ -3384,6 +3384,31 @@ impl Simulation {
         self.overlay_grid = Some(grid);
     }
 
+    /// The authored loader runs the final InitCellAttributes sweep on the live
+    /// map grid outside the simulation, then installs it again through
+    /// [`Self::install_resolved_terrain_for_new_map`].
+    pub(crate) fn take_resolved_terrain_for_load(&mut self) -> Option<ResolvedTerrainGrid> {
+        self.resolved_terrain.take()
+    }
+
+    /// Install the bridge record vector a load builds from the map grid's
+    /// CellClass state, or its rebuild after a crate `OverlayClass::Mark` batch.
+    pub(crate) fn install_bridge_runtime(&mut self, bridges: BridgeRuntimeState) {
+        self.bridge_state = Some(bridges);
+    }
+
+    /// Install the map's `[Smudge]` grid and mark the cells it seeded dirty.
+    pub(crate) fn install_smudge_grid(&mut self, smudges: SmudgeGrid) {
+        self.smudge_grid = Some(smudges);
+        Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
+    }
+
+    /// Install the native unique-id cursor a scenario prefix plan staged,
+    /// before terrain Fill constructs the first map object.
+    pub(crate) fn install_native_unique_id_cursor(&mut self, cursor: NativeUniqueIdCursor) {
+        self.native_unique_ids = Some(cursor);
+    }
+
     // Client-crate fixtures for operations that take their owners.
 
     #[cfg(any(test, feature = "test-support"))]

@@ -70,6 +70,8 @@ pub(crate) mod sinking;
 pub mod skirmish_shell_chrome;
 pub mod smudge;
 pub mod sprite_atlas;
+pub mod status_font;
+pub(crate) mod status_font_data;
 pub(crate) mod surface_line;
 pub mod tactical_compat;
 pub mod tactical_draw_plan;

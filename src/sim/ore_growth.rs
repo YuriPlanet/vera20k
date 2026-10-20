@@ -169,6 +169,16 @@ impl OreGrowthConfig {
         }
     }
 
+    /// Re-read the gates for the scenario being loaded ([`Self::resolve`]).
+    pub(crate) fn reload_for_scenario(
+        &mut self,
+        basic: &BasicSection,
+        special_flags: &SpecialFlagsSection,
+        session: &crate::sim::scenario_session::ScenarioSession,
+    ) {
+        *self = Self::resolve(basic, special_flags, session);
+    }
+
     /// Disabled config — no growth or spread.
     pub fn disabled() -> Self {
         Self {
@@ -580,6 +590,13 @@ impl OreGrowthState {
             native_tiberium: NativeTiberiumState::default(),
             native_rect: (map_width, map_height),
         }
+    }
+
+    /// Drop every queue and size the state for a `map_width` x `map_height`
+    /// cell array, as a scenario load does before it rebuilds the queues
+    /// ([`initialize_native_tiberium_queues`](crate::sim::runtime::initialize_native_tiberium_queues)).
+    pub(crate) fn reset_for_cell_array(&mut self, map_width: u16, map_height: u16) {
+        *self = Self::new(map_width, map_height);
     }
 
     /// The native `MapRect` the queue stores are sized and walked from.

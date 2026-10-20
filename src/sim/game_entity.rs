@@ -392,7 +392,7 @@ pub struct GameEntity {
     /// [`FacingClass`] that moves only through its own methods. VERA keeps
     /// one for a `Turret=yes` unit and every aircraft: construction installs
     /// it (`world_spawn::construction`) and a Fly order installs it on an
-    /// aircraft built without one (`air_movement::ensure_fly_secondary_facing`).
+    /// aircraft built without one ([`Self::ensure_fly_secondary_facing`]).
     /// A building aims its [`Self::body_facing`] instead.
     ///
     /// [`FacingClass`]: crate::sim::movement::FacingClass
@@ -1367,6 +1367,18 @@ impl GameEntity {
             } else {
                 type_rot
             });
+    }
+
+    /// Spawn owns Aircraft initialization. Legacy/headless movers may lack the
+    /// Secondary controller; initialize it once from the body's heading without
+    /// replacing an existing live turn. The body's rate stands in for `ROT=`:
+    /// the Aircraft constructor (`0x00413FD2..0x00414015`) gives both
+    /// controllers that one value.
+    pub fn ensure_fly_secondary_facing(&mut self) {
+        let initial = self.body_facing.destination();
+        let body = &self.body_facing;
+        self.barrel_facing
+            .get_or_insert_with(|| crate::sim::movement::FacingClass::with_rate_of(initial, body));
     }
 
     pub(crate) fn set_owner_from_store(

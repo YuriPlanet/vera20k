@@ -153,10 +153,14 @@ impl AppState {
     }
 
     /// Whether the software cursor (mouse.shp) should be active this frame.
-    /// Asset-independent status cards and diagnostic modals use the OS cursor.
+    /// Asset-independent status cards and diagnostic modals use the OS cursor,
+    /// and so does the pointer once it leaves the client area: mouse.shp has no
+    /// art for the title bar or resize border, and the OS arrow is drawn there
+    /// whether VERA asks for it or not.
     pub(crate) fn use_software_cursor(&self) -> bool {
-        !(self.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && self.frontend.main_menu_shell_error.is_some())
+        self.platform.pointer_in_client
+            && !(self.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+                && self.frontend.main_menu_shell_error.is_some())
             && self
                 .match_state
                 .match_presentation

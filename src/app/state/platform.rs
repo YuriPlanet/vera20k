@@ -35,6 +35,22 @@ pub(crate) struct PlatformState {
     /// the OS drops the clip on alt-tab. Presentation-only — never serialized or
     /// read by the deterministic simulation.
     pub(crate) cursor_confined: bool,
+    /// Whether the OS pointer is inside the window's client area, from winit's
+    /// enter/leave edges. Outside it the system owns the pointer — the title bar
+    /// and resize border need the system arrow, which `DefWindowProc` installs
+    /// for every non-client `WM_SETCURSOR` hit — so VERA draws no mouse.shp
+    /// there and asks for a visible OS cursor. A clipped (`cursor_confined`)
+    /// pointer cannot leave, so this only moves while the lock is off.
+    /// Presentation-only — never serialized or read by the deterministic
+    /// simulation.
+    pub(crate) pointer_in_client: bool,
+    /// The last visibility handed to `Window::set_cursor_visible`, so a steady
+    /// frame does not re-issue it. winit's call is not free on Windows: it runs
+    /// `refresh_os_cursor`, which clears any OS cursor clip winit does not itself
+    /// own, so repeating it per frame would tear `cursor_confined` down every
+    /// frame. `show_os_cursor_only_without_game_cursor` is the only writer and
+    /// re-asserts the clip after each transition. Presentation-only.
+    pub(crate) os_cursor_visible: Option<bool>,
     /// Live message-pump modifiers for focused shell controls. Gameplay keeps
     /// its separate paused-input admission snapshot.
     pub(crate) live_modifiers: winit::keyboard::ModifiersState,
@@ -86,6 +102,8 @@ impl PlatformState {
         Self {
             window,
             cursor_confined: true,
+            pointer_in_client: true,
+            os_cursor_visible: None,
             live_modifiers: winit::keyboard::ModifiersState::empty(),
             held_modifier_keys: Default::default(),
             window_active: true,

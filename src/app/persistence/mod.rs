@@ -9,6 +9,7 @@ pub(crate) mod commands;
 pub(crate) mod options;
 pub(crate) mod options_profile;
 mod resource_load;
+pub(crate) mod wol_profile;
 pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 
 use std::path::{Path, PathBuf};

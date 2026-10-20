@@ -31,11 +31,63 @@ fn startup_asset_or_error<T>(result: Result<T>, error: &mut Option<String>) -> O
     match result {
         Ok(asset) => Some(asset),
         Err(err) => {
-            let message = format!("{err:#}");
-            log::warn!("{message}");
-            error.get_or_insert(message);
+            // The log keeps the raw chain, which carries the host's localized
+            // OS text; the card gets an English description instead, because
+            // its in-repo face cannot draw a localised sentence.
+            log::warn!("{err:#}");
+            error.get_or_insert_with(|| describe_startup_error(&err));
             None
         }
+    }
+}
+
+/// English description of a startup failure, for the error card.
+///
+/// `std::io::Error`'s own message is localized by the host, so on a Chinese
+/// Windows the raw chain reads a localized sentence and the card could only
+/// draw boxes. This walks the `anyhow` chain and states each link in English:
+/// our own context strings already are, and I/O kinds are mapped here.
+fn describe_startup_error(err: &anyhow::Error) -> String {
+    use crate::assets::error::AssetError;
+
+    let mut parts: Vec<String> = Vec::new();
+    for cause in err.chain() {
+        let part = if let Some(asset) = cause.downcast_ref::<AssetError>() {
+            match asset {
+                AssetError::Io(io) => describe_io_error(io),
+                other => other.to_string(),
+            }
+        } else if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+            describe_io_error(io)
+        } else {
+            cause.to_string()
+        };
+        // The same I/O failure arrives through several context layers; say it
+        // once.
+        if parts.last() != Some(&part) {
+            parts.push(part);
+        }
+    }
+    parts.join(": ")
+}
+
+/// One I/O failure in English, with the numeric code kept for the log search.
+fn describe_io_error(err: &std::io::Error) -> String {
+    use std::io::ErrorKind;
+
+    let text = match err.kind() {
+        ErrorKind::NotFound => "the file or path does not exist",
+        ErrorKind::PermissionDenied => "access was denied",
+        ErrorKind::AlreadyExists => "the target already exists",
+        ErrorKind::InvalidData => "the file is not a valid game archive",
+        ErrorKind::InvalidInput => "the file name or data is invalid",
+        ErrorKind::UnexpectedEof => "the file is truncated",
+        ErrorKind::WouldBlock => "the file is in use by another program",
+        _ => "the file could not be read",
+    };
+    match err.raw_os_error() {
+        Some(code) => format!("{text} (os error {code})"),
+        None => text.to_owned(),
     }
 }
 
@@ -195,6 +247,8 @@ impl App {
         let gpu: GpuContext = GpuContext::new(window.clone())?;
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
         let status_screen_fill = batch_renderer.create_texture(&gpu, &[255; 4], 1, 1);
+        let status_card_glow =
+            crate::app::frontend::status_screen::build_button_glow(&gpu, &batch_renderer);
         let mut terrain_draw_renderer = crate::render::terrain_draw::TerrainDrawRenderer::new(
             &gpu.device,
             &gpu.queue,
@@ -721,6 +775,7 @@ impl App {
                 wol_login_art: None,
                 wol_lobby_art: None,
                 wol_options_art: None,
+                wol_auto_login_art: None,
                 wol_sound_options_art: None,
                 wol_lobby_globals: Default::default(),
                 wol_preferences: Default::default(),
@@ -744,7 +799,9 @@ impl App {
                 sidebar_surface: None,
                 in_game_shell_surface: None,
                 status_screen_fill,
+                status_card_glow,
                 bit_font,
+                status_font: crate::render::status_font::StatusFaceCache::new(),
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
@@ -851,6 +908,38 @@ fn quickplay_launch_session(selected_map: String) -> crate::skirmish_launch::Ski
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_errors_are_described_in_english_not_host_locale() {
+        // A missing install surfaces as io::ErrorKind::NotFound inside the
+        // asset error. The card cannot draw the host's localized sentence, so
+        // the description must state the cause in English and keep the code.
+        let io = std::io::Error::from_raw_os_error(3);
+        let asset = crate::assets::error::AssetError::Io(io);
+        let err = anyhow::Error::new(asset).context("Could not load the game archives");
+        let text = describe_startup_error(&err);
+        assert!(text.is_ascii(), "{text}");
+        assert!(text.contains("Could not load the game archives"), "{text}");
+        assert!(
+            text.contains("does not exist") || text.contains("could not be read"),
+            "{text}"
+        );
+        assert!(text.contains("os error 3"), "{text}");
+    }
+
+    #[test]
+    fn asset_errors_keep_their_own_context() {
+        let asset = crate::assets::error::AssetError::AssetNotFound {
+            name: "SDBTNANM.SHP".to_owned(),
+        };
+        let err = anyhow::Error::new(asset).context("Required game-menu artwork is unavailable");
+        let text = describe_startup_error(&err);
+        assert!(text.contains("SDBTNANM.SHP"), "{text}");
+        assert!(
+            text.contains("Required game-menu artwork is unavailable"),
+            "{text}"
+        );
+    }
 
     #[test]
     fn required_string_table_failure_is_retained_for_the_startup_error_screen() {

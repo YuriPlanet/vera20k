@@ -29,7 +29,7 @@ impl Simulation {
         let Some(e) = substrate.entities.get_mut(id) else {
             return;
         };
-        air_movement::ensure_fly_secondary_facing(e);
+        e.ensure_fly_secondary_facing();
         if air_movement::current_fly_height(e, resolved_terrain.as_ref()) == 0 {
             e.body_facing.snap(
                 e.barrel_facing.unwrap().destination(),

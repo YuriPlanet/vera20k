@@ -546,6 +546,23 @@ impl ApplicationHandler for App {
                 // not; see the `Resized` arm above.
                 Self::set_window_hidden(state, occluded);
             }
+            WindowEvent::CursorEntered { .. } => {
+                // The pointer is back over the drawable region: mouse.shp owns it
+                // again and the OS arrow goes. Redraw so the cursor decision and the
+                // clip both follow the edge.
+                state.platform.pointer_in_client = true;
+                state.platform.window.request_redraw();
+            }
+            WindowEvent::CursorLeft { .. } => {
+                // winit raises this from `WM_MOUSELEAVE`, which it arms on the
+                // matching enter and which fires when the pointer crosses onto the
+                // title bar or resize border, not only off the window. There the
+                // system owns the arrow (`DefWindowProc` answers the non-client
+                // `WM_SETCURSOR` with it), so VERA stops drawing mouse.shp rather
+                // than fighting it for the same pixel.
+                state.platform.pointer_in_client = false;
+                state.platform.window.request_redraw();
+            }
             WindowEvent::ModifiersChanged(_) => {
                 // Deliberately not a modifier source: winit re-derives this
                 // event from each mouse event's flags, which drop a held
