@@ -192,10 +192,9 @@ def controls():
 
 
 def identities():
-    ares, game = ArmorProbe.input_bytes
+    ares = ArmorProbe.input_bytes[0]
     return {
         "ares": dict(file="Ares.dll", length=len(ares), sha256=hashlib.sha256(ares).hexdigest()),
-        "game": dict(file="gamemd.exe", length=len(game), sha256=hashlib.sha256(game).hexdigest()),
     }
 
 
@@ -203,7 +202,7 @@ def metadata(raw, count):
     return dict(
         schema_version=1,
         scope="Ares 3.0 armor token/default/warhead entry inheritance, original armor binding hooks, ordinary weapon admission/selection and bounded GetTotalDamage",
-        ares_sha256=ARES_SHA256, gamemd_sha256=identities()["game"]["sha256"],
+        ares_sha256=ARES_SHA256,
         payload_sha256=hashlib.sha256(raw).hexdigest(), control_count=count,
         fpcw="0x0e7f",
         entry_points={

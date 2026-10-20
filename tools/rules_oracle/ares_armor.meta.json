@@ -2,8 +2,7 @@
   "schema_version": 1,
   "scope": "Ares 3.0 armor token/default/warhead entry inheritance, original armor binding hooks, ordinary weapon admission/selection and bounded GetTotalDamage",
   "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
-  "gamemd_sha256": "7cd005d263fde203d9c84548200a057a8df61d724da3c6bd1e521eeb61cd0747",
-  "payload_sha256": "4f0b5d8804ab4dc9c586c262d3eadb7e3fefdcd0ba9241c4b69de3eec95e8b15",
+  "payload_sha256": "9d38d3666ba46fc1a697dd3b3b25b6a487bd9ad2731490b93b2ec7454ca1d9af",
   "control_count": 57,
   "fpcw": "0x0e7f",
   "entry_points": {
