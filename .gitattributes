@@ -18,3 +18,4 @@ tools/spatial_oracle/_factory_infantry_output/gate.py whitespace=-blank-at-eof
 tools/spatial_oracle/_factory_infantry_output/idle.py whitespace=-blank-at-eof
 tools/spatial_oracle/_factory_infantry_output/phase.py whitespace=-blank-at-eof
 tools/spatial_oracle/_factory_infantry_output/producer.py whitespace=-blank-at-eof
+tools/rules_oracle/ares_armor.json -text

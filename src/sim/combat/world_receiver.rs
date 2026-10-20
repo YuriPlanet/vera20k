@@ -562,10 +562,7 @@ pub(crate) fn commit_terrain(
 ) -> (DeathEffects, Vec<UnderAttackEvent>) {
     let mut effects = DeathEffects::default();
     let mut under_attack_events = Vec::new();
-    let Some(warhead) = rules
-        .warhead(world.interner.resolve(event.warhead_ref))
-        .cloned()
-    else {
+    let Some(warhead) = rules.warhead(world.interner.resolve(event.warhead_ref)) else {
         return (effects, under_attack_events);
     };
     let receive = world.terrain_objects.receive_damage(
@@ -574,7 +571,7 @@ pub(crate) fn commit_terrain(
         (event.rx, event.ry),
         event.damage,
         event.distance_leptons,
-        &warhead,
+        warhead,
         rules,
         &world.interner,
         world.session.no_damage(),
@@ -593,7 +590,7 @@ pub(crate) fn commit_terrain(
     );
 
     if lethal.spawns_tiberium
-        && let Some(c4_warhead) = rules.warhead(&rules.bridge_warheads.c4_name).cloned()
+        && let Some(c4_warhead) = rules.warhead(&rules.bridge_warheads.c4_name)
     {
         let c4_id = world.interner.intern(&c4_warhead.id);
         // Terrain71BABF passes its retained Object Location, not a fresh
@@ -606,7 +603,7 @@ pub(crate) fn commit_terrain(
             overlay_registry,
             impact,
             100,
-            &c4_warhead,
+            c4_warhead,
             (RAD_NO_ATTACKER, None, c4_id),
         );
         effects.append(nested);
