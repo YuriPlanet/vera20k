@@ -14,8 +14,9 @@ public final class MainActivity extends NativeActivity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        // NativeActivity loads libmain during super.onCreate. A failed native
-        // load never reaches this assignment or calls our destroy entry point.
+        // NativeActivity opens the library with dlopen; also register it with
+        // ART so Java can resolve our separate lifecycle JNI entry point.
+        System.loadLibrary("main");
         nativeReady = true;
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -52,5 +53,11 @@ public final class MainActivity extends NativeActivity {
             }
         }
         super.onDestroy();
+        if (nativeReady) {
+            // winit permits one EventLoop per process. NativeActivity has now
+            // joined the native owner and its asset worker; a later launch
+            // must get a fresh process instead of recreating that EventLoop.
+            android.os.Process.killProcess(android.os.Process.myPid());
+        }
     }
 }
