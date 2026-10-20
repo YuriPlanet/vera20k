@@ -13,6 +13,14 @@ use crate::render::unit_pose_cache::VxlPoseFrameCache;
 use super::draw_plan_lowering::{ObjectDrawRun, ObjectLayerPass, ObjectTexture};
 use crate::render::tactical_draw_plan::RenderZPolicy;
 
+/// Native background bases6D9920 and subsequent Display sweep6D8DB0 use
+/// the same sprite payload and GPU blitters at their respective frame phases.
+#[derive(Clone, Copy)]
+pub(super) enum ObjectDrawPhase {
+    BuildingBase,
+    Display,
+}
+
 /// Dispatch the already-lowered native Display sequence without re-sorting it.
 ///
 /// Every run is a contiguous slice of one flat instance buffer. Texture page,
@@ -20,6 +28,7 @@ use crate::render::tactical_draw_plan::RenderZPolicy;
 /// change the retained Display parent order carried by `TacticalDrawPlan`.
 pub(super) fn draw_native_object_pass<'a>(
     encoder: &mut wgpu::CommandEncoder,
+    phase: ObjectDrawPhase,
     color: &wgpu::TextureView,
     depth: &wgpu::TextureView,
     terrain: &mut crate::render::terrain_draw::TerrainDrawRenderer,
@@ -76,11 +85,15 @@ pub(super) fn draw_native_object_pass<'a>(
             unreachable!("packed source classification is retained by lowering")
         }
     };
+    let runs = match phase {
+        ObjectDrawPhase::BuildingBase => &ground.building_base_runs,
+        ObjectDrawPhase::Display => &ground.runs,
+    };
     let camera = batch.camera_uniform();
     let mut run_offset = 0;
     let mut cursor = 0;
-    while cursor < ground.runs.len() {
-        let run = &ground.runs[cursor];
+    while cursor < runs.len() {
+        let run = &runs[cursor];
         if let ObjectTexture::SurfaceLines(index) = run.target {
             terrain.draw_surface_lines(encoder, color, ground.line_batches[index]);
             cursor += 1;
@@ -156,11 +169,11 @@ pub(super) fn draw_native_object_pass<'a>(
             // an ancillary SHP draw remains its own Convert490E50 operation.
             // See procedural_drawing_oracle/translucent_blitter_a.md.
             let mut composites = Vec::new();
-            while cursor < ground.runs.len() && ground.runs[cursor].packed_parent.is_some() {
+            while cursor < runs.len() && runs[cursor].packed_parent.is_some() {
                 let start = cursor;
-                let run = &ground.runs[cursor];
-                cursor = packed_span_end(&ground.runs, cursor);
-                let pieces: Vec<_> = ground.runs[start..cursor]
+                let run = &runs[cursor];
+                cursor = packed_span_end(runs, cursor);
+                let pieces: Vec<_> = runs[start..cursor]
                     .iter()
                     .flat_map(|run| {
                         let binding = packed_binding(run.target);
@@ -202,10 +215,10 @@ pub(super) fn draw_native_object_pass<'a>(
         }
         if destination_edit(run.target).is_some() {
             let start = cursor;
-            cursor = destination_span_end(&ground.runs, start);
+            cursor = destination_span_end(runs, start);
             // Atlas changes preserve parent order. All destination edits in
             // this span share overlap dependencies; ordinary draws are fences.
-            let commands = ground.runs[start..cursor].iter().flat_map(|run| {
+            let commands = runs[start..cursor].iter().flat_map(|run| {
                 let (piece, atlas_slot) =
                     destination_edit(run.target).expect("destination edit span");
                 (run.start..run.start + run.count).map(move |index| {
@@ -241,17 +254,17 @@ pub(super) fn draw_native_object_pass<'a>(
         let mut pass =
             crate::app::presentation::sidebar_render::begin_main_load_pass(encoder, color, depth);
         pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
-        while cursor < ground.runs.len()
-            && ground.runs[cursor].packed_parent.is_none()
-            && destination_edit(ground.runs[cursor].target).is_none()
+        while cursor < runs.len()
+            && runs[cursor].packed_parent.is_none()
+            && destination_edit(runs[cursor].target).is_none()
             && !matches!(
-                ground.runs[cursor].target,
+                runs[cursor].target,
                 ObjectTexture::SurfaceLines(_)
                     | ObjectTexture::CombatLight(_)
                     | ObjectTexture::Status(_)
             )
         {
-            let run = &ground.runs[cursor];
+            let run = &runs[cursor];
             let start = run.start + run_offset;
             let remaining = run.count - run_offset;
             let count = if is_opaque_voxel_run(run) {

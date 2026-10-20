@@ -330,6 +330,47 @@ pub(super) fn dispatch_draw_passes(
     // railing pass from its tables. Retail gate/resource regression:
     // map::theater::theater_tests::active_retail_tile_shadow_route_is_dormant.
 
+    // Native6D9920 ->43CEA0/43D290 draws Ground's building bases into the
+    // background before rally6D4648. These ranges draw only here; Display's
+    // building branch6D916C requests the dynamic turret43DA80 instead. Anim
+    // slots and voxel turrets keep their independent later Display positions.
+    if !data.object_layers[2].building_base_runs.is_empty() {
+        drop(pass);
+        state
+            .renderer
+            .terrain_draw_renderer
+            .note_external_passes(encoder, 1);
+        merge_passes::draw_native_object_pass(
+            encoder,
+            super::merge_passes::ObjectDrawPhase::BuildingBase,
+            view,
+            &state.renderer.depth_view,
+            &mut state.renderer.terrain_draw_renderer,
+            [tac_x, tac_y, tac_w, tac_h],
+            &state.renderer.batch_renderer,
+            pool.get_page("object_layer", 2),
+            &data.object_layers[2],
+            state.match_state.match_presentation.overlay_atlas.as_ref(),
+            state.match_state.match_presentation.unit_atlas.as_ref(),
+            Some(&pose_cache),
+            state.match_state.match_presentation.sprite_atlas.as_ref(),
+            state.match_state.match_presentation.palette_set.as_ref(),
+            state
+                .match_state
+                .match_presentation
+                .building_zshape
+                .as_ref()
+                .map_or(
+                    state.renderer.batch_renderer.default_zshape_bind_group(),
+                    |z| &z.bind_group,
+                ),
+            None,
+            None,
+        );
+        pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+    }
+
     let bracket_tex = state
         .match_state
         .match_presentation
@@ -337,8 +378,9 @@ pub(super) fn dispatch_draw_passes(
         .as_ref()
         .map(|o| o.white_texture());
     // Original6D4648 draws the first rally pass BEFORE the object loop at
-    // 6D465F. Bodies may cover its source and any crossed object; the second
-    // pass belongs after effects and BandBox. Both leaves bypass Z.
+    // 6D465F. Building bases have already primed Z; mobile bodies and Anim
+    // slots can cover the line. The second pass follows effects and BandBox.
+    // Both rally leaves bypass Z.
     draw_pooled_ui_passthrough(
         &mut pass,
         &state.renderer.batch_renderer,
@@ -378,6 +420,7 @@ pub(super) fn dispatch_draw_passes(
     for layer in 0..=3 {
         merge_passes::draw_native_object_pass(
             encoder,
+            super::merge_passes::ObjectDrawPhase::Display,
             view,
             &state.renderer.depth_view,
             &mut state.renderer.terrain_draw_renderer,
@@ -449,6 +492,7 @@ pub(super) fn dispatch_draw_passes(
     let layer = 4;
     merge_passes::draw_native_object_pass(
         encoder,
+        super::merge_passes::ObjectDrawPhase::Display,
         view,
         &state.renderer.depth_view,
         &mut state.renderer.terrain_draw_renderer,
@@ -1098,7 +1142,8 @@ mod tests {
     fn gsi_13_01_pixel_fx_and_timers_precede_native_outcome_and_chrono_capture() {
         let first_rally = source_offset("\"factory_rally_first\"");
         let ion_blasts = source_offset(".draw_ion_blasts(encoder, view)");
-        let objects = source_offset("merge_passes::draw_native_object_pass(");
+        let building_bases = source_offset("ObjectDrawPhase::BuildingBase");
+        let objects = source_offset("for layer in 0..=3 {");
         let combat_lights = source_offset("for record in data.persistent_lights.clone()");
         let second_rally = source_offset("\"factory_rally_second\"");
         let target_lines = source_offset("\"target_lines\"");
@@ -1122,6 +1167,7 @@ mod tests {
 
         // Original6D4648,6D4656,6D465F: IonBlast DrawAll between the first
         // rally pass and the object loop.
+        assert!(building_bases < first_rally);
         assert!(first_rally < ion_blasts);
         assert!(ion_blasts < objects);
         // Original6D4648,6D4664,6D46CF,6D4750. A is now consumed by

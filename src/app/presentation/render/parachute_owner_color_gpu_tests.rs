@@ -315,6 +315,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
     );
     draw_native_object_pass(
         &mut encoder,
+        crate::app::render::merge_passes::ObjectDrawPhase::Display,
         &cv,
         &dv,
         &mut terrain,

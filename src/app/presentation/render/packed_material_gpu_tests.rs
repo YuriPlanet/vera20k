@@ -337,6 +337,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                         }
                         draw_native_object_pass(
                             &mut encoder,
+                            crate::app::render::merge_passes::ObjectDrawPhase::Display,
                             &cv,
                             &dv,
                             &mut terrain,
@@ -663,6 +664,7 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
                 let clip = std::array::from_fn(|i| row["clip"][i].as_u64().unwrap() as u32);
                 let stats = draw_native_object_pass(
                     &mut encoder,
+                    crate::app::render::merge_passes::ObjectDrawPhase::Display,
                     &cv,
                     &dv,
                     &mut terrain,
@@ -827,6 +829,7 @@ fn retained_packed_high_resolution_dispatch_preserves_native_pixels() {
         );
         let stats = draw_native_object_pass(
             &mut encoder,
+            crate::app::render::merge_passes::ObjectDrawPhase::Display,
             &cv,
             &dv,
             &mut terrain,
@@ -942,6 +945,7 @@ fn retained_packed_workload_timing() {
         );
         let stats = draw_native_object_pass(
             &mut encoder,
+            crate::app::render::merge_passes::ObjectDrawPhase::Display,
             &cv,
             &dv,
             &mut terrain,

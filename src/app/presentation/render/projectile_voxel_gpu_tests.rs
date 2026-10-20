@@ -263,6 +263,7 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
                 let tactical = std::array::from_fn(|i| clip[i].as_u64().unwrap() as u32);
                 let stats = draw_native_object_pass(
                     &mut encoder,
+                    crate::app::render::merge_passes::ObjectDrawPhase::Display,
                     &cv,
                     &dv,
                     &mut terrain,
@@ -526,6 +527,7 @@ fn kirov_pose_upload_and_replay(interpolated: bool) {
                 );
                 let stats = draw_native_object_pass(
                     &mut encoder,
+                    crate::app::render::merge_passes::ObjectDrawPhase::Display,
                     &cv,
                     &dv,
                     &mut terrain,
@@ -730,6 +732,7 @@ fn global_voxel_palette_bypasses_theater_and_house_remap_on_both_replay_routes()
                 );
                 let stats = draw_native_object_pass(
                     &mut encoder,
+                    crate::app::render::merge_passes::ObjectDrawPhase::Display,
                     &cv,
                     &dv,
                     &mut terrain,

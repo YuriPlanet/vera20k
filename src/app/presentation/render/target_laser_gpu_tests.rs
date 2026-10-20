@@ -113,6 +113,7 @@ fn tail_stores_reach_the_gpu_over_any_z_without_writing_it() {
         seed_depth_grid(&gpu, &mut encoder, &dv, &z, SIZE[0]);
         draw_native_object_pass(
             &mut encoder,
+            crate::app::render::merge_passes::ObjectDrawPhase::Display,
             &cv,
             &dv,
             &mut terrain,

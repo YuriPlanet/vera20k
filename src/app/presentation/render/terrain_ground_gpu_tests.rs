@@ -132,6 +132,7 @@ fn retained_ground_history_controls_overlapping_atlas_pixels() {
     );
     draw_native_object_pass(
         &mut encoder,
+        crate::app::render::merge_passes::ObjectDrawPhase::Display,
         &cv,
         &dv,
         &mut terrain,
@@ -299,6 +300,7 @@ fn unit_body_shadow_replay(layer: u8, masked: bool, initial_z: u16) {
     ]);
     let stats = draw_native_object_pass(
         &mut encoder,
+        crate::app::render::merge_passes::ObjectDrawPhase::Display,
         &cv,
         &dv,
         &mut terrain,
@@ -541,6 +543,7 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
         // Clip both edges; every restarted normal pass must restore this clip.
         let stats = draw_native_object_pass(
             &mut encoder,
+            crate::app::render::merge_passes::ObjectDrawPhase::Display,
             &cv,
             &dv,
             &mut terrain,
@@ -709,6 +712,7 @@ fn destination_batching_layer_fences_do_not_plan_ordinary_unit_instances() {
                 let start = std::time::Instant::now();
                 let stats = draw_native_object_pass(
                     &mut encoder,
+                    crate::app::render::merge_passes::ObjectDrawPhase::Display,
                     &cv,
                     &dv,
                     &mut terrain,

@@ -376,8 +376,13 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
     };
     let lowered = lower_object_instances(vec![planned]);
     let ground = &lowered[layer];
-    assert_eq!(ground.runs.len(), 1, "one ordered destination-edit run");
-    let run = ground.runs[0];
+    let runs = if structure {
+        &ground.building_base_runs
+    } else {
+        &ground.runs
+    };
+    assert_eq!(runs.len(), 1, "one ordered destination-edit run");
+    let run = runs[0];
     assert_eq!(
         run.target,
         ObjectTexture::SpriteAtlasEdit(page_index, TerrainPiece::Shadow)
@@ -413,6 +418,11 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
     for _ in 0..2 {
         draw_native_object_pass(
             &mut encoder,
+            if structure {
+                crate::app::render::merge_passes::ObjectDrawPhase::BuildingBase
+            } else {
+                crate::app::render::merge_passes::ObjectDrawPhase::Display
+            },
             &color_view,
             &depth_view,
             &mut terrain,

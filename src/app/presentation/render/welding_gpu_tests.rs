@@ -353,6 +353,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
             for layer in &layers {
                 draw_native_object_pass(
                     &mut encoder,
+                    crate::app::render::merge_passes::ObjectDrawPhase::Display,
                     &cv,
                     &dv,
                     &mut terrain,
@@ -596,6 +597,7 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
             for index in replay {
                 draw_native_object_pass(
                     &mut encoder,
+                    crate::app::render::merge_passes::ObjectDrawPhase::Display,
                     &cv,
                     &dv,
                     &mut terrain,

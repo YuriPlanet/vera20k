@@ -123,6 +123,7 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
         );
         let stats = draw_native_object_pass(
             &mut encoder,
+            crate::app::render::merge_passes::ObjectDrawPhase::Display,
             &cv,
             &dv,
             &mut terrain,
