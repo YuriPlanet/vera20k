@@ -220,6 +220,7 @@ impl App {
         let mut startup_asset_manager = game_config.as_ref().and_then(|config| {
             startup_asset_or_error(
                 AssetManager::new(&config.paths.ra2_dir, startup_options.media_archive_mode)
+                    .and_then(|assets| assets.with_ini_roots(&config.ini))
                     .context("Could not load the game archives"),
                 &mut main_menu_shell_error,
             )
@@ -318,9 +319,13 @@ impl App {
         // presented swapchain frame stays composited while this thread blocks,
         // and the hold armed above is measured from that present, so a slow
         // load is spent inside the five seconds instead of before them.
-        let mut process_assets = crate::app::process_assets::ProcessAssets::new(
+        let mut process_assets = crate::app::process_assets::ProcessAssets::new_with_ini_config(
             startup_options.media_archive_mode,
             startup_audio.load_audio_indices,
+            game_config
+                .as_ref()
+                .map(|config| config.ini.clone())
+                .unwrap_or_default(),
         );
         process_assets.csf = startup_csf;
         let (startup_rules, startup_rules_projection) = startup_asset_manager

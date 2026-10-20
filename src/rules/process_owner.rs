@@ -40,6 +40,8 @@ use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 /// objects do not have.
 #[derive(Debug)]
 struct NativeRulesSourceSnapshot {
+    /// Logical names frozen with the selected snapshots, including MOD roots.
+    rules_art_names: [String; 2],
     selected_rules_root: IniFile,
     langrule: Option<IniFile>,
     fixed_art: IniFile,
@@ -195,6 +197,26 @@ impl NativeRulesProcessOwner {
         fixed_sounds: Arc<SoundRegistry>,
         fixed_eva: Arc<EvaRegistry>,
     ) -> Result<Self, RulesError> {
+        Self::from_named_cold_start_sources(
+            selected_rules_root,
+            langrule,
+            fixed_art,
+            fixed_sounds,
+            fixed_eva,
+            ["RULESMD.INI".into(), "ARTMD.INI".into()],
+        )
+    }
+
+    /// Preserve the selector's actual logical names beside the frozen inputs.
+    /// These diagnostic labels do not alter Rules processing or saved state.
+    pub(crate) fn from_named_cold_start_sources(
+        selected_rules_root: IniFile,
+        langrule: Option<IniFile>,
+        fixed_art: IniFile,
+        fixed_sounds: Arc<SoundRegistry>,
+        fixed_eva: Arc<EvaRegistry>,
+        rules_art_names: [String; 2],
+    ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         let cold_trace = process_native_rules_cold_start(
             NativeRulesRegistryState::default(),
@@ -204,6 +226,7 @@ impl NativeRulesProcessOwner {
         )?;
         Ok(Self {
             sources: NativeRulesSourceSnapshot {
+                rules_art_names,
                 selected_rules_root,
                 langrule,
                 fixed_art,
@@ -308,17 +331,20 @@ impl NativeRulesProcessOwner {
 
     /// Parsed-cache hashes of the actual frozen process sources. These are
     /// not byte SHA256 values and do not reopen files after source selection.
-    pub fn selected_source_ini_hashes(&self) -> [(&'static str, Option<u64>); 3] {
+    pub fn selected_source_ini_hashes(&self) -> [(&str, Option<u64>); 3] {
         [
             (
-                "RULESMD.INI",
+                &self.sources.rules_art_names[0],
                 Some(self.sources.selected_rules_root.content_hash()),
             ),
             (
                 "LANGRULE.INI",
                 self.sources.langrule.as_ref().map(IniFile::content_hash),
             ),
-            ("ARTMD.INI", Some(self.sources.fixed_art.content_hash())),
+            (
+                &self.sources.rules_art_names[1],
+                Some(self.sources.fixed_art.content_hash()),
+            ),
         ]
     }
 

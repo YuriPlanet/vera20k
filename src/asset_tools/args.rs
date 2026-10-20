@@ -43,6 +43,7 @@ pub enum Verb {
     Compare { name: String },
     IniGet { section: String, key: String },
     IniType { type_id: String },
+    IniRoots,
     Help,
 }
 
@@ -66,6 +67,7 @@ pub struct Cli {
     pub compare: CompareOptions,
     pub corpus_baseline_out: Option<PathBuf>,
     pub ini: IniOptions,
+    pub ini_roots: Option<crate::util::ini_roots::IniRootConfig>,
 }
 
 pub fn usage() -> &'static str {
@@ -78,6 +80,7 @@ USAGE
 VERBS
   ini-get <SECTION> <KEY>  Inspect exact authored values and a production INI accessor.
   ini-type <TYPE>          Inspect final scenario ObjectType movement/flight fields.
+  ini-roots               Inspect the selected Rules/Art/AI roots and byte sources.
   find <NAME>          Which archive wins, what shadows it, and what is
                        catalogued but unreachable by name lookup.
   ls <ARCHIVE>         Paged listing of one archive's entries.
@@ -118,6 +121,9 @@ ini-type
                       --reader/--default/--capacity/--all-mixes are rejected.
 
 GLOBAL OPTIONS
+  --ini-profile <yr|mo|auto|custom>  INI verbs only; overrides the whole [ini] config.
+  --rules-ini <NAME> --art-ini <NAME> --ai-ini <NAME>
+                       Custom profile requires all three plain INI basenames.
   --ra2-dir <PATH>     Retail install root. Overrides $RA2_DIR and config.toml.
   --all-mixes          Also mount archives the game's startup path skips.
                        Tooling-only: hits found this way are not what the game
@@ -220,6 +226,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         compare: CompareOptions::default(),
         corpus_baseline_out: None,
         ini: IniOptions::default(),
+        ini_roots: None,
     };
 
     let mut args = argv.into_iter().peekable();
@@ -230,7 +237,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
         return Ok(cli);
     }
 
-    if matches!(verb_word.as_str(), "ini-get" | "ini-type")
+    if matches!(verb_word.as_str(), "ini-get" | "ini-type" | "ini-roots")
         && args
             .peek()
             .is_some_and(|arg| matches!(arg.as_str(), "-h" | "--help"))
@@ -241,7 +248,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
     // The corpus-wide verbs sweep everything and so take no positional target.
     let needs_target = !matches!(
         verb_word.as_str(),
-        "archives" | "bag-ls" | "scan" | "parse-check" | "corpus-baseline"
+        "archives" | "bag-ls" | "scan" | "parse-check" | "corpus-baseline" | "ini-roots"
     );
     let target = if needs_target {
         match args.peek() {
@@ -253,6 +260,7 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
     };
 
     cli.verb = match verb_word.as_str() {
+        "ini-roots" => Verb::IniRoots,
         "ini-get" => Verb::IniGet {
             section: require_target(target, "ini-get", "<SECTION> <KEY>")?,
             key: value(&mut args, "ini-get key")?,
@@ -302,10 +310,29 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
     };
 
     while let Some(flag) = args.next() {
+        if matches!(cli.verb, Verb::IniRoots)
+            && !matches!(
+                flag.as_str(),
+                "--ra2-dir"
+                    | "--all-mixes"
+                    | "--ini-profile"
+                    | "--rules-ini"
+                    | "--art-ini"
+                    | "--ai-ini"
+                    | "-h"
+                    | "--help"
+            )
+        {
+            return Err(flag_not_valid(&flag, &cli.verb));
+        }
         if matches!(cli.verb, Verb::IniGet { .. } | Verb::IniType { .. })
             && !matches!(
                 flag.as_str(),
                 "--ra2-dir"
+                    | "--ini-profile"
+                    | "--rules-ini"
+                    | "--art-ini"
+                    | "--ai-ini"
                     | "--domain"
                     | "--reader"
                     | "--default"
@@ -333,6 +360,23 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             }
             "--ra2-dir" => cli.ra2_dir = Some(PathBuf::from(value(&mut args, "--ra2-dir")?)),
             "--all-mixes" => cli.all_mixes = true,
+            "--ini-profile" | "--rules-ini" | "--art-ini" | "--ai-ini" => {
+                if !matches!(
+                    cli.verb,
+                    Verb::IniGet { .. } | Verb::IniType { .. } | Verb::IniRoots
+                ) {
+                    return Err(flag_not_valid(&flag, &cli.verb));
+                }
+                let config = cli.ini_roots.get_or_insert_with(Default::default);
+                let text = value(&mut args, &flag)?;
+                match flag.as_str() {
+                    "--ini-profile" => config.profile = text.parse()?,
+                    "--rules-ini" => config.rules = Some(text),
+                    "--art-ini" => config.art = Some(text),
+                    "--ai-ini" => config.ai = Some(text),
+                    _ => unreachable!(),
+                }
+            }
             "--domain" | "--reader" | "--default" | "--capacity" | "--map" | "--mode-id" => {
                 if !matches!(cli.verb, Verb::IniGet { .. } | Verb::IniType { .. }) {
                     return Err(flag_not_valid(&flag, &cli.verb));
@@ -484,6 +528,9 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             );
         }
     }
+    if let Some(config) = &cli.ini_roots {
+        config.validate()?;
+    }
     Ok(cli)
 }
 
@@ -532,6 +579,7 @@ fn flag_not_valid(flag: &str, verb: &Verb) -> String {
         Verb::CorpusBaseline => "corpus-baseline",
         Verb::IniGet { .. } => "ini-get",
         Verb::IniType { .. } => "ini-type",
+        Verb::IniRoots => "ini-roots",
         Verb::Help => "help",
     };
     format!("{flag} is not valid for `{verb_name}`")
@@ -540,6 +588,47 @@ fn flag_not_valid(flag: &str, verb: &Verb) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ini_roots_cli_keeps_profile_choice_whole_and_rejects_other_verbs() {
+        let auto = parse(args(&["ini-roots", "--ini-profile", "auto", "--all-mixes"])).unwrap();
+        assert!(matches!(auto.verb, Verb::IniRoots));
+        assert_eq!(
+            auto.ini_roots.unwrap().profile,
+            crate::util::ini_roots::IniProfile::Auto
+        );
+        let custom = parse(args(&[
+            "ini-roots",
+            "--rules-ini",
+            "r.ini",
+            "--art-ini",
+            "a.ini",
+            "--ai-ini",
+            "i.ini",
+            "--ini-profile",
+            "custom",
+        ]))
+        .unwrap();
+        assert_eq!(
+            custom.ini_roots.unwrap().resolve(|_| true).unwrap().names(),
+            ["r.ini", "a.ini", "i.ini"]
+        );
+        for words in [
+            vec![
+                "ini-roots",
+                "--ini-profile",
+                "custom",
+                "--rules-ini",
+                "r.ini",
+            ],
+            vec!["ini-roots", "--ini-profile", "mo", "--ai-ini", "aimd.ini"],
+            vec!["ini-roots", "--ini-profile", "unknown"],
+            vec!["ini-roots", "--out", "somewhere"],
+            vec!["find", "r.ini", "--ini-profile", "mo"],
+        ] {
+            assert!(parse(args(&words)).is_err(), "{words:?}");
+        }
+    }
 
     fn args(words: &[&str]) -> Vec<String> {
         words.iter().map(|w| (*w).to_string()).collect()
