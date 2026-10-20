@@ -67,6 +67,7 @@ use crate::app::loading::init::MapMenuEntry;
 use crate::map::preview::PreviewSourceBounds;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
+use crate::render::shell_text::ShellTextDraw;
 #[cfg(test)]
 use crate::render::shell_text::ShellAlign;
 use crate::render::shell_transition_pass::ShellRenderTarget;
@@ -447,8 +448,6 @@ fn build_skirmish_shell_instances(
             );
         }
     }
-
-    push_dropdown_instances(&mut instances, atlas, color_schemes, layout, shell, maps);
     instances
 }
 
@@ -756,6 +755,27 @@ fn render_skirmish_shell_with_atlas(
         );
     }
     let parent_showing = !message_box_up && choose_map_layout.is_none() && !leaving;
+    // ComboDropWin is a popup over the dialog: its frame and rows go after
+    // every dialog text, which this unbuffered pass paints in queue order.
+    let mut dropdown_instances = Vec::new();
+    let dropdown_text_draws = if parent_showing {
+        push_dropdown_instances(
+            &mut dropdown_instances,
+            atlas,
+            color_schemes,
+            &layout,
+            &state.frontend.skirmish_shell_state,
+            state.frontend.scenario_catalog.shell_maps(),
+        );
+        text::build_dropdown_text_draws(
+            state,
+            &layout,
+            &state.frontend.skirmish_shell_state,
+            state.frontend.scenario_catalog.shell_maps(),
+        )
+    } else {
+        Vec::new()
+    };
     let parent_statics = if parent_showing {
         text::paint_skirmish_statics(state, &layout, sliding)
     } else {
@@ -858,6 +878,19 @@ fn render_skirmish_shell_with_atlas(
                 .create_instance_buffer(&state.renderer.gpu, &d.instances)
         })
         .collect();
+    let dropdown_buffer = state
+        .renderer
+        .batch_renderer
+        .create_instance_buffer(&state.renderer.gpu, &dropdown_instances);
+    let dropdown_text_buffers: Vec<_> = dropdown_text_draws
+        .iter()
+        .map(|d| {
+            state
+                .renderer
+                .batch_renderer
+                .create_instance_buffer(&state.renderer.gpu, &d.instances)
+        })
+        .collect();
     let cursor_instances: Vec<SpriteInstance> =
         crate::app::frontend::shell_pass::software_cursor(state, SHELL_CURSOR_DEPTH)
             .map(|(_, instance)| instance)
@@ -940,23 +973,22 @@ fn render_skirmish_shell_with_atlas(
             *count,
         );
     }
-    for (draw, buf) in shell_draws.iter().zip(scissored_text_buffers.iter()) {
-        let Some((buffer, count)) = buf.as_ref() else {
-            continue;
-        };
-        pass.set_scissor_rect(
-            draw.scissor.x,
-            draw.scissor.y,
-            draw.scissor.w,
-            draw.scissor.h,
-        );
+    draw_scissored_text(&mut pass, state, &shell_draws, &scissored_text_buffers);
+    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    if let Some((buffer, count)) = dropdown_buffer.as_ref() {
         state.renderer.batch_renderer.draw_with_buffer_passthrough(
             &mut pass,
-            state.renderer.bit_font.atlas(),
+            &atlas.texture,
             buffer,
             *count,
         );
     }
+    draw_scissored_text(
+        &mut pass,
+        state,
+        &dropdown_text_draws,
+        &dropdown_text_buffers,
+    );
     // Reset scissor to full render so any subsequent draws / passes aren't clipped.
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
     // Software cursor draws last, on top of all chrome/controls/modals.
@@ -969,6 +1001,32 @@ fn render_skirmish_shell_with_atlas(
     drop(pass);
 
     Ok(action)
+}
+
+/// Each draw under its own scissor; the caller resets the scissor after.
+fn draw_scissored_text<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    state: &'a AppState,
+    draws: &[ShellTextDraw],
+    buffers: &'a [Option<(wgpu::Buffer, u32)>],
+) {
+    for (draw, buf) in draws.iter().zip(buffers) {
+        let Some((buffer, count)) = buf.as_ref() else {
+            continue;
+        };
+        pass.set_scissor_rect(
+            draw.scissor.x,
+            draw.scissor.y,
+            draw.scissor.w,
+            draw.scissor.h,
+        );
+        state.renderer.batch_renderer.draw_with_buffer_passthrough(
+            pass,
+            state.renderer.bit_font.atlas(),
+            buffer,
+            *count,
+        );
+    }
 }
 
 fn clear_shell_target(
