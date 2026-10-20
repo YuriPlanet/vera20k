@@ -803,6 +803,21 @@ pub enum Command {
         target: Option<crate::sim::combat::TargetKind>,
         destination: Option<crate::sim::combat::TargetKind>,
     },
+    /// VERA extension: the saved one-use source selection, not native
+    /// SPECIAL_PLACE. Appended to preserve existing command discriminants.
+    CompletePaidSuperWeapon {
+        selection: crate::sim::superweapon::PaidSuperWeaponSelection,
+        target_rx: u16,
+        target_ry: u16,
+    },
+    CancelPaidSuperWeapon {
+        selection: crate::sim::superweapon::PaidSuperWeaponSelection,
+    },
+    BeginPaidSuperWeapon {
+        selection: crate::sim::superweapon::PaidSuperWeaponSelection,
+        target_rx: u16,
+        target_ry: u16,
+    },
 }
 
 impl Command {

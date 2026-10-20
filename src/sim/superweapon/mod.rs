@@ -17,30 +17,27 @@ mod chronosphere;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 pub mod airstrike_tint;
 #[cfg(test)]
-mod can_fire_tests;
+mod building_requirements_tests;
 #[cfg(test)]
-mod view_admission_tests;
+mod can_fire_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod cell_receiver_tests;
 #[cfg(test)]
 mod charge_native_tests;
-#[cfg(test)]
-mod building_requirements_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod chronosphere_lunar_retail_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod chronosphere_tests;
 mod fire;
-mod money;
 pub mod force_shield;
 mod generic_warhead;
-mod targeting;
 pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
 pub mod lightning_storm;
 #[cfg(test)]
 pub(crate) mod lightning_storm_tests;
+mod money;
 pub(crate) mod nuke;
 #[cfg(test)]
 mod nuke_tests;
@@ -50,7 +47,12 @@ pub mod psychic_dominator;
 mod psychic_dominator_tests;
 pub mod psychic_reveal;
 mod spy_plane;
+mod targeting;
+mod two_stage;
 pub(crate) mod unit_delivery;
+#[cfg(test)]
+mod view_admission_tests;
+pub use two_stage::PaidSuperWeaponSelection;
 #[cfg(test)]
 mod spy_plane_tests;
 
@@ -61,6 +63,22 @@ use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::native_x87::{NativeF32Bits, X87Chop53, X87Ordering};
+
+/// The type whose money/refusal settings final activation uses. PostClick
+/// borrows the source, including a zero source amount; it never adds its fee.
+/// Rule-only presentation and runtime views share this same interpretation.
+pub fn financial_type<'a>(rules: &'a RuleSet, sw: &'a SuperWeaponType) -> &'a SuperWeaponType {
+    if sw.post_click
+        && let Some(source) = usize::try_from(sw.pre_dependent)
+            .ok()
+            .and_then(|index| rules.super_weapon_order.get(index))
+            .and_then(|name| rules.super_weapon(name))
+        && (source.money_amount != 0 || sw.money_amount != 0)
+    {
+        return source;
+    }
+    sw
+}
 
 /// Leptons `SuperClass::Launch` raises an invoke animation above its cell.
 const INVOKE_ANIM_Z_LIFT_LEPTONS: i32 = 5;
@@ -263,6 +281,10 @@ pub struct SuperWeaponInstance {
     /// new one. None when that grant did not list it.
     #[serde(default)]
     timer_place: Option<u32>,
+    #[serde(default)]
+    paid_sequence: u64,
+    #[serde(default)]
+    paid_selection: Option<PaidSuperWeaponSelection>,
 }
 
 fn idle_fade() -> i32 {
@@ -360,6 +382,8 @@ impl SuperWeaponInstance {
             fade_countdown: idle_fade(),
             fade_coords: [0; 3],
             timer_place: None,
+            paid_sequence: 0,
+            paid_selection: None,
         }
     }
 
@@ -508,6 +532,7 @@ impl SuperWeaponInstance {
     /// timer list; its timer and hold stay as they were. The entry stays; a
     /// later grant activates it again.
     pub fn deactivate(&mut self) {
+        self.paid_selection = None;
         self.is_active = false;
         self.is_ready = false;
     }
@@ -530,6 +555,9 @@ impl SuperWeaponInstance {
         }
         self.store_charge_timer(timer);
         self.is_suspended = on;
+        if on {
+            self.paid_selection = None;
+        }
         true
     }
 
@@ -612,6 +640,7 @@ impl SuperWeaponInstance {
     /// `CameoChargeState` (`+0x78`, -1) is the sidebar's. The grant, the hold
     /// and the drain state stay.
     fn reset(&mut self, sw: &SuperWeaponType, current_frame: u32) {
+        self.paid_selection = None;
         let frame = current_frame as i32;
         let stopped = self.charge_start_tick == -1;
         self.is_ready = false;
@@ -653,6 +682,11 @@ pub(crate) fn reset_super(sim: &mut Simulation, rules: &RuleSet, owner: Interned
     let (Some(type_id), Some(sw)) = (sim.interner.get(sw_type), rules.super_weapon(sw_type)) else {
         return;
     };
+    if let Some(selection) = sim.paid_super_weapon_selection(owner)
+        && (selection.source == type_id || selection.destination == type_id)
+    {
+        sim.cancel_paid_super_weapon_selection(rules, owner, selection);
+    }
     sim.release_super_anim(owner, type_id);
     let frame = sim.session.binary_frame;
     if let Some(instance) = sim
@@ -903,14 +937,22 @@ pub fn superweapon_views_for_owner(
         let Some(sw_type) = rules.super_weapon(type_id_str) else {
             continue;
         };
+        let paid_source = two_stage::source_for_destination(sim, rules, sw_type)
+            .filter(|(_, source)| source.money_amount != 0 || sw_type.money_amount != 0);
+        let money_type = financial_type(rules, sw_type);
         views.push(SuperWeaponView {
             type_id: inst.type_id,
             display_name: type_id_str.to_string(),
             progress: inst.charge_progress(sim.session.binary_frame, inst.recharge_time(sw_type)),
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
-            can_fire: inst.can_fire(sw_type),
-            can_afford: money::can_afford(sim, *owner, sw_type),
+            can_fire: if paid_source.is_some() {
+                sim.paid_super_weapon_selection(*owner)
+                    .is_some_and(|selection| selection.destination == inst.type_id)
+            } else {
+                inst.can_fire(sw_type)
+            },
+            can_afford: money::can_afford(sim, *owner, money_type),
             sidebar_image: sw_type.sidebar_image.clone(),
         });
     }
@@ -1181,6 +1223,7 @@ fn provider_supers(
 /// Native code reads the shared building providers and retained power totals;
 /// it does not grant or construct. Changed hold/loss re-dirties House+1FC.
 pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
+    let paid_before = sim.paid_super_weapon_selection(owner);
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
@@ -1226,6 +1269,16 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
                     sw_type: type_id,
                 });
         }
+    }
+    if let Some(selection) = paid_before
+        && sim.paid_super_weapon_selection(owner) != Some(selection)
+    {
+        sim.release_super_anim(owner, selection.source);
+        sim.sound_events
+            .push(SimSoundEvent::SuperWeaponStatusChanged {
+                owner,
+                sw_type: selection.destination,
+            });
     }
 }
 

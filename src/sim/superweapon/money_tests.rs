@@ -500,30 +500,24 @@ fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
         let source = ready(&mut sim, &rules, owner, "Sphere", false);
         let mut admitted = Vec::new();
         for _ in 0..3 {
-            let before = sim.state_hash();
             sim.sound_events.clear();
             admitted.push(fire(&mut sim, &rules, owner, source, (10, 10)));
-            assert_eq!(
-                sim.state_hash(),
-                before,
-                "refusal preserves source and pair"
-            );
-            assert!(
-                sim.sound_events.is_empty(),
-                "refusal has no activation effects"
-            );
             sim.session.binary_frame += 1;
             superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
         }
         assert_eq!(
             sim.houses[&owner].economy.credits(),
             10_000,
-            "unsupported paid source must not settle on a repeatable selection"
+            "source selection must never settle, even after native re-readiness"
         );
-        assert_eq!(admitted, vec![false; 3]);
+        assert_eq!(admitted, vec![true; 3]);
         assert!(sim.super_weapons[&owner][&source].is_ready);
+        assert_eq!(sim.paid_super_weapon_selection(owner).unwrap().sequence, 3);
     }
 }
+
+#[path = "money_two_stage_tests.rs"]
+mod two_stage_tests;
 
 #[test]
 fn superweapon_money_two_stage_destination_cannot_bypass_paid_predecessor() {

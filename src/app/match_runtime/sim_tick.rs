@@ -807,6 +807,7 @@ fn advance_in_game_runtime_mode(
     mode: RuntimeAdvanceMode,
     startup_admitted: bool,
 ) {
+    crate::app::input::commands::reconcile_paid_super_weapon_cursor(state);
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
     let pacer_timing_admits = match mode {

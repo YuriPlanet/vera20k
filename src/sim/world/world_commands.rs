@@ -1946,6 +1946,53 @@ impl Simulation {
                     false,
                 )
             }
+            Command::CompletePaidSuperWeapon {
+                selection,
+                target_rx,
+                target_ry,
+            } => {
+                let Some(rules) = rules else {
+                    return false;
+                };
+                let owner = self.interner.intern(command_owner);
+                self.fire_super_weapon_selected(
+                    rules,
+                    owner,
+                    selection.destination,
+                    (*target_rx, *target_ry),
+                    overlay_registry,
+                    frame_effects,
+                    false,
+                    Some(*selection),
+                )
+            }
+            Command::CancelPaidSuperWeapon { selection } => {
+                let Some(rules) = rules else {
+                    return false;
+                };
+                let owner = self.interner.intern(command_owner);
+                self.cancel_paid_super_weapon_selection(rules, owner, *selection)
+            }
+            Command::BeginPaidSuperWeapon {
+                selection,
+                target_rx,
+                target_ry,
+            } => {
+                let Some(rules) = rules else {
+                    return false;
+                };
+                let owner = self.interner.intern(command_owner);
+                self.fire_super_weapon_selected(
+                    rules,
+                    owner,
+                    selection.source,
+                    (*target_rx, *target_ry),
+                    overlay_registry,
+                    frame_effects,
+                    false,
+                    Some(*selection),
+                )
+            }
             Command::EnterBunker { unit_id, bunker_id } => {
                 let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *unit_id) {

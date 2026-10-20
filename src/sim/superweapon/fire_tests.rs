@@ -142,6 +142,8 @@ fn click_fire_matches_native() {
             (33, 44),
             None,
             crate::sim::world::FrameEffects::default(),
+            None,
+            false,
         );
         let events = row["events"].as_array().unwrap();
         let called = |name: &str| events.iter().any(|event| event[0] == name);
@@ -335,7 +337,9 @@ fn a_charged_nuke_held_for_low_power_does_not_launch() {
         sw,
         (33, 44),
         None,
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        None,
+        false
     ));
     sim.power_states.get_mut(&owner).unwrap().is_low_power = false;
     sim.session.binary_frame = 30;
@@ -348,6 +352,8 @@ fn a_charged_nuke_held_for_low_power_does_not_launch() {
         sw,
         (33, 44),
         None,
-        crate::sim::world::FrameEffects::default()
+        crate::sim::world::FrameEffects::default(),
+        None,
+        false
     ));
 }

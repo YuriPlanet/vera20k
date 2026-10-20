@@ -66,6 +66,11 @@ pub(crate) fn handle_mouse_input(
     button: MouseButton,
     btn_state: ElementState,
 ) {
+    handle_mouse_input_inner(state, button, btn_state);
+    super::commands::reconcile_paid_super_weapon_cursor(state);
+}
+
+fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state: ElementState) {
     use crate::app::input::gadget_input::GadgetConsume;
     let pressed = btn_state.is_pressed();
     state
@@ -1059,6 +1064,11 @@ fn sidebar_cameo_press(
 }
 
 pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) {
+    apply_sidebar_action_inner(state, action);
+    super::commands::reconcile_paid_super_weapon_cursor(state);
+}
+
+fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
     if crate::app::input::campaign_input::is_locked(state) {
         return;
     }
@@ -1116,7 +1126,11 @@ pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) 
                 {
                     let cue = state
                         .rules()
-                        .and_then(|rules| rules.super_weapon(&section))
+                        .and_then(|rules| {
+                            rules
+                                .super_weapon(&section)
+                                .map(|sw| crate::sim::superweapon::financial_type(rules, sw))
+                        })
                         .and_then(|sw| sw.insufficient_funds_eva.clone());
                     if let Some(cue) = cue {
                         push_local_eva(state, &cue);
@@ -1128,14 +1142,11 @@ pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) 
                 }
                 super::superweapon_cameo::SuperWeaponClick::Launch(sw_type_id) => {
                     let owner = preferred_local_owner_name(state).unwrap_or_default();
-                    crate::app::input::commands::try_schedule_command(
+                    crate::app::input::commands::queue_super_weapon_click(
                         state,
                         &owner,
-                        Command::LaunchSuperWeapon {
-                            sw_type_id,
-                            target_rx: 0,
-                            target_ry: 0,
-                        },
+                        sw_type_id,
+                        (0, 0),
                     );
                 }
                 _ => {}
@@ -1484,6 +1495,15 @@ fn execute_type_select_tap(state: &mut AppState) {
 }
 
 pub(crate) fn handle_hotkey_pressed(
+    state: &mut AppState,
+    resolution: HotkeyResolution,
+    physical_code: winit::keyboard::KeyCode,
+) {
+    handle_hotkey_pressed_inner(state, resolution, physical_code);
+    super::commands::reconcile_paid_super_weapon_cursor(state);
+}
+
+fn handle_hotkey_pressed_inner(
     state: &mut AppState,
     resolution: HotkeyResolution,
     physical_code: winit::keyboard::KeyCode,

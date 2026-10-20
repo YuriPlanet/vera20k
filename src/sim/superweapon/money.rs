@@ -12,9 +12,8 @@ use crate::sim::world::{SimSoundEvent, Simulation};
 #[path = "money_tests.rs"]
 mod tests;
 
-/// Ares separates source selection from final settlement (ChronoSphere
-/// `NoMoney`, SWTypeExt::Launch). VERA has no saved one-use paid selection;
-/// reject these optional settings instead of paying a repeatable source.
+/// Single-stage admission. Paired powers instead require the saved one-use
+/// selection owner in `two_stage`; malformed half-pairs remain rejected.
 /// https://github.com/Ares-Developers/Ares/blob/4f1d929920aca31924c6cd4d3dfa849daa65252a/src/Ext/SWType/Body.cpp#L469
 pub(super) fn configuration_supported(sw: &SuperWeaponType) -> bool {
     sw.money_amount == 0

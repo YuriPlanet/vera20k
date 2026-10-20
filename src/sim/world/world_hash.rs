@@ -1390,6 +1390,7 @@ impl Simulation {
                 inst.ready_tick.hash(hasher);
                 inst.hash_recharge_time(hasher);
                 inst.hash_grant_flags(hasher);
+                inst.hash_paid_selection(hasher);
                 if let Some(id) = inst.native_unique_id() {
                     b"super-native-identity-v1".hash(hasher);
                     id.hash(hasher);
