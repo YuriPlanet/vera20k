@@ -166,6 +166,8 @@ pub mod voxel_anim_type;
 pub mod voxel_asset_catalog;
 pub mod voxel_frame_catalog;
 pub mod warhead_type;
+#[cfg(test)]
+mod warhead_verses_tests;
 pub mod weapon_type;
 
 #[cfg(any(test, feature = "test-support"))]

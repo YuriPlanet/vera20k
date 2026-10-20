@@ -1213,7 +1213,10 @@ use crate::util::save_codec;
 // second SpawnSurvivors of a building that outlives its killing blow.
 // 453 -> 454: HouseState retains House+0x248, the executed-EXIT flag.
 // 454 -> 455: BunkerState gains WallsUp (UpdateBunker state 5) before Occupied.
-const SNAPSHOT_VERSION: u32 = 455;
+// 455 -> 456: the retained type registry stores Warhead+0xA0 after each
+// reached ReadINI, including its per-layer literal default; its positional
+// payload and the effective rules configuration hash change.
+const SNAPSHOT_VERSION: u32 = 456;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
