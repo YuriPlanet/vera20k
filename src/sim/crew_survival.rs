@@ -1,5 +1,4 @@
-//! Crew survival: the infantry that leave a building or vehicle as it dies
-//! or is sold.
+//! Crew survival and passenger escape when a building or vehicle dies or is sold.
 //!
 //! Owner of the three crew producers and the pieces they share:
 //! - `BuildingClass::SpawnSurvivors @ 0x00442D90`, called by
@@ -16,10 +15,10 @@
 //! - `BuildingClass::How_Many_Survivors @ 0x00451330`, the building crew pick
 //!   `0x0044EB10` and `TechnoClass::GetCrew @ 0x00707D20`.
 //!
-//! Placement is `CellClass::PlaceInfantryInCell @ 0x00481180` on the cell's
-//! ground with the live Gate (`Simulation::place_infantry_in_ground_cell`); the exit is
-//! `InfantryClass::Scatter(&EmptyCoord, 1, 0)` through the shared forced
-//! Scatter arm. Every draw is on the Scenario stream. Aircraft never ask for
+//! Infantry placement is `CellClass::PlaceInfantryInCell @ 0x00481180` on the
+//! cell's ground with the live Gate (`Simulation::place_infantry_in_ground_cell`).
+//! Crew and passengers then dispatch `Scatter(&EmptyCoord, 1, 0)` through the
+//! shared class-aware owner. Every draw is on the Scenario stream. Aircraft never ask for
 //! a crew: `Pilot=` has no gameplay reader and no aircraft caller reaches the
 //! crew-type slot `vt+0x30C`.
 //!
@@ -54,15 +53,12 @@
 //!     takes each passenger out of its own Team (`0x006EA870`). VERA skips
 //!     the Hunt but makes neither call. Production creates no teams, so
 //!     both arms are dormant.
-//!   - A vehicle passenger (in `SizeLimit=6` amphibious transports) is not
-//!     Scattered (`UnitClass::Scatter @ 0x00743A50`), and its Unlimbo
-//!     (`0x00737BA0`) still leaves `+0x220` unchanged. Secondary facing now
-//!     follows its shared lifecycle writer at `0x00737BD2`. Trigger: a
-//!     transport carrying vehicles destroyed ashore.
-//!     Effect: the first vehicle stays on the cell with no NavCom, so the
-//!     next one's Can_Enter_Cell sees a stationary unit (code 6) and it
-//!     dies where native lets it out. Frequency: uncommon. Risk: unit
-//!     counts and the Scenario stream. The next path of this mechanism.
+//!   - A reused vehicle's Unlimbo does not apply the exceptional CloakState=2
+//!     write (`0x00737BD7..0x00737BEB`) when runtime Cloakable is set and
+//!     freshly stored Techno `+0x3D5` playfield membership is clear. Escape
+//!     retains the previous cloak state. Ordinary in-playfield MTNK
+//!     passengers do not meet this gate; cloakable passengers at the map
+//!     edge remain a separate placement limitation.
 //!   - The selection hand-over reads `HouseClass::IsHumanPlayer
 //!     @ 0x0050B6F0` as "owned by the local player". That is its skirmish
 //!     arm. In a campaign it admits any house with IsHuman (`+0x1EC`) or
@@ -80,8 +76,13 @@
 //!     an open-topped transport dying with a passenger of another house.
 //!     Frequency: rare. Risk: that escapee's Doing.
 //!
-//!   Each escapee spends Scatter's RandomRanged(0,4). Immediate Walk can
-//!   place a center request ordinarily; a raised A8E7AC suppresses that draw.
+//!   Each infantry escapee spends Scatter's RandomRanged(0,4). Unit null
+//!   Scatter sets a destination without RNG or immediate movement. Its new
+//!   NavCom can admit the next vehicle while both still occupy the source
+//!   cell; `tools/spatial_oracle/vehicle_passenger_escape.json` executes the
+//!   original placement, Scatter and following passenger admission.
+//!   Infantry's immediate Walk can place a center request ordinarily; a
+//!   raised A8E7AC suppresses that draw.
 //!   Initialized48E480 offsets and explicit center/corner controls are
 //!   retained in the crew-priority evidence; cold offsets are superseded.
 //! - A crewman on a cell the path grid marks unwalkable loses its Scatter
@@ -954,9 +955,9 @@ impl Simulation {
                     sim.assign_target_represented(passenger, None, Some(rules), registry, effects);
             }
             // `0x00738130..0x0073813D`: Scatter(&EmptyCoord, 1, 0).
-            if infantry {
-                sim.scatter_crew(rules, registry, passenger, effects);
-            }
+            // The virtual receiver includes Unit passengers. Its destination
+            // can let the following vehicle enter this still-occupied cell.
+            sim.scatter_crew(rules, registry, passenger, effects);
             // `0x00738143..0x0073816E`: a computer passenger joins the unit's Team
             // (`TeamClass::Add_Member @ 0x006EA500`), or Hunts without one.
             if !sim.owner_is_human(passenger_owner) {
@@ -1247,10 +1248,11 @@ impl Simulation {
         spawned
     }
 
-    /// `InfantryClass::Scatter(&EmptyCoord, 1, 0)`. A receiver error leaves
-    /// the crewman where it landed. The immediate Process's bridge-state
-    /// flag, which the hut caller propagates, is dropped: a crewman's first
-    /// walk step does not change bridge state.
+    /// Class-dispatched `Scatter(&EmptyCoord, 1, 0)` for crew and passengers.
+    /// A receiver error leaves the escapee where it landed. The Infantry
+    /// immediate Process's bridge-state flag, which the hut caller propagates,
+    /// is dropped: a crewman's first walk step does not change bridge state.
+    /// Unit null Scatter only assigns a destination through the shared owner.
     fn scatter_crew(
         &mut self,
         rules: &RuleSet,

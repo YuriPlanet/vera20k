@@ -368,6 +368,119 @@ fn retail_vehicle_enter_keeps_live_transport_target() {
     }
 }
 
+/// Unit ReceiveDamage calls each escaped passenger's Scatter(&EmptyCoord, 1, 0)
+/// at 0x00738130..0x0073813D. For a tank, Unit Scatter installs a cell NavCom
+/// through its ordinary destination setter and Drive Move_To.
+#[test]
+fn retail_tanks_scatter_after_their_transport_is_destroyed() {
+    use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
+    use crate::sim::components::{DriveCoord, NavTargetRef};
+    use crate::sim::movement::track_process::TrackFamily;
+    use crate::sim::world::FrameEffects;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, grid) = arena(rules);
+    let transport = sim.spawn_object("LCRF", OWNER, 16, 16, 64, rules).unwrap();
+    let mut passengers = Vec::new();
+    for _ in 0..2 {
+        let passenger = sim.spawn_object("MTNK", OWNER, 16, 14, 64, rules).unwrap();
+        assert!(crate::sim::passenger::can_enter_transport(
+            &sim, rules, passenger, transport
+        ));
+        assert!(sim.apply_command(
+            OWNER,
+            &Command::EnterTransport {
+                passenger_id: passenger,
+                transport_id: transport,
+            },
+            Some(rules),
+        ));
+        for _ in 0..600 {
+            sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+            if entity(&sim, passenger).passenger_role.is_inside_transport() {
+                break;
+            }
+        }
+        assert_eq!(
+            entity(&sim, passenger).passenger_role.inside_transport_id(),
+            Some(transport),
+            "the stock tank must board through its Enter command"
+        );
+        assert!(entity(&sim, passenger).lifecycle.in_limbo());
+        passengers.push(passenger);
+    }
+    let cargo = entity(&sim, transport).passenger_role.cargo().unwrap();
+    assert_eq!(cargo.passengers, [passengers[1], passengers[0]]);
+    assert_eq!(cargo.passenger_sizes, [3.0, 3.0]);
+    assert_eq!(cargo.total_size, 6);
+    let source = entity(&sim, transport).position.clone();
+    let warhead = sim.interner.intern("AP");
+    let hit = EntityDamageEvent::direct_receiver(
+        transport,
+        100_000,
+        0,
+        RAD_NO_ATTACKER,
+        None,
+        warhead,
+        ReceiverCallFlags {
+            ignore_defenses: false,
+            arg6: false,
+        },
+    );
+    sim.commit_noncombat_aoe_hits(rules, None, &[hit], FrameEffects::default());
+    assert!(sim.substrate.pending_delete.contains_object(&transport));
+    assert!(
+        entity(&sim, transport)
+            .passenger_role
+            .cargo()
+            .unwrap()
+            .is_empty()
+    );
+
+    // The original two_guard row admits the second tank with code 2 after
+    // the first tank receives its NavCom. Neither Scatter runs a Process.
+    for &id in &passengers {
+        let escaped = entity(&sim, id);
+        assert!(escaped.lifecycle.object_alive() && !escaped.lifecycle.in_limbo());
+        assert!(escaped.passenger_role.is_none());
+        assert_eq!(
+            (escaped.position.rx(), escaped.position.ry()),
+            (source.rx(), source.ry())
+        );
+        let Some(NavTargetRef::Cell { rx, ry }) = escaped.navigation.nav_com() else {
+            panic!("an escaped stock tank must receive Scatter's cell destination");
+        };
+        assert_ne!((rx, ry), (source.rx(), source.ry()));
+        assert_eq!(
+            escaped
+                .locomotor
+                .as_ref()
+                .unwrap()
+                .track_destination(TrackFamily::Drive),
+            Some(DriveCoord {
+                x: i32::from(rx) * 256 + 128,
+                y: i32::from(ry) * 256 + 128,
+                z: 0,
+            }),
+            "the escape destination must reach the tank's Drive locomotor"
+        );
+    }
+    // The carrier's deferred deletion must not retire its escaped cargo.
+    // Subsequent pathfinding and congestion are outside the escape oracle.
+    for _ in 0..600 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+    }
+    assert!(sim.substrate.entities.get(transport).is_none());
+    for id in passengers {
+        let escaped = entity(&sim, id);
+        assert!(escaped.lifecycle.object_alive() && !escaped.lifecycle.in_limbo());
+        assert!(escaped.passenger_role.is_none());
+    }
+}
+
 #[test]
 fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {

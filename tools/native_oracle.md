@@ -239,6 +239,7 @@ covered. The metadata records the executed binary, command and supplied type get
 
 | Python module | Sampled native behavior | Rust consumer/test location |
 | --- | --- | --- |
+| `tools.spatial_oracle.vehicle_passenger_escape` | Six resolved-input Unit passenger controls through the original death-escape caller, full Unit Unlimbo, map occupation, virtual Scatter and destination setter. Two-passenger rows retain the first passenger's native writes: its new NavCom admits the second before movement. Includes Sleep-to-Guard Unlimbo, frame, retained destination and blocked-neighbor controls. Boarding, damage prefix, full constructors/readers and later movement are excluded. | `world/vehicle_passenger_escape_oracle_tests.rs` compares placement, navigation, occupancy and RNG; `passenger/gunner_tests.rs` exercises stock LCRF/MTNK boarding and destruction through production commands and damage. |
 | `tools.rmg_oracle.gen_rng_vectors` | Seeded state and 16 draws for five seeds | `src/map/rmg/rng.rs` |
 | `tools.rmg_oracle.gen_x87_vectors` | Eight Gaussian draws for two seeds | `src/map/rmg/x87.rs` |
 | `tools.storage_oracle.sed_description` | 28 fresh-file Description fixtures and one cached-section diagnostic; original reader with supplied INI indexes | `src/map/rmg/description.rs`; disk-load regression in `saved_seeds.rs` |

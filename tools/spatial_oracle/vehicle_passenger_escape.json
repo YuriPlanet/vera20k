@@ -1,0 +1,1407 @@
+{
+  "map_input": {
+    "allocated_cells": [
+      32,
+      32
+    ],
+    "clear_speed_rows": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "land": 0,
+    "level": 0,
+    "local_size": [
+      0,
+      0,
+      32,
+      32
+    ],
+    "size": [
+      16,
+      16
+    ]
+  },
+  "rows": [
+    {
+      "input": {
+        "blocked_cells": [],
+        "frame": 100,
+        "name": "one_guard",
+        "passengers": [
+          {
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null
+          }
+        ],
+        "seed": 31,
+        "source_cell": [
+          10,
+          10
+        ]
+      },
+      "native_text_unchanged": true,
+      "passengers": [
+        {
+          "admission": 0,
+          "after": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_scatter": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_unlimbo": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": true,
+            "logic_registered": false,
+            "marked": false,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before_scatter": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "placement_admitted": true,
+          "reached_addresses": [
+            "0x0047E8A0",
+            "0x004A9720",
+            "0x004AFD40",
+            "0x004D3780",
+            "0x004D7170",
+            "0x004D94B0",
+            "0x0050B730",
+            "0x0055BAA0",
+            "0x005683C0",
+            "0x0056DC20",
+            "0x005F4EC0",
+            "0x006F6CA0",
+            "0x00737BA0",
+            "0x00737FE3",
+            "0x00738021",
+            "0x00738030",
+            "0x007380EC",
+            "0x007380F2",
+            "0x007380FA",
+            "0x00738130",
+            "0x0073813D",
+            "0x00738143",
+            "0x007381A8",
+            "0x0073F0A0",
+            "0x00741970",
+            "0x00743A50",
+            "0x007441B0"
+          ],
+          "terminal": "0x007381AE",
+          "unlimbo_al": 1
+        }
+      ],
+      "scenario_init_counter": 0,
+      "scenario_rng_unchanged": true,
+      "source_members": [
+        0
+      ],
+      "source_occupation": 32
+    },
+    {
+      "input": {
+        "blocked_cells": [],
+        "frame": 100,
+        "name": "two_guard",
+        "passengers": [
+          {
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null
+          },
+          {
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null
+          }
+        ],
+        "seed": 31,
+        "source_cell": [
+          10,
+          10
+        ]
+      },
+      "native_text_unchanged": true,
+      "passengers": [
+        {
+          "admission": 0,
+          "after": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_scatter": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_unlimbo": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": true,
+            "logic_registered": false,
+            "marked": false,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before_scatter": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "placement_admitted": true,
+          "reached_addresses": [
+            "0x0047E8A0",
+            "0x004A9720",
+            "0x004AFD40",
+            "0x004D3780",
+            "0x004D7170",
+            "0x004D94B0",
+            "0x0050B730",
+            "0x0055BAA0",
+            "0x005683C0",
+            "0x0056DC20",
+            "0x005F4EC0",
+            "0x006F6CA0",
+            "0x00737BA0",
+            "0x00737FE3",
+            "0x00738021",
+            "0x00738030",
+            "0x007380EC",
+            "0x007380F2",
+            "0x007380FA",
+            "0x00738130",
+            "0x0073813D",
+            "0x00738143",
+            "0x007381A8",
+            "0x0073F0A0",
+            "0x00741970",
+            "0x00743A50",
+            "0x007441B0"
+          ],
+          "terminal": "0x007381AE",
+          "unlimbo_al": 1
+        },
+        {
+          "admission": 2,
+          "after": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_scatter": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_unlimbo": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": true,
+            "logic_registered": false,
+            "marked": false,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before_scatter": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "placement_admitted": true,
+          "reached_addresses": [
+            "0x0047E8A0",
+            "0x004A9720",
+            "0x004AFD40",
+            "0x004D3780",
+            "0x004D7170",
+            "0x004D94B0",
+            "0x0050B730",
+            "0x0055BAA0",
+            "0x005683C0",
+            "0x0056DC20",
+            "0x005F4EC0",
+            "0x006F6CA0",
+            "0x00737BA0",
+            "0x00737FE3",
+            "0x00738021",
+            "0x00738030",
+            "0x007380EC",
+            "0x007380F2",
+            "0x007380FA",
+            "0x00738130",
+            "0x0073813D",
+            "0x00738143",
+            "0x007381A8",
+            "0x0073F0A0",
+            "0x00741970",
+            "0x00743A50",
+            "0x007441B0"
+          ],
+          "terminal": "0x007381AE",
+          "unlimbo_al": 1
+        }
+      ],
+      "scenario_init_counter": 0,
+      "scenario_rng_unchanged": true,
+      "source_members": [
+        1,
+        0
+      ],
+      "source_occupation": 32
+    },
+    {
+      "input": {
+        "blocked_cells": [],
+        "frame": 100,
+        "name": "two_first_sleep",
+        "passengers": [
+          {
+            "mega_mission": -1,
+            "mission": 0,
+            "nav_cell": null
+          },
+          {
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null
+          }
+        ],
+        "seed": 31,
+        "source_cell": [
+          10,
+          10
+        ]
+      },
+      "native_text_unchanged": true,
+      "passengers": [
+        {
+          "admission": 0,
+          "after": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_scatter": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_unlimbo": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": true,
+            "logic_registered": false,
+            "marked": false,
+            "mega_mission": -1,
+            "mission": 0,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before_scatter": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "placement_admitted": true,
+          "reached_addresses": [
+            "0x0047E8A0",
+            "0x004A9720",
+            "0x004AFD40",
+            "0x004D3780",
+            "0x004D7170",
+            "0x004D94B0",
+            "0x0050B730",
+            "0x0055BAA0",
+            "0x005683C0",
+            "0x0056DC20",
+            "0x005F4EC0",
+            "0x006F6CA0",
+            "0x00737BA0",
+            "0x00737FE3",
+            "0x00738021",
+            "0x00738030",
+            "0x007380EC",
+            "0x007380F2",
+            "0x007380FA",
+            "0x00738130",
+            "0x0073813D",
+            "0x00738143",
+            "0x007381A8",
+            "0x0073F0A0",
+            "0x00741970",
+            "0x00743A50",
+            "0x007441B0"
+          ],
+          "terminal": "0x007381AE",
+          "unlimbo_al": 1
+        },
+        {
+          "admission": 2,
+          "after": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_scatter": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_unlimbo": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": true,
+            "logic_registered": false,
+            "marked": false,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before_scatter": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "placement_admitted": true,
+          "reached_addresses": [
+            "0x0047E8A0",
+            "0x004A9720",
+            "0x004AFD40",
+            "0x004D3780",
+            "0x004D7170",
+            "0x004D94B0",
+            "0x0050B730",
+            "0x0055BAA0",
+            "0x005683C0",
+            "0x0056DC20",
+            "0x005F4EC0",
+            "0x006F6CA0",
+            "0x00737BA0",
+            "0x00737FE3",
+            "0x00738021",
+            "0x00738030",
+            "0x007380EC",
+            "0x007380F2",
+            "0x007380FA",
+            "0x00738130",
+            "0x0073813D",
+            "0x00738143",
+            "0x007381A8",
+            "0x0073F0A0",
+            "0x00741970",
+            "0x00743A50",
+            "0x007441B0"
+          ],
+          "terminal": "0x007381AE",
+          "unlimbo_al": 1
+        }
+      ],
+      "scenario_init_counter": 0,
+      "scenario_rng_unchanged": true,
+      "source_members": [
+        1,
+        0
+      ],
+      "source_occupation": 32
+    },
+    {
+      "input": {
+        "blocked_cells": [],
+        "frame": 103,
+        "name": "one_guard_frame_103",
+        "passengers": [
+          {
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null
+          }
+        ],
+        "seed": 31,
+        "source_cell": [
+          10,
+          10
+        ]
+      },
+      "native_text_unchanged": true,
+      "passengers": [
+        {
+          "admission": 0,
+          "after": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2688,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              10
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_scatter": {
+            "alive": true,
+            "drive_destination": [
+              2944,
+              2688,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              11,
+              10
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_unlimbo": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": true,
+            "logic_registered": false,
+            "marked": false,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before_scatter": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "placement_admitted": true,
+          "reached_addresses": [
+            "0x0047E8A0",
+            "0x004A9720",
+            "0x004AFD40",
+            "0x004D3780",
+            "0x004D7170",
+            "0x004D94B0",
+            "0x0050B730",
+            "0x0055BAA0",
+            "0x005683C0",
+            "0x0056DC20",
+            "0x005F4EC0",
+            "0x006F6CA0",
+            "0x00737BA0",
+            "0x00737FE3",
+            "0x00738021",
+            "0x00738030",
+            "0x007380EC",
+            "0x007380F2",
+            "0x007380FA",
+            "0x00738130",
+            "0x0073813D",
+            "0x00738143",
+            "0x007381A8",
+            "0x0073F0A0",
+            "0x00741970",
+            "0x00743A50",
+            "0x007441B0"
+          ],
+          "terminal": "0x007381AE",
+          "unlimbo_al": 1
+        }
+      ],
+      "scenario_init_counter": 0,
+      "scenario_rng_unchanged": true,
+      "source_members": [
+        0
+      ],
+      "source_occupation": 32
+    },
+    {
+      "input": {
+        "blocked_cells": [],
+        "frame": 100,
+        "name": "one_retained_destination",
+        "passengers": [
+          {
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              12,
+              10
+            ]
+          }
+        ],
+        "seed": 31,
+        "source_cell": [
+          10,
+          10
+        ]
+      },
+      "native_text_unchanged": true,
+      "passengers": [
+        {
+          "admission": 0,
+          "after": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 2,
+            "nav_cell": [
+              12,
+              10
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_scatter": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 2,
+            "nav_cell": [
+              12,
+              10
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_unlimbo": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 2,
+            "nav_cell": [
+              12,
+              10
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": true,
+            "logic_registered": false,
+            "marked": false,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              12,
+              10
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before_scatter": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 2,
+            "nav_cell": [
+              12,
+              10
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "placement_admitted": true,
+          "reached_addresses": [
+            "0x0047E8A0",
+            "0x004A9720",
+            "0x004D3780",
+            "0x004D7170",
+            "0x0050B730",
+            "0x0055BAA0",
+            "0x005683C0",
+            "0x005F4EC0",
+            "0x006F6CA0",
+            "0x00737BA0",
+            "0x00737FE3",
+            "0x00738021",
+            "0x00738030",
+            "0x007380EC",
+            "0x007380F2",
+            "0x007380FA",
+            "0x00738130",
+            "0x0073813D",
+            "0x00738143",
+            "0x007381A8",
+            "0x0073F0A0",
+            "0x00743A50",
+            "0x007441B0"
+          ],
+          "terminal": "0x007381AE",
+          "unlimbo_al": 1
+        }
+      ],
+      "scenario_init_counter": 0,
+      "scenario_rng_unchanged": true,
+      "source_members": [
+        0
+      ],
+      "source_occupation": 32
+    },
+    {
+      "input": {
+        "blocked_cells": [
+          [
+            11,
+            9
+          ]
+        ],
+        "frame": 100,
+        "name": "one_blocked_preferred_neighbor",
+        "passengers": [
+          {
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null
+          }
+        ],
+        "seed": 31,
+        "source_cell": [
+          10,
+          10
+        ]
+      },
+      "native_text_unchanged": true,
+      "passengers": [
+        {
+          "admission": 0,
+          "after": {
+            "alive": true,
+            "drive_destination": [
+              2688,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              10,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_scatter": {
+            "alive": true,
+            "drive_destination": [
+              2688,
+              2432,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": [
+              10,
+              9
+            ],
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "after_unlimbo": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": true,
+            "logic_registered": false,
+            "marked": false,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": true
+          },
+          "before_scatter": {
+            "alive": true,
+            "drive_destination": [
+              0,
+              0,
+              0
+            ],
+            "limbo": false,
+            "logic_registered": true,
+            "marked": true,
+            "mega_mission": -1,
+            "mission": 5,
+            "nav_cell": null,
+            "position": [
+              2688,
+              2688,
+              0
+            ],
+            "queued": -1,
+            "transporter": false
+          },
+          "placement_admitted": true,
+          "reached_addresses": [
+            "0x0047E8A0",
+            "0x004A9720",
+            "0x004AFD40",
+            "0x004D3780",
+            "0x004D7170",
+            "0x004D94B0",
+            "0x0050B730",
+            "0x0055BAA0",
+            "0x005683C0",
+            "0x0056DC20",
+            "0x005F4EC0",
+            "0x006F6CA0",
+            "0x00737BA0",
+            "0x00737FE3",
+            "0x00738021",
+            "0x00738030",
+            "0x007380EC",
+            "0x007380F2",
+            "0x007380FA",
+            "0x00738130",
+            "0x0073813D",
+            "0x00738143",
+            "0x007381A8",
+            "0x0073F0A0",
+            "0x00741970",
+            "0x00743A50",
+            "0x007441B0"
+          ],
+          "terminal": "0x007381AE",
+          "unlimbo_al": 1
+        }
+      ],
+      "scenario_init_counter": 0,
+      "scenario_rng_unchanged": true,
+      "source_members": [
+        0
+      ],
+      "source_occupation": 32
+    }
+  ],
+  "type_input": {
+    "armed": false,
+    "crusher": true,
+    "locomotor": "Drive",
+    "movement_zone": "Normal",
+    "native_cell_occupier_default": true,
+    "native_logic_default": true,
+    "rot": 5,
+    "sight": 8,
+    "speed": 7,
+    "speed_type": "Track",
+    "strength": 300
+  }
+}
