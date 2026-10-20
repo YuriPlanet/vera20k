@@ -77,16 +77,8 @@ pub(crate) fn first_owner_compatible<'a>(
     })
 }
 
-pub(crate) fn house_token_mask(tokens: &[String], rules: &RuleSet) -> u32 {
-    tokens.iter().fold(0u32, |mask, token| {
-        rules
-            .trigger_house_type_index(token)
-            .map_or(mask, |index| mask | country_bit(index))
-    })
-}
-
 pub(crate) fn owner_allows(candidate: &ObjectType, country_bit: u32, rules: &RuleSet) -> bool {
-    !candidate.owner.is_empty() && house_token_mask(&candidate.owner, rules) & country_bit != 0
+    !candidate.owner.is_empty() && rules.house_type_mask(&candidate.owner) & country_bit != 0
 }
 
 /// Exact identity/shell tail of `HouseClass__FirstBuildableFromArray`.
@@ -106,12 +98,12 @@ pub fn candidate_allowed(
         return false;
     }
     if !candidate.required_houses.is_empty()
-        && house_token_mask(&candidate.required_houses, rules) & country.actual == 0
+        && rules.house_type_mask(&candidate.required_houses) & country.actual == 0
     {
         return false;
     }
     if !candidate.forbidden_houses.is_empty()
-        && house_token_mask(&candidate.forbidden_houses, rules) & country.actual != 0
+        && rules.house_type_mask(&candidate.forbidden_houses) & country.actual != 0
     {
         return false;
     }

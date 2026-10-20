@@ -137,6 +137,11 @@ def generate_parent():
   for token in ('PARENT','parent','ParentAlias','UNKNOWN','','CHILD','<none>','<random>'):
    raw,receipt=call(0x5117D0,m.cstring(token))
    lookup.append(dict(token=token,index=signed(raw),**receipt))
+  masks=[]
+  for text in ['<random>','<none>','none','UNKNOWN','PARENT','ParentAlias','PARENT,CHILD,<random>','PARENT,PARENT']:
+   source=ini(m,f'[Mask]\nOwner={text}\n')
+   result,receipt=call(0x4750D0,source,(m.cstring('Mask'),m.cstring('Owner'),0))
+   masks.append(dict(text=text,mask=result,**receipt))
   house=m.alloc(0x1000);m.u.mem_write(house+0x34,dwords(child))
   typ=m.alloc(0x1800);vector=m.alloc(24);data=m.alloc(4)
   m.u.mem_write(data,dwords(typ));m.u.mem_write(vector,dwords(0,data,1,1,1,10))
@@ -158,9 +163,23 @@ def generate_parent():
    gates.append(dict(id=name,country='CHILD',actual_index=m.read32(child+0xB8),
     parent=prior['parent'],owner_mask=owner,required_mask=required,forbidden_mask=forbidden,
     selected=bool(result),**receipt))
+  for name,parent_name,text in [
+   ('authored_random_parent_and_owner','<random>','<random>'),
+   ('authored_none_does_not_own_country_zero','BASE','<none>'),
+   ('authored_owner_alias','PARENT','ParentAlias'),
+  ]:
+   prior=read(child,f'[CHILD]\nParentCountry={parent_name}\n')
+   source=ini(m,f'[Mask]\nOwner={text}\n')
+   owner,_=call(0x4750D0,source,(m.cstring('Mask'),m.cstring('Owner'),0))
+   m.u.mem_write(typ+0x6CC,dwords(owner,-1));m.u.mem_write(typ+0xDA0,dwords(-1,-1))
+   result,receipt=call(0x5051E0,house,(vector,))
+   assert result in (0,typ)
+   gates.append(dict(id=name,country='CHILD',actual_index=m.read32(child+0xB8),
+    parent=prior['parent'],owner_text=text,owner_mask=owner,required_mask=-1,forbidden_mask=-1,
+    selected=bool(result),**receipt))
   return dict(schema_version=1,binary_sha256=hashlib.sha256(image_bytes()).hexdigest(),
    constructor=ctor,rng_state_hex=initial_rng,reader_controls=rows,parent_alias_read=alias_read,
-   lookup_controls=lookup,first_buildable_controls=gates)
+   lookup_controls=lookup,house_mask_controls=masks,first_buildable_controls=gates)
  finally:
   if 'hooks' in locals():
    for hook in hooks:m.u.hook_del(hook)
@@ -170,17 +189,19 @@ def generate_parent():
 def parent_metadata():
  from tools.native_oracle import provenance
  return provenance(
-  scope='Original Country constructor and sixteen retained physical INI reads; whole country-name lookup and seven whole FirstBuildableFromArray controls',
+  scope='Original Country constructor and sixteen retained physical INI reads; eight whole country-name lookups, eight physical Owner mask reads and ten whole FirstBuildableFromArray controls',
   assumptions=[
    'Synthetic ASCII files only. Existing RetailRulesHistory executes complete INI constructor535B30, file constructor4739F0, physical loader4741F0 and Country reader511850. Physical empty keys are elided: an otherwise empty section disappears and its read retains prior state; a surviving section with another key defaults omitted ParentCountry to currentID. No synthetic cached-empty entry is injected.',
    'Original Country5113F0 registers BASE/PARENT/CHILD in that order. The sampled CHILD storage starts A5-filled; constructor511404 clears only ParentCountry first byte. Original Country+98 is retained across actual511850 calls; currentID section and ParentCountry key are case-sensitive; ReadString528A10 capacity25/defaultcurrentID and the original copy execute.',
    'Whole5117D0 resolves original Name+64 or ID+24 case-insensitively and returns stored index+B8, unknown/empty/<none> -1 and special<random> -2. ParentAlias comes from an original retained Country body read, not supplied comparison output.',
+   'Whole INI4750D0 reads physical Owner strings with capacity128 and default0, then48DEB0 rejects only lookup result-1. Random-2 contributesbit30; unknown and unregistered none contribute0. Three joined controls feed this original reader result directly into whole5051E0, rather than synthesizing the candidate mask.',
    'Whole5051E0 receives one synthetic candidate type and an explicit House pointing to CHILD. Owner+6CC uses resolved ParentCountry bit; Required+DA0/Forbidden+DA4 use actualCountry+B8. Candidate AI side+6D0 is -1 and superweapons are enabled; world, factories, AI scheduling, complete object construction and player sidebar behavior are outside coverage.',
    'Three full seeded RNG states are retained once and compared byte-for-byte before/after each selected original call. Action-timer sentinel[995,0,25] and writes to its12bytes are recorded. No claim covers unrelated timers, complete RNG chronology or whole-world detach/lifecycle behavior. Original mapped code bytes are checked unchanged.',
   ],
   substitutions=['Existing RetailRulesHistory/BulletReader Windows/file/heap/CRT/TLS platform transport; supplied synthetic source bytes and candidate/House priors only. No INI parser, Country constructor/read, country-name lookup, mask test or FirstBuildable body is replaced.'],
   entry_points={'country_ctor':0x5113F0,'country_read':0x511850,'parent_key_read':0x5118E2,
-   'read_string':0x528A10,'country_name_lookup':0x5117D0,'first_buildable':0x5051E0})
+   'read_string':0x528A10,'country_name_lookup':0x5117D0,'house_mask_read':0x4750D0,
+   'house_mask_token':0x48DEB0,'first_buildable':0x5051E0})
 
 if __name__=='__main__':
  import sys

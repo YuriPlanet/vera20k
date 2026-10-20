@@ -125,6 +125,150 @@
         25
       ],
       "timer_writes": []
+    },
+    {
+      "actual_index": 2,
+      "country": "CHILD",
+      "forbidden_mask": -1,
+      "id": "authored_random_parent_and_owner",
+      "owner_mask": 1073741824,
+      "owner_text": "<random>",
+      "parent": "<random>",
+      "required_mask": -1,
+      "rng_unchanged": true,
+      "selected": true,
+      "timer_after": [
+        995,
+        0,
+        25
+      ],
+      "timer_writes": []
+    },
+    {
+      "actual_index": 2,
+      "country": "CHILD",
+      "forbidden_mask": -1,
+      "id": "authored_none_does_not_own_country_zero",
+      "owner_mask": 0,
+      "owner_text": "<none>",
+      "parent": "BASE",
+      "required_mask": -1,
+      "rng_unchanged": true,
+      "selected": false,
+      "timer_after": [
+        995,
+        0,
+        25
+      ],
+      "timer_writes": []
+    },
+    {
+      "actual_index": 2,
+      "country": "CHILD",
+      "forbidden_mask": -1,
+      "id": "authored_owner_alias",
+      "owner_mask": 2,
+      "owner_text": "ParentAlias",
+      "parent": "PARENT",
+      "required_mask": -1,
+      "rng_unchanged": true,
+      "selected": true,
+      "timer_after": [
+        995,
+        0,
+        25
+      ],
+      "timer_writes": []
+    }
+  ],
+  "house_mask_controls": [
+    {
+      "mask": 1073741824,
+      "rng_unchanged": true,
+      "text": "<random>",
+      "timer_after": [
+        995,
+        0,
+        25
+      ],
+      "timer_writes": []
+    },
+    {
+      "mask": 0,
+      "rng_unchanged": true,
+      "text": "<none>",
+      "timer_after": [
+        995,
+        0,
+        25
+      ],
+      "timer_writes": []
+    },
+    {
+      "mask": 0,
+      "rng_unchanged": true,
+      "text": "none",
+      "timer_after": [
+        995,
+        0,
+        25
+      ],
+      "timer_writes": []
+    },
+    {
+      "mask": 0,
+      "rng_unchanged": true,
+      "text": "UNKNOWN",
+      "timer_after": [
+        995,
+        0,
+        25
+      ],
+      "timer_writes": []
+    },
+    {
+      "mask": 2,
+      "rng_unchanged": true,
+      "text": "PARENT",
+      "timer_after": [
+        995,
+        0,
+        25
+      ],
+      "timer_writes": []
+    },
+    {
+      "mask": 2,
+      "rng_unchanged": true,
+      "text": "ParentAlias",
+      "timer_after": [
+        995,
+        0,
+        25
+      ],
+      "timer_writes": []
+    },
+    {
+      "mask": 1073741830,
+      "rng_unchanged": true,
+      "text": "PARENT,CHILD,<random>",
+      "timer_after": [
+        995,
+        0,
+        25
+      ],
+      "timer_writes": []
+    },
+    {
+      "mask": 2,
+      "rng_unchanged": true,
+      "text": "PARENT,PARENT",
+      "timer_after": [
+        995,
+        0,
+        25
+      ],
+      "timer_writes": []
     }
   ],
   "lookup_controls": [

@@ -127,7 +127,7 @@ pub(crate) fn can_build(
         rules,
         sim.interner.resolve(house.house_type_id()),
     );
-    let house_mask = |tokens: &[String]| crate::sim::ai_buildable::house_token_mask(tokens, rules);
+    let house_mask = |tokens: &[String]| rules.house_type_mask(tokens);
     if !obj.required_houses.is_empty() && house_mask(&obj.required_houses) & house_bit == 0 {
         return CanBuild::No;
     }
@@ -689,7 +689,7 @@ fn get_ownable(obj: &ObjectType, rules: &RuleSet, game_mode_nonzero: bool) -> u3
     if obj.double_owned && game_mode_nonzero {
         return 0x7FFF_FFFF;
     }
-    crate::sim::ai_buildable::house_token_mask(&obj.owner, rules)
+    rules.house_type_mask(&obj.owner)
 }
 
 #[cfg(test)]

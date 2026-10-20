@@ -74,6 +74,29 @@ fn parent_owner_lookup_uses_original_alias_and_signed_sentinels() {
 }
 
 #[test]
+fn authored_house_masks_match_original_owner_reader() {
+    use super::object_type::ObjectCategory;
+    let gold = crate::test_fixture::json("tools/rules_oracle/session_country_parent.json");
+    for row in gold["house_mask_controls"].as_array().unwrap() {
+        let text = format!(
+            "[Countries]\n0=BASE\n1=PARENT\n2=CHILD\n[PARENT]\nName=ParentAlias\n\
+             [BuildingTypes]\n0=TARGET\n[TARGET]\nStrength=100\nOwner={}\n",
+            row["text"].as_str().unwrap()
+        );
+        let rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
+        let object = rules
+            .object_in_category(ObjectCategory::Building, "TARGET")
+            .unwrap();
+        assert_eq!(
+            rules.house_type_mask(&object.owner),
+            row["mask"].as_u64().unwrap() as u32,
+            "{}",
+            row["text"]
+        );
+    }
+}
+
+#[test]
 fn parent_state_survives_save_handoff_and_is_cleared_by_destructive_reset() {
     let processed = advance(start(), "[CHILD]\nParentCountry=PARENT\n");
     let bytes = save_codec::serialize(&processed).unwrap();

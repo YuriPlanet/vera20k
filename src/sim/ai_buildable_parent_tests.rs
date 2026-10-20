@@ -9,7 +9,7 @@ fn mask_names(mask: i64) -> String {
     (0..32)
         .filter(|bit| mask & (1i64 << bit) != 0)
         .map(|bit| match bit {
-            0 => "ZERO".into(),
+            0 => "BASE".into(),
             1 => "PARENT".into(),
             2 => "CHILD".into(),
             _ => format!("N{bit}"),
@@ -22,12 +22,16 @@ fn mask_names(mask: i64) -> String {
 fn first_buildable_keeps_parent_owner_and_actual_restrictions_separate() {
     let gold = crate::test_fixture::json("tools/rules_oracle/session_country_parent.json");
     for row in gold["first_buildable_controls"].as_array().unwrap() {
-        let mut text = String::from("[Countries]\n0=ZERO\n1=PARENT\n2=CHILD\n");
+        let mut text = String::from("[Countries]\n0=BASE\n1=PARENT\n2=CHILD\n");
         for index in 3..32 {
             text.push_str(&format!("{index}=N{index}\n"));
         }
-        text.push_str(&format!("[CHILD]\nParentCountry={}\n[BuildingTypes]\n0=TARGET\n[TARGET]\nStrength=100\nAIBasePlanningSide=0\nOwner={}\n",
-            row["parent"].as_str().unwrap(), mask_names(row["owner_mask"].as_i64().unwrap())));
+        let owner = row["owner_text"]
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| mask_names(row["owner_mask"].as_i64().unwrap()));
+        text.push_str(&format!("[PARENT]\nName=ParentAlias\n[CHILD]\nParentCountry={}\n[BuildingTypes]\n0=TARGET\n[TARGET]\nStrength=100\nAIBasePlanningSide=0\nOwner={}\n",
+            row["parent"].as_str().unwrap(), owner));
         for (field, key) in [
             ("required_mask", "RequiredHouses"),
             ("forbidden_mask", "ForbiddenHouses"),

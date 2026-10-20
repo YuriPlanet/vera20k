@@ -37,11 +37,22 @@ special `<random>` token. It does not recursively follow parent text. Native
 | `RequiredHouses=` | Actual Country index `+0xB8`, `0x50523B..0x50524B` |
 | `ForbiddenHouses=` | Actual Country index `+0xB8`, `0x50525E..0x50526E` |
 
-The seven whole-function controls distinguish these gates with one supplied
+Ten whole-function controls distinguish these gates with one supplied
 candidate and a House pointing to the original constructed Country. They also
-execute unknown and `<random>` parent shifts. Candidate side is unrestricted
+execute unknown and `<random>` parent shifts. Three cases use an authored
+Owner value read through the original physical INI loader and whole
+`ReadOwners` (`0x4750D0`), then feed that result directly into FirstBuildable.
+Candidate side is unrestricted
 and super weapons are enabled. This does not establish whole-AI scheduling,
 factory production, initial-force generation or player sidebar parity.
+
+Eight additional whole `ReadOwners` controls cover ordinary names, aliases,
+unknown values, duplicates and special tokens. Its token helper `0x48DEB0`
+rejects only lookup result -1, so `<random>` (-2) contributes bit 30.
+An unregistered `<none>` contributes zero; the TriggerType-specific rule
+mapping it to country zero does not apply. Existing tokenization and capacity
+128 remain with the production INI list reader. Physical layer history of
+Owner/RequiredHouses/ForbiddenHouses beyond these declared reads is not covered.
 
 The corpus retains three complete seeded RNG states and asserts no change for
 each selected call. It records one 12-byte action-timer sentinel and its writes;
