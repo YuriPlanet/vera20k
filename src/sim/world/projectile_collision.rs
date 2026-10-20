@@ -157,10 +157,10 @@ impl ProjectileCollisionWorld<'_> {
     ) -> ImpactLadderWorld {
         let em_effect = self.rules.is_some_and(|rules| {
             rules
-                .warhead(self.interner.resolve(projectile.payload.warhead))
+                .warhead(self.interner.resolve(projectile.payload().warhead))
                 .is_some_and(|warhead| warhead.em_effect)
         });
-        let target = match projectile.target {
+        let target = match projectile.target() {
             ProjectileTarget::Entity(id) => self.entities.get(id).map(|target| {
                 let coords = self.location(target);
                 let object_type = self
@@ -179,14 +179,14 @@ impl ProjectileCollisionWorld<'_> {
                         offset_coords.y,
                         offset_coords.z,
                     ),
-                    in_air: self.high_flying(projectile.target),
+                    in_air: self.high_flying(projectile.target()),
                     ground_layer: super::display_registry::entity_layer(
                         target,
                         self.terrain,
                         self.rules.map(|rules| (rules, self.interner)),
                     ) == super::display_layers::DisplayLayer::GROUND,
                     distance: self
-                        .target_distance(location, projectile.target)
+                        .target_distance(location, projectile.target())
                         .expect("represented impact target"),
                     building_offset: target.category() == EntityCategory::Structure
                         && object_type.is_some_and(|kind| kind.target_coord_offset() != [0; 3]),
@@ -200,11 +200,11 @@ impl ProjectileCollisionWorld<'_> {
                     coords,
                     aim: coords,
                     offset_coords: coords,
-                    in_air: self.high_flying(projectile.target),
+                    in_air: self.high_flying(projectile.target()),
                     ground_layer: target.display_layer(self.terrain, self.rules)
                         == super::display_layers::DisplayLayer::GROUND,
                     distance: self
-                        .target_distance(location, projectile.target)
+                        .target_distance(location, projectile.target())
                         .expect("represented impact target"),
                     building_offset: false,
                 }
@@ -268,20 +268,23 @@ impl ProjectileCollisionWorld<'_> {
         use crate::util::native_x87::NativeF64Bits;
         let candidate = motion.candidate_coord();
         let mut candidate_z = f64::from_bits(motion.candidate[2].bits());
-        let vertical = matches!(projectile.trajectory, ProjectileTrajectory::Vertical { .. });
+        let vertical = matches!(
+            projectile.trajectory(),
+            ProjectileTrajectory::Vertical { .. }
+        );
         let source = self
             .entities
-            .get(projectile.source_id)
-            .map(|_| projectile.source_id);
+            .get(projectile.source_id())
+            .map(|_| projectile.source_id());
         let mut impact = false;
         if !vertical {
             let floor = self.ground(candidate);
             let deck = floor.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
             let cell = self.cell(candidate);
             let structural = cell.bridge_flags_0x1180() & 0x100 != 0
-                || self.cell(projectile.position).bridge_flags_0x1180() & 0x100 != 0;
+                || self.cell(projectile.position()).bridge_flags_0x1180() & 0x100 != 0;
             let crossing = if structural {
-                projectile_bridge_crossing(projectile.position.z, candidate.z, deck)
+                projectile_bridge_crossing(projectile.position().z, candidate.z, deck)
             } else {
                 ProjectileBridgeCrossing::None
             };
@@ -342,7 +345,7 @@ impl ProjectileCollisionWorld<'_> {
                     motion.velocity = crate::sim::projectile::projectile_slope_reflect_double(
                         motion.velocity,
                         slope,
-                        projectile.collision.elasticity_bits,
+                        projectile.collision().elasticity_bits,
                     )
                     .expect("supported native Bullet slope matrix");
                     impact = true;
@@ -369,16 +372,19 @@ impl ProjectileCollisionWorld<'_> {
         native_velocity: [crate::util::native_x87::NativeF64Bits; 3],
         mut impact: bool,
     ) -> ProjectileCollisionResponse {
-        let vertical = matches!(projectile.trajectory, ProjectileTrajectory::Vertical { .. });
+        let vertical = matches!(
+            projectile.trajectory(),
+            ProjectileTrajectory::Vertical { .. }
+        );
         let source = self
             .entities
-            .get(projectile.source_id)
-            .map(|_| projectile.source_id);
+            .get(projectile.source_id())
+            .map(|_| projectile.source_id());
         let mut near_target = false;
         let mut left_map = false;
         let target_cell_coord = (
-            (projectile.launch_target.x / 256) as i16,
-            (projectile.launch_target.y / 256) as i16,
+            (projectile.launch_target().x / 256) as i16,
+            (projectile.launch_target().y / 256) as i16,
         );
         let same_cell =
             ((candidate.x / 256) as i16, (candidate.y / 256) as i16) == target_cell_coord;
@@ -386,9 +392,9 @@ impl ProjectileCollisionWorld<'_> {
         // from the bridge deck for an OnBridge bullet.
         let old_height = || {
             crate::sim::movement::ground_pose::height_at_z(
-                projectile.position.z,
-                self.ground(projectile.position),
-                projectile.on_bridge,
+                projectile.position().z,
+                self.ground(projectile.position()),
+                projectile.on_bridge(),
             )
         };
         if !vertical && same_cell && old_height() < 208 {
@@ -397,7 +403,7 @@ impl ProjectileCollisionWorld<'_> {
             velocity = persistent_velocity;
         } else {
             let candidate_cell = self.packed_cell(candidate);
-            let target_cell = self.packed_cell(projectile.launch_target);
+            let target_cell = self.packed_cell(projectile.launch_target());
             let candidate_building = self.building(&candidate_cell);
             let target_building = self.building(&target_cell);
             if !vertical
@@ -417,14 +423,14 @@ impl ProjectileCollisionWorld<'_> {
                 }) {
                     let _ = id;
                     impact = true;
-                    if !projectile.collision.inaccurate {
+                    if !projectile.collision().inaccurate {
                         candidate = position;
                     }
                     velocity = persistent_velocity;
                 } else if !self.inside_map(candidate) {
                     impact = true;
                     left_map = true;
-                    candidate = projectile.position;
+                    candidate = projectile.position();
                     velocity = persistent_velocity;
                 } else {
                     if vertical {
@@ -468,7 +474,7 @@ impl ProjectileCollisionWorld<'_> {
 
     fn shared(&self, projectile: &Projectile, candidate: ProjectileCoord) -> bool {
         let cell = self.cell(candidate);
-        if (projectile.collision.subject_to_cliffs || projectile.collision.subject_to_walls)
+        if (projectile.collision().subject_to_cliffs || projectile.collision().subject_to_walls)
             && self.cliff_wall(projectile, candidate)
         {
             return true;
@@ -479,24 +485,24 @@ impl ProjectileCollisionWorld<'_> {
         let height = crate::sim::movement::ground_pose::height_at_z(
             candidate.z,
             self.ground(candidate),
-            projectile.on_bridge,
+            projectile.on_bridge(),
         );
         if height <= -crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS {
             return true;
         }
-        if projectile.collision.flak_scatter
+        if projectile.collision().flak_scatter
             && self
-                .target_coordinate(projectile.target, ProjectileTargetQuery::TargetAim)
+                .target_coordinate(projectile.target(), ProjectileTargetQuery::TargetAim)
                 .is_some_and(|target| candidate.z < target.z)
             && crate::sim::movement::ground_pose::height_at_z(
                 candidate.z,
                 self.ground(candidate),
-                projectile.on_bridge,
+                projectile.on_bridge(),
             ) < 0
         {
             return true;
         }
-        if projectile.collision.level {
+        if projectile.collision().level {
             // Cell ctor47BC11 stores DWORD 0xFFFF; ordinary IsoMap loading
             // rejects/reconstructs the dummy, and Recalc skips it entirely.
             let tile = match &cell {
@@ -512,10 +518,10 @@ impl ProjectileCollisionWorld<'_> {
                 return true;
             }
         }
-        if projectile.collision.anti_air
-            && self.high_flying(projectile.target)
+        if projectile.collision().anti_air
+            && self.high_flying(projectile.target())
             && self
-                .target_distance(candidate, projectile.target)
+                .target_distance(candidate, projectile.target())
                 .is_some_and(|distance| distance < 128)
         {
             return true;
@@ -556,18 +562,18 @@ impl ProjectileCollisionWorld<'_> {
         };
         // Shared468BB0 resolves the three retained inputs before4CC360.
         // Source/target use565730; previous and sampled queries use5657A0.
-        let source = self.cell(projectile.launch_origin);
-        let target = self.cell(projectile.launch_target);
+        let source = self.cell(projectile.launch_origin());
+        let target = self.cell(projectile.launch_target());
         let previous = if self.terrain.is_some() {
             get_cellclass_fallback(
                 self.terrain,
-                i32::from(projectile.previous_cell.0),
-                i32::from(projectile.previous_cell.1),
+                i32::from(projectile.previous_cell().0),
+                i32::from(projectile.previous_cell().1),
             )
         } else {
             self.dummy.stamp_coord(
-                i32::from(projectile.previous_cell.0),
-                i32::from(projectile.previous_cell.1),
+                i32::from(projectile.previous_cell().0),
+                i32::from(projectile.previous_cell().1),
             );
             CellRef::Dummy {
                 cell: self.dummy.clone(),
@@ -588,11 +594,11 @@ impl ProjectileCollisionWorld<'_> {
                     y: candidate.y,
                     z: candidate.z,
                 },
-                subject_to_cliffs: projectile.collision.subject_to_cliffs,
-                subject_to_walls: projectile.collision.subject_to_walls,
+                subject_to_cliffs: projectile.collision().subject_to_cliffs,
+                subject_to_walls: projectile.collision().subject_to_walls,
                 firing_house: self
                     .entities
-                    .get(projectile.source_id)
+                    .get(projectile.source_id())
                     .map(|source| source.owner()),
             },
             self.interner,
@@ -830,18 +836,18 @@ mod tests {
             let bullet = sim
                 .projectiles
                 .iter()
-                .find_map(|(_, p)| (p.source_id == firer).then(|| p.clone()))
+                .find_map(|(_, p)| (p.source_id() == firer).then(|| p.clone()))
                 .expect("retail M60 FireAt admits a Bullet");
-            assert_eq!(bullet.on_bridge, target_bridge);
+            assert_eq!(bullet.on_bridge(), target_bridge);
             let collision = world(&sim);
             // A deliberately supplied later committed position on clear
             // ground isolates GetHeight from the independent cliff admission
             // on the target's bridge anchor. No stock flight is claimed.
-            let later_xy = ProjectileCoord::new(bullet.position.x + 256, bullet.position.y, 0);
+            let later_xy = ProjectileCoord::new(bullet.position().x + 256, bullet.position().y, 0);
             let candidate =
                 ProjectileCoord::new(later_xy.x, later_xy.y, collision.ground(later_xy));
             let mut later = bullet.clone();
-            later.position = candidate;
+            later.set_position_for_test(candidate);
             assert_eq!(
                 collision
                     .collide(&later, candidate, ProjectileCollisionPhase::Shared)
@@ -854,7 +860,7 @@ mod tests {
             // the Techno live-object turn and drains final deletion afterward.
             sim.advance_tick(&[], Some(&rules), None, None, 16);
             assert!(
-                sim.projectiles.get(bullet.id).is_none(),
+                sim.projectiles.get(bullet.id()).is_none(),
                 "stock ordinary admission still detonates at first AI"
             );
             assert!(
@@ -1111,9 +1117,10 @@ mod tests {
             let response = world(&sim).ordinary_tail(
                 projectile,
                 candidate,
-                projectile.velocity,
-                projectile.velocity,
-                ProjectileCollisionMotion::from_coordinate(candidate, projectile.velocity).velocity,
+                projectile.velocity(),
+                projectile.velocity(),
+                ProjectileCollisionMotion::from_coordinate(candidate, projectile.velocity())
+                    .velocity,
                 false,
             );
             let ProjectileCollisionResponse::Ordinary {
@@ -1284,17 +1291,19 @@ mod tests {
             spawn.collision.level = flag("level");
             sim.projectiles.spawn(100, spawn);
             let mut projectile = sim.projectiles.get(100).unwrap().clone();
-            projectile.position = candidate;
-            projectile.on_bridge = flag("on_bridge");
-            projectile.previous_cell = row["previous"]
-                .as_array()
-                .map(|xy| {
-                    (
-                        xy[0].as_i64().unwrap() as i16,
-                        xy[1].as_i64().unwrap() as i16,
-                    )
-                })
-                .unwrap_or((1, 2));
+            projectile.set_position_for_test(candidate);
+            projectile.set_on_bridge_for_test(flag("on_bridge"));
+            projectile.set_previous_cell_for_test(
+                row["previous"]
+                    .as_array()
+                    .map(|xy| {
+                        (
+                            xy[0].as_i64().unwrap() as i16,
+                            xy[1].as_i64().unwrap() as i16,
+                        )
+                    })
+                    .unwrap_or((1, 2)),
+            );
             let mut world = world(&sim);
             world.rules = Some(&rules);
             world.overlay_registry = Some(&registry);
@@ -1576,7 +1585,13 @@ mod tests {
             );
             if !detonate {
                 assert_eq!(
-                    runtime.simulation.projectiles.get(100).unwrap().position.z,
+                    runtime
+                        .simulation
+                        .projectiles
+                        .get(100)
+                        .unwrap()
+                        .position()
+                        .z,
                     -5,
                     "467BEE skips the common clamp when no impact was admitted"
                 );
@@ -1646,15 +1661,15 @@ mod tests {
                 )
                 .expect("fixture frame must complete");
             let saved = runtime.simulation.projectiles.get(id).unwrap().clone();
-            assert_eq!(saved.arm_timer.start_frame(), 100);
+            assert_eq!(saved.arm_timer().start_frame(), 100);
             assert_eq!(
                 saved
-                    .arm_timer
+                    .arm_timer()
                     .remaining(runtime.simulation.session.binary_frame() as i32),
                 9
             );
             assert_eq!(
-                saved.position,
+                saved.position(),
                 ProjectileCoord::new(3200, 3200, origin_z - 3)
             );
             let bytes = GameSnapshot::save(&runtime.simulation, 17, 18, "TIMER.MAP", 0);
@@ -1662,12 +1677,12 @@ mod tests {
                 .unwrap()
                 .sim;
             let mut serialized_expected = saved.clone();
-            serialized_expected.in_logic_vector = false;
+            serialized_expected.set_in_logic_vector_for_test(false);
             assert_eq!(restored.projectiles.get(id), Some(&serialized_expected));
             restored.restore_after_snapshot_load().unwrap();
             let mut expected = saved.clone();
             expected
-                .arm_timer
+                .arm_timer_mut_for_test()
                 .start(restored.session.binary_frame() as i32, 0);
             assert_eq!(restored.projectiles.get(id), Some(&expected));
             let hash = restored.state_hash();
@@ -1675,23 +1690,37 @@ mod tests {
                 .projectiles
                 .get_mut(id)
                 .unwrap()
-                .arm_timer
+                .arm_timer_mut_for_test()
                 .start(restored.session.binary_frame() as i32, 1);
             assert_ne!(
                 restored.state_hash(),
                 hash,
                 "proximity duration is hash authority"
             );
-            restored.projectiles.get_mut(id).unwrap().arm_timer = expected.arm_timer;
-            restored.projectiles.get_mut(id).unwrap().collision.dropping = !dropping;
+            restored
+                .projectiles
+                .get_mut(id)
+                .unwrap()
+                .set_arm_timer_for_test(*expected.arm_timer());
+            restored
+                .projectiles
+                .get_mut(id)
+                .unwrap()
+                .collision_mut_for_test()
+                .dropping = !dropping;
             assert_ne!(
                 restored.state_hash(),
                 hash,
                 "Dropping admission policy is hash authority"
             );
-            restored.projectiles.get_mut(id).unwrap().collision.dropping = dropping;
+            restored
+                .projectiles
+                .get_mut(id)
+                .unwrap()
+                .collision_mut_for_test()
+                .dropping = dropping;
             assert_eq!(restored.state_hash(), hash);
-            assert!(restored.projectiles.get(id).unwrap().in_logic_vector);
+            assert!(restored.projectiles.get(id).unwrap().in_logic_vector());
             restored.rebuild_caches_after_load(
                 terrain,
                 crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
@@ -1731,7 +1760,8 @@ mod tests {
             if dropping {
                 let shot = resumed.simulation.projectiles.get(id).unwrap();
                 assert_eq!(
-                    shot.last_distance_half, 47,
+                    shot.last_distance_half(),
+                    47,
                     "Dropping commits Check's native 94/2 watermark after load"
                 );
                 assert_eq!(
@@ -1740,7 +1770,7 @@ mod tests {
                         .projectiles
                         .get(id)
                         .unwrap()
-                        .last_distance_half,
+                        .last_distance_half(),
                     100
                 );
                 assert_eq!(
@@ -1859,10 +1889,10 @@ mod tests {
                 );
                 let (_, shot) = runtime.simulation.projectiles.iter().next().unwrap();
                 assert_eq!(
-                    shot.arm_timer.start_frame(),
+                    shot.arm_timer().start_frame(),
                     100, // Logic ran at frame100; advance_frame increments the clock afterward.
                 );
-                assert_eq!(shot.arm_timer.duration(), if aircraft { 0 } else { arm });
+                assert_eq!(shot.arm_timer().duration(), if aircraft { 0 } else { arm });
             }
         }
     }
@@ -1993,14 +2023,14 @@ mod tests {
                 .map(|v| v.as_str().unwrap())
                 .collect();
             assert_eq!(
-                shot.velocity
+                shot.velocity()
                     .native()
                     .map(|v| format!("{:016x}", v.bits()))
                     .as_slice(),
                 expected_bits.as_slice()
             );
             assert_eq!(
-                [shot.position.x, shot.position.y, shot.position.z],
+                [shot.position().x, shot.position().y, shot.position().z],
                 std::array::from_fn::<_, 3, _>(
                     |i| expected["candidate"][i].as_i64().unwrap() as i32
                 ),
@@ -2020,28 +2050,36 @@ mod tests {
             let snapshot = GameSnapshot::save(&runtime.simulation, 0, 0, "native motion", 0);
             let mut restored = GameSnapshot::load(&snapshot).unwrap().sim;
             let mut serialized_expected = runtime.simulation.projectiles.get(id).unwrap().clone();
-            serialized_expected.in_logic_vector = false;
+            serialized_expected.set_in_logic_vector_for_test(false);
             assert_eq!(restored.projectiles.get(id), Some(&serialized_expected));
             restored.restore_after_snapshot_load().unwrap();
             assert_eq!(
-                restored.projectiles.get(id).unwrap().velocity,
-                runtime.simulation.projectiles.get(id).unwrap().velocity
+                restored.projectiles.get(id).unwrap().velocity(),
+                runtime.simulation.projectiles.get(id).unwrap().velocity()
             );
             let mut expected_loaded = runtime.simulation.projectiles.get(id).unwrap().clone();
             expected_loaded
-                .arm_timer
+                .arm_timer_mut_for_test()
                 .start(restored.session.binary_frame() as i32, 0);
             assert_eq!(restored.projectiles.get(id), Some(&expected_loaded));
             let hash = restored.state_hash();
-            let velocity = restored.projectiles.get(id).unwrap().velocity;
-            restored.projectiles.get_mut(id).unwrap().velocity.x =
-                crate::util::native_x87::NativeF64Bits::from_bits(velocity.x.bits() ^ 1);
+            let velocity = restored.projectiles.get(id).unwrap().velocity();
+            restored
+                .projectiles
+                .get_mut(id)
+                .unwrap()
+                .velocity_mut_for_test()
+                .x = crate::util::native_x87::NativeF64Bits::from_bits(velocity.x.bits() ^ 1);
             assert_ne!(
                 restored.state_hash(),
                 hash,
                 "one binary64 ULP remains hash-visible"
             );
-            restored.projectiles.get_mut(id).unwrap().velocity = velocity;
+            restored
+                .projectiles
+                .get_mut(id)
+                .unwrap()
+                .set_velocity_for_test(velocity);
             assert_eq!(restored.state_hash(), hash);
             // The real load contract rebuilds skipped map caches and native
             // overlay/Tiberium authority. Scenario RNG and Tiberium timers have
@@ -2090,7 +2128,7 @@ mod tests {
                     .map(|v| v.as_str().unwrap())
                     .collect();
                 assert_eq!(
-                    shot.velocity
+                    shot.velocity()
                         .native()
                         .map(|v| format!("{:016x}", v.bits()))
                         .as_slice(),
@@ -2098,19 +2136,19 @@ mod tests {
                     "runtime native motion frame {frame}"
                 );
                 assert_eq!(
-                    [shot.position.x, shot.position.y, shot.position.z],
+                    [shot.position().x, shot.position().y, shot.position().z],
                     std::array::from_fn::<_, 3, _>(
                         |i| expected["candidate"][i].as_i64().unwrap() as i32
                     )
                 );
                 assert_eq!(
-                    shot.position,
-                    resumed.simulation.projectiles.get(id).unwrap().position,
+                    shot.position(),
+                    resumed.simulation.projectiles.get(id).unwrap().position(),
                     "snapshot continuation frame {frame}"
                 );
                 assert_eq!(
-                    shot.velocity,
-                    resumed.simulation.projectiles.get(id).unwrap().velocity
+                    shot.velocity(),
+                    resumed.simulation.projectiles.get(id).unwrap().velocity()
                 );
             }
         }
@@ -2171,7 +2209,7 @@ mod tests {
                 .expect("post-ramp speed survives the ordinary tail");
             let candidate = &expected["candidate"];
             assert_eq!(
-                projectile.position,
+                projectile.position(),
                 ProjectileCoord::new(
                     candidate[0].as_i64().unwrap() as i32,
                     candidate[1].as_i64().unwrap() as i32,
@@ -2186,7 +2224,7 @@ mod tests {
                 .collect();
             assert_eq!(
                 projectile
-                    .velocity
+                    .velocity()
                     .native()
                     .map(|v| format!("{:016x}", v.bits()))
                     .as_slice(),

@@ -131,10 +131,14 @@ fn waypoint_curtain_uses_ground_spread_order_including_warped_foot() {
         assert!(sim.entities().get(ordered[0]).unwrap().chrono_warp_latch());
         let anim = sim.substrate.anims.iter().next().unwrap().1;
         assert_eq!(
-            [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
+            [
+                anim.world_coord().x,
+                anim.world_coord().y,
+                anim.world_coord().z
+            ],
             [10368, 10368, 213]
         );
-        assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0));
+        assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x600, 0));
         assert!(!sim.sound_events.iter().any(|event| matches!(
             event,
             SimSoundEvent::SuperWeaponLaunched { .. } | SimSoundEvent::RadarEvent { .. }
@@ -399,12 +403,12 @@ fn the_launch_matches_native() {
             .anims
             .iter()
             .map(|(_, anim)| anim)
-            .filter(|anim| anim.type_id == invoke)
+            .filter(|anim| anim.type_id() == invoke)
             .collect();
         let native_anims: Vec<&Value> = events(row, "anim").collect();
         assert_eq!(anims.len(), native_anims.len(), "{row}");
         if let (Some(anim), Some(native)) = (anims.first(), native_anims.first()) {
-            let world = anim.world_coord;
+            let world = anim.world_coord();
             assert_eq!(
                 [world.x, world.y, world.z],
                 [int(&native[2][0]), int(&native[2][1]), int(&native[2][2])],
@@ -412,7 +416,7 @@ fn the_launch_matches_native() {
             );
             // (delay, loopCount, drawFlags, zAdjust, reverse).
             assert_eq!(native[3], serde_json::json!([0, 1, 0x600, 0, 0]));
-            assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0), "{row}");
+            assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x600, 0), "{row}");
         }
 
         // PlayEVA, then CreateRadarEvent(13, cell).

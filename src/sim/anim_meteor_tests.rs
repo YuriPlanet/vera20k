@@ -93,7 +93,7 @@ fn original_meteor_shower_controls_preserve_signed_spread_and_interleaved_constr
             ),
             expected["result"] == 1
         );
-        let actual:Vec<_>=sim.anims().map(|(_, anim)|serde_json::json!({"type":sim.interner.resolve(anim.type_id),"location":[anim.world_coord.x,anim.world_coord.y,anim.world_coord.z],"velocity_bits":anim.bounce.unwrap().velocity.map(|v|v.bits())})).collect();
+        let actual:Vec<_>=sim.anims().map(|(_, anim)|serde_json::json!({"type":sim.interner.resolve(anim.type_id),"location":[anim.world_coord.x,anim.world_coord.y,anim.world_coord.z],"velocity_bits":anim.bounce.unwrap().velocity().map(|v|v.bits())})).collect();
         let pieces:Vec<_>=expected["pieces"].as_array().unwrap().iter().map(|p|serde_json::json!({"type":p["type"],"location":p["location"],"velocity_bits":p["velocity_bits"]})).collect();
         assert_eq!(actual, pieces, "{input}");
         assert_rng(&sim, expected, "after");

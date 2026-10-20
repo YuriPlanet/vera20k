@@ -1166,7 +1166,7 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
         let name = |slot: usize| {
             entity.building_art.anim_slots()[slot].map(|anim| {
                 sim.interner
-                    .resolve(sim.anim(anim).unwrap().type_id)
+                    .resolve(sim.anim(anim).unwrap().type_id())
                     .to_string()
             })
         };
@@ -1294,7 +1294,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
         let name = |slot: usize| {
             entity.building_art.anim_slots()[slot].map(|anim| {
                 sim.interner
-                    .resolve(sim.anim(anim).unwrap().type_id)
+                    .resolve(sim.anim(anim).unwrap().type_id())
                     .to_string()
             })
         };

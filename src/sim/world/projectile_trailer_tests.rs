@@ -105,22 +105,22 @@ fn rngs(sim: &Simulation) -> Value {
 }
 
 fn anim_state(sim: &Simulation, anim: &AnimObject) -> Value {
-    let p = anim.world_coord;
+    let p = anim.world_coord();
     json!({
-        "native_id": anim.native_unique_id,
-        "alive": !sim.substrate.pending_delete.contains_object(&anim.stable_id),
+        "native_id": anim.native_unique_id(),
+        "alive": !sim.substrate.pending_delete.contains_object(&anim.stable_id()),
         "position": [p.x,p.y,p.z],
-        "stage": anim.runtime.current_frame,
-        "timer": [anim.runtime.frame_timer.start_frame(), anim.runtime.frame_timer.duration()],
-        "rate": anim.runtime.rate_reload,
-        "step": anim.runtime.frame_step,
-        "owner_object": anim.owner_entity.unwrap_or(0),
+        "stage": anim.runtime().current_frame,
+        "timer": [anim.runtime().frame_timer.start_frame(), anim.runtime().frame_timer.duration()],
+        "rate": anim.runtime().rate_reload,
+        "step": anim.runtime().frame_step,
+        "owner_object": anim.owner_entity().unwrap_or(0),
         "bullet": anim.attached_bullet().unwrap_or(0),
-        "z_adjust": anim.z_adjust,
-        "delay": anim.runtime.delay_remaining,
-        "draw_flags": anim.draw_flags,
-        "loops": anim.runtime.loop_remaining,
-        "brand_new": anim.runtime.first_ai_guard,
+        "z_adjust": anim.z_adjust(),
+        "delay": anim.runtime().delay_remaining,
+        "draw_flags": anim.draw_flags(),
+        "loops": anim.runtime().loop_remaining,
+        "brand_new": anim.runtime().first_ai_guard,
     })
 }
 
@@ -194,7 +194,9 @@ fn only_bubble(sim: &Simulation) -> u64 {
         .substrate
         .anims
         .iter()
-        .filter_map(|(id, anim)| (sim.interner.resolve(anim.type_id) == "BBBLELRG").then_some(*id))
+        .filter_map(|(id, anim)| {
+            (sim.interner.resolve(anim.type_id()) == "BBBLELRG").then_some(*id)
+        })
         .collect();
     assert_eq!(ids.len(), 1);
     ids[0]
@@ -265,7 +267,7 @@ fn scalable_unit_scene(shots: usize) -> Option<(Simulation, RuleSet, u64, u64)> 
         sim.substrate
             .anims
             .iter()
-            .all(|(_, anim)| { sim.interner.resolve(anim.type_id) != "BBBLELRG" })
+            .all(|(_, anim)| { sim.interner.resolve(anim.type_id()) != "BBBLELRG" })
     );
     Some((sim, rules, tank, target))
 }
@@ -280,18 +282,18 @@ fn scalable_unit_shots_emit_a_real_trailer_on_the_shared_eighth_member_cadence()
     let kind = sim.interner.get("Cannon").unwrap();
     assert_eq!(sim.projectiles.scaled_spawn_delay(kind), 4);
     let (&bullet, projectile) = sim.projectiles.iter().next().unwrap();
-    let origin = projectile.position;
+    let origin = projectile.position();
     sim.session.set_binary_frame_for_test(4);
     sim.object_ai_visit_one_with_effects(bullet, Some(&rules), ObjectAiCtx::default());
     let bubble = only_bubble(&sim);
-    let position = sim.anim(bubble).unwrap().world_coord;
+    let position = sim.anim(bubble).unwrap().world_coord();
     assert_eq!(
         [position.x, position.y, position.z],
         [origin.x, origin.y, origin.z],
         "the real Anim constructor receives pre-flight Location"
     );
     assert!(sim.substrate.logic.as_slice().contains(&bubble));
-    assert_ne!(sim.projectiles.get(bullet).unwrap().position, origin);
+    assert_ne!(sim.projectiles.get(bullet).unwrap().position(), origin);
 }
 
 #[test]
@@ -317,7 +319,7 @@ fn projectile_trailer_retail_constructor_rng_and_complete_lifetime_match_native(
             row["after_native_id"].as_u64().unwrap() as u32
         );
         assert_ne!(
-            sim.projectiles.get(bullet).unwrap().position,
+            sim.projectiles.get(bullet).unwrap().position(),
             coord(&row["emissions"][0]["position"]),
             "trail stands at pre-flight Location"
         );
@@ -396,7 +398,7 @@ fn projectile_trailer_is_registered_before_terminal_logic_compaction() {
         );
         let bubble = only_bubble(&sim);
         assert_eq!(
-            sim.anim(bubble).unwrap().runtime.first_ai_guard,
+            sim.anim(bubble).unwrap().runtime().first_ai_guard,
             terminal,
             "a terminal Bullet's removal shifts its new Anim behind the cursor"
         );
@@ -405,7 +407,7 @@ fn projectile_trailer_is_registered_before_terminal_logic_compaction() {
             terminal
         );
         assert_eq!(
-            sim.anim(bubble).unwrap().world_coord.x,
+            sim.anim(bubble).unwrap().world_coord().x,
             coord(&row["supplied"]["position"]).x
         );
         assert_eq!(rngs(&sim), row["after_rng"]);
@@ -567,7 +569,7 @@ fn scalable_uninit_self_callback_removes_before_drain_and_keeps_type_override() 
         .projectiles
         .get(id)
         .unwrap()
-        .payload
+        .payload()
         .projectile_type()
         .unwrap();
     let corpus = native();

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Retail DRON per-frame FireAtTarget736DF0 through actual Unit/Techno FireAt, Bullet flight/Parasite attachment, ExitUnit and ten whole UnitAI visits; retained firing counter and bounded SHP frame reads",
+  "assumptions": [
+    "Existing building_death_anims owns original retail readers, VM, allocator, physical actors, flat map/House projection and platform/presentation boundaries. Its opt-in fresh actor boundary runs native constructors/Unlimbo, without supplied Limbo or AttachTo.",
+    "Original physical RULESMD, optional LANGRULE, MPBattleMD and Hills map layers plus fixed ART/DRONP are read; DRON/MTNK are admitted at declared (8,8)/(9,8). Target assignment and instantaneous aim use original owners. This is a bounded projected map, not full scenario startup.",
+    "One real736DF0 invokes original741340 and6FDD50; no FireAt, fire legality, Bullet or parasite answer is substituted. BulletAI runs until real attachment; three real host ParasiteAI visits precede direct whole ExitUnit. Later whole UnitAI visits run only for the genuinely registered released source.",
+    "Draw73C62B..73C725 reads admitted undisguised eight-facing DRON frame state; it is not DrawIt admission, blitter execution or original pixels. Other actors/particles/animations and the whole Logic schedule are not advanced in this component.",
+    "RNG streams are retained from actual constructor inputs without reseeding. All subsequent raw/ranged requests and continuation states are recorded. Watched firing/rearm/passive/paralysis/parasite timer stores and Limbo/expiry calls preserve phase/order; this does not establish exhaustive whole-game timer/detach coverage."
+  ],
+  "substitutions": [
+    "Only existing declared IO/allocator/presentation/cache seams of the joined runtime; exact original code remains unchanged. The direct ExitUnit invocation is the release boundary, not a native Sonic-hit producer or user input event. Native full-match/pixel equivalence is not claimed."
+  ],
+  "entry_points": {
+    "unit_fire_visit": "0x00736DF0",
+    "unit_fire": "0x00741340",
+    "techno_fire": "0x006FDD50",
+    "unit_ctor": "0x007353C0",
+    "unit_unlimbo": "0x00737BA0",
+    "bullet_ai": "0x004666E0",
+    "attach": "0x0062A980",
+    "parasite_ai": "0x00629FD0",
+    "exit_unit": "0x0062A4A0",
+    "unit_ai": "0x007360C0",
+    "counter": "0x007363C9",
+    "frame": "0x0073C62B"
+  },
+  "payload_sha256": "a902c363037142ac6d8cbea408edc551246cad00c3d3c18e4d977172df42d995"
+}

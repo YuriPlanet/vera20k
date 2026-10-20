@@ -163,7 +163,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
     assert_eq!(
         runtime
             .simulation
-            .resolve(runtime.simulation.anim(damaged_slot).unwrap().type_id),
+            .resolve(runtime.simulation.anim(damaged_slot).unwrap().type_id()),
         before["slots"][0]["type_name"].as_str().unwrap()
     );
     let engineer = runtime
@@ -254,7 +254,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
     assert_eq!(
         runtime
             .simulation
-            .resolve(runtime.simulation.anim(healthy_slot).unwrap().type_id),
+            .resolve(runtime.simulation.anim(healthy_slot).unwrap().type_id()),
         after["slots"][0]["type_name"].as_str().unwrap()
     );
     assert!(runtime.simulation.power_states[&owner].total_output() >= 200);

@@ -113,17 +113,17 @@ impl Scene {
                 int(&control["input"]["game_mode"]) != 0,
             ),
         );
-        sim.fog.width = sim.session.map_width();
-        sim.fog.height = sim.session.map_height();
+        sim.fog.set_width_for_test(sim.session.map_width());
+        sim.fog.set_height_for_test(sim.session.map_height());
         // Native repair_target_prior supplies each registered Cell+12C=18
         // and +E4=0. Map5656D0 reads bit8 as visible. Exploration-only
         // reveal_all_for_owner does not publish current sight; this existing
         // fixture adapter publishes18/counter0 without creating a sight source.
-        let mut visibility = OwnerVisibility::new(sim.fog.width, sim.fog.height);
+        let mut visibility = OwnerVisibility::new(sim.fog.width(), sim.fog.height());
         for &(x, y) in &allocated {
             visibility.mark_visible(x, y);
         }
-        sim.fog.by_owner.insert(owner, visibility);
+        sim.fog.by_owner_mut_for_test().insert(owner, visibility);
         sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(3));
         let wall_type = sim.interner.get("GAWALL").unwrap();
         Some(Self {

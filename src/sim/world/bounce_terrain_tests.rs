@@ -22,15 +22,15 @@ fn body(case: &Value) -> BounceState {
             NativeF32Bits::from_bits((case[name][i].as_f64().unwrap() as f32).to_bits())
         })
     };
-    BounceState {
-        elasticity: NativeF64Bits::from_bits(case["elasticity"].as_f64().unwrap().to_bits()),
-        gravity: NativeF64Bits::from_bits(case["gravity"].as_f64().unwrap().to_bits()),
-        angular_velocity_magnitude: NativeF64Bits::POSITIVE_ZERO,
-        position: floats("position"),
-        velocity: floats("velocity"),
-        orientation: IDENTITY,
-        rotation: IDENTITY,
-    }
+    BounceState::from_native_for_test(
+        NativeF64Bits::from_bits(case["elasticity"].as_f64().unwrap().to_bits()),
+        NativeF64Bits::from_bits(case["gravity"].as_f64().unwrap().to_bits()),
+        NativeF64Bits::POSITIVE_ZERO,
+        floats("position"),
+        floats("velocity"),
+        IDENTITY,
+        IDENTITY,
+    )
 }
 
 /// A zero-spin quaternion: these comparisons read position and velocity only.
@@ -186,8 +186,8 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
             case["name"]
         );
         for (key, values) in [
-            ("position_bits", state.position),
-            ("velocity_bits", state.velocity),
+            ("position_bits", state.position()),
+            ("velocity_bits", state.velocity()),
         ] {
             for i in 0..3 {
                 let actual = values[i].bits();
@@ -336,13 +336,17 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
         let id = sim.substrate.voxel_anims.ids()[0];
         // This terrain-consumer fixture supplies the independently captured
         // Bounce body after the ordinary constructor has admitted the object.
-        sim.substrate.voxel_anims.get_mut(id).unwrap().bounce = body(case);
+        sim.substrate
+            .voxel_anims
+            .get_mut(id)
+            .unwrap()
+            .set_bounce_for_test(body(case));
         assert!(sim.live_object_order_snapshot().contains(&id));
         let before = sim.state_hash();
         sim.visit_voxel_anim(id, Some(&rules));
         let actual = sim.substrate.voxel_anims.get(id).unwrap();
         assert_eq!(
-            actual.duration,
+            actual.duration(),
             if case["outcome"].as_u64() == Some(2) {
                 0
             } else {
@@ -352,7 +356,7 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
         );
         for i in 0..3 {
             assert_eq!(
-                actual.bounce.position[i].bits(),
+                actual.bounce().position()[i].bits(),
                 case["position_bits"][i].as_u64().unwrap() as u32,
                 "{name} position"
             );
@@ -413,15 +417,15 @@ fn native_body(bytes: &[u8]) -> BounceState {
     let f32_at = |at: usize| {
         NativeF32Bits::from_bits(u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()))
     };
-    BounceState {
-        elasticity: f64_at(0),
-        gravity: f64_at(8),
-        angular_velocity_magnitude: f64_at(0x10),
-        position: std::array::from_fn(|axis| f32_at(0x18 + axis * 4)),
-        velocity: std::array::from_fn(|axis| f32_at(0x24 + axis * 4)),
-        orientation: std::array::from_fn(|i| f32_at(0x30 + i * 4)),
-        rotation: std::array::from_fn(|i| f32_at(0x40 + i * 4)),
-    }
+    BounceState::from_native_for_test(
+        f64_at(0),
+        f64_at(8),
+        f64_at(0x10),
+        std::array::from_fn(|axis| f32_at(0x18 + axis * 4)),
+        std::array::from_fn(|axis| f32_at(0x24 + axis * 4)),
+        std::array::from_fn(|i| f32_at(0x30 + i * 4)),
+        std::array::from_fn(|i| f32_at(0x40 + i * 4)),
+    )
 }
 
 fn outcome_code(outcome: BounceOutcome) -> i64 {
@@ -476,8 +480,8 @@ fn a_debris_chunk_flight_matches_original_update() {
                 break;
             }
             for axis in 0..3 {
-                let position = state.position[axis].bits();
-                let velocity = f32::from_bits(state.velocity[axis].bits());
+                let position = state.position()[axis].bits();
+                let velocity = f32::from_bits(state.velocity()[axis].bits());
                 if position != at(4 + axis) as u32
                     || velocity != f32::from_bits(at(7 + axis) as u32)
                 {
@@ -491,7 +495,8 @@ fn a_debris_chunk_flight_matches_original_update() {
         if ran == native_ticks.len() {
             quaternion_rows += 1;
             let native = native_body(&hex_bytes(row["final_body_hex"].as_str().unwrap()));
-            if (state.orientation, state.rotation) != (native.orientation, native.rotation) {
+            if (state.orientation(), state.rotation()) != (native.orientation(), native.rotation())
+            {
                 issues.push(format!("{input} final quaternions"));
             }
         }
@@ -533,19 +538,19 @@ fn a_spinning_piece_tumbles_like_the_original() {
             let context = format!("{input} tick {}", tick + 1);
             assert_eq!(outcome, i64::from(native[0]), "{context}");
             assert_eq!(
-                state.orientation.map(NativeF32Bits::bits),
+                state.orientation().map(NativeF32Bits::bits),
                 native[1..5],
                 "{context}"
             );
             assert_eq!(
-                state.rotation.map(NativeF32Bits::bits),
+                state.rotation().map(NativeF32Bits::bits),
                 native[5..9],
                 "{context}"
             );
             assert_eq!(matrix, native[9..21], "{context}");
         }
         let native = native_body(&hex_bytes(row["final_body_hex"].as_str().unwrap()));
-        assert_eq!(state.position, native.position, "{input}");
+        assert_eq!(state.position(), native.position(), "{input}");
     }
     assert!(
         bounces > 32,

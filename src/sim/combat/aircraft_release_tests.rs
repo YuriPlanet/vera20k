@@ -557,7 +557,7 @@ fn a_strafers_bomb_leaves_at_its_weapon_speed_toward_the_target() {
     assert_eq!(weapon_speed, 76);
     let bomb = first_bullet(&mut sim, &rules);
     let [x, y, z] = bomb
-        .velocity
+        .velocity()
         .native()
         .map(|axis| f64::from_bits(axis.bits()));
     let speed = (x * x + y * y + z * z).sqrt();
@@ -621,8 +621,8 @@ fn a_human_aircraft_shooting_over_shroud_maps_the_cells_around_it() {
             64,
             crate::map::resolved_terrain::test_flat_cell,
         ));
-        sim.fog.width = 64;
-        sim.fog.height = 64;
+        sim.fog.set_width_for_test(64);
+        sim.fog.set_height_for_test(64);
         sim.substrate
             .entities
             .get_mut(1)

@@ -779,7 +779,7 @@ mod tests {
             let x = row["exposed"][0].as_u64().unwrap() as usize;
             let y = row["exposed"][1].as_u64().unwrap() as usize;
             sim.fog
-                .by_owner
+                .by_owner_mut_for_test()
                 .insert(owner, serde_json::from_value(visibility).unwrap());
             sim.fog.set_ground_bits_for_test(
                 owner,

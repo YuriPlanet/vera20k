@@ -1352,8 +1352,8 @@ fn an_aircraft_unlimbo_asks_the_aircraft_entry_query() {
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
         );
         let owner = sim.interner.get("Americans").unwrap();
-        sim.fog.width = 10;
-        sim.fog.height = 10;
+        sim.fog.set_width_for_test(10);
+        sim.fog.set_height_for_test(10);
         if mapped {
             sim.fog.reveal_all_for_owner(owner);
         }

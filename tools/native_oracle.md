@@ -1,6 +1,20 @@
 # Native comparison workflow
 
-### Terror Drone impulse and Drive controls
+### Terror Drone firing, impulse and Drive controls
+
+`tools.spatial_oracle.gattling_unit_fire --shp-frames --check` compares the
+original Unit SHP firing selector for every facing byte, eight countdowns and
+signed counter arithmetic edges. Its DRON layout is independently read by
+`--shp-history --check`, which reuses the joined physical input/runtime owners.
+Set `VERA20K_BUILDING_DEATH_ASSETS` to the joined input directory, including
+physical `DRON.SHP`, `DRONP.SHP`, `GTNK.VXL`, `GTNK.HVA` and `VOXELS.VPL`, and
+use `PYTHONPATH=.:tools/spatial_oracle`. The history starts at real constructor
+and Unlimbo admissions, executes whole Unit FireAtTarget, Bullet flight and
+attachment, then direct ExitUnit and whole released Unit AI visits. It retains
+the firing count across limbo, frame indices, RNG requests/continuations and
+selected timer stores. Direct ExitUnit is an explicit boundary; a native Sonic
+hit producer, whole Logic schedule and scene pixels are not covered. The older
+default gattling corpus remains separate.
 
 `tools.spatial_oracle.unit_rocking_update --impulse` adds eight whole original
 `70B280` controls through the existing physical GTNK loader VM. Supplied inputs

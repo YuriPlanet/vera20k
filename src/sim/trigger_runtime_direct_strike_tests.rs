@@ -96,26 +96,26 @@ fn chemical_strike_uses_original_edge_origins_and_fixed_unowned_launch() {
         let bullet = bullets[0].1;
         assert_eq!(
             [
-                bullet.launch_origin.x,
-                bullet.launch_origin.y,
-                bullet.launch_origin.z
+                bullet.launch_origin().x,
+                bullet.launch_origin().y,
+                bullet.launch_origin().z
             ],
             origin
         );
         // Original Fire468AAC..468B57 persisted values, after its ROT tail;
         // the action ABI controls separately establish the pre-Fire vector.
         assert_eq!(
-            bullet.velocity.native().map(|v| v.bits()),
+            bullet.velocity().native().map(|v| v.bits()),
             [0x3ca1a5ffffffffff, 0x3feffffffffffffe, 0]
         );
-        assert_eq!(bullet.guidance.unwrap().max_speed, 20);
-        assert_eq!(bullet.source_id, RAD_NO_ATTACKER);
+        assert_eq!(bullet.guidance().unwrap().max_speed, 20);
+        assert_eq!(bullet.source_id(), RAD_NO_ATTACKER);
         assert_eq!(bullet.firer_house(), None);
-        assert_eq!(bullet.payload.installed_weapon(), None);
-        assert!(!bullet.payload.bright());
-        assert_eq!(bullet.payload.base_damage, 100);
+        assert_eq!(bullet.payload().installed_weapon(), None);
+        assert!(!bullet.payload().bright());
+        assert_eq!(bullet.payload().base_damage, 100);
         assert_eq!(
-            bullet.target,
+            bullet.target(),
             ProjectileTarget::Cell {
                 rx: cell.0 as u16,
                 ry: cell.1 as u16
@@ -224,8 +224,8 @@ fn retail_chemical_weapon_requires_real_allocation_before_find() {
     waypoint(&mut sim, (40, 40));
     assert!(run(&mut sim, &rules, 96));
     let bullet = sim.projectiles.iter().next().unwrap().1;
-    assert_eq!(bullet.payload.base_damage, 100);
-    assert_eq!(bullet.payload.installed_weapon(), None);
+    assert_eq!(bullet.payload().base_damage, 100);
+    assert_eq!(bullet.payload().installed_weapon(), None);
     assert_eq!(bullet.firer_house(), None);
 }
 

@@ -177,15 +177,15 @@ fn the_launch_matches_native() {
             .anims
             .iter()
             .map(|(_, anim)| anim)
-            .filter(|anim| anim.type_id == invoke)
+            .filter(|anim| anim.type_id() == invoke)
             .collect();
         assert_eq!(anims.len(), 1, "{row}");
-        let world = anims[0].world_coord;
+        let world = anims[0].world_coord();
         assert_eq!([world.x, world.y, world.z], coord(&native_anim[2]), "{row}");
         // (delay, loopCount, drawFlags, zAdjust, reverse) = (0, 1, 0x600, 0, 0).
         assert_eq!(native_anim[3], serde_json::json!([0, 1, 0x600, 0, 0]));
         assert_eq!(
-            (anims[0].draw_flags, anims[0].z_adjust),
+            (anims[0].draw_flags(), anims[0].z_adjust()),
             (0x600, 0),
             "{row}"
         );
@@ -360,7 +360,7 @@ fn a_grant_keeps_the_countdown_and_releases_the_anim() {
             .anims
             .get(anim)
             .unwrap()
-            .runtime
+            .runtime()
             .loop_remaining,
         0
     );

@@ -297,9 +297,9 @@ fn mcv_building_slots_wait_for_completion_and_use_converted_health() {
     let anim = sim
         .anim(destination.building_art.anim_slots()[18].unwrap())
         .unwrap();
-    assert_eq!(sim.interner.resolve(anim.type_id), "D");
+    assert_eq!(sim.interner.resolve(anim.type_id()), "D");
     let expected_rate = expected_rng.next_range_u32_inclusive(1, 5) as u16;
-    assert_eq!(anim.runtime.rate_reload, expected_rate);
+    assert_eq!(anim.runtime().rate_reload, expected_rate);
     assert_eq!(
         sim.scenario_rng.logical_state(),
         expected_rng.logical_state()

@@ -350,8 +350,8 @@ mod tests {
     #[test]
     fn gsi_04_18_shroud_no_reveals_only_the_local_human_plane_without_sight_or_rng() {
         let mut sim = Simulation::with_seed(0x418);
-        sim.fog.width = 8;
-        sim.fog.height = 6;
+        sim.fog.set_width_for_test(8);
+        sim.fog.set_height_for_test(6);
         sim.session.game_options_mut_for_test().shroud = false;
         let local = sim.interner.intern("Player");
         let ai = sim.interner.intern("Computer");
@@ -359,10 +359,8 @@ mod tests {
             .register(HouseState::new(local, 0, None, true, 10_000, 10));
         sim.houses
             .register(HouseState::new(ai, 1, None, false, 10_000, 10));
-        sim.fog.by_owner.insert(
-            ai,
-            crate::sim::vision::OwnerVisibility::new(sim.fog.width, sim.fog.height),
-        );
+        let plane = crate::sim::vision::OwnerVisibility::new(sim.fog.width(), sim.fog.height());
+        sim.fog.by_owner_mut_for_test().insert(ai, plane);
         sim.session.set_current_house_for_test(Some(local));
         let scenario_rng_before = sim.scenario_rng.state();
         let main_rng_before = sim.main_rng.state();
@@ -383,8 +381,8 @@ mod tests {
     #[test]
     fn gsi_04_18_shroud_yes_and_a_missing_current_house_stay_unexplored() {
         let mut shrouded = Simulation::with_seed(0x418);
-        shrouded.fog.width = 8;
-        shrouded.fog.height = 6;
+        shrouded.fog.set_width_for_test(8);
+        shrouded.fog.set_height_for_test(6);
         let human = shrouded.interner.intern("Player");
         shrouded
             .houses
@@ -404,8 +402,8 @@ mod tests {
     fn gsi_04_18_explicit_launch_applies_shroud_no_with_bases_off() {
         let mut sim = Simulation::with_seed(0x418);
         // The map's Size 64x64 diamond spans rx and ry 1..=127.
-        sim.fog.width = 128;
-        sim.fog.height = 128;
+        sim.fog.set_width_for_test(128);
+        sim.fog.set_height_for_test(128);
         let mut session = test_session();
         session.options.shroud = false;
         session.options.bases = false;

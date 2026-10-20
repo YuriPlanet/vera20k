@@ -171,13 +171,13 @@ impl Planes {
 
     /// Leave the source writes to every plane but `kept`'s waiting until
     /// [`Self::settle`].
-    pub(crate) fn defer(&mut self, kept: Vec<InternedId>) {
+    pub(super) fn defer(&mut self, kept: Vec<InternedId>) {
         self.kept = Some(kept);
     }
 
     /// Stop deferring, and apply every plane's waiting writes, the planes in
     /// parallel.
-    pub(crate) fn settle(&mut self) {
+    pub(super) fn settle(&mut self) {
         self.kept = None;
         let mut waiting: Vec<&mut Plane> = self
             .planes

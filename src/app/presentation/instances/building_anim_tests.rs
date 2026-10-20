@@ -177,7 +177,7 @@ fn bunker_slot_emitter_interleaves_front_and_back_around_the_unit() {
             ]
         );
         let hidden = sim.substrate.anims.get_mut(front).unwrap();
-        hidden.draw_runtime.hidden = true;
+        hidden.draw_runtime_mut_for_test().hidden = true;
         let remaining = emit(&sim, &rules, building, &atlas, &order);
         assert_eq!(
             remaining

@@ -48,8 +48,13 @@
 //! scan's scores (`VHPScan=`, retail `[NASAM]` only). The scan's own effects
 //! stay at the object's turn in native order: the scan frame stamp, the
 //! RandomRanged(0, 2) draw, the timer, the drop step, the assignment, the
-//! estimate debit and Foot+688's write. Greatest_Threat draws no random
-//! numbers, so the RNG stream changes only through changed picks. Each answer
+//! estimate debit and Foot+688's write. Greatest_Threat draws only for a
+//! computer's disguise detection (`0x006F851C`) of a blinking candidate: an
+//! answer that drew is dropped, and so is one that refused a disguised
+//! candidate for want of a blink once a shot starts a blink during the pass
+//! ([`Simulation::note_disguise_blink_started`]); their objects scan live.
+//! Residual: a candidate that disguises or comes into reach during the pass
+//! is not seen by an answer, and neither is its roll. Each answer
 //! reads only the frame-start world, and its copy of the Dummy (below) starts
 //! from the shared word on whichever thread it runs, so no result depends on
 //! the thread count. Simulations start without batching; real matches and
@@ -102,6 +107,10 @@ pub(crate) struct ScanBatch {
     /// The picks a release reached during the pass.
     #[serde(skip)]
     released: BTreeSet<u64>,
+    /// A shot started a disguise blink during the pass
+    /// ([`Simulation::note_disguise_blink_started`]).
+    #[serde(skip)]
+    blink_started: bool,
     /// Answers scans took.
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
@@ -237,7 +246,9 @@ impl Simulation {
                     pick_house,
                 })
             });
-            answer.filter(|_| !stamped).map(|answer| (id, Some(answer)))
+            answer
+                .filter(|answer| !stamped && !answer.outcome.drew_scenario_rng())
+                .map(|answer| (id, Some(answer)))
         });
         answers.sort_unstable_by_key(|&(id, _)| id);
         if let Some(batch) = self.scan_batch.as_mut() {
@@ -250,6 +261,18 @@ impl Simulation {
         if let Some(batch) = self.scan_batch.as_mut() {
             batch.answers.clear();
             batch.released.clear();
+            batch.blink_started = false;
+        }
+    }
+
+    /// A shot started a disguise blink (`UnitClass::Fire_At @ 0x0074143E`):
+    /// no answer that refused a disguised candidate only for want of a blink
+    /// is taken this pass, so its scan runs live and rolls as native does.
+    pub(crate) fn note_disguise_blink_started(&mut self) {
+        if let Some(batch) = self.scan_batch.as_mut()
+            && !batch.answers.is_empty()
+        {
+            batch.blink_started = true;
         }
     }
 
@@ -355,7 +378,8 @@ impl Simulation {
         let released = answer
             .outcome
             .target()
-            .is_some_and(|pick| batch.released.contains(&pick));
+            .is_some_and(|pick| batch.released.contains(&pick))
+            || (batch.blink_started && answer.outcome.met_idle_disguise());
         let scanner = self.substrate.entities.get(id)?;
         let obj = self.object_type(scanner.type_ref(), rules)?;
         if released || ScannerKey::of(self, scanner, obj, rules) != answer.key {

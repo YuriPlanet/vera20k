@@ -69,11 +69,11 @@ fn lightning_strike_action_creates_one_cloud_bolt_over_the_waypoint() {
             .general
             .weather_con_clouds
             .iter()
-            .any(|name| name.eq_ignore_ascii_case(sim.interner.resolve(cloud.type_id)))
+            .any(|name| name.eq_ignore_ascii_case(sim.interner.resolve(cloud.type_id())))
     );
     // 53A140 places the cloud over the cell centre; no storm is started.
     assert_eq!(
-        (cloud.world_coord.x, cloud.world_coord.y),
+        (cloud.world_coord().x, cloud.world_coord().y),
         (30 * 256 + 128, 31 * 256 + 128)
     );
     assert!(!lightning_storm::has_deferment(&sim));

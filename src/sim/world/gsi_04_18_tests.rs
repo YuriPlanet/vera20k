@@ -27,8 +27,8 @@ fn spy_sat_rules() -> RuleSet {
 
 fn fixture() -> (Simulation, RuleSet, InternedId) {
     let mut sim = Simulation::with_seed(0x418);
-    sim.fog.width = 24;
-    sim.fog.height = 24;
+    sim.fog.set_width_for_test(24);
+    sim.fog.set_height_for_test(24);
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 10_000, 10));

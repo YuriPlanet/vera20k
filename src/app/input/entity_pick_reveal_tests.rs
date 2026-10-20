@@ -38,8 +38,8 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
                 32,
                 terrain_cells,
             ));
-            sim.fog.width = 32;
-            sim.fog.height = 32;
+            sim.fog.set_width_for_test(32);
+            sim.fog.set_height_for_test(32);
             let mapped: Vec<_> = input["mapped_cells"]
                 .as_array()
                 .unwrap()

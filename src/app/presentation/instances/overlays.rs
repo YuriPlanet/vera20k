@@ -311,7 +311,7 @@ pub(crate) fn build_display_effect_instances(
         if parachute_type.is_some_and(|ty| parachute_canopy_owner(anim, ty).is_some()) {
             continue;
         }
-        let type_name: &str = sim.interner.resolve(anim.type_id);
+        let type_name: &str = sim.interner.resolve(anim.type_id());
         let config = input.rules.art().anim_runtime_config(type_name);
         if config.is_some_and(|config| !config.art_body_read) {
             continue;
@@ -345,23 +345,23 @@ pub(crate) fn build_display_effect_instances(
                     // A Super's ChronoPlacement anim: the client's byte
                     // (`match_runtime::super_selection`).
                     false => {
-                        anim.draw_runtime.hidden || input.hidden_super_anims.contains(&stable_id)
+                        anim.draw_runtime().hidden || input.hidden_super_anims.contains(&stable_id)
                     }
                 },
-                special_hidden: anim.draw_runtime.special_hidden,
+                special_hidden: anim.draw_runtime().special_hidden,
                 // The native special-hide type bit remains an explicit residual.
                 type_special_hide: false,
             },
         ) {
             continue;
         }
-        let Ok(frame) = u16::try_from(anim.runtime.current_frame) else {
+        let Ok(frame) = u16::try_from(anim.runtime().current_frame) else {
             continue;
         };
         // `AnimClass::GetCoords @ 0x00422BE0`: an owner-attached anim stores an
         // owner-relative delta, so the draw position must be resolved through
         // the owner rather than read off the field.
-        let Some(anim_coord) = sim.anim_absolute_coord(anim.stable_id) else {
+        let Some(anim_coord) = sim.anim_absolute_coord(anim.stable_id()) else {
             continue;
         };
         let (center_x, center_y, rx, ry, _, lift_px) = anim_world_render_coords(anim_coord);
@@ -380,11 +380,11 @@ pub(crate) fn build_display_effect_instances(
                 input.lighting,
                 (rx, ry),
                 config,
-                anim.use_cell_drawer,
+                anim.use_cell_drawer(),
             )
         };
         let key = ShpSpriteKey {
-            palette_context: if anim.use_cell_drawer {
+            palette_context: if anim.use_cell_drawer() {
                 crate::render::sprite_atlas::ShpPaletteContext::Cell
             } else if remap_color.is_some() {
                 crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme
@@ -401,14 +401,14 @@ pub(crate) fn build_display_effect_instances(
         };
         let Some(alpha) = anim_instance_alpha_with_flags(
             config,
-            anim.draw_flags,
-            anim.runtime.current_frame,
+            anim.draw_flags(),
+            anim.runtime().current_frame,
             i32::from(
                 presentation_anim_frame_count(&atlas.active_anim_frame_counts, type_name)
                     .unwrap_or(0),
             ),
             input.detail_level as i32,
-            anim.draw_runtime,
+            anim.draw_runtime(),
         ) else {
             continue;
         };
@@ -419,7 +419,7 @@ pub(crate) fn build_display_effect_instances(
             center_y,
             lift_px,
         );
-        debug_assert!(!anim.terrain_attached || anim.use_cell_drawer);
+        debug_assert!(!anim.terrain_attached() || anim.use_cell_drawer());
         // Native Z (`AnimClass__DrawIt @ 0x00422CA0`): 0x2800, gradient entry
         // 2 (0 when Flat), `YDrawOffset + ZAdjust - AdjustForZ - 2`; tests Z
         // per pixel and never writes. YDrawOffset is already in the atlas
@@ -432,7 +432,7 @@ pub(crate) fn build_display_effect_instances(
             source_palette: entry.source_palette,
             depth: apply_shape_z_adjust(
                 fire_depth,
-                anim.z_adjust + ANIM_DRAW_DEPTH_BIAS_PX,
+                anim.z_adjust() + ANIM_DRAW_DEPTH_BIAS_PX,
                 world_height,
             ),
             tint,
@@ -442,7 +442,7 @@ pub(crate) fn build_display_effect_instances(
             // ride the Z term to keep Z on the un-offset row, as natively.
             z_adjust: super::helpers::lifted_z_adjust(
                 lift_px,
-                anim.z_adjust + config.map_or(0, |c| c.y_draw_offset) + ANIM_DRAW_DEPTH_BIAS_PX,
+                anim.z_adjust() + config.map_or(0, |c| c.y_draw_offset) + ANIM_DRAW_DEPTH_BIAS_PX,
             ),
             z_gradient: crate::render::native_z::pack_z_gradient(
                 if config.is_some_and(|c| c.flat) {
@@ -454,7 +454,7 @@ pub(crate) fn build_display_effect_instances(
             ),
             ..Default::default()
         };
-        if let Some(parent) = ground_order.object_draw(anim.stable_id, SpriteEncoding::Plain) {
+        if let Some(parent) = ground_order.object_draw(anim.stable_id(), SpriteEncoding::Plain) {
             ground_objects.push(
                 crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance::object(
                     parent,
@@ -558,8 +558,8 @@ fn parachute_canopy_owner(
     anim: &crate::sim::anim_class::AnimObject,
     parachute_type: crate::sim::intern::InternedId,
 ) -> Option<u64> {
-    (anim.type_id == parachute_type)
-        .then_some(anim.owner_entity)
+    (anim.type_id() == parachute_type)
+        .then_some(anim.owner_entity())
         .flatten()
 }
 
@@ -1177,7 +1177,7 @@ pub(crate) fn build_parachute_instances(
         let Some(target_id) = parachute_canopy_owner(anim, parachute_type) else {
             continue;
         };
-        let Ok(frame) = u16::try_from(anim.runtime.current_frame) else {
+        let Ok(frame) = u16::try_from(anim.runtime().current_frame) else {
             continue;
         };
         let entity = match sim.entities().get(target_id) {

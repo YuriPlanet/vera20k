@@ -276,7 +276,7 @@ fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
         }
         let link = entity.mind_control;
         let ring = link.ring_anim.expect("existing owner attached the ring");
-        let runtime = sim.anim(ring).unwrap().runtime.clone();
+        let runtime = sim.anim(ring).unwrap().runtime().clone();
         let coord = sim.anim_absolute_coord(ring);
         let rng = sim.rng_state();
         // Both input values ensure this is a write, not an accidentally
@@ -285,12 +285,12 @@ fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
             sim.set_anim_hidden(ring, initial_hidden);
             sim.update_disguise_ring_visibility(target);
             assert_eq!(
-                u8::from(sim.anim(ring).unwrap().draw_runtime.hidden),
+                u8::from(sim.anim(ring).unwrap().draw_runtime().hidden),
                 row["hidden_after"].as_u64().unwrap() as u8,
                 "{context}"
             );
             assert_eq!(
-                sim.anim(ring).unwrap().runtime,
+                *sim.anim(ring).unwrap().runtime(),
                 runtime,
                 "{context}: no second animation clock"
             );
@@ -350,8 +350,8 @@ fn capture_takes_the_target_and_records_its_house() {
     // The ring is MINDANIM, attached to the captive, 0x8C above it.
     let ring = entity.mind_control.ring_anim.expect("ring anim");
     let anim = sim.anim(ring).expect("live ring");
-    assert_eq!(sim.interner.resolve(anim.type_id), "MINDANIM");
-    assert_eq!(anim.owner_entity, Some(gi));
+    assert_eq!(sim.interner.resolve(anim.type_id()), "MINDANIM");
+    assert_eq!(anim.owner_entity(), Some(gi));
     let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
     assert_eq!(sim.anim_absolute_coord(ring).unwrap().z, location.z + 0x8C);
     // Computer house: one RandomRanged(1, 100), and every stock choice hunts.
@@ -398,7 +398,7 @@ fn a_captured_buildings_ring_sits_height_levels_above_its_centre() {
     );
     let at = sim.anim_absolute_coord(ring).unwrap();
     assert_eq!((at.x, at.y, at.z), (centre.x, centre.y, centre.z + 3 * 104));
-    assert_eq!(sim.anim(ring).unwrap().z_adjust, -1024);
+    assert_eq!(sim.anim(ring).unwrap().z_adjust(), -1024);
 }
 
 /// A single-link controller releases its victim before taking the next one:
@@ -443,7 +443,7 @@ fn a_single_link_controller_releases_its_victim_first() {
     assert!(!released.mind_control.is_mind_controlled());
     assert!(released.mind_control.ring_anim.is_none());
     assert!(sim.anim(ring).is_none_or(|anim| {
-        !anim.in_logic_vector && sim.substrate.pending_delete.contains_object(&ring)
+        !anim.in_logic_vector() && sim.substrate.pending_delete.contains_object(&ring)
     }));
     assert_eq!(voc_sounds(&sim), ["MindCleared"]);
     assert_eq!(victims(&sim, yuri), [second]);
@@ -1070,11 +1070,11 @@ fn native_overload_update_corpus() {
                 .iter()
                 .filter(|(id, _)| !systems.contains(id))
                 .map(|(_, system)| {
-                    assert_eq!(system.type_id, spark_type);
-                    assert_eq!(system.target_coords, glam::IVec3::ZERO);
-                    assert!(system.target_ref.is_none() && system.owner_entity.is_none());
-                    assert!(system.owner_house.is_none());
-                    let offset = system.coords - location;
+                    assert_eq!(system.type_id(), spark_type);
+                    assert_eq!(system.target_coords(), glam::IVec3::ZERO);
+                    assert!(system.target_ref().is_none() && system.owner_entity().is_none());
+                    assert!(system.owner_house().is_none());
+                    let offset = system.coords() - location;
                     [offset.x, offset.y, offset.z]
                 })
                 .collect();
@@ -1368,30 +1368,30 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
             let system = world.particle_systems().get(id).unwrap();
             let state = &expected["state"];
             assert_eq!(
-                json!(rules.particle_system_type(system.type_id).name),
+                json!(rules.particle_system_type(system.type_id()).name),
                 expected["type"]
             );
             assert_eq!(json!(system.native_unique_id()), state["native_id"]);
-            assert_eq!(json!(system.coords.to_array()), state["position"]);
-            assert_eq!(json!(system.coords.to_array()), expected["position"]);
-            assert_eq!(json!(system.target_coords.to_array()), state["target"]);
+            assert_eq!(json!(system.coords().to_array()), state["position"]);
+            assert_eq!(json!(system.coords().to_array()), expected["position"]);
+            assert_eq!(json!(system.target_coords().to_array()), state["target"]);
             assert_eq!(
-                json!(system.target_coords.to_array()),
+                json!(system.target_coords().to_array()),
                 expected["args"]["target"]
             );
-            assert_eq!(json!(system.lifetime), state["lifetime"]);
+            assert_eq!(json!(system.lifetime()), state["lifetime"]);
             assert_eq!(
-                json!(system.spark_spawn_frames),
+                json!(system.spark_spawn_frames()),
                 state["spark_spawn_frames"]
             );
-            assert_eq!(json!(system.done_spawning), state["time_to_die"]);
-            assert_eq!(json!(system.in_logic_vector), state["logic"]);
-            assert_eq!(json!(system.particles.len()), state["particle_count"]);
-            assert!(system.alive() && !system.in_limbo() && system.particles.is_empty());
+            assert_eq!(json!(system.done_spawning()), state["time_to_die"]);
+            assert_eq!(json!(system.in_logic_vector()), state["logic"]);
+            assert_eq!(json!(system.particles().len()), state["particle_count"]);
+            assert!(system.alive() && !system.in_limbo() && system.particles().is_empty());
             assert!(
-                system.owner_entity.is_none()
-                    && system.target_ref.is_none()
-                    && system.owner_house.is_none()
+                system.owner_entity().is_none()
+                    && system.target_ref().is_none()
+                    && system.owner_house().is_none()
             );
             for key in ["owner", "target_object", "house"] {
                 assert_eq!(state[key], json!(0));

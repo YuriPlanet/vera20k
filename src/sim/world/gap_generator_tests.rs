@@ -18,8 +18,8 @@ fn fixture() -> (Simulation, RuleSet, InternedId, InternedId, InternedId) {
          [GASPYSAT]\nSpySat=yes\nStrength=100\nFoundation=1x1\n",
     )).unwrap();
     let mut sim = Simulation::with_seed(0x143);
-    sim.fog.width = 32;
-    sim.fog.height = 32;
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
     let a = sim.interner.intern("Americans");
     let b = sim.interner.intern("Soviet");
     let c = sim.interner.intern("Third");
@@ -354,11 +354,11 @@ fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
     );
     assert!(
         sim.fog
-            .gap_sources
+            .gap_sources()
             .get(&a)
             .is_none_or(|sources| sources.is_empty())
     );
-    assert_eq!(sim.fog.gap_sources[&b].len(), 1);
+    assert_eq!(sim.fog.gap_sources()[&b].len(), 1);
 
     // This viewer's inactive generator must still be called by a live bracket
     //after power restores, even while6C8 remains true and no receipt exists.
@@ -375,7 +375,7 @@ fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
             .viewers()[&a]
             .active()
     );
-    assert_eq!(sim.fog.gap_sources[&a].len(), 1);
+    assert_eq!(sim.fog.gap_sources()[&a].len(), 1);
 }
 
 #[test]
@@ -393,8 +393,8 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
     );
     assert!(sim.fog.is_cell_visible(a, 12, 12));
     assert!(sim.fog.is_cell_revealed(a, 12, 12));
-    assert!(sim.fog.gap_sources[&a].is_empty());
-    assert_eq!(sim.fog.gap_sources[&owner].len(), 1);
+    assert!(sim.fog.gap_sources()[&a].is_empty());
+    assert_eq!(sim.fog.gap_sources()[&owner].len(), 1);
     let radius = sim
         .substrate
         .entities
@@ -423,7 +423,7 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
             .radius(),
         radius
     );
-    assert!(sim.fog.gap_sources[&owner].is_empty());
+    assert!(sim.fog.gap_sources()[&owner].is_empty());
     assert!(
         !sim.fog
             .sight_admissions_for_test()

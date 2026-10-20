@@ -184,11 +184,11 @@ fn anims(sim: &Simulation) -> Vec<(String, AnimWorldCoord, u16, u32, i32)> {
         .iter()
         .map(|(_, anim)| {
             (
-                sim.interner.resolve(anim.type_id).to_string(),
-                anim.world_coord,
-                anim.runtime.delay_remaining,
-                anim.draw_flags,
-                anim.z_adjust,
+                sim.interner.resolve(anim.type_id()).to_string(),
+                anim.world_coord(),
+                anim.runtime().delay_remaining,
+                anim.draw_flags(),
+                anim.z_adjust(),
             )
         })
         .collect()
@@ -1195,17 +1195,21 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                 .filter(|(id, _)| !before.contains(id))
                 .map(|(_, anim)| {
                     (
-                        sim.interner.resolve(anim.type_id).to_string(),
-                        [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]
-                            .map(i64::from)
-                            .to_vec(),
-                        anim.runtime.delay_remaining,
-                        anim.draw_flags,
-                        anim.z_adjust,
-                        anim.bounce.as_ref().map(|body| {
+                        sim.interner.resolve(anim.type_id()).to_string(),
+                        [
+                            anim.world_coord().x,
+                            anim.world_coord().y,
+                            anim.world_coord().z,
+                        ]
+                        .map(i64::from)
+                        .to_vec(),
+                        anim.runtime().delay_remaining,
+                        anim.draw_flags(),
+                        anim.z_adjust(),
+                        anim.bounce().as_ref().map(|body| {
                             (
-                                body.position.map(|v| i64::from(v.bits())).to_vec(),
-                                body.velocity.map(|v| i64::from(v.bits())).to_vec(),
+                                body.position().map(|v| i64::from(v.bits())).to_vec(),
+                                body.velocity().map(|v| i64::from(v.bits())).to_vec(),
                             )
                         }),
                     )

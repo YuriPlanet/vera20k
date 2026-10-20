@@ -110,7 +110,7 @@ impl Simulation {
         // WaveClass keeps raw owner/target pointers through the represented
         // dying interval. Only PointerExpired makes either identity null.
         let owner = wave
-            .owner_id
+            .owner_id()
             .and_then(|owner_id| self.substrate.entities.get(owner_id));
         // The tracking distance reads Location (`0x00762BB4`), independently
         // of the GetFLH(0, null) geometry call (`0x00762AF0`). The ordinary
@@ -147,7 +147,7 @@ impl Simulation {
         });
         // The target's vt+0x58 (`0x00762BD1`, `0x00762D2C`), which an object
         // forwards to its GetCoords (`0x00410540`).
-        let target_position = match wave.target_ref {
+        let target_position = match wave.target_ref() {
             Some(target @ TargetKind::Entity(_)) => {
                 crate::sim::movement::ground_pose::target_get_target_coords(
                     target,
@@ -159,7 +159,7 @@ impl Simulation {
             Some(TargetKind::Cell(rx, ry)) => Some(self.wave_cell_target_position(rx, ry)),
             None => None,
         };
-        let target_is_unit = match wave.target_ref {
+        let target_is_unit = match wave.target_ref() {
             Some(TargetKind::Entity(id)) => self
                 .substrate
                 .entities
@@ -415,7 +415,7 @@ impl Simulation {
                 let trailer = self
                     .projectiles
                     .get(id)
-                    .and_then(|projectile| projectile.payload.projectile_type())
+                    .and_then(|projectile| projectile.payload().projectile_type())
                     .and_then(|type_id| rules.projectile(self.interner.resolve(type_id)))
                     .and_then(|kind| {
                         self.projectiles
@@ -446,7 +446,7 @@ impl Simulation {
             let source_is_jumpjet = rules.is_some_and(|rules| {
                 self.substrate
                     .entities
-                    .get(projectile.source_id)
+                    .get(projectile.source_id())
                     .is_some_and(|source| {
                         self.object_type(source.type_ref(), rules)
                             .is_some_and(|kind| kind.jumpjet)
@@ -455,7 +455,7 @@ impl Simulation {
             // `BulletClass::AI 0x0046699D` reads the GLOBAL frame counter's
             // parity for the half-rate course-locked acceleration ramp, so the
             // Logic slot has to hand the flight loop the current frame.
-            let target_is_aircraft = match projectile.target {
+            let target_is_aircraft = match projectile.target() {
                 crate::sim::projectile::ProjectileTarget::Entity(target) => {
                     self.substrate.entities.get(target).is_some_and(|entity| {
                         entity.category() == crate::map::entities::EntityCategory::Aircraft
@@ -726,6 +726,13 @@ fn techno_ai_shell(
         if sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed) {
             return;
         }
+    }
+    // Unit7363C9..7363DE precedes Hunt/Ready/Foot AI, after the existing
+    // Tube, death and Temporal entry gates. Limboed Units have no Logic visit.
+    if category == EntityCategory::Unit
+        && let Some(entity) = sim.substrate.entities.get_mut(id)
+    {
+        crate::sim::animation::tick_unit_firing_counter(entity);
     }
     // Unit736465/736473 and Infantry51BC1C/51BC51 run Ready/Commence
     // before Foot -> Techno AI. Commence clears+C4; Techno6FA646..655 then
@@ -2232,10 +2239,10 @@ mod tests {
         behind_indicator_step(&mut sim, tank, &rules);
         let anim = behind(&sim).expect("the Behind anim");
         let object = sim.anim(anim).unwrap();
-        assert_eq!(object.owner_entity, Some(tank));
+        assert_eq!(object.owner_entity(), Some(tank));
         assert!(
             sim.interner
-                .resolve(object.type_id)
+                .resolve(object.type_id())
                 .eq_ignore_ascii_case("BEHIND")
         );
         behind_indicator_step(&mut sim, tank, &rules);
@@ -5256,13 +5263,13 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
             .particle_systems()
             .get(spark_system(&sim, 1).unwrap())
             .unwrap();
-        assert_eq!(system.owner_entity, Some(1));
-        assert_eq!(system.lifetime, 5);
-        assert!(system.in_logic_vector);
+        assert_eq!(system.owner_entity(), Some(1));
+        assert_eq!(system.lifetime(), 5);
+        assert!(system.in_logic_vector());
         assert!(
             sim.display_layers()
                 .ordered_ids()
-                .any(|&id| id == system.stable_id)
+                .any(|&id| id == system.stable_id())
         );
     }
 
@@ -5283,7 +5290,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         sim.particle_systems_mut()
             .get_mut(first)
             .unwrap()
-            .done_spawning = true;
+            .set_done_spawning_for_test(true);
         sim.retire_particle_system(first, crate::sim::world::UninitContext::with_rules(&rules));
         assert_eq!(spark_system(&sim, 1), None);
         let mut expect = sim.scenario_rng.clone();
@@ -5307,13 +5314,16 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         insert_cyborg_unit(&mut sim, 1, 20);
         techno_common_post(&mut sim, 1, Some(&rules));
         let system_id = spark_system(&sim, 1).unwrap();
-        assert_eq!(sim.particle_systems().get(system_id).unwrap().lifetime, -1);
+        assert_eq!(
+            sim.particle_systems().get(system_id).unwrap().lifetime(),
+            -1
+        );
         // This is an explicit done-empty prior. Its real common AI, rather
         // than a guessed Lifetime<=0 timer, broadcasts the matching expiry.
         sim.particle_systems_mut()
             .get_mut(system_id)
             .unwrap()
-            .done_spawning = true;
+            .set_done_spawning_for_test(true);
         crate::sim::particles::system_ai::tick_particle_system(
             &mut sim,
             &rules,

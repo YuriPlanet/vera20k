@@ -1819,9 +1819,9 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
             .filter_map(|(_, id)| {
                 (*id).and_then(|id| sim.anim(id)).map(|anim| {
                     (
-                        anim.type_id,
-                        anim.runtime.current_frame,
-                        anim.runtime.paused,
+                        anim.type_id(),
+                        anim.runtime().current_frame,
+                        anim.runtime().paused,
                     )
                 })
             })
@@ -2401,14 +2401,14 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
     );
     let (id, system) = sim.particle_systems().iter().next().unwrap();
     assert_eq!(
-        system.type_id,
+        system.type_id(),
         rules
             .ps_type_id_by_name(smoke["type_name"].as_str().unwrap())
             .unwrap()
     );
-    assert_eq!(json!(system.coords.to_array()), smoke["coordinate"]);
+    assert_eq!(json!(system.coords().to_array()), smoke["coordinate"]);
     assert_eq!(json!(system.native_unique_id()), smoke["native_unique_id"]);
-    assert_eq!(system.owner_entity, Some(1));
+    assert_eq!(system.owner_entity(), Some(1));
     assert_eq!(
         sim.substrate
             .entities
@@ -2418,7 +2418,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
             .system(),
         Some(*id)
     );
-    assert!(system.particles.is_empty(), "no particle AI visit yet");
+    assert!(system.particles().is_empty(), "no particle AI visit yet");
     for (stream, actual) in [
         ("main", sim.main_rng.native_state_hex()),
         ("scenario", sim.scenario_rng.native_state_hex()),
@@ -2497,8 +2497,8 @@ fn native_trigger_reveal_action_matches_original_controls() {
         let player = sim.interner.intern("Player");
         let other = sim.interner.intern("Other");
         sim.session.set_current_house_for_test(Some(player));
-        sim.fog.width = 128;
-        sim.fog.height = 128;
+        sim.fog.set_width_for_test(128);
+        sim.fog.set_height_for_test(128);
         for (owner, latch) in [(player, &input["latch"]), (other, &input["other_latch"])] {
             if latch.as_u64().unwrap_or(0) != 0 {
                 sim.fog.reveal_all_for_owner(owner);
@@ -2506,7 +2506,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
             // Native fixture supplies House240 independently of the Cell
             // constructor's untouched planes. Seed them through their owner.
             sim.fog
-                .by_owner
+                .by_owner_mut_for_test()
                 .insert(owner, OwnerVisibility::new(128, 128));
         }
         let mut definitions = RuntimeDefinitions::default();
@@ -2641,20 +2641,20 @@ fn native_trigger_reveal_action_matches_original_controls() {
             for cell in cells.as_array().unwrap() {
                 let x = integer(&cell["cell"][0]) as u16;
                 let y = integer(&cell["cell"][1]) as u16;
-                let vis = &fog.by_owner[&player];
+                let vis = &fog.by_owner()[&player];
                 let state = vis.shroud_knowledge_raw()[usize::from(y) * 128 + usize::from(x)];
                 assert_eq!(
-                    state.counter,
+                    state.counter(),
                     integer(&cell["counter"]),
                     "{name}: ({x},{y}) counter"
                 );
                 assert_eq!(
-                    state.gap_counter,
+                    state.gap_counter(),
                     integer(&cell["gap"]),
                     "{name}: ({x},{y}) gap"
                 );
                 assert_eq!(
-                    state.pending,
+                    state.pending(),
                     cell["flags"].as_u64().unwrap() & 0x20 != 0,
                     "{name}: pending"
                 );
@@ -2667,7 +2667,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
                     cell["alt"].as_u64().unwrap() & 16 != 0
                 );
                 assert_eq!(
-                    state.local_sources + state.allied_sources,
+                    state.local_sources() + state.allied_sources(),
                     0,
                     "{name}: no permanent source"
                 );
@@ -2682,7 +2682,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
         probe.install_resolved_terrain_for_new_map(sim.resolved_terrain.as_ref().unwrap().clone());
         probe
             .fog
-            .by_owner
+            .by_owner_mut_for_test()
             .insert(player, OwnerVisibility::new(128, 128));
         for pass in row["passes"].as_array().unwrap() {
             let coord = &pass["coord"];
@@ -2726,7 +2726,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
                 assert_eq!(dummy.level, level);
             }
         }
-        for vis in sim.fog.by_owner.values_mut() {
+        for vis in sim.fog.by_owner_mut_for_test().values_mut() {
             vis.clear_all_visible();
         }
         assert_eq!(

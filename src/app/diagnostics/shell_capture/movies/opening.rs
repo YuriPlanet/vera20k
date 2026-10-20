@@ -459,9 +459,9 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                         let id = (*id)?;
                         let anim = sim.anim(id)?;
                         Some(json!({"slot": slot, "id": id,
-                            "type": sim.interner.resolve(anim.type_id),
-                            "frame": anim.runtime.current_frame,
-                            "paused": anim.runtime.paused}))
+                            "type": sim.interner.resolve(anim.type_id()),
+                            "frame": anim.runtime().current_frame,
+                            "paused": anim.runtime().paused}))
                     }).collect::<Vec<_>>(),
                 "house_power": sim.power_states.get(&entity.owner()).map(|power| json!({
                     "output": power.total_output(), "drain": power.total_drain(),
@@ -480,12 +480,12 @@ fn opening_observation(state: &AppState) -> Result<Value> {
         .filter(|(_, anim)| anim.no_effects())
         .map(|(id, anim)| {
             let cell = (
-                crate::util::lepton::lepton_to_cell_packed(anim.world_coord.x) as u16,
-                crate::util::lepton::lepton_to_cell_packed(anim.world_coord.y) as u16,
+                crate::util::lepton::lepton_to_cell_packed(anim.world_coord().x) as u16,
+                crate::util::lepton::lepton_to_cell_packed(anim.world_coord().y) as u16,
             );
-            json!({"id": id, "type": sim.interner.resolve(anim.type_id),
-            "coord": [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
-            "z_adjust": anim.z_adjust, "cell": cell,
+            json!({"id": id, "type": sim.interner.resolve(anim.type_id()),
+            "coord": [anim.world_coord().x, anim.world_coord().y, anim.world_coord().z],
+            "z_adjust": anim.z_adjust(), "cell": cell,
             "cell_shrouded": cell_shrouded(cell)})
         })
         .collect::<Vec<_>>();

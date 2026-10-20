@@ -579,7 +579,7 @@ pub fn disguise_rejects_candidate(
     if !is_disguised_to_attacker || attacker_detects_disguise {
         return DisguiseGateOutcome::Accept;
     }
-    if blink_frames_remaining <= 0 {
+    if blink_frames_remaining == 0 {
         return DisguiseGateOutcome::Reject;
     }
     if attacker_house_is_human {
@@ -596,10 +596,8 @@ pub enum DisguiseGateOutcome {
     /// Native rejects without drawing.
     Reject,
     /// Native reaches its one `RandomRanged(0, 99)` on the Scenario stream and
-    /// compares against `[General] DisabledDisguiseDetectionPercent`. Only an
-    /// AI-controlled attacking house gets here, and VERA has no AI opponent, so
-    /// no production caller can produce this variant yet — it is modelled, not
-    /// wired, and wiring it costs one Scenario draw per evaluated candidate.
+    /// compares against `[General] DisabledDisguiseDetectionPercent`. Only a
+    /// computer attacking house gets here, while the candidate blinks.
     AiDetectionRoll,
 }
 
@@ -608,8 +606,9 @@ pub(crate) mod transitions;
 #[cfg(any(test, feature = "test-support"))]
 use transitions::{StartCloakingResult, StartUncloakingResult};
 
-/// Retained Techno disguise identity and re-disguise timer. Original
-/// `6F2CBE..6F2CCA` starts +1E0/+1E8 at construction with duration zero.
+/// Retained Techno disguise identity, re-disguise timer and firing blink
+/// timer. Original `6F2CBE..6F2CDB` starts +1E0/+1E8 and +1EC/+1F4 at
+/// construction with duration zero.
 /// The intervening +1E4 word is uninitialized by that constructor and copied
 /// from different stack slots by the two reveal writers. It has no established
 /// behavioral meaning in this chain and is not deterministic cell state.
@@ -621,6 +620,9 @@ pub struct DisguiseRuntime {
     disguise_type: Option<InternedId>,
     disguised_as_house: Option<InternedId>,
     reveal_timer: CdTimer,
+    /// `+0x1EC`/`+0x1F4`: the frames a firing `DisguiseWhenStill=` Unit
+    /// blinks (`UnitClass::Fire_At @ 0x0074143E..0x00741471`).
+    blink_timer: CdTimer,
 }
 
 impl Default for DisguiseRuntime {
@@ -637,6 +639,7 @@ impl DisguiseRuntime {
             disguise_type: None,
             disguised_as_house: None,
             reveal_timer: CdTimer::started(construction_frame as i32, 0),
+            blink_timer: CdTimer::started(construction_frame as i32, 0),
         }
     }
 
@@ -660,6 +663,10 @@ impl DisguiseRuntime {
         self.reveal_timer
     }
 
+    pub const fn blink_timer(&self) -> CdTimer {
+        self.blink_timer
+    }
+
     pub(crate) fn hash_state(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
         self.disguised.hash(hasher);
@@ -667,6 +674,7 @@ impl DisguiseRuntime {
         self.disguise_type.hash(hasher);
         self.disguised_as_house.hash(hasher);
         self.reveal_timer.hash(hasher);
+        self.blink_timer.hash(hasher);
     }
 
     /// `InfantryClass::DisguiseAs` / `UnitClass::DisguiseAs`.
@@ -740,6 +748,20 @@ impl DisguiseRuntime {
     /// Whether the re-disguise block is still running.
     pub fn reveal_blocks(&self, current_frame: u32) -> bool {
         !self.reveal_timer.expired(current_frame as i32)
+    }
+
+    /// `UnitClass::Fire_At @ 0x0074143E..0x00741471`: after a launched shot,
+    /// a `DisguiseWhenStill=` Unit starts the blink at the current frame for
+    /// the weapon's `DisguiseFakeBlinkTime=`. The intervening `+0x1F0` word
+    /// is copied from a stack slot no reader takes.
+    pub(crate) fn start_fire_blink(&mut self, current_frame: u32, duration: i32) {
+        self.blink_timer.start(current_frame as i32, duration);
+    }
+
+    /// The blink's remaining frames: IsClearlyVisibleTo (`0x0070EE39..0x0070EE5D`)
+    /// and Evaluate_Candidate (`0x006F84DE..0x006F8503`) read it alike.
+    pub fn blink_remaining(&self, current_frame: u32) -> i32 {
+        self.blink_timer.remaining(current_frame as i32)
     }
 }
 

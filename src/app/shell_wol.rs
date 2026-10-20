@@ -9,11 +9,13 @@
 //! [`WolServiceEvent`]. Production has no WOLAPI ([`WolProvider::Unavailable`]):
 //! every WOL action shows `TXT_APIMISSING` in `0xD0` and returns to a new
 //! `0xE2` (`0x0052E28E`), as on a retail install without the online
-//! components.
+//! components, unless the Options page's developer box picks VERA's offline
+//! stand-in ([`WolProvider::TestService`]).
 
 pub(crate) mod lobby;
 mod login;
 mod service;
+mod test_service;
 
 pub(crate) use login::{combo_popup, login_layout, open_login_art};
 pub(crate) use service::{
@@ -28,6 +30,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<std::time::Instant> {
         service::poll_wait(state),
         login::poll_scroll_repeat(state),
         lobby::poll(state),
+        test_service::poll(state),
     ]
     .into_iter()
     .flatten()
@@ -138,7 +141,8 @@ impl WolVisit {
     }
 
     /// Diagnostics and tests only: a controlled service will drain the
-    /// requests and inject events. Production keeps `Unavailable`.
+    /// requests and inject events. Production keeps `Unavailable` unless
+    /// the Options page chose the test service.
     pub(crate) fn set_provider(&mut self, provider: WolProvider) {
         self.provider = provider;
     }
@@ -227,7 +231,11 @@ impl App {
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         let lobby_music = state.persistence.options_profile.wol_lobby_music != 0;
         let saved_shuffle = state.audio.enter_wol_lobby_music(lobby_music, now_ms);
-        state.frontend.wol = Some(WolVisit::open(saved_shuffle));
+        let mut visit = WolVisit::open(saved_shuffle);
+        if state.persistence.options_profile.wol_test_service {
+            visit.provider = WolProvider::TestService;
+        }
+        state.frontend.wol = Some(visit);
         state.frontend.shell_route = ShellRoute::Wol;
         state
             .frontend
@@ -435,7 +443,7 @@ impl App {
                     .frontend
                     .wol
                     .as_ref()
-                    .is_some_and(|visit| visit.provider == WolProvider::Controlled);
+                    .is_some_and(|visit| visit.provider != WolProvider::Unavailable);
                 if controlled && mode != WolMode::CustomMatch {
                     // Quick Match, Quick Co-op, Buddy List and My Information
                     // behind a working WOLAPI are later chains.

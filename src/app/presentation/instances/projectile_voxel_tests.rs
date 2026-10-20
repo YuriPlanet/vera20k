@@ -157,15 +157,15 @@ pub(crate) fn launched_stock_submarine_torpedo(
         let (&id, bullet) = sim
             .projectiles
             .iter()
-            .find(|(_, bullet)| bullet.source_id == source)
+            .find(|(_, bullet)| bullet.source_id() == source)
             .expect("real SubTorpedo FireAt admits a live Bullet before impact");
-        assert_eq!(bullet.payload.installed_weapon(), Some(shot.weapon_id));
+        assert_eq!(bullet.payload().installed_weapon(), Some(shot.weapon_id));
         assert_eq!(
             sim.interner
-                .resolve(bullet.payload.projectile_type().unwrap()),
+                .resolve(bullet.payload().projectile_type().unwrap()),
             "Torpedo"
         );
-        assert!(bullet.in_logic_vector);
+        assert!(bullet.in_logic_vector());
         let order = NativeDisplayOrder::from_display(sim.display_layers());
         let parent = order
             .object_draw(id, crate::render::tactical_draw_plan::SpriteEncoding::Voxel)
@@ -191,7 +191,7 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
         .unwrap();
     let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();
     let before_draw = sim.state_hash();
-    let matrix = crate::render::vxl_raster::projectile_voxel_matrix(bullet.velocity)
+    let matrix = crate::render::vxl_raster::projectile_voxel_matrix(bullet.velocity())
         .expect("actual launched velocity provides the native voxel pose");
     cache.begin_frame();
     assert_eq!(cache.fill_test_page().page, 0);
@@ -210,8 +210,11 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
         body.page > 0,
         "actual torpedo survives a full preceding pose page"
     );
-    let (x, y) =
-        absolute_leptons_to_screen(bullet.position.x, bullet.position.y, bullet.position.z);
+    let (x, y) = absolute_leptons_to_screen(
+        bullet.position().x,
+        bullet.position().y,
+        bullet.position().z,
+    );
     let object = projectile_draw_instance(
         bullet,
         kind,
@@ -312,7 +315,7 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
         assert_eq!(kind.voxel_image_load(), Some("ZBOMB"));
         assert_eq!(kind.color_scheme(), 1);
         let (mut sim, id) = admitted_kirov_bomb(rules, weapon_name);
-        let position = sim.projectiles.get(id).unwrap().position;
+        let position = sim.projectiles.get(id).unwrap().position();
         let order = NativeDisplayOrder::from_display(sim.display_layers());
         let (x, y) = absolute_leptons_to_screen(position.x, position.y, position.z);
         let object = projectile_draw_instance(
@@ -384,13 +387,17 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
             {
                 let bullet = sim.projectiles.get(id).unwrap();
                 assert_eq!(
-                    [bullet.position.x, bullet.position.y, bullet.position.z],
+                    [
+                        bullet.position().x,
+                        bullet.position().y,
+                        bullet.position().z
+                    ],
                     std::array::from_fn::<_, 3, _>(
                         |i| expected["candidate"][i].as_i64().unwrap() as i32
                     )
                 );
                 for (actual, expected) in bullet
-                    .velocity
+                    .velocity()
                     .native()
                     .iter()
                     .zip(expected["bits"].as_array().unwrap())

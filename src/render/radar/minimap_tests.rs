@@ -192,7 +192,7 @@ fn test_cell_visibility_color_revealed_shows_full_color() {
     // In standard YR (FogOfWar=false), revealed cells show at full brightness.
     let mut fog = FogState::new(16, 16);
     fog.mark_visible_for_owner(test_intern("Americans"), 5, 7);
-    fog.by_owner
+    fog.by_owner_mut_for_test()
         .get_mut(&test_intern("Americans"))
         .expect("owner present")
         .clear_all_visible();
@@ -755,7 +755,10 @@ fn radar_pixel_fogged_but_explored_cell_passes_render_gate_without_gap_proxy() {
     let (entities, interner, houses) = radar_gate_fixture("Enemy");
     let mut fog = FogState::default();
     fog.mark_visible_for_owner(local, 0, 0);
-    fog.by_owner.get_mut(&local).unwrap().clear_all_visible();
+    fog.by_owner_mut_for_test()
+        .get_mut(&local)
+        .unwrap()
+        .clear_all_visible();
     assert!(fog.is_cell_revealed(local, 0, 0));
     assert!(!fog.is_cell_visible(local, 0, 0));
     assert!(radar_pixel_candidate_eligible(

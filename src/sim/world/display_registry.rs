@@ -133,14 +133,14 @@ impl GroundSortKeys for GroundSortView<'_> {
         if let Some(system) = self.particles.get(id) {
             // ParticleSystem VT7EFB9C: +AC ->41BE00 ->+48 ->5F65A0,
             // +B8 ->5F6BD0. Attachment updates coords in its AI, not here.
-            let key = system.coords.x.wrapping_add(system.coords.y);
+            let key = system.coords().x.wrapping_add(system.coords().y);
             return (key, KeptSortKey::Unknown);
         }
         if let Some(anim) = self.anims.get(id) {
             // Anim422BC0 -> Object5F6BD0 -> GetCoords422BE0, then retained
             // instance+104. Type changes do not recopy this constructor field.
             let key = crate::sim::anim_class::anim_display_sort_key(anim, self.entities);
-            let kept = match anim.owner_entity {
+            let kept = match anim.owner_entity() {
                 Some(owner) => KeptSortKey::Attached {
                     own: crate::sim::anim_class::anim_own_sort_term(anim),
                     owner,
@@ -561,7 +561,12 @@ mod tests {
                 }
                 2 => {
                     let anim = anims[next(8) as usize];
-                    sim.substrate.anims.get_mut(anim).unwrap().world_coord.x += delta;
+                    sim.substrate
+                        .anims
+                        .get_mut(anim)
+                        .unwrap()
+                        .world_coord_mut_for_test()
+                        .x += delta;
                 }
                 3 => {
                     let anim = anims[next(8) as usize];

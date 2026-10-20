@@ -186,8 +186,8 @@ fn wave_world_xy(wave: &crate::sim::wave::Wave) -> Option<(i32, i32)> {
     // coordinate produced by `0x00761640/0x00762070`: source for types 0/3,
     // and ftol(source*1.05f + target*(1-1.05f)) for types 1/2.
     Some((
-        wave_object_axis(wave.source.x, wave.target.x, wave.wave_type)?,
-        wave_object_axis(wave.source.y, wave.target.y, wave.wave_type)?,
+        wave_object_axis(wave.source().x, wave.target().x, wave.wave_type())?,
+        wave_object_axis(wave.source().y, wave.target().y, wave.wave_type())?,
     ))
 }
 
@@ -315,10 +315,10 @@ impl Simulation {
             ObjectKind::Anim => {
                 let anim = self.substrate.anims.get(stable_id).ok_or(missing)?;
                 ChecksumObject::new(
-                    anim.world_coord.x,
-                    anim.world_coord.y,
+                    anim.world_coord().x,
+                    anim.world_coord().y,
                     RTTI_ANIM,
-                    anim.native_unique_id,
+                    anim.native_unique_id(),
                 )
             }
             ObjectKind::Spotlight => {
@@ -339,7 +339,12 @@ impl Simulation {
                     .particle_systems
                     .get(stable_id)
                     .ok_or(missing)?;
-                ChecksumObject::new(system.coords.x, system.coords.y, RTTI_PARTICLE_SYSTEM, 0)
+                ChecksumObject::new(
+                    system.coords().x,
+                    system.coords().y,
+                    RTTI_PARTICLE_SYSTEM,
+                    0,
+                )
             }
             ObjectKind::Terrain => {
                 let terrain = self
@@ -352,14 +357,19 @@ impl Simulation {
             }
             ObjectKind::Projectile => {
                 let projectile = self.projectiles.get(stable_id).ok_or(missing)?;
-                ChecksumObject::new(projectile.position.x, projectile.position.y, RTTI_BULLET, 0)
+                ChecksumObject::new(
+                    projectile.position().x,
+                    projectile.position().y,
+                    RTTI_BULLET,
+                    0,
+                )
             }
             ObjectKind::Wave => {
                 let wave = self.waves.get(stable_id).ok_or(missing)?;
                 let (world_x, world_y) =
                     wave_world_xy(wave).ok_or(MultiplayerChecksumError::InvalidWaveType {
                         id: stable_id,
-                        wave_type: wave.wave_type,
+                        wave_type: wave.wave_type(),
                     })?;
                 ChecksumObject::new(world_x, world_y, RTTI_WAVE, 0)
             }
@@ -461,7 +471,7 @@ mod tests {
                 ParticleSystemTypeId(0),
                 IVec3::new(-311, 912, 0),
             );
-            system.facing = 0;
+            system.set_facing_for_test(0);
             system
         });
 

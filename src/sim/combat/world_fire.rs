@@ -1870,18 +1870,41 @@ pub(super) fn emit_admitted_fire(
         effects,
     );
     // UnitClass::Fire741340 wraps the base FireAt6FDD50 (7413CE).
-    // Only its non-null return/current retained BulletType.Scalable reaches
-    // InitScalable46B280 at741439. This existing class-FireAt owner serves
+    // Its non-null return seeds the Unit firing counter at741421, after the
+    // base tail (including LimboLaunch). Scalable then reaches46B280 at741439.
+    // This existing class-FireAt owner serves
     // UnitTarget and direct mission calls; constructors/shrapnel/other
     // classes never pass this Unit-only postprocessing boundary.
-    if snap.category == EntityCategory::Unit
-        && let Some(kind) = world
+    if snap.category == EntityCategory::Unit {
+        let frames = rules
+            .unit_shp_read_state(world.interner.resolve(snap.type_id))
+            .map_or(0, |layout| layout.firing_frames());
+        if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
+            crate::sim::animation::commit_unit_firing_counter(entity, frames);
+        }
+        if let Some(kind) = world
             .projectiles
             .get(bullet_id)
-            .and_then(|bullet| bullet.payload.projectile_type())
+            .and_then(|bullet| bullet.payload().projectile_type())
             .and_then(|type_id| rules.projectile(world.interner.resolve(type_id)))
+        {
+            world.projectiles.init_scalable(bullet_id, kind);
+        }
+    }
+    // Fire741340's last step (74143E..741471): a DisguiseWhenStill= Unit
+    // (UnitType+0xD32) starts its disguise blink for the weapon's
+    // DisguiseFakeBlinkTime= (+0x13C), read by IsClearlyVisibleTo and the
+    // computer's disguise detection.
+    if snap.category == EntityCategory::Unit
+        && obj.disguise_when_still
+        && let Some(disguise) = world
+            .substrate
+            .entities
+            .get_mut(snap.stable_id)
+            .and_then(|entity| entity.disguise.as_mut())
     {
-        world.projectiles.init_scalable(bullet_id, kind);
+        disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
+        world.note_disguise_blink_started();
     }
     Some(bullet_id)
 }
@@ -2672,8 +2695,8 @@ mod reveal_on_fire_tests {
         ))
         .unwrap();
         let mut sim = Simulation::new();
-        sim.fog.width = 32;
-        sim.fog.height = 32;
+        sim.fog.set_width_for_test(32);
+        sim.fog.set_height_for_test(32);
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
@@ -2768,14 +2791,14 @@ mod reveal_on_fire_tests {
             crate::sim::vision::reveal_radius(&mut sim.fog, viewer, 10, 12, 1);
             assert!(!revealed(&sim, "Americans", 10, 10));
             assert_eq!(
-                sim.fog.by_owner[&viewer]
+                sim.fog.by_owner()[&viewer]
                     .map_cell_edge_cache_for_test((10, 11))
                     .0[0],
                 -2
             );
             reveal_on_fire(&mut sim, &rules, 1, TargetKind::Entity(2), false, path);
             assert!(!revealed(&sim, "Americans", 10, 10), "disabled leaf");
-            let frame = sim.fog.by_owner[&viewer]
+            let frame = sim.fog.by_owner()[&viewer]
                 .map_cell_edge_cache_for_test((10, 11))
                 .0[0];
             assert_eq!(frame != -2, path == FireDisclosurePath::Spawner);
@@ -2803,13 +2826,13 @@ mod reveal_on_fire_tests {
         );
         assert!(!revealed(&sim, "Americans", 10, 10), "no human victim leaf");
         assert_ne!(
-            sim.fog.by_owner[&viewer]
+            sim.fog.by_owner()[&viewer]
                 .map_cell_edge_cache_for_test((10, 11))
                 .0[0],
             -2
         );
         assert!(
-            !sim.fog.by_owner.contains_key(&computer),
+            !sim.fog.by_owner().contains_key(&computer),
             "no computer client projection"
         );
     }
@@ -2846,7 +2869,7 @@ mod reveal_on_fire_tests {
         );
         assert!(!revealed(&sim, "Americans", 10, 10));
         assert_ne!(
-            sim.fog.by_owner[&viewer]
+            sim.fog.by_owner()[&viewer]
                 .map_cell_edge_cache_for_test((10, 11))
                 .0[0],
             -2
@@ -2861,7 +2884,7 @@ mod reveal_on_fire_tests {
             let cell = if aircraft { (10, 11) } else { (10, 10) };
             // Seed a single ordinary observation without refreshing its frame.
             sim.fog
-                .by_owner
+                .by_owner_mut_for_test()
                 .get_or_insert_with(viewer, || crate::sim::vision::OwnerVisibility::new(32, 32))
                 .mark_visible(cell.0, cell.1);
             if aircraft {
@@ -2878,7 +2901,7 @@ mod reveal_on_fire_tests {
                 FireDisclosurePath::Spawner,
             );
             assert_eq!(
-                sim.fog.by_owner[&viewer]
+                sim.fog.by_owner()[&viewer]
                     .map_cell_edge_cache_for_test(cell)
                     .0[0],
                 -2

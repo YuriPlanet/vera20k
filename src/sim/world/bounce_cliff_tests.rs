@@ -23,15 +23,15 @@ fn native_body(hex: &str) -> BounceState {
             bytes[offset..offset + 4].try_into().unwrap(),
         ))
     };
-    BounceState {
-        elasticity: double(0),
-        gravity: double(8),
-        angular_velocity_magnitude: double(0x10),
-        position: std::array::from_fn(|i| float(0x18 + i * 4)),
-        velocity: std::array::from_fn(|i| float(0x24 + i * 4)),
-        orientation: std::array::from_fn(|i| float(0x30 + i * 4)),
-        rotation: std::array::from_fn(|i| float(0x40 + i * 4)),
-    }
+    BounceState::from_native_for_test(
+        double(0),
+        double(8),
+        double(0x10),
+        std::array::from_fn(|i| float(0x18 + i * 4)),
+        std::array::from_fn(|i| float(0x24 + i * 4)),
+        std::array::from_fn(|i| float(0x30 + i * 4)),
+        std::array::from_fn(|i| float(0x40 + i * 4)),
+    )
 }
 
 #[test]
@@ -211,11 +211,11 @@ fn native_physical_hills_tyre_constructor_flight_and_host_retirement() {
     assert_eq!(ids.len(), 1);
     let id = ids[0];
     assert_eq!(
-        sim.voxel_anims().get(id).unwrap().bounce,
+        sim.voxel_anims().get(id).unwrap().bounce(),
         native_body(native["constructor_body_hex"].as_str().unwrap())
     );
     assert_eq!(
-        i64::from(sim.voxel_anims().get(id).unwrap().duration),
+        i64::from(sim.voxel_anims().get(id).unwrap().duration()),
         native["constructor_state"]["duration"].as_i64().unwrap()
     );
     let air = crate::sim::world::display_layers::DisplayLayer::AIR;
@@ -228,12 +228,12 @@ fn native_physical_hills_tyre_constructor_flight_and_host_retirement() {
         if let Some(row) = checkpoint {
             let before = sim.voxel_anims().get(id).unwrap();
             assert_eq!(
-                before.bounce,
+                before.bounce(),
                 native_body(row["before"]["body_hex"].as_str().unwrap()),
                 "before visit{visit}"
             );
             assert_eq!(
-                i64::from(before.duration),
+                i64::from(before.duration()),
                 row["before"]["duration"].as_i64().unwrap(),
                 "before visit{visit}"
             );
@@ -254,12 +254,12 @@ fn native_physical_hills_tyre_constructor_flight_and_host_retirement() {
             if registered {
                 let after = sim.voxel_anims().get(id).unwrap();
                 assert_eq!(
-                    after.bounce,
+                    after.bounce(),
                     native_body(row["after"]["body_hex"].as_str().unwrap()),
                     "after visit{visit}"
                 );
                 assert_eq!(
-                    i64::from(after.duration),
+                    i64::from(after.duration()),
                     row["after"]["duration"].as_i64().unwrap(),
                     "after visit{visit}"
                 );
@@ -342,15 +342,18 @@ fn retail_hills_harv_death_admits_a_cliff_tyre_and_retires_its_display() {
     let mut reflected_at_selected_cliff = false;
     for _ in 1..=151 {
         for &id in &ids {
-            let before = sim.voxel_anims().get(id).map(|piece| piece.bounce.clone());
+            let before = sim
+                .voxel_anims()
+                .get(id)
+                .map(|piece| piece.bounce().clone());
             sim.visit_voxel_anim(id, Some(rules));
             if let (Some(before), Some(after)) = (before, sim.voxel_anims().get(id)) {
                 let coord = before.position_leptons();
                 reflected_at_selected_cliff |= coord.x / 256 == 102
                     && coord.y / 256 == 63
-                    && before.position == after.bounce.position
-                    && f32::from_bits(before.velocity[0].bits()) > 0.0
-                    && f32::from_bits(after.bounce.velocity[0].bits()) < 0.0;
+                    && before.position() == after.bounce().position()
+                    && f32::from_bits(before.velocity()[0].bits()) > 0.0
+                    && f32::from_bits(after.bounce().velocity()[0].bits()) < 0.0;
             }
         }
     }

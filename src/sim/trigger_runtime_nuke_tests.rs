@@ -120,35 +120,38 @@ fn nuke_strike_dispatch_matches_original_launch_controls() {
         let fire = &events.iter().find(|event| event[0] == "fire").unwrap()[1];
         assert_eq!(
             [
-                bullet.launch_origin.x,
-                bullet.launch_origin.y,
-                bullet.launch_origin.z
+                bullet.launch_origin().x,
+                bullet.launch_origin().y,
+                bullet.launch_origin().z
             ],
             std::array::from_fn::<_, 3, _>(|i| integer(&fire["origin"][i])),
             "{row}"
         );
         assert_eq!(
-            bullet.velocity.native().map(|value| value.bits()),
+            bullet.velocity().native().map(|value| value.bits()),
             velocity_bits(&fire["velocity_bits"]),
             "{row}"
         );
-        assert_eq!(bullet.payload.base_damage, integer(&construct["damage"]));
-        assert_eq!(bullet.payload.bright(), integer(&construct["bright"]) != 0);
-        assert_eq!(bullet.source_id, RAD_NO_ATTACKER);
+        assert_eq!(bullet.payload().base_damage, integer(&construct["damage"]));
+        assert_eq!(
+            bullet.payload().bright(),
+            integer(&construct["bright"]) != 0
+        );
+        assert_eq!(bullet.source_id(), RAD_NO_ATTACKER);
         assert_eq!(
             bullet.firer_house(),
             None,
             "incoming Trigger House is ignored"
         );
         assert_eq!(
-            bullet.target,
+            bullet.target(),
             ProjectileTarget::Cell {
                 rx: cell.0,
                 ry: cell.1
             }
         );
         assert_eq!(
-            bullet.trajectory,
+            bullet.trajectory(),
             ProjectileTrajectory::Vertical {
                 detonation_altitude: 30000,
                 acceleration: 1,
@@ -157,7 +160,7 @@ fn nuke_strike_dispatch_matches_original_launch_controls() {
         );
         assert_eq!(
             sim.interner
-                .resolve(bullet.payload.installed_weapon().unwrap()),
+                .resolve(bullet.payload().installed_weapon().unwrap()),
             "NukePayload"
         );
         assert_eq!(
@@ -236,17 +239,17 @@ fn high_explosive_revenge_authored_strikes_launch_and_reach_damage() {
         sim.session.install_waypoints(&map.waypoints);
         assert!(run(&mut sim, &rules, entry));
         let (_, bullet) = sim.projectiles.iter().next().unwrap();
-        assert_eq!(bullet.payload.base_damage, 350);
+        assert_eq!(bullet.payload().base_damage, 350);
         assert_eq!(
             [
-                bullet.launch_origin.x,
-                bullet.launch_origin.y,
-                bullet.launch_origin.z
+                bullet.launch_origin().x,
+                bullet.launch_origin().y,
+                bullet.launch_origin().z
             ],
             std::array::from_fn::<_, 3, _>(|i| integer(&fire["origin"][i])),
             "the physical action/waypoint reaches the native launch point"
         );
-        assert!(!bullet.payload.bright());
+        assert!(!bullet.payload().bright());
     }
 
     // The original bounded descending history, through the actual frame
@@ -280,7 +283,11 @@ fn high_explosive_revenge_authored_strikes_launch_and_reach_damage() {
     assert!(run(&mut sim, &rules, entry));
     let (&id, bullet) = sim.projectiles.iter().next().unwrap();
     assert_eq!(
-        [bullet.position.x, bullet.position.y, bullet.position.z],
+        [
+            bullet.position().x,
+            bullet.position().y,
+            bullet.position().z
+        ],
         std::array::from_fn::<_, 3, _>(|i| integer(&flight["launch"]["position"][i])),
     );
     for frame in flight["frames"].as_array().unwrap() {
@@ -290,13 +297,17 @@ fn high_explosive_revenge_authored_strikes_launch_and_reach_damage() {
             .get(id)
             .expect("the native descending missile is alive");
         assert_eq!(
-            [bullet.position.x, bullet.position.y, bullet.position.z],
+            [
+                bullet.position().x,
+                bullet.position().y,
+                bullet.position().z
+            ],
             std::array::from_fn::<_, 3, _>(|i| integer(&frame["position"][i])),
             "native frame {}",
             frame["frame"],
         );
         assert_eq!(
-            bullet.velocity.native().map(|v| v.bits()),
+            bullet.velocity().native().map(|v| v.bits()),
             velocity_bits(&frame["velocity_bits"])
         );
         assert_eq!(

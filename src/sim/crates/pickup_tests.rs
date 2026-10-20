@@ -541,8 +541,8 @@ fn armor_and_firepower_crates_multiply_once_and_announce() {
 fn reveal_crate_reveals_the_whole_map_for_the_owner() {
     let (mut sim, _, registry, owner, actor) = multiplayer_fixture(POWERUP_REVEAL as u8);
     let rules = effect_rules("[AudioVisual]\nCrateRevealSound=CrateReveal\n");
-    sim.fog.width = sim.session.map_width();
-    sim.fog.height = sim.session.map_height();
+    sim.fog.set_width_for_test(sim.session.map_width());
+    sim.fog.set_height_for_test(sim.session.map_height());
     assert!(!sim.fog.whole_map_revealed_for_owner(owner));
     assert!(!sim.houses[&owner].map_is_clear());
 
@@ -1278,7 +1278,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
         );
         let anim = *sim
             .anims()
-            .find(|(_, anim)| sim.resolve(anim.type_id) == "MONEY")
+            .find(|(_, anim)| sim.resolve(anim.type_id()) == "MONEY")
             .unwrap()
             .0;
         crate::sim::anim_class::trigger_tests::assert_state(&sim, anim, &row["initial_anim"], name);

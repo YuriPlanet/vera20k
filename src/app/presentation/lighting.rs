@@ -665,7 +665,7 @@ fn source_maps(sim: &Simulation) -> (BTreeMap<u64, PointLight>, BTreeMap<(u16, u
         sim.lighting_sources.buildings.clone(),
         sim.radiation
             .sites()
-            .filter_map(|site| site.light_source().map(|source| (site.center, source)))
+            .filter_map(|site| site.light_source().map(|source| (site.center(), source)))
             .collect(),
     )
 }

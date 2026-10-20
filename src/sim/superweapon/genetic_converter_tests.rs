@@ -94,7 +94,7 @@ fn anims_of<'a>(sim: &'a Simulation, name: &str) -> Vec<&'a crate::sim::anim_cla
         .anims
         .iter()
         .map(|(_, anim)| anim)
-        .filter(|anim| anim.type_id == type_id)
+        .filter(|anim| anim.type_id() == type_id)
         .collect()
 }
 
@@ -216,11 +216,11 @@ fn the_launch_matches_native() {
         let native_anims: Vec<&Value> = events(row, "anim").collect();
         assert_eq!(rings.len(), native_anims.len(), "{row}");
         if let (Some(anim), Some(native)) = (rings.first(), native_anims.first()) {
-            let world = anim.world_coord;
+            let world = anim.world_coord();
             assert_eq!([world.x, world.y, world.z], coord(&native[2]), "{row}");
             // (delay, loopCount, drawFlags, zAdjust, reverse).
             assert_eq!(native[3], serde_json::json!([0, 1, 0x600, 0, 0]));
-            assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0), "{row}");
+            assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x600, 0), "{row}");
         }
 
         // PlayEVA and PlayAtCoord (one launch event), then
@@ -481,8 +481,8 @@ fn the_mutation_arm_matches_native() {
             let [anim] = mutants[..] else {
                 panic!("one InfantryMutate anim: {row}");
             };
-            assert_eq!(anim.world_coord, AnimWorldCoord { x, y, z }, "{row}");
-            assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0), "{row}");
+            assert_eq!(anim.world_coord(), AnimWorldCoord { x, y, z }, "{row}");
+            assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x600, 0), "{row}");
             let owner = match row["anim_owner"].as_str() {
                 Some("source") => Some(russians),
                 Some("house") => Some(americans),
@@ -621,7 +621,7 @@ fn the_make_infantry_end_matches_native() {
             .anims
             .get_mut(anim)
             .unwrap()
-            .runtime
+            .runtime_mut_for_test()
             .current_frame = int(&row["stage"]);
         let before: BTreeSet<u64> = sim.substrate.entities.keys_sorted().into_iter().collect();
 
@@ -636,7 +636,7 @@ fn the_make_infantry_end_matches_native() {
         assert_eq!(ends, row["end"] == "uninit", "{row}");
         if !ends {
             assert_eq!(
-                sim.anim(anim).unwrap().runtime.current_frame,
+                sim.anim(anim).unwrap().runtime().current_frame,
                 int(&row["stage_after"]),
                 "{row}"
             );

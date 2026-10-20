@@ -89,11 +89,11 @@ impl Scene {
         )
         .unwrap();
         let bullet = self.world.projectiles.get(id).unwrap();
-        assert_eq!(bullet.guidance.unwrap().rot, 60);
-        assert_eq!(bullet.target, ProjectileTarget::Entity(self.target));
-        assert_eq!(bullet.launch_target, self.centre());
-        assert_eq!(bullet.proximity_reference, self.centre());
-        assert_eq!(bullet.last_target_position, self.centre());
+        assert_eq!(bullet.guidance().unwrap().rot, 60);
+        assert_eq!(bullet.target(), ProjectileTarget::Entity(self.target));
+        assert_eq!(bullet.launch_target(), self.centre());
+        assert_eq!(bullet.proximity_reference(), self.centre());
+        assert_eq!(bullet.last_target_position(), self.centre());
         id
     }
 
@@ -135,9 +135,12 @@ fn retail_ifv_first_logic_visit_uses_live_shipyard_target_offset() {
         let id = scene.launch();
         scene.visit(id);
         let bullet = scene.world.projectiles.get(id).unwrap();
-        assert!(bullet.in_logic_vector, "first guided visit is nonterminal");
+        assert!(
+            bullet.in_logic_vector(),
+            "first guided visit is nonterminal"
+        );
         assert_eq!(
-            bullet.last_target_position,
+            bullet.last_target_position(),
             ProjectileCoord::new(
                 centre.x + offset[0],
                 centre.y + offset[1],
@@ -145,9 +148,9 @@ fn retail_ifv_first_logic_visit_uses_live_shipyard_target_offset() {
             ),
             "{kind}: live guidance must use+A4"
         );
-        assert_eq!(bullet.launch_target, centre);
-        assert_eq!(bullet.proximity_reference, centre);
-        assert_eq!(bullet.target, ProjectileTarget::Entity(scene.target));
+        assert_eq!(bullet.launch_target(), centre);
+        assert_eq!(bullet.proximity_reference(), centre);
+        assert_eq!(bullet.target(), ProjectileTarget::Entity(scene.target));
     }
 }
 
@@ -177,7 +180,7 @@ fn live_guidance_refreshes_offsets_and_preserves_zero_offset_targets() {
                 .projectiles
                 .get(id)
                 .unwrap()
-                .last_target_position,
+                .last_target_position(),
             ProjectileCoord::new(
                 initial.x + offset[0],
                 initial.y + offset[1],
@@ -201,15 +204,15 @@ fn live_guidance_refreshes_offsets_and_preserves_zero_offset_targets() {
         scene.visit(id);
         let bullet = scene.world.projectiles.get(id).unwrap();
         assert_eq!(
-            bullet.last_target_position,
+            bullet.last_target_position(),
             ProjectileCoord::new(
                 moved.x + offset[0],
                 moved.y + offset[1],
                 moved.z + offset[2]
             )
         );
-        assert_eq!(bullet.launch_target, initial);
-        assert_eq!(bullet.proximity_reference, initial);
+        assert_eq!(bullet.launch_target(), initial);
+        assert_eq!(bullet.proximity_reference(), initial);
     }
 }
 
@@ -230,12 +233,12 @@ fn guided_mode_one_snap_keeps_get_coords_before_the_impact_ladder() {
     let position = ProjectileCoord::new(centre.x - 1500, centre.y, centre.z + 1000);
     {
         let bullet = scene.world.projectiles.get_mut(id).unwrap();
-        bullet.position = position;
-        bullet.velocity = crate::sim::projectile::ProjectileVelocity::new(1, 0, 0);
-        bullet.speed_leptons_per_frame = 1;
-        bullet.proximity_reference = position;
-        bullet.arm_timer.start(100, 0);
-        let guidance = bullet.guidance.as_mut().unwrap();
+        bullet.set_position_for_test(position);
+        bullet.set_velocity_for_test(crate::sim::projectile::ProjectileVelocity::new(1, 0, 0));
+        bullet.set_speed_leptons_per_frame_for_test(1);
+        bullet.set_proximity_reference_for_test(position);
+        bullet.arm_timer_mut_for_test().start(100, 0);
+        let guidance = bullet.guidance_mut_for_test().as_mut().unwrap();
         guidance.max_speed = 1;
         guidance.acceleration = 0;
         guidance.course_locked = true;
@@ -256,11 +259,11 @@ fn guided_mode_one_snap_keeps_get_coords_before_the_impact_ladder() {
         .get(id)
         .expect("late delete retains the fired Bullet");
     assert!(
-        !bullet.in_logic_vector,
+        !bullet.in_logic_vector(),
         "mode-one detonation retires this visit"
     );
     assert_eq!(
-        bullet.last_target_position,
+        bullet.last_target_position(),
         ProjectileCoord::new(
             centre.x + offset[0],
             centre.y + offset[1],
@@ -268,7 +271,8 @@ fn guided_mode_one_snap_keeps_get_coords_before_the_impact_ladder() {
         )
     );
     assert_eq!(
-        bullet.position, centre,
+        bullet.position(),
+        centre,
         "final fuse snap uses+48, not the+A4 live guidance point"
     );
     assert!(

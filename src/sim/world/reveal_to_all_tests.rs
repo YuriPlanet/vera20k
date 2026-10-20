@@ -76,9 +76,9 @@ fn alternate_cells(sim: &Simulation, id: u64, viewer: InternedId) -> Vec<(u16, u
 /// `viewer`'s shroud counter at a cell (CellClass `+0x130`'s on the native
 /// map): 1 shrouded, 0 explored, -n under n sight contributions.
 fn counter(sim: &Simulation, viewer: InternedId, (x, y): (u16, u16)) -> i32 {
-    sim.fog.by_owner[&viewer].shroud_knowledge_raw()
-        [usize::from(y) * usize::from(sim.fog.width) + usize::from(x)]
-    .counter
+    sim.fog.by_owner()[&viewer].shroud_knowledge_raw()
+        [usize::from(y) * usize::from(sim.fog.width()) + usize::from(x)]
+    .counter()
 }
 
 #[test]

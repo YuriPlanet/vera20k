@@ -628,7 +628,7 @@ mod tests {
     /// (or already deleted by a later tick).
     fn anim_uninited(sim: &Simulation, id: crate::sim::anim_class::AnimId) -> bool {
         sim.anim(id).is_none_or(|anim| {
-            !anim.in_logic_vector && sim.substrate.pending_delete.contains_object(&id)
+            !anim.in_logic_vector() && sim.substrate.pending_delete.contains_object(&id)
         })
     }
 
@@ -642,8 +642,8 @@ mod tests {
             .anim
             .expect("drain anim");
         let anim = sim.anim(id).expect("live drain anim");
-        assert_eq!(sim.interner.resolve(anim.type_id), "DISKRAY");
-        assert_eq!(anim.owner_entity, Some(disk));
+        assert_eq!(sim.interner.resolve(anim.type_id()), "DISKRAY");
+        assert_eq!(anim.owner_entity(), Some(disk));
         id
     }
 

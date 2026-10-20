@@ -862,7 +862,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
         for slot in expected["slots"].as_array().unwrap() {
             let index = int(&slot["slot"]) as usize;
             let actual = entity.building_art.anim_slots()[index]
-                .map(|id| sim.interner.resolve(sim.anim(id).unwrap().type_id));
+                .map(|id| sim.interner.resolve(sim.anim(id).unwrap().type_id()));
             assert_eq!(json!(actual), slot["type"], "native slot{index}");
             if let Some(id) = entity.building_art.anim_slots()[index] {
                 let anim = sim.anim(id).unwrap();
@@ -872,7 +872,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                     .iter()
                     .find(|anim| anim["pointer"] == slot["pointer"])
                     .unwrap();
-                let mut runtime = serde_json::to_value(&anim.runtime).unwrap();
+                let mut runtime = serde_json::to_value(&anim.runtime()).unwrap();
                 for flag in [
                     "first_ai_guard",
                     "constructor_reverse",
@@ -882,8 +882,8 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                     runtime[flag] = json!(u8::from(runtime[flag].as_bool().unwrap()));
                 }
                 runtime["frame_timer"] = json!([
-                    anim.runtime.frame_timer.start_frame(),
-                    anim.runtime.frame_timer.duration(),
+                    anim.runtime().frame_timer.start_frame(),
+                    anim.runtime().frame_timer.duration(),
                 ]);
                 assert_eq!(runtime, native_anim["runtime"], "native slot{index} clock");
             }
@@ -1005,7 +1005,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             let id = sim
                 .set_building_anim_slot(yard, int(&slot["slot"]) as u8, false, false, 0, &rules)
                 .unwrap();
-            assert_eq!(sim.interner.resolve(sim.anim(id).unwrap().type_id), name);
+            assert_eq!(sim.interner.resolve(sim.anim(id).unwrap().type_id()), name);
             let prior = before["selected_anims"]
                 .as_array()
                 .unwrap()
@@ -1014,19 +1014,19 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                 .unwrap();
             let runtime = &prior["runtime"];
             let anim = sim.substrate.anims.get_mut(id).unwrap();
-            anim.runtime.current_frame = int(&runtime["current_frame"]);
-            anim.runtime.frame_step = int(&runtime["frame_step"]);
-            anim.runtime.delay_remaining = int(&runtime["delay_remaining"]) as u16;
-            anim.runtime.rate_reload = int(&runtime["rate_reload"]) as u16;
-            anim.runtime.frame_timer = CdTimer::from_raw(
+            anim.runtime_mut_for_test().current_frame = int(&runtime["current_frame"]);
+            anim.runtime_mut_for_test().frame_step = int(&runtime["frame_step"]);
+            anim.runtime_mut_for_test().delay_remaining = int(&runtime["delay_remaining"]) as u16;
+            anim.runtime_mut_for_test().rate_reload = int(&runtime["rate_reload"]) as u16;
+            anim.runtime_mut_for_test().frame_timer = CdTimer::from_raw(
                 int(&runtime["frame_timer"][0]),
                 int(&runtime["frame_timer"][1]),
             );
-            anim.runtime.loop_remaining = int(&runtime["loop_remaining"]) as u8;
-            anim.runtime.first_ai_guard = runtime["first_ai_guard"] == 1;
-            anim.runtime.constructor_reverse = runtime["constructor_reverse"] == 1;
-            anim.runtime.inactive = runtime["inactive"] == 1;
-            anim.runtime.paused = runtime["paused"] == 1;
+            anim.runtime_mut_for_test().loop_remaining = int(&runtime["loop_remaining"]) as u8;
+            anim.runtime_mut_for_test().first_ai_guard = runtime["first_ai_guard"] == 1;
+            anim.runtime_mut_for_test().constructor_reverse = runtime["constructor_reverse"] == 1;
+            anim.runtime_mut_for_test().inactive = runtime["inactive"] == 1;
+            anim.runtime_mut_for_test().paused = runtime["paused"] == 1;
         }
         sim.session.set_binary_frame_for_test(now);
         sim.main_rng =
@@ -1044,7 +1044,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             .building_art
             .anim_slots();
         let production_before =
-            slots_before[8].map(|id| (id, sim.anim(id).unwrap().runtime.clone()));
+            slots_before[8].map(|id| (id, sim.anim(id).unwrap().runtime().clone()));
         let delay = mission_unload(&mut sim, yard, &rules, ObjectAiCtx::default()).unwrap();
         assert_eq!(
             json!(delay),
@@ -1080,7 +1080,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                 Some(id)
             );
             assert_eq!(
-                sim.anim(id).unwrap().runtime,
+                *sim.anim(id).unwrap().runtime(),
                 runtime,
                 "state4 retains the actual running Production8"
             );

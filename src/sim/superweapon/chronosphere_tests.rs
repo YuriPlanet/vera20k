@@ -365,10 +365,13 @@ fn retail_chrono_warp_moves_the_source_block() {
     let placement: Vec<_> = sim.super_placement_anims();
     assert_eq!(placement.len(), 1);
     let anim = sim.substrate.anims.get(placement[0].1).unwrap();
-    assert_eq!(sim.interner.resolve(anim.type_id), "CHRONOAR");
+    assert_eq!(sim.interner.resolve(anim.type_id()), "CHRONOAR");
     // Case 3 lifts the cell 5 leptons and CreateChronoAnim 5 more
     // (`0x006CC423`, `0x006CB43B`).
-    assert_eq!(anim.world_coord.z, super::deck_coords(&sim, SOURCE)[2] + 10);
+    assert_eq!(
+        anim.world_coord().z,
+        super::deck_coords(&sim, SOURCE)[2] + 10
+    );
     step(&mut sim, &rules);
     assert!(sim.super_weapons[&americans][&sphere].is_ready);
 

@@ -114,16 +114,20 @@ fn authored_waypoint_explosions_detonate_the_selected_weapon_at_the_waypoint() {
                 warhead
                     .anim_list
                     .iter()
-                    .any(|name| name.eq_ignore_ascii_case(sim.interner.resolve(anim.type_id))),
+                    .any(|name| name.eq_ignore_ascii_case(sim.interner.resolve(anim.type_id()))),
                 "{map_name}: {} from {:?}",
-                sim.interner.resolve(anim.type_id),
+                sim.interner.resolve(anim.type_id()),
                 warhead.anim_list
             );
             assert_eq!(
                 (
-                    [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
-                    anim.draw_flags,
-                    anim.z_adjust,
+                    [
+                        anim.world_coord().x,
+                        anim.world_coord().y,
+                        anim.world_coord().z
+                    ],
+                    anim.draw_flags(),
+                    anim.z_adjust(),
                 ),
                 ([x, y, z], 0x2600, -15),
                 "{map_name} Anim constructor"

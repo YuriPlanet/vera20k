@@ -184,7 +184,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
                 palette_context: ShpPaletteContext::SelectedScheme,
                 type_id: parachute_name.clone(),
                 facing: 0,
-                frame: u16::try_from(anim.runtime.current_frame).unwrap(),
+                frame: u16::try_from(anim.runtime().current_frame).unwrap(),
                 house_color: color,
             };
             let entry = atlas

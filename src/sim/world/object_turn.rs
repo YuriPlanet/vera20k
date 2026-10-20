@@ -752,7 +752,7 @@ impl Simulation {
                 .filter(|&house| self.owner_is_human(house))
                 .chain([current])
                 .collect();
-            self.fog.by_owner.defer(kept);
+            self.fog.defer_plane_writes(kept);
         }
         // The pass's sight walks ask each owner's viewers once until the ally
         // graph changes (`vision::RevealViewers`).
@@ -776,7 +776,7 @@ impl Simulation {
             outcome.ownership_changed |= turn.ownership_changed;
             Ok(())
         });
-        self.fog.by_owner.settle();
+        self.fog.settle_plane_writes();
         self.reveal_viewers.end();
         self.finish_batched_path_searches();
         self.finish_batched_scans();

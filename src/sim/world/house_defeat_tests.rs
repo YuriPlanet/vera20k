@@ -835,8 +835,8 @@ fn a_computer_defeat_turns_the_computers_left_paranoid() {
 /// house; each owns one counted building.
 fn two_house_plane(rules: &RuleSet) -> (Simulation, Vec<InternedId>, [u64; 2]) {
     let (mut sim, houses) = sim_with_houses(&[0, 1]);
-    sim.fog.width = 40;
-    sim.fog.height = 40;
+    sim.fog.set_width_for_test(40);
+    sim.fog.set_height_for_test(40);
     sim.session.game_options_mut_for_test().short_game = true;
     sim.session.set_current_house_for_test(Some(houses[0]));
     let own = sim
@@ -903,8 +903,8 @@ fn a_local_defeat_reveals_the_whole_map_and_keeps_the_radar_on() {
 #[test]
 fn reveal_entire_map_reveals_once_and_only_to_the_current_house() {
     let (mut sim, houses) = sim_with_houses(&[0, 1]);
-    sim.fog.width = 8;
-    sim.fog.height = 8;
+    sim.fog.set_width_for_test(8);
+    sim.fog.set_height_for_test(8);
     let context = crate::sim::world::UninitContext::default();
     sim.reveal_entire_map(None, context);
     assert!(
@@ -917,12 +917,12 @@ fn reveal_entire_map_reveals_once_and_only_to_the_current_house() {
     assert!(!sim.houses[&houses[0]].map_is_clear());
     assert!(sim.fog.whole_map_revealed_for_owner(houses[0]));
     assert!(sim.fog.is_cell_revealed(houses[0], 7, 7));
-    let plane = save_codec::serialize(&sim.fog.by_owner[&houses[0]]).unwrap();
+    let plane = save_codec::serialize(&sim.fog.by_owner()[&houses[0]]).unwrap();
 
     sim.reveal_entire_map(Some(houses[0]), context);
     assert!(sim.houses[&houses[0]].map_is_clear());
     assert_eq!(
-        save_codec::serialize(&sim.fog.by_owner[&houses[0]]).unwrap(),
+        save_codec::serialize(&sim.fog.by_owner()[&houses[0]]).unwrap(),
         plane
     );
 

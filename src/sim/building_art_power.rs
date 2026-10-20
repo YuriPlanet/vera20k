@@ -53,7 +53,11 @@ impl Simulation {
             let replay = entity.building_art.anim_effect_replay[usize::from(slot)];
             if flags.powered {
                 if let Some(anim) = anim.and_then(|anim| self.substrate.anims.get_mut(anim)) {
-                    anim.runtime.paused = !restoring;
+                    if restoring {
+                        anim.resume();
+                    } else {
+                        anim.pause();
+                    }
                 }
             } else if flags.powered_light {
                 if restoring {
@@ -299,7 +303,12 @@ mod tests {
                     .unwrap()
             });
             if let Some(old) = old {
-                sim.substrate.anims.get_mut(old).unwrap().runtime.paused = i.restoring;
+                sim.substrate
+                    .anims
+                    .get_mut(old)
+                    .unwrap()
+                    .runtime_mut_for_test()
+                    .paused = i.restoring;
             }
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.building_art.actually_placed = i.placed;
@@ -336,7 +345,7 @@ mod tests {
                 );
                 if let Some(anim) = sim.anim(old) {
                     assert_eq!(
-                        u8::from(anim.runtime.paused),
+                        u8::from(anim.runtime().paused),
                         row.output.paused,
                         "pause row {index}"
                     );
@@ -349,8 +358,8 @@ mod tests {
                 .filter(|(anim, _)| Some(**anim) != old)
                 .map(|(_, anim)| {
                     (
-                        anim.building_slot.unwrap().1,
-                        sim.interner.resolve(anim.type_id).to_string(),
+                        anim.building_slot().unwrap().1,
+                        sim.interner.resolve(anim.type_id()).to_string(),
                     )
                 })
                 .collect();
@@ -383,7 +392,7 @@ mod tests {
         );
         let anim = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
         assert!(
-            sim.anim(anim).unwrap().runtime.paused,
+            sim.anim(anim).unwrap().runtime().paused,
             "4467D0 initial pause"
         );
         sim.visit_building_operational(
@@ -392,18 +401,18 @@ mod tests {
             None,
             crate::sim::world::FrameEffects::default(),
         );
-        assert!(!sim.anim(anim).unwrap().runtime.paused);
+        assert!(!sim.anim(anim).unwrap().runtime().paused);
         sim.substrate
             .anims
             .get_mut(anim)
             .unwrap()
-            .runtime
+            .runtime_mut_for_test()
             .first_ai_guard = false;
         sim.substrate
             .anims
             .get_mut(anim)
             .unwrap()
-            .runtime
+            .runtime_mut_for_test()
             .frame_timer = CdTimer::started(0, 3);
         sim.power_states
             .entry(owner)
@@ -422,8 +431,11 @@ mod tests {
             None,
             crate::sim::world::FrameEffects::default(),
         );
-        assert_eq!(sim.anim(anim).unwrap().runtime.current_frame, 0);
-        assert_eq!(sim.anim(anim).unwrap().runtime.frame_timer.start_frame(), 0);
+        assert_eq!(sim.anim(anim).unwrap().runtime().current_frame, 0);
+        assert_eq!(
+            sim.anim(anim).unwrap().runtime().frame_timer.start_frame(),
+            0
+        );
         sim.power_states
             .get_mut(&owner)
             .unwrap()
@@ -440,9 +452,9 @@ mod tests {
             None,
             crate::sim::world::FrameEffects::default(),
         );
-        assert_eq!(sim.anim(anim).unwrap().runtime.current_frame, 1);
+        assert_eq!(sim.anim(anim).unwrap().runtime().current_frame, 1);
         assert_eq!(
-            sim.anim(anim).unwrap().runtime.frame_timer.start_frame(),
+            sim.anim(anim).unwrap().runtime().frame_timer.start_frame(),
             20
         );
     }
@@ -492,7 +504,12 @@ mod tests {
             let old10 = sim
                 .set_building_anim_slot(id, 10, damaged, false, 0, &rules)
                 .unwrap();
-            sim.substrate.anims.get_mut(old3).unwrap().runtime.paused = false;
+            sim.substrate
+                .anims
+                .get_mut(old3)
+                .unwrap()
+                .runtime_mut_for_test()
+                .paused = false;
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.building_art.actually_placed = true;
             entity
@@ -520,7 +537,7 @@ mod tests {
                 "sample row {index}"
             );
             assert_eq!(
-                sim.anim(old3).unwrap().runtime.paused,
+                sim.anim(old3).unwrap().runtime().paused,
                 o["paused"].as_bool().unwrap(),
                 "pause row {index}"
             );
@@ -542,8 +559,8 @@ mod tests {
                 .filter(|(anim, _)| **anim != old3 && **anim != old10)
                 .map(|(_, anim)| {
                     (
-                        anim.building_slot.unwrap().1,
-                        sim.interner.resolve(anim.type_id).to_string(),
+                        anim.building_slot().unwrap().1,
+                        sim.interner.resolve(anim.type_id()).to_string(),
                     )
                 })
                 .collect();

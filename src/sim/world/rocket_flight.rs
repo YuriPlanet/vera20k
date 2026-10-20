@@ -460,7 +460,7 @@ pub(super) mod retail_tests {
                 let sim = &runtime.simulation;
                 for (&id, anim) in sim.anims() {
                     if seen_anims.insert(id) {
-                        anim_names.insert(sim.interner.resolve(anim.type_id).to_owned());
+                        anim_names.insert(sim.interner.resolve(anim.type_id()).to_owned());
                     }
                 }
                 // Detonate's UnInit leaves the frame's pending-delete flush.
@@ -942,13 +942,13 @@ pub(super) mod retail_tests {
                 i32::from(target_cell.1) * 256 + 128,
             ];
             for (&id, bomb) in sim.projectiles.iter() {
-                if hornets.contains(&bomb.source_id) && !bombs.contains_key(&id) {
-                    let [x, y, z] = bomb.velocity.native().map(|v| f64::from_bits(v.bits()));
-                    let toward = [goal[0] - bomb.position.x, goal[1] - bomb.position.y];
+                if hornets.contains(&bomb.source_id()) && !bombs.contains_key(&id) {
+                    let [x, y, z] = bomb.velocity().native().map(|v| f64::from_bits(v.bits()));
+                    let toward = [goal[0] - bomb.position().x, goal[1] - bomb.position().y];
                     let aim = x * f64::from(toward[0]) + y * f64::from(toward[1]);
                     bombs.insert(
                         id,
-                        (frame, bomb.source_id, (x * x + y * y + z * z).sqrt(), aim),
+                        (frame, bomb.source_id(), (x * x + y * y + z * z).sqrt(), aim),
                     );
                 }
             }
@@ -1126,8 +1126,8 @@ pub(super) mod retail_tests {
                 .filter(|(id, _)| !seen_anims.contains(*id))
                 .map(|(_, anim)| {
                     (
-                        sim.interner.resolve(anim.type_id).to_ascii_uppercase(),
-                        anim.world_coord,
+                        sim.interner.resolve(anim.type_id()).to_ascii_uppercase(),
+                        anim.world_coord(),
                     )
                 })
                 .collect();

@@ -59,16 +59,16 @@ pub(crate) fn particle_system_light(
     kind: &crate::rules::particle_system_type::ParticleSystemType,
     detail: &mut DetailState,
 ) -> Option<CombatLightDrawRecord> {
-    if !kind.one_frame_light || kind.light_size <= 0 || system.particles.is_empty() {
+    if !kind.one_frame_light || kind.light_size <= 0 || system.particles().is_empty() {
         return None;
     }
     let count =
-        i32::try_from(system.particles.len()).expect("native particle vector count fits i32");
+        i32::try_from(system.particles().len()).expect("native particle vector count fits i32");
     let base_size =
         system_light_base_size(count, kind.particle_cap as i32, kind.light_size).ok()?;
     CombatLight {
-        coord: ProjectileCoord::new(system.coords.x, system.coords.y, system.coords.z),
-        stage: system.facing,
+        coord: ProjectileCoord::new(system.coords().x, system.coords().y, system.coords().z),
+        stage: system.facing(),
         base_size,
         flags: 0,
     }

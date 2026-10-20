@@ -119,7 +119,7 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
             }
         }
         assert!(sim.substrate.pending_delete.contains_object(&id), "{name}");
-        assert!(!sim.anim(id).unwrap().in_logic_vector, "{name}");
+        assert!(!sim.anim(id).unwrap().in_logic_vector(), "{name}");
         let events = std::mem::take(&mut sim.sound_events);
         let mut output = SoundEventQueue::default();
         dispatch_sim_sound_events(events, &sim, &rules, None, &mut |_| true, &mut output);

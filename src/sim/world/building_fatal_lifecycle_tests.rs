@@ -630,7 +630,7 @@ impl Fixture {
                 .anims
                 .iter()
                 .map(|(_, a)| a)
-                .find(|a| a.native_unique_id == int(&anim["native_id"]))
+                .find(|a| a.native_unique_id() == int(&anim["native_id"]))
                 .unwrap();
             let mut runtime = anim["runtime"].clone();
             for key in [
@@ -644,24 +644,24 @@ impl Fixture {
             runtime["frame_timer"] = json!({"start_frame": int(&runtime["frame_timer"][0]),
                 "duration": int(&runtime["frame_timer"][1])});
             assert_eq!(
-                serde_json::to_value(&actual.runtime).unwrap(),
+                serde_json::to_value(&actual.runtime()).unwrap(),
                 runtime,
                 "{boundary}: Anim{} runtime",
-                actual.native_unique_id
+                actual.native_unique_id()
             );
             let owner = anim["owner_object"].as_u64().unwrap();
             let expected_owner = (owner != 0).then(|| pointers[&owner]);
             assert_eq!(
-                actual.owner_entity.map(native_id),
+                actual.owner_entity().map(native_id),
                 expected_owner,
                 "{boundary}: Anim{} owner",
-                actual.native_unique_id
+                actual.native_unique_id()
             );
             assert_eq!(
-                actual.z_adjust,
+                actual.z_adjust(),
                 int(&anim["z_adjust"]),
                 "{boundary}: Anim{} depth",
-                actual.native_unique_id
+                actual.native_unique_id()
             );
         }
     }
@@ -820,7 +820,7 @@ impl Fixture {
             .anims
             .iter()
             .map(|(_, a)| a)
-            .filter(|a| a.native_unique_id >= floor)
+            .filter(|a| a.native_unique_id() >= floor)
             .collect();
         let expected: Vec<_> = expected
             .iter()
@@ -834,8 +834,8 @@ impl Fixture {
             actual
                 .iter()
                 .map(|anim| (
-                    anim.native_unique_id,
-                    self.sim.interner.resolve(anim.type_id)
+                    anim.native_unique_id(),
+                    self.sim.interner.resolve(anim.type_id())
                 ))
                 .collect::<Vec<_>>(),
             expected
@@ -845,20 +845,20 @@ impl Fixture {
         );
         for (actual, native) in actual.iter().zip(expected) {
             assert_eq!(
-                actual.native_unique_id,
+                actual.native_unique_id(),
                 int(&native["native_id"]),
                 "{boundary}: Anim ID"
             );
             assert_eq!(
-                self.sim.interner.resolve(actual.type_id),
+                self.sim.interner.resolve(actual.type_id()),
                 native["type_name"].as_str().unwrap(),
                 "{boundary}: Anim type"
             );
             assert_eq!(
                 [
-                    actual.world_coord.x,
-                    actual.world_coord.y,
-                    actual.world_coord.z
+                    actual.world_coord().x,
+                    actual.world_coord().y,
+                    actual.world_coord().z
                 ],
                 [
                     int(&native["location"][0]),
@@ -868,25 +868,25 @@ impl Fixture {
                 "{boundary}: Anim coordinate"
             );
             assert_eq!(
-                i32::from(actual.runtime.delay_remaining),
+                i32::from(actual.runtime().delay_remaining),
                 int(&native["runtime"]["delay_remaining"]),
                 "{boundary}: Anim delay"
             );
             assert_eq!(
-                actual.draw_flags,
+                actual.draw_flags(),
                 int(&native["draw_flags"]) as u32,
                 "{boundary}: Anim flags"
             );
-            if let Some(bounce) = &actual.bounce {
+            if let Some(bounce) = &actual.bounce() {
                 assert_eq!(
-                    bounce.position.map(|v| v.bits()),
+                    bounce.position().map(|v| v.bits()),
                     std::array::from_fn(
                         |i| native["bounce"]["position_bits"][i].as_u64().unwrap() as u32
                     ),
                     "{boundary}: Bounce position"
                 );
                 assert_eq!(
-                    bounce.velocity.map(|v| v.bits()),
+                    bounce.velocity().map(|v| v.bits()),
                     std::array::from_fn(
                         |i| native["bounce"]["velocity_bits"][i].as_u64().unwrap() as u32
                     ),
@@ -974,9 +974,9 @@ impl Fixture {
                     .substrate
                     .anims
                     .iter()
-                    .filter(|(_, a)| a.native_unique_id >= floor
-                        && a.native_unique_id < actual.native_unique_id()
-                        && a.in_logic_vector)
+                    .filter(|(_, a)| a.native_unique_id() >= floor
+                        && a.native_unique_id() < actual.native_unique_id()
+                        && a.in_logic_vector())
                     .all(|(id, _)| logic.iter().position(|live| live == id).unwrap() < crew_slot),
                 "{boundary}: death Anims admitted before crew"
             );
@@ -1043,8 +1043,14 @@ impl Fixture {
             .entities
             .get(id)
             .map(|e| e.native_unique_id())
-            .or_else(|| self.sim.substrate.anims.get(id).map(|a| a.native_unique_id))
-            .or_else(|| self.sim.projectiles.get(id).map(|p| p.native_unique_id))
+            .or_else(|| {
+                self.sim
+                    .substrate
+                    .anims
+                    .get(id)
+                    .map(|a| a.native_unique_id())
+            })
+            .or_else(|| self.sim.projectiles.get(id).map(|p| p.native_unique_id()))
             .or_else(|| {
                 self.sim
                     .smudge_grid
@@ -1237,7 +1243,7 @@ impl Fixture {
                     .anims
                     .iter()
                     .map(|(_, anim)| anim)
-                    .find(|actual| actual.native_unique_id == int(&anim["native_id"]))
+                    .find(|actual| actual.native_unique_id() == int(&anim["native_id"]))
                     .unwrap();
                 // Building slot membership is distinct from Anim+CC. Native
                 // GAPOWR_A23 occupies slot3 with owner_object==0 in this suffix.
@@ -1247,7 +1253,8 @@ impl Fixture {
                     _ => panic!("unretained normal-PUT slot Anim owner"),
                 };
                 assert_eq!(
-                    actual.owner_entity, owner,
+                    actual.owner_entity(),
+                    owner,
                     "{boundary}: slot Anim Object owner"
                 );
                 Some(int(&anim["native_id"]))
@@ -1270,10 +1277,10 @@ impl Fixture {
                 .anims
                 .iter()
                 .map(|(_, anim)| anim)
-                .find(|anim| anim.native_unique_id == int(&expected["native_id"]))
+                .find(|anim| anim.native_unique_id() == int(&expected["native_id"]))
                 .unwrap();
             assert_eq!(
-                self.sim.interner.resolve(actual.type_id),
+                self.sim.interner.resolve(actual.type_id()),
                 expected["type_name"],
                 "{boundary}: Anim type"
             );
@@ -1593,12 +1600,12 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             .map(|(_, p)| p)
             .next()
             .unwrap();
-        assert_eq!(bullet.native_unique_id, int(&route["shot"]["bullet_id"]));
+        assert_eq!(bullet.native_unique_id(), int(&route["shot"]["bullet_id"]));
         assert_eq!(
             [
-                bullet.launch_origin.x,
-                bullet.launch_origin.y,
-                bullet.launch_origin.z
+                bullet.launch_origin().x,
+                bullet.launch_origin().y,
+                bullet.launch_origin().z
             ],
             [
                 int(&route["shot"]["launch_position"][0]),

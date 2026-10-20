@@ -67,8 +67,8 @@ fn stock_e1_feedback_matches_whole_native_receiver_before_audio_service() {
             u16::try_from(coordinate[1] >> 8).unwrap(),
         ];
         let mut sim = Simulation::new();
-        sim.fog.width = 128;
-        sim.fog.height = 128;
+        sim.fog.set_width_for_test(128);
+        sim.fog.set_height_for_test(128);
         sim.intern_rule_type_ids(rules);
         let owner = sim.interner.intern("Americans");
         let mut house = HouseState::new(owner, 0, None, true, 0, 10);

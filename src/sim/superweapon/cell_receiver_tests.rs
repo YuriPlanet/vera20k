@@ -400,9 +400,9 @@ fn infantry_same_frame_firer_death_keeps_electric_consequences() {
         );
         assert_eq!(
             sim.projectiles.iter().filter(|(_, bullet)| {
-                bullet.in_logic_vector
-                    && bullet.guidance.as_ref().is_some_and(|guidance| guidance.rot == 1)
-                    && matches!(bullet.target, crate::sim::projectile::ProjectileTarget::Entity(id) if id == tesla)
+                bullet.in_logic_vector()
+                    && bullet.guidance().is_some_and(|guidance| guidance.rot == 1)
+                    && matches!(bullet.target(), crate::sim::projectile::ProjectileTarget::Entity(id) if id == tesla)
             }).count(),
             1,
             "the Rifle bullet must remain live so its removal cannot skip the Tesla bullet"

@@ -382,13 +382,13 @@ impl EffectBoundary {
             "{context}: admitted Anims {boundary}"
         );
         for (&(id, anim), expected) in anims.iter().zip(native) {
-            let runtime = &anim.runtime;
+            let runtime = &anim.runtime();
             let actual = json!({
-                "object":names[id], "anim_type":sim.resolve(anim.type_id),
-                "location":[anim.world_coord.x,anim.world_coord.y,anim.world_coord.z],
-                "native_id_offset":(anim.native_unique_id as u32).wrapping_sub(self.native_id_cursor) as i32,
-                "draw_flags":anim.draw_flags, "z_adjust":anim.z_adjust,
-                "is_bouncing":u8::from(anim.bounce.is_some()),
+                "object":names[id], "anim_type":sim.resolve(anim.type_id()),
+                "location":[anim.world_coord().x,anim.world_coord().y,anim.world_coord().z],
+                "native_id_offset":(anim.native_unique_id() as u32).wrapping_sub(self.native_id_cursor) as i32,
+                "draw_flags":anim.draw_flags(), "z_adjust":anim.z_adjust(),
+                "is_bouncing":u8::from(anim.bounce().is_some()),
                 "runtime":{
                     "current_frame":runtime.current_frame,"frame_step":runtime.frame_step,
                     "delay_remaining":runtime.delay_remaining,"rate_reload":runtime.rate_reload,
@@ -405,14 +405,14 @@ impl EffectBoundary {
                     names[id]
                 );
             }
-            if let Some(bounce) = &anim.bounce {
+            if let Some(bounce) = &anim.bounce() {
                 let actual = json!({
-                    "elasticity_bits":bounce.elasticity.bits(),"gravity_bits":bounce.gravity.bits(),
-                    "clamp_bits":bounce.angular_velocity_magnitude.bits(),
-                    "position_bits":bounce.position.map(|v| v.bits()),
-                    "velocity_bits":bounce.velocity.map(|v| v.bits()),
-                    "orientation_bits":bounce.orientation.map(|v| v.bits()),
-                    "rotation_bits":bounce.rotation.map(|v| v.bits())
+                    "elasticity_bits":bounce.elasticity().bits(),"gravity_bits":bounce.gravity().bits(),
+                    "clamp_bits":bounce.angular_velocity_magnitude().bits(),
+                    "position_bits":bounce.position().map(|v| v.bits()),
+                    "velocity_bits":bounce.velocity().map(|v| v.bits()),
+                    "orientation_bits":bounce.orientation().map(|v| v.bits()),
+                    "rotation_bits":bounce.rotation().map(|v| v.bits())
                 });
                 for (key, value) in actual.as_object().unwrap() {
                     assert_eq!(

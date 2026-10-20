@@ -136,14 +136,14 @@ pub(super) fn record_replay_diagnostic(
             "alternate_sight_admissions":sim.fog.alternate_sight_admissions_for_test().iter().map(|(&(id,viewer),source)|
                 serde_json::json!({"id":id,"viewer":sim.resolve(viewer),"source":source})
             ).collect::<Vec<_>>(),
-            "fog_owners":sim.fog.by_owner.iter().map(|(owner,view)| {
+            "fog_owners":sim.fog.by_owner().iter().map(|(owner,view)| {
                 let mut hash = crate::sim::state_hasher::StateHasher::new();
                 view.hash_cells(&mut hash);
                 serde_json::json!({"owner":sim.resolve(*owner),"digest":std::hash::Hasher::finish(&hash)})
             }).collect::<Vec<_>>(),
             "default_fog_owner_digest":({
                 let mut hash = crate::sim::state_hasher::StateHasher::new();
-                crate::sim::vision::OwnerVisibility::new(sim.fog.width,sim.fog.height).hash_cells(&mut hash);
+                crate::sim::vision::OwnerVisibility::new(sim.fog.width(),sim.fog.height()).hash_cells(&mut hash);
                 std::hash::Hasher::finish(&hash)
             }),
         }),

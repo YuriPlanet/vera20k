@@ -459,7 +459,7 @@ pub(crate) fn render_game(
         .map(|runtime| runtime.view().simulation());
     let segments = presentation.line_trails.composite(|id| {
         sim.and_then(|sim| sim.projectiles.get(id))
-            .map(|bullet| bullet.position)
+            .map(|bullet| bullet.position())
     });
     let frame_rate = presentation.detail.borrow().frame_rate();
     presentation.radiation_beams.composite(frame_rate, viewport);

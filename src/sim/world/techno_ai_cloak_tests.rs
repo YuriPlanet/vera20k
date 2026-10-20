@@ -25,8 +25,8 @@ fn rules() -> RuleSet {
 fn spawned_sub() -> (Simulation, RuleSet, u64) {
     let rules = rules();
     let mut sim = Simulation::with_seed(0xC10A_C001);
-    sim.fog.width = 64;
-    sim.fog.height = 64;
+    sim.fog.set_width_for_test(64);
+    sim.fog.set_height_for_test(64);
     sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         64, 2, 2, 56, 52,
     ));

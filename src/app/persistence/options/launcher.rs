@@ -35,6 +35,7 @@ pub(crate) fn launcher_values_from_profile(
         original_shape: profile.original_shape,
         ra2_look: profile.ra2_look,
         shift_queue: profile.shift_queue,
+        wol_test_service: profile.wol_test_service,
         sidebar: profile.sidebar,
         score_position: admitted_volume_position(profile.score_volume),
         sound_position: admitted_volume_position(profile.sound_volume),
@@ -71,6 +72,7 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_original_shape(&mut self, original_shape: bool);
     fn store_ra2_look(&mut self, ra2_look: bool);
     fn store_shift_queue(&mut self, shift_queue: bool);
+    fn store_wol_test_service(&mut self, wol_test_service: bool);
 }
 
 /// Dispatch one already-ordered UI event without an INI write. The three audio
@@ -93,6 +95,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::Ra2LookChanged(ra2_look) => operations.store_ra2_look(ra2_look),
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
+        }
+        LauncherOptionsEvent::WolTestServiceChanged(wol_test_service) => {
+            operations.store_wol_test_service(wol_test_service);
         }
         LauncherOptionsEvent::ScorePreview(volume) => {
             apply_volume(operations, AudioVolume::Score, volume, true)
@@ -274,6 +279,7 @@ mod tests {
             show_hidden: true,
             ra2_look: true,
             shift_queue: true,
+            wol_test_service: true,
             ..RetailOptionsProfile::default()
         });
         assert!(!booleans.tooltips);
@@ -281,5 +287,6 @@ mod tests {
         assert!(booleans.show_hidden);
         assert!(booleans.ra2_look);
         assert!(booleans.shift_queue);
+        assert!(booleans.wol_test_service);
     }
 }

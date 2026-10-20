@@ -15,8 +15,8 @@ fn passive_rules() -> RuleSet {
 fn fixture() -> (Simulation, RuleSet) {
     let rules = RuleSet::from_ini(&IniFile::from_str("[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=500\nSpeed=6\nSensorsSight=1\nWalkRate=1\nIdleRate=0\n")).unwrap();
     let mut sim = Simulation::new();
-    sim.fog.width = 32;
-    sim.fog.height = 32;
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
     sim.session.set_binary_frame_for_test(10);
     let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
     entity.set_category_for_test(EntityCategory::Unit);

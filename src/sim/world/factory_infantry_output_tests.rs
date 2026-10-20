@@ -231,8 +231,8 @@ fn ground_command_fixture(
     );
     sim.session
         .set_binary_frame_for_test(state["frame"].as_u64().unwrap().try_into().unwrap());
-    sim.fog.width = sim.session.map_width();
-    sim.fog.height = sim.session.map_height();
+    sim.fog.set_width_for_test(sim.session.map_width());
+    sim.fog.set_height_for_test(sim.session.map_height());
     sim.fog.reveal_all_for_owner(owner);
     let location = ground_command_coordinate(&state["location"]);
     let id = sim

@@ -309,7 +309,7 @@ impl Simulation {
         };
         if self
             .anim(anim)
-            .is_some_and(|anim| anim.owner_entity != Some(victim))
+            .is_some_and(|anim| anim.owner_entity() != Some(victim))
         {
             self.set_anim_owner_object(anim, Some(victim), rules);
             if let Some(source) = self.substrate.entities.get(owner) {
@@ -321,7 +321,7 @@ impl Simulation {
                     .as_ref()
                     .and_then(|terrain| terrain.cell(target.position.rx(), target.position.ry()))
             {
-                let frame = self.anim(anim).unwrap().runtime.current_frame;
+                let frame = self.anim(anim).unwrap().runtime().current_frame;
                 self.set_anim_frame_and_z_adjust(
                     anim,
                     frame,

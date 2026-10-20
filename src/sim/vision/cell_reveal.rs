@@ -194,11 +194,7 @@ impl OwnerVisibility {
         let Some(index) = self.index(cell.0, cell.1) else {
             return;
         };
-        let state = &mut self.shroud_knowledge[index];
-        state.leave();
-        if state.counter >= 0 {
-            state.open = false;
-            state.transient_visible = false;
+        if self.shroud_knowledge[index].leave_reshrouded() {
             self.set_ground_bits(
                 index,
                 self.ground_flags[index] & !(GROUND_VISIBLE | GROUND_OPEN),
@@ -216,10 +212,7 @@ impl OwnerVisibility {
         let Some(index) = self.index(cell.0, cell.1) else {
             return;
         };
-        let state = &mut self.shroud_knowledge[index];
-        state.counter = i32::from(reset);
-        state.gap_counter = 0;
-        state.open = !reset;
+        self.shroud_knowledge[index].store_bulk(reset);
         let ground = if reset {
             self.ground_flags[index] & !(GROUND_VISIBLE | GROUND_OPEN)
         } else {
@@ -429,9 +422,9 @@ impl OwnerVisibility {
             state.reveal();
         }
         if projection != MapRevealProjection::Source {
-            state.transient_visible = matches!(key, VisibilityCell::Real(_));
+            state.project_reveal(matches!(key, VisibilityCell::Real(_)));
         }
-        let open = state.open;
+        let open = state.open();
         if open {
             *ground |= GROUND_VISIBLE | GROUND_OPEN;
         } else {
@@ -608,7 +601,7 @@ impl FogState {
                 let key = vis.visibility_cell((x, y), native_cells);
                 let (state, ground, _) = vis.map_cell_parts_mut(key);
                 if *ground & (GROUND_VISIBLE | GROUND_OPEN) == GROUND_VISIBLE {
-                    state.pending = true;
+                    state.mark_pending();
                     if let VisibilityCell::Real(index) = key {
                         vis.publish_knowledge(index);
                     }
@@ -628,15 +621,14 @@ impl FogState {
                 let key = vis.visibility_cell(cell, native_cells);
                 let before = vis.edge_inputs(key);
                 let (state, ground, _) = vis.map_cell_parts_mut(key);
-                if !state.pending {
+                //4ACB68 clears20 BEFORE4ACDA0 tests8, including closed cells.
+                if !state.take_pending() {
                     continue;
                 }
-                //4ACB68 clears20 BEFORE4ACDA0 tests8, including closed cells.
-                state.pending = false;
                 let hide = *ground & GROUND_VISIBLE != 0;
                 if hide {
                     *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
-                    state.open = false;
+                    state.hide();
                 }
                 vis.note_edge_inputs(key, before);
                 if let VisibilityCell::Real(index) = key {
@@ -676,11 +668,9 @@ impl FogState {
         let key = vis.visibility_cell(cell, native_cells);
         let before = vis.edge_inputs(key);
         let (state, ground, _) = vis.map_cell_parts_mut(key);
-        if state.counter != 0 {
+        if !state.conceal() {
             return;
         }
-        state.counter = 1;
-        state.open = false;
         *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
         vis.note_edge_inputs(key, before);
         if let VisibilityCell::Real(index) = key {
@@ -702,7 +692,7 @@ impl FogState {
         let key = vis.visibility_cell(cell, native_cells);
         let before = vis.edge_inputs(key);
         let (state, ground, cache) = vis.map_cell_parts_mut(key);
-        if !state.pending {
+        if !state.pending() {
             return None;
         }
         state.sweep();
@@ -812,7 +802,7 @@ impl FogState {
         let (state, ground, cache) = vis.map_cell_parts_mut(key);
         cache.initialized = true;
         *ground |= GROUND_VISIBLE;
-        state.open = true;
+        state.open_mapped();
         if let VisibilityCell::Real(index) = key {
             vis.publish_knowledge(index);
         }
@@ -941,7 +931,7 @@ impl FogState {
         let (state, ground, _) = vis.map_cell_parts_mut(center);
         let fresh = *ground & GROUND_VISIBLE == 0;
         *ground |= GROUND_VISIBLE;
-        state.open = true;
+        state.open_mapped();
         if let VisibilityCell::Real(index) = center {
             vis.publish_knowledge(index);
         }
@@ -1180,7 +1170,7 @@ impl FogState {
             return;
         }
         assert!(
-            !vis.shroud_knowledge[index].pending || edges.pending.contains(&(index as u32)),
+            !vis.shroud_knowledge[index].pending() || edges.pending.contains(&(index as u32)),
             "{cell:?}: unlisted pending cell"
         );
         if self.map_cell_edge_frame(viewer, cell, false, Some(cells))

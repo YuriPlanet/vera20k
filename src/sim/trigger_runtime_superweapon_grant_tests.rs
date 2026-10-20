@@ -364,21 +364,21 @@ fn super_grant_one_time_nuke_uses_payload_speed_and_ground_warning_without_silo(
             .expect("one-time launch has no silo dependency");
         assert_eq!(
             (
-                bullet.launch_origin.x,
-                bullet.launch_origin.y,
-                bullet.launch_origin.z
+                bullet.launch_origin().x,
+                bullet.launch_origin().y,
+                bullet.launch_origin().z
             ),
             (2688, 2688, origin_z)
         );
         assert_eq!(
-            bullet.velocity.native().map(|n| n.bits()),
+            bullet.velocity().native().map(|n| n.bits()),
             [0xb9be6aaf04000000, 0xbd0b936000000000, 0xc059000000000000]
         );
-        assert_eq!(bullet.source_id, crate::sim::combat::RAD_NO_ATTACKER);
+        assert_eq!(bullet.source_id(), crate::sim::combat::RAD_NO_ATTACKER);
         assert_eq!(bullet.firer_house(), None);
-        assert!(!bullet.payload.bright());
+        assert!(!bullet.payload().bright());
         assert!(matches!(
-            bullet.trajectory,
+            bullet.trajectory(),
             ProjectileTrajectory::Vertical { max_speed: 77, .. }
         ));
         assert_eq!(sim.houses[&owner].nuke_target(), (0, 0));
@@ -386,20 +386,20 @@ fn super_grant_one_time_nuke_uses_payload_speed_and_ground_warning_without_silo(
             .substrate
             .anims
             .iter()
-            .find(|(_, a)| sim.interner.resolve(a.type_id) == "PSIWARN")
+            .find(|(_, a)| sim.interner.resolve(a.type_id()) == "PSIWARN")
             .expect("bound warning constructs");
         assert_eq!(
             (
-                warning.world_coord.x,
-                warning.world_coord.y,
-                warning.world_coord.z
+                warning.world_coord().x,
+                warning.world_coord().y,
+                warning.world_coord().z
             ),
             (2688, 2688, warning_z)
         );
         assert_eq!(warning.attached_bullet(), Some(bullet_id));
         assert_eq!(warning.owner_house(), Some(owner));
-        assert!(warning.draw_runtime.hidden);
-        assert_eq!(warning.draw_flags, 0x600);
+        assert!(warning.draw_runtime().hidden);
+        assert_eq!(warning.draw_flags(), 0x600);
         assert!(sim.retire_non_entity_object(
             bullet_id,
             crate::sim::world::UninitContext::with_rules(&rules)

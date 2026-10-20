@@ -239,7 +239,7 @@ impl Probe {
                     &gpu.device,
                     &gpu.queue,
                     size,
-                    [scene.sim().fog.width, scene.sim().fog.height],
+                    [scene.sim().fog.width(), scene.sim().fog.height()],
                     frames,
                     [width, height],
                     crate::render::shroud_buffer::SHROUD_EDGE_LUT,

@@ -819,9 +819,9 @@ fn teleport_warp_matches_the_original_process() {
                     .anims
                     .iter()
                     .map(|(_, anim)| anim)
-                    .filter(|anim| anim.type_id == warp_out)
+                    .filter(|anim| anim.type_id() == warp_out)
                     .map(|anim| {
-                        let (rx, ry, _, _, _) = anim.world_coord.to_cell_sub_z();
+                        let (rx, ry, _, _, _) = anim.world_coord().to_cell_sub_z();
                         (rx, ry)
                     })
                     .collect();

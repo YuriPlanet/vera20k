@@ -106,18 +106,18 @@ fn scene(rules: &RuleSet, cursor: &Value) -> (Simulation, Roles) {
 
 fn system_state(system: &ParticleSystem, roles: &Roles) -> Value {
     json!({
-        "native_id":system.native_unique_id(), "position":system.coords.to_array(),
-        "offset":system.offset.to_array(), "target_coords":system.target_coords.to_array(),
-        "owner":system.owner_entity.map(|id|roles.iter().find(|(_,value)|**value==id).unwrap().0),
-        "retained_target":target_role(roles,system.target_ref),
-        "owner_house_present":system.owner_house.is_some(), "lifetime":system.lifetime,
-        "spark_spawn_frames":system.spark_spawn_frames, "stage":system.facing,
-        "spawn_timer_f32_bits":system.spawn_timer().bits(), "done":system.done_spawning,
+        "native_id":system.native_unique_id(), "position":system.coords().to_array(),
+        "offset":system.offset().to_array(), "target_coords":system.target_coords().to_array(),
+        "owner":system.owner_entity().map(|id|roles.iter().find(|(_,value)|**value==id).unwrap().0),
+        "retained_target":target_role(roles,system.target_ref()),
+        "owner_house_present":system.owner_house().is_some(), "lifetime":system.lifetime(),
+        "spark_spawn_frames":system.spark_spawn_frames(), "stage":system.facing(),
+        "spawn_timer_f32_bits":system.spawn_timer().bits(), "done":system.done_spawning(),
         // Original ctor62DD0A writes zero; the retained Spark owner documents
         // the absence of an active setter and does not store a second flag.
-        "direction_used":false, "particle_count":system.particles.len(),
-        "particle_native_ids":system.particles.iter().map(|p|p.native_unique_id()).collect::<Vec<_>>(),
-        "alive":system.alive(), "logic":system.in_logic_vector,
+        "direction_used":false, "particle_count":system.particles().len(),
+        "particle_native_ids":system.particles().iter().map(|p|p.native_unique_id()).collect::<Vec<_>>(),
+        "alive":system.alive(), "logic":system.in_logic_vector(),
     })
 }
 
@@ -553,7 +553,7 @@ fn native_id(sim: &Simulation, id: u64) -> i32 {
     }
     sim.particle_systems()
         .iter()
-        .flat_map(|(_, system)| &system.particles)
+        .flat_map(|(_, system)| system.particles())
         .find(|particle| particle.stable_id() == id)
         .unwrap()
         .native_unique_id()
@@ -636,11 +636,11 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
             && let Some(particle) = sim
                 .particle_systems()
                 .get(id)
-                .and_then(|system| system.particles.first())
+                .and_then(|system| system.particles().first())
         {
-            let spark = particle.spark.unwrap();
+            let spark = particle.spark().unwrap();
             let expected = &row["first_produced_particle"];
-            assert_eq!(json!(particle.coords.to_array()), expected["world"]);
+            assert_eq!(json!(particle.coords().to_array()), expected["world"]);
             assert_eq!(json!(spark.start_rgb), expected["start_rgb"]);
             assert_eq!(json!(spark.color_index), expected["color_index"]);
             assert_eq!(
@@ -675,7 +675,7 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
                 for (field, actual) in [
                     ("alive", alive),
                     ("in_limbo", in_limbo),
-                    ("marked_for_deletion", particle.marked_for_deletion),
+                    ("marked_for_deletion", particle.marked_for_deletion()),
                     (
                         "display_registered",
                         sim.display_layers().layer_of(child_id).is_some(),
@@ -687,7 +687,7 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
                     (
                         "in_parent_vector",
                         sim.particle_systems().iter().any(|(_, system)| {
-                            system.particles.iter().any(|p| p.stable_id() == child_id)
+                            system.particles().iter().any(|p| p.stable_id() == child_id)
                         }),
                     ),
                     ("object_registered", body_retained),
@@ -825,7 +825,7 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
         .particle_systems()
         .get(system_id)
         .unwrap()
-        .particles
+        .particles()
         .iter()
         .map(|particle| particle.stable_id())
         .collect();
@@ -840,7 +840,7 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
         sim.particle_systems()
             .get(system_id)
             .unwrap()
-            .particles
+            .particles()
             .iter()
             .map(|particle| particle.stable_id())
             .collect::<Vec<_>>(),

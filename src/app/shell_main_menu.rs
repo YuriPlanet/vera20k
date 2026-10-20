@@ -67,6 +67,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
     }
+    fn store_wol_test_service(&mut self, wol_test_service: bool) {
+        // The next Internet visit picks its provider from it.
+        self.persistence.options_profile.wol_test_service = wol_test_service;
+    }
 }
 
 struct AppStateLauncherParentOperations<'a> {

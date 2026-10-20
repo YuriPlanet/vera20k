@@ -370,3 +370,77 @@ fn nested_side_by_side_hunt_scans_do_not_depend_on_the_thread_count() {
     assert!(used > 0, "the hunters' scans take batched answers");
     assert_eq!(batched_frames(rules, 48, 4, 10, companies), (one, used));
 }
+
+/// A computer Rhino's answer refused a disguised Mirage two Cells away only
+/// for want of a blink. A shot that starts a blink during the pass drops the
+/// answer: the scan runs live and rolls, as it does without batching.
+#[test]
+fn an_answer_that_met_an_idle_disguise_is_dropped_once_a_blink_starts() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &fixture.rules;
+    // The slot's RandomRanged(0, 2) comes first; the second draw is the roll,
+    // at most the Normal entry (5).
+    let seed = (0..)
+        .find(|&seed| {
+            let mut rng = crate::sim::rng::SimRng::new(seed);
+            rng.next_range_i32_inclusive(0, 2);
+            rng.next_range_i32_inclusive(0, 99) <= 5
+        })
+        .unwrap();
+    let build = |batched: bool, blink: bool| {
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 626);
+        let rhino = sim
+            .spawn_object("HTNK", "Russians", 12, 12, 0, rules)
+            .unwrap();
+        let mirage = sim
+            .spawn_object("MGTK", "Americans", 14, 12, 0, rules)
+            .unwrap();
+        let owner = sim.substrate.entities.get(rhino).unwrap().owner();
+        sim.fog.mark_visible_for_owner(owner, 14, 12);
+        sim.session.set_binary_frame_for_test(100);
+        sim.update_unit_disguise(mirage, rules).unwrap();
+        on_mission(&mut sim, rhino, crate::sim::mission::MissionType::Guard);
+        sim.substrate
+            .entities
+            .get_mut(rhino)
+            .unwrap()
+            .passive_scan
+            .timer_mut_for_test()
+            .clear();
+        if batched {
+            sim.batch_target_scans();
+            sim.answer_batched_scans(Some(rules), None);
+        }
+        if blink {
+            // The Mirage's shot during the pass.
+            sim.substrate
+                .entities
+                .get_mut(mirage)
+                .unwrap()
+                .disguise
+                .as_mut()
+                .unwrap()
+                .start_fire_blink(100, 15);
+            sim.note_disguise_blink_started();
+        }
+        sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
+        (sim, rhino, mirage)
+    };
+
+    let (mut idle, rhino, _) = build(true, false);
+    assert_eq!(scan(&mut idle, rules, rhino), None, "no blink: refused");
+    assert_eq!(idle.batched_scans_used(), 1, "the answer is taken");
+
+    let (mut serial, rhino, mirage) = build(false, true);
+    let live = scan(&mut serial, rules, rhino);
+    assert_eq!(live, Some(TargetKind::Entity(mirage)), "the roll admits it");
+    let (mut batched, _, _) = build(true, true);
+    assert_eq!(scan(&mut batched, rules, rhino), live);
+    assert_eq!(batched.batched_scans_used(), 0);
+    assert_eq!(
+        batched.scenario_rng.logical_state(),
+        serial.scenario_rng.logical_state()
+    );
+}

@@ -34,29 +34,79 @@ use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
 /// One live `VoxelAnimClass` instance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VoxelAnimObject {
-    pub stable_id: u64,
+    stable_id: u64,
     /// Abstract74944E ->410230: assigned before constructor launch RNG.
     /// Separate from the Rust stable handle and retained across save/load.
     native_unique_id: i32,
-    pub type_id: VoxelAnimTypeId,
+    type_id: VoxelAnimTypeId,
     /// `+0x140`, seeded from the type's `Duration=` (`+0x29C`) by the
     /// constructor. Ticks remaining. `VoxelAnimClass::AI @ 0x00749F30`
     /// decrements it while non-zero and runs the expiry arm once it is not
     /// positive.
-    pub duration: i32,
+    duration: i32,
     /// `+0x110`. Queued for removal; the AI deletes on its next visit.
-    pub marked_for_deletion: bool,
+    marked_for_deletion: bool,
     /// Owner house, or `None` — Bullet debris passes null; Techno death
     /// debris passes the dying object's house (VoxelAnim74941C).
-    pub owner_house: Option<InternedId>,
+    owner_house: Option<InternedId>,
     /// The embedded `BounceClass` at `+0xB0`.
-    pub bounce: BounceState,
+    bounce: BounceState,
     /// LogicClass membership, reconstructed from the serialized vector.
     #[serde(skip)]
-    pub in_logic_vector: bool,
+    in_logic_vector: bool,
 }
 
 impl VoxelAnimObject {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_duration_for_test(&mut self, value: i32) {
+        self.duration = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_bounce_for_test(&mut self, value: BounceState) {
+        self.bounce = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_in_logic_vector_for_test(&mut self, value: bool) {
+        self.in_logic_vector = value;
+    }
+
+    /// LogicClass membership: RegisterObject sets it (`0x0055BAC6`),
+    /// UnregisterObject clears it (`0x0055BB27`). Only the logic vector's
+    /// owner writes it, and a load rebuilds it from the saved vector.
+    pub(crate) fn mark_logic_membership(&mut self, member: bool) {
+        self.in_logic_vector = member;
+    }
+
+    pub const fn stable_id(&self) -> u64 {
+        self.stable_id
+    }
+
+    pub const fn type_id(&self) -> VoxelAnimTypeId {
+        self.type_id
+    }
+
+    pub const fn duration(&self) -> i32 {
+        self.duration
+    }
+
+    pub const fn marked_for_deletion(&self) -> bool {
+        self.marked_for_deletion
+    }
+
+    pub const fn owner_house(&self) -> Option<InternedId> {
+        self.owner_house
+    }
+
+    pub const fn bounce(&self) -> BounceState {
+        self.bounce
+    }
+
+    pub const fn in_logic_vector(&self) -> bool {
+        self.in_logic_vector
+    }
+
     /// Constructor-assigned AbstractClass identity, separate from the stable handle.
     pub const fn native_unique_id(&self) -> i32 {
         self.native_unique_id
@@ -966,7 +1016,7 @@ mod tests {
             voxel_type.elasticity,
             DEBRIS_GRAVITY,
             NativeF64Bits::POSITIVE_ZERO,
-            piece.bounce.velocity,
+            piece.bounce.velocity(),
             voxel_type.min_angular_velocity,
             &mut expected,
         )

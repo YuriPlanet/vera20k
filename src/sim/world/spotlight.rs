@@ -16,7 +16,7 @@ use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct Spotlight {
-    pub(crate) stable_id: u64,
+    stable_id: u64,
     native_id: i32,
     coord: [i32; 3],
     pivot: [i32; 3],
@@ -29,7 +29,21 @@ pub(crate) struct Spotlight {
     parent: Option<u64>,
     alive: bool,
     #[serde(skip)]
-    pub(super) in_logic_vector: bool,
+    in_logic_vector: bool,
+}
+impl Spotlight {
+    pub(crate) fn stable_id(&self) -> u64 {
+        self.stable_id
+    }
+    pub(super) fn in_logic_vector(&self) -> bool {
+        self.in_logic_vector
+    }
+    /// LogicClass membership: RegisterObject sets it (`0x0055BAC6`),
+    /// UnregisterObject clears it (`0x0055BB27`). Only the logic vector's
+    /// owner writes it, and a load rebuilds it from the saved vector.
+    pub(super) fn mark_logic_membership(&mut self, member: bool) {
+        self.in_logic_vector = member;
+    }
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct SpotlightStore {

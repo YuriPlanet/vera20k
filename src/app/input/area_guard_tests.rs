@@ -94,8 +94,8 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
         stride, stride, cells,
     ));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
-    sim.fog.width = stride;
-    sim.fog.height = stride;
+    sim.fog.set_width_for_test(stride);
+    sim.fog.set_height_for_test(stride);
     let current_house = before["current_house"].as_u64().unwrap();
     let mut owners = BTreeMap::new();
     let mut owner_rows: Vec<_> = before["actors"].as_object().unwrap().values().collect();

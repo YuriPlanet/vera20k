@@ -54,6 +54,9 @@ fn restore_disguise(native: &Value, interner: &mut StringInterner) -> DisguiseRu
         "reveal_timer": CdTimer::from_raw(
             int(&native["reveal_start"]), int(&native["reveal_duration"])
         ),
+        // The damage rows record no +1EC/+1F4 firing blink, which the
+        // receiver does not read.
+        "blink_timer": CdTimer::default(),
     }))
     .expect("native disguise prior fits the retained-state schema")
 }

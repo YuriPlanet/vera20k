@@ -45,30 +45,30 @@ const FALLBACK_BOUNDS: (u16, u16) = (512, 512);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RadSite {
     /// Center cell.
-    pub center: (u16, u16),
+    center: (u16, u16),
     /// Spread in whole cells (truncated warhead CellSpread); the affected
     /// square is (2·spread+1)² around the center. Fixed at creation — a merge
     /// does NOT update it even if the new weapon's warhead differs.
-    pub spread: i32,
+    spread: i32,
     /// Falloff radius in leptons = spread × 256 + 128.
-    pub radius_leptons: i32,
+    radius_leptons: i32,
     /// Site level at the last (re)activation. Constant between activations;
     /// the decay step recomputes per-cell falloff from this value.
-    pub level: i32,
+    level: i32,
     /// Number of decay steps over the lifetime = duration / level_delay
     /// (integer division — 0 is possible for short-lived sites and makes the
     /// per-step amount unbounded; zero-over-zero cells retain a masked NaN).
-    pub level_steps: i32,
+    level_steps: i32,
     /// Total lifetime in frames = duration_multiple × level.
-    pub duration: i32,
+    duration: i32,
     /// Frames left. Decremented once per tick; the site self-deletes when it
     /// drops below 1 (leaving residual cell levels in place — only the center
     /// marker is released).
-    pub remaining: i32,
+    remaining: i32,
     /// The level-decay countdown (`RadSiteClass+0x28`/`+0x30`), restarted
     /// with `RadLevelDelay=` at each activation and decay step
     /// (`RadSiteClass::AI @ 0x0065B80E`).
-    pub level_timer: CdTimer,
+    level_timer: CdTimer,
     /// Independent source clock and retained output, owned by this site.
     /// A before-AI activation decrements lifetime on its creation frame but
     /// does not advance this timer. Neither rendering nor load restarts it.
@@ -76,6 +76,38 @@ pub struct RadSite {
 }
 
 impl RadSite {
+    pub const fn center(&self) -> (u16, u16) {
+        self.center
+    }
+
+    pub const fn spread(&self) -> i32 {
+        self.spread
+    }
+
+    pub const fn radius_leptons(&self) -> i32 {
+        self.radius_leptons
+    }
+
+    pub const fn level(&self) -> i32 {
+        self.level
+    }
+
+    pub const fn level_steps(&self) -> i32 {
+        self.level_steps
+    }
+
+    pub const fn duration(&self) -> i32 {
+        self.duration
+    }
+
+    pub const fn remaining(&self) -> i32 {
+        self.remaining
+    }
+
+    pub const fn level_timer(&self) -> CdTimer {
+        self.level_timer
+    }
+
     /// Current source parameters, without deriving age from the lifetime.
     /// Callers receive a value; the site remains the sole mutation owner.
     pub fn light_source(&self) -> Option<PointLight> {

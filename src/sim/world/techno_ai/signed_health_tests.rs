@@ -95,7 +95,10 @@ fn original_selfheal_tail_and_192_height_rows_retain_art_and_mark_smoke() {
         );
         assert_eq!(entity.damage_smoke_system_id.system(), Some(smoke_id));
         assert_eq!(
-            sim.particle_systems().get(smoke_id).unwrap().done_spawning,
+            sim.particle_systems()
+                .get(smoke_id)
+                .unwrap()
+                .done_spawning(),
             row["output"]["smoke_done"] == 1,
             "{row}"
         );

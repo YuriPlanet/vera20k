@@ -89,9 +89,9 @@ fn stock_flat_torpedo_pose_upload_and_surface_replay_match_original_pixels() {
             let point = &input["point"];
             let bullet = sim.projectiles.get(id).unwrap();
             let (x, y) = crate::util::lepton::absolute_leptons_to_screen(
-                bullet.position.x,
-                bullet.position.y,
-                bullet.position.z,
+                bullet.position().x,
+                bullet.position().y,
+                bullet.position().z,
             );
             let cam = [
                 x - point[0].as_f64().unwrap() as f32,
@@ -390,7 +390,7 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
             &[HouseColorIndex(0)],
         );
         let (mut sim, id) = admitted_kirov_bomb(rules, "BlimpBomb");
-        let position = sim.projectiles.get(id).unwrap().position;
+        let position = sim.projectiles.get(id).unwrap().position();
         let (x, y) =
             crate::util::lepton::absolute_leptons_to_screen(position.x, position.y, position.z);
         let cam = [x - 48.0, y - 48.0];
@@ -411,7 +411,10 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
             ProjectileVelocity::new(0, 0, -1),
             ProjectileVelocity::new(1, 0, 0),
         ] {
-            sim.projectiles.get_mut(id).unwrap().velocity = velocity;
+            sim.projectiles
+                .get_mut(id)
+                .unwrap()
+                .set_velocity_for_test(velocity);
             cache.begin_frame();
             let matrix = projectile_voxel_matrix(velocity).unwrap();
             let (expected, _) = model

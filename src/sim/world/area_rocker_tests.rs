@@ -165,11 +165,11 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
             actual_shot = true;
         }
         actual_bomb |= sim.projectiles.iter().any(|(_, bullet)| {
-            bullet.source_id == kirov
-                && bullet.target == crate::sim::projectile::ProjectileTarget::Entity(target)
-                && bullet.in_logic_vector
+            bullet.source_id() == kirov
+                && bullet.target() == crate::sim::projectile::ProjectileTarget::Entity(target)
+                && bullet.in_logic_vector()
                 && bullet
-                    .payload
+                    .payload()
                     .projectile_type()
                     .is_some_and(|id| sim.interner.resolve(id) == "BlimpBombP")
         });
@@ -214,14 +214,14 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
                     .collect::<Vec<_>>(),
                 sim.projectiles
                     .iter()
-                    .filter(|(_, bullet)| bullet.source_id == kirov)
+                    .filter(|(_, bullet)| bullet.source_id() == kirov)
                     .map(|(id, bullet)| (
                         id,
-                        bullet.position,
-                        bullet.launch_origin,
-                        bullet.launch_target,
-                        bullet.velocity,
-                        bullet.trajectory
+                        bullet.position(),
+                        bullet.launch_origin(),
+                        bullet.launch_target(),
+                        bullet.velocity(),
+                        bullet.trajectory()
                     ))
                     .collect::<Vec<_>>()
             ));
@@ -304,7 +304,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
             assert!(
                 sim.projectiles
                     .iter()
-                    .all(|(_, bullet)| bullet.source_id != kirov),
+                    .all(|(_, bullet)| bullet.source_id() != kirov),
                 "the observed physical bomb must retire through its ordinary impact"
             );
             assert!(

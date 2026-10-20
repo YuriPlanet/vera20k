@@ -257,12 +257,12 @@ fn a_nested_source_release_is_not_resurrected_by_outer_walk_or_next_frame() {
             .object_alive()
     );
     let cache = sim.fog.sight_admissions_for_test()[&(id, owner)].clone();
-    let before = sim.fog.by_owner[&owner].shroud_knowledge_raw().to_vec();
+    let before = sim.fog.by_owner()[&owner].shroud_knowledge_raw().to_vec();
     let config = sim.sight_reveal_config(Some(&rules));
     sim.refresh_sight_sources(&config, Some(&rules));
     assert_eq!(sim.fog.sight_admissions_for_test()[&(id, owner)], cache);
     assert!(!sim.fog.sight_is_latched(id, owner));
-    assert_eq!(sim.fog.by_owner[&owner].shroud_knowledge_raw(), before);
+    assert_eq!(sim.fog.by_owner()[&owner].shroud_knowledge_raw(), before);
 }
 
 /// Original Techno6F6D04/D0C admits its whole suffix before the first sight
@@ -435,7 +435,7 @@ fn assert_retail_goldst_initial_amcv(sim: &Simulation) -> (u64, Vec<(u16, u16)>)
         i64::from(cache.origin.2),
         expected["xyz"][2].as_i64().unwrap()
     );
-    let view = &sim.fog.by_owner[&owner];
+    let view = &sim.fog.by_owner()[&owner];
     let rows = history["before_draw_cells"].as_array().unwrap();
     assert_eq!(rows.len(), 8);
     let mut witnesses = Vec::with_capacity(rows.len());
@@ -445,7 +445,7 @@ fn assert_retail_goldst_initial_amcv(sim: &Simulation) -> (u64, Vec<(u16, u16)>)
             row["cell"][1].as_u64().unwrap() as u16,
         );
         witnesses.push(cell);
-        let index = usize::from(cell.1) * usize::from(sim.fog.width) + usize::from(cell.0);
+        let index = usize::from(cell.1) * usize::from(sim.fog.width()) + usize::from(cell.0);
         let state = view.shroud_knowledge_raw()[index];
         let (frames, flags) = view.map_cell_edge_cache_for_test(cell);
         assert_eq!(json!(frames), row["cache"], "edge cache at {cell:?}");
@@ -455,12 +455,12 @@ fn assert_retail_goldst_initial_amcv(sim: &Simulation) -> (u64, Vec<(u16, u16)>)
             "140 at {cell:?}"
         );
         assert_eq!(
-            i64::from(state.counter),
+            i64::from(state.counter()),
             row["counter"].as_i64().unwrap(),
             "counter at {cell:?}"
         );
         assert_eq!(
-            i64::from(state.gap_counter),
+            i64::from(state.gap_counter()),
             row["gap"].as_i64().unwrap(),
             "gap at {cell:?}"
         );
@@ -471,12 +471,12 @@ fn assert_retail_goldst_initial_amcv(sim: &Simulation) -> (u64, Vec<(u16, u16)>)
             "12C ground at {cell:?}"
         );
         assert_eq!(
-            state.open,
+            state.open(),
             native_flags & 8 != 0,
             "knowledge open at {cell:?}"
         );
         assert_eq!(
-            state.pending,
+            state.pending(),
             row["flags"].as_u64().unwrap() & 0x20 != 0,
             "pending at {cell:?}"
         );
@@ -571,35 +571,40 @@ fn retail_goldst_amcv_sight_follows_arrivals_then_survives_stop() {
                 .all(|&(_, viewer)| viewer != owner),
             "this control has no alternate local sight source"
         );
-        let view = &sim.fog.by_owner[&owner];
+        let view = &sim.fog.by_owner()[&owner];
         // The normal frame already validates the whole derived source
         // index. Keep this integration observation on named Cell controls.
         let cells = selected
             .iter()
             .copied()
             .map(|cell| {
-                let index = usize::from(cell.1) * usize::from(sim.fog.width) + usize::from(cell.0);
+                let index =
+                    usize::from(cell.1) * usize::from(sim.fog.width()) + usize::from(cell.0);
                 let state = view.shroud_knowledge_raw()[index];
                 assert_eq!(
-                    state.local_sources,
+                    state.local_sources(),
                     u32::from(admission.cells.contains(&cell)),
                     "tick{}: retained source index at{cell:?}",
                     sim.session.tick(),
                 );
-                assert_eq!(state.allied_sources, 0, "no allied source at{cell:?}");
-                if state.local_sources == 1 {
-                    assert_eq!(state.counter, -1, "one Cell487630 contribution at{cell:?}");
-                    assert_eq!(state.gap_counter, 0);
-                    assert!(state.open);
+                assert_eq!(state.allied_sources(), 0, "no allied source at{cell:?}");
+                if state.local_sources() == 1 {
+                    assert_eq!(
+                        state.counter(),
+                        -1,
+                        "one Cell487630 contribution at{cell:?}"
+                    );
+                    assert_eq!(state.gap_counter(), 0);
+                    assert!(state.open());
                 }
                 CellObservation {
                     cell,
-                    counter: state.counter,
-                    gap: state.gap_counter,
-                    local_sources: state.local_sources,
-                    allied_sources: state.allied_sources,
-                    open: state.open,
-                    pending: state.pending,
+                    counter: state.counter(),
+                    gap: state.gap_counter(),
+                    local_sources: state.local_sources(),
+                    allied_sources: state.allied_sources(),
+                    open: state.open(),
+                    pending: state.pending(),
                     ground: view.ground_flags_raw()[index],
                     edge: view.map_cell_edge_cache_for_test(cell),
                 }
@@ -1107,7 +1112,7 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
                 PathGrid::from_resolved_terrain_with_bridges(terrain),
             ));
         }
-        let before_view = serde_json::to_value(&sim.fog.by_owner[&local]).unwrap();
+        let before_view = serde_json::to_value(&sim.fog.by_owner()[&local]).unwrap();
         let before_rng = (
             sim.scenario_rng.native_state_hex(),
             sim.main_rng.native_state_hex(),
@@ -1187,7 +1192,7 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
                     .is_empty()
             );
             assert_eq!(
-                serde_json::to_value(&sim.fog.by_owner[&local]).unwrap(),
+                serde_json::to_value(&sim.fog.by_owner()[&local]).unwrap(),
                 before_view,
                 "native rejected call has no current-player cache/knowledge effect {name}"
             );
@@ -1329,7 +1334,7 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
         }
         let topology = json!({
             "allocated_cells": expected.values().collect::<Vec<_>>(),
-            "dimensions": [sim.fog.width,sim.fog.height],
+            "dimensions": [sim.fog.width(),sim.fog.height()],
             // Existing executed receiver fixture supplies the unexamined Dummy.
             "dummy_prior": vision::discovery_corpus()["cache_controls"]["topology"]["dummy_prior"],
         });

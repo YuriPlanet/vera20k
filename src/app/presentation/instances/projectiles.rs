@@ -91,7 +91,7 @@ pub(crate) fn build_projectile_visual_instances(
         .unwrap_or(crate::rules::house_colors::NO_REMAP);
     for (_, projectile) in sim.projectiles.iter() {
         let Some(type_id) = projectile
-            .payload
+            .payload()
             .projectile_type()
             .map(|id| sim.interner.resolve(id))
         else {
@@ -151,23 +151,23 @@ pub(crate) fn projectile_draw_instance(
     } else {
         SpriteEncoding::Plain
     };
-    let mut parent = order.object_draw(projectile.id, encoding)?;
+    let mut parent = order.object_draw(projectile.id(), encoding)?;
     // `0x004680E2..0x004680FE`: an `Inviso=` type and a bullet waiting on
     // its `NUKE` anim (`+0x158`) draw nothing.
     if kind.inviso || projectile.awaiting_anim() {
         return None;
     }
     let (x, y) = absolute_leptons_to_screen(
-        projectile.position.x,
-        projectile.position.y,
-        projectile.position.z,
+        projectile.position().x,
+        projectile.position().y,
+        projectile.position().z,
     );
     let point = [x, y];
     if !projection_admitted(point, camera, viewport) {
         return None;
     }
     let depth = crate::render::native_z::depth_for_row(
-        point[1] + adjust_for_z_standard(projectile.position.z) as f32,
+        point[1] + adjust_for_z_standard(projectile.position().z) as f32,
         axis.origin_y,
         axis.world_height,
     );
@@ -176,7 +176,7 @@ pub(crate) fn projectile_draw_instance(
         // palette arms. Its retained LoadVoxelAssets5F8110 pair supplies
         // frame0, diffuse lighting, type Color and no owner/cell lighting.
         let image = kind.voxel_image_load()?;
-        let matrix = crate::render::vxl_raster::projectile_voxel_matrix(projectile.velocity)?;
+        let matrix = crate::render::vxl_raster::projectile_voxel_matrix(projectile.velocity())?;
         let entry = render_voxel(image, matrix)?;
         let runtime_scheme = u32::try_from(kind.color_scheme()).ok()?;
         let remap_row = runtime_scheme / 2 + 1;
@@ -226,12 +226,12 @@ pub(crate) fn projectile_draw_instance(
     let frame = u16::from(projectile_shp_frame(projectile, kind));
     let entry = atlas?.projectile_sprite(type_id, kind, frame, scheme)?;
     let (ground_z, structural) =
-        super::foot_depth::floor_probe(terrain, projectile.position.x, projectile.position.y);
+        super::foot_depth::floor_probe(terrain, projectile.position().x, projectile.position().y);
     let geometry = geometry(
-        projectile.position,
+        projectile.position(),
         ground_z,
         structural,
-        projectile.on_bridge,
+        projectile.on_bridge(),
         kind.shadow,
     );
     let mut pieces = Vec::with_capacity(2);

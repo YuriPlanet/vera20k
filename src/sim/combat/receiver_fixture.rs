@@ -194,8 +194,8 @@ fn constructed_anims(world: &Simulation) -> Vec<ConstructedAnimObservation> {
         .anims
         .iter()
         .map(|(_, anim)| ConstructedAnimObservation {
-            type_id: anim.type_id,
-            world_coord: anim.world_coord,
+            type_id: anim.type_id(),
+            world_coord: anim.world_coord(),
         })
         .collect()
 }
@@ -943,7 +943,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                             || world
                                 .projectiles
                                 .get(id)
-                                .is_some_and(|projectile| projectile.in_logic_vector)
+                                .is_some_and(|projectile| projectile.in_logic_vector())
                     })
                     .map(|(_, _, spawn)| spawn),
             );

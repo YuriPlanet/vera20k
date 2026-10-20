@@ -1187,10 +1187,10 @@ fn emit_building_anims(
         };
         // Building's retained slot reaches DrawIt422CA0..4238AF until physical
         // release. That body gates on hidden19D, not19B or Logic membership.
-        if instance.draw_runtime.hidden {
+        if instance.draw_runtime().hidden {
             continue;
         }
-        let anim_name = sim.interner.resolve(instance.type_id);
+        let anim_name = sim.interner.resolve(instance.type_id());
         let Some(runtime_config) = art_reg.anim_runtime_config(anim_name) else {
             continue;
         };
@@ -1201,7 +1201,7 @@ fn emit_building_anims(
         // copies only AC; its timer/loop state remains the new constructor's.
         let Ok(frame) = u16::try_from(
             instance
-                .runtime
+                .runtime()
                 .current_frame
                 .wrapping_add(runtime_config.start),
         ) else {
@@ -1251,7 +1251,7 @@ fn emit_building_anims(
         }
         // Original451988 copies the slot's ZAdjust even when it is zero;
         // the constructor's AnimType ZAdjust is not a zero-value fallback.
-        let z_adjust_px = instance.z_adjust + ANIM_DRAW_DEPTH_BIAS_PX;
+        let z_adjust_px = instance.z_adjust() + ANIM_DRAW_DEPTH_BIAS_PX;
         let anim_depth = apply_shape_z_adjust(
             compute_sprite_depth_params_lifted(origin_y, world_height, screen_y, lift_px),
             z_adjust_px,
@@ -1533,6 +1533,7 @@ pub(crate) fn resolve_object_shp_frame(
             set,
             facing,
             entity.body_frame_counter.get(),
+            entity.unit_firing_counter.get(),
             // The draw asks the locomotor's Is_Moving (vt+0x10 at `0x0073C696`).
             crate::sim::movement::motion_query::is_moving(entity) == Some(true),
             entity

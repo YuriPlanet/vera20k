@@ -381,10 +381,14 @@ impl Calls {
             .skip(anims_before)
             .map(|(_, anim)| {
                 (
-                    sim.interner.resolve(anim.type_id).to_string(),
-                    [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
-                    anim.draw_flags,
-                    anim.z_adjust,
+                    sim.interner.resolve(anim.type_id()).to_string(),
+                    [
+                        anim.world_coord().x,
+                        anim.world_coord().y,
+                        anim.world_coord().z,
+                    ],
+                    anim.draw_flags(),
+                    anim.z_adjust(),
                 )
             })
             .collect();
@@ -751,7 +755,7 @@ fn storm_process_matches_native_rows() {
                 .anims
                 .get_mut(id)
                 .unwrap()
-                .runtime
+                .runtime_mut_for_test()
                 .current_frame = int(&anim[2]);
             anims.push(id);
         }
@@ -783,9 +787,13 @@ fn storm_process_matches_native_rows() {
             .map(|(index, (_, anim))| {
                 (
                     index,
-                    sim.interner.resolve(anim.type_id).to_string(),
-                    [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
-                    anim.runtime.current_frame,
+                    sim.interner.resolve(anim.type_id()).to_string(),
+                    [
+                        anim.world_coord().x,
+                        anim.world_coord().y,
+                        anim.world_coord().z,
+                    ],
+                    anim.runtime().current_frame,
                 )
             })
             .collect();
@@ -983,7 +991,7 @@ fn renamed_general_weather_bolt_reaches_ground_strike() {
     strike(&mut sim, &rules, (5, 5), None);
     let custom = sim.interner.intern("CUSTOMBOLT");
     assert!(
-        sim.anims().any(|(_, anim)| anim.type_id == custom),
+        sim.anims().any(|(_, anim)| anim.type_id() == custom),
         "the production strike must construct the renamed bolt"
     );
 }

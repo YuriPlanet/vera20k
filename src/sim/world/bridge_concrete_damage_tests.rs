@@ -193,11 +193,11 @@ fn retail_concrete_hut_damage_matches_native_both_huts_and_three_states() {
             .iter()
             .filter(|(id, _)| !before_anims.contains(id))
             .map(|(_, anim)| {
-                json!({"type":sim.resolve(anim.type_id),
-                "position":[anim.world_coord.x,anim.world_coord.y,anim.world_coord.z],
-                "delay":anim.runtime.delay_remaining,"flags":anim.draw_flags,
-                "loops":anim.runtime.loop_remaining,"z_adjust":anim.z_adjust,
-                "reverse":u8::from(anim.runtime.constructor_reverse)})
+                json!({"type":sim.resolve(anim.type_id()),
+                "position":[anim.world_coord().x,anim.world_coord().y,anim.world_coord().z],
+                "delay":anim.runtime().delay_remaining,"flags":anim.draw_flags(),
+                "loops":anim.runtime().loop_remaining,"z_adjust":anim.z_adjust(),
+                "reverse":u8::from(anim.runtime().constructor_reverse)})
             })
             .collect();
         assert_eq!(

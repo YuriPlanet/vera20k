@@ -300,24 +300,30 @@ fn retail_birth_fields_match_native_with_documented_flh_residual() {
                 sim.native_unique_ids.as_ref().unwrap().current_raw(),
                 int(&spark["birth"]["state"]["native_id_cursor"]) as u32
             );
-            assert_eq!(json!(system.coords.to_array()), call["coords"]);
-            assert_eq!(json!(system.target_coords.to_array()), call["target"]);
+            assert_eq!(json!(system.coords().to_array()), call["coords"]);
+            assert_eq!(json!(system.target_coords().to_array()), call["target"]);
             assert!(
-                system.owner_entity.is_none()
-                    && system.target_ref.is_none()
-                    && system.owner_house.is_none()
+                system.owner_entity().is_none()
+                    && system.target_ref().is_none()
+                    && system.owner_house().is_none()
             );
-            assert_eq!(system.lifetime, int(&original_system["lifetime"]));
+            assert_eq!(system.lifetime(), int(&original_system["lifetime"]));
             assert_eq!(
-                system.spark_spawn_frames,
+                system.spark_spawn_frames(),
                 int(&original_system["spark_spawn_frames"])
             );
-            assert_eq!(system.done_spawning, original_system["time_to_die"] == true);
             assert_eq!(
-                system.particles.len(),
+                system.done_spawning(),
+                original_system["time_to_die"] == true
+            );
+            assert_eq!(
+                system.particles().len(),
                 int(&original_system["particle_count"]) as usize
             );
-            assert!(sim.live_object_order_snapshot().contains(&system.stable_id));
+            assert!(
+                sim.live_object_order_snapshot()
+                    .contains(&system.stable_id())
+            );
         } else {
             assert_eq!(
                 sim.native_unique_ids.as_ref().unwrap().current_raw(),
@@ -380,7 +386,7 @@ fn direct_bolt_uses_explicit_weapon_source_and_existing_rng_constructor() {
         systems[0].1.native_unique_id(),
         int(&spark["birth"]["state"]["systems"][0]["native_id"])
     );
-    assert_eq!(systems[0].1.coords.to_array(), xyz(&expected["target"]));
+    assert_eq!(systems[0].1.coords().to_array(), xyz(&expected["target"]));
 }
 
 #[test]
@@ -606,24 +612,24 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
     let systems: Vec<_> = sim
         .particle_systems()
         .iter()
-        .filter(|(_, system)| system.type_id == spark_type)
+        .filter(|(_, system)| system.type_id() == spark_type)
         .collect();
     assert_eq!(systems.len(), 1);
     let system = systems[0].1;
-    let system_id = system.stable_id;
+    let system_id = system.stable_id();
     // The native predecessor component supplies Bullet -> Spark construction,
     // then runs the original live loop. Bullet retirement compacts Spark into
     // the visited slot; the unadjusted cursor skips it on this firing pass.
     let firing_pass = &schedule["first_logic_visit"]["state"];
     let skipped = &firing_pass["systems"][0];
-    assert_eq!(system.lifetime, int(&skipped["lifetime"]));
+    assert_eq!(system.lifetime(), int(&skipped["lifetime"]));
     assert_eq!(
-        system.spark_spawn_frames,
+        system.spark_spawn_frames(),
         int(&skipped["spark_spawn_frames"])
     );
-    assert_eq!(system.done_spawning, skipped["time_to_die"] == true);
+    assert_eq!(system.done_spawning(), skipped["time_to_die"] == true);
     assert_eq!(
-        system.particles.len(),
+        system.particles().len(),
         int(&skipped["particle_count"]) as usize
     );
     assert_eq!(skipped, &schedule["birth"]["state"]["systems"][0]);
@@ -657,15 +663,18 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
         sim.anims().any(|(_, anim)| {
             impact_types
                 .iter()
-                .any(|impact| impact["name"] == sim.resolve(anim.type_id))
+                .any(|impact| impact["name"] == sim.resolve(anim.type_id()))
         }),
         "the same impact constructed a physically bound animation"
     );
-    assert_eq!(json!(system.coords.to_array()), row["bolts"][0]["target"]);
+    assert_eq!(json!(system.coords().to_array()), row["bolts"][0]["target"]);
     let order = sim.live_object_order_snapshot();
     assert!(
         order.iter().position(|&id| id == source).unwrap()
-            < order.iter().position(|&id| id == system.stable_id).unwrap()
+            < order
+                .iter()
+                .position(|&id| id == system.stable_id())
+                .unwrap()
     );
     assert!(
         sim.substrate.entities.get(target).unwrap().health.current()
@@ -847,22 +856,22 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             });
             let expected = &visit["state"];
             assert_eq!(
-                actual.runtime.current_frame,
+                actual.runtime().current_frame,
                 int(&expected["frame"]),
                 "{name}"
             );
             assert_eq!(
-                actual.runtime.first_ai_guard,
+                actual.runtime().first_ai_guard,
                 expected["first_ai_guard"] == true,
                 "{name}"
             );
             assert_eq!(
-                actual.runtime.frame_timer.start_frame(),
+                actual.runtime().frame_timer.start_frame(),
                 int(&expected["timer_start"]),
                 "{name}"
             );
             assert_eq!(
-                actual.runtime.frame_timer.duration(),
+                actual.runtime().frame_timer.duration(),
                 int(&expected["timer_duration"]),
                 "{name}"
             );
@@ -971,7 +980,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             .anim_slots()[3]
             .expect("normal delayed-fire completion restores the Active slot");
         assert_eq!(
-            sim.resolve(sim.anim(idle).unwrap().type_id),
+            sim.resolve(sim.anim(idle).unwrap().type_id()),
             "NATSLA_A",
             "{name}"
         );

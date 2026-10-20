@@ -644,7 +644,7 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
             .anims
             .iter()
             .filter(|(id, _)| seen.insert(**id))
-            .map(|(_, anim)| sim.interner.resolve(anim.type_id).to_string())
+            .map(|(_, anim)| sim.interner.resolve(anim.type_id()).to_string())
             .collect();
         let crash_sounds = output
             .sound_events

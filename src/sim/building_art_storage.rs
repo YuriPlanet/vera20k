@@ -147,8 +147,7 @@ impl Simulation {
                     .anims
                     .get_mut(anim)
                     .expect("retained SiloDamage Anim exists")
-                    .runtime
-                    .current_frame = frame;
+                    .jump_to_frame(frame);
             }
         }
         if !refinery {
@@ -308,8 +307,8 @@ mod tests {
                 .filter(|(a, _)| old.is_none_or(|(_, old)| **a != old))
                 .map(|(_, a)| {
                     (
-                        a.building_slot.unwrap().1,
-                        sim.interner.resolve(a.type_id).to_owned(),
+                        a.building_slot().unwrap().1,
+                        sim.interner.resolve(a.type_id()).to_owned(),
                     )
                 })
                 .collect();
@@ -326,7 +325,7 @@ mod tests {
                 .collect();
             assert_eq!(actual, expected, "allocation row{index}");
             let silo_frame = sim.entities().get(id).unwrap().building_art.anim_slots[10]
-                .map(|a| sim.anim(a).unwrap().runtime.current_frame);
+                .map(|a| sim.anim(a).unwrap().runtime().current_frame);
             assert_eq!(
                 silo_frame,
                 output["silo_frame"].as_i64().map(|f| f as i32),

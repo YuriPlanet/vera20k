@@ -90,8 +90,8 @@ fn create_overlap(rules: &RuleSet, count: usize) -> (Simulation, u64) {
     assert_eq!(sim.radiation.sites().count(), count);
     for center in &CENTERS[..count] {
         let site = sim.radiation.site_at(*center).unwrap();
-        assert_eq!(site.level, 500);
-        assert_eq!(site.radius_leptons, 2688);
+        assert_eq!(site.level(), 500);
+        assert_eq!(site.radius_leptons(), 2688);
     }
     // Admit the fresh target after all direct self-shot damage has completed.
     // Field geometry and stock DOG health are the native comparison inputs.

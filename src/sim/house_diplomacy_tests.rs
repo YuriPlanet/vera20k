@@ -227,7 +227,7 @@ fn ally_writes_reach_the_remembered_reveal_viewers() {
     );
     for &id in &ids {
         sim.fog
-            .by_owner
+            .by_owner_mut_for_test()
             .get_or_insert_with(id, || crate::sim::vision::OwnerVisibility::new(8, 8));
     }
     let config = crate::sim::vision::VisionConfig::default();

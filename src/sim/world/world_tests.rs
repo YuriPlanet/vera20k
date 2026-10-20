@@ -388,10 +388,10 @@ fn particle_frame_boundary_fixture(frame_count: u16) -> (Simulation, RuleSet) {
     sim.particle_systems_mut().insert({
         let mut system =
             ParticleSystem::test_fixture(stable_id, ParticleSystemTypeId(0), IVec3::ZERO);
-        system.particles = vec![particle];
-        system.lifetime = 100;
-        system.facing = 0;
-        system.done_spawning = true;
+        system.set_particles_for_test(vec![particle]);
+        system.set_lifetime_for_test(100);
+        system.set_facing_for_test(0);
+        system.set_done_spawning_for_test(true);
         system
     });
     assert!(sim.reveal_particle_system(stable_id, None));
@@ -427,13 +427,13 @@ fn app_and_headless_frames_hash_identically_for_particle_frame_timing() {
             .particle_systems()
             .iter()
             .next()
-            .map(|(_, system)| system.particles.len())
+            .map(|(_, system)| system.particles().len())
             .unwrap_or(0);
         let headless_particles = headless_sim
             .particle_systems()
             .iter()
             .next()
-            .map(|(_, system)| system.particles.len())
+            .map(|(_, system)| system.particles().len())
             .unwrap_or(0);
         assert_eq!(app_particles, headless_particles, "frame {frame}");
         if frame == 4 {
@@ -546,7 +546,7 @@ fn a_ship_wakes_every_eighth_frame_unless_it_is_underwater() {
             .iter()
             .filter(|id| {
                 sim.anim(**id)
-                    .is_some_and(|anim| sim.interner.resolve(anim.type_id) == "WAKE1")
+                    .is_some_and(|anim| sim.interner.resolve(anim.type_id()) == "WAKE1")
             })
             .count()
     };
@@ -651,7 +651,7 @@ Rate=120
         .copied()
         .filter(|id| {
             sim.anim(*id)
-                .is_some_and(|anim| sim.interner.resolve(anim.type_id) == "WAKE1")
+                .is_some_and(|anim| sim.interner.resolve(anim.type_id()) == "WAKE1")
         })
         .collect();
     assert_eq!(wake_anims.len(), 1, "one wake AnimClass per moving boat");
@@ -666,10 +666,10 @@ Rate=120
         boat.position.z(),
     );
     assert_eq!(
-        (wake.world_coord.x, wake.world_coord.y),
+        (wake.world_coord().x, wake.world_coord().y),
         (expected.x, expected.y)
     );
-    assert_eq!(wake.draw_flags, 0x600);
+    assert_eq!(wake.draw_flags(), 0x600);
 
     // Off-cadence frames and a unit that is not moving now spawn nothing.
     sim.session.set_binary_frame_for_test(5);
@@ -687,7 +687,7 @@ Rate=120
         .iter()
         .filter(|id| {
             sim.anim(**id)
-                .is_some_and(|a| sim.interner.resolve(a.type_id) == "WAKE1")
+                .is_some_and(|a| sim.interner.resolve(a.type_id()) == "WAKE1")
         })
         .count();
     assert_eq!(
@@ -3133,7 +3133,7 @@ fn sonic_constructor_dead_pointer_link_lives_until_deferred_delete_at_239() {
         .get(&firer_id)
         .expect("dead pointer stored");
     assert!(sim.waves.get(wave_id).is_some());
-    assert!(!sim.waves.get(wave_id).unwrap().in_logic_vector);
+    assert!(!sim.waves.get(wave_id).unwrap().in_logic_vector());
     assert_eq!(sim.substrate.pending_delete.object_ids(), vec![wave_id]);
 
     sim.process_pending_delete();
@@ -3161,7 +3161,7 @@ fn target_coord_offset_moves_initial_wave_endpoint_but_not_tracking() {
     let event = sonic_fire_event(&mut sim, &rules, dolphin, yard);
     let wave = sim.prepare_fired_wave(&rules, &event, 0).unwrap();
     assert_eq!(
-        wave.source,
+        wave.source(),
         crate::sim::projectile::ProjectileCoord::new(centre.x + 300, centre.y + 200, centre.z,)
     );
     admit_test_wave(&mut sim, &rules, &event);
@@ -3214,15 +3214,16 @@ fn sonic_constructor_at_240_registers_then_runs_at_same_pass_tail() {
         .get(&firer_id)
         .expect("live owner link");
     let wave = sim.waves.get(wave_id).expect("registered Wave");
-    assert!(wave.in_logic_vector);
-    assert_eq!(wave.lifetime, 100, "FireAt only registers the Logic tail");
+    assert!(wave.in_logic_vector());
+    assert_eq!(wave.lifetime(), 100, "FireAt only registers the Logic tail");
 
     sim.visit_combat_tail(0, &rules, None, crate::sim::world::FrameEffects::default());
 
     let wave = sim.waves.get(wave_id).expect("Wave survives first tail AI");
-    assert_eq!(wave.lifetime, 99, "first AI belongs to the firing pass");
+    assert_eq!(wave.lifetime(), 99, "first AI belongs to the firing pass");
     assert_eq!(
-        wave.target.z, 50,
+        wave.target().z,
+        50,
         "type-0 uses the live target-side Sonic Z adjustment"
     );
     assert!(sim.substrate.pending_delete.is_empty());
@@ -3265,7 +3266,7 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
         .expect("off-map Cell target produces a live Wave");
     let wave = sim.waves.get(wave_id).expect("registered Wave");
     assert_eq!(
-        wave.target,
+        wave.target(),
         crate::sim::projectile::ProjectileCoord::new(-128, 1_920, 674),
         "CellClass ground 2*104 plus structural +416 and Sonic +50",
     );
@@ -3293,9 +3294,9 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
     // samples stay in its cell and look nothing up.
     sim.visit_combat_tail(0, &rules, None, crate::sim::world::FrameEffects::default());
     let wave = sim.waves.get(wave_id).expect("Wave survives first live AI");
-    assert_eq!(wave.lifetime, 99);
-    assert_eq!(wave.target.z, 674);
-    assert!(wave.recorded_cells.is_empty());
+    assert_eq!(wave.lifetime(), 99);
+    assert_eq!(wave.target().z, 674);
+    assert!(wave.recorded_cells().is_empty());
     assert_eq!(process_dummy.snapshot().coord, (-1, 7));
     // The second AI's third sample enters (0, 1), off this empty map.
     sim.visit_combat_tail(0, &rules, None, crate::sim::world::FrameEffects::default());
@@ -3303,9 +3304,9 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
         .waves
         .get(wave_id)
         .expect("Wave survives second live AI");
-    assert_eq!(wave.lifetime, 98);
+    assert_eq!(wave.lifetime(), 98);
     assert_eq!(
-        wave.recorded_cells,
+        wave.recorded_cells(),
         [crate::sim::wave::WaveRecordedCell {
             identity: crate::sim::wave::WaveCellIdentity::SharedDummy,
         }]
@@ -3554,7 +3555,10 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
         .get(&dolphin_id)
         .expect("Dolphin retains the live Wave link");
     assert_eq!(
-        sim.waves.get(wave_id).expect("Wave remains live").lifetime,
+        sim.waves
+            .get(wave_id)
+            .expect("Wave remains live")
+            .lifetime(),
         99,
         "the new Logic tail owns its first AI in the firing pass",
     );
@@ -3716,7 +3720,10 @@ fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     // deck on its first AI in the same tail. Its removal shifts the Wave into
     // the visited slot (`0x0055B608..0x0055B619`), so the Wave's first AI is
     // the next frame's.
-    assert_eq!(runtime.simulation.waves.get(wave_id).unwrap().lifetime, 100);
+    assert_eq!(
+        runtime.simulation.waves.get(wave_id).unwrap().lifetime(),
+        100
+    );
     let output = runtime
         .advance_frame(
             &[],
@@ -3728,9 +3735,10 @@ fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     assert!(output.tick.frame_committed);
     let sim = &runtime.simulation;
     let wave = sim.waves.get(wave_id).expect("Wave survives its first AI");
-    assert_eq!(wave.lifetime, 99);
+    assert_eq!(wave.lifetime(), 99);
     assert_eq!(
-        wave.target.z, 674,
+        wave.target().z,
+        674,
         "level 2 CellClass target is 2*104 + structural 416 + Sonic 50",
     );
     assert_eq!(
@@ -8657,17 +8665,11 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
     // the duration has to move the hash.
     let before_tick = sim.state_hash();
     let first_id = ids[0];
-    sim.substrate
-        .voxel_anims
-        .get_mut(first_id)
-        .unwrap()
-        .duration -= 1;
+    let debris = sim.substrate.voxel_anims.get_mut(first_id).unwrap();
+    debris.set_duration_for_test(debris.duration() - 1);
     assert_ne!(sim.state_hash(), before_tick);
-    sim.substrate
-        .voxel_anims
-        .get_mut(first_id)
-        .unwrap()
-        .duration += 1;
+    let debris = sim.substrate.voxel_anims.get_mut(first_id).unwrap();
+    debris.set_duration_for_test(debris.duration() + 1);
     assert_eq!(sim.state_hash(), before_tick);
 
     let expected_order = sim.live_object_order_snapshot();
@@ -9117,7 +9119,7 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     sim.emit_debris_voxel(type_id, &kind, None, glam::IVec3::ZERO, false, &mut packets)
         .unwrap();
     assert_eq!(packets.len(), 1);
-    let id = packets[0].object.stable_id;
+    let id = packets[0].object.stable_id();
     let native_id = packets[0].object.native_unique_id();
     assert_eq!(sim.native_identity_cursor(), Some(native_id as u32));
     assert!(sim.voxel_anims().is_empty());

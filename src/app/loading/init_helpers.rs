@@ -881,19 +881,19 @@ mod tests {
         for (id, tile) in ids.iter().zip(&tiles) {
             let anim = sim.anim(*id).expect("spawned terrain AnimClass");
             assert_eq!(
-                anim.world_coord,
+                anim.world_coord(),
                 crate::sim::anim_class::AnimWorldCoord {
                     x: tile.world_x,
                     y: tile.world_y,
                     z: tile.world_z,
                 }
             );
-            assert_eq!(anim.draw_flags, 0x1600);
-            assert_eq!(anim.z_adjust, tile.z_adjust);
-            assert_eq!(anim.runtime.loop_remaining, u8::MAX);
-            assert!(!anim.runtime.constructor_reverse);
-            assert!(anim.use_cell_drawer);
-            assert!(anim.terrain_attached);
+            assert_eq!(anim.draw_flags(), 0x1600);
+            assert_eq!(anim.z_adjust(), tile.z_adjust);
+            assert_eq!(anim.runtime().loop_remaining, u8::MAX);
+            assert!(!anim.runtime().constructor_reverse);
+            assert!(anim.use_cell_drawer());
+            assert!(anim.terrain_attached());
         }
         assert!(matches!(
             sim.sound_events.as_slice(),
@@ -913,8 +913,8 @@ mod tests {
         restored.rebuild_logic_membership();
         assert_eq!(restored.live_object_order_snapshot(), expected_order);
         assert_eq!(restored.state_hash(), expected_hash);
-        assert!(restored.anim(ids[0]).unwrap().use_cell_drawer);
-        assert!(restored.anim(ids[0]).unwrap().terrain_attached);
+        assert!(restored.anim(ids[0]).unwrap().use_cell_drawer());
+        assert!(restored.anim(ids[0]).unwrap().terrain_attached());
         assert!(restored.sound_events.is_empty());
     }
 

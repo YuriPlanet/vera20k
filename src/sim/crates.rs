@@ -2128,7 +2128,7 @@ pub(crate) mod tests {
                 "the expired slot must construct its replacement CellAnim"
             );
             assert_eq!(
-                anims[0].z_adjust, 775,
+                anims[0].z_adjust(), 775,
                 "cold/in-game restore must use incoming ordinary Cell10A, not defaults, outgoing, or selected Ion lighting"
             );
         }
@@ -2161,14 +2161,14 @@ pub(crate) mod tests {
         );
         let visible_anim = visible.substrate.anims.iter().next().unwrap().1;
         assert_eq!(
-            visible_anim.world_coord,
+            visible_anim.world_coord(),
             crate::sim::anim_class::AnimWorldCoord {
                 x: i32::from(cell.0) * 256 + 128 + 0x180,
                 y: i32::from(cell.1) * 256 + 128 + 0x180,
                 z: 0,
             }
         );
-        assert_eq!(visible_anim.draw_flags, 0x600);
+        assert_eq!(visible_anim.draw_flags(), 0x600);
         assert_eq!(
             visible_anim.remap(),
             Some(crate::sim::anim_class::AnimRemap::ColorScheme(
@@ -2177,7 +2177,7 @@ pub(crate) mod tests {
             "the constructed CellAnim uses the live tiberium Color scheme"
         );
         assert_eq!(
-            visible_anim.z_adjust, 775,
+            visible_anim.z_adjust(), 775,
             "CellClass +0x10A is ambient*10 + level*height - ground"
         );
         let encoded =
@@ -2186,7 +2186,7 @@ pub(crate) mod tests {
             crate::util::save_codec::deserialize(&encoded).expect("restore CellAnim remap state");
         let restored_anim = restored.substrate.anims.iter().next().unwrap().1;
         assert_eq!(restored_anim.remap(), visible_anim.remap());
-        assert_eq!(restored_anim.z_adjust, visible_anim.z_adjust);
+        assert_eq!(restored_anim.z_adjust(), visible_anim.z_adjust());
 
         let mut ghost = sim_with_grid(0x14090006);
         ghost
@@ -2206,7 +2206,7 @@ pub(crate) mod tests {
         let ghost_anim = ghost.substrate.anims.iter().next().unwrap().1;
         assert_eq!(ghost_anim.remap(), None);
         assert_eq!(
-            ghost_anim.z_adjust, 0,
+            ghost_anim.z_adjust(), 0,
             "failed Mark leaves the Cell without tiberium, so native skips both post-writes"
         );
         assert_eq!(

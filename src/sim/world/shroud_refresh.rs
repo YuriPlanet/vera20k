@@ -194,11 +194,11 @@ impl Simulation {
             .order()
             .iter()
             .copied()
-            .filter(|owner| self.fog.by_owner.contains_key(owner))
+            .filter(|owner| self.fog.by_owner().contains_key(owner))
             .collect();
         let mut extra: Vec<_> = self
             .fog
-            .by_owner
+            .by_owner()
             .keys()
             .copied()
             .filter(|owner| !self.houses.order().contains(owner))
@@ -679,7 +679,7 @@ impl Simulation {
             radius,
             z,
             line_of_sight.and_then(|heights| heights.cell_levels(self.resolved_terrain.as_ref())),
-            (self.fog.width, self.fog.height),
+            (self.fog.width(), self.fog.height()),
         );
         #[cfg(any(test, feature = "test-support"))]
         REVEAL_CALLS.with_borrow_mut(|trace| {
@@ -1062,8 +1062,8 @@ impl Simulation {
                 house.mark_map_clear();
             }
         }
-        if self.fog.width != 0
-            && self.fog.height != 0
+        if self.fog.width() != 0
+            && self.fog.height() != 0
             && (reset || !self.fog.whole_map_revealed_for_owner(owner))
         {
             //577AB0/577D90/577C90 initialize the same allocated cursor as16
@@ -1540,10 +1540,10 @@ impl Simulation {
             if let Some(trace) = trace {
                 for &cell in &border {
                     trace.border_receivers.push(cell);
-                    if cell.0 < self.fog.width && cell.1 < self.fog.height {
+                    if cell.0 < self.fog.width() && cell.1 < self.fog.height() {
                         trace.border_ground_after.push(
                             self.fog
-                                .by_owner
+                                .by_owner_mut_for_test()
                                 .get_mut(&viewer)
                                 .expect("the refresh made a plane")
                                 .map_cell_edge_cache_for_test(cell)
@@ -1881,7 +1881,7 @@ impl Simulation {
         // The terrain of the fog's own map; a fixture's may differ.
         match self.resolved_terrain.as_ref() {
             Some(terrain)
-                if (terrain.width(), terrain.height()) == (self.fog.width, self.fog.height) =>
+                if (terrain.width(), terrain.height()) == (self.fog.width(), self.fog.height()) =>
             {
                 SightHeights(SightLevels::Terrain)
             }

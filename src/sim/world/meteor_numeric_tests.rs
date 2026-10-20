@@ -89,35 +89,35 @@ fn meteor_constructors_match_native_draws_float_stores_and_integer_placement() {
             "{row}"
         );
         assert_eq!(
-            body.position.map(|value| value.bits()),
+            body.position().map(|value| value.bits()),
             triple("position_bits"),
             "{row}"
         );
         assert_eq!(
-            body.velocity.map(|value| value.bits()),
+            body.velocity().map(|value| value.bits()),
             triple("velocity_bits"),
             "{row}"
         );
         assert_eq!(
-            body.orientation.map(|value| value.bits()),
+            body.orientation().map(|value| value.bits()),
             quad("orientation_bits"),
             "{row}"
         );
         assert_eq!(
-            body.rotation.map(|value| value.bits()),
+            body.rotation().map(|value| value.bits()),
             quad("rotation_bits"),
             "{row}"
         );
         assert_eq!(
-            body.elasticity.bits(),
+            body.elasticity().bits(),
             fields["elasticity_bits"].as_u64().unwrap()
         );
         assert_eq!(
-            body.gravity.bits(),
+            body.gravity().bits(),
             fields["gravity_bits"].as_u64().unwrap()
         );
         assert_eq!(
-            body.angular_velocity_magnitude.bits(),
+            body.angular_velocity_magnitude().bits(),
             fields["clamp_bits"].as_u64().unwrap()
         );
     }
@@ -146,14 +146,14 @@ fn meteor_update_compensation_matches_original_flights_on_declared_crop() {
                 "tick{tick}"
             );
             assert_eq!(
-                body.position.map(|value| value.bits()),
+                body.position().map(|value| value.bits()),
                 std::array::from_fn::<_, 3, _>(|i| expected[4 + i].as_u64().unwrap() as u32),
                 "tick{tick}"
             );
             // The existing flat-reflection kernel admits signed-zero deltas;
             // all nonzero velocity values still compare exactly as f32.
             assert_eq!(
-                body.velocity.map(|value| f32::from_bits(value.bits())),
+                body.velocity().map(|value| f32::from_bits(value.bits())),
                 std::array::from_fn::<_, 3, _>(|i| f32::from_bits(
                     expected[7 + i].as_u64().unwrap() as u32
                 )),

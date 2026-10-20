@@ -171,7 +171,7 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
             assert_eq!(fv.damage_particle_systems, ["SparkSys", "SmallGreySSys"]);
             let (id, smoke) = world.particle_systems().iter().next().unwrap();
             assert_eq!(
-                smoke.type_id,
+                smoke.type_id(),
                 rules.ps_type_id_by_name("SmallGreySSys").unwrap()
             );
             assert_eq!(
@@ -179,8 +179,11 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
                 (row["native_cursor_before"].as_u64().unwrap() as u32).wrapping_add(1),
                 "{name}"
             );
-            assert!(smoke.particles.is_empty(), "{name}: no smoke AI visit yet");
-            assert_eq!(smoke.owner_entity, Some(receiver));
+            assert!(
+                smoke.particles().is_empty(),
+                "{name}: no smoke AI visit yet"
+            );
+            assert_eq!(smoke.owner_entity(), Some(receiver));
             assert_eq!(
                 world
                     .substrate
@@ -216,28 +219,32 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
         );
         let anim = anims[0];
         assert_eq!(
-            world.interner.resolve(anim.type_id),
+            world.interner.resolve(anim.type_id()),
             row["constructed"].as_str().unwrap(),
             "{name}"
         );
         assert_eq!(
-            serde_json::json!([anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]),
+            serde_json::json!([
+                anim.world_coord().x,
+                anim.world_coord().y,
+                anim.world_coord().z
+            ]),
             row["constructor"]["position"],
             "{name}"
         );
         assert_eq!(
-            serde_json::json!(anim.draw_flags),
+            serde_json::json!(anim.draw_flags()),
             row["constructor"]["flags"],
             "{name}"
         );
         assert_eq!(
-            serde_json::json!(anim.z_adjust),
+            serde_json::json!(anim.z_adjust()),
             row["constructor"]["z_adjust"],
             "{name}"
         );
         let expected_cursor = (row["native_cursor_after"].as_u64().unwrap() as u32)
             .wrapping_add(receiver_allocations);
-        assert_eq!(anim.native_unique_id as u32, expected_cursor, "{name}");
+        assert_eq!(anim.native_unique_id() as u32, expected_cursor, "{name}");
         assert_eq!(
             world.native_unique_ids.as_ref().unwrap().current_raw(),
             expected_cursor,

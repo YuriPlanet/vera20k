@@ -530,6 +530,101 @@ fn a_heal_forces_the_drone_off_and_its_running_suppression_kills_it() {
 }
 
 #[test]
+fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
+    let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+        return;
+    };
+    let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
+        return;
+    };
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    // The ordered reader above retains UnitType's native frame layout. Install
+    // its immutable ART metadata too, as the normal asset binding does.
+    rules.install_art_fixture(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let mut arena = Arena::new(&rules);
+    let drone = arena.spawn(&rules, "DRON", "Russians", (8, 8));
+    let tank = arena.spawn(&rules, "MTNK", "Americans", (9, 8));
+    arena.infect(&rules, drone, tank);
+    assert_eq!(
+        arena
+            .sim
+            .entities()
+            .get(drone)
+            .unwrap()
+            .unit_firing_counter
+            .get(),
+        7
+    );
+    for _ in 0..12 {
+        arena.step(&rules);
+    }
+    assert!(arena.in_limbo(drone));
+    assert_eq!(
+        arena
+            .sim
+            .entities()
+            .get(drone)
+            .unwrap()
+            .unit_firing_counter
+            .get(),
+        7
+    );
+    arena.hit(&rules, tank, None, 4, "SonicWarhead");
+    let actor = arena.sim.substrate.entities.get(drone).unwrap();
+    assert!(actor.lifecycle.object_alive() && !actor.lifecycle.in_limbo());
+    let facing = actor.body_facing_byte(arena.frame());
+    let native = crate::test_fixture::json("tools/spatial_oracle/unit_shp_fire_frames.json");
+    let expected = u16::try_from(
+        native["first_by_facing"][usize::from(facing)]
+            .as_u64()
+            .unwrap(),
+    )
+    .unwrap();
+    let frame = crate::sim::animation::resolve_shp_vehicle_body_frame(
+        rules.animation_sequence("DRON").unwrap(),
+        facing,
+        actor.body_frame_counter.get(),
+        actor.unit_firing_counter.get(),
+        crate::sim::movement::motion_query::is_moving(actor) == Some(true),
+        false,
+    );
+    // Original Unit741340 -> Bullet4666E0 -> Attach62A980 -> Exit62A4A0
+    // retains +6C0=7 through limbo. Draw73C62B..73C725 selects the fire
+    // block for the actual facing, not the standing block. The original
+    // counter resumes in Unit7363C9.
+    assert_eq!(frame, Some(expected), "post-release DRON facing {facing}");
+
+    // Stop interrupts the attack without restarting/consuming a separate
+    // presentation clock. Match the actual original Unit AI countdown.
+    let owner = actor.owner();
+    arena.sim.queue_command(CommandEnvelope::new(
+        owner,
+        arena.sim.session.tick() + 1,
+        Command::Stop { entity_id: drone },
+    ));
+    let history = crate::test_fixture::json("tools/spatial_oracle/unit_shp_fire_history.json");
+    for row in history["history"]["recovery"].as_array().unwrap() {
+        arena.step(&rules);
+        let actor = arena.sim.entities().get(drone).unwrap();
+        let counter = actor.unit_firing_counter.get();
+        assert_eq!(
+            i64::from(counter),
+            row["source"]["counter"].as_i64().unwrap()
+        );
+        let image = crate::sim::animation::resolve_shp_vehicle_body_frame(
+            rules.animation_sequence("DRON").unwrap(),
+            actor.body_facing_byte(arena.frame()),
+            actor.body_frame_counter.get(),
+            counter,
+            crate::sim::movement::motion_query::is_moving(actor) == Some(true),
+            false,
+        )
+        .unwrap();
+        assert_eq!((56..88).contains(&image), counter >= 0);
+    }
+}
+
+#[test]
 fn a_sonic_hit_ejects_the_drone_alive_beside_its_host_and_drops_the_shooter_target() {
     // 0x004D734F..0x004D7371: ExitUnit with no suppression, then the source's
     // Assign_Target(NULL). A successful exit unlimboes the owner facing 90

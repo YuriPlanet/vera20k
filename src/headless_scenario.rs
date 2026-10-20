@@ -816,22 +816,23 @@ mod retail_construction_tests {
         for (id, anim) in scenario
             .sim()
             .anims()
-            .filter(|(_, anim)| anim.terrain_attached)
+            .filter(|(_, anim)| anim.terrain_attached())
         {
             terrain_anims += 1;
-            let name = scenario.sim().interner.resolve(anim.type_id);
+            let name = scenario.sim().interner.resolve(anim.type_id());
             let config = rules
                 .art()
                 .anim_runtime_config(name)
                 .expect("bound terrain type");
             assert!(rules.art().scheduler_anim_types().contains(name));
             assert!(config.art_body_read && config.raw_shp_frame_count.is_some());
-            assert_eq!(anim.effective_end, config.end, "{name} final bound End");
+            assert_eq!(anim.effective_end(), config.end, "{name} final bound End");
             assert_eq!(
-                anim.effective_loop_end, config.loop_end,
+                anim.effective_loop_end(),
+                config.loop_end,
                 "{name} final bound LoopEnd"
             );
-            assert!(anim.use_cell_drawer);
+            assert!(anim.use_cell_drawer());
             assert!(
                 scenario
                     .sim()

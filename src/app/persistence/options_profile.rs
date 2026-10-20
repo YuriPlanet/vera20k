@@ -132,6 +132,10 @@ pub(crate) struct RetailOptionsProfile {
     /// mobile strip while [`Self::shift_queue`] is on. VERA's own convenience;
     /// gamemd never reads this section. Clamped by [`SHIFT_QUEUE_COUNT_RANGE`].
     pub(crate) shift_queue_count: u32,
+    /// `[VERA] WolTestService=`: Internet answers from VERA's stand-in WOL
+    /// service instead of showing `TXT_APIMISSING`: the Options page's
+    /// developer box. Off by default; no real service exists yet.
+    pub(crate) wol_test_service: bool,
 }
 
 /// The two process-start products obtained from one physical `RA2MD.INI`
@@ -191,6 +195,7 @@ impl Default for RetailOptionsProfile {
             ra2_look: false,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
+            wol_test_service: false,
         }
     }
 }
@@ -207,7 +212,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 7],
+    pub(crate) vera: [(&'static str, String); 8],
 }
 
 impl RetailOptionsLoad {
@@ -412,6 +417,7 @@ impl RetailOptionsProfile {
             self.shift_queue_count = clamp_shift_queue_count(
                 vera.read_int("ShiftQueueCount", self.shift_queue_count as i32),
             );
+            self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
         }
     }
 
@@ -496,6 +502,10 @@ impl RetailOptionsProfile {
                 ("RA2Look", format_bool(self.ra2_look).to_string()),
                 ("ShiftQueue", format_bool(self.shift_queue).to_string()),
                 ("ShiftQueueCount", self.shift_queue_count.to_string()),
+                (
+                    "WolTestService",
+                    format_bool(self.wol_test_service).to_string(),
+                ),
             ],
         }
     }
@@ -1160,6 +1170,8 @@ mod tests {
         assert!(!defaults.retained_profile.ra2_look);
         // Shift + left click queues one copy, as in gamemd, until it is ticked.
         assert!(!defaults.retained_profile.shift_queue);
+        // Internet shows TXT_APIMISSING, as on retail, until it is ticked.
+        assert!(!defaults.retained_profile.wol_test_service);
         assert_eq!(
             defaults.retained_profile.shift_queue_count,
             DEFAULT_SHIFT_QUEUE_COUNT
@@ -1167,7 +1179,7 @@ mod tests {
 
         let load = load_snapshot(
             &RetailStartupOptions::default(),
-            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nRA2Look=yes\nShiftQueue=yes\nShiftQueueCount=8\n",
+            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nRA2Look=yes\nShiftQueue=yes\nShiftQueueCount=8\nWolTestService=yes\n",
         );
         assert!(load.retained_profile.full_screen);
         // The first release saved the whole factor.
@@ -1176,6 +1188,7 @@ mod tests {
         assert_eq!(load.retained_profile.sidebar, SidebarSize::Large);
         assert!(load.retained_profile.ra2_look);
         assert!(load.retained_profile.shift_queue);
+        assert!(load.retained_profile.wol_test_service);
         assert_eq!(load.retained_profile.shift_queue_count, 8);
         // A value this build doesn't know reads as Auto.
         let unknown = load_snapshot(&RetailStartupOptions::default(), b"[VERA]\nZoom=9\n");
@@ -1189,13 +1202,14 @@ mod tests {
             ra2_look: true,
             shift_queue: true,
             shift_queue_count: 7,
+            wol_test_service: true,
             ..RetailOptionsProfile::default()
         };
         let output =
             String::from_utf8(profile.transform_ra2md(b"[Video]\r\nScreenWidth=800\r\n")).unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nRA2Look=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nRA2Look=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\n"
             ),
             "{output}"
         );
@@ -1206,6 +1220,7 @@ mod tests {
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
         assert!(reread.retained_profile.ra2_look);
         assert!(reread.retained_profile.shift_queue);
+        assert!(reread.retained_profile.wol_test_service);
         assert_eq!(reread.retained_profile.shift_queue_count, 7);
     }
 

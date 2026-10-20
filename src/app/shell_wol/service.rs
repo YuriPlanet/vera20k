@@ -27,6 +27,9 @@ pub(crate) enum WolProvider {
     Unavailable,
     /// A diagnostics/test service drains requests and injects events.
     Controlled,
+    /// VERA's offline stand-in service ([`super::test_service`]), chosen by
+    /// the Options page's developer box.
+    TestService,
 }
 
 /// One server record (`0xF8` bytes; IRC type at +0x5F). `name` is the text

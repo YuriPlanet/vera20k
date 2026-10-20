@@ -390,7 +390,7 @@ fn stock_animation_constructor_matches_native_forward_reverse_and_rng() {
             .start_unit_deploy_anim(id, "SCHPDEPL", reverse, &rules)
             .unwrap();
         let anim = sim.anim(anim_id).unwrap();
-        let runtime = &anim.runtime;
+        let runtime = &anim.runtime();
         let actual = json!({
             "constructor_reverse": u8::from(runtime.constructor_reverse),
             "current_frame": runtime.current_frame,
@@ -405,16 +405,16 @@ fn stock_animation_constructor_matches_native_forward_reverse_and_rng() {
         });
         assert_eq!(actual, expected["runtime"], "reverse={reverse}");
         assert_eq!(
-            u64::from(anim.draw_flags),
+            u64::from(anim.draw_flags()),
             expected["draw_flags"].as_u64().unwrap()
         );
         assert_eq!(
-            i64::from(anim.z_adjust),
+            i64::from(anim.z_adjust()),
             expected["z_adjust"].as_i64().unwrap()
         );
         let coord = sim.anim_absolute_coord(anim_id).unwrap();
         assert_eq!(json!([coord.x, coord.y, coord.z]), expected["location"]);
-        assert_eq!(anim.owner_entity, Some(id));
+        assert_eq!(anim.owner_entity(), Some(id));
         assert_eq!(
             anim.remap(),
             Some(crate::sim::anim_class::AnimRemap::House(
@@ -515,8 +515,8 @@ fn ordinary_commands_land_animate_deploy_reverse_and_resume_flight() {
         .deploy_anim()
         .unwrap();
     assert_eq!(altitude(&sim, id), 0);
-    assert!(!sim.anim(forward).unwrap().runtime.constructor_reverse);
-    assert_eq!(sim.anim(forward).unwrap().owner_entity, Some(id));
+    assert!(!sim.anim(forward).unwrap().runtime().constructor_reverse);
+    assert_eq!(sim.anim(forward).unwrap().owner_entity(), Some(id));
     advance_until(&mut sim, &rules, 200, "fully deployed Unit", |sim| {
         let entity = sim.substrate.entities.get(id).unwrap();
         entity.is_fully_deployed() && !entity.unit_deploying()
@@ -560,8 +560,8 @@ fn ordinary_commands_land_animate_deploy_reverse_and_resume_flight() {
         .deploy_anim()
         .unwrap();
     assert_ne!(reverse, forward);
-    assert!(sim.anim(reverse).unwrap().runtime.constructor_reverse);
-    assert_eq!(sim.anim(reverse).unwrap().owner_entity, Some(id));
+    assert!(sim.anim(reverse).unwrap().runtime().constructor_reverse);
+    assert_eq!(sim.anim(reverse).unwrap().owner_entity(), Some(id));
     advance_until(&mut sim, &rules, 200, "completed undeployment", |sim| {
         let entity = sim.substrate.entities.get(id).unwrap();
         !entity.is_fully_deployed() && !entity.unit_deploying()
@@ -630,7 +630,7 @@ fn compare_snapshot_continuation(mut sim: Simulation, rules: &RuleSet, id: u64, 
         attachment
     );
     if let Some(anim) = attachment {
-        assert_eq!(loaded.anim(anim).unwrap().owner_entity, Some(id));
+        assert_eq!(loaded.anim(anim).unwrap().owner_entity(), Some(id));
     }
     assert_eq!(
         sim.state_hash(),

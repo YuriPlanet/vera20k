@@ -164,6 +164,11 @@ fn lobby(state: &AppState) -> Option<&WolLobby> {
     state.frontend.wol.as_ref()?.lobby.as_deref()
 }
 
+/// This user is in a channel (`[0xB77DD0]`): a leave will see its OnPart.
+pub(super) fn in_channel(state: &AppState) -> bool {
+    lobby(state).is_some_and(|lobby| lobby.current.is_some())
+}
+
 fn lobby_mut(state: &mut AppState) -> Option<&mut WolLobby> {
     state.frontend.wol.as_mut()?.lobby.as_deref_mut()
 }

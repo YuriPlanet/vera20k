@@ -116,7 +116,10 @@ fn fixture(row: &Value, kind: &crate::rules::projectile_type::ProjectileType) ->
             collision: ProjectileCollisionPolicy::NONE,
         },
     );
-    sim.projectiles.get_mut(id).unwrap().on_bridge = input["on_bridge"].as_i64().unwrap_or(0) != 0;
+    sim.projectiles
+        .get_mut(id)
+        .unwrap()
+        .set_on_bridge_for_test(input["on_bridge"].as_i64().unwrap_or(0) != 0);
     (sim, id)
 }
 

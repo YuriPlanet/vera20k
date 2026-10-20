@@ -288,7 +288,7 @@ impl DrawState {
                     },
                     voxel,
                 }),
-                disguise: Self::disguise_input(entity, observer),
+                disguise: Self::disguise_input(entity, current_frame, observer),
                 warp_out,
                 warp_in,
             },
@@ -299,6 +299,7 @@ impl DrawState {
 
     pub(crate) fn disguise_input(
         entity: &GameEntity,
+        current_frame: u32,
         observer: ObserverDrawContext,
     ) -> Option<DisguiseDrawInput> {
         entity.disguise.as_ref().map(|disguise| DisguiseDrawInput {
@@ -306,10 +307,9 @@ impl DrawState {
             owner_is_current_player: observer.owner_is_current_player,
             cell_present: observer.disguise_cell_present,
             detected: observer.detects_disguise,
-            // The separate Techno blink producer is not retained yet. The
-            // stationary stock Mirage path starts with an inactive timer;
-            // do not alias its gameplay re-disguise timer to this input.
-            blink_active: false,
+            // +1EC/+1F4, which a DisguiseWhenStill= Unit's shot starts
+            // (Fire741340), not the re-disguise timer at +1E0/+1E8.
+            blink_active: disguise.blink_remaining(current_frame) != 0,
             start_frame: disguise.creation_frame(),
         })
     }
@@ -319,7 +319,7 @@ impl DrawState {
         current_frame: u32,
         observer: ObserverDrawContext,
     ) -> bool {
-        Self::disguise_input(entity, observer)
+        Self::disguise_input(entity, current_frame, observer)
             .is_some_and(|input| !input.shows_real_type(current_frame))
     }
 }

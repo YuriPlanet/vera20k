@@ -2371,7 +2371,7 @@ fn bullet_location(
     detonation: &ProjectileDetonation,
 ) -> (ProjectileCoord, bool) {
     match world.projectiles.get(detonation.projectile_id) {
-        Some(bullet) => (bullet.position, bullet.on_bridge),
+        Some(bullet) => (bullet.position(), bullet.on_bridge()),
         None if detonation.reason
             == crate::sim::projectile::ProjectileDetonationReason::DeathWeapon =>
         {

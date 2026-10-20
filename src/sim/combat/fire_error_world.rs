@@ -302,6 +302,7 @@ impl<'a> FireSubject<'a> {
                 .remaining(self.world.session.binary_frame() as i32)
                 != 0,
             ammo: firer.ammo().map_or(-1, |ammo| ammo.current()),
+            firing_frame: firer.unit_firing_counter.get(),
             cloak_state: firer.cloak.as_ref().map_or(0, |cloak| cloak.state()),
             current_weapon: combat_weapon::attacker_facts(firer, obj).current_weapon_number,
             draining_me: firer.drain.draining_me().is_some(),

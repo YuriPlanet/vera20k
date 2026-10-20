@@ -302,7 +302,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     .sim
                     .projectiles
                     .iter()
-                    .all(|(_, bullet)| bullet.source_id != scene.source),
+                    .all(|(_, bullet)| bullet.source_id() != scene.source),
                 "the nested DeathWeapon finishes synchronously; no ordinary outgoing shot remains"
             );
             for visit in row["death_visits"].as_array().unwrap() {
@@ -361,11 +361,11 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
         for expected in source_anims {
             assert!(
                 scene.sim.substrate.anims.iter().any(|(_, anim)| {
-                    scene.sim.interner.resolve(anim.type_id) == expected["type"].as_str().unwrap()
+                    scene.sim.interner.resolve(anim.type_id()) == expected["type"].as_str().unwrap()
                         && serde_json::json!([
-                            anim.world_coord.x,
-                            anim.world_coord.y,
-                            anim.world_coord.z
+                            anim.world_coord().x,
+                            anim.world_coord().y,
+                            anim.world_coord().z
                         ]) == expected["location"]
                 }),
                 "{} anim {}",
@@ -459,7 +459,7 @@ fn ordinary_terror_attack_finishes_die2_and_retires_its_source() {
     );
     assert!(
         scene.sim.substrate.anims.iter().any(|(_, anim)| {
-            let name = scene.sim.interner.resolve(anim.type_id);
+            let name = scene.sim.interner.resolve(anim.type_id());
             scene
                 .rules
                 .general

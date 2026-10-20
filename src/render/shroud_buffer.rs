@@ -672,8 +672,8 @@ mod tests {
     #[test]
     fn a_whole_map_reveal_lifts_the_full_shroud_for_the_current_house() {
         let mut sim = crate::sim::world::Simulation::with_seed(0x577F30);
-        sim.fog.width = 8;
-        sim.fog.height = 6;
+        sim.fog.set_width_for_test(8);
+        sim.fog.set_height_for_test(6);
         let local = sim.interner.intern("Player");
         let other = sim.interner.intern("Computer");
         sim.session.set_current_house_for_test(Some(local));

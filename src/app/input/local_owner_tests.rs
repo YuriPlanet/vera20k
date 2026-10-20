@@ -36,8 +36,8 @@ fn saved_current_house_drives_app_fog_and_command_owner_after_load() {
             .register(HouseState::new(owner, index as u8, None, true, 0, 10));
     }
     saved.session.set_current_house_for_test(Some(player));
-    saved.fog.width = 8;
-    saved.fog.height = 8;
+    saved.fog.set_width_for_test(8);
+    saved.fog.set_height_for_test(8);
     saved.fog.reveal_cells_for_owner(player, [(3, 4)]);
     assert!(saved.fog.is_cell_revealed(player, 3, 4));
     assert!(!saved.fog.is_cell_revealed(outgoing, 3, 4));

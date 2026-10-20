@@ -187,11 +187,12 @@ fn assert_collapsed_bridge_restores(
         let loaded = restored
             .anim(id)
             .expect("every saved live AnimClass restores");
-        assert_eq!(loaded.type_id, original.type_id);
-        assert_eq!(loaded.world_coord, original.world_coord);
-        assert_eq!(loaded.bounce, original.bounce, "BounceClass body {id}");
+        assert_eq!(loaded.type_id(), original.type_id());
+        assert_eq!(loaded.world_coord(), original.world_coord());
+        assert_eq!(loaded.bounce(), original.bounce(), "BounceClass body {id}");
         assert_eq!(
-            loaded.runtime, original.runtime,
+            loaded.runtime(),
+            original.runtime(),
             "AnimClass timer/lifecycle {id}"
         );
     }
@@ -214,8 +215,8 @@ fn assert_live_projectile_restore_continuation(
         .get(projectile_id)
         .expect("save contains the already-moved live Bullet")
         .clone();
-    assert_ne!(saved_shell.position, saved_shell.launch_origin);
-    assert!(saved_shell.in_logic_vector);
+    assert_ne!(saved_shell.position(), saved_shell.launch_origin());
+    assert!(saved_shell.in_logic_vector());
     assert_eq!(
         scenario.sim().display_layers().layer_of(projectile_id),
         Some(DisplayLayer::AIR)
@@ -252,10 +253,10 @@ fn assert_live_projectile_restore_continuation(
         // retained field, including binary64 motion, visual bytes and target,
         // must remain identical after the complete production restore.
         assert_eq!(
-            retained.arm_timer,
+            *retained.arm_timer(),
             crate::sim::timer::CdTimer::started(restored.session.binary_frame() as i32, 0)
         );
-        retained.arm_timer = saved_shell.arm_timer;
+        retained.set_arm_timer_for_test(*saved_shell.arm_timer());
         assert_eq!(retained, saved_shell);
         assert_eq!(
             save_codec::serialize(restored.display_layers()).unwrap(),
@@ -287,7 +288,7 @@ fn assert_live_projectile_restore_continuation(
             .expect("first restored Bullet continuation frame");
         assert!(first_output.tick.frame_committed);
         if let Some(shell) = scenario.sim().projectiles.get(projectile_id) {
-            moved |= shell.position != saved_shell.position;
+            moved |= shell.position() != saved_shell.position();
         }
         std::mem::swap(&mut scenario.runtime.simulation, &mut second);
         let second_output = scenario
@@ -337,7 +338,7 @@ fn assert_live_projectile_restore_continuation(
     let retired_at = retired_at.expect("restored Bullet must retire within 300 frames");
     println!(
         "saved Bullet {projectile_id} at {:?} resumed flight and retired after {retired_at} ordinary frames; both restored state-hash sequences matched, Display membership was removed, original live frame preserved",
-        saved_shell.position
+        saved_shell.position()
     );
 }
 
@@ -355,7 +356,7 @@ fn assert_debris_restore_continuation(
     let mut second = assert_collapsed_bridge_restores(scenario, template, target, attacker);
     let flying = first
         .anims()
-        .filter_map(|(&id, anim)| anim.bounce.is_some().then_some(id))
+        .filter_map(|(&id, anim)| anim.bounce().is_some().then_some(id))
         .collect::<Vec<_>>();
     assert!(!flying.is_empty(), "save must contain live Bouncer flight");
     assert_eq!(
@@ -563,7 +564,7 @@ fn retail_bridge_forcefire_chain(vehicle_name: &str, weapon_name: &str, projecti
                         .sim()
                         .projectiles
                         .get(*stable_id)
-                        .is_some_and(|bullet| bullet.source_id == attacker) =>
+                        .is_some_and(|bullet| bullet.source_id() == attacker) =>
                 {
                     assert!(trails.insert(*stable_id), "one trail per Bullet lifetime");
                 }
@@ -588,15 +589,15 @@ fn retail_bridge_forcefire_chain(vehicle_name: &str, weapon_name: &str, projecti
         }
         for (&id, &(launched_at, previous)) in &live {
             if let Some(shell) = scenario.sim().projectiles.get(id) {
-                flight_observed |= shell.position != previous;
+                flight_observed |= shell.position() != previous;
                 assert!(
                     frame - launched_at < 300,
                     "{projectile_name} remains in flight for 300 frames: id={id}, launch={:?}, aim={:?}, now={:?}, velocity={:?}, trajectory={:?}",
-                    shell.launch_origin,
-                    shell.launch_target,
-                    shell.position,
-                    shell.velocity,
-                    shell.trajectory
+                    shell.launch_origin(),
+                    shell.launch_target(),
+                    shell.position(),
+                    shell.velocity(),
+                    shell.trajectory()
                 );
             } else {
                 disappeared += 1;
@@ -607,27 +608,27 @@ fn retail_bridge_forcefire_chain(vehicle_name: &str, weapon_name: &str, projecti
             .sim()
             .projectiles
             .iter()
-            .filter(|(_, shell)| shell.source_id == attacker)
+            .filter(|(_, shell)| shell.source_id() == attacker)
         {
             first_launch.get_or_insert(frame);
             live.entry(*id).or_insert_with(|| {
                 assert_eq!(
-                    shell.target,
+                    shell.target(),
                     ProjectileTarget::Cell {
                         rx: target.0,
                         ry: target.1
                     }
                 );
-                assert_eq!(shell.launch_target, expected_aim);
-                (frame, shell.position)
+                assert_eq!(shell.launch_target(), expected_aim);
+                (frame, shell.position())
             });
         }
         if !live_flight_restore_checked {
             let moved_projectile = scenario.sim().projectiles.iter().find_map(|(&id, shell)| {
-                (shell.source_id == attacker
-                    && shell.position != shell.launch_origin
+                (shell.source_id() == attacker
+                    && shell.position() != shell.launch_origin()
                     && shell
-                        .payload
+                        .payload()
                         .projectile_type()
                         .map(|kind| scenario.sim().interner.resolve(kind))
                         == Some(projectile_name))

@@ -817,8 +817,8 @@ fn repair_pointer_expiry_keeps_sensor_and_occupier_exceptions_and_current_nav_ga
         let id = ready_engineer(&mut sim, &rules, &registry, hut);
         let owner = sim.substrate.entities.get(id).unwrap().owner();
         if exception == 0 {
-            sim.fog.width = 33;
-            sim.fog.height = 33;
+            sim.fog.set_width_for_test(33);
+            sim.fog.set_height_for_test(33);
             sim.fog.increment_sensor_at(owner, 16, 15);
         }
         let e = sim.substrate.entities.get_mut(id).unwrap();

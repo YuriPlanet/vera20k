@@ -68,14 +68,14 @@ fn offline_sparks_match_original_execution() {
             .particle_systems()
             .iter()
             .map(|(_, system)| {
-                assert_eq!(system.type_id, spark, "{name}");
+                assert_eq!(system.type_id(), spark, "{name}");
                 let coord = |coord: glam::IVec3| serde_json::json!([coord.x, coord.y, coord.z]);
                 serde_json::json!({
-                    "coords": coord(system.coords),
-                    "target": system.target_ref.map_or(0, |_| 1),
-                    "owner": system.owner_entity.map_or(0, |_| 1),
-                    "target_coords": coord(system.target_coords),
-                    "house": system.owner_house.map_or(0, |_| 1),
+                    "coords": coord(system.coords()),
+                    "target": system.target_ref().map_or(0, |_| 1),
+                    "owner": system.owner_entity().map_or(0, |_| 1),
+                    "target_coords": coord(system.target_coords()),
+                    "house": system.owner_house().map_or(0, |_| 1),
                 })
             })
             .collect();
@@ -361,7 +361,7 @@ fn losing_and_regaining_the_last_powered_center_switches_robot_tanks() {
         sparks.extend(
             sim.particle_systems()
                 .iter()
-                .filter(|(_, system)| system.type_id == spark)
+                .filter(|(_, system)| system.type_id() == spark)
                 .map(|(&id, _)| id),
         );
         false
@@ -648,9 +648,9 @@ fn losing_robot_power_drops_water_hover_and_keeps_land_hover_alive() {
                 }
                 if let Some(splash) = splash {
                     saw_splash |= sim.substrate.anims.iter().any(|(_, anim)| {
-                        sim.interner.resolve(anim.type_id) == splash.as_str()
-                            && anim.world_coord.to_cell_sub_z().0 == water_cell.0
-                            && anim.world_coord.to_cell_sub_z().1 == water_cell.1
+                        sim.interner.resolve(anim.type_id()) == splash.as_str()
+                            && anim.world_coord().to_cell_sub_z().0 == water_cell.0
+                            && anim.world_coord().to_cell_sub_z().1 == water_cell.1
                     });
                 }
                 sim.substrate.entities.get(water_tank).is_none()

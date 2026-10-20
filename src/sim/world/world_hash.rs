@@ -747,7 +747,7 @@ impl Simulation {
         if bridge_keeps_dummy
             || cells_or_entities_retain_dummy
             || self.projectiles.iter().any(|(_, projectile)| {
-                projectile.target == crate::sim::projectile::ProjectileTarget::DummyCell
+                projectile.target() == crate::sim::projectile::ProjectileTarget::DummyCell
             })
         {
             // Retained Cell pointers make the live coordinate affect
@@ -860,64 +860,64 @@ impl Simulation {
         self.projectiles.len().hash(hasher);
         for (&id, projectile) in self.projectiles.iter() {
             id.hash(hasher);
-            projectile.id.hash(hasher);
-            projectile.native_unique_id.hash(hasher);
-            projectile.source_id.hash(hasher);
-            projectile.position.x.hash(hasher);
-            projectile.position.y.hash(hasher);
-            projectile.position.z.hash(hasher);
-            projectile.launch_origin.hash(hasher);
-            projectile.launch_target.hash(hasher);
-            projectile.previous_cell.hash(hasher);
-            hash_projectile_target(projectile.target, hasher);
-            projectile.last_target_position.x.hash(hasher);
-            projectile.last_target_position.y.hash(hasher);
-            projectile.last_target_position.z.hash(hasher);
-            projectile.payload.base_damage.hash(hasher);
-            projectile.payload.warhead.index().hash(hasher);
+            projectile.id().hash(hasher);
+            projectile.native_unique_id().hash(hasher);
+            projectile.source_id().hash(hasher);
+            projectile.position().x.hash(hasher);
+            projectile.position().y.hash(hasher);
+            projectile.position().z.hash(hasher);
+            projectile.launch_origin().hash(hasher);
+            projectile.launch_target().hash(hasher);
+            projectile.previous_cell().hash(hasher);
+            hash_projectile_target(projectile.target(), hasher);
+            projectile.last_target_position().x.hash(hasher);
+            projectile.last_target_position().y.hash(hasher);
+            projectile.last_target_position().z.hash(hasher);
+            projectile.payload().base_damage.hash(hasher);
+            projectile.payload().warhead.index().hash(hasher);
             projectile
-                .payload
+                .payload()
                 .projectile_type()
                 .map(|id| id.index())
                 .hash(hasher);
-            projectile.payload.bright().hash(hasher);
+            projectile.payload().bright().hash(hasher);
             projectile
-                .payload
+                .payload()
                 .installed_weapon()
                 .map(|id| id.index())
                 .hash(hasher);
-            if projectile.payload.damage_multiplier()
+            if projectile.payload().damage_multiplier()
                 != crate::sim::projectile::ProjectilePayload::UNSCALED
             {
                 b"prism-damage-multiplier-v1".hash(hasher);
-                projectile.payload.damage_multiplier().hash(hasher);
+                projectile.payload().damage_multiplier().hash(hasher);
             }
 
-            projectile.speed_leptons_per_frame.hash(hasher);
-            projectile.velocity.hash(hasher);
-            projectile.trajectory.hash(hasher);
-            projectile.guidance.hash(hasher);
-            projectile.visual.hash(hasher);
-            projectile.arm_timer.hash(hasher);
-            projectile.fuse_frames_remaining.hash(hasher);
-            projectile.ranged_fuse.hash(hasher);
-            projectile.proximity_reference.hash(hasher);
-            projectile.last_distance_half.hash(hasher);
-            projectile.tracks_target.hash(hasher);
-            projectile.target_expiry.hash(hasher);
-            projectile.collision.level.hash(hasher);
-            projectile.collision.subject_to_walls.hash(hasher);
-            projectile.collision.native_cell_collision.hash(hasher);
-            projectile.collision.dropping.hash(hasher);
-            projectile.collision.subject_to_cliffs.hash(hasher);
-            projectile.collision.flak_scatter.hash(hasher);
-            projectile.collision.anti_air.hash(hasher);
-            projectile.collision.airburst.hash(hasher);
-            projectile.collision.inaccurate.hash(hasher);
-            projectile.collision.floater.hash(hasher);
-            projectile.collision.elasticity_bits.hash(hasher);
-            projectile.on_bridge.hash(hasher);
-            projectile.collision.arcing.hash(hasher);
+            projectile.speed_leptons_per_frame().hash(hasher);
+            projectile.velocity().hash(hasher);
+            projectile.trajectory().hash(hasher);
+            projectile.guidance().hash(hasher);
+            projectile.visual().hash(hasher);
+            projectile.arm_timer().hash(hasher);
+            projectile.fuse_frames_remaining().hash(hasher);
+            projectile.ranged_fuse().hash(hasher);
+            projectile.proximity_reference().hash(hasher);
+            projectile.last_distance_half().hash(hasher);
+            projectile.tracks_target().hash(hasher);
+            projectile.target_expiry().hash(hasher);
+            projectile.collision().level.hash(hasher);
+            projectile.collision().subject_to_walls.hash(hasher);
+            projectile.collision().native_cell_collision.hash(hasher);
+            projectile.collision().dropping.hash(hasher);
+            projectile.collision().subject_to_cliffs.hash(hasher);
+            projectile.collision().flak_scatter.hash(hasher);
+            projectile.collision().anti_air.hash(hasher);
+            projectile.collision().airburst.hash(hasher);
+            projectile.collision().inaccurate.hash(hasher);
+            projectile.collision().floater.hash(hasher);
+            projectile.collision().elasticity_bits.hash(hasher);
+            projectile.on_bridge().hash(hasher);
+            projectile.collision().arcing.hash(hasher);
             if let Some(house) = projectile.firer_house() {
                 b"bullet-firer-scheme-v1".hash(hasher);
                 house.index().hash(hasher);
@@ -953,26 +953,26 @@ impl Simulation {
         for (id, sys) in self.particle_systems().iter() {
             id.hash(hasher);
             sys.native_unique_id().hash(hasher);
-            sys.type_id.0.hash(hasher);
-            sys.coords.x.hash(hasher);
-            sys.coords.y.hash(hasher);
-            sys.coords.z.hash(hasher);
-            sys.lifetime.hash(hasher);
-            sys.facing.hash(hasher);
-            sys.done_spawning.hash(hasher);
+            sys.type_id().0.hash(hasher);
+            sys.coords().x.hash(hasher);
+            sys.coords().y.hash(hasher);
+            sys.coords().z.hash(hasher);
+            sys.lifetime().hash(hasher);
+            sys.facing().hash(hasher);
+            sys.done_spawning().hash(hasher);
             sys.alive().hash(hasher);
             sys.in_limbo().hash(hasher);
             // The rest of the saved system state. `in_logic_vector` is not
             // saved (load rebuilds it from the logic vector), so it stays out.
-            sys.offset.to_array().hash(hasher);
+            sys.offset().to_array().hash(hasher);
             sys.spawn_timer().bits().hash(hasher);
-            sys.spark_spawn_frames.hash(hasher);
-            sys.target_ref.hash(hasher);
-            sys.owner_entity.hash(hasher);
-            sys.target_coords.to_array().hash(hasher);
-            sys.owner_house.hash(hasher);
-            sys.particles.len().hash(hasher);
-            for particle in &sys.particles {
+            sys.spark_spawn_frames().hash(hasher);
+            sys.target_ref().hash(hasher);
+            sys.owner_entity().hash(hasher);
+            sys.target_coords().to_array().hash(hasher);
+            sys.owner_house().hash(hasher);
+            sys.particles().len().hash(hasher);
+            for particle in sys.particles() {
                 hash_particle(particle, hasher);
             }
         }
@@ -1233,42 +1233,15 @@ impl Simulation {
         }
     }
 
-    /// One digest per House's fog grids, in House order, spread over threads
-    /// once the grids are large (30 Houses on a 500x500 map hold millions of
-    /// cells).
+    /// One digest per House's fog grids ([`FogState::plane_digests`]).
     fn fog_digests(&self) -> Vec<u64> {
-        let grids: Vec<_> = self.fog.by_owner.values().collect();
-        let cells = usize::from(self.fog.width) * usize::from(self.fog.height) * grids.len();
-        state_hasher::digests(&grids, cells >= 1 << 20, |grid, hasher| {
-            grid.hash_cells(hasher)
-        })
+        self.fog.plane_digests()
     }
 
     /// Hash fog-of-war visibility and house alliance data, each House's grids
     /// as its digest from [`Self::fog_digests`].
     fn hash_fog_and_alliances(&self, fog_digests: &[u64], hasher: &mut impl Hasher) {
-        self.fog.width.hash(hasher);
-        self.fog.height.hash(hasher);
-        debug_assert_eq!(fog_digests.len(), self.fog.by_owner.len());
-        for (owner, digest) in self.fog.by_owner.keys().zip(fog_digests) {
-            owner.hash(hasher);
-            digest.hash(hasher);
-        }
-        self.fog.gap_sources.hash(hasher);
-        self.fog.hash_sight_admissions(hasher);
-        self.fog.hash_whole_map_reveal_state(hasher);
-        b"fogged-object-footprints-v1".hash(hasher);
-        self.fog.next_fogged_object_id.hash(hasher);
-        self.fog.fogged_object_cells.hash(hasher);
-        self.fog.fogged_objects.hash(hasher);
-        self.fog.sensors_by_house.hash(hasher);
-        // `CellClass+0xAC[house]` disguise-detect counters.
-        // Behaviour-affecting like their `SensorsOfHouses` sibling above:
-        // `FUN_004870F0` reads them inside `IsDisguisedTo`, which decides
-        // target acquisition and so changes issued commands, not just
-        // presentation.
-        self.fog.disguise_detect_by_house.hash(hasher);
-        self.fog.cloaked_by_houses.hash(hasher);
+        self.fog.hash_state(fog_digests, hasher);
         for (owner, allies) in &self.house_alliances {
             owner.hash(hasher);
             for ally in allies {
@@ -1443,8 +1416,8 @@ impl Simulation {
             id.hash(hasher);
 
             anim.hash(hasher);
-            anim.bounce.is_some().hash(hasher);
-            if let Some(body) = &anim.bounce {
+            anim.bounce().is_some().hash(hasher);
+            if let Some(body) = &anim.bounce() {
                 body.hash_bits(hasher);
             }
         }
@@ -1471,11 +1444,11 @@ impl Simulation {
         for (id, debris) in self.substrate.voxel_anims.iter() {
             id.hash(hasher);
             debris.native_unique_id().hash(hasher);
-            debris.type_id.0.hash(hasher);
-            debris.duration.hash(hasher);
-            debris.marked_for_deletion.hash(hasher);
-            debris.owner_house.hash(hasher);
-            debris.bounce.hash_bits(hasher);
+            debris.type_id().0.hash(hasher);
+            debris.duration().hash(hasher);
+            debris.marked_for_deletion().hash(hasher);
+            debris.owner_house().hash(hasher);
+            debris.bounce().hash_bits(hasher);
         }
     }
 }
@@ -1485,23 +1458,23 @@ impl Simulation {
 fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) {
     p.stable_id().hash(hasher);
     p.native_unique_id().hash(hasher);
-    p.type_id.0.hash(hasher);
-    p.coords.x.hash(hasher);
-    p.coords.y.hash(hasher);
-    p.coords.z.hash(hasher);
-    p.lifetime_remaining.hash(hasher);
-    p.animation_state.hash(hasher);
-    p.translucency.hash(hasher);
-    p.marked_for_deletion.hash(hasher);
-    p.origin.to_array().hash(hasher);
-    p.direction.map(|v| v.to_bits()).hash(hasher);
-    p.motion.map(|v| v.bits()).hash(hasher);
+    p.type_id().0.hash(hasher);
+    p.coords().x.hash(hasher);
+    p.coords().y.hash(hasher);
+    p.coords().z.hash(hasher);
+    p.lifetime_remaining().hash(hasher);
+    p.animation_state().hash(hasher);
+    p.translucency().hash(hasher);
+    p.marked_for_deletion().hash(hasher);
+    p.origin().to_array().hash(hasher);
+    p.direction().map(|v| v.to_bits()).hash(hasher);
+    p.motion().map(|v| v.bits()).hash(hasher);
     p.velocity().bits().hash(hasher);
-    p.damage_counter.hash(hasher);
-    p.state_ai_advance.hash(hasher);
-    (p.drift_x, p.drift_y, p.drift_z).hash(hasher);
-    p.prev_delta.map(|v| v.to_bits()).hash(hasher);
-    match p.spark {
+    p.damage_counter().hash(hasher);
+    p.state_ai_advance().hash(hasher);
+    (p.drift_x(), p.drift_y(), p.drift_z()).hash(hasher);
+    p.prev_delta().map(|v| v.to_bits()).hash(hasher);
+    match p.spark() {
         None => 0_u8.hash(hasher),
         Some(spark) => {
             1_u8.hash(hasher);
@@ -1671,6 +1644,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         entity.barrel_elevation().hash(hasher);
     }
     entity.body_frame_counter.get().hash(hasher);
+    if entity.unit_firing_counter.get() != -1 {
+        b"unit-firing-counter-v1".hash(hasher);
+        entity.unit_firing_counter.hash(hasher);
+    }
     if !entity.tesla_charge.is_default() {
         b"building-tesla-charge-v1".hash(hasher);
         entity.tesla_charge.hash(hasher);
@@ -3417,7 +3394,7 @@ mod particle_hash_tests {
 
     fn insert_system(sim: &mut Simulation, mut system: ParticleSystem) -> u64 {
         let id = sim.allocate_stable_id();
-        system.stable_id = id;
+        system.set_stable_id_for_test(id);
         sim.particle_systems_mut().insert(system);
         sim.reveal_particle_system(id, None);
         id
@@ -3425,16 +3402,16 @@ mod particle_hash_tests {
 
     fn particle_with_spark(spark: Option<SparkRuntimeState>) -> Particle {
         let mut particle = Particle::test_fixture(ParticleTypeId(0), IVec3::new(-1, 2, 3));
-        particle.origin = IVec3::ZERO;
-        particle.lifetime_remaining = 9;
-        particle.spark = spark;
+        particle.set_origin_for_test(IVec3::ZERO);
+        particle.set_lifetime_remaining_for_test(9);
+        particle.set_spark_for_test(spark);
         particle
     }
 
     fn hash_with_particle(particle: Particle) -> u64 {
         let mut sim = Simulation::new();
         let mut system = fake_system(IVec3::ZERO);
-        system.particles.push(particle);
+        system.particles_mut_for_test().push(particle);
         insert_system(&mut sim, system);
         sim.state_hash()
     }
@@ -3495,34 +3472,45 @@ mod particle_hash_tests {
     #[test]
     fn saved_system_and_particle_fields_change_the_state_hash() {
         let mut base = fake_system(IVec3::ZERO);
-        base.particles.push(particle_with_spark(None));
+        base.particles_mut_for_test()
+            .push(particle_with_spark(None));
         let base_hash = hash_with_system(base.clone());
         let owner_house = Simulation::new().interner.intern("Americans");
         type Edit = Box<dyn Fn(&mut ParticleSystem)>;
         let edits: Vec<Edit> = vec![
-            Box::new(|s| s.offset = IVec3::new(1, 0, 0)),
+            Box::new(|s| s.set_offset_for_test(IVec3::new(1, 0, 0))),
             Box::new(|s| {
                 s.set_spawn_timer_for_test(crate::util::native_x87::NativeF32Bits::from_bits(
                     0x4000_0000,
                 ))
             }),
-            Box::new(|s| s.spark_spawn_frames = 1),
-            Box::new(|s| s.target_ref = Some(crate::sim::combat::TargetKind::Entity(7))),
-            Box::new(|s| s.owner_entity = Some(7)),
-            Box::new(|s| s.target_coords = IVec3::new(0, 1, 0)),
-            Box::new(move |s| s.owner_house = Some(owner_house)),
-            Box::new(|s| s.particles[0].origin = IVec3::new(0, 0, 1)),
-            Box::new(|s| s.particles[0].direction[1] = SimFixed::from_num(1)),
-            Box::new(|s| s.particles[0].motion[1] = crate::util::native_x87::NativeF32Bits::ONE),
+            Box::new(|s| s.set_spark_spawn_frames_for_test(1)),
             Box::new(|s| {
-                s.particles[0].set_velocity_for_test(crate::util::native_x87::NativeF32Bits::ONE)
+                s.set_target_ref_for_test(Some(crate::sim::combat::TargetKind::Entity(7)))
             }),
-            Box::new(|s| s.particles[0].damage_counter = 1),
-            Box::new(|s| s.particles[0].state_ai_advance = 1),
-            Box::new(|s| s.particles[0].drift_x = 1),
-            Box::new(|s| s.particles[0].drift_y = 1),
-            Box::new(|s| s.particles[0].drift_z = 1),
-            Box::new(|s| s.particles[0].prev_delta[2] = SimFixed::from_num(1)),
+            Box::new(|s| s.set_owner_entity_for_test(Some(7))),
+            Box::new(|s| s.set_target_coords_for_test(IVec3::new(0, 1, 0))),
+            Box::new(move |s| s.set_owner_house_for_test(Some(owner_house))),
+            Box::new(|s| s.particles_mut_for_test()[0].set_origin_for_test(IVec3::new(0, 0, 1))),
+            Box::new(|s| {
+                s.particles_mut_for_test()[0].direction_mut_for_test()[1] = SimFixed::from_num(1)
+            }),
+            Box::new(|s| {
+                s.particles_mut_for_test()[0].motion_mut_for_test()[1] =
+                    crate::util::native_x87::NativeF32Bits::ONE
+            }),
+            Box::new(|s| {
+                s.particles_mut_for_test()[0]
+                    .set_velocity_for_test(crate::util::native_x87::NativeF32Bits::ONE)
+            }),
+            Box::new(|s| s.particles_mut_for_test()[0].set_damage_counter_for_test(1)),
+            Box::new(|s| s.particles_mut_for_test()[0].set_state_ai_advance_for_test(1)),
+            Box::new(|s| s.particles_mut_for_test()[0].set_drift_x_for_test(1)),
+            Box::new(|s| s.particles_mut_for_test()[0].set_drift_y_for_test(1)),
+            Box::new(|s| s.particles_mut_for_test()[0].set_drift_z_for_test(1)),
+            Box::new(|s| {
+                s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = SimFixed::from_num(1)
+            }),
         ];
         for (index, edit) in edits.iter().enumerate() {
             let mut system = base.clone();
@@ -3677,7 +3665,7 @@ mod building_anim_slot_hash_tests {
             .anims
             .get_mut(anim)
             .unwrap()
-            .runtime
+            .runtime_mut_for_test()
             .current_frame += 1;
         assert_ne!(present, sim.state_hash());
         let advanced = sim.state_hash();

@@ -478,10 +478,10 @@ impl Simulation {
                     .expect("constructed falling Bullet");
                 let detonation = crate::sim::projectile::ProjectileDetonation {
                     projectile_id: bullet_id,
-                    source_id: bullet.source_id,
-                    target: bullet.target,
+                    source_id: bullet.source_id(),
+                    target: bullet.target(),
                     impact: crate::sim::projectile::ProjectileCoord::new(coords.x, coords.y, z),
-                    payload: bullet.payload,
+                    payload: bullet.payload(),
                     reason: crate::sim::projectile::ProjectileDetonationReason::DeathWeapon,
                 };
                 bridge_state_changed |= self.commit_logic_projectile_detonations(

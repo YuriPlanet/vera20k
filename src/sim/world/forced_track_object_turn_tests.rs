@@ -21,8 +21,8 @@ fn fixture(selector: i32) -> Simulation {
     // Native Scenario deserialization reseeds this RNG to zero. Using that
     // same initial seed isolates track persistence from the separate RNG rule.
     let mut sim = Simulation::with_seed(0);
-    sim.fog.width = 32;
-    sim.fog.height = 32;
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
     let turn = drive_track::turn_track_at(selector as usize).unwrap();
     let first = drive_track::raw_track_points(turn.normal_track)[0];
     let (dx, dy, facing) =

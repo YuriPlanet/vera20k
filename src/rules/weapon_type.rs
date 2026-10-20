@@ -76,6 +76,10 @@ pub struct WeaponType {
     // ── Int fields ───────────────────────────────────────────────────
     /// Ambient damage dealt to units standing near the weapon's owner (+0x98).
     pub ambient_damage: i32,
+    /// `DisguiseFakeBlinkTime=` (`+0x13C`): the frames a `DisguiseWhenStill=`
+    /// Unit's disguise blinks after it fires this weapon
+    /// (`UnitClass::Fire_At @ 0x0074145E`).
+    pub disguise_fake_blink_time: i32,
     /// Minimum firing range in LEPTONS — `+0xB8` through the same
     /// `CCINIClass::ReadRange` 0x00474620 call at 0x00772350.
     pub minimum_range_leptons: i32,
@@ -228,6 +232,9 @@ impl WeaponType {
 
             // Int fields
             ambient_damage: section.read_int("AmbientDamage", 0),
+            // Constructor 0 (`0x00771DDA`); ReadINI passes it as the default
+            // (`0x0077226C..0x00772280`).
+            disguise_fake_blink_time: section.read_int("DisguiseFakeBlinkTime", 0),
             // +0xB8 is zeroed alongside +0xB4 at 0x00771CBF.
             minimum_range_leptons: section.read_range("MinimumRange", 0),
             // ReadINI stores only AL; SpawnLaser6FD21D sign-extends the

@@ -449,7 +449,7 @@ fn slot_anim(sim: &Simulation, id: u64, slot: usize) -> Option<String> {
         .anim_slots()[slot]
         .map(|anim| {
             sim.interner
-                .resolve(sim.anim(anim).unwrap().type_id)
+                .resolve(sim.anim(anim).unwrap().type_id())
                 .to_string()
         })
 }

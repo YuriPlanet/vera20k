@@ -116,16 +116,16 @@ pub(super) fn build_particle_system_instance(
     objects: &mut Vec<PlannedObjectInstance>,
     order: &NativeDisplayOrder,
 ) {
-    let Some(parent) = order.object_draw(system.stable_id, SpriteEncoding::Plain) else {
+    let Some(parent) = order.object_draw(system.stable_id(), SpriteEncoding::Plain) else {
         return;
     };
-    let point = absolute_leptons_to_screen(system.coords.x, system.coords.y, system.coords.z);
+    let point = absolute_leptons_to_screen(system.coords().x, system.coords().y, system.coords().z);
     if system.in_limbo()
         || !projection_admitted([point.0, point.1], context.camera, context.viewport)
     {
         return;
     }
-    let kind = input.rules.particle_system_type(system.type_id);
+    let kind = input.rules.particle_system_type(system.type_id());
     let record = crate::app::presentation::combat_lights::particle_system_light(
         system,
         kind,
@@ -212,11 +212,15 @@ pub(super) fn build_particle_instance(
     let camera = context.camera;
     let viewport = context.viewport;
     let axis = context.axis;
-    let point = absolute_leptons_to_screen(particle.coords.x, particle.coords.y, particle.coords.z);
+    let point = absolute_leptons_to_screen(
+        particle.coords().x,
+        particle.coords().y,
+        particle.coords().z,
+    );
     if !projection_admitted([point.0, point.1], camera, viewport) {
         return;
     }
-    let kind = rules.particle_type(particle.type_id);
+    let kind = rules.particle_type(particle.type_id());
     // ParticleDraw62CEC0 reads the shared unsigned FPS/minimum owner.
     // Damaging particles alone can pass a below-minimum frame rate.
     let enough_fps = {
@@ -235,9 +239,9 @@ pub(super) fn build_particle_instance(
         return;
     }
     if kind.behaves_like == ParticleBehavesLike::Spark {
-        if let Some(spark) = particle.spark {
+        if let Some(spark) = particle.spark() {
             let command = crate::render::tactical_compat::SparkPointCommand {
-                world: particle.coords,
+                world: particle.coords(),
                 start_rgb: spark.start_rgb,
                 color_index: spark.color_index,
                 color_accumulator: spark.color_accumulator,
@@ -277,7 +281,7 @@ pub(super) fn build_particle_instance(
         // ParticleGetDrawFrame62D830: MOVSX from state+12E. The atlas
         // accepts nonnegative frames only; stock Smoke is0..19.
         ParticleBehavesLike::Smoke | ParticleBehavesLike::Gas => {
-            i32::from(particle.animation_state as i8)
+            i32::from(particle.animation_state() as i8)
         }
         // The separate Fire frame policy retains its existing path;
         // this mechanism is bounded to stock building damage-Smoke.
@@ -288,8 +292,8 @@ pub(super) fn build_particle_instance(
             let Some(system) = system else {
                 return;
             };
-            let band = (u16::from(system.facing) / 0x40) & 3;
-            i32::from(band * u16::from(kind.end_state_ai) + u16::from(particle.animation_state))
+            let band = (u16::from(system.facing()) / 0x40) & 3;
+            i32::from(band * u16::from(kind.end_state_ai) + u16::from(particle.animation_state()))
         }
         ParticleBehavesLike::Spark | ParticleBehavesLike::Railgun => return,
     };
@@ -306,11 +310,11 @@ pub(super) fn build_particle_instance(
     let Some(entry) = atlas.get(&key) else {
         return;
     };
-    let flags = particle_draw_flags(detail_level, particle.translucency);
+    let flags = particle_draw_flags(detail_level, particle.translucency());
     if flags & 6 != 0 {
         parent.policy = BlitPolicy::translucent(SpriteEncoding::Plain, RenderZPolicy::ReadOnly);
     }
-    let lift = adjust_for_z_standard(particle.coords.z);
+    let lift = adjust_for_z_standard(particle.coords().z);
     let piece = ObjectPieceInstance {
         target: ObjectTexture::ShpPage(entry.page as usize),
         render_z: parent.policy.render_z,
@@ -340,7 +344,7 @@ pub(super) fn build_particle_instance(
     };
     if let (Some(rows), Some(system)) = (observations.as_mut(), system) {
         rows.push(ParticleDrawObservation {
-            system_id: system.stable_id,
+            system_id: system.stable_id(),
             particle_id: parent.id,
             particle_native_id: particle.native_unique_id(),
             display_layer: parent.layer.0,

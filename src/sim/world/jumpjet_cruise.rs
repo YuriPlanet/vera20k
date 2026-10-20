@@ -1814,8 +1814,8 @@ mod tests {
                 destroyed_at = Some((frame, off));
             }
             for (&id, bomb) in sim.projectiles.iter() {
-                if bomb.source_id == kirov {
-                    let here = [bomb.position.x, bomb.position.y];
+                if bomb.source_id() == kirov {
+                    let here = [bomb.position().x, bomb.position().y];
                     bombs.entry(id).or_insert_with(Vec::new).push(here);
                 }
             }

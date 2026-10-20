@@ -121,7 +121,7 @@ impl Simulation {
                 .ok_or("Unit retained an expired deployment animation")?;
             let config = rules
                 .art()
-                .anim_runtime_config(self.interner.resolve(anim.type_id))
+                .anim_runtime_config(self.interner.resolve(anim.type_id()))
                 .ok_or("retained deployment animation type is unbound")?;
             // Original ADD/SUB wrap before a signed comparison. Owner Stage
             // increments positively even for the separately reversed Anim.
@@ -170,7 +170,7 @@ impl Simulation {
                     .ok_or("deployment animation missing after construction")?;
                 let config = rules
                     .art()
-                    .anim_runtime_config(self.interner.resolve(anim.type_id))
+                    .anim_runtime_config(self.interner.resolve(anim.type_id()))
                     .ok_or("deployment animation type is unbound")?;
                 let (start, rate) = (config.start, i32::from(config.rate_logic_frames));
                 let entity = self.substrate.entities.get_mut(id).expect("same Unit");

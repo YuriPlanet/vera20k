@@ -84,42 +84,47 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
                 &rules,
             );
             let bullet = sim.projectiles.get(id).unwrap();
-            assert_eq!(bullet.native_unique_id, state["native_id"]);
-            assert_eq!(bullet.position, ProjectileCoord::new(0, 0, 0));
+            assert_eq!(bullet.native_unique_id(), state["native_id"]);
+            assert_eq!(bullet.position(), ProjectileCoord::new(0, 0, 0));
             assert_eq!(
-                serde_json::json!([bullet.position.x, bullet.position.y, bullet.position.z]),
+                serde_json::json!([
+                    bullet.position().x,
+                    bullet.position().y,
+                    bullet.position().z
+                ]),
                 state["location"]
             );
-            assert_eq!(bullet.source_id, source);
-            assert_eq!(bullet.target, ProjectileTarget::Entity(falling));
-            assert_eq!(bullet.payload.base_damage, state["damage"]);
+            assert_eq!(bullet.source_id(), source);
+            assert_eq!(bullet.target(), ProjectileTarget::Entity(falling));
+            assert_eq!(bullet.payload().base_damage, state["damage"]);
             assert_eq!(
-                bullet.payload.damage_multiplier(),
+                bullet.payload().damage_multiplier(),
                 state["damage_multiplier"]
             );
             assert_eq!(
-                sim.interner.resolve(bullet.payload.warhead),
+                sim.interner.resolve(bullet.payload().warhead),
                 state["warhead"]
             );
             assert_eq!(
                 sim.interner
-                    .resolve(bullet.payload.projectile_type().unwrap()),
+                    .resolve(bullet.payload().projectile_type().unwrap()),
                 state["projectile"]
             );
-            assert_eq!(bullet.payload.bright(), state["bright"]);
+            assert_eq!(bullet.payload().bright(), state["bright"]);
             assert!(
-                bullet.payload.installed_weapon().is_none() && state["installed_weapon"].is_null()
+                bullet.payload().installed_weapon().is_none()
+                    && state["installed_weapon"].is_null()
             );
             assert_eq!(
-                i32::from(bullet.speed_leptons_per_frame),
+                i32::from(bullet.speed_leptons_per_frame()),
                 state["maximum_speed"]
             );
-            assert_eq!(bullet.arm_timer.start_frame(), state["timers"][2]);
-            assert_eq!(bullet.arm_timer.duration(), state["timers"][3]);
-            assert_eq!(bullet.proximity_reference, ProjectileCoord::new(0, 0, 0));
-            assert_eq!(bullet.last_distance_half, 0);
-            assert!(!bullet.in_logic_vector && state["in_logic"] == false);
-            assert!(!bullet.on_bridge && state["on_bridge"] == false);
+            assert_eq!(bullet.arm_timer().start_frame(), state["timers"][2]);
+            assert_eq!(bullet.arm_timer().duration(), state["timers"][3]);
+            assert_eq!(bullet.proximity_reference(), ProjectileCoord::new(0, 0, 0));
+            assert_eq!(bullet.last_distance_half(), 0);
+            assert!(!bullet.in_logic_vector() && state["in_logic"] == false);
+            assert!(!bullet.on_bridge() && state["on_bridge"] == false);
             assert_eq!(sim.substrate.display.layer_of(id), None);
             assert!(
                 state["object_registered"] == true
@@ -129,10 +134,10 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
             if index == 0 {
                 sim.notify_pointer_expired(falling, UninitContext::with_rules(&rules));
                 let repaired = sim.projectiles.get(id).unwrap();
-                assert_eq!(repaired.target, ProjectileTarget::Cell { rx: 10, ry: 20 });
+                assert_eq!(repaired.target(), ProjectileTarget::Cell { rx: 10, ry: 20 });
                 assert_eq!(expected["after_detonate"]["target"]["kind"], "cell");
                 assert_eq!(
-                    repaired.source_id == crate::sim::combat::RAD_NO_ATTACKER,
+                    repaired.source_id() == crate::sim::combat::RAD_NO_ATTACKER,
                     expected["after_detonate"]["source"].is_null()
                 );
             }
@@ -219,7 +224,7 @@ fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
         let target = ProjectileTarget::Cell { rx: 10, ry: 20 };
         let id = sim.construct_projectile(RAD_NO_ATTACKER, target, payload, &rules);
         assert_eq!(
-            sim.projectiles.get(id).unwrap().native_unique_id,
+            sim.projectiles.get(id).unwrap().native_unique_id(),
             state["native_id"]
         );
         let impact = ProjectileCoord::new(
@@ -267,16 +272,20 @@ fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
             .anims
             .iter()
             .find(|(_, anim)| {
-                anim.native_unique_id as u64 == native_anims[index]["native_id"].as_u64().unwrap()
+                anim.native_unique_id() as u64 == native_anims[index]["native_id"].as_u64().unwrap()
             })
             .map(|(_, anim)| anim)
             .expect("interleaved native Anim allocation");
         assert_eq!(
-            sim.interner.resolve(anim.type_id),
+            sim.interner.resolve(anim.type_id()),
             native_anims[index]["name"]
         );
         assert_eq!(
-            serde_json::json!([anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]),
+            serde_json::json!([
+                anim.world_coord().x,
+                anim.world_coord().y,
+                anim.world_coord().z
+            ]),
             native_anims[index]["location"]
         );
         assert_eq!(
@@ -1160,7 +1169,7 @@ fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
             .substrate
             .anims
             .iter()
-            .filter(|(_, anim)| anim.type_id == boom)
+            .filter(|(_, anim)| anim.type_id() == boom)
             .count();
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
         if sim.sound_events.iter().any(|event| {
@@ -1191,7 +1200,7 @@ fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
                     .substrate
                     .anims
                     .iter()
-                    .filter(|(_, anim)| anim.type_id == boom)
+                    .filter(|(_, anim)| anim.type_id() == boom)
                     .count()
                     - booms_before;
                 return fall;
@@ -1255,7 +1264,7 @@ fn a_shot_down_drainer_drops_its_link_and_ray_at_the_kill() {
         None
     );
     assert!(sim.anim(ray).is_none_or(|anim| {
-        !anim.in_logic_vector && sim.substrate.pending_delete.contains_object(&ray)
+        !anim.in_logic_vector() && sim.substrate.pending_delete.contains_object(&ray)
     }));
 }
 
@@ -1692,9 +1701,9 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
                 .anims
                 .iter()
                 .filter(|(id, anim)| {
-                    !anims_before.contains(id) && impact_anims.contains(&anim.type_id)
+                    !anims_before.contains(id) && impact_anims.contains(&anim.type_id())
                 })
-                .map(|(_, anim)| sim.interner.resolve(anim.type_id).to_string())
+                .map(|(_, anim)| sim.interner.resolve(anim.type_id()).to_string())
                 .collect();
             break;
         };
@@ -1725,7 +1734,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
                 rocking.angle_forwards().to_num::<f64>()
             );
             for (id, anim) in sim.substrate.anims.iter() {
-                if anim.type_id == smoke_type {
+                if anim.type_id() == smoke_type {
                     smoke.insert(*id);
                 }
             }
@@ -2009,7 +2018,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                     .anims
                     .iter()
                     .filter(|(anim_id, _)| !anims_before.contains(anim_id))
-                    .map(|(_, anim)| sim.interner.resolve(anim.type_id).to_string())
+                    .map(|(_, anim)| sim.interner.resolve(anim.type_id()).to_string())
                     .collect();
                 continue;
             };

@@ -909,6 +909,11 @@ impl Simulation {
         id: u64,
         mut result: crate::sim::combat::greatest_threat::ThreatScanOutcome,
     ) -> Option<u64> {
+        // The computer's disguise detection draws during the scan
+        // (Evaluate_Candidate 0x006F851C).
+        if let Some(rng) = result.take_scenario_rng() {
+            self.scenario_rng = rng;
+        }
         if let Some(collected) = result.take_collected()
             && let Some(entity) = self.substrate.entities.get_mut(id)
         {

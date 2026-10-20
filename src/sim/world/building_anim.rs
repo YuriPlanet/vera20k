@@ -94,7 +94,10 @@ pub(crate) fn emit_refinery_smoke(sim: &mut Simulation, rules: &RuleSet, buildin
                 rules,
             ) {
                 // Original4599CD calls6301F0 after each constructor.
-                sim.particle_systems_mut().get_mut(system).unwrap().lifetime = lifetime;
+                sim.particle_systems_mut()
+                    .get_mut(system)
+                    .unwrap()
+                    .override_lifetime(lifetime);
             }
         }
     }
@@ -244,12 +247,12 @@ mod tests {
                 .collect();
             assert_eq!(actual.len(), expected.len(), "{row}");
             for (system, call) in actual.into_iter().zip(expected) {
-                assert_eq!(system.coords, vector(&call["coords"]), "{row}");
-                assert_eq!(system.target_coords, vector(&call["target"]));
-                assert_eq!(system.lifetime, call["lifetime"].as_i64().unwrap() as i32);
-                assert_eq!(system.owner_entity, Some(id));
-                assert_eq!(system.target_ref, None);
-                assert_eq!(system.owner_house, None);
+                assert_eq!(system.coords(), vector(&call["coords"]), "{row}");
+                assert_eq!(system.target_coords(), vector(&call["target"]));
+                assert_eq!(system.lifetime(), call["lifetime"].as_i64().unwrap() as i32);
+                assert_eq!(system.owner_entity(), Some(id));
+                assert_eq!(system.target_ref(), None);
+                assert_eq!(system.owner_house(), None);
             }
             represented += 1;
         }
@@ -429,7 +432,7 @@ mod tests {
             finalize(&mut sim);
             let id = sim.entities().get(41).unwrap().building_art.anim_slots()[10].unwrap();
             assert_eq!(
-                sim.interner.resolve(sim.anim(id).unwrap().type_id),
+                sim.interner.resolve(sim.anim(id).unwrap().type_id()),
                 if row.output.refinery_special_damaged {
                     "DAMAGED"
                 } else {

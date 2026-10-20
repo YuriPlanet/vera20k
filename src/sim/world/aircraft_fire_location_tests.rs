@@ -288,7 +288,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         }
     }
     sim.fog
-        .by_owner
+        .by_owner_mut_for_test()
         .insert(viewer, serde_json::from_value(view).unwrap());
     (sim, rules)
 }

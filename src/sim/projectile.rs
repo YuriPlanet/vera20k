@@ -1054,47 +1054,47 @@ pub struct ProjectileSpawn {
 /// Persistent state corresponding to one native `BulletClass` instance.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Projectile {
-    pub id: u64,
-    pub native_unique_id: i32,
+    id: u64,
+    native_unique_id: i32,
     /// LogicClass membership is reconstructed from the serialized mixed order.
     #[serde(skip)]
-    pub in_logic_vector: bool,
-    pub source_id: u64,
-    pub position: ProjectileCoord,
+    in_logic_vector: bool,
+    source_id: u64,
+    position: ProjectileCoord,
     /// Bullet +134 and +140 are captured by Fire 4686A5/468722 and never
     /// replaced by the live homing target or proximity detector reference.
-    pub launch_origin: ProjectileCoord,
-    pub launch_target: ProjectileCoord,
+    launch_origin: ProjectileCoord,
+    launch_target: ProjectileCoord,
     /// Bullet+14C: packed committed cell from Fire or the preceding AI tail.
-    pub previous_cell: (i16, i16),
-    pub target: ProjectileTarget,
-    pub last_target_position: ProjectileCoord,
-    pub payload: ProjectilePayload,
-    pub speed_leptons_per_frame: u16,
-    pub velocity: ProjectileVelocity,
-    pub trajectory: ProjectileTrajectory,
-    pub guidance: Option<ProjectileGuidance>,
-    pub visual: ProjectileVisualState,
+    previous_cell: (i16, i16),
+    target: ProjectileTarget,
+    last_target_position: ProjectileCoord,
+    payload: ProjectilePayload,
+    speed_leptons_per_frame: u16,
+    velocity: ProjectileVelocity,
+    trajectory: ProjectileTrajectory,
+    guidance: Option<ProjectileGuidance>,
+    visual: ProjectileVisualState,
     /// Bullet+C4/CC: global frame anchor and signed proximity delay.
-    pub arm_timer: crate::sim::timer::CdTimer,
-    pub fuse_frames_remaining: Option<u16>,
-    pub ranged_fuse: bool,
+    arm_timer: crate::sim::timer::CdTimer,
+    fuse_frames_remaining: Option<u16>,
+    ranged_fuse: bool,
     /// The ProximityDetector's reference (`+0xB8 + 0x18` = `+0xD0`), which
     /// Fire's `Setup` (`0x00468A80..0x00468A93`, `0x004E1130`) takes from the
     /// target coordinate Fire kept, as a `FlakScatter=` Inviso bullet's
     /// placement moved it ([`ProjectileStore::fire_inviso`]). Check measures
     /// to it and the impact ladder reads it; nothing moves it after Fire.
-    pub proximity_reference: ProjectileCoord,
-    pub last_distance_half: i32,
-    pub tracks_target: bool,
-    pub target_expiry: TargetExpiryPolicy,
-    pub collision: ProjectileCollisionPolicy,
+    proximity_reference: ProjectileCoord,
+    last_distance_half: i32,
+    tracks_target: bool,
+    target_expiry: TargetExpiryPolicy,
+    collision: ProjectileCollisionPolicy,
     /// Bullet `+0x8C`: FireAt copies the target's OnBridge onto an `Inviso=`
     /// bullet (`0x006FF08B..0x006FF0B0`); every other bullet keeps the
     /// constructor's false. `ObjectClass::GetHeight @ 0x005F5F40` then
     /// measures from the bridge deck.
     #[serde(default)]
-    pub on_bridge: bool,
+    on_bridge: bool,
     /// Bullet `+0x114`: `BulletClass::Construct @ 0x004664C0` keeps its
     /// Owner's House colour scheme for a `FirersPalette=` type
     /// (`0x00466519..0x0046653B`; -1 otherwise), which the draw selects
@@ -1114,6 +1114,193 @@ pub struct Projectile {
 }
 
 impl Projectile {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_arm_timer_for_test(&mut self, value: crate::sim::timer::CdTimer) {
+        self.arm_timer = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_in_logic_vector_for_test(&mut self, value: bool) {
+        self.in_logic_vector = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_last_distance_half_for_test(&mut self, value: i32) {
+        self.last_distance_half = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_on_bridge_for_test(&mut self, value: bool) {
+        self.on_bridge = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_payload_for_test(&mut self, value: ProjectilePayload) {
+        self.payload = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_position_for_test(&mut self, value: ProjectileCoord) {
+        self.position = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_previous_cell_for_test(&mut self, value: (i16, i16)) {
+        self.previous_cell = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_proximity_reference_for_test(&mut self, value: ProjectileCoord) {
+        self.proximity_reference = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_source_id_for_test(&mut self, value: u64) {
+        self.source_id = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_speed_leptons_per_frame_for_test(&mut self, value: u16) {
+        self.speed_leptons_per_frame = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_target_for_test(&mut self, value: ProjectileTarget) {
+        self.target = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_velocity_for_test(&mut self, value: ProjectileVelocity) {
+        self.velocity = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn collision_mut_for_test(&mut self) -> &mut ProjectileCollisionPolicy {
+        &mut self.collision
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn guidance_mut_for_test(&mut self) -> &mut Option<ProjectileGuidance> {
+        &mut self.guidance
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn velocity_mut_for_test(&mut self) -> &mut ProjectileVelocity {
+        &mut self.velocity
+    }
+
+    /// LogicClass membership: RegisterObject sets it (`0x0055BAC6`),
+    /// UnregisterObject clears it (`0x0055BB27`). Only the logic vector's
+    /// owner writes it, and a load rebuilds it from the saved vector.
+    pub(crate) fn mark_logic_membership(&mut self, member: bool) {
+        self.in_logic_vector = member;
+    }
+
+    pub const fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub const fn native_unique_id(&self) -> i32 {
+        self.native_unique_id
+    }
+
+    pub const fn in_logic_vector(&self) -> bool {
+        self.in_logic_vector
+    }
+
+    pub const fn source_id(&self) -> u64 {
+        self.source_id
+    }
+
+    pub const fn position(&self) -> ProjectileCoord {
+        self.position
+    }
+
+    pub const fn launch_origin(&self) -> ProjectileCoord {
+        self.launch_origin
+    }
+
+    pub const fn launch_target(&self) -> ProjectileCoord {
+        self.launch_target
+    }
+
+    pub const fn previous_cell(&self) -> (i16, i16) {
+        self.previous_cell
+    }
+
+    pub const fn target(&self) -> ProjectileTarget {
+        self.target
+    }
+
+    pub const fn last_target_position(&self) -> ProjectileCoord {
+        self.last_target_position
+    }
+
+    pub const fn payload(&self) -> ProjectilePayload {
+        self.payload
+    }
+
+    pub const fn speed_leptons_per_frame(&self) -> u16 {
+        self.speed_leptons_per_frame
+    }
+
+    pub const fn velocity(&self) -> ProjectileVelocity {
+        self.velocity
+    }
+
+    pub const fn trajectory(&self) -> ProjectileTrajectory {
+        self.trajectory
+    }
+
+    pub const fn guidance(&self) -> Option<ProjectileGuidance> {
+        self.guidance
+    }
+
+    pub const fn visual(&self) -> &ProjectileVisualState {
+        &self.visual
+    }
+
+    pub const fn arm_timer(&self) -> &crate::sim::timer::CdTimer {
+        &self.arm_timer
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn arm_timer_mut_for_test(&mut self) -> &mut crate::sim::timer::CdTimer {
+        &mut self.arm_timer
+    }
+
+    pub const fn fuse_frames_remaining(&self) -> Option<u16> {
+        self.fuse_frames_remaining
+    }
+
+    pub const fn ranged_fuse(&self) -> bool {
+        self.ranged_fuse
+    }
+
+    pub const fn proximity_reference(&self) -> ProjectileCoord {
+        self.proximity_reference
+    }
+
+    pub const fn last_distance_half(&self) -> i32 {
+        self.last_distance_half
+    }
+
+    pub const fn tracks_target(&self) -> bool {
+        self.tracks_target
+    }
+
+    pub const fn target_expiry(&self) -> TargetExpiryPolicy {
+        self.target_expiry
+    }
+
+    pub const fn collision(&self) -> ProjectileCollisionPolicy {
+        self.collision
+    }
+
+    pub const fn on_bridge(&self) -> bool {
+        self.on_bridge
+    }
+
     /// The ids [`ProjectileStore::pointer_expired`] compares: the source
     /// (Owner `+0xB0`), target object (`+0x10C`) and awaited Anim (`+0x154`). A source already
     /// `RAD_NO_ATTACKER` stays so, which changes nothing. VERA-only: feeds the
@@ -1448,6 +1635,15 @@ impl ProjectileStore {
     /// only the world's existing native-load boundary calls this method.
     pub(crate) fn restore_scalable_after_load(&mut self) {
         self.scalable_members.clear();
+    }
+
+    /// Bullet Load 46AE9C..46AEB0 starts both embedded timers at the
+    /// already-restored global frame with duration zero. Only C4/CC gates AI
+    /// through Check (4E11F0); the saved reference and watermark are kept.
+    pub(crate) fn restart_arm_timers_after_load(&mut self, frame: i32) {
+        for projectile in self.projectiles.values_mut() {
+            projectile.arm_timer.start(frame, 0);
+        }
     }
 
     pub fn new() -> Self {

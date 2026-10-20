@@ -567,9 +567,13 @@ mod tests {
             .iter()
             .map(|(_, anim)| {
                 (
-                    (anim.world_coord.x, anim.world_coord.y, anim.world_coord.z),
-                    anim.native_unique_id,
-                    anim.draw_flags,
+                    (
+                        anim.world_coord().x,
+                        anim.world_coord().y,
+                        anim.world_coord().z,
+                    ),
+                    anim.native_unique_id(),
+                    anim.draw_flags(),
                 )
             })
             .collect();

@@ -247,7 +247,7 @@ impl Simulation {
             .and_then(|anim| {
                 rules
                     .art()
-                    .anim_runtime_config(self.interner.resolve(anim.type_id))
+                    .anim_runtime_config(self.interner.resolve(anim.type_id()))
             })
             .and_then(|config| config.spawns_particle.as_deref())
             .and_then(|name| rules.p_type_id_by_name(name))
@@ -658,7 +658,7 @@ mod corpse_tests {
         );
         let nukedie = |sim: &Simulation| {
             sim.anims()
-                .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "NUKEDIE")
+                .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "NUKEDIE")
                 .count()
         };
         for frame in 10..16 {

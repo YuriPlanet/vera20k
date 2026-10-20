@@ -333,9 +333,9 @@ pub enum AnimRemap {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnimObject {
-    pub stable_id: AnimId,
-    pub native_unique_id: i32,
-    pub type_id: InternedId,
+    stable_id: AnimId,
+    native_unique_id: i32,
+    type_id: InternedId,
     /// World leptons — but **owner-relative whenever `owner_entity` is set**,
     /// exactly as `AnimClass::SetOwnerObject @ 0x00424B50` stores it. Read it
     /// through [`Simulation::anim_absolute_coord`] for a world position; read
@@ -343,23 +343,23 @@ pub struct AnimObject {
     /// coordinate directly, which is the multiplayer sync checksum
     /// (`Compute_Game_Sync_Checksum @ 0x0064DAB0` folds `+0x9c`/`+0xa0`) and
     /// the state hash. All three axes are world leptons.
-    pub world_coord: AnimWorldCoord,
-    pub draw_flags: u32,
-    pub z_adjust: i32,
+    world_coord: AnimWorldCoord,
+    draw_flags: u32,
+    z_adjust: i32,
     /// Optional ConvertClass palette selected by a producer after construction
     /// (for example OverlayClass CellAnim over a Tiberium cell).
     #[serde(default)]
     remap: Option<AnimRemap>,
-    pub effective_end: i32,
-    pub effective_loop_end: i32,
-    pub runtime: AnimRuntime,
-    pub draw_runtime: AnimDrawRuntime,
+    effective_end: i32,
+    effective_loop_end: i32,
+    runtime: AnimRuntime,
+    draw_runtime: AnimDrawRuntime,
     /// AnimClass `+0x196`: use the containing CellClass draw/palette authority.
     #[serde(default)]
-    pub use_cell_drawer: bool,
+    use_cell_drawer: bool,
     /// AnimClass `+0x197`: created from a terrain tile animation descriptor.
     #[serde(default)]
-    pub terrain_attached: bool,
+    terrain_attached: bool,
     /// Anim+198. Constructor421FF1 clears it; TAction416E2368 sets it
     /// only after constructor-time Start. Start424CF1/424D5F, AI423AC6
     /// and UnInit4255DA suppress effects, independently of drawing/Middle.
@@ -368,12 +368,12 @@ pub struct AnimObject {
     /// LogicClass membership is reconstructed from the serialized vector.
     /// ObjectClass::Save does not persist its local membership byte.
     #[serde(skip)]
-    pub in_logic_vector: bool,
-    pub owner_entity: Option<u64>,
+    in_logic_vector: bool,
+    owner_entity: Option<u64>,
     /// Derived reverse index of Building+55C's slot reference, rebuilt on load.
     /// Independent of both Anim+118 and the Anim+CC Object-owner attachment.
     #[serde(skip)]
-    pub building_slot: Option<(u64, u8)>,
+    building_slot: Option<(u64, u8)>,
     /// Anim+118: ctor421F44 clears it; Building45199B sets it. It suppresses
     /// independent drawing and admits451B40, even after the slot is cleared.
     #[serde(default)]
@@ -381,19 +381,19 @@ pub struct AnimObject {
     /// Derived reverse index of Building+5C8's damage-fire slot, rebuilt on
     /// load. It survives owner expiry until the Anim's own UnInit broadcast.
     #[serde(skip)]
-    pub(crate) damage_fire_slot: Option<(u64, u8)>,
+    damage_fire_slot: Option<(u64, u8)>,
     /// Anim+179: constructor421FB0 clears it; normal AI completion424B31
     /// sets it before UnInit. Building451B40 distinguishes a completed
     /// retraction from an animation removed for another reason.
     #[serde(default)]
     completed: bool,
-    pub start_sound_active: bool,
-    pub stop_sound_id: Option<InternedId>,
-    pub(crate) display: AnimDisplayState,
+    start_sound_active: bool,
+    stop_sound_id: Option<InternedId>,
+    display: AnimDisplayState,
     /// `AnimClass+0x128`: a `Bouncer=` chunk's BounceClass body. Its presence
     /// is `+0x194` for the ported arm (the `IsMeteor=` arm is not built).
     #[serde(default)]
-    pub bounce: Option<BounceState>,
+    bounce: Option<BounceState>,
     /// `AnimClass+0x180`, the owning House (`SetOwnerHouse @ 0x00424CA0`).
     /// Its expiry also ends the anim (`0x004251D5`). The PsiWarning
     /// visibility test reads it against the local player (`0x0043B4C0`).
@@ -408,6 +408,195 @@ pub struct AnimObject {
 }
 
 impl AnimObject {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn draw_runtime_mut_for_test(&mut self) -> &mut AnimDrawRuntime {
+        &mut self.draw_runtime
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_building_slot_for_test(&mut self, value: Option<(u64, u8)>) {
+        self.building_slot = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_in_logic_vector_for_test(&mut self, value: bool) {
+        self.in_logic_vector = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_owner_entity_for_test(&mut self, value: Option<u64>) {
+        self.owner_entity = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_start_sound_active_for_test(&mut self, value: bool) {
+        self.start_sound_active = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_terrain_attached_for_test(&mut self, value: bool) {
+        self.terrain_attached = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn runtime_mut_for_test(&mut self) -> &mut AnimRuntime {
+        &mut self.runtime
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn world_coord_mut_for_test(&mut self) -> &mut AnimWorldCoord {
+        &mut self.world_coord
+    }
+
+    /// LogicClass membership: RegisterObject sets it (`0x0055BAC6`),
+    /// UnregisterObject clears it (`0x0055BB27`). Only the logic vector's
+    /// owner writes it, and a load rebuilds it from the saved vector.
+    pub(crate) fn mark_logic_membership(&mut self, member: bool) {
+        self.in_logic_vector = member;
+    }
+
+    /// Building43F738 moves a slot anim to its building's new coordinate;
+    /// it neither reconstructs the anim nor resets its timers.
+    pub(crate) fn move_with_building(&mut self, coord: AnimWorldCoord) {
+        self.world_coord = coord;
+    }
+
+    /// The anim takes slot `slot` of `building` (Building+55C), with the
+    /// slot config's `ZAdjust=`. The reverse index is derived from that slot.
+    pub(crate) fn enter_building_slot(&mut self, building: u64, slot: u8, z_adjust: i32) {
+        self.building_slot = Some((building, slot));
+        self.z_adjust = z_adjust;
+    }
+
+    /// The reverse index of the building slot that holds this anim, rebuilt
+    /// from Building+55C on load.
+    pub(crate) fn index_building_slot(&mut self, building: u64, slot: u8) {
+        self.building_slot = Some((building, slot));
+    }
+
+    /// The building slot leaves the anim: the index is cleared and returned.
+    pub(crate) fn take_building_slot(&mut self) -> Option<(u64, u8)> {
+        self.building_slot.take()
+    }
+
+    /// The reverse index of the Building+5C8 damage-fire slot that holds
+    /// this anim, rebuilt on load.
+    pub(crate) fn index_damage_fire_slot(&mut self, building: u64, slot: u8) {
+        self.damage_fire_slot = Some((building, slot));
+    }
+
+    /// Drop both derived slot indexes before a rebuild, or when the
+    /// building releases the anim.
+    pub(crate) fn clear_slot_indexes(&mut self) {
+        self.building_slot = None;
+        self.damage_fire_slot = None;
+    }
+
+    /// Anim pause (`0x00425260`): only Anim+19E changes; the absolute frame
+    /// timer keeps running.
+    pub(crate) fn pause(&mut self) {
+        self.runtime.paused = true;
+    }
+
+    /// Anim resume (`0x00425270`).
+    pub(crate) fn resume(&mut self) {
+        self.runtime.paused = false;
+    }
+
+    /// A building writes the anim's current frame: a slot successor keeps
+    /// its predecessor's frame, and SiloDamage (`0x00450D81`) shows the
+    /// storage tier.
+    pub(crate) fn jump_to_frame(&mut self, frame: i32) {
+        self.runtime.current_frame = frame;
+    }
+
+    /// No loops remain: the anim ends after its current pass. The
+    /// parachute release and the ChronoPlacement release use it.
+    pub(crate) fn end_loops(&mut self) {
+        self.runtime.loop_remaining = 0;
+    }
+
+    pub const fn stable_id(&self) -> AnimId {
+        self.stable_id
+    }
+
+    pub const fn native_unique_id(&self) -> i32 {
+        self.native_unique_id
+    }
+
+    pub const fn type_id(&self) -> InternedId {
+        self.type_id
+    }
+
+    pub const fn world_coord(&self) -> AnimWorldCoord {
+        self.world_coord
+    }
+
+    pub const fn draw_flags(&self) -> u32 {
+        self.draw_flags
+    }
+
+    pub const fn z_adjust(&self) -> i32 {
+        self.z_adjust
+    }
+
+    pub const fn effective_end(&self) -> i32 {
+        self.effective_end
+    }
+
+    pub const fn effective_loop_end(&self) -> i32 {
+        self.effective_loop_end
+    }
+
+    pub const fn runtime(&self) -> &AnimRuntime {
+        &self.runtime
+    }
+
+    pub const fn draw_runtime(&self) -> AnimDrawRuntime {
+        self.draw_runtime
+    }
+
+    pub const fn use_cell_drawer(&self) -> bool {
+        self.use_cell_drawer
+    }
+
+    pub const fn terrain_attached(&self) -> bool {
+        self.terrain_attached
+    }
+
+    pub const fn in_logic_vector(&self) -> bool {
+        self.in_logic_vector
+    }
+
+    pub const fn owner_entity(&self) -> Option<u64> {
+        self.owner_entity
+    }
+
+    pub const fn building_slot(&self) -> Option<(u64, u8)> {
+        self.building_slot
+    }
+
+    pub const fn damage_fire_slot(&self) -> Option<(u64, u8)> {
+        self.damage_fire_slot
+    }
+
+    pub const fn start_sound_active(&self) -> bool {
+        self.start_sound_active
+    }
+
+    pub const fn stop_sound_id(&self) -> Option<InternedId> {
+        self.stop_sound_id
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn display(&self) -> &AnimDisplayState {
+        &self.display
+    }
+
+    pub const fn bounce(&self) -> Option<BounceState> {
+        self.bounce
+    }
+
     pub fn remap(&self) -> Option<AnimRemap> {
         self.remap
     }
@@ -4972,28 +5161,28 @@ mod tests {
             let bits = |key: &str, i: usize| native[key][i].as_u64().unwrap() as u32;
             for axis in 0..3 {
                 assert_eq!(
-                    body.position[axis].bits(),
+                    body.position()[axis].bits(),
                     bits("position_bits", axis),
                     "{input}"
                 );
                 assert_eq!(
-                    body.velocity[axis].bits(),
+                    body.velocity()[axis].bits(),
                     bits("velocity_bits", axis),
                     "{input}"
                 );
             }
             assert_eq!(
-                body.elasticity.bits(),
+                body.elasticity().bits(),
                 native["elasticity_bits"].as_u64().unwrap(),
                 "{input}"
             );
             assert_eq!(
-                body.gravity.bits(),
+                body.gravity().bits(),
                 native["gravity_bits"].as_u64().unwrap(),
                 "{input}"
             );
             assert_eq!(
-                body.angular_velocity_magnitude.bits(),
+                body.angular_velocity_magnitude().bits(),
                 native["clamp_bits"].as_u64().unwrap(),
                 "{input}"
             );
@@ -5168,13 +5357,13 @@ mod tests {
             // Every stored field, including both quaternions, is compared to
             // the whole original constructor rather than a second launch port.
             let actual = serde_json::json!({
-                "elasticity_bits": body.elasticity.bits(),
-                "gravity_bits": body.gravity.bits(),
-                "clamp_bits": body.angular_velocity_magnitude.bits(),
-                "position_bits": body.position.map(|v| v.bits()),
-                "velocity_bits": body.velocity.map(|v| v.bits()),
-                "orientation_bits": body.orientation.map(|v| v.bits()),
-                "rotation_bits": body.rotation.map(|v| v.bits()),
+                "elasticity_bits": body.elasticity().bits(),
+                "gravity_bits": body.gravity().bits(),
+                "clamp_bits": body.angular_velocity_magnitude().bits(),
+                "position_bits": body.position().map(|v| v.bits()),
+                "velocity_bits": body.velocity().map(|v| v.bits()),
+                "orientation_bits": body.orientation().map(|v| v.bits()),
+                "rotation_bits": body.rotation().map(|v| v.bits()),
             });
             assert_eq!(actual, row["bounce"], "{input}: whole native Bounce state");
         }

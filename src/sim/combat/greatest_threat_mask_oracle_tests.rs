@@ -127,3 +127,62 @@ fn distance_cutoff_matches_the_original() {
         );
     }
 }
+
+/// Evaluate_Candidate's disguise arm (`0x006F84B1..0x006F854B`) executed
+/// natively: the blink's remaining frames through `CdTimer::remaining`, the
+/// gate, and one Scenario `RandomRanged(0, 99)` (stream offset `0x218`) only
+/// for a computer attacker while the candidate blinks.
+#[test]
+fn disguise_arm_matches_the_original() {
+    use crate::sim::cloak_disguise::{DisguiseGateOutcome, disguise_rejects_candidate};
+    use crate::sim::house_state::HouseDifficulty;
+    use crate::sim::rng::SimRng;
+    use crate::sim::timer::CdTimer;
+
+    let mut rules =
+        RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).expect("rules");
+    rules.general.disabled_disguise_detection_percent = vec![15, 5, 2];
+    let scanner = crate::sim::intern::test_interner().intern("Scanner");
+    let rows = rows("disguise");
+    assert!(
+        rows.iter()
+            .any(|row| row["admitted"] == true && !row["draws"].as_array().unwrap().is_empty())
+    );
+    for row in rows {
+        let blink = CdTimer::from_raw(int(&row["start"]), int(&row["duration"]))
+            .remaining(int(&row["frame"]));
+        let outcome = disguise_rejects_candidate(
+            flag(&row["disguised"]),
+            flag(&row["detects"]),
+            blink,
+            flag(&row["human"]),
+        );
+        let draws = row["draws"].as_array().unwrap();
+        let mut house = HouseState::new(scanner, 0, None, flag(&row["human"]), 0, 10);
+        house.set_difficulty_for_test(
+            HouseDifficulty::from_native(int(&row["difficulty"])).unwrap(),
+        );
+        let roll = int(&row["roll"]);
+        let mut rng = SimRng::answering(0, 99, roll);
+        let mut once = rng.clone();
+        once.next_range_i32_inclusive(0, 99);
+        let admitted = match outcome {
+            DisguiseGateOutcome::Accept => true,
+            DisguiseGateOutcome::Reject => false,
+            DisguiseGateOutcome::AiDetectionRoll => {
+                let admitted = disguise_detection_roll(&mut rng, Some(&house), &rules);
+                assert_eq!(rng.logical_state(), once.logical_state(), "{row}");
+                admitted
+            }
+        };
+        assert_eq!(admitted, flag(&row["admitted"]), "{row}");
+        assert_eq!(
+            outcome == DisguiseGateOutcome::AiDetectionRoll,
+            !draws.is_empty(),
+            "{row}"
+        );
+        for draw in draws {
+            assert_eq!(draw, &serde_json::json!([0x218, 0, 99]), "{row}");
+        }
+    }
+}

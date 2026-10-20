@@ -276,10 +276,10 @@ pub fn visit_paid_deso_light_lifecycle(
                         .radiation
                         .site_at(center)
                         .expect("published live site");
-                    assert_eq!(site.spread, spread);
-                    assert_eq!(site.level, rad_level);
-                    assert!(site.radius_leptons > 0);
-                    assert_eq!(source.radius_leptons, site.radius_leptons);
+                    assert_eq!(site.spread(), spread);
+                    assert_eq!(site.level(), rad_level);
+                    assert!(site.radius_leptons() > 0);
+                    assert_eq!(source.radius_leptons, site.radius_leptons());
                     assert!(source.active && expired_at.is_none());
                     if !active {
                         assert!(shots > 0, "actual FireAt/Bullet creates the site");
@@ -287,7 +287,7 @@ pub fn visit_paid_deso_light_lifecycle(
                         phase = Some("active");
                     } else if !faded && last_source.as_ref() != Some(source) {
                         assert!(
-                            site.remaining < site.duration,
+                            site.remaining() < site.duration(),
                             "source decay follows activation"
                         );
                         faded = true;

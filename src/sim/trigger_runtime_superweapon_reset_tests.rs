@@ -266,7 +266,7 @@ fn superweapon_reset_releases_a_production_chrono_placement_without_destroying_i
         .anims
         .get(anim)
         .unwrap()
-        .runtime
+        .runtime()
         .loop_remaining;
     let before = serde_json::to_value(&sim.super_weapons[&owner][&id]).unwrap();
     let index = rules
@@ -293,7 +293,7 @@ fn superweapon_reset_releases_a_production_chrono_placement_without_destroying_i
             .anims
             .get(anim)
             .unwrap()
-            .runtime
+            .runtime()
             .loop_remaining,
         loops
     );
@@ -319,7 +319,7 @@ fn superweapon_reset_releases_a_production_chrono_placement_without_destroying_i
                 .anims
                 .get(anim)
                 .unwrap()
-                .runtime
+                .runtime()
                 .loop_remaining
         ),
         expected["output"]["animation_loops"]

@@ -49,34 +49,34 @@ mod virus_tests;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParticleSystem {
-    pub stable_id: u64,
+    stable_id: u64,
     /// AbstractClass+10, independent of the Rust handle. Original630100 calls
     /// Object5F6250 -> Abstract410410 to checksum it;630090 ->410320 saves it.
     native_unique_id: i32,
     /// LogicClass active-vector membership. The serialized vector is
     /// authoritative across load, so this object-local guard is rebuilt.
     #[serde(skip)]
-    pub in_logic_vector: bool,
-    pub type_id: ParticleSystemTypeId,
+    in_logic_vector: bool,
+    type_id: ParticleSystemTypeId,
     #[serde(with = "ivec3_serde")]
-    pub coords: IVec3,
+    coords: IVec3,
     /// Constructor62DE6D: Location minus owner GetCoords, in world leptons.
     /// Smoke AI adds this unchanged displacement to moving owners' GetCoords.
     #[serde(with = "ivec3_serde")]
-    pub offset: IVec3,
-    pub particles: Vec<Particle>,
+    offset: IVec3,
+    particles: Vec<Particle>,
     // Native +E8, owned by ParticleSystem: repeatedly stored binary32.
     spawn_timer: NativeF32Bits,
-    pub lifetime: i32,
-    pub spark_spawn_frames: i32,
-    pub facing: u8,
+    lifetime: i32,
+    spark_spawn_frames: i32,
+    facing: u8,
     /// Constructor62DE35..62DE5A: the owner's TarCom when it is a Techno,
     /// otherwise the supplied target only when no owner was supplied.
-    pub target_ref: Option<crate::sim::combat::TargetKind>,
-    pub owner_entity: Option<u64>,
+    target_ref: Option<crate::sim::combat::TargetKind>,
+    owner_entity: Option<u64>,
     #[serde(with = "ivec3_serde")]
-    pub target_coords: IVec3,
-    pub owner_house: Option<InternedId>,
+    target_coords: IVec3,
+    owner_house: Option<InternedId>,
     /// `ParticleSystemClass+0xF8` — one byte with two jobs, and this engine
     /// used to model it as two fields that drifted apart.
     ///
@@ -93,7 +93,7 @@ pub struct ParticleSystem {
     /// native — they are one. Splitting them here let a system with
     /// `Lifetime=-1` (which every stock Spark system has, since none authors
     /// `Lifetime=`) finish spawning, empty out, and then never retire.
-    pub done_spawning: bool,
+    done_spawning: bool,
     alive: bool,
     in_limbo: bool,
 }
@@ -115,40 +115,159 @@ pub struct Particle {
     /// Original630100 reads each owned Particle's GetUniqueID for its CRC;
     /// ParticleSave62D810 -> AbstractSave410320 also retains this signed word.
     native_unique_id: i32,
-    pub type_id: ParticleTypeId,
+    type_id: ParticleTypeId,
     #[serde(with = "ivec3_serde")]
-    pub coords: IVec3,
+    coords: IVec3,
     #[serde(with = "ivec3_serde")]
-    pub origin: IVec3,
+    origin: IVec3,
     /// Constructor's normalized target vector (+10C), retained at the existing
     /// Fire fixed-point boundary. It is distinct from the Gas motion words.
-    pub direction: [SimFixed; 3],
+    direction: [SimFixed; 3],
     /// Particle+CC/D0/D4. Constructor62B634 initializes (0,0,-1); Gas AI
     /// replaces these words before Move62D2A0 consumes them.
-    pub(super) motion: [NativeF32Bits; 3],
+    motion: [NativeF32Bits; 3],
     // Native +E4. All class bodies mutate this one stored scalar.
     velocity: NativeF32Bits,
-    pub lifetime_remaining: i16,
-    pub damage_counter: i16,
-    pub state_ai_advance: u8,
-    pub animation_state: u8,
-    pub translucency: u8,
-    pub marked_for_deletion: bool,
+    lifetime_remaining: i16,
+    damage_counter: i16,
+    state_ai_advance: u8,
+    animation_state: u8,
+    translucency: u8,
+    marked_for_deletion: bool,
 
-    pub drift_x: i32,
-    pub drift_y: i32,
-    pub drift_z: i32,
+    drift_x: i32,
+    drift_y: i32,
+    drift_z: i32,
 
     /// Authoritative behavior-3 state. Generic direction/velocity fields
     /// remain authoritative for the existing Smoke/Gas/Fire implementations only.
-    pub spark: Option<SparkRuntimeState>,
+    spark: Option<SparkRuntimeState>,
 
     /// Fire-only scratch: per-tick velocity delta computed by fire AI and
     /// consumed by `move_fire` (jitter * direction). Zero for smoke/gas.
-    pub prev_delta: [SimFixed; 3],
+    prev_delta: [SimFixed; 3],
 }
 
 impl Particle {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_damage_counter_for_test(&mut self, value: i16) {
+        self.damage_counter = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_state_ai_advance_for_test(&mut self, value: u8) {
+        self.state_ai_advance = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_drift_x_for_test(&mut self, value: i32) {
+        self.drift_x = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_drift_y_for_test(&mut self, value: i32) {
+        self.drift_y = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_drift_z_for_test(&mut self, value: i32) {
+        self.drift_z = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn direction_mut_for_test(&mut self) -> &mut [SimFixed; 3] {
+        &mut self.direction
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn motion_mut_for_test(&mut self) -> &mut [NativeF32Bits; 3] {
+        &mut self.motion
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn prev_delta_mut_for_test(&mut self) -> &mut [SimFixed; 3] {
+        &mut self.prev_delta
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_lifetime_remaining_for_test(&mut self, value: i16) {
+        self.lifetime_remaining = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_origin_for_test(&mut self, value: IVec3) {
+        self.origin = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_spark_for_test(&mut self, value: Option<SparkRuntimeState>) {
+        self.spark = value;
+    }
+
+    pub const fn type_id(&self) -> ParticleTypeId {
+        self.type_id
+    }
+
+    pub const fn coords(&self) -> IVec3 {
+        self.coords
+    }
+
+    pub const fn origin(&self) -> IVec3 {
+        self.origin
+    }
+
+    pub const fn direction(&self) -> [SimFixed; 3] {
+        self.direction
+    }
+
+    pub const fn motion(&self) -> [NativeF32Bits; 3] {
+        self.motion
+    }
+
+    pub const fn lifetime_remaining(&self) -> i16 {
+        self.lifetime_remaining
+    }
+
+    pub const fn damage_counter(&self) -> i16 {
+        self.damage_counter
+    }
+
+    pub const fn state_ai_advance(&self) -> u8 {
+        self.state_ai_advance
+    }
+
+    pub const fn animation_state(&self) -> u8 {
+        self.animation_state
+    }
+
+    pub const fn translucency(&self) -> u8 {
+        self.translucency
+    }
+
+    pub const fn marked_for_deletion(&self) -> bool {
+        self.marked_for_deletion
+    }
+
+    pub const fn drift_x(&self) -> i32 {
+        self.drift_x
+    }
+
+    pub const fn drift_y(&self) -> i32 {
+        self.drift_y
+    }
+
+    pub const fn drift_z(&self) -> i32 {
+        self.drift_z
+    }
+
+    pub const fn spark(&self) -> Option<SparkRuntimeState> {
+        self.spark
+    }
+
+    pub const fn prev_delta(&self) -> [SimFixed; 3] {
+        self.prev_delta
+    }
+
     pub fn stable_id(&self) -> u64 {
         self.stable_id
     }
@@ -256,6 +375,145 @@ impl Particle {
 }
 
 impl ParticleSystem {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_coords_for_test(&mut self, value: IVec3) {
+        self.coords = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_done_spawning_for_test(&mut self, value: bool) {
+        self.done_spawning = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_facing_for_test(&mut self, value: u8) {
+        self.facing = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_in_logic_vector_for_test(&mut self, value: bool) {
+        self.in_logic_vector = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_lifetime_for_test(&mut self, value: i32) {
+        self.lifetime = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_offset_for_test(&mut self, value: IVec3) {
+        self.offset = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_owner_entity_for_test(&mut self, value: Option<u64>) {
+        self.owner_entity = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_owner_house_for_test(&mut self, value: Option<InternedId>) {
+        self.owner_house = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_particles_for_test(&mut self, value: Vec<Particle>) {
+        self.particles = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_spark_spawn_frames_for_test(&mut self, value: i32) {
+        self.spark_spawn_frames = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_stable_id_for_test(&mut self, value: u64) {
+        self.stable_id = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_target_coords_for_test(&mut self, value: IVec3) {
+        self.target_coords = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_target_ref_for_test(&mut self, value: Option<crate::sim::combat::TargetKind>) {
+        self.target_ref = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn particles_mut_for_test(&mut self) -> &mut Vec<Particle> {
+        &mut self.particles
+    }
+
+    /// LogicClass membership: RegisterObject sets it (`0x0055BAC6`),
+    /// UnregisterObject clears it (`0x0055BB27`). Only the logic vector's
+    /// owner writes it, and a load rebuilds it from the saved vector.
+    pub(crate) fn mark_logic_membership(&mut self, member: bool) {
+        self.in_logic_vector = member;
+    }
+
+    /// `0x006301F0`, which the refinery smoke calls right after each
+    /// constructor (`0x004599CD`): the system lives `lifetime` frames.
+    pub(crate) fn override_lifetime(&mut self, lifetime: i32) {
+        self.lifetime = lifetime;
+    }
+
+    pub const fn stable_id(&self) -> u64 {
+        self.stable_id
+    }
+
+    pub const fn in_logic_vector(&self) -> bool {
+        self.in_logic_vector
+    }
+
+    pub const fn type_id(&self) -> ParticleSystemTypeId {
+        self.type_id
+    }
+
+    pub const fn coords(&self) -> IVec3 {
+        self.coords
+    }
+
+    pub const fn offset(&self) -> IVec3 {
+        self.offset
+    }
+
+    pub fn particles(&self) -> &[Particle] {
+        &self.particles
+    }
+
+    pub const fn lifetime(&self) -> i32 {
+        self.lifetime
+    }
+
+    pub const fn spark_spawn_frames(&self) -> i32 {
+        self.spark_spawn_frames
+    }
+
+    pub const fn facing(&self) -> u8 {
+        self.facing
+    }
+
+    pub const fn target_ref(&self) -> Option<crate::sim::combat::TargetKind> {
+        self.target_ref
+    }
+
+    pub const fn owner_entity(&self) -> Option<u64> {
+        self.owner_entity
+    }
+
+    pub const fn target_coords(&self) -> IVec3 {
+        self.target_coords
+    }
+
+    pub const fn owner_house(&self) -> Option<InternedId> {
+        self.owner_house
+    }
+
+    pub const fn done_spawning(&self) -> bool {
+        self.done_spawning
+    }
+
     /// ParticleSystem virtual F8 ->6301E0: set the native completion byte.
     /// Subtype AI controls emission; SystemAI62FD60 owns done-and-empty
     /// retirement. Existing children, Alive and expiry broadcasts stay intact.

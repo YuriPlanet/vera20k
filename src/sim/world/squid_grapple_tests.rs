@@ -229,17 +229,17 @@ impl Encounter {
                     .projectiles
                     .iter()
                     .find(|(_, bullet)| {
-                        bullet.source_id == self.squid
-                            && bullet.target
+                        bullet.source_id() == self.squid
+                            && bullet.target()
                                 == crate::sim::projectile::ProjectileTarget::Entity(self.ship)
                     })
                     .map(|(&id, bullet)| {
-                        assert!(bullet.ranged_fuse);
+                        assert!(bullet.ranged_fuse());
                         assert_eq!(
-                            bullet.arm_timer.duration(),
+                            bullet.arm_timer().duration(),
                             self.rules.projectile("SQDJUMP").unwrap().arm
                         );
-                        (id, bullet.arm_timer)
+                        (id, bullet.arm_timer())
                     })
                     .expect("the actual armed SQDJUMP remains represented after its stock launch");
                 for _ in 0..=arm.duration().max(0) {
@@ -261,9 +261,9 @@ impl Encounter {
                         self.sim.projectiles.get(bullet_id).expect(
                             "pending SQDJUMP must survive until its real fuse/impact visit",
                         );
-                    assert_eq!(pending.source_id, self.squid);
+                    assert_eq!(pending.source_id(), self.squid);
                     assert_eq!(
-                        pending.target,
+                        pending.target(),
                         crate::sim::projectile::ProjectileTarget::Entity(self.ship)
                     );
                     self.step();
@@ -312,9 +312,9 @@ impl Encounter {
             self.step();
             if let Some(anim_id) = self.anim() {
                 let anim = self.sim.anim(anim_id).expect("held SQDG is live");
-                assert_eq!(self.sim.interner.resolve(anim.type_id), "SQDG");
-                assert_eq!(anim.owner_entity, Some(self.ship));
-                assert!((0..240).contains(&anim.runtime.current_frame));
+                assert_eq!(self.sim.interner.resolve(anim.type_id()), "SQDG");
+                assert_eq!(anim.owner_entity(), Some(self.ship));
+                assert!((0..240).contains(&anim.runtime().current_frame));
                 let target = self.sim.substrate.entities.get(self.ship).unwrap();
                 assert!(
                     target
@@ -327,7 +327,7 @@ impl Encounter {
                     .is_some_and(|r| r.angle_sideways().abs() > SimFixed::lit("0.005"))
                 {
                     assert_eq!(
-                        anim.runtime.frame_timer.duration(),
+                        anim.runtime().frame_timer.duration(),
                         128,
                         "manager, not independent ART cadence"
                     );
@@ -780,7 +780,7 @@ fn stock_squid_internal_snapshot_preserves_live_roll_progress_and_reference() {
     assert_eq!(restored.victim(), Some(scene.ship));
     assert_eq!(restored.grapple_anim(), Some(anim));
     assert_eq!(restored.grapple_progress_for_test(), progress);
-    assert_eq!(loaded.anim(anim).unwrap().owner_entity, Some(scene.ship));
+    assert_eq!(loaded.anim(anim).unwrap().owner_entity(), Some(scene.ship));
     for _ in 0..90 {
         scene.step();
         let commands = loaded.take_due_commands();
@@ -835,8 +835,8 @@ fn stock_squid_internal_snapshot_preserves_live_roll_progress_and_reference() {
                 .current()
         );
         assert_eq!(
-            loaded.anim(anim).unwrap().runtime.current_frame,
-            scene.sim.anim(anim).unwrap().runtime.current_frame
+            loaded.anim(anim).unwrap().runtime().current_frame,
+            scene.sim.anim(anim).unwrap().runtime().current_frame
         );
         assert_eq!(
             loaded.scenario_rng.logical_state(),
@@ -987,16 +987,16 @@ fn stock_squid_owner_receiver_death_destroys_owned_anim_without_unparalyzing_hos
 
 fn native_anim_runtime(anim: &crate::sim::anim_class::AnimObject) -> serde_json::Value {
     serde_json::json!({
-        "current_frame": anim.runtime.current_frame,
-        "frame_step": anim.runtime.frame_step,
-        "delay_remaining": anim.runtime.delay_remaining,
-        "rate_reload": anim.runtime.rate_reload,
-        "frame_timer": [anim.runtime.frame_timer.start_frame(), anim.runtime.frame_timer.duration()],
-        "loop_remaining": anim.runtime.loop_remaining,
-        "first_ai_guard": u8::from(anim.runtime.first_ai_guard),
-        "constructor_reverse": u8::from(anim.runtime.constructor_reverse),
-        "inactive": u8::from(anim.runtime.inactive),
-        "paused": u8::from(anim.runtime.paused),
+        "current_frame": anim.runtime().current_frame,
+        "frame_step": anim.runtime().frame_step,
+        "delay_remaining": anim.runtime().delay_remaining,
+        "rate_reload": anim.runtime().rate_reload,
+        "frame_timer": [anim.runtime().frame_timer.start_frame(), anim.runtime().frame_timer.duration()],
+        "loop_remaining": anim.runtime().loop_remaining,
+        "first_ai_guard": u8::from(anim.runtime().first_ai_guard),
+        "constructor_reverse": u8::from(anim.runtime().constructor_reverse),
+        "inactive": u8::from(anim.runtime().inactive),
+        "paused": u8::from(anim.runtime().paused),
     })
 }
 
@@ -1006,23 +1006,23 @@ fn compare_native_anim(scene: &Encounter, id: u64, expected: &serde_json::Value,
         .sim
         .anim(id)
         .expect("native-observed Anim remains represented");
-    assert_eq!(json!(anim.native_unique_id), expected["native_id"]);
+    assert_eq!(json!(anim.native_unique_id()), expected["native_id"]);
     let coord = if absolute {
         scene.sim.anim_absolute_coord(id).unwrap()
     } else {
-        anim.world_coord
+        anim.world_coord()
     };
     assert_eq!(json!([coord.x, coord.y, coord.z]), expected["location"]);
-    assert_eq!(json!(anim.draw_flags), expected["draw_flags"]);
-    assert_eq!(json!(anim.z_adjust), expected["z_adjust"]);
+    assert_eq!(json!(anim.draw_flags()), expected["draw_flags"]);
+    assert_eq!(json!(anim.z_adjust()), expected["z_adjust"]);
     assert_eq!(native_anim_runtime(anim), expected["runtime"]);
     assert_eq!(
-        json!(anim.bounce.is_some()),
+        json!(anim.bounce().is_some()),
         json!(expected["is_bouncing"] == 1)
     );
     assert!(!scene.sim.substrate.pending_delete.contains_object(&id));
     if let Some(registered) = expected.get("logic_registered") {
-        assert_eq!(json!(anim.in_logic_vector), *registered);
+        assert_eq!(json!(anim.in_logic_vector()), *registered);
     }
     if let Some(layers) = expected.get("display_layers") {
         let actual: Vec<_> = scene
@@ -1069,11 +1069,11 @@ fn compare_native_grapple_state(scene: &Encounter, expected: &serde_json::Value)
         Some(id) => {
             let anim = scene.sim.anim(id).unwrap();
             assert_eq!(
-                json!(anim.native_unique_id),
+                json!(anim.native_unique_id()),
                 expected["manager"]["anim_native_id"]
             );
-            assert_eq!(scene.sim.interner.resolve(anim.type_id), "SQDG");
-            assert_eq!(anim.owner_entity, Some(scene.ship));
+            assert_eq!(scene.sim.interner.resolve(anim.type_id()), "SQDG");
+            assert_eq!(anim.owner_entity(), Some(scene.ship));
             compare_native_anim(scene, id, &expected["held_anim"], false);
         }
         None => assert!(expected["manager"]["anim_native_id"].is_null()),
@@ -1314,7 +1314,7 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
                     scene
                         .sim
                         .interner
-                        .resolve(scene.sim.anim(id).unwrap().type_id),
+                        .resolve(scene.sim.anim(id).unwrap().type_id()),
                     native["type"].as_str().unwrap()
                 );
                 compare_native_anim(&scene, id, native, true);

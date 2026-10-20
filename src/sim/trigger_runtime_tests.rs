@@ -2579,8 +2579,8 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
-    sim.fog.width = 100;
-    sim.fog.height = 100;
+    sim.fog.set_width_for_test(100);
+    sim.fog.set_height_for_test(100);
     let mobile_type = sim.interner.intern("MTNK");
     let building_type = sim.interner.intern("GAPOWR");
     let mut mobile = GameEntity::new_at_frame_zero_for_test(

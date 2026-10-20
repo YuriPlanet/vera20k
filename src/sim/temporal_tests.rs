@@ -295,9 +295,9 @@ fn warp_away_anims(sim: &Simulation) -> Vec<AnimWorldCoord> {
     sim.substrate
         .anims
         .iter()
-        .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "WARPAWAY")
+        .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "WARPAWAY")
         .map(|(&id, anim)| {
-            assert_eq!(anim.draw_flags, TEMPORAL_ANIM_DRAW_FLAGS);
+            assert_eq!(anim.draw_flags(), TEMPORAL_ANIM_DRAW_FLAGS);
             sim.anim_absolute_coord(id).unwrap()
         })
         .collect()
@@ -1170,7 +1170,7 @@ fn a_warped_object_is_frozen_and_immune() {
         .substrate
         .anims
         .iter()
-        .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "CHRONOSK")
+        .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "CHRONOSK")
         .map(|(&id, _)| sim.anim_absolute_coord(id).unwrap())
         .collect();
     let location = location_coord(entity(&sim, tank));
@@ -1190,7 +1190,7 @@ fn a_warped_object_is_frozen_and_immune() {
         sim.substrate
             .anims
             .iter()
-            .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "CHRONOSK")
+            .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "CHRONOSK")
             .count(),
         1,
         "frame 49 does not"

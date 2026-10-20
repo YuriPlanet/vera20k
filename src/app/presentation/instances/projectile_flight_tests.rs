@@ -188,7 +188,7 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
     );
     assert!(sim.register_projectile(id, kind.flat));
     assert_eq!(
-        sim.projectiles.get(id).unwrap().position,
+        sim.projectiles.get(id).unwrap().position(),
         coord(&source["retained_xyz"])
     );
 
@@ -244,16 +244,16 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
         assert!(advanced.detonations.is_empty() && advanced.expired.is_empty());
         let projectile = sim.projectiles.get(id).unwrap();
         assert_eq!(
-            projectile.position,
+            projectile.position(),
             coord(&row["xyz"]),
             "tick {tick} retained position"
         );
         assert_eq!(
-            native_bits(projectile.velocity.native()),
+            native_bits(projectile.velocity().native()),
             bits(&row["velocity_bits"])
         );
         assert_eq!(
-            [projectile.position.x / 256, projectile.position.y / 256],
+            [projectile.position().x / 256, projectile.position().y / 256],
             [
                 input["mapped_cell"][0].as_i64().unwrap() as i32,
                 input["mapped_cell"][1].as_i64().unwrap() as i32
@@ -264,17 +264,17 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
         let state_before = sim.state_hash();
         let dummy_before = terrain.shared_cell_dummy().snapshot();
         let (ground, structural) =
-            floor_probe(terrain, projectile.position.x, projectile.position.y);
+            floor_probe(terrain, projectile.position().x, projectile.position().y);
         assert_eq!(
             structural,
             flags & 0x100 != 0,
             "tick {tick} live structural flag"
         );
         let actual = geometry(
-            projectile.position,
+            projectile.position(),
             ground,
             structural,
-            projectile.on_bridge,
+            projectile.on_bridge(),
             kind.shadow,
         );
         let camera = [
@@ -392,10 +392,10 @@ fn original_ifv_dragon_frame_getter_matches_retained_flights_and_all_directions(
     let mut directions = BTreeSet::new();
     for row in rows {
         let projectile = sim.projectiles.get_mut(id).unwrap();
-        projectile.position = coord(&row["position"]);
-        projectile.velocity = crate::sim::projectile::ProjectileVelocity::from_native(
+        projectile.set_position_for_test(coord(&row["position"]));
+        projectile.set_velocity_for_test(crate::sim::projectile::ProjectileVelocity::from_native(
             bits(&row["velocity"]["bits"]).map(NativeF64Bits::from_bits),
-        );
+        ));
         let before = sim.state_hash();
         let frame = projectile_shp_frame(sim.projectiles.get(id).unwrap(), kind);
         assert_eq!(

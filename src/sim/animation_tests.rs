@@ -422,7 +422,7 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dlph, 0, 7, false, false),
+        resolve_shp_vehicle_body_frame(&dlph, 0, 7, -1, false, false),
         Some(7),
         "idle Dolphin uses walk/swim slot 1 and counter 7 % 6"
     );
@@ -436,22 +436,84 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&sqd, 0, 3, false, false),
+        resolve_shp_vehicle_body_frame(&sqd, 0, 3, -1, false, false),
         Some(23),
         "idle Squid uses walk/swim slot 1 and counter 3"
     );
 
     let dron = gsi_13_06_shp_set(6, 48, FootBodyCadence::native_defaults());
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 99, false, false),
+        resolve_shp_vehicle_body_frame(&dron, 0, 99, -1, false, false),
         Some(49),
         "idle Terror Drone with IdleRate=0 uses standing slot 1"
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 7, true, false),
+        resolve_shp_vehicle_body_frame(&dron, 0, 7, -1, true, false),
         Some(7),
         "moving Terror Drone uses counter 7 % 6"
     );
+}
+
+#[test]
+fn retail_drone_firing_counter_and_frames_match_original() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/unit_shp_fire_frames.json");
+    let mut entity = gsi_13_06_active_shp_unit("DRON", LocomotorKind::Drive);
+    for row in native["counter_steps"].as_array().unwrap() {
+        entity
+            .unit_firing_counter
+            .set_for_test(i32::try_from(row["before"].as_i64().unwrap()).unwrap());
+        tick_unit_firing_counter(&mut entity);
+        assert_eq!(
+            i64::from(entity.unit_firing_counter.get()),
+            row["after"].as_i64().unwrap(),
+            "native counter input {}",
+            row["before"]
+        );
+    }
+    let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+        return;
+    };
+    let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
+        return;
+    };
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    rules.install_art_fixture(ArtRegistry::from_ini(&art));
+    let set = rules.animation_sequence("DRON").unwrap();
+    let attack = set.get(&SequenceKind::Attack).unwrap();
+    assert_eq!(
+        u64::from(attack.start_frame),
+        native["input"]["start_firing_frame"].as_u64().unwrap()
+    );
+    assert_eq!(
+        u64::from(attack.frame_count),
+        native["input"]["firing_frames"].as_u64().unwrap()
+    );
+    assert_eq!(
+        u64::from(attack.facings),
+        native["input"]["facings"].as_u64().unwrap()
+    );
+    for (facing, expected) in native["first_by_facing"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(
+            resolve_shp_vehicle_body_frame(set, facing as u8, 0, 7, false, false),
+            Some(u16::try_from(expected.as_u64().unwrap()).unwrap()),
+            "native DRON first firing image, facing {facing}"
+        );
+    }
+    for row in native["countdown"].as_array().unwrap() {
+        let facing = u8::try_from(row["facing"].as_u64().unwrap()).unwrap();
+        for (step, expected) in row["frames"].as_array().unwrap().iter().enumerate() {
+            assert_eq!(
+                resolve_shp_vehicle_body_frame(set, facing, 99, 7 - step as i32, true, false),
+                Some(u16::try_from(expected.as_u64().unwrap()).unwrap()),
+                "firing precedes moving body: facing {facing}, step {step}"
+            );
+        }
+    }
 }
 
 // --- advance_animation tests ---

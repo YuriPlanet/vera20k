@@ -823,8 +823,8 @@ mod tests {
             sim.substrate
                 .anims
                 .iter()
-                .find(|(_, anim)| anim.type_id == parachute)
-                .map(|(id, anim)| (*id, anim.owner_entity, anim.runtime.loop_remaining))
+                .find(|(_, anim)| anim.type_id() == parachute)
+                .map(|(id, anim)| (*id, anim.owner_entity(), anim.runtime().loop_remaining))
         };
         let (canopy_id, owner, loops) = canopy(&sim).expect("the drop attached a canopy");
         assert_eq!((owner, loops), (Some(passenger_id), u8::MAX));
@@ -950,8 +950,8 @@ mod tests {
             .substrate
             .anims
             .iter()
-            .filter(|(_, anim)| anim.type_id == explode)
-            .map(|(_, anim)| anim.world_coord)
+            .filter(|(_, anim)| anim.type_id() == explode)
+            .map(|(_, anim)| anim.world_coord())
             .collect();
         assert_eq!(explosions.len(), 1, "{explosions:?}");
         assert_eq!(
@@ -964,8 +964,8 @@ mod tests {
             sim.substrate
                 .anims
                 .iter()
-                .filter(|(_, anim)| anim.type_id == parachute)
-                .all(|(_, anim)| anim.owner_entity.is_none() && anim.runtime.inactive),
+                .filter(|(_, anim)| anim.type_id() == parachute)
+                .all(|(_, anim)| anim.owner_entity().is_none() && anim.runtime().inactive),
             "the canopy's owner expired"
         );
     }

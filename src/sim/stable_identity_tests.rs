@@ -122,7 +122,7 @@ fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
     assert!(restored.substrate.entities.contains(entity_id));
     assert!(restored.terrain_objects.objects().contains_key(&terrain_id));
     assert_eq!(
-        restored.projectiles.get(projectile_id).unwrap().id,
+        restored.projectiles.get(projectile_id).unwrap().id(),
         projectile_id
     );
     assert_eq!(
@@ -130,7 +130,7 @@ fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
             .waves
             .iter()
             .next()
-            .map(|(&id, wave)| (id, wave.id)),
+            .map(|(&id, wave)| (id, wave.id())),
         Some((wave_id, wave_id))
     );
     assert_eq!(restored.substrate.next_stable_object_id, next_id);

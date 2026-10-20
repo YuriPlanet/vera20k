@@ -238,34 +238,38 @@ fn retail_bridge_debris_matches_original_producer_and_constructor_rng() {
             .collect();
         for ((anim, expected), constructor) in actual.iter().zip(expected).zip(constructors) {
             assert_eq!(
-                sim.interner.resolve(anim.type_id),
+                sim.interner.resolve(anim.type_id()),
                 expected["type"].as_str().unwrap(),
                 "{input}"
             );
             assert_eq!(
-                serde_json::json!([anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]),
+                serde_json::json!([
+                    anim.world_coord().x,
+                    anim.world_coord().y,
+                    anim.world_coord().z
+                ]),
                 expected["location"],
                 "{input}"
             );
             assert_eq!(
-                u64::from(anim.runtime.delay_remaining),
+                u64::from(anim.runtime().delay_remaining),
                 constructor["delay"].as_u64().unwrap(),
                 "{input}"
             );
             assert_eq!(
-                u64::from(anim.draw_flags),
+                u64::from(anim.draw_flags()),
                 constructor["flags"].as_u64().unwrap(),
                 "{input}"
             );
             assert_eq!(
-                anim.bounce.is_some(),
+                anim.bounce().is_some(),
                 expected["is_bouncing"] == 1,
                 "{input}"
             );
-            if let Some(body) = anim.bounce {
+            if let Some(body) = anim.bounce() {
                 for (actual, key) in [
-                    (body.position, "position_bits"),
-                    (body.velocity, "velocity_bits"),
+                    (body.position(), "position_bits"),
+                    (body.velocity(), "velocity_bits"),
                 ] {
                     assert_eq!(
                         serde_json::json!(actual.map(|value| value.bits())),
@@ -274,12 +278,12 @@ fn retail_bridge_debris_matches_original_producer_and_constructor_rng() {
                     );
                 }
                 assert_eq!(
-                    body.elasticity.bits(),
+                    body.elasticity().bits(),
                     expected["bounce"]["elasticity_bits"].as_u64().unwrap(),
                     "{input}"
                 );
                 assert_eq!(
-                    body.gravity.bits(),
+                    body.gravity().bits(),
                     expected["bounce"]["gravity_bits"].as_u64().unwrap(),
                     "{input}"
                 );

@@ -78,7 +78,7 @@ impl Simulation {
     fn gap_viewers(&self) -> Vec<InternedId> {
         self.houses
             .keys()
-            .chain(self.fog.by_owner.keys())
+            .chain(self.fog.by_owner().keys())
             .copied()
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
@@ -243,10 +243,7 @@ impl Simulation {
             ry: entity.position.ry(),
             radius,
         };
-        // A normal scenario constructs its viewer Houses before Technos.
-        self.fog.by_owner.get_or_insert_with(viewer, || {
-            vision::OwnerVisibility::new(self.fog.width, self.fog.height)
-        });
+        self.fog.ensure_viewer(viewer);
         let spy_sat_active = self
             .houses
             .iter()

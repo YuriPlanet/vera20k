@@ -83,7 +83,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     );
     let death_ids = |sim: &Simulation| {
         sim.anims()
-            .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "DEATHTEST")
+            .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "DEATHTEST")
             .map(|(id, _)| *id)
             .collect::<Vec<_>>()
     };

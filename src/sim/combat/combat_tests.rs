@@ -3487,14 +3487,14 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         .expect("yellow crossing attaches a Smoke system");
     let system = sim.particle_systems().get(system_id).unwrap();
     assert_eq!(
-        rules.particle_system_type(system.type_id).name,
+        rules.particle_system_type(system.type_id()).name,
         "SmallGreySSys"
     );
-    assert_eq!(system.owner_entity, Some(victim_id));
-    assert_eq!(system.target_ref, None);
-    assert_eq!(system.owner_house, None);
+    assert_eq!(system.owner_entity(), Some(victim_id));
+    assert_eq!(system.target_ref(), None);
+    assert_eq!(system.owner_house(), None);
     assert_eq!(
-        system.coords,
+        system.coords(),
         glam::IVec3::new(8 * 256 + 128, 5 * 256 + 128, 0)
     );
     let mut expected_order = before_order;
@@ -3527,7 +3527,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         crate::sim::world::UninitContext::with_rules(&rules)
     ));
     assert_eq!(
-        sim.particle_systems().get(system_id).unwrap().coords,
+        sim.particle_systems().get(system_id).unwrap().coords(),
         glam::IVec3::new(moved.x, moved.y, moved.z)
     );
     assert_eq!(sim.scenario_rng.logical_state(), before_rng);
@@ -3583,7 +3583,10 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         180
     );
     assert!(
-        sim.particle_systems().get(system_id).unwrap().done_spawning,
+        sim.particle_systems()
+            .get(system_id)
+            .unwrap()
+            .done_spawning(),
         "recovery above ConditionYellow invokes mark-only ParticleSystem Destroy"
     );
     assert_eq!(
@@ -8294,7 +8297,7 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
         .radiation
         .site_at((10, 10))
         .expect("detonation armed a site at the desolator's cell");
-    assert_eq!(site.level, 500);
+    assert_eq!(site.level(), 500);
     assert_eq!(sim.radiation.cell_level((10, 10)), 500.0);
 
     // Tick 2: gate closed (effective 500 ≥ 500/3) → no fire, self-target
@@ -8329,7 +8332,7 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
     let events = guard_visit(&mut sim, 341);
     assert_eq!(events.len(), 1, "gate reopens below one third");
     let site = sim.radiation.site_at((10, 10)).expect("merged site");
-    assert!(site.level > 500, "re-detonation merged effective + added");
+    assert!(site.level() > 500, "re-detonation merged effective + added");
 }
 
 #[test]
@@ -9034,7 +9037,7 @@ fn projectile_shrapnel_reads_the_bullets_location_not_its_impact() {
             collision: ProjectileCollisionPolicy::NONE,
         },
     );
-    assert_eq!(sim.projectiles.get(id).unwrap().position, location);
+    assert_eq!(sim.projectiles.get(id).unwrap().position(), location);
     let mut expected = sim.scenario_rng.clone();
     let cell = projectile_random_shrapnel_cell(5, 5, &mut expected);
 
@@ -9049,9 +9052,9 @@ fn projectile_shrapnel_reads_the_bullets_location_not_its_impact() {
 
     assert_eq!(fragments.len(), 1);
     let fragment = &fragments[0];
-    assert_eq!(fragment.launch_origin, location);
+    assert_eq!(fragment.launch_origin(), location);
     assert_eq!(
-        fragment.target,
+        fragment.target(),
         ProjectileTarget::Cell {
             rx: cell.0 as u16,
             ry: cell.1 as u16,
@@ -9134,7 +9137,7 @@ fn projectile_shrapnel_count_zero_takes_every_hostile_ring_head() {
     let before = sim.scenario_rng.logical_state();
     let mut targets = commit_shrapnel_at_5_5(&mut sim, &rules)
         .into_iter()
-        .map(|fragment| fragment.target)
+        .map(|fragment| fragment.target())
         .collect::<Vec<_>>();
     targets.sort_by_key(|target| match target {
         ProjectileTarget::Entity(id) => *id,
@@ -9164,7 +9167,7 @@ fn an_inviso_fragment_is_admitted_standing_on_its_target() {
     );
     let fragments = commit_shrapnel_at_5_5(&mut sim, &rules);
     assert_eq!(fragments.len(), 1);
-    assert_eq!(fragments[0].target, ProjectileTarget::Entity(3));
+    assert_eq!(fragments[0].target(), ProjectileTarget::Entity(3));
     let aim = crate::sim::movement::ground_pose::object_get_coords(
         sim.substrate.entities.get(3).unwrap(),
         None,
@@ -9172,10 +9175,13 @@ fn an_inviso_fragment_is_admitted_standing_on_its_target() {
 
     let fragment = sim
         .projectiles
-        .get(fragments[0].id)
+        .get(fragments[0].id())
         .expect("the admitted fragment");
-    assert_eq!(fragment.position, ProjectileCoord::new(aim.x, aim.y, aim.z));
-    assert_eq!(fragment.speed_leptons_per_frame, 0);
+    assert_eq!(
+        fragment.position(),
+        ProjectileCoord::new(aim.x, aim.y, aim.z)
+    );
+    assert_eq!(fragment.speed_leptons_per_frame(), 0);
 }
 
 #[test]
@@ -9273,18 +9279,18 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
     );
     assert_eq!(children.len(), 3);
     assert_eq!(
-        children[0].target,
+        children[0].target(),
         ProjectileTarget::Cell {
             rx: expected_cells[0].0 as u16,
             ry: expected_cells[0].1 as u16,
         }
     );
-    assert_eq!(children[1].target, ProjectileTarget::DummyCell);
-    assert_eq!(children[2].target, ProjectileTarget::DummyCell);
+    assert_eq!(children[1].target(), ProjectileTarget::DummyCell);
+    assert_eq!(children[2].target(), ProjectileTarget::DummyCell);
     for (index, child) in children.iter().enumerate() {
-        assert_eq!(child.launch_target, expected_positions[index]);
+        assert_eq!(child.launch_target(), expected_positions[index]);
         assert_eq!(
-            child.velocity,
+            child.velocity(),
             crate::sim::projectile::launch::shrapnel_launch_velocity(
                 detonation.impact,
                 expected_positions[index],
@@ -9293,7 +9299,7 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
             )
         );
     }
-    assert_ne!(children[1].launch_target, children[2].launch_target);
+    assert_ne!(children[1].launch_target(), children[2].launch_target());
 
     let final_snapshot = dummy.snapshot();
     assert_eq!(final_snapshot.coord, expected_cells[2]);
@@ -9315,11 +9321,11 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
     assert_eq!(later_target.x, 9 * 256 + 128);
     assert_eq!(later_target.y, 10 * 256 + 128);
     assert_eq!(later_target.z, 2 * 104 + BRIDGE_DECK_HEIGHT_LEPTONS);
-    assert_ne!(later_target, children[2].launch_target);
+    assert_ne!(later_target, children[2].launch_target());
     assert_eq!(
         children
             .iter()
-            .map(|spawn| spawn.launch_target)
+            .map(|spawn| spawn.launch_target())
             .collect::<Vec<_>>(),
         expected_positions
     );
@@ -10615,7 +10621,7 @@ fn gsi_05_14_a_dying_harvester_throws_voxel_tires_and_no_shp_debris() {
     );
     // Every piece launches from the wreck's own coordinate, lifted 10 leptons.
     for piece in &result.consequences.effects().voxel_debris {
-        assert_eq!(piece.object.duration, 150);
+        assert_eq!(piece.object.duration(), 150);
         assert_eq!(piece.object.world_coord().z, 10);
     }
 }

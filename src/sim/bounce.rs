@@ -106,27 +106,27 @@ pub(crate) fn meteor_launch(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BounceState {
     /// `+0x00`. Bounce coefficient from the type's `Elasticity`.
-    pub elasticity: NativeF64Bits,
+    elasticity: NativeF64Bits,
     /// `+0x08`. Subtracted from `velocity_z` every tick. 1.4 for voxel debris,
     /// hardcoded in `VoxelAnimClass::Constructor`; 3.0 in the terrain-meteor
     /// helper `FUN_00439690`.
-    pub gravity: NativeF64Bits,
+    gravity: NativeF64Bits,
     /// `+0x10`. Clamp threshold for the velocity vector's length. Zero disables
     /// the clamp, which is the voxel-debris case.
-    pub angular_velocity_magnitude: NativeF64Bits,
+    angular_velocity_magnitude: NativeF64Bits,
     /// `+0x18`, `+0x1C`, `+0x20`. World position in leptons, carried as float.
-    pub position: [NativeF32Bits; 3],
+    position: [NativeF32Bits; 3],
     /// `+0x24`, `+0x28`, `+0x2C`. Velocity in leptons per tick.
-    pub velocity: [NativeF32Bits; 3],
+    velocity: [NativeF32Bits; 3],
     /// `+0x30` CurrentAngle, the drawn orientation as a quaternion
     /// `(x, y, z, w)`. `Init` sets it to `(+0, +0, +0, 1)`, and every
     /// [`Self::update`] multiplies it by [`Self::rotation`]. Only the draw
     /// reads it ([`Self::drawing_matrix`]).
-    pub orientation: [NativeF32Bits; 4],
+    orientation: [NativeF32Bits; 4],
     /// `+0x40` AngularVelocity, the per-tick rotation `Init` builds from its
     /// three axis draws and its angle argument. A bounce negates its vector
     /// part, reversing the spin.
-    pub rotation: [NativeF32Bits; 4],
+    rotation: [NativeF32Bits; 4],
 }
 
 /// What one `BounceClass::Update` reported, from the switch in
@@ -144,6 +144,57 @@ pub enum BounceOutcome {
 }
 
 impl BounceState {
+    /// A fixture's body from the native BounceClass fields, in their
+    /// layout order (`+0x00`..`+0x40`).
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn from_native_for_test(
+        elasticity: NativeF64Bits,
+        gravity: NativeF64Bits,
+        angular_velocity_magnitude: NativeF64Bits,
+        position: [NativeF32Bits; 3],
+        velocity: [NativeF32Bits; 3],
+        orientation: [NativeF32Bits; 4],
+        rotation: [NativeF32Bits; 4],
+    ) -> Self {
+        Self {
+            elasticity,
+            gravity,
+            angular_velocity_magnitude,
+            position,
+            velocity,
+            orientation,
+            rotation,
+        }
+    }
+
+    pub const fn elasticity(&self) -> NativeF64Bits {
+        self.elasticity
+    }
+
+    pub const fn gravity(&self) -> NativeF64Bits {
+        self.gravity
+    }
+
+    pub const fn angular_velocity_magnitude(&self) -> NativeF64Bits {
+        self.angular_velocity_magnitude
+    }
+
+    pub const fn position(&self) -> [NativeF32Bits; 3] {
+        self.position
+    }
+
+    pub const fn velocity(&self) -> [NativeF32Bits; 3] {
+        self.velocity
+    }
+
+    pub const fn orientation(&self) -> [NativeF32Bits; 4] {
+        self.orientation
+    }
+
+    pub const fn rotation(&self) -> [NativeF32Bits; 4] {
+        self.rotation
+    }
+
     /// Meteor tails42395C..423962 /74A7C8..74A7D4 add gravity BACK after
     /// Update. Retain both float stores; bypassing gravity in the integrator
     /// would lose the subtraction/addition rounding of the original.

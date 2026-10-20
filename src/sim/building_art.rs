@@ -271,7 +271,7 @@ impl Simulation {
             };
             let coord = self.building_anim_world_coord(id, &config).unwrap();
             if let Some(anim) = self.substrate.anims.get_mut(anim_id) {
-                anim.world_coord = coord;
+                anim.move_with_building(coord);
             }
         }
     }
@@ -571,19 +571,17 @@ impl Simulation {
         let old = self.substrate.entities.get(id)?.building_art.anim_slots[usize::from(slot)];
         if let Some(frame) = old
             .and_then(|old_id| self.anim(old_id))
-            .map(|anim| anim.runtime.current_frame)
+            .map(|anim| anim.runtime().current_frame)
         {
             self.substrate
                 .anims
                 .get_mut(new_id)
                 .expect("new slot animation")
-                .runtime
-                .current_frame = frame;
+                .jump_to_frame(frame);
         }
         self.clear_building_anim_slot(id, slot);
         if let Some(anim) = self.substrate.anims.get_mut(new_id) {
-            anim.building_slot = Some((id, slot));
-            anim.z_adjust = config.z_adjust;
+            anim.enter_building_slot(id, slot, config.z_adjust);
         }
         self.substrate.entities.get_mut(id)?.building_art.anim_slots[usize::from(slot)] =
             Some(new_id);
@@ -596,7 +594,7 @@ impl Simulation {
         let enabled = self.substrate.entities.get(id)?.building_art.stuff_enabled
             && self.building_operational_state(id, rules) == Some(true);
         if !enabled && object.powered && self.building_anim_power_flags(id, slot, rules).powered {
-            self.substrate.anims.get_mut(new_id)?.runtime.paused = true;
+            self.substrate.anims.get_mut(new_id)?.pause();
         }
         Some(new_id)
     }
@@ -634,7 +632,7 @@ impl Simulation {
     /// The reverse index skips listeners whose slot array cannot name this Anim.
     /// Evidence: tools/spatial_oracle/building_slot_replacement.expiry.{json,md}.
     pub(crate) fn building_anim_pointer_expired(&mut self, expired: u64, rules: Option<&RuleSet>) {
-        let Some((owner, slot)) = self.anim(expired).and_then(|anim| anim.building_slot) else {
+        let Some((owner, slot)) = self.anim(expired).and_then(|anim| anim.building_slot()) else {
             return;
         };
         let Some(rules) = rules else {
@@ -670,7 +668,7 @@ impl Simulation {
     fn building_anim_slot_expired(&mut self, expired: u64, rules: &RuleSet) {
         let Some((owner, slot, completed)) = self.anim(expired).and_then(|anim| {
             anim.is_building_anim()
-                .then_some(anim.building_slot)
+                .then_some(anim.building_slot())
                 .flatten()
                 .map(|(owner, slot)| (owner, slot, anim.completed()))
         }) else {
@@ -724,7 +722,7 @@ impl Simulation {
             .substrate
             .anims
             .get_mut(id)
-            .and_then(|anim| anim.building_slot.take());
+            .and_then(|anim| anim.take_building_slot());
         if let Some((owner, slot)) = slot
             && let Some(entity) = self.substrate.entities.get_mut(owner)
             && entity.building_art.anim_slots[usize::from(slot)] == Some(id)
@@ -738,8 +736,7 @@ impl Simulation {
     /// and the damage-fire slots (+5C8), their source of truth.
     pub(crate) fn rebuild_building_anim_slot_indices(&mut self) {
         for anim in self.substrate.anims.values_mut() {
-            anim.building_slot = None;
-            anim.damage_fire_slot = None;
+            anim.clear_slot_indexes();
         }
         let slots: Vec<_> = self
             .substrate
@@ -759,7 +756,7 @@ impl Simulation {
                 .anims
                 .get_mut(id)
                 .expect("snapshot admission validated every unique Building slot Anim")
-                .building_slot = Some((owner, slot));
+                .index_building_slot(owner, slot);
         }
         for entity in self.substrate.entities.values() {
             for (slot, id) in entity.damage_fires.anim_ids().iter().enumerate() {
@@ -768,7 +765,7 @@ impl Simulation {
                         .anims
                         .get_mut(*id)
                         .expect("snapshot admission validated every unique damage-fire Anim")
-                        .damage_fire_slot = Some((entity.stable_id(), slot as u8));
+                        .index_damage_fire_slot(entity.stable_id(), slot as u8);
                 }
             }
         }
@@ -1124,13 +1121,16 @@ mod slot_tests {
                 let expected = &row["copied"];
                 assert!(anim.is_building_anim(), "{row}");
                 assert_eq!(
-                    anim.display.y_sort_adjust(),
+                    anim.display().y_sort_adjust(),
                     expected["y_sort"].as_i64().unwrap() as i32,
                     "original4519A2 must replace the Anim type's sort adjustment: {row}, damaged={damaged}"
                 );
-                assert_eq!(anim.z_adjust, expected["z_adjust"].as_i64().unwrap() as i32);
                 assert_eq!(
-                    sim.interner.resolve(anim.type_id),
+                    anim.z_adjust(),
+                    expected["z_adjust"].as_i64().unwrap() as i32
+                );
+                assert_eq!(
+                    sim.interner.resolve(anim.type_id()),
                     row["slot"][if damaged { "damaged" } else { "normal" }]
                         .as_str()
                         .unwrap()
@@ -1138,9 +1138,9 @@ mod slot_tests {
                 let key = crate::sim::anim_class::anim_own_sort_term(anim);
                 assert_eq!(
                     key,
-                    anim.world_coord
+                    anim.world_coord()
                         .x
-                        .wrapping_add(anim.world_coord.y)
+                        .wrapping_add(anim.world_coord().y)
                         .wrapping_add(expected["y_sort"].as_i64().unwrap() as i32)
                 );
                 let config = rules
@@ -1175,11 +1175,11 @@ mod slot_tests {
         let first = sim
             .set_building_anim_slot(id, 3, false, false, 0, &rules)
             .unwrap();
-        assert_eq!(sim.anim(first).unwrap().world_coord.x, 512);
+        assert_eq!(sim.anim(first).unwrap().world_coord().x, 512);
         sim.set_building_damage_state(id, true, &rules);
         let replaced = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
-        assert_eq!(sim.anim(replaced).unwrap().world_coord.x, 512);
-        let timer = sim.anim(replaced).unwrap().runtime.frame_timer;
+        assert_eq!(sim.anim(replaced).unwrap().world_coord().x, 512);
+        let timer = sim.anim(replaced).unwrap().runtime().frame_timer;
         // This synthetic owner has never been marked; enter through the real
         // coordinate commit and verify its already retained slot moves in place.
         let entity = sim.entities_mut().get_mut(id).unwrap();
@@ -1206,9 +1206,9 @@ mod slot_tests {
             sim.entities().get(id).unwrap().building_art.anim_slots[3],
             Some(replaced)
         );
-        assert_eq!(sim.anim(replaced).unwrap().world_coord.x, 768);
-        assert_eq!(sim.anim(replaced).unwrap().world_coord.y, 1024);
-        assert_eq!(sim.anim(replaced).unwrap().runtime.frame_timer, timer);
+        assert_eq!(sim.anim(replaced).unwrap().world_coord().x, 768);
+        assert_eq!(sim.anim(replaced).unwrap().world_coord().y, 1024);
+        assert_eq!(sim.anim(replaced).unwrap().runtime().frame_timer, timer);
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -1219,8 +1219,8 @@ mod slot_tests {
             sim.session.pixel_conversion_bounds()
         );
         assert_eq!(
-            restored.anim(replaced).unwrap().world_coord,
-            sim.anim(replaced).unwrap().world_coord
+            restored.anim(replaced).unwrap().world_coord(),
+            sim.anim(replaced).unwrap().world_coord()
         );
     }
 
@@ -1312,9 +1312,9 @@ mod slot_tests {
                 sim.set_building_anim_slot(id, 6, false, false, 0, &rules)
                     .is_none()
             );
-            assert_eq!(sim.anim(early).unwrap().runtime.rate_reload, 3);
+            assert_eq!(sim.anim(early).unwrap().runtime().rate_reload, 3);
             assert_eq!(
-                sim.anim(late).unwrap().runtime.rate_reload,
+                sim.anim(late).unwrap().runtime().rate_reload,
                 if next_pass { 3 } else { 1 }
             );
             assert_eq!(
@@ -1333,7 +1333,7 @@ mod slot_tests {
                     .raw_shp_frame_count,
                 None
             );
-            assert_eq!(sim.anim(missing).unwrap().effective_end, 0);
+            assert_eq!(sim.anim(missing).unwrap().effective_end(), 0);
             assert_eq!(sim.scenario_rng.logical_state(), before_rng);
             sim.visit_anim(
                 missing,
@@ -1341,8 +1341,8 @@ mod slot_tests {
                 None,
                 crate::sim::world::FrameEffects::default(),
             );
-            assert!(!sim.anim(missing).unwrap().runtime.first_ai_guard);
-            assert!(!sim.anim(missing).unwrap().runtime.inactive);
+            assert!(!sim.anim(missing).unwrap().runtime().first_ai_guard);
+            assert!(!sim.anim(missing).unwrap().runtime().inactive);
             sim.session
                 .set_binary_frame_for_test(sim.session.binary_frame() + 1);
             sim.visit_anim(
@@ -1352,7 +1352,7 @@ mod slot_tests {
                 crate::sim::world::FrameEffects::default(),
             );
             assert!(sim.substrate.pending_delete.contains_object(&missing));
-            assert!(!sim.anim(missing).unwrap().in_logic_vector);
+            assert!(!sim.anim(missing).unwrap().in_logic_vector());
             assert_eq!(
                 sim.entities().get(id).unwrap().building_art.anim_slots[5],
                 None
@@ -1369,21 +1369,25 @@ mod slot_tests {
             .anims
             .get_mut(old)
             .unwrap()
-            .runtime
+            .runtime_mut_for_test()
             .current_frame = 17;
         sim.substrate
             .anims
             .get_mut(old)
             .unwrap()
-            .runtime
+            .runtime_mut_for_test()
             .first_ai_guard = false;
         sim.substrate
             .anims
             .get_mut(old)
             .unwrap()
-            .runtime
+            .runtime_mut_for_test()
             .loop_remaining = 8;
-        sim.substrate.anims.get_mut(old).unwrap().start_sound_active = true;
+        sim.substrate
+            .anims
+            .get_mut(old)
+            .unwrap()
+            .set_start_sound_active_for_test(true);
         sim.session.set_binary_frame_for_test(91);
         let before_rng = sim.scenario_rng.logical_state();
         sim.set_building_damage_state(id, true, &rules);
@@ -1392,13 +1396,13 @@ mod slot_tests {
         assert!(sim.anim(old).is_none());
         assert!(!sim.substrate.pending_delete.contains_object(&old));
         let anim = sim.anim(new).unwrap();
-        assert_eq!(sim.interner.resolve(anim.type_id), "D");
-        assert_eq!(anim.runtime.current_frame, 17);
-        assert!(anim.runtime.first_ai_guard);
-        assert_eq!(anim.runtime.loop_remaining, 255);
-        assert_eq!(anim.owner_entity, None);
-        assert_eq!(anim.building_slot, Some((id, 3)));
-        assert_eq!(anim.draw_flags, 0x1600);
+        assert_eq!(sim.interner.resolve(anim.type_id()), "D");
+        assert_eq!(anim.runtime().current_frame, 17);
+        assert!(anim.runtime().first_ai_guard);
+        assert_eq!(anim.runtime().loop_remaining, 255);
+        assert_eq!(anim.owner_entity(), None);
+        assert_eq!(anim.building_slot(), Some((id, 3)));
+        assert_eq!(anim.draw_flags(), 0x1600);
         assert_ne!(before_rng, sim.scenario_rng.logical_state());
         assert!(sim.sound_events.iter().any(|event| matches!(event,
             crate::sim::world::SimSoundEvent::ObjectSoundReleased{owner} if *owner==old)));
@@ -1422,7 +1426,7 @@ mod slot_tests {
             None
         );
         assert!(sim.substrate.pending_delete.contains_object(&anim));
-        assert!(!sim.anim(anim).unwrap().in_logic_vector);
+        assert!(!sim.anim(anim).unwrap().in_logic_vector());
         sim.process_pending_delete();
         assert!(sim.anim(anim).is_none());
         assert_eq!(
@@ -1455,10 +1459,10 @@ mod slot_tests {
         assert!(building.lifecycle.in_limbo());
         assert_eq!(building.building_art.anim_slots[3], Some(anim_id));
         let anim = sim.anim(anim_id).expect("slot survives Building UnInit");
-        assert_eq!(anim.owner_entity, None);
-        assert_eq!(anim.building_slot, Some((id, 3)));
-        assert!(anim.in_logic_vector);
-        assert!(!anim.runtime.inactive);
+        assert_eq!(anim.owner_entity(), None);
+        assert_eq!(anim.building_slot(), Some((id, 3)));
+        assert!(anim.in_logic_vector());
+        assert!(!anim.runtime().inactive);
         assert_eq!(sim.logic_order(), before_logic);
         assert_eq!(
             (
@@ -1559,7 +1563,12 @@ mod native_slot_tests {
                 let old = sim
                     .set_building_anim_slot(id, slot, false, false, 0, &rules)
                     .unwrap();
-                let runtime = &mut sim.substrate.anims.get_mut(old).unwrap().runtime;
+                let runtime = sim
+                    .substrate
+                    .anims
+                    .get_mut(old)
+                    .unwrap()
+                    .runtime_mut_for_test();
                 runtime.current_frame = old_frame;
                 runtime.loop_remaining = 8;
                 runtime.first_ai_guard = false;
@@ -1574,18 +1583,18 @@ mod native_slot_tests {
                 .unwrap();
             let anim = sim.anim(new).unwrap();
             assert_eq!(
-                anim.runtime.current_frame,
+                anim.runtime().current_frame,
                 output["frame"].as_i64().unwrap() as i32,
                 "{row}"
             );
             assert_eq!(
-                anim.runtime.loop_remaining,
+                anim.runtime().loop_remaining,
                 output["loop_remaining"].as_u64().unwrap() as u8
             );
-            assert_eq!(anim.runtime.first_ai_guard, output["first_guard"] == 1);
-            assert_eq!(anim.runtime.frame_timer.start_frame(), 91);
-            assert_eq!(anim.runtime.frame_timer.duration(), 3);
-            assert_eq!(anim.building_slot, Some((id, slot)));
+            assert_eq!(anim.runtime().first_ai_guard, output["first_guard"] == 1);
+            assert_eq!(anim.runtime().frame_timer.start_frame(), 91);
+            assert_eq!(anim.runtime().frame_timer.duration(), 3);
+            assert_eq!(anim.building_slot(), Some((id, slot)));
             assert_eq!(
                 sim.entities().get(id).unwrap().building_art.anim_slots[usize::from(slot)],
                 Some(new)
@@ -1685,9 +1694,13 @@ mod native_slot_tests {
                     .anims
                     .get_mut(anim)
                     .unwrap()
-                    .runtime
+                    .runtime_mut_for_test()
                     .current_frame = n as i32 + 123;
-                sim.substrate.anims.get_mut(anim).unwrap().building_slot = Some((id, n as u8));
+                sim.substrate
+                    .anims
+                    .get_mut(anim)
+                    .unwrap()
+                    .set_building_slot_for_test(Some((id, n as u8)));
                 sim.substrate
                     .entities
                     .get_mut(id)
@@ -1721,13 +1734,13 @@ mod native_slot_tests {
                     assert_ne!(new, old_slot, "{row}");
                     assert!(sim.anim(old_slot.unwrap()).is_none());
                     assert_eq!(
-                        sim.interner.resolve(anim.type_id),
+                        sim.interner.resolve(anim.type_id()),
                         expected["name"].as_str().unwrap()
                     );
-                    assert_eq!(anim.runtime.current_frame, n as i32 + 123);
-                    assert!(anim.runtime.first_ai_guard);
-                    assert!(previous_new.is_none_or(|previous| previous < anim.stable_id));
-                    previous_new = Some(anim.stable_id);
+                    assert_eq!(anim.runtime().current_frame, n as i32 + 123);
+                    assert!(anim.runtime().first_ai_guard);
+                    assert!(previous_new.is_none_or(|previous| previous < anim.stable_id()));
+                    previous_new = Some(anim.stable_id());
                 } else {
                     assert_eq!(new, old_slot, "native row retains slot{n}: {row}");
                 }

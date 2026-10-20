@@ -279,15 +279,16 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
     assert_eq!(bullets.len(), 1);
     let bullet = bullets[0];
     assert_eq!(
-        bullet.launch_origin,
+        bullet.launch_origin(),
         attack_aim_coord(&row["bullet"]["position"])
     );
     assert_eq!(
-        bullet.launch_target, argument,
+        bullet.launch_target(),
+        argument,
         "Bullet::Fire retains the unled argument"
     );
     assert_eq!(
-        i64::from(bullet.speed_leptons_per_frame),
+        i64::from(bullet.speed_leptons_per_frame()),
         row["launch_speed"].as_i64().unwrap()
     );
     let expected_velocity = row["bullet"]["velocity"]["bits"]
@@ -299,7 +300,7 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
     // The level Cannon arc takes its pitch from the Acos table (48A9D0).
     assert_eq!(
         bullet
-            .velocity
+            .velocity()
             .native()
             .map(|component| component.bits())
             .as_slice(),
@@ -585,7 +586,7 @@ impl Duel {
             .iter()
             .map(|(_, projectile)| projectile)
             .find(|projectile| {
-                projectile.source_id == firer && !self.before.contains(&projectile.id)
+                projectile.source_id() == firer && !self.before.contains(&projectile.id())
             })
     }
 }
@@ -636,13 +637,13 @@ fn a_moving_rhino_is_led() {
         }
         let target = duel.location(rhino);
         let [vx, vy, _] = shell
-            .velocity
+            .velocity()
             .native()
             .map(|bits| f64::from_bits(bits.bits()));
         // Where the launch heading crosses the Rhino's column, relative to
         // the Rhino: the lead, `ftol(d / (GetSpeed * 0.9) * Rhino speed)`.
-        let crossing = shell.launch_origin.y as f64
-            + vy / vx * (target.x - shell.launch_origin.x) as f64
+        let crossing = shell.launch_origin().y as f64
+            + vy / vx * (target.x - shell.launch_origin().x) as f64
             - target.y as f64;
         // About 230 here; the unled heading crosses within ~15 of the Rhino.
         assert!(

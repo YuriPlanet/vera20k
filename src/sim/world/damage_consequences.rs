@@ -384,14 +384,14 @@ mod muzzle_anim_tests {
         let event = shot(&mut sim, tank, EntityCategory::Unit);
         admit_muzzle_anim(&mut sim, &rules, &event);
         let id = *sim.substrate.anims.iter().next().expect("muzzle anim").0;
-        let relative = sim.anim(id).unwrap().world_coord;
+        let relative = sim.anim(id).unwrap().world_coord();
 
         sim.uninit_with_rules(tank, &rules);
 
         let anim = sim.anim(id).expect("the anim is still stored this frame");
-        assert_eq!(anim.owner_entity, None, "the teardown detached it");
+        assert_eq!(anim.owner_entity(), None, "the teardown detached it");
         assert!(
-            anim.runtime.inactive,
+            anim.runtime().inactive,
             "native19B requests expiry on its next AI"
         );
         assert!(!sim.substrate.pending_delete.contains_object(&id));

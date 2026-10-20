@@ -2724,23 +2724,23 @@ impl Simulation {
                 .substrate
                 .spotlights
                 .get(stable_id)
-                .is_some_and(|l| l.in_logic_vector),
+                .is_some_and(|l| l.in_logic_vector()),
             ObjectKind::Smudge => false,
             ObjectKind::Anim => self
                 .substrate
                 .anims
                 .get(stable_id)
-                .is_some_and(|anim| anim.in_logic_vector),
+                .is_some_and(|anim| anim.in_logic_vector()),
             ObjectKind::VoxelAnim => self
                 .substrate
                 .voxel_anims
                 .get(stable_id)
-                .is_some_and(|debris| debris.in_logic_vector),
+                .is_some_and(|debris| debris.in_logic_vector()),
             ObjectKind::ParticleSystem => self
                 .substrate
                 .particle_systems
                 .get(stable_id)
-                .is_some_and(|system| system.in_logic_vector),
+                .is_some_and(|system| system.in_logic_vector()),
             ObjectKind::Terrain => self
                 .terrain_objects
                 .objects()
@@ -2749,11 +2749,11 @@ impl Simulation {
             ObjectKind::Projectile => self
                 .projectiles
                 .get(stable_id)
-                .is_some_and(|projectile| projectile.in_logic_vector),
+                .is_some_and(|projectile| projectile.in_logic_vector()),
             ObjectKind::Wave => self
                 .waves
                 .get(stable_id)
-                .is_some_and(|wave| wave.in_logic_vector),
+                .is_some_and(|wave| wave.in_logic_vector()),
             ObjectKind::Entity => self
                 .substrate
                 .entities
@@ -2770,23 +2770,23 @@ impl Simulation {
         match kind {
             ObjectKind::Spotlight => {
                 if let Some(l) = self.substrate.spotlights.get_mut(stable_id) {
-                    l.in_logic_vector = member;
+                    l.mark_logic_membership(member);
                 }
             }
             ObjectKind::Smudge => assert!(!member, "Smudge {stable_id} never joins Logic"),
             ObjectKind::Anim => {
                 if let Some(anim) = self.substrate.anims.get_mut(stable_id) {
-                    anim.in_logic_vector = member;
+                    anim.mark_logic_membership(member);
                 }
             }
             ObjectKind::VoxelAnim => {
                 if let Some(debris) = self.substrate.voxel_anims.get_mut(stable_id) {
-                    debris.in_logic_vector = member;
+                    debris.mark_logic_membership(member);
                 }
             }
             ObjectKind::ParticleSystem => {
                 if let Some(system) = self.substrate.particle_systems.get_mut(stable_id) {
-                    system.in_logic_vector = member;
+                    system.mark_logic_membership(member);
                 }
             }
             ObjectKind::Terrain => {
@@ -2794,12 +2794,12 @@ impl Simulation {
             }
             ObjectKind::Projectile => {
                 if let Some(projectile) = self.projectiles.get_mut(stable_id) {
-                    projectile.in_logic_vector = member;
+                    projectile.mark_logic_membership(member);
                 }
             }
             ObjectKind::Wave => {
                 if let Some(wave) = self.waves.get_mut(stable_id) {
-                    wave.in_logic_vector = member;
+                    wave.mark_logic_membership(member);
                 }
             }
             ObjectKind::Entity => {
@@ -2883,7 +2883,7 @@ impl Simulation {
                 .substrate
                 .anims
                 .get(stable_id)
-                .is_some_and(|anim| !anim.runtime.inactive)
+                .is_some_and(|anim| !anim.runtime().inactive)
         {
             return false;
         }
@@ -3091,7 +3091,7 @@ impl Simulation {
             return;
         };
         assert!(
-            !bullet.in_logic_vector && self.substrate.display.layer_of(id).is_none(),
+            !bullet.in_logic_vector() && self.substrate.display.layer_of(id).is_none(),
             "temporary Bullet {id} must not be Fired before direct destruction"
         );
         self.substrate
@@ -4829,7 +4829,7 @@ impl Simulation {
         if !self
             .projectiles
             .iter()
-            .any(|(_, bullet)| bullet.target.object_id() == Some(target_id))
+            .any(|(_, bullet)| bullet.target().object_id() == Some(target_id))
         {
             return;
         }
@@ -4854,7 +4854,7 @@ impl Simulation {
                 self.substrate
                     .particle_systems
                     .get(target_id)
-                    .map(|system| [system.coords.x, system.coords.y])
+                    .map(|system| [system.coords().x, system.coords().y])
             })
             .or_else(|| {
                 self.terrain_objects.objects().get(&target_id).map(|tree| {
@@ -5028,9 +5028,11 @@ impl Simulation {
             })
             .or_else(|| {
                 let system = self.substrate.particle_systems.get(expired_id)?;
-                let cell = u16::try_from(crate::util::lepton::lepton_to_cell(system.coords.x))
+                let cell = u16::try_from(crate::util::lepton::lepton_to_cell(system.coords().x))
                     .ok()
-                    .zip(u16::try_from(crate::util::lepton::lepton_to_cell(system.coords.y)).ok());
+                    .zip(
+                        u16::try_from(crate::util::lepton::lepton_to_cell(system.coords().y)).ok(),
+                    );
                 // ObjectCtor5F390B..5F3919 supplies Health=255. A System
                 // has no Techno flags, selling mission or Techno owner;
                 // its retained coordinates and liveness are still readable
@@ -5042,20 +5044,21 @@ impl Simulation {
                     .substrate
                     .particle_systems
                     .detached_particle(expired_id)?;
-                let cell = u16::try_from(crate::util::lepton::lepton_to_cell(particle.coords.x))
+                let cell = u16::try_from(crate::util::lepton::lepton_to_cell(particle.coords().x))
                     .ok()
                     .zip(
-                        u16::try_from(crate::util::lepton::lepton_to_cell(particle.coords.y)).ok(),
+                        u16::try_from(crate::util::lepton::lepton_to_cell(particle.coords().y))
+                            .ok(),
                     );
                 Some((cell, alive, 255, false, None))
             })
             .or_else(|| {
                 let bullet = self.projectiles.get(expired_id)?;
-                let point = bullet.position;
+                let point = bullet.position();
                 let cell = u16::try_from(crate::util::lepton::lepton_to_cell(point.x))
                     .ok()
                     .zip(u16::try_from(crate::util::lepton::lepton_to_cell(point.y)).ok());
-                Some((cell, true, bullet.payload.base_damage, false, None))
+                Some((cell, true, bullet.payload().base_damage, false, None))
             })
             .or_else(|| {
                 let tree = self.terrain_objects.objects().get(&expired_id)?;
@@ -5147,7 +5150,7 @@ impl Simulation {
             && self
                 .projectiles
                 .get(expired_id)
-                .and_then(|bullet| bullet.payload.projectile_type())
+                .and_then(|bullet| bullet.payload().projectile_type())
                 .and_then(|type_id| context.rules()?.projectile(self.interner.resolve(type_id)))
                 .is_some_and(|kind| kind.scalable)
             && self.projectiles.scalable_enrolled(expired_id);
@@ -5254,7 +5257,7 @@ impl Simulation {
                     .or_else(|| {
                         self.projectiles
                             .get(expired_id)
-                            .map(|bullet| (true, !bullet.in_logic_vector))
+                            .map(|bullet| (true, !bullet.in_logic_vector()))
                     })
                     .or_else(|| {
                         self.spotlight_alive(expired_id)
@@ -5398,7 +5401,7 @@ impl Simulation {
                 let target_matches = self
                     .projectiles
                     .get(listener_id)
-                    .is_some_and(|projectile| projectile.target.object_id() == Some(expired_id));
+                    .is_some_and(|projectile| projectile.target().object_id() == Some(expired_id));
                 let projectile_replacement_target = if target_matches {
                     self.projectile_lost_target(expired_id, context)
                 } else {
@@ -5423,7 +5426,7 @@ impl Simulation {
                 if let Some((source_id, target)) = self
                     .projectiles
                     .get(listener_id)
-                    .map(|projectile| (projectile.source_id, projectile.target))
+                    .map(|projectile| (projectile.source_id(), projectile.target()))
                 {
                     self.trace_lifecycle_for_test(
                         LifecycleTestEvent::ProjectilePointerExpiredVisited {
@@ -5610,7 +5613,7 @@ impl Simulation {
             .particle_systems
             .get(stable_id)
             .is_some_and(|system| {
-                system.alive() && system.done_spawning && system.particles.is_empty()
+                system.alive() && system.done_spawning() && system.particles().is_empty()
             });
         if !ready {
             return;
@@ -5650,12 +5653,12 @@ impl Simulation {
             // Every ordinary Anim retirement Conceals before queueing. Owner
             // expiry425196 only sets19B and leaves Logic live until its own AI;
             // that byte is not ObjectUnInit5F6625's readiness state.
-            return !anim.in_logic_vector;
+            return !anim.in_logic_vector();
         }
         if let Some(system) = self.substrate.particle_systems.get(stable_id) {
             // SystemVT7EFB9C+44 -> IsReadyToDelete62FE60: done+F8 and
             // count+CC==0, independently of the ObjectAlive byte.
-            return system.done_spawning && system.particles.is_empty();
+            return system.done_spawning() && system.particles().is_empty();
         }
         if let Some((_, alive)) = self.substrate.particle_systems.detached_particle(stable_id) {
             // Particle+44 inherits Object5F6690: !ObjectAlive.
@@ -5665,10 +5668,10 @@ impl Simulation {
             return !terrain.is_live() && !terrain.in_logic_vector();
         }
         if let Some(projectile) = self.projectiles.get(stable_id) {
-            return !projectile.in_logic_vector;
+            return !projectile.in_logic_vector();
         }
         if let Some(wave) = self.waves.get(stable_id) {
-            return !wave.in_logic_vector;
+            return !wave.in_logic_vector();
         }
         true
     }
@@ -5968,7 +5971,7 @@ impl Simulation {
             // SystemDtor62E0AE..62E15D disposes retained children before its
             // vector is freed. Ordinary AI retirement has no children left;
             // direct disposal must still remove each individual AIR entry.
-            for particle in &system.particles {
+            for particle in system.particles() {
                 self.conceal_particle(particle.stable_id());
             }
         }
@@ -5985,7 +5988,7 @@ impl Simulation {
             .as_mut()
             .and_then(|grid| grid.finalize_remove(stable_id));
         if let Some(wave) = wave.as_ref()
-            && let Some(owner_id) = wave.owner_id
+            && let Some(owner_id) = wave.owner_id()
             && self.active_wave_links.get(&owner_id) == Some(&stable_id)
         {
             self.active_wave_links.remove(&owner_id);

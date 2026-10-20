@@ -279,7 +279,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             .world
             .projectiles
             .get(bullet)
-            .map_or(ProjectileVelocity::new(0, 0, 0), |bullet| bullet.velocity);
+            .map_or(ProjectileVelocity::new(0, 0, 0), |bullet| bullet.velocity());
         Some(AircraftShot::new(rot, velocity))
     }
 

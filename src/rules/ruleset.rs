@@ -1608,6 +1608,13 @@ pub struct GeneralRules {
     /// convention is hardest-first, so the array is `[Brutal, Medium, Easy]`
     /// with the retail default `[4, 2, 0]`.
     pub ai_virtual_purifiers: [i32; 3],
+    /// `[General] DisabledDisguiseDetectionPercent=`: an IntVector
+    /// (`Rules+0xE10`, read at `0x0067020F` through `0x00475D70` with the
+    /// field as its default; the constructor leaves it empty), indexed by the
+    /// attacking House's difficulty (`+0x184`, hardest first). A computer
+    /// attacker detects a blinking disguise when `RandomRanged(0, 99)` does
+    /// not exceed its entry (Evaluate_Candidate `0x006F851C..0x006F854B`).
+    pub disabled_disguise_detection_percent: Vec<i32>,
 
     // -- Survivor spawning on sell/destroy --
     /// Divisor to compute survivor count for Allied buildings (AlliedSurvivorDivisor= in [General]).
@@ -2564,6 +2571,7 @@ impl Default for GeneralRules {
             chrono_range_minimum: 0,
             purifier_bonus_ppm: 250_000,
             ai_virtual_purifiers: [4, 2, 0],
+            disabled_disguise_detection_percent: Vec::new(),
             allied_survivor_divisor: DEFAULT_SURVIVOR_DIVISORS[0],
             soviet_survivor_divisor: DEFAULT_SURVIVOR_DIVISORS[1],
             third_survivor_divisor: DEFAULT_SURVIVOR_DIVISORS[2],
@@ -3722,6 +3730,9 @@ impl GeneralRules {
                 .read_int_list("AIVirtualPurifiers")
                 .and_then(|values| values.get(..3)?.try_into().ok())
                 .unwrap_or([4, 2, 0]),
+            disabled_disguise_detection_percent: general
+                .read_int_list("DisabledDisguiseDetectionPercent")
+                .unwrap_or_else(|| defaults.disabled_disguise_detection_percent.clone()),
             allied_crew: defaults.allied_crew.clone(),
             soviet_crew: defaults.soviet_crew.clone(),
             third_crew: defaults.third_crew.clone(),

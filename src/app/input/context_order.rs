@@ -279,6 +279,30 @@ pub(crate) fn attack_action(
     {
         action = AttackAction::NoMove;
     }
+    // A player's Deployer= infantryman in Doing 27..30 (Type+0xEC8,
+    // +0x6C4) keeps Attack only for a DeployFire= type (+0x6AC) whose
+    // SelectWeapon(NULL) weapon reaches the target, else NoMove: over an
+    // object CanFireAt (vt+0x3A8, Infantry51EB81..51EC11), on a Cell
+    // IsCloseEnough3D (vt+0x164 0x6F7970, which asks CanFireAt on the Cell
+    // under the Cell's centre; Infantry51F8BB..51F94E).
+    if action == AttackAction::Attack
+        && actor.category() == EntityCategory::Infantry
+        && human
+        && kind.deployer
+        && actor.infantry_deploy_doing()
+        && (!kind.deploy_fire
+            || !resolved_unit_in_range(
+                sim,
+                actor_id,
+                target,
+                Some(rules),
+                sim.resolved_terrain.as_ref(),
+                overlay_registry,
+                None,
+            ))
+    {
+        action = AttackAction::NoMove;
+    }
     // Infantry51EE3B..51EEEF: a player's Infiltrate= infantryman's Attack is
     // Capture over a building it may infiltrate, which its producers ask
     // first (Simulation::infiltrator_building_action); otherwise it is 0
@@ -610,6 +634,17 @@ fn attack_branch_orders(
             continue;
         }
         attack_receivers.insert(id);
+        // Unit 0x738890 and Infantry 0x51F190 ClickedAction_Object hand an
+        // object click's 2 to Foot 0x4D74E0, which moves near the object, as
+        // the unforced click does (`object_attack_click_command`).
+        if action == AttackAction::NoMove
+            && !is_structure
+            && let TargetKind::Entity(target_id) = attack_target
+        {
+            consumed_attack_action = true;
+            queued.extend(no_move_near_object(sim, rules, id, target_id));
+            continue;
+        }
         match action {
             AttackAction::None | AttackAction::NoMove => consumed_attack_action = true,
             AttackAction::Rally => unreachable!("rally remains with its existing receiver"),
@@ -625,21 +660,11 @@ fn attack_branch_orders(
                     TargetKind::Entity(target_id) => {
                         match infantry_attack_action(sim, rules, id, target_id) {
                             Some(InfantryAttackAction::NoMove) => {
-                                let owner = sim.entities().get(id).expect("action actor").owner();
-                                let Some(destination) =
-                                    crate::app::input::commands::object_move_destination(
-                                        sim,
-                                        rules,
-                                        owner,
-                                        id,
-                                        target_id,
-                                        crate::sim::world::MoveAction::NoMove,
-                                        false,
-                                    )
+                                let Some(command) = no_move_near_object(sim, rules, id, target_id)
                                 else {
                                     continue;
                                 };
-                                move_click_command(sim, rules, OrderMode::Move, id, destination)
+                                command
                             }
                             Some(InfantryAttackAction::Infiltrate) => Command::CaptureBuilding {
                                 engineer_id: id,
@@ -670,6 +695,33 @@ fn attack_branch_orders(
         consumed: consumed_attack_action,
         select_fallback,
     }
+}
+
+/// Foot `0x004D74E0` case 2 for a forced object click: a Move near the
+/// object.
+fn no_move_near_object(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    id: u64,
+    target_id: u64,
+) -> Option<Command> {
+    let owner = sim.entities().get(id)?.owner();
+    let destination = crate::app::input::commands::object_move_destination(
+        sim,
+        rules,
+        owner,
+        id,
+        target_id,
+        crate::sim::world::MoveAction::NoMove,
+        false,
+    )?;
+    Some(move_click_command(
+        sim,
+        rules,
+        OrderMode::Move,
+        id,
+        destination,
+    ))
 }
 
 /// INI voice key for the mission a command commits.
@@ -1454,6 +1506,11 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         {
             return false;
         }
+        // Selection__DispatchMultiUnitOrder clamps the shared Cell first
+        // (`0x004AE77E`, `Clamp_To_Playfield @ 0x00586E50`); every later
+        // receiver's What_Action and ClickedAction see it. Object hit-testing
+        // above keeps the raw screen-derived world point.
+        let (target_rx, target_ry) = sim.clamped_click_cell((target_rx, target_ry));
         let cell_is_shrouded = crate::app::presentation::instances::cell_visibility_for_local_owner(
             Some(owner_id),
             Some(&sim.fog),
@@ -3309,6 +3366,49 @@ mod tests {
     use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::world::Simulation;
+
+    /// The native selection dispatcher clamps its shared Cell before asking
+    /// receivers' What_Action and ClickedAction (`0x004AE77E`), then each Foot
+    /// resolves from that same Cell (`0x004AE8BA`, `0x004AE921`, `0x004AE976`).
+    /// At these retail edge clicks the raw Cell answers NoMove while the
+    /// clamped one answers the receiver's real action; an interior Cell is
+    /// unchanged. The click path's call site itself is not driven here.
+    #[test]
+    fn mobile_cell_dispatch_clamps_before_action_and_goal_resolution() {
+        use crate::sim::world::{CellActionQuery, MoveAction};
+
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let (mut sim, rules, _) = Simulation::walk_cell_input_test_scene_with(retail.rules, false);
+        let owner = sim.interner.get("Local").unwrap();
+        let tank = sim
+            .spawn_object("MTNK", "Local", 12, 4, 0, &rules)
+            .expect("retail tank spawns");
+        sim.resolve_type_handles(&rules);
+        let action = |cell| {
+            sim.cell_move_action(
+                owner,
+                tank,
+                cell,
+                CellActionQuery {
+                    mouse_over: false,
+                    shift: false,
+                },
+                &rules,
+                None,
+            )
+            .unwrap()
+        };
+
+        for (raw, expected_action) in [((7, 0), MoveAction::NoMove), ((16, 0), MoveAction::Move)] {
+            let clamped = sim.clamped_click_cell(raw);
+            assert_ne!(clamped, raw, "fixed edge input {raw:?} must clamp");
+            assert_eq!(action(raw), MoveAction::NoMove, "raw edge {raw:?}");
+            assert_eq!(action(clamped), expected_action, "clamped edge {raw:?}");
+        }
+        assert_eq!(sim.clamped_click_cell((9, 5)), (9, 5));
+    }
 
     /// An all-berserk selection's left release follows the best object's
     /// class rung: Infantry NoMove (`0x0051F05E`, cell `0x0051FAAB`), Unit

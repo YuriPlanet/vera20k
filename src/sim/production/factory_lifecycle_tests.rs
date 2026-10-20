@@ -157,7 +157,7 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
         .anim_slots()[18]
         .expect("stock idle animation is live before production");
     assert_eq!(
-        sim.interner.resolve(sim.anim(idle).unwrap().type_id),
+        sim.interner.resolve(sim.anim(idle).unwrap().type_id()),
         "GAYARD_A"
     );
     let mut product = None;
@@ -203,7 +203,7 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
                 "one Production animation per delivered ship"
             );
             assert_eq!(
-                sim.interner.resolve(sim.anim(anim).unwrap().type_id),
+                sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
                 "GAYARD_D"
             );
             assert!(producer.building_art.anim_slots()[18].is_none());
@@ -216,7 +216,7 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
                 .expect("normal Production expiry restores Idle");
             assert_ne!(restored, idle);
             assert_eq!(
-                sim.interner.resolve(sim.anim(restored).unwrap().type_id),
+                sim.interner.resolve(sim.anim(restored).unwrap().type_id()),
                 "GAYARD_A"
             );
             assert!(

@@ -76,6 +76,12 @@ pub enum WolTarget {
     AbortReturn,
     /// `0x113` Back: the channel left and a fresh `0x10E` settled.
     LobbyBack,
+    /// The Options page's offline test service: login to a settled 0x113.
+    TestServiceLobby,
+    /// The same, then Create Game: C2 settled.
+    TestServiceCreate,
+    /// The same, then Join on the first game: C9 settled.
+    TestServiceJoin,
 }
 
 impl WolTarget {
@@ -91,6 +97,14 @@ impl WolTarget {
                 | Self::ServerListFailure
                 | Self::LoginRejected
                 | Self::LoginRejectedReturn
+        )
+    }
+
+    /// The production test service answers instead of the capture.
+    fn test_service(self) -> bool {
+        matches!(
+            self,
+            Self::TestServiceLobby | Self::TestServiceCreate | Self::TestServiceJoin
         )
     }
 
@@ -141,6 +155,9 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-c9-accept", WolTarget::GuestAccept),
     ("wol-c9-back", WolTarget::GuestBack),
     ("wol-abort-return", WolTarget::AbortReturn),
+    ("wol-test-service-lobby", WolTarget::TestServiceLobby),
+    ("wol-test-service-create", WolTarget::TestServiceCreate),
+    ("wol-test-service-join", WolTarget::TestServiceJoin),
 ];
 
 /// The controlled guest of the C2 targets, the host of the C9 targets.
@@ -186,6 +203,12 @@ enum WolPhase {
     AbortInput,
     /// EXIT queued: the match returns to the chat lobby.
     MatchLeaving,
+    /// Test service: Custom Match pressed, waiting for 0x10F.
+    ServiceLogin,
+    /// Test service: Login pressed, waiting for 0x113.
+    ServiceLobby,
+    /// Test service: 0xC3 OK pressed, waiting for C2.
+    ServiceSetup,
     Settle(u32),
 }
 
@@ -270,6 +293,9 @@ impl WolCapture {
                         state,
                     ))? =>
             {
+                // The Options box, read when Internet opens the visit; the
+                // capture never writes the profile out.
+                state.persistence.options_profile.wol_test_service = self.target.test_service();
                 App::leave_shell_dialog(
                     state,
                     crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
@@ -283,6 +309,16 @@ impl WolCapture {
                 if rendered == PresentedShell::WolWelcome
                     && Self::page_settled(state, ShellSlideKind::WolWelcome) =>
             {
+                if self.target.test_service() {
+                    let rect = App::wol_welcome_layout(state)
+                        .page
+                        .button_rect(crate::ui::wol_shell::CUSTOM_MATCH)
+                        .context("Custom Match")?;
+                    welcome_click(state, rect);
+                    self.event(frame, "0x10E Custom Match (Options test service)");
+                    self.phase = WolPhase::ServiceLogin;
+                    return Ok(());
+                }
                 state
                     .frontend
                     .wol
@@ -685,6 +721,72 @@ impl WolCapture {
                     self.rejoined = true;
                     self.phase = WolPhase::Lobby;
                 }
+            }
+            WolPhase::ServiceLogin
+                if rendered == PresentedShell::WolLogin
+                    && Self::page_settled(state, ShellSlideKind::WolLogin) =>
+            {
+                let layout = crate::app::shell_wol::login_layout(state);
+                login_click(state, layout.nickname_face);
+                App::handle_wol_key(state, None, true, Some(NICKNAME));
+                login_click(state, layout.password);
+                App::handle_wol_key(state, None, true, Some(PASSWORD));
+                login_click(state, button(&layout, LOGIN)?);
+                self.event(frame, "0x10F Login (test service)");
+                self.phase = WolPhase::ServiceLobby;
+            }
+            WolPhase::ServiceLobby
+                if rendered == PresentedShell::WolLobby
+                    && Self::page_settled(state, ShellSlideKind::WolLobby) =>
+            {
+                let lobby = Self::lobby(state)?;
+                ensure!(
+                    lobby.shown
+                        && lobby.ui.lobby_rows.len() == 3
+                        && lobby.ui.game_rows.len() == 3
+                        && lobby.ui.player_rows.iter().any(|row| row.name == NICKNAME),
+                    "the test service did not fill 0x113"
+                );
+                self.event(frame, "0x113 settled from the test service");
+                if self.target == WolTarget::TestServiceCreate {
+                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    lobby_button(state, &layout, lobby_ui::CREATE)?;
+                    let (width, height) = (
+                        state.renderer.gpu.config.width as i32,
+                        state.renderer.gpu.config.height as i32,
+                    );
+                    let ok = crate::ui::shell::modal::wol_create_game_layout(width, height).ok;
+                    welcome_click(state, ok);
+                    self.event(frame, "0xC3 OK (test service)");
+                    self.phase = WolPhase::ServiceSetup;
+                    return Ok(());
+                }
+                if self.target == WolTarget::TestServiceJoin {
+                    game_row_click(state, 0)?;
+                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    lobby_button(state, &layout, lobby_ui::JOIN)?;
+                    self.event(frame, "Join on Tanya's_game (test service)");
+                    self.phase = WolPhase::ServiceSetup;
+                    return Ok(());
+                }
+                self.hover_settle(state);
+            }
+            WolPhase::ServiceSetup
+                if rendered == PresentedShell::NetworkSetup
+                    && wol_setup_settled(state, self.target != WolTarget::TestServiceJoin) =>
+            {
+                ensure!(
+                    state
+                        .match_state
+                        .session
+                        .network_setup()
+                        .is_some_and(|launch| launch.local_player().name == NICKNAME),
+                    "C2/C9 did not open for the local user"
+                );
+                self.event(frame, "C2/C9 settled from the test service");
+                MoviesCapture::restore_neutral_pointer(state);
+                crate::app::input::multiplayer_setup::cursor_moved(state);
+                self.settle();
             }
             WolPhase::Settle(remaining) if remaining > 0 => {
                 self.phase = WolPhase::Settle(remaining - 1);

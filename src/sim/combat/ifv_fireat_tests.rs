@@ -186,18 +186,19 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
         assert_eq!(new_bullets.len(), 1, "one constructor at {frame}");
         let (&stable_id, bullet) = new_bullets[0];
         assert_eq!(
-            bullet.native_unique_id,
+            bullet.native_unique_id(),
             row["launch"]["unique_id"].as_i64().unwrap() as i32
         );
-        assert_ne!(stable_id, bullet.native_unique_id as u64);
-        assert_eq!(bullet.launch_origin, coord(&row["launch"]["position"]));
+        assert_ne!(stable_id, bullet.native_unique_id() as u64);
+        assert_eq!(bullet.launch_origin(), coord(&row["launch"]["position"]));
         assert_eq!(
-            bullet.position, bullet.launch_origin,
+            bullet.position(),
+            bullet.launch_origin(),
             "no intervening Bullet AI"
         );
-        assert_eq!(bullet.launch_target, coord(&row["launch"]["target"]));
+        assert_eq!(bullet.launch_target(), coord(&row["launch"]["target"]));
         assert_eq!(emitted.fire_events.len(), 1);
-        assert_eq!(emitted.fire_events[0].fire_coord, bullet.launch_origin);
+        assert_eq!(emitted.fire_events[0].fire_coord, bullet.launch_origin());
         assert_eq!(
             world.substrate.anims.len(),
             anim_count,

@@ -138,8 +138,8 @@ impl Replay {
         }
         if input["sensor"] == 1 {
             let owner = scene.sim.interner.get("Americans").unwrap();
-            scene.sim.fog.width = 33;
-            scene.sim.fog.height = 33;
+            scene.sim.fog.set_width_for_test(33);
+            scene.sim.fog.set_height_for_test(33);
             scene.sim.fog.sensors_add_at(owner, (16, 15), 1);
         }
         if let Some(control) = input.get("idle_control") {

@@ -111,7 +111,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
     let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();
     for &id in &ids {
         let piece = sim.voxel_anims().get(id).unwrap();
-        let kind = rules.voxel_anim_type(piece.type_id);
+        let kind = rules.voxel_anim_type(piece.type_id());
         assert_eq!(kind.image, "TIRE");
         let location = piece.world_coord();
         let palette = piece_palette(piece, kind, &sim, &house_colors, &light);
@@ -234,7 +234,7 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         sim.visit_voxel_anim(id, Some(rules));
     }
     let piece = sim.voxel_anims().get(id).unwrap();
-    assert_eq!(piece.owner_house, None);
+    assert_eq!(piece.owner_house(), None);
     let mut light = CellLightGrid::new();
     let location = piece.world_coord();
     let cell = ((location.x / 256) as u16, (location.y / 256) as u16);

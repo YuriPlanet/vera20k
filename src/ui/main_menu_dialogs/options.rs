@@ -67,6 +67,10 @@ pub(crate) const ORIGINAL_SHAPE_HELP: &str =
 pub(crate) const RA2_LOOK_LABEL: &str = "RA2 Loading & Menu Movie";
 pub(crate) const RA2_LOOK_HELP: &str = "Show the Red Alert 2 loading screen and menu movie.";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
+pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "Developer Options";
+pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "Offline Internet Test Service";
+pub(crate) const WOL_TEST_SERVICE_HELP: &str =
+    "Internet opens with stand-in servers, lobbies and players, for testing its screens.";
 pub(crate) const SHIFT_QUEUE_HELP: &str =
     "Shift-click an infantry, vehicle or aircraft cameo to queue several at once.";
 
@@ -344,6 +348,10 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's own box: Shift + left click on a mobile build cameo queues
     /// several copies instead of gamemd's one. It applies at once.
     ShiftQueue,
+    /// VERA's developer box: Internet answers from the stand-in WOL test
+    /// service instead of showing that WOLAPI is missing. The next Internet
+    /// visit reads it.
+    WolTestService,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -367,6 +375,7 @@ pub(crate) enum LauncherOptionsEvent {
     OriginalShapeChanged(bool),
     Ra2LookChanged(bool),
     ShiftQueueChanged(bool),
+    WolTestServiceChanged(bool),
     ScorePreview(f32),
     SoundPreview(f32),
     VoicePreview(f32),
@@ -402,6 +411,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) original_shape: bool,
     pub(crate) ra2_look: bool,
     pub(crate) shift_queue: bool,
+    pub(crate) wol_test_service: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
     pub(crate) score_position: u8,
@@ -422,6 +432,7 @@ impl Default for LauncherOptionsValues {
             original_shape: false,
             ra2_look: false,
             shift_queue: false,
+            wol_test_service: false,
             sidebar: SidebarSize::Normal,
             score_position: 4,
             sound_position: 7,
@@ -708,6 +719,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::OriginalShape => &mut self.values.original_shape,
             LauncherCheckboxId::Ra2Look => &mut self.values.ra2_look,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
+            LauncherCheckboxId::WolTestService => &mut self.values.wol_test_service,
         };
         *slot = !*slot;
         let checked = *slot;
@@ -726,6 +738,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShiftQueue => self
                 .pending_events
                 .push(LauncherOptionsEvent::ShiftQueueChanged(checked)),
+            LauncherCheckboxId::WolTestService => self
+                .pending_events
+                .push(LauncherOptionsEvent::WolTestServiceChanged(checked)),
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
             | LauncherCheckboxId::ShowHidden => {}

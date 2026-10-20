@@ -2359,31 +2359,31 @@ impl MapElectricBoltObservation {
         let mut particle_systems = Vec::new();
         for (&id, system) in sim.particle_systems().iter() {
             count = count
-                .checked_add(1 + system.particles.len())
+                .checked_add(1 + system.particles().len())
                 .context("particle observation count overflow")?;
             ensure!(
                 count <= MAX_OBSERVATION_SAMPLES,
                 "particle observation exceeds sample budget"
             );
-            let particles: Vec<_> = system.particles.iter().map(|particle| json!({
+            let particles: Vec<_> = system.particles().iter().map(|particle| json!({
                 "stable_id": particle.stable_id(),
-                "native_id": particle.native_unique_id(), "type_id": rules.particle_type(particle.type_id).name,
+                "native_id": particle.native_unique_id(), "type_id": rules.particle_type(particle.type_id()).name,
                 "display_layer": sim.display_layers().layer_of(particle.stable_id()).map(|layer| layer.index()),
-                "coord": particle.coords.to_array(), "lifetime": particle.lifetime_remaining,
-                "damage_counter": particle.damage_counter, "marked_for_deletion": particle.marked_for_deletion,
-                "velocity_bits": particle.velocity().bits(), "origin": particle.origin.to_array(),
-                "drift": [particle.drift_x, particle.drift_y, particle.drift_z],
-                "animation_state": particle.animation_state, "state_ai_advance": particle.state_ai_advance,
-                "translucency": particle.translucency,
+                "coord": particle.coords().to_array(), "lifetime": particle.lifetime_remaining(),
+                "damage_counter": particle.damage_counter(), "marked_for_deletion": particle.marked_for_deletion(),
+                "velocity_bits": particle.velocity().bits(), "origin": particle.origin().to_array(),
+                "drift": [particle.drift_x(), particle.drift_y(), particle.drift_z()],
+                "animation_state": particle.animation_state(), "state_ai_advance": particle.state_ai_advance(),
+                "translucency": particle.translucency(),
             })).collect();
             particle_systems.push(json!({"stable_id": id, "native_id": system.native_unique_id(),
-                "type_id": rules.particle_system_type(system.type_id).name, "coord": system.coords.to_array(),
-                "lifetime": system.lifetime, "spawn_frames": system.spark_spawn_frames,
+                "type_id": rules.particle_system_type(system.type_id()).name, "coord": system.coords().to_array(),
+                "lifetime": system.lifetime(), "spawn_frames": system.spark_spawn_frames(),
                 "spawn_timer_bits": system.spawn_timer().bits(),
                 "in_limbo": system.in_limbo(),
                 "display_layer": sim.display_layers().layer_of(id).map(|layer| layer.index()),
-                "done_spawning": system.done_spawning, "in_logic_vector": system.in_logic_vector,
-                "owner_entity": system.owner_entity, "attached_entity": match system.target_ref { Some(crate::sim::combat::TargetKind::Entity(id)) => Some(id), _ => None },
+                "done_spawning": system.done_spawning(), "in_logic_vector": system.in_logic_vector(),
+                "owner_entity": system.owner_entity(), "attached_entity": match system.target_ref() { Some(crate::sim::combat::TargetKind::Entity(id)) => Some(id), _ => None },
                 "particles": particles}));
         }
         let rng = sim.rng_views();
@@ -2453,31 +2453,31 @@ impl MapEffectObservation {
     ) -> Result<Self> {
         let projectiles = (profile.observe_projectiles == Some(true)).then(|| {
             sim.projectiles.iter().take(MAX_OBSERVATION_SAMPLES + 1).map(|(&id, bullet)| {
-                let weapon = bullet.payload.installed_weapon().map(|id| sim.interner.resolve(id));
-                let type_id = bullet.payload.projectile_type().map(|id| sim.interner.resolve(id));
-                json!({"stable_id": id, "native_id": bullet.native_unique_id,
-                    "weapon": weapon, "type_id": type_id, "source_id": bullet.source_id,
-                    "physical_leptons": [bullet.position.x, bullet.position.y, bullet.position.z],
-                    "in_logic_vector": bullet.in_logic_vector, "awaiting_anim": bullet.awaiting_anim(),
-                    "visual_frame": bullet.visual.runtime_frame,
-                    "visual_countdown": bullet.visual.runtime_countdown})
+                let weapon = bullet.payload().installed_weapon().map(|id| sim.interner.resolve(id));
+                let type_id = bullet.payload().projectile_type().map(|id| sim.interner.resolve(id));
+                json!({"stable_id": id, "native_id": bullet.native_unique_id(),
+                    "weapon": weapon, "type_id": type_id, "source_id": bullet.source_id(),
+                    "physical_leptons": [bullet.position().x, bullet.position().y, bullet.position().z],
+                    "in_logic_vector": bullet.in_logic_vector(), "awaiting_anim": bullet.awaiting_anim(),
+                    "visual_frame": bullet.visual().runtime_frame,
+                    "visual_countdown": bullet.visual().runtime_countdown})
             }).collect::<Vec<_>>()
         });
         let animations = profile.observe_anim_types.as_ref().map(|types| {
             sim.anims().filter(|(_, anim)| types.iter().any(|name|
-                name.eq_ignore_ascii_case(sim.interner.resolve(anim.type_id))))
+                name.eq_ignore_ascii_case(sim.interner.resolve(anim.type_id()))))
                 .take(MAX_OBSERVATION_SAMPLES + 1).map(|(&id, anim)| {
                     let absolute = sim.anim_absolute_coord(id).map(|at| [at.x, at.y, at.z]);
-                    json!({"stable_id": id, "native_id": anim.native_unique_id,
-                        "type_id": sim.interner.resolve(anim.type_id),
-                        "stored_leptons": [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
-                        "physical_leptons": absolute, "owner_entity": anim.owner_entity,
-                        "in_logic_vector": anim.in_logic_vector, "completed": anim.completed(),
-                        "effective_end": anim.effective_end, "effective_loop_end": anim.effective_loop_end,
-                        "draw_flags": anim.draw_flags, "z_adjust": anim.z_adjust,
-                        "hidden": anim.draw_runtime.hidden,
-                        "translucency_ramp": anim.draw_runtime.translucency_ramp,
-                        "runtime": anim.runtime})
+                    json!({"stable_id": id, "native_id": anim.native_unique_id(),
+                        "type_id": sim.interner.resolve(anim.type_id()),
+                        "stored_leptons": [anim.world_coord().x, anim.world_coord().y, anim.world_coord().z],
+                        "physical_leptons": absolute, "owner_entity": anim.owner_entity(),
+                        "in_logic_vector": anim.in_logic_vector(), "completed": anim.completed(),
+                        "effective_end": anim.effective_end(), "effective_loop_end": anim.effective_loop_end(),
+                        "draw_flags": anim.draw_flags(), "z_adjust": anim.z_adjust(),
+                        "hidden": anim.draw_runtime().hidden,
+                        "translucency_ramp": anim.draw_runtime().translucency_ramp,
+                        "runtime": anim.runtime()})
                 }).collect::<Vec<_>>()
         });
         let rng = sim.rng_views().scenario;
@@ -3902,8 +3902,8 @@ impl TacticalCaptureSession {
                 let unit = entity.mission_leaf.as_unit().map(|leaf| {
                     let animation = entity.deploy_anim().map(|anim_id| {
                         json!({"stable_id": anim_id, "live": sim.anim(anim_id).map(|anim| {
-                            json!({"type_id": sim.interner.resolve(anim.type_id),
-                                "frame": anim.runtime.current_frame, "owner_entity": anim.owner_entity})
+                            json!({"type_id": sim.interner.resolve(anim.type_id()),
+                                "frame": anim.runtime().current_frame, "owner_entity": anim.owner_entity()})
                         })})
                     });
                     json!({"deployed_6e0": leaf.deployed(),
@@ -3925,15 +3925,15 @@ impl TacticalCaptureSession {
                         .filter_map(|(slot, anim_id)| {
                             anim_id.map(|anim_id| {
                                 let animation = sim.anim(anim_id).map(|anim| {
-                                    json!({"stable_id": anim.stable_id,
-                                        "native_id": anim.native_unique_id,
-                                        "type_id": sim.interner.resolve(anim.type_id),
-                                        "interned_type_id": anim.type_id.index(),
-                                        "physical_leptons": [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
-                                        "in_logic_vector": anim.in_logic_vector,
-                                        "owner_entity": anim.owner_entity,
-                                        "building_slot": anim.building_slot,
-                                        "runtime": anim.runtime})
+                                    json!({"stable_id": anim.stable_id(),
+                                        "native_id": anim.native_unique_id(),
+                                        "type_id": sim.interner.resolve(anim.type_id()),
+                                        "interned_type_id": anim.type_id().index(),
+                                        "physical_leptons": [anim.world_coord().x, anim.world_coord().y, anim.world_coord().z],
+                                        "in_logic_vector": anim.in_logic_vector(),
+                                        "owner_entity": anim.owner_entity(),
+                                        "building_slot": anim.building_slot(),
+                                        "runtime": anim.runtime()})
                                 });
                                 json!({"slot": slot, "anim_id": anim_id, "animation": animation})
                             })
@@ -5241,7 +5241,7 @@ mod tests {
         let live = sim.anims().find(|(id, _)| **id == selected).unwrap().1;
         assert_eq!(
             rows[0]["runtime"],
-            serde_json::to_value(&live.runtime).unwrap()
+            serde_json::to_value(&live.runtime()).unwrap()
         );
         assert_eq!(sim.state_hash(), hash);
         assert_eq!(sim.rng_state(), rng);

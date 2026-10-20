@@ -295,7 +295,7 @@ mod tests {
             .filter_map(|slot| {
                 let anim = entity.building_art.anim_slots[usize::from(slot)]?;
                 let anim = sim.substrate.anims.get(anim)?;
-                Some((slot, sim.interner.resolve(anim.type_id).to_string()))
+                Some((slot, sim.interner.resolve(anim.type_id()).to_string()))
             })
             .collect()
     }

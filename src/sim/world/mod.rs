@@ -2332,7 +2332,7 @@ impl Simulation {
         if self
             .waves
             .get(request.wave_id)
-            .and_then(|wave| wave.owner_id)
+            .and_then(|wave| wave.owner_id())
             != Some(request.firer_id)
         {
             return;
@@ -3482,8 +3482,7 @@ impl Simulation {
         // vision must never run against a zero-dim first-tick window. Fixture
         // sims built without a descriptor (zero bounds) keep the lazy
         // derivation as a fallback inside the vision recompute.
-        out.fog.width = out.session.map_width();
-        out.fog.height = out.session.map_height();
+        out.fog = FogState::new(out.session.map_width(), out.session.map_height());
         out
     }
 
@@ -4232,12 +4231,12 @@ impl Simulation {
                 .projectiles
                 .get(id)
                 .expect("constructed Bullet")
-                .position,
+                .position(),
             in_logic: self
                 .projectiles
                 .get(id)
                 .expect("constructed Bullet")
-                .in_logic_vector,
+                .in_logic_vector(),
             in_display: self.substrate.display.layer_of(id).is_some(),
         });
         id
@@ -4273,12 +4272,12 @@ impl Simulation {
             return;
         };
         let firers_palette = projectile
-            .payload
+            .payload()
             .projectile_type()
             .and_then(|id| rules.projectile(self.interner.resolve(id)))
             .is_some_and(|kind| kind.firers_palette);
         let house = firers_palette
-            .then(|| self.substrate.entities.get(projectile.source_id))
+            .then(|| self.substrate.entities.get(projectile.source_id()))
             .flatten()
             .map(|owner| owner.owner());
         self.projectiles.set_firer_house(bullet, house);
@@ -4359,17 +4358,17 @@ impl Simulation {
                         .substrate
                         .anims
                         .get(id)
-                        .is_some_and(|anim| anim.in_logic_vector)
+                        .is_some_and(|anim| anim.in_logic_vector())
                     || self
                         .substrate
                         .voxel_anims
                         .get(id)
-                        .is_some_and(|debris| debris.in_logic_vector)
+                        .is_some_and(|debris| debris.in_logic_vector())
                     || self
                         .substrate
                         .particle_systems
                         .get(id)
-                        .is_some_and(|system| system.in_logic_vector)
+                        .is_some_and(|system| system.in_logic_vector())
                     || self
                         .terrain_objects
                         .objects()
@@ -4378,13 +4377,16 @@ impl Simulation {
                     || self
                         .projectiles
                         .get(id)
-                        .is_some_and(|projectile| projectile.in_logic_vector)
-                    || self.waves.get(id).is_some_and(|wave| wave.in_logic_vector)
+                        .is_some_and(|projectile| projectile.in_logic_vector())
+                    || self
+                        .waves
+                        .get(id)
+                        .is_some_and(|wave| wave.in_logic_vector())
                     || self
                         .substrate
                         .spotlights
                         .get(id)
-                        .is_some_and(|light| light.in_logic_vector),
+                        .is_some_and(|light| light.in_logic_vector()),
                 "logic order id {id} is missing or not membership-flagged",
             );
         }
@@ -4398,19 +4400,19 @@ impl Simulation {
             .substrate
             .anims
             .iter()
-            .filter(|(_, anim)| anim.in_logic_vector)
+            .filter(|(_, anim)| anim.in_logic_vector())
             .count();
         let flagged_voxel_anims = self
             .substrate
             .voxel_anims
             .iter()
-            .filter(|(_, debris)| debris.in_logic_vector)
+            .filter(|(_, debris)| debris.in_logic_vector())
             .count();
         let flagged_particle_systems = self
             .substrate
             .particle_systems
             .iter()
-            .filter(|(_, system)| system.in_logic_vector)
+            .filter(|(_, system)| system.in_logic_vector())
             .count();
         let flagged_terrain = self
             .terrain_objects
@@ -4421,18 +4423,18 @@ impl Simulation {
         let flagged_projectiles = self
             .projectiles
             .iter()
-            .filter(|(_, projectile)| projectile.in_logic_vector)
+            .filter(|(_, projectile)| projectile.in_logic_vector())
             .count();
         let flagged_waves = self
             .waves
             .iter()
-            .filter(|(_, wave)| wave.in_logic_vector)
+            .filter(|(_, wave)| wave.in_logic_vector())
             .count();
         let flagged_spotlights = self
             .substrate
             .spotlights
             .iter()
-            .filter(|(_, l)| l.in_logic_vector)
+            .filter(|(_, l)| l.in_logic_vector())
             .count();
         let flagged = flagged_spotlights
             + flagged_entities
@@ -4645,47 +4647,8 @@ impl Simulation {
     /// Test-only: force the active order and sync membership flags to it.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_logic_order_for_test(&mut self, order: Vec<u64>) {
-        for entity in self.substrate.entities.values_mut() {
-            entity.in_logic_vector.mark(false);
-        }
-        for anim in self.substrate.anims.values_mut() {
-            anim.in_logic_vector = false;
-        }
-        for light in self.substrate.spotlights.values_mut() {
-            light.in_logic_vector = false;
-        }
-        for debris in self.substrate.voxel_anims.values_mut() {
-            debris.in_logic_vector = false;
-        }
-        for (_, system) in self.substrate.particle_systems.iter_mut() {
-            system.in_logic_vector = false;
-        }
-        self.terrain_objects.clear_logic_memberships();
-        for (_, projectile) in self.projectiles.iter_mut() {
-            projectile.in_logic_vector = false;
-        }
-        for (_, wave) in self.waves.iter_mut() {
-            wave.in_logic_vector = false;
-        }
-        for &id in &order {
-            if let Some(e) = self.substrate.entities.get_mut(id) {
-                e.in_logic_vector.mark(true);
-            } else if let Some(anim) = self.substrate.anims.get_mut(id) {
-                anim.in_logic_vector = true;
-            } else if let Some(light) = self.substrate.spotlights.get_mut(id) {
-                light.in_logic_vector = true;
-            } else if let Some(debris) = self.substrate.voxel_anims.get_mut(id) {
-                debris.in_logic_vector = true;
-            } else if let Some(system) = self.substrate.particle_systems.get_mut(id) {
-                system.in_logic_vector = true;
-            } else if self.terrain_objects.set_logic_membership(id, true) {
-            } else if let Some(projectile) = self.projectiles.get_mut(id) {
-                projectile.in_logic_vector = true;
-            } else if let Some(wave) = self.waves.get_mut(id) {
-                wave.in_logic_vector = true;
-            }
-        }
         self.substrate.logic.set_order_for_test(order);
+        self.rebuild_logic_membership();
     }
 
     /// Common VoxelAnim7493B0 constructor/admission for typed Techno and
@@ -4729,7 +4692,7 @@ impl Simulation {
         spawns: impl IntoIterator<Item = crate::sim::voxel_anim::VoxelDebrisSpawn>,
     ) {
         for spawn in spawns {
-            let stable_id = spawn.object.stable_id;
+            let stable_id = spawn.object.stable_id();
             self.substrate.voxel_anims.insert(spawn.object);
             self.reveal_voxel_anim(stable_id);
         }
@@ -5836,40 +5799,40 @@ impl Simulation {
             entity.in_logic_vector.mark(false);
         }
         for anim in self.substrate.anims.values_mut() {
-            anim.in_logic_vector = false;
+            anim.mark_logic_membership(false);
         }
         for light in self.substrate.spotlights.values_mut() {
-            light.in_logic_vector = false;
+            light.mark_logic_membership(false);
         }
         for debris in self.substrate.voxel_anims.values_mut() {
-            debris.in_logic_vector = false;
+            debris.mark_logic_membership(false);
         }
         for (_, system) in self.substrate.particle_systems.iter_mut() {
-            system.in_logic_vector = false;
+            system.mark_logic_membership(false);
         }
         self.terrain_objects.clear_logic_memberships();
         for (_, projectile) in self.projectiles.iter_mut() {
-            projectile.in_logic_vector = false;
+            projectile.mark_logic_membership(false);
         }
         for (_, wave) in self.waves.iter_mut() {
-            wave.in_logic_vector = false;
+            wave.mark_logic_membership(false);
         }
         for &id in &self.substrate.logic.snapshot() {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.in_logic_vector.mark(true);
             } else if let Some(anim) = self.substrate.anims.get_mut(id) {
-                anim.in_logic_vector = true;
+                anim.mark_logic_membership(true);
             } else if let Some(light) = self.substrate.spotlights.get_mut(id) {
-                light.in_logic_vector = true;
+                light.mark_logic_membership(true);
             } else if let Some(debris) = self.substrate.voxel_anims.get_mut(id) {
-                debris.in_logic_vector = true;
+                debris.mark_logic_membership(true);
             } else if let Some(system) = self.substrate.particle_systems.get_mut(id) {
-                system.in_logic_vector = true;
+                system.mark_logic_membership(true);
             } else if self.terrain_objects.set_logic_membership(id, true) {
             } else if let Some(projectile) = self.projectiles.get_mut(id) {
-                projectile.in_logic_vector = true;
+                projectile.mark_logic_membership(true);
             } else if let Some(wave) = self.waves.get_mut(id) {
-                wave.in_logic_vector = true;
+                wave.mark_logic_membership(true);
             }
         }
         // Alive, limbo, cell Mark, and death-sequence state are independent
@@ -6352,11 +6315,11 @@ impl Simulation {
         if self.session.tick() == 1 {
             log::info!(
                 "Fog grid: {}x{}, {} owners",
-                self.fog.width,
-                self.fog.height,
-                self.fog.by_owner.len()
+                self.fog.width(),
+                self.fog.height(),
+                self.fog.by_owner().len()
             );
-            for (owner, vis) in self.fog.by_owner.iter() {
+            for (owner, vis) in self.fog.by_owner().iter() {
                 let total = vis.width() as u32 * vis.height() as u32;
                 let visible_count = vis.cells_raw().iter().filter(|c| **c & 0x02 != 0).count();
                 let revealed_count = vis.cells_raw().iter().filter(|c| **c & 0x01 != 0).count();

@@ -28,10 +28,13 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
+    // Periodic frame hashes feed replay and sync checks, which nothing here
+    // reads; an interval no tick reaches skips them (11-12% of each frame in
+    // this unoptimized test build).
     scene
         .runtime
         .simulation
-        .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
+        .hash_state_every(std::num::NonZeroU64::MAX);
     let owner = scene.sim().session.current_house().unwrap();
     let owner_name = scene.sim().resolve(owner).to_owned();
     let wall_type = scene.sim().interner.get("GAWALL").unwrap();
@@ -189,10 +192,13 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
+    // Periodic frame hashes feed replay and sync checks, which nothing here
+    // reads; an interval no tick reaches skips them (11-12% of each frame in
+    // this unoptimized test build).
     scene
         .runtime
         .simulation
-        .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
+        .hash_state_every(std::num::NonZeroU64::MAX);
     let owner = scene.sim().session.current_house().unwrap();
     let owner_name = scene.sim().resolve(owner).to_owned();
     assert_eq!(owner_name, "VERA-OBSERVER");

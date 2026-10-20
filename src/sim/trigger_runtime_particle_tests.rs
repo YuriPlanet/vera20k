@@ -108,16 +108,20 @@ fn original_creation_controls_preserve_signed_center_registry_index_and_ground_o
             .collect();
         assert_eq!(systems.len(), 1);
         let system = systems[0];
-        assert_eq!(system.type_id.0, index as u32);
-        assert_eq!(system.coords, IVec3::new(3200, 4480, 208));
-        assert_eq!(system.target_coords, IVec3::ZERO);
-        assert_eq!(system.offset, IVec3::ZERO);
+        assert_eq!(system.type_id().0, index as u32);
+        assert_eq!(system.coords(), IVec3::new(3200, 4480, 208));
+        assert_eq!(system.target_coords(), IVec3::ZERO);
+        assert_eq!(system.offset(), IVec3::ZERO);
         assert_eq!(
-            (system.target_ref, system.owner_entity, system.owner_house),
+            (
+                system.target_ref(),
+                system.owner_entity(),
+                system.owner_house()
+            ),
             (None, None, None)
         );
-        assert!(system.alive() && !system.done_spawning);
-        assert!(system.particles.is_empty());
+        assert!(system.alive() && !system.done_spawning());
+        assert!(system.particles().is_empty());
         assert_eq!(rng(&sim), before);
         assert_eq!(sim.session.binary_frame(), frame);
     }
@@ -183,9 +187,9 @@ fn all_five_original_stop_controls_only_mark_alive_same_cell_systems() {
         assert_eq!(sim.particle_systems().len(), count);
         for (index, id) in ids.into_iter().enumerate() {
             let system = sim.particle_systems().get(id).unwrap();
-            assert_eq!(system.done_spawning, expected[index], "{cell:?}/{index}");
+            assert_eq!(system.done_spawning(), expected[index], "{cell:?}/{index}");
             assert_eq!(system.alive(), priors[index].0);
-            assert_eq!(system.coords, IVec3::from_array(priors[index].1));
+            assert_eq!(system.coords(), IVec3::from_array(priors[index].1));
         }
         assert_eq!(rng(&sim), before);
         assert_eq!(sim.session.binary_frame(), 0);
@@ -212,14 +216,14 @@ fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_r
         crate::sim::world::UninitContext::with_rules(&rules)
     ));
     let system = sim.particle_systems().get(id).unwrap();
-    assert!(!system.done_spawning);
-    assert!(!system.particles.is_empty());
-    let children = serde_json::to_value(&system.particles).unwrap();
+    assert!(!system.done_spawning());
+    assert!(!system.particles().is_empty());
+    let children = serde_json::to_value(&system.particles()).unwrap();
     let before = rng(&sim);
     assert!(run(&mut sim, &action(89, -1), None));
     let system = sim.particle_systems().get(id).unwrap();
-    assert!(system.alive() && system.done_spawning);
-    assert_eq!(serde_json::to_value(&system.particles).unwrap(), children);
+    assert!(system.alive() && system.done_spawning());
+    assert_eq!(serde_json::to_value(&system.particles()).unwrap(), children);
     assert_eq!(rng(&sim), before);
     let serialized = serde_json::to_value(system).unwrap();
     let bytes = GameSnapshot::save(&sim, 0, 0, "Stopped smoke", 0);

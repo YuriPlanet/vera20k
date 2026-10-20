@@ -84,7 +84,7 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
     let Some(location) = sim
         .projectiles
         .get(impact.projectile_id())
-        .map(|bullet| bullet.position)
+        .map(|bullet| bullet.position())
     else {
         return;
     };

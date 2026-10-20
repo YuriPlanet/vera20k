@@ -751,7 +751,7 @@ fn a_tracked_pass_after_a_sweep_marks_the_swept_cells_a_footprint_covers() {
     for (x, y) in [covered, alternate] {
         let vis = fog.by_owner.get_mut(&americans).unwrap();
         let index = vis.index(x, y).unwrap();
-        vis.shroud_knowledge[index].pending = true;
+        vis.shroud_knowledge[index].set_pending_for_test(true);
         vis.publish_knowledge(index);
         fog.sweep_pending_map_cell(americans, (x, y), None);
     }
@@ -1392,17 +1392,17 @@ fn shroud_current_sight_matches_original_native_sequences() {
             let vis = &fog.by_owner[&owner];
             let state = vis.shroud_knowledge[vis.index(10, 10).unwrap()];
             assert_eq!(
-                state.counter,
+                state.counter(),
                 observation["counter"].as_i64().unwrap() as i32,
                 "{name}/{op}/counter"
             );
             assert_eq!(
-                state.gap_counter,
+                state.gap_counter(),
                 observation["gap"].as_i64().unwrap() as i32,
                 "{name}/{op}/gap"
             );
             assert_eq!(
-                state.pending,
+                state.pending(),
                 observation["flags"].as_u64().unwrap() & 0x20 != 0,
                 "{name}/{op}/pending"
             );
@@ -1507,10 +1507,10 @@ fn shroud_current_sight_provenance_changes_future_conceal_and_hash() {
     // state with a past mapping receipt.
     mapped.sight_admissions.clear();
     for state in &mut mapped.by_owner.get_mut(&owner).unwrap().shroud_knowledge {
-        if state.local_sources > 0 {
-            state.local_sources = 0;
-            state.counter = 0;
-            state.transient_visible = true;
+        if state.local_sources() > 0 {
+            state.set_local_sources_for_test(0);
+            state.set_counter_for_test(0);
+            state.set_transient_visible_for_test(true);
         }
     }
     let sight = std::mem::replace(&mut sim.fog, mapped);

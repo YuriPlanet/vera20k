@@ -215,42 +215,42 @@ fn assert_joined_frame(sim: &Simulation, id: u64, frame: &Value, context: &str) 
         "{context}: live animations"
     );
     for (anim, expected) in rust_anims.iter().zip(native_anims) {
-        let runtime = &anim.runtime;
+        let runtime = &anim.runtime();
         assert_eq!(
-            sim.interner.resolve(anim.type_id),
+            sim.interner.resolve(anim.type_id()),
             expected["type_name"].as_str().unwrap(),
             "{context}: retained type identity"
         );
         assert_eq!(
-            i64::from(anim.native_unique_id),
+            i64::from(anim.native_unique_id()),
             expected["native_id"].as_i64().unwrap(),
             "{context}: native ID"
         );
         assert_eq!(
-            u64::from(anim.draw_flags),
+            u64::from(anim.draw_flags()),
             expected["draw_flags"].as_u64().unwrap(),
             "{context}: draw flags"
         );
         assert_eq!(
-            i64::from(anim.z_adjust),
+            i64::from(anim.z_adjust()),
             expected["z_adjust"].as_i64().unwrap(),
             "{context}: Z adjustment"
         );
-        let coord = sim.anim_absolute_coord(anim.stable_id).unwrap();
+        let coord = sim.anim_absolute_coord(anim.stable_id()).unwrap();
         assert_eq!(
             json!([coord.x, coord.y, coord.z]),
             expected["location"],
             "{context}: world location"
         );
         assert!(
-            anim.owner_entity.is_none(),
+            anim.owner_entity().is_none(),
             "{context}: slot reference is distinct from Object owner"
         );
         assert_eq!(expected["owner_object"], 0);
         assert_eq!(expected["alive"], 1);
         assert_eq!(expected["limbo"], 0);
         assert_eq!(expected["is_bouncing"], 0);
-        assert!(anim.bounce.is_none());
+        assert!(anim.bounce().is_none());
         assert_eq!(
             json!({
                 "constructor_reverse": u8::from(runtime.constructor_reverse),
@@ -276,7 +276,7 @@ fn assert_joined_frame(sim: &Simulation, id: u64, frame: &Value, context: &str) 
         let anim = sim.anim(rust_id).unwrap();
         native_anims
             .iter()
-            .find(|row| row["native_id"].as_i64() == Some(i64::from(anim.native_unique_id)))
+            .find(|row| row["native_id"].as_i64() == Some(i64::from(anim.native_unique_id())))
             .unwrap()["pointer"]
             .as_u64()
             .unwrap()

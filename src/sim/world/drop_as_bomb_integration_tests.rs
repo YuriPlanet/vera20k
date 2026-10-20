@@ -275,10 +275,10 @@ fn run_drop(sim: &mut Simulation, rules: &RuleSet, carrier: u64, passenger: u64,
         .filter(|(id, _)| !anims_before_landing.contains(id))
         .map(|(_, anim)| {
             (
-                sim.interner.resolve(anim.type_id).to_owned(),
-                anim.world_coord,
-                anim.draw_flags,
-                anim.z_adjust,
+                sim.interner.resolve(anim.type_id()).to_owned(),
+                anim.world_coord(),
+                anim.draw_flags(),
+                anim.z_adjust(),
             )
         })
         .collect::<Vec<_>>();

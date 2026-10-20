@@ -191,7 +191,7 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                 sim.anims()
                     .filter(|(_, anim)| {
                         rules.general.metallic_debris.iter().any(|name| {
-                            name.eq_ignore_ascii_case(sim.interner.resolve(anim.type_id))
+                            name.eq_ignore_ascii_case(sim.interner.resolve(anim.type_id()))
                         })
                     })
                     .collect();
@@ -216,12 +216,16 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                     sim.resolved_terrain.as_ref(),
                 );
                 for (_, piece) in pieces {
-                    assert_eq!(piece.type_id, tire_id);
-                    assert_eq!(piece.owner_house, None, "Bullet passes a null debris owner");
-                    assert!(piece.in_logic_vector && !piece.marked_for_deletion);
+                    assert_eq!(piece.type_id(), tire_id);
+                    assert_eq!(
+                        piece.owner_house(),
+                        None,
+                        "Bullet passes a null debris owner"
+                    );
+                    assert!(piece.in_logic_vector() && !piece.marked_for_deletion());
                     assert!(
-                        piece.duration > 0
-                            && piece.duration <= rules.voxel_anim_type(tire_id).duration
+                        piece.duration() > 0
+                            && piece.duration() <= rules.voxel_anim_type(tire_id).duration
                     );
                     // The frame may already visit the newborn Bounce body.
                     // Check its live Inviso target region, not an invented
@@ -247,17 +251,17 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
             };
             let mut expected_children = std::collections::BTreeSet::new();
             for (_, anim) in &debris {
-                assert_eq!(anim.draw_flags, 0x600);
-                assert_eq!(anim.owner_entity, None);
+                assert_eq!(anim.draw_flags(), 0x600);
+                assert_eq!(anim.owner_entity(), None);
                 assert_eq!(anim.owner_house(), None);
                 assert_eq!(anim.attached_bullet(), None);
                 assert!(
-                    anim.in_logic_vector,
+                    anim.in_logic_vector(),
                     "constructor admits each piece to live Logic"
                 );
                 let config = rules
                     .art()
-                    .anim_runtime_config(sim.interner.resolve(anim.type_id))
+                    .anim_runtime_config(sim.interner.resolve(anim.type_id()))
                     .unwrap();
                 expected_children.extend(config.trailer_anim.iter().cloned());
                 expected_children.extend(config.expire_anim.iter().cloned());
@@ -354,7 +358,7 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                     assert!(actor.lifecycle.object_alive() && actor.health.current() > 0);
                 }
                 for (id, anim) in sim.anims() {
-                    let name = sim.interner.resolve(anim.type_id);
+                    let name = sim.interner.resolve(anim.type_id());
                     if expected_children.contains(name) {
                         seen_children.insert(name.to_owned());
                         child_ids.insert(*id);
@@ -407,13 +411,13 @@ fn brute_nonlethal_smash_emits_stock_and_authored_typed_warhead_debris() {
 
 fn native_bounce_fields(body: &crate::sim::bounce::BounceState) -> serde_json::Value {
     serde_json::json!({
-        "elasticity_bits": body.elasticity.bits(),
-        "gravity_bits": body.gravity.bits(),
-        "clamp_bits": body.angular_velocity_magnitude.bits(),
-        "position_bits": body.position.map(|v| v.bits()),
-        "velocity_bits": body.velocity.map(|v| v.bits()),
-        "orientation_bits": body.orientation.map(|v| v.bits()),
-        "rotation_bits": body.rotation.map(|v| v.bits()),
+        "elasticity_bits": body.elasticity().bits(),
+        "gravity_bits": body.gravity().bits(),
+        "clamp_bits": body.angular_velocity_magnitude().bits(),
+        "position_bits": body.position().map(|v| v.bits()),
+        "velocity_bits": body.velocity().map(|v| v.bits()),
+        "orientation_bits": body.orientation().map(|v| v.bits()),
+        "rotation_bits": body.rotation().map(|v| v.bits()),
     })
 }
 
@@ -660,7 +664,7 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
         // applies Unlimbo's floor+1; Fire's existing Inviso placement owner
         // then overwrites it (4688B7..468A39). Keep the native input unchanged.
         world.projectiles.fire_inviso(id, live, false);
-        assert_eq!(world.projectiles.get(id).unwrap().position, live);
+        assert_eq!(world.projectiles.get(id).unwrap().position(), live);
         if retired {
             // Production retirement clears live membership and queues late
             // deletion; retained store presence must not resurrect the tail.
@@ -749,69 +753,77 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
         );
         for (anim, expected) in actual.iter().zip(expected) {
             assert_eq!(
-                world.interner.resolve(anim.type_id),
+                world.interner.resolve(anim.type_id()),
                 expected["type"].as_str().unwrap(),
                 "{context}: constructor order"
             );
             assert_eq!(
-                json!([anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]),
+                json!([
+                    anim.world_coord().x,
+                    anim.world_coord().y,
+                    anim.world_coord().z
+                ]),
                 expected["location"],
                 "{context}: live GetCoords versus placement"
             );
             assert_eq!(
-                json!(anim.native_unique_id),
+                json!(anim.native_unique_id()),
                 expected["native_id"],
                 "{context}"
             );
-            assert_eq!(json!(anim.draw_flags), expected["draw_flags"], "{context}");
-            assert_eq!(json!(anim.z_adjust), expected["z_adjust"], "{context}");
             assert_eq!(
-                json!(anim.in_logic_vector),
+                json!(anim.draw_flags()),
+                expected["draw_flags"],
+                "{context}"
+            );
+            assert_eq!(json!(anim.z_adjust()), expected["z_adjust"], "{context}");
+            assert_eq!(
+                json!(anim.in_logic_vector()),
                 expected["logic_registered"],
                 "{context}"
             );
             assert_eq!(
                 json!({
-                    "current_frame": anim.runtime.current_frame,
-                    "frame_step": anim.runtime.frame_step,
-                    "delay_remaining": anim.runtime.delay_remaining,
-                    "rate_reload": anim.runtime.rate_reload,
-                    "frame_timer": [anim.runtime.frame_timer.start_frame(), anim.runtime.frame_timer.duration()],
-                    "loop_remaining": anim.runtime.loop_remaining,
-                    "first_ai_guard": u8::from(anim.runtime.first_ai_guard),
-                    "constructor_reverse": u8::from(anim.runtime.constructor_reverse),
-                    "inactive": u8::from(anim.runtime.inactive),
-                    "paused": u8::from(anim.runtime.paused),
+                    "current_frame": anim.runtime().current_frame,
+                    "frame_step": anim.runtime().frame_step,
+                    "delay_remaining": anim.runtime().delay_remaining,
+                    "rate_reload": anim.runtime().rate_reload,
+                    "frame_timer": [anim.runtime().frame_timer.start_frame(), anim.runtime().frame_timer.duration()],
+                    "loop_remaining": anim.runtime().loop_remaining,
+                    "first_ai_guard": u8::from(anim.runtime().first_ai_guard),
+                    "constructor_reverse": u8::from(anim.runtime().constructor_reverse),
+                    "inactive": u8::from(anim.runtime().inactive),
+                    "paused": u8::from(anim.runtime().paused),
                 }),
                 expected["runtime"],
                 "{context}: full constructor runtime"
             );
-            assert_eq!(anim.owner_entity, None);
+            assert_eq!(anim.owner_entity(), None);
             assert_eq!(anim.owner_house(), None);
             assert_eq!(anim.attached_bullet(), None);
             assert_eq!(
-                anim.bounce.is_some(),
+                anim.bounce().is_some(),
                 expected["is_bouncing"] == 1,
                 "{context}"
             );
-            if let Some(body) = anim.bounce {
+            if let Some(body) = anim.bounce() {
                 assert_eq!(
-                    json!(body.position.map(|v| v.bits())),
+                    json!(body.position().map(|v| v.bits())),
                     expected["bounce"]["position_bits"],
                     "{context}"
                 );
                 assert_eq!(
-                    json!(body.velocity.map(|v| v.bits())),
+                    json!(body.velocity().map(|v| v.bits())),
                     expected["bounce"]["velocity_bits"],
                     "{context}"
                 );
                 assert_eq!(
-                    json!(body.elasticity.bits()),
+                    json!(body.elasticity().bits()),
                     expected["bounce"]["elasticity_bits"],
                     "{context}"
                 );
                 assert_eq!(
-                    json!(body.gravity.bits()),
+                    json!(body.gravity().bits()),
                     expected["bounce"]["gravity_bits"],
                     "{context}"
                 );
@@ -823,7 +835,7 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
             assert_eq!(actual.len(), expected.len(), "{context}: typed births");
             for ((stable_id, piece), native) in actual.iter().zip(expected) {
                 assert_eq!(
-                    rules.voxel_anim_type(piece.type_id).name,
+                    rules.voxel_anim_type(piece.type_id()).name,
                     native["type"].as_str().unwrap()
                 );
                 assert_eq!(
@@ -832,18 +844,18 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
                     "{context}: constructor identity order"
                 );
                 assert_eq!(
-                    json!(piece.owner_house.is_none()),
+                    json!(piece.owner_house().is_none()),
                     native["owner_is_null"],
                     "{context}"
                 );
-                assert_eq!(json!(piece.duration), native["duration"], "{context}");
+                assert_eq!(json!(piece.duration()), native["duration"], "{context}");
                 assert_eq!(
-                    json!(piece.in_logic_vector),
+                    json!(piece.in_logic_vector()),
                     native["logic_registered"],
                     "{context}"
                 );
                 assert_eq!(
-                    json!(piece.marked_for_deletion),
+                    json!(piece.marked_for_deletion()),
                     native["marked_for_deletion"]
                 );
                 assert_eq!(
@@ -861,7 +873,7 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
                     native["display_layers"],
                     "{context}: native Display admission"
                 );
-                let body = &piece.bounce;
+                let body = &piece.bounce();
                 assert_eq!(
                     native_bounce_fields(body),
                     native["bounce"],
@@ -1130,10 +1142,10 @@ fn original_fatal_mtnk_tires_precede_the_concrete_death_anim_identity() {
         assert_eq!(pieces.len(), row["voxels"].as_array().unwrap().len());
         let mut ordered_births = Vec::new();
         for ((id, piece), native) in pieces.iter().zip(row["voxels"].as_array().unwrap()) {
-            assert_eq!(piece.type_id, tire_id);
+            assert_eq!(piece.type_id(), tire_id);
             assert_eq!(json!(piece.native_unique_id()), native["native_id"]);
             assert_eq!(
-                piece.owner_house,
+                piece.owner_house(),
                 Some(owner),
                 "{context}: Techno passes source owner"
             );
@@ -1142,10 +1154,10 @@ fn original_fatal_mtnk_tires_precede_the_concrete_death_anim_identity() {
                 native["owner_native_id"], prior["owner_native_id"],
                 "{context}: logical owner maps to the supplied native source house"
             );
-            assert_eq!(json!(piece.duration), native["duration"]);
-            assert_eq!(json!(piece.in_logic_vector), native["logic_registered"]);
+            assert_eq!(json!(piece.duration()), native["duration"]);
+            assert_eq!(json!(piece.in_logic_vector()), native["logic_registered"]);
             assert_eq!(
-                json!(piece.marked_for_deletion),
+                json!(piece.marked_for_deletion()),
                 native["marked_for_deletion"]
             );
             assert_eq!(
@@ -1160,7 +1172,7 @@ fn original_fatal_mtnk_tires_precede_the_concrete_death_anim_identity() {
                 .collect();
             assert_eq!(json!(layers), native["display_layers"]);
             assert_eq!(
-                native_bounce_fields(&piece.bounce),
+                native_bounce_fields(&piece.bounce()),
                 native["bounce"],
                 "{context}: complete constructor body"
             );
@@ -1170,18 +1182,22 @@ fn original_fatal_mtnk_tires_precede_the_concrete_death_anim_identity() {
         assert_eq!(anims.len(), row["anims"].as_array().unwrap().len());
         for ((id, anim), native) in anims.iter().zip(row["anims"].as_array().unwrap()) {
             assert_eq!(
-                world.interner.resolve(anim.type_id),
+                world.interner.resolve(anim.type_id()),
                 native["type"].as_str().unwrap()
             );
-            assert_eq!(json!(anim.native_unique_id), native["native_id"]);
+            assert_eq!(json!(anim.native_unique_id()), native["native_id"]);
             assert_eq!(
-                json!([anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]),
+                json!([
+                    anim.world_coord().x,
+                    anim.world_coord().y,
+                    anim.world_coord().z
+                ]),
                 native["location"]
             );
-            assert_eq!(json!(anim.draw_flags), native["draw_flags"]);
-            assert_eq!(json!(anim.z_adjust), native["z_adjust"]);
-            assert_eq!(anim.bounce.is_some(), native["is_bouncing"] == 1);
-            assert_eq!(json!(anim.in_logic_vector), native["logic_registered"]);
+            assert_eq!(json!(anim.draw_flags()), native["draw_flags"]);
+            assert_eq!(json!(anim.z_adjust()), native["z_adjust"]);
+            assert_eq!(anim.bounce().is_some(), native["is_bouncing"] == 1);
+            assert_eq!(json!(anim.in_logic_vector()), native["logic_registered"]);
             let layers: Vec<_> = world
                 .display_layers()
                 .layer_of(**id)
@@ -1189,7 +1205,7 @@ fn original_fatal_mtnk_tires_precede_the_concrete_death_anim_identity() {
                 .into_iter()
                 .collect();
             assert_eq!(json!(layers), native["display_layers"]);
-            ordered_births.push((**id, anim.native_unique_id));
+            ordered_births.push((**id, anim.native_unique_id()));
         }
         // Inspect the shared live Logic order, not two independently sorted
         // stores: both typed pieces precede the actual concrete Unit death Anim.

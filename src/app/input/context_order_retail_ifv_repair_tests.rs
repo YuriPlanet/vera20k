@@ -300,29 +300,29 @@ pub(in crate::app) fn ordinary_welding_children(rules: &RuleSet) -> OrdinaryWeld
     let systems: Vec<_> = sim
         .particle_systems()
         .iter()
-        .filter(|(_, system)| system.type_id == welding)
+        .filter(|(_, system)| system.type_id() == welding)
         .collect();
     let [(_, system)] = systems.as_slice() else {
         panic!("the first ordinary repair must create one WeldingSys");
     };
-    assert_eq!(system.owner_entity, Some(ifv));
+    assert_eq!(system.owner_entity(), Some(ifv));
     assert_eq!(
-        system.target_ref,
+        system.target_ref(),
         Some(crate::sim::combat::TargetKind::Entity(tank))
     );
-    assert!(system.in_logic_vector);
+    assert!(system.in_logic_vector());
     assert!(
         sim.display_layers()
             .ordered_ids()
-            .any(|&id| id == system.stable_id),
+            .any(|&id| id == system.stable_id()),
         "the constructed system must retain its ordinary Display membership"
     );
-    let first_system = system.stable_id;
+    let first_system = system.stable_id();
     for _ in 0..120 {
         if sim
             .particle_systems()
             .get(first_system)
-            .is_some_and(|system| !system.particles.is_empty())
+            .is_some_and(|system| !system.particles().is_empty())
         {
             break;
         }
@@ -333,7 +333,7 @@ pub(in crate::app) fn ordinary_welding_children(rules: &RuleSet) -> OrdinaryWeld
         .get(first_system)
         .expect("the first system still lives");
     assert!(
-        !system.particles.is_empty(),
+        !system.particles().is_empty(),
         "ordinary Logic must create real Welding children"
     );
     assert_eq!(
@@ -371,9 +371,9 @@ fn retail_engineer_ifv_plain_repair_click_reaches_attack_mission_and_heals() {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
         match sim.particle_systems().get(first_system) {
             Some(system) => {
-                drained_after_emission |= system.spark_spawn_frames <= 0
-                    && system.done_spawning
-                    && !system.particles.is_empty();
+                drained_after_emission |= system.spark_spawn_frames() <= 0
+                    && system.done_spawning()
+                    && !system.particles().is_empty();
             }
             None => retired = true,
         }
@@ -391,7 +391,7 @@ fn retail_engineer_ifv_plain_repair_click_reaches_attack_mission_and_heals() {
         "the next ordinary repair must resume after actual system expiry and rearm"
     );
     assert!(sim.particle_systems().iter().any(|(&id, system)| {
-        id != first_system && system.type_id == welding && system.owner_entity == Some(ifv)
+        id != first_system && system.type_id() == welding && system.owner_entity() == Some(ifv)
     }));
 }
 

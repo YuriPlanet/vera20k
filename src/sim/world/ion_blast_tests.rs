@@ -127,10 +127,10 @@ fn counted_action94_uses_ground_then_real_frame_damage_and_cleanup() {
         .anims()
         .map(|(_, a)| {
             (
-                sim.interner.resolve(a.type_id).to_string(),
-                [a.world_coord.x, a.world_coord.y, a.world_coord.z],
-                a.draw_flags,
-                a.z_adjust,
+                sim.interner.resolve(a.type_id()).to_string(),
+                [a.world_coord().x, a.world_coord().y, a.world_coord().z],
+                a.draw_flags(),
+                a.z_adjust(),
             )
         })
         .collect();
@@ -167,7 +167,7 @@ fn water_selects_last_splash_and_only_raw100_adds_a_deck_area() {
         assert_eq!(areas.len(), area_count);
         let names: Vec<_> = sim
             .anims()
-            .map(|(_, a)| sim.interner.resolve(a.type_id))
+            .map(|(_, a)| sim.interner.resolve(a.type_id()))
             .collect();
         assert_eq!(names, [expected_anim, "IONBEAM"]);
     }

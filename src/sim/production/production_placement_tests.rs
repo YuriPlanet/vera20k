@@ -145,8 +145,8 @@ fn gap_operational_actual_placement_waits_for_build_up_and_next_building_turn() 
          [GAGAP]\nOwner=Americans,Alliance,Russians,Soviet\nGapGenerator=yes\nGapRadiusInCells=10\nPowered=yes\nPower=-100\nStrength=600\nCost=1000\nFoundation=1x1\n[Clear]\nBuildable=yes\n",
     )).unwrap();
     let mut sim = placement_sim();
-    sim.fog.width = 64;
-    sim.fog.height = 64;
+    sim.fog.set_width_for_test(64);
+    sim.fog.set_height_for_test(64);
     let owner = sim.interner.intern("Americans");
     let viewer = sim.interner.intern("Soviet");
     for house in [owner, viewer] {

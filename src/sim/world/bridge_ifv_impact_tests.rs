@@ -290,29 +290,33 @@ fn native_ifv_bridge_impact_orders_live_selection_debris_ids_and_rng() {
         assert_eq!(actual.len(), expected.len(), "{name}");
         for (anim, expected) in actual.into_iter().zip(expected) {
             assert_eq!(
-                json!(anim.native_unique_id),
+                json!(anim.native_unique_id()),
                 expected["native_id"],
                 "{name}"
             );
             assert_eq!(
-                world.interner.resolve(anim.type_id),
+                world.interner.resolve(anim.type_id()),
                 expected["type"].as_str().unwrap(),
                 "{name}"
             );
             assert_eq!(
-                json!([anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]),
+                json!([
+                    anim.world_coord().x,
+                    anim.world_coord().y,
+                    anim.world_coord().z
+                ]),
                 expected["location"],
                 "{name}"
             );
             assert_eq!(
-                anim.bounce.is_some(),
+                anim.bounce().is_some(),
                 expected["is_bouncing"] == 1,
                 "{name}"
             );
-            if let Some(body) = anim.bounce {
+            if let Some(body) = anim.bounce() {
                 for (actual, key) in [
-                    (body.position, "position_bits"),
-                    (body.velocity, "velocity_bits"),
+                    (body.position(), "position_bits"),
+                    (body.velocity(), "velocity_bits"),
                 ] {
                     assert_eq!(
                         json!(actual.map(|value| value.bits())),
@@ -321,9 +325,9 @@ fn native_ifv_bridge_impact_orders_live_selection_debris_ids_and_rng() {
                     );
                 }
                 for (actual, key) in [
-                    (body.elasticity.bits(), "elasticity_bits"),
-                    (body.gravity.bits(), "gravity_bits"),
-                    (body.angular_velocity_magnitude.bits(), "clamp_bits"),
+                    (body.elasticity().bits(), "elasticity_bits"),
+                    (body.gravity().bits(), "gravity_bits"),
+                    (body.angular_velocity_magnitude().bits(), "clamp_bits"),
                 ] {
                     assert_eq!(json!(actual), expected["bounce"][key], "{name}/{key}");
                 }

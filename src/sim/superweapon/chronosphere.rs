@@ -96,7 +96,7 @@ impl Simulation {
             return;
         };
         if let Some(anim) = self.substrate.anims.get_mut(anim) {
-            anim.runtime.loop_remaining = 0;
+            anim.end_loops();
         }
     }
 }

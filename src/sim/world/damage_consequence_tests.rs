@@ -66,7 +66,7 @@ fn delivered_ids(sim: &Simulation) -> Vec<u64> {
     for name in ["DEATHFX", "DESTROYFX"] {
         ids.push(
             sim.anims()
-                .find(|(_, anim)| sim.interner.resolve(anim.type_id) == name)
+                .find(|(_, anim)| sim.interner.resolve(anim.type_id()) == name)
                 .unwrap_or_else(|| panic!("missing {name}"))
                 .0
                 .to_owned(),
@@ -150,13 +150,13 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
         .find(|(id, _)| **id == ids[1])
         .unwrap()
         .1
-        .native_unique_id;
+        .native_unique_id();
     let destroy_native = sim
         .anims()
         .find(|(id, _)| **id == ids[2])
         .unwrap()
         .1
-        .native_unique_id;
+        .native_unique_id();
     assert_eq!(death_native, debris_native.wrapping_add(1));
     assert_eq!(destroy_native, death_native.wrapping_add(1));
     let next_id = sim.allocate_stable_id();
@@ -226,7 +226,10 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
     sim.admit_projectile(projectile, spawn);
     // Supply the already-arrived Bullet AI boundary: this consequence-order
     // fixture detonates at the receiver, after native launch placement.
-    sim.projectiles.get_mut(projectile).unwrap().position = impact;
+    sim.projectiles
+        .get_mut(projectile)
+        .unwrap()
+        .set_position_for_test(impact);
     assert!(sim.object_ai_visit_one(projectile, Some(&rules), ObjectAiCtx::default()));
     let ids = delivered_ids(&sim);
     assert_eq!(ids, vec![projectile + 1, projectile + 2, projectile + 3]);

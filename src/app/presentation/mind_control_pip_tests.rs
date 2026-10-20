@@ -275,15 +275,15 @@ fn stock_captive_force_attack_death_reduces_overload_then_the_controller_settles
                     .simulation()
                     .projectiles
                     .iter()
-                    .filter(|(_, bullet)| bullet.source_id == attacker)
+                    .filter(|(_, bullet)| bullet.source_id() == attacker)
                     .map(|(id, bullet)| (
                         id,
-                        bullet.position,
-                        bullet.launch_origin,
-                        bullet.launch_target,
-                        bullet.target,
-                        bullet.velocity,
-                        bullet.payload
+                        bullet.position(),
+                        bullet.launch_origin(),
+                        bullet.launch_target(),
+                        bullet.target(),
+                        bullet.velocity(),
+                        bullet.payload()
                     ))
                     .collect::<Vec<_>>()
             ));
@@ -501,7 +501,7 @@ fn stock_fatal_overload_releases_real_captives_and_retires_rings_and_sparks() {
             .simulation()
             .projectiles
             .iter()
-            .all(|(_, bullet)| bullet.source_id != scene.mind())
+            .all(|(_, bullet)| bullet.source_id() != scene.mind())
     );
 }
 

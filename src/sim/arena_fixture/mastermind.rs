@@ -406,7 +406,7 @@ impl MindScene {
                     .sim
                     .particle_systems()
                     .iter()
-                    .filter(|(id, system)| !before.contains(id) && system.type_id == spark)
+                    .filter(|(id, system)| !before.contains(id) && system.type_id() == spark)
                     .collect();
                 assert_eq!(
                     born.len(),
@@ -415,7 +415,7 @@ impl MindScene {
                 );
                 assert!(born.iter().all(|(_, system)| system.alive()
                     && !system.in_limbo()
-                    && system.in_logic_vector));
+                    && system.in_logic_vector()));
                 let pulse_frame = self.sim.session.binary_frame() - 1;
                 eprintln!(
                     "MIND ordinary overload visited_frame={pulse_frame} tick={} health={} new_sparks={}",
@@ -466,7 +466,7 @@ pub fn spark_ids(scene: &MindScene) -> BTreeSet<u64> {
         .sim
         .particle_systems()
         .iter()
-        .filter(|(_, system)| system.type_id == ty)
+        .filter(|(_, system)| system.type_id() == ty)
         .map(|(&id, _)| id)
         .collect()
 }
@@ -477,9 +477,9 @@ pub fn captive_ring_ids(scene: &MindScene) -> BTreeSet<crate::sim::anim_class::A
         .sim
         .anims()
         .filter(|(_, anim)| {
-            scene.sim.interner.resolve(anim.type_id) == name
+            scene.sim.interner.resolve(anim.type_id()) == name
                 && anim
-                    .owner_entity
+                    .owner_entity()
                     .is_some_and(|id| scene.targets.contains(&id))
         })
         .map(|(&id, _)| id)

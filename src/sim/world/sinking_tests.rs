@@ -111,12 +111,16 @@ fn native_sink_suffix_preserves_cadence_coordinates_and_complete_rng_states() {
         if let Some(wake) = wake {
             let (_, anim) = sim.substrate.anims.iter().next().unwrap();
             assert_eq!(
-                serde_json::json!([anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]),
+                serde_json::json!([
+                    anim.world_coord().x,
+                    anim.world_coord().y,
+                    anim.world_coord().z
+                ]),
                 wake["coord"],
                 "{name}"
             );
             assert_eq!(
-                anim.draw_flags,
+                anim.draw_flags(),
                 wake["draw_flags"].as_u64().unwrap() as u32,
                 "{name}"
             );

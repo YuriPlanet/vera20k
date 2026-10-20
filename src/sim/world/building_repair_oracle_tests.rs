@@ -514,7 +514,7 @@ fn update_repair_and_power_matches_the_original() {
         );
         if let Some(smoke) = smoke {
             assert_eq!(
-                u8::from(sim.particle_systems().get(smoke).unwrap().done_spawning),
+                u8::from(sim.particle_systems().get(smoke).unwrap().done_spawning()),
                 row["smoke_done"].as_u64().unwrap() as u8,
                 "{name}: smoke"
             );

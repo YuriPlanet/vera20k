@@ -1175,7 +1175,7 @@ fn keyboard_scroll_distance(state: &AppState) -> f32 {
             .sim_runtime
             .as_ref()
             .map(|rt| &rt.simulation)
-            .map_or(0u32, |sim| u32::from(sim.fog.width.max(sim.fog.height)));
+            .map_or(0u32, |sim| u32::from(sim.fog.width().max(sim.fog.height())));
         (cells << KEY_SCROLL_CTRL_CELL_SHIFT) as f32
     } else {
         KEY_SCROLL_DISTANCE

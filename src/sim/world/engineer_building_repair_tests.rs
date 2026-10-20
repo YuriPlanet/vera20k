@@ -484,7 +484,7 @@ impl Fixture {
                 .anim(entity.building_art.anim_slots()[3].unwrap())
                 .unwrap();
             assert_eq!(
-                self.sim.resolve(anim.type_id),
+                self.sim.resolve(anim.type_id()),
                 slot["type_name"].as_str().unwrap(),
                 "{boundary}: active/damaged ART consumer"
             );

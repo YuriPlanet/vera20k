@@ -222,3 +222,125 @@ fn retail_engineer_forced_attack_keeps_native_no_move_override() {
         Command::Move { .. } | Command::MoveToObject { .. }
     ));
 }
+
+/// Infantry What_Action's deployed arm (object `0x0051EB81..0x0051EC11`,
+/// Cell `0x0051F8BB..0x0051F94E`): a deployed GI keeps Attack only where his
+/// SelectWeapon(NULL) weapon (Para, range 5; standing M60 reaches 4) reaches,
+/// so beyond it the cursor shows NoMove. Ctrl on an object then walks him
+/// toward it (Infantry ClickedAction_Object `0x0051F190` hands 2 to Foot
+/// `0x004D74E0`); Ctrl on a Cell sends nothing (`0x0051F250`). A GI on his
+/// feet still attacks: he walks into range.
+#[test]
+fn a_deployed_gi_answers_nomove_beyond_his_deployed_range() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let mut sim = arena(rules);
+    let deployed = sim
+        .spawn_object("E1", "Americans", 16, 16, 64, rules)
+        .unwrap();
+    let standing = sim
+        .spawn_object("E1", "Americans", 16, 22, 64, rules)
+        .unwrap();
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::ToggleInfantryDeploy {
+            entity_id: deployed
+        },
+        Some(rules)
+    ));
+    for _ in 0..32 {
+        sim.advance_tick(&[], Some(rules), None, None, 67);
+        if sim
+            .entities()
+            .get(deployed)
+            .unwrap()
+            .infantry_deploy_doing()
+        {
+            break;
+        }
+    }
+    assert!(
+        sim.entities()
+            .get(deployed)
+            .unwrap()
+            .infantry_deploy_doing()
+    );
+    // About 4.5 Cells away: Para reaches it, M60 would not.
+    let near = sim
+        .spawn_object("MTNK", "Russians", 20, 18, 64, rules)
+        .unwrap();
+    let far = sim
+        .spawn_object("MTNK", "Russians", 28, 16, 64, rules)
+        .unwrap();
+    let action =
+        |actor, target, forced| attack_action(&sim, rules, actor, &target, forced, Some(&registry));
+    assert_eq!(
+        action(deployed, TargetKind::Entity(near), false),
+        AttackAction::Attack
+    );
+    assert_eq!(
+        action(deployed, TargetKind::Entity(far), false),
+        AttackAction::NoMove
+    );
+    assert_eq!(
+        action(deployed, TargetKind::Cell(20, 19), true),
+        AttackAction::Attack
+    );
+    assert_eq!(
+        action(deployed, TargetKind::Cell(28, 17), true),
+        AttackAction::NoMove
+    );
+    assert_eq!(
+        action(standing, TargetKind::Entity(far), false),
+        AttackAction::Attack
+    );
+    assert_eq!(
+        action(standing, TargetKind::Cell(28, 17), true),
+        AttackAction::Attack
+    );
+
+    let cursor = |target| {
+        cursor_id_for_feedback(capability_cursor_for_hover(
+            &sim,
+            &[deployed],
+            Some(deployed),
+            &HoverTargetKindWithId {
+                stable_id: target,
+                kind: HoverTargetKind::EnemyUnit,
+            },
+            Some(rules),
+            Some(&registry),
+            OrderModifier::Normal,
+            false,
+        ))
+    };
+    assert_eq!(cursor(near), Some(CursorId::Attack));
+    assert_eq!(cursor(far), Some(CursorId::NoMove));
+
+    let ctrl = |target| attack_branch_orders(&sim, rules, &[deployed], target, true, &registry);
+    assert_eq!(
+        ctrl(TargetKind::Entity(near)).commands,
+        [Command::Attack {
+            attacker_id: deployed,
+            target_id: near
+        }]
+    );
+    let walk = ctrl(TargetKind::Entity(far));
+    assert!(walk.consumed);
+    assert!(
+        matches!(
+            walk.commands.as_slice(),
+            [Command::Move { .. } | Command::MoveToObject { .. }]
+        ),
+        "{:?}",
+        walk.commands
+    );
+    let cell = ctrl(TargetKind::Cell(28, 17));
+    assert!(cell.consumed && cell.commands.is_empty());
+}

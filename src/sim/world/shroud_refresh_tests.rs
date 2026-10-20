@@ -333,8 +333,8 @@ fn periodic_conceal_shares_the_full_sweep_and_preserves_viewer_planes() {
     let clear = conceal_topology(&corpus, &json!({}));
     let (other_fog, _) = native_map_cell_fixture(&clear, other);
     sim.fog
-        .by_owner
-        .insert(other, other_fog.by_owner[&other].clone());
+        .by_owner_mut_for_test()
+        .insert(other, other_fog.by_owner()[&other].clone());
     sim.session.set_binary_frame_for_test(119);
     sim.tick_pending_shroud_conceal(UninitContext::default());
     assert!(sim.fog.is_ground_unshrouded(player, 1, 4));
@@ -345,7 +345,7 @@ fn periodic_conceal_shares_the_full_sweep_and_preserves_viewer_planes() {
     assert!(sim.fog.is_ground_unshrouded(other, 1, 4));
     assert_eq!(calls.notifications, vec![((1, 4), true)]);
     assert_eq!(
-        sim.fog.by_owner[&player]
+        sim.fog.by_owner()[&player]
             .map_cell_edge_cache_for_test((1, 4))
             .1,
         0
@@ -357,11 +357,11 @@ fn periodic_conceal_shares_the_full_sweep_and_preserves_viewer_planes() {
     let (other_fog, _) = native_map_cell_fixture(&conceal_topology(&corpus, &alternate), other);
     let (player_fog, _) = native_map_cell_fixture(&topology, player);
     sim.fog
-        .by_owner
-        .insert(other, other_fog.by_owner[&other].clone());
+        .by_owner_mut_for_test()
+        .insert(other, other_fog.by_owner()[&other].clone());
     sim.fog
-        .by_owner
-        .insert(player, player_fog.by_owner[&player].clone());
+        .by_owner_mut_for_test()
+        .insert(player, player_fog.by_owner()[&player].clone());
     sim.houses.reorder_for_test(&[other, player]);
     let (_, ordered) =
         trace_reveal_calls(|| sim.tick_pending_shroud_conceal(UninitContext::default()));
@@ -569,9 +569,8 @@ fn native_trigger_reveal_canonical_dummy_and_passed_viewer_match_original() {
         // The direct native MapCell contrast uses one physical map plane.
         // Seed that supplied plane under its passed viewer for this API.
         if viewer != player {
-            sim.fog
-                .by_owner
-                .insert(viewer, sim.fog.by_owner[&player].clone());
+            let plane = sim.fog.by_owner()[&player].clone();
+            sim.fog.by_owner_mut_for_test().insert(viewer, plane);
         }
         reveal_cell(&mut sim, viewer, (9, 10), false);
         assert_eq!(discovery(&sim, id), row["discovery"]);
@@ -641,7 +640,7 @@ fn native_trigger_reveal_whole_area_histories_match_original_cache_and_residents
         }
         assert_eq!(rng_hashes(&sim), row["rng_after"]);
         sim.fog
-            .by_owner
+            .by_owner_mut_for_test()
             .get_mut(&player)
             .unwrap()
             .clear_all_visible();
@@ -881,7 +880,7 @@ fn native_trigger_reveal_all_fifty_five_startup_actions_match_original_empty_res
     // This establishes their geometry/callback reach, not whole native Fill
     // or the later live Tag poll order/resident membership.
     assert!(
-        sim.fog.by_owner[&player]
+        sim.fog.by_owner()[&player]
             .ground_flags_raw()
             .iter()
             .any(|flags| flags & 8 != 0)
@@ -974,7 +973,7 @@ fn edge_update_record(sim: &Simulation, calls: &RevealCalls, residents: &[u64]) 
     use std::hash::Hasher;
     let planes: BTreeMap<_, _> = sim
         .fog
-        .by_owner
+        .by_owner()
         .iter()
         .map(|(viewer, plane)| {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();

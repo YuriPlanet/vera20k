@@ -107,7 +107,7 @@ fn piece_palette(
     let location = piece.world_coord();
     let [x, y] = [location.x, location.y]
         .map(|lepton| lepton.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16);
-    let Some(owner) = piece.owner_house else {
+    let Some(owner) = piece.owner_house() else {
         let brightness = if kind.is_tiberium {
             light
                 .cell_light_at((x, y))
@@ -169,7 +169,7 @@ pub(crate) fn build_voxel_anim_instances(
     let presentation = &state.match_state.match_presentation;
     let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
     for (&id, piece) in sim.voxel_anims().iter() {
-        let kind = rules.voxel_anim_type(piece.type_id);
+        let kind = rules.voxel_anim_type(piece.type_id());
         let palette = piece_palette(
             piece,
             kind,
@@ -216,7 +216,7 @@ fn voxel_anim_draw_instance(
         return None;
     }
     let matrix = piece
-        .bounce
+        .bounce()
         .drawing_matrix()
         .ok()?
         .map(|bits| f32::from_bits(bits.bits()));

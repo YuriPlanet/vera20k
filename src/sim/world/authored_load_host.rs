@@ -351,10 +351,10 @@ mod tests {
 
         let (&id, anim) = sim.anims().next().expect("one constructed terrain Anim");
         assert_eq!(sim.anims().count(), 1);
-        assert_eq!(anim.native_unique_id, 701);
-        assert_eq!(anim.effective_end, 2);
-        assert_eq!(anim.z_adjust, -7);
-        assert!(anim.terrain_attached && anim.use_cell_drawer && anim.start_sound_active);
+        assert_eq!(anim.native_unique_id(), 701);
+        assert_eq!(anim.effective_end(), 2);
+        assert_eq!(anim.z_adjust(), -7);
+        assert!(anim.terrain_attached() && anim.use_cell_drawer() && anim.start_sound_active());
         assert_eq!(
             sim.anim_display_layer(id, Some(&rules)),
             Some(DisplayLayer::GROUND)

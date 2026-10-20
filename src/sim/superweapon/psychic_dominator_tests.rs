@@ -88,13 +88,13 @@ fn owner_name(sim: &Simulation, id: u64) -> &str {
 /// The anim whose owner object is `id` and whose type is `kind`.
 fn attached_anim(sim: &Simulation, id: u64, kind: &str) -> bool {
     sim.anims().any(|(_, anim)| {
-        anim.owner_entity == Some(id) && sim.interner.resolve(anim.type_id) == kind
+        anim.owner_entity() == Some(id) && sim.interner.resolve(anim.type_id()) == kind
     })
 }
 
 fn anim_kind(sim: &Simulation) -> Option<&str> {
     let anim = sim.anim(sim.psychic_dominator.anim()?)?;
-    Some(sim.interner.resolve(anim.type_id))
+    Some(sim.interner.resolve(anim.type_id()))
 }
 
 /// The keys the chain reads, through the production readers on the retail
@@ -215,7 +215,7 @@ fn retail_process_steps_match_native() {
                 .anims
                 .get_mut(anim)
                 .unwrap()
-                .runtime
+                .runtime_mut_for_test()
                 .current_frame = stage;
             anim
         });
@@ -354,16 +354,19 @@ fn retail_start_matches_native() {
         if let Some(anim_event) = events.iter().find(|event| event[0] == "anim") {
             let anim = sim.anim(state.anim().unwrap()).unwrap();
             assert_eq!(anim_event[1], "first");
-            assert_eq!(sim.interner.resolve(anim.type_id), "PDFXCLD");
+            assert_eq!(sim.interner.resolve(anim.type_id()), "PDFXCLD");
             let coords: Vec<i32> = anim_event[2].as_array().unwrap().iter().map(int).collect();
-            let at = anim.world_coord;
+            let at = anim.world_coord();
             assert_eq!(vec![at.x, at.y, at.z], coords, "{row}");
             // (delay 0, loopCount 1, drawFlags 0x600, zAdjust 0, reverse 0)
             assert_eq!(
-                (anim.draw_flags, anim.z_adjust),
+                (anim.draw_flags(), anim.z_adjust()),
                 (int(&anim_event[5]) as u32, int(&anim_event[6]))
             );
-            assert_eq!(i32::from(anim.runtime.loop_remaining), int(&anim_event[4]));
+            assert_eq!(
+                i32::from(anim.runtime().loop_remaining),
+                int(&anim_event[4])
+            );
         }
         let lit = events.iter().any(|event| event[0] == "update_lighting");
         assert_eq!(
@@ -620,7 +623,7 @@ fn retail_dominator_strike_captures_the_block() {
     assert!(!sim.super_weapons[&americans][&sw_type].is_ready);
     let first = sim.psychic_dominator.anim().expect("PDFXCLD");
     let anim = sim.anim(first).unwrap();
-    assert_eq!(sim.interner.resolve(anim.type_id), "PDFXCLD");
+    assert_eq!(sim.interner.resolve(anim.type_id()), "PDFXCLD");
     let ground = crate::sim::projectile::cell_ground_coord(
         sim.resolved_terrain.as_ref(),
         TARGET.0,
@@ -628,7 +631,11 @@ fn retail_dominator_strike_captures_the_block() {
     );
     let ground = [ground.x, ground.y, ground.z];
     assert_eq!(
-        [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
+        [
+            anim.world_coord().x,
+            anim.world_coord().y,
+            anim.world_coord().z
+        ],
         [ground[0], ground[1], ground[2] + 750]
     );
     assert_eq!(
@@ -644,7 +651,7 @@ fn retail_dominator_strike_captures_the_block() {
     // The strike.
     let mut frames = 0;
     loop {
-        let stage = sim.anim(first).map(|anim| anim.runtime.current_frame);
+        let stage = sim.anim(first).map(|anim| anim.runtime().current_frame);
         step(&mut sim, &rules);
         frames += 1;
         if sim.psychic_dominator.status_number() == 3 {

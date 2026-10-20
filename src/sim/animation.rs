@@ -310,6 +310,57 @@ impl BodyFrameCounter {
     }
 }
 
+/// UnitClass+6C0. Original7353E0 constructs -1; successful Unit741421
+/// seeds the signed-byte ART FiringFrames countdown. Unit7363C9 advances it
+/// before Foot AI. A limboed parasite has no Logic visit and retains the value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct UnitFiringCounter {
+    value: i32,
+}
+
+impl Default for UnitFiringCounter {
+    fn default() -> Self {
+        Self { value: -1 }
+    }
+}
+
+impl UnitFiringCounter {
+    /// Native signed countdown; -1 selects the non-firing body branch.
+    pub const fn get(self) -> i32 {
+        self.value
+    }
+
+    fn advance(&mut self) {
+        self.value = self.value.wrapping_sub(1).max(-1);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    /// Install an original comparison or persistence fixture's raw counter.
+    pub fn set_for_test(&mut self, value: i32) {
+        self.value = value;
+    }
+}
+
+/// Admitted Unit7363C9..7363DE, before Hunt/Ready/Foot AI. Entry lifecycle,
+/// Tube and Temporal gates belong to the existing Unit AI caller.
+pub(crate) fn tick_unit_firing_counter(entity: &mut crate::sim::game_entity::GameEntity) {
+    entity.unit_firing_counter.advance();
+}
+
+/// Successful Unit741410..741421, after the base FireAt/LimboLaunch tail.
+/// Stock DRON retains native FiringSyncFrame0/1=-1. The sync-gated primary
+/// arm remains unrepresented with the existing fire-error reader; this writer
+/// covers the represented, unsynchronized Unit types, not that dormant arm.
+pub(crate) fn commit_unit_firing_counter(
+    entity: &mut crate::sim::game_entity::GameEntity,
+    firing_frames: i8,
+) {
+    if firing_frames > 0 {
+        entity.unit_firing_counter.value = i32::from(firing_frames) * 2 - 1;
+    }
+}
+
 /// Advance the persistent Foot body counter at FootClass's post-Process
 /// point for the current absolute binary frame.
 ///
@@ -366,17 +417,35 @@ pub(crate) fn tick_foot_body_frame_counter(
     }
 }
 
-/// Resolve the ordinary UnitClass SHP body frame from the persistent Foot
-/// counter. Firing and death counters intentionally stay on their existing
-/// paths; this helper covers only the standing/walking draw branch.
+/// Unit73C64B..73C725: an active firing counter precedes Stand/Walk and
+/// advances one image per two counter steps, in descending image order.
+/// The persistent Foot counter continues to own Stand/Walk. Death drawing
+/// remains outside this admitted live-body branch.
 pub fn resolve_shp_vehicle_body_frame(
     set: &SequenceSet,
     facing: u8,
     body_frame_counter: u32,
+    firing_counter: i32,
     locomotor_is_moving: bool,
     disguised: bool,
 ) -> Option<u16> {
     let cadence = set.shp_vehicle_cadence()?;
+    if firing_counter >= 0 {
+        let def = set.get(&SequenceKind::Attack)?;
+        let frame_index = firing_counter / 2;
+        // The native seed is within its type's fire block. Do not wrap an
+        // incompatible/invalid retained counter onto an unrelated atlas frame.
+        if frame_index >= i32::from(def.frame_count) {
+            return None;
+        }
+        return u16::try_from(resolve_generic_shp_frame(
+            def,
+            facing,
+            frame_index,
+            disguised,
+        ))
+        .ok();
+    }
     let sequence = if locomotor_is_moving || cadence.idle_rate != 0 {
         SequenceKind::Walk
     } else {

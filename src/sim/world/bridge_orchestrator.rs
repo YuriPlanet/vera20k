@@ -1149,7 +1149,7 @@ mod tests {
             .anims
             .iter()
             .map(|(_, anim)| anim)
-            .filter(|anim| sim.bridge_explosions.contains(&anim.type_id))
+            .filter(|anim| sim.bridge_explosions.contains(&anim.type_id()))
             .collect()
     }
 
@@ -1266,10 +1266,10 @@ mod tests {
             // `CollapseBridge_NS_Low @ 0x00575540`: row `(type, &coord,
             // RandomRanged(1, 5), 1, 0x600, 0, 0)`, Z from the cell level with
             // no deck offset.
-            assert_eq!(anim.draw_flags, 0x600);
-            assert_eq!(anim.z_adjust, 0);
-            assert!((1..=5).contains(&anim.runtime.delay_remaining));
-            let (.., level) = anim.world_coord.to_cell_sub_z();
+            assert_eq!(anim.draw_flags(), 0x600);
+            assert_eq!(anim.z_adjust(), 0);
+            assert!((1..=5).contains(&anim.runtime().delay_remaining));
+            let (.., level) = anim.world_coord().to_cell_sub_z();
             assert_eq!(
                 level, 0,
                 "walker explosions sit on the cell level, not the deck"

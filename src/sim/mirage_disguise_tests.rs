@@ -45,6 +45,8 @@ pub(in crate::sim) fn state_from_native(sim: &mut Simulation, native: &Value) ->
             signed(&native["reveal_start"]),
             signed(&native["reveal_duration"]),
         ),
+        // The capture records no +1EC/+1F4 firing blink; none of its rows fires.
+        blink_timer: CdTimer::default(),
     }
 }
 

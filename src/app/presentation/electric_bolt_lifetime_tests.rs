@@ -240,9 +240,9 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
         );
         assert_eq!(sim.projectiles.len(), 1, "retail MTNK emitted its shell");
         let (_, bullet) = sim.projectiles.iter().next().unwrap();
-        assert_eq!(bullet.source_id, source);
-        assert_eq!(bullet.native_unique_id, cursor.wrapping_add(1) as i32);
-        outcomes.push((after.main, bullet.native_unique_id, bullet.id));
+        assert_eq!(bullet.source_id(), source);
+        assert_eq!(bullet.native_unique_id(), cursor.wrapping_add(1) as i32);
+        outcomes.push((after.main, bullet.native_unique_id(), bullet.id()));
     }
     for outcome in &outcomes[1..] {
         assert_ne!(outcome.0, outcomes[0].0, "composites advanced shared Main");

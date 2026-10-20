@@ -44,7 +44,11 @@ impl Simulation {
                 .powered
                 && let Some(anim) = anim_id.and_then(|id| self.substrate.anims.get_mut(id))
             {
-                anim.runtime.paused = !enabled;
+                if enabled {
+                    anim.resume();
+                } else {
+                    anim.pause();
+                }
             }
         }
     }
@@ -206,16 +210,16 @@ mod tests {
         let (mut sim, rules, id) = fixture("NeedsEngineer=yes\nCapturable=yes\nPowered=no");
         let anim = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
         // Rate=900 produces one frame per native timer tick; Rate=0 freezes.
-        assert_eq!(sim.anim(anim).unwrap().runtime.rate_reload, 1);
-        assert!(sim.anim(anim).unwrap().effective_end > 3);
-        let frame = sim.anim(anim).unwrap().runtime.current_frame;
+        assert_eq!(sim.anim(anim).unwrap().runtime().rate_reload, 1);
+        assert!(sim.anim(anim).unwrap().effective_end() > 3);
+        let frame = sim.anim(anim).unwrap().runtime().current_frame;
         assert!(!sim.entities().get(id).unwrap().building_art.stuff_enabled);
         assert_eq!(sim.building_operational_state(id, &rules), Some(false));
         for _ in 0..6 {
             tick(&mut sim, &rules);
         }
-        assert!(sim.anim(anim).unwrap().runtime.paused);
-        assert_eq!(sim.anim(anim).unwrap().runtime.current_frame, frame);
+        assert!(sim.anim(anim).unwrap().runtime().paused);
+        assert_eq!(sim.anim(anim).unwrap().runtime().current_frame, frame);
         let old_owner = sim.entities().get(id).unwrap().owner();
         sim.change_owner_with_rules(
             id,
@@ -247,11 +251,11 @@ mod tests {
                 .is_set()
         );
         assert!(sim.entities().get(id).unwrap().building_art.stuff_enabled);
-        assert!(!sim.anim(anim).unwrap().runtime.paused);
+        assert!(!sim.anim(anim).unwrap().runtime().paused);
         for _ in 0..3 {
             tick(&mut sim, &rules);
         }
-        assert_ne!(sim.anim(anim).unwrap().runtime.current_frame, frame);
+        assert_ne!(sim.anim(anim).unwrap().runtime().current_frame, frame);
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -274,7 +278,7 @@ mod tests {
     fn offline_damage_replacement_uses_constructor_power_gate() {
         let (mut sim, rules, id) = fixture("NeedsEngineer=yes\nCapturable=yes\nPowered=no");
         let old = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
-        assert!(sim.anim(old).unwrap().runtime.paused);
+        assert!(sim.anim(old).unwrap().runtime().paused);
         sim.entities_mut()
             .get_mut(id)
             .unwrap()
@@ -283,7 +287,7 @@ mod tests {
         sim.refresh_building_damage_state(id, &rules);
         let replaced = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
         assert!(
-            !sim.anim(replaced).unwrap().runtime.paused,
+            !sim.anim(replaced).unwrap().runtime().paused,
             "replacement does not copy pause; TypePowered is false"
         );
         assert!(!sim.entities().get(id).unwrap().building_art.stuff_enabled);
@@ -317,7 +321,7 @@ mod tests {
         let occupied = sim.entities().get(id).unwrap().building_art.anim_slots[4].unwrap();
         assert!(sim.anim(empty).is_none());
         assert_eq!(
-            sim.interner.resolve(sim.anim(occupied).unwrap().type_id),
+            sim.interner.resolve(sim.anim(occupied).unwrap().type_id()),
             "M"
         );
         sim.entities_mut()
@@ -328,7 +332,7 @@ mod tests {
         sim.refresh_building_damage_state(id, &rules);
         let damaged = sim.entities().get(id).unwrap().building_art.anim_slots[4].unwrap();
         assert_eq!(
-            sim.interner.resolve(sim.anim(damaged).unwrap().type_id),
+            sim.interner.resolve(sim.anim(damaged).unwrap().type_id()),
             "MD"
         );
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
@@ -357,7 +361,7 @@ mod tests {
         assert_eq!(
             restored
                 .interner
-                .resolve(restored.anim(empty).unwrap().type_id),
+                .resolve(restored.anim(empty).unwrap().type_id()),
             "D"
         );
     }

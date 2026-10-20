@@ -100,14 +100,14 @@ fn paid_diagnostic(
         "next_native_id":sim.native_unique_ids.as_ref().unwrap().current_raw(),
         "mission":mission_state(actor),
         "passive_scan":passive_scan_state(actor),
-        "bullets":sim.projectiles.iter().filter(|(_,b)|b.source_id == id)
+        "bullets":sim.projectiles.iter().filter(|(_,b)|b.source_id() == id)
             .map(|(_,b)|b).collect::<Vec<_>>(),
         "anims":sim.substrate.anims.iter().filter(|(id, _)| !ambient_anims.contains(id))
             .map(|(_, anim)|anim).collect::<Vec<_>>(),
         "anim_types":sim.substrate.anims.iter().filter(|(id, _)| !ambient_anims.contains(id))
             .map(|(_, anim)| {
-                let name = sim.resolve(anim.type_id);
-                json!({"name":name,"native_id":anim.native_unique_id,
+                let name = sim.resolve(anim.type_id());
+                json!({"name":name,"native_id":anim.native_unique_id(),
                     "config":scene.runtime.resources.rules.art().anim_runtime_config(name)
                         .map(|c|json!({"raw_shp_frame_count":c.raw_shp_frame_count,
                             "start":c.start,"end":c.end,"loop_start":c.loop_start,
@@ -147,13 +147,13 @@ fn paid_snapshot(
     let bullets: Vec<_> = sim
         .projectiles
         .iter()
-        .filter(|(_, b)| b.source_id == id)
+        .filter(|(_, b)| b.source_id() == id)
         .map(|(_, b)| {
-            let guidance = b.guidance.as_ref().expect("physical FV guided missile");
-            json!({"native_id":b.native_unique_id,"alive":1,
-            "position":[b.position.x,b.position.y,b.position.z],
-            "velocity":[b.velocity.x.bits(),b.velocity.y.bits(),b.velocity.z.bits()],
-            "arm_timer":[b.arm_timer.start_frame(),b.arm_timer.duration()],
+            let guidance = b.guidance().expect("physical FV guided missile");
+            json!({"native_id":b.native_unique_id(),"alive":1,
+            "position":[b.position().x,b.position().y,b.position().z],
+            "velocity":[b.velocity().x.bits(),b.velocity().y.bits(),b.velocity().z.bits()],
+            "arm_timer":[b.arm_timer().start_frame(),b.arm_timer().duration()],
             "course_locked":guidance.course_locked,"course_frames":guidance.course_frames,
             "closing_frames":guidance.closing_frames,
             "closing_accumulator_bits":guidance.closing_accumulator_bits})
@@ -161,16 +161,16 @@ fn paid_snapshot(
         .collect();
     let anims: Vec<_> = sim.substrate.anims.iter()
         .filter(|(id, _)| !ambient_anims.contains(id))
-        .map(|(_, a)| json!({"native_id":a.native_unique_id,
-            "type_name":sim.resolve(a.type_id),"alive":true,
-            "position":[a.world_coord.x,a.world_coord.y,a.world_coord.z],
-            "runtime":{"current_frame":a.runtime.current_frame,
-                "frame_step":a.runtime.frame_step,"delay_remaining":a.runtime.delay_remaining,
-                "rate_reload":a.runtime.rate_reload,
-                "frame_timer":[a.runtime.frame_timer.start_frame(),a.runtime.frame_timer.duration()],
-                "loop_remaining":a.runtime.loop_remaining,"first_ai_guard":a.runtime.first_ai_guard,
-                "constructor_reverse":a.runtime.constructor_reverse,"inactive":a.runtime.inactive,
-                "paused":a.runtime.paused}}))
+        .map(|(_, a)| json!({"native_id":a.native_unique_id(),
+            "type_name":sim.resolve(a.type_id()),"alive":true,
+            "position":[a.world_coord().x,a.world_coord().y,a.world_coord().z],
+            "runtime":{"current_frame":a.runtime().current_frame,
+                "frame_step":a.runtime().frame_step,"delay_remaining":a.runtime().delay_remaining,
+                "rate_reload":a.runtime().rate_reload,
+                "frame_timer":[a.runtime().frame_timer.start_frame(),a.runtime().frame_timer.duration()],
+                "loop_remaining":a.runtime().loop_remaining,"first_ai_guard":a.runtime().first_ai_guard,
+                "constructor_reverse":a.runtime().constructor_reverse,"inactive":a.runtime().inactive,
+                "paused":a.runtime().paused}}))
         .collect();
     json!({
         "next_frame":sim.session.binary_frame(),
