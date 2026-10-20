@@ -1235,7 +1235,8 @@ use crate::util::save_codec;
 // CommandEnvelope payloads.
 // 462 -> 463: retained ObjectType armor IDs, Ares armor registry and independent
 // Warhead extension records; the capability metadata header still starts at 459.
-const SNAPSHOT_VERSION: u32 = 463;
+// 463 -> 464: retained Country ParentCountry+98 in processed Rules records.
+const SNAPSHOT_VERSION: u32 = 464;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10252,6 +10253,6 @@ mod tests {
         // 460 -> 461: Tiberium queues hold the shared native heap.
         // 461 -> 462: the typed Enter and Harvest commands are gone.
         // 462 -> 463: retained armor IDs and Ares warhead extension records.
-        assert_eq!(super::SNAPSHOT_VERSION, 463);
+        assert_eq!(super::SNAPSHOT_VERSION, 464);
     }
 }

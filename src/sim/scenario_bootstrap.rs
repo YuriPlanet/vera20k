@@ -2380,7 +2380,7 @@ pub fn launch_mcv_type_for_country(country: LaunchCountry, rules: &RuleSet) -> O
         rules,
         &rules.general.base_unit_types,
         crate::rules::object_type::ObjectCategory::Vehicle,
-        crate::sim::ai_buildable::house_country_bit(rules, name),
+        rules.country_owner_mask(name),
     )
     .map(|object| object.id.as_str())
 }

@@ -313,9 +313,9 @@ pub(super) fn choose_unit_crate_type<'r>(
     owner: InternedId,
     preempted: bool,
 ) -> Option<&'r crate::rules::object_type::ObjectType> {
-    use crate::sim::ai_buildable::{first_owner_compatible, house_country_bit};
+    use crate::sim::ai_buildable::first_owner_compatible;
     let house = houses.get(&owner)?;
-    let country_bit = house_country_bit(rules, interner.resolve(house.house_type_id()));
+    let country_bit = rules.country_owner_mask(interner.resolve(house.house_type_id()));
     let mut chosen = None;
     if preempted {
         chosen = first_owner_compatible(

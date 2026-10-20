@@ -7,7 +7,8 @@ use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_buildable::{
-    candidate_allowed, country_bit, first_buildable_from_array, first_owner_compatible_harvester,
+    CountryBuildMasks, candidate_allowed, first_buildable_from_array,
+    first_owner_compatible_harvester,
 };
 use crate::sim::base_plan::BasePlanState;
 use crate::sim::house_state::HouseDifficulty;
@@ -30,10 +31,10 @@ pub(crate) fn preflight_recalc(
     side_index: i32,
     difficulty: HouseDifficulty,
 ) -> Result<(), RecalcPreflightError> {
-    let country_index = rules
-        .trigger_house_type_index(country_name)
+    rules
+        .country_index(country_name)
         .ok_or(RecalcPreflightError::UnknownCountry)?;
-    let bit = country_bit(country_index);
+    let bit = rules.country_owner_mask(country_name);
     let has_harvester = first_owner_compatible_harvester(rules, bit).is_some();
     let refinery_counts = if has_harvester {
         &rules.ai_extra_refineries
@@ -75,10 +76,7 @@ pub(crate) fn recalc_base_plan(
 ) {
     debug_assert!(preflight_recalc(rules, country_name, side_index, difficulty).is_ok());
 
-    let country_index = rules
-        .trigger_house_type_index(country_name)
-        .expect("active House country is registered");
-    let bit = country_bit(country_index);
+    let country = CountryBuildMasks::for_country(rules, country_name);
     let mut eligible: Vec<&ObjectType> = rules
         .building_ids
         .iter()
@@ -87,7 +85,7 @@ pub(crate) fn recalc_base_plan(
             recalc_candidate_allowed(
                 candidate,
                 type_tech_levels,
-                bit,
+                country,
                 side_index,
                 tech_level,
                 super_weapons,
@@ -191,7 +189,7 @@ pub(crate) fn recalc_base_plan(
         super_weapons,
     )
     .expect("active Recalc BuildRefinery list resolves a buildable type");
-    let has_harvester = first_owner_compatible_harvester(rules, bit).is_some();
+    let has_harvester = first_owner_compatible_harvester(rules, country.owner_bit()).is_some();
     let duplicate_count = if has_harvester {
         rules.ai_extra_refineries[difficulty.table_index()]
     } else {
@@ -246,13 +244,13 @@ pub(crate) fn recalc_base_plan(
 fn recalc_candidate_allowed(
     candidate: &ObjectType,
     type_tech_levels: &TypeTechLevels,
-    country_bit: u32,
+    country: CountryBuildMasks,
     side_index: i32,
     tech_level: i32,
     super_weapons: bool,
     rules: &RuleSet,
 ) -> bool {
-    candidate_allowed(candidate, country_bit, side_index, super_weapons, rules)
+    candidate_allowed(candidate, country, side_index, super_weapons, rules)
         && candidate.ai_build_this
         && type_tech_levels.get(candidate) <= tech_level
 }
@@ -448,14 +446,14 @@ mod tests {
              [SuperWeaponTypes]\n0=DISABLED\n[DISABLED]\nType=MultiMissile\nDisableableFromShell=yes\n",
         ))
         .expect("eligibility fixture");
-        let bit = country_bit(rules.trigger_house_type_index("Americans").unwrap());
+        let country = CountryBuildMasks::for_country(&rules, "Americans");
         let allowed = |id: &str, shell_enabled: bool| {
             recalc_candidate_allowed(
                 rules
                     .object_in_category(ObjectCategory::Building, id)
                     .unwrap(),
                 &TypeTechLevels::default(),
-                bit,
+                country,
                 0,
                 5,
                 shell_enabled,

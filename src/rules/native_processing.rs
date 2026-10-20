@@ -583,6 +583,16 @@ impl ProcessedRulesLayers {
                 "Ares armor state in retail rules",
             ));
         }
+        if families.iter().any(|(&family, members)| {
+            members.iter().any(|member| {
+                member.country_parent.chars().count() > 24
+                    || (family != RulesTypeFamily::Country && !member.country_parent.is_empty())
+            })
+        }) {
+            return Err(RulesError::InvalidSavedState(
+                "invalid retained Country parent",
+            ));
+        }
         registry.validate_techno_type_order()?;
         registry.validate_prerequisites()?;
         let families = &registry.families;
@@ -1282,7 +1292,9 @@ impl ProcessedRulesLayers {
     /// Ordered live Country identities, Color+C0 and Side+BC. Side672440
     /// writes BC before HouseType511850 can override it in ReadTypeData.
     /// A constructor-only Country retains BC=-1, not an invented side.
-    pub(crate) fn country_projection(&self) -> impl Iterator<Item = (&str, &IniSection, i32, i32)> {
+    pub(crate) fn country_projection(
+        &self,
+    ) -> impl Iterator<Item = (&str, &IniSection, i32, i32, &str)> {
         self.native_type_construction_trace
             .registry_state()
             .country_projection()
@@ -1819,7 +1831,9 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
-    pub(crate) fn country_projection(&self) -> impl Iterator<Item = (&str, &IniSection, i32, i32)> {
+    pub(crate) fn country_projection(
+        &self,
+    ) -> impl Iterator<Item = (&str, &IniSection, i32, i32, &str)> {
         self.families
             .get(&RulesTypeFamily::Country)
             .into_iter()
@@ -1830,6 +1844,7 @@ impl NativeRulesRegistryState {
                     &member.body,
                     member.country_color_scheme,
                     member.country_side_index,
+                    member.country_parent.as_str(),
                 )
             })
     }
@@ -2263,6 +2278,9 @@ struct ProcessedType {
     /// HouseType ctor511416 writes-1. Side67259A and the late Side reader
     /// 51209E/4756F0 update this binding on the same retained Country.
     country_side_index: i32,
+    /// Country+98: ctor511404 clears its first byte; reached5118CF reads
+    /// ParentCountry with current ID default, capacity25.
+    country_parent: String,
     /// Side+9C ordered Country indexes. ReadHouses4767C0 retains the prior
     /// vector on count0 and otherwise replaces it without deduplication.
     /// Signed entries preserve `<random>`=-2 before the full-reader boundary.
@@ -2668,6 +2686,7 @@ impl ProcessedType {
             native_stored_id,
             country_color_scheme: 0,
             country_side_index: -1,
+            country_parent: String::new(),
             side_country_members: Vec::new(),
             anim_art_read: false,
             building_foundation: 0,
@@ -3638,6 +3657,11 @@ impl RulesPassProcessor {
                     .families
                     .get_mut(&RulesTypeFamily::Country)
                     .expect("the live Country exists")[index];
+                // ReadINI5118CF..511928 always reads with the current ID
+                // default, not the previous parent. Whole-section failure
+                // skips this body and retains the prior Country+98.
+                member.country_parent =
+                    raw.read_string("ParentCountry", &member.native_stored_id, 25);
                 member.country_color_scheme = raw.read_color_scheme(
                     "Color",
                     member.country_color_scheme,

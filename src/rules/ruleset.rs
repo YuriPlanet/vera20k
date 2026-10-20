@@ -63,6 +63,8 @@ mod multiplayer_rules_tests;
 /// Country-level fields needed by gameplay systems.
 #[derive(Debug, Clone)]
 pub struct CountryRules {
+    /// Immutable projection of retained HouseType+98, never merged-text inheritance.
+    parent_country: String,
     /// Native HouseType+C0, initialized0 at51141C and read through
     /// ReadColor474A90 at51193D with the current index as default. The
     /// Process owner supplies the typed value from each actual catalog pass.
@@ -168,6 +170,7 @@ impl Default for CountryRules {
         // multiplier is `INCOME_PPM_SCALE`, not 0.
         Self {
             color_scheme: 0,
+            parent_country: String::new(),
             multiplay: false,
             multiplay_passive: false,
             wall_owner: true,
@@ -199,6 +202,7 @@ impl CountryRules {
             // Filled from the typed Process receipt, never by resolving an
             // earlier projected string against the final Colors registry.
             color_scheme: 0,
+            parent_country: String::new(),
             multiplay: section.read_bool("Multiplay", Self::default().multiplay),
             multiplay_passive: section.read_bool("MultiplayPassive", false),
             wall_owner: section.read_bool("WallOwner", true),
@@ -5737,9 +5741,22 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // v31: CanBeHidden comes from ART.
-        b"rules-simulation-config-v31".hash(&mut hasher);
+        // v32: retained Country+98 governs Owner admission independently
+        // of the current merged INI and actual Country restriction bits.
+        b"rules-simulation-config-v32".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        b"country-parent-v1".hash(&mut hasher);
+        // The native parent lookup scans registration order and checks Name
+        // aliases as well as IDs. These retained inputs can differ after an
+        // identical later pass, even when source_ini_hash is the same.
+        self.country_ids
+            .iter()
+            .map(|id| {
+                let country = &self.countries[id];
+                (id, &country.name, &country.parent_country)
+            })
+            .collect::<Vec<_>>()
+            .hash(&mut hasher);
         self.object_list
             .iter()
             .filter(|object| object.category == ObjectCategory::Building)
@@ -6523,7 +6540,7 @@ impl RuleSet {
     /// localized UIName; the app catalog owns that presentation check.
     pub(crate) fn refresh_country_side_projection<'a>(
         &mut self,
-        countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32)>,
+        countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32, &'a str)>,
         sides: impl Iterator<Item = &'a str>,
     ) {
         let projection = project_country_side_registry(countries, sides);
@@ -6622,6 +6639,23 @@ impl RuleSet {
             return NativeF32Bits::ONE;
         };
         country.build_time_mults[object.factor_slot()]
+    }
+
+    /// Native Country+98 as retained by511850. An unread registered Country
+    /// has an empty parent; a missing key in a reached section defaults to its ID.
+    pub fn country_parent_name(&self, country: &str) -> Option<&str> {
+        self.country_rules(country)
+            .map(|fields| fields.parent_country.as_str())
+    }
+
+    /// Owner-side bit used by FirstOwnable505316, FirstBuildable5051E9,
+    /// Recalc5054E2 and the AI economy/defense choosers. Reuse the native
+    /// alias-before-ID5117D0 scan: <random> is -2/bit30, unknown is -1/bit31.
+    /// RequiredHouses/ForbiddenHouses instead use the actual Country index.
+    pub fn country_owner_mask(&self, country: &str) -> u32 {
+        let parent = self.country_parent_name(country).unwrap_or(country);
+        let index = house_type_index_of_name(parent, self.country_lookup_members());
+        1u32.wrapping_shl(index as u32)
     }
 
     /// Resolve a country name to its stable `[Countries]` registration index.
@@ -7488,7 +7522,7 @@ struct ProjectedCountrySideRegistry {
 /// reached-pass order; reconstructing those decisions from merged text would
 /// invent Countries, lose prior Side vectors and change allocation chronology.
 fn project_country_side_registry<'a>(
-    countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32)>,
+    countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32, &'a str)>,
     sides: impl Iterator<Item = &'a str>,
 ) -> ProjectedCountrySideRegistry {
     let side_ids: Vec<String> = sides.map(str::to_owned).collect();
@@ -7504,7 +7538,7 @@ fn project_country_side_registry<'a>(
     let mut country_indices = HashMap::new();
     let mut country_sides = Vec::new();
     let mut rules = HashMap::new();
-    for (id, section, color, side) in countries {
+    for (id, section, color, side, parent) in countries {
         let index = CountryIdx(
             u16::try_from(country_ids.len()).expect("[Countries] exceeds u16 identity space"),
         );
@@ -7520,6 +7554,7 @@ fn project_country_side_registry<'a>(
         rules.entry(id.to_owned()).or_insert_with(|| {
             let mut fields = CountryRules::from_ini_section(section);
             fields.color_scheme = color;
+            fields.parent_country = parent.to_owned();
             fields
         });
     }
