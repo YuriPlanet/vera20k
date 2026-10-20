@@ -225,7 +225,7 @@ mod tests {
             let tier = input["old_tier"].as_i64().unwrap() as i32;
             let rules = &configs[&(capacity, source == "silo")];
             let mut sim = Simulation::new();
-            let id = sim.allocate_stable_id();
+            let id = sim.substrate.allocate_stable_id();
             let mut entity = GameEntity::test_default_of_category(
                 id,
                 "B",

@@ -135,7 +135,11 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
     .remove(0);
     let lit_pixels = crate::render::depth_gpu_tests::render_terrain_lighting_probe(&tile, instance);
 
-    scenario.runtime.simulation.discard_lighting_events();
+    scenario
+        .runtime
+        .simulation
+        .lighting_sources_mut_for_test()
+        .discard_pending();
     scenario.runtime.simulation.apply_fatal_lifecycle_stage(
         rules,
         crate::sim::combat::FatalLifecycleStage::BeforeDeathEffects { attacker: None },

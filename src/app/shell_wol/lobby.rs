@@ -288,6 +288,8 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
+    // Runner entry clears [0xB77DC1] (0x00787973).
+    visit.in_game = false;
     if state.match_state.session.network_return_context().is_none() {
         state
             .match_state
@@ -936,6 +938,7 @@ fn send_chat(state: &mut AppState, text: Vec<u16>) {
     } else {
         Vec::new()
     };
+    super::chat_sent(state, &line);
     request(state, WolServiceRequest::Chat { line, to });
     if let Some((text, color)) = echo_line {
         echo(state, text, color);
@@ -1416,20 +1419,141 @@ fn lobby_postmatch(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.postmatch)
 }
 
-/// The page sink (CChatEventSink+0x70, `0x007A9220`): the sender becomes
-/// `[0xB77E30]`; a dialog with a transcript shows `(%hs) %s` in white and
-/// `[AudioVisual] IncomingMessage` plays. Elsewhere the page dialog `0x11E`
-/// would open, a later chain; no auto-reply text exists without wolinfo.
-pub(super) fn page_received(state: &mut AppState, from: String, text: Vec<u16>) {
-    let Some(visit) = state.frontend.wol.as_mut() else {
+fn sender(member: &WolMember) -> wol_chat::WolSender<'_> {
+    wol_chat::WolSender {
+        operator: member.flags & MEMBER_OPERATOR != 0,
+        name: &member.name,
+        clan: &member.clan_name,
+    }
+}
+
+/// The two gates every chat, action and page sink runs: the language gate
+/// (`0x0077D2E0`, inlined) and `0x0077D4C0`. The runner holds `0x113` in
+/// the shell stack, also while C2/C9 run over it, until it hands over to a
+/// match (it closes every dialog first); C2/C9 run when the setup route is
+/// up. The local record is found by the login nickname
+/// (`[0xB73E40]`) among the channel's users.
+/// RESIDUAL: the buddy list (`0xB73AB0`) is not ported, so it is empty.
+fn sender_passes(state: &AppState, from: &WolMember, text: &[u16]) -> bool {
+    let preferences = &state.frontend.wol_preferences;
+    let filters = wol_chat::WolDisplayFilters {
+        latin: preferences.display_latin != 0,
+        asian: preferences.display_asian != 0,
+        buddies: preferences.display_buddies,
+        clan: preferences.display_clan,
+    };
+    let sender = sender(from);
+    let setup_open = state.frontend.shell_route.network_setup();
+    let local = nickname(state);
+    let in_game = state
+        .frontend
+        .wol
+        .as_ref()
+        .is_none_or(|visit| visit.in_game);
+    let lobby = lobby(state).filter(|_| !in_game);
+    let local_clan = lobby
+        .and_then(|lobby| {
+            lobby
+                .members
+                .iter()
+                .find(|member| member.name.eq_ignore_ascii_case(&local))
+        })
+        .map(|member| member.clan_name.as_str());
+    wol_chat::language_gate(&sender, setup_open, text, filters)
+        && wol_chat::buddy_clan_gate(&sender, local_clan, &[], filters, lobby.is_some())
+}
+
+/// The chat sinks (`0x007A8DA0`, `0x007A8FC0`, `0x007AB170`, `0x007AAFB0`
+/// and their UTF-16 forms): nothing while a match runs (`[0xB77DC1]`);
+/// then the gates; a line under this user's own name (`strcmpi` with
+/// `[0xA8B380]`) is not shown, the send already echoed it. The line goes to
+/// the current dialog's transcript (`0x005E2700`), the lobby's or C2/C9's.
+pub(super) fn message_received(
+    state: &mut AppState,
+    from: WolMember,
+    text: Vec<u16>,
+    private: bool,
+    action: bool,
+) {
+    if state
+        .frontend
+        .wol
+        .as_ref()
+        .is_none_or(|visit| visit.in_game)
+        || !sender_passes(state, &from, &text)
+        || from.name.eq_ignore_ascii_case(&nickname(state))
+    {
+        return;
+    }
+    let (line, color) = wol_chat::received_line(&sender(&from), &text, private, action);
+    echo(state, line, color);
+    state.platform.window.request_redraw();
+}
+
+/// The find sink `0x007A9970` for a locate this user sent (`[0xB76E28]`),
+/// outside a buddy-status locate (chain F) and the `0xCF` page (chain E):
+/// `TXT_USER_FOUND` with a chat lobby's room text (type 0 named
+/// `Lob_41_<n>`, as `TXT_JOINED_S` shows it) or the channel's own name;
+/// otherwise the code's `TXT_USER_*` text. The line goes, white, to the
+/// current dialog's transcript and the sink returns; only the path without
+/// a transcript clears the name (`0x007AA685`).
+/// RESIDUAL: in a match the line is a MessageList row (WOL in-match chain).
+pub(super) fn located(state: &mut AppState, result: Result<WolChannel, u32>) {
+    let Some(visit) = state.frontend.wol.as_ref() else {
         return;
     };
-    visit.last_pager = Some(from.clone());
+    let name = visit.locate_name.clone().unwrap_or_default();
+    use crate::assets::csf_file::{CsfArg, format_csf};
+    let text = match result {
+        Ok(channel) => {
+            let room = match channel.lobby_number().filter(|_| channel.kind == 0) {
+                Some(number) => WolLobbyRow::joined_name(number, &base_names(state)),
+                None => channel.name.clone(),
+            };
+            format_csf(
+                &csf(state, "TXT_USER_FOUND"),
+                &[CsfArg::Str(&name), CsfArg::Str(&room)],
+            )
+        }
+        Err(code) => {
+            let key = match code {
+                0x0004_0131 => "TXT_USER_NOT_IN_CHANNEL",
+                0x0004_0132 => "TXT_USER_FIND_DISABLED",
+                _ => "TXT_USER_NOT_ONLINE",
+            };
+            format_csf(&csf(state, key), &[CsfArg::Str(&name)])
+        }
+    };
     let route = state.frontend.shell_route;
     if route.wol_lobby() || route.network_setup() {
-        let mut line: Vec<u16> = format!("({from}) ").encode_utf16().collect();
+        message_line(state, text);
+        state.platform.window.request_redraw();
+    } else {
+        log::info!("WOL find result outside a transcript: {text}");
+        if let Some(visit) = state.frontend.wol.as_mut() {
+            visit.locate_name = None;
+        }
+    }
+}
+
+/// The page sink (`0x007A9200`, UTF-16 `0x007A9550`): the two gates, then
+/// the sender becomes `[0xB77E30]`; a dialog with a transcript shows
+/// `(%hs) %s` in white and `[AudioVisual] IncomingMessage` plays. Elsewhere
+/// the page dialog `0x11E` would open, a later chain; no auto-reply text
+/// exists without wolinfo.
+/// RESIDUAL: in a match the page is a MessageList row pair (WOL in-match
+/// chain).
+pub(super) fn page_received(state: &mut AppState, from: WolMember, text: Vec<u16>) {
+    if state.frontend.wol.is_none() || !sender_passes(state, &from, &text) {
+        return;
+    }
+    let visit = state.frontend.wol.as_mut().expect("checked");
+    visit.last_pager = Some(from.name.clone());
+    let route = state.frontend.shell_route;
+    if route.wol_lobby() || route.network_setup() {
+        let mut line: Vec<u16> = format!("({}) ", from.name).encode_utf16().collect();
         line.extend_from_slice(&text);
-        echo(state, line, 0xFF_FFFF);
+        echo(state, line, wol_chat::PAGE_COLOR);
     } else {
         log::warn!("WOL page outside a transcript needs dialog 0x11E; not shown");
     }
@@ -1903,7 +2027,10 @@ pub(crate) fn status_help(state: &AppState) -> String {
             .and_then(|row| ui.player_rows.get(row))
         {
             None => csf(state, "STT:LobbyListUsers"),
-            Some(row) => user_help(state, &row.name),
+            Some(row) => {
+                let member = lobby.members.iter().find(|member| member.name == row.name);
+                user_help(state, &row.name, member)
+            }
         },
         Some(control) => tooltip_key(control)
             .map(|key| csf(state, key))
@@ -1912,9 +2039,46 @@ pub(crate) fn status_help(state: &AppState) -> String {
     }
 }
 
-/// `0x00780A90` without ladder records: `"nick : Unranked"`.
-fn user_help(state: &AppState, name: &str) -> String {
-    format!("{name} : {}", csf(state, "TXT_UNRANKED"))
+/// `0x00780A90`: `"<nick> : "`, then `TXT_RANK` and the ladder rank or
+/// `TXT_UNRANKED`, then `": "` and the clan name (`+0x2E`, else the tag
+/// `+0x57`) when there is one, then `" : "` and `WOL:Locale%02d` for a
+/// known nonzero locale. Both tables are looked up by the ASCII-lowered
+/// name (`0x007B5B30`). A player row passes its user record; a game row's
+/// record (`0x00780E30`) holds only the host's name, so no clan.
+/// RESIDUAL: nothing requests ladder ranks or locales yet (ladder chain);
+/// only a service that sends them fills the tables.
+fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String {
+    let Some(visit) = state.frontend.wol.as_ref() else {
+        return String::new();
+    };
+    let key = name.to_ascii_lowercase();
+    let mut help = format!("{name} : ");
+    match visit.ladder_ranks.get(&key) {
+        Some(rank) => {
+            help.push_str(&csf(state, "TXT_RANK"));
+            help.push(' ');
+            help.push_str(&rank.to_string());
+        }
+        None => help.push_str(&csf(state, "TXT_UNRANKED")),
+    }
+    if let Some(member) = member {
+        let clan = if member.clan_name.is_empty() {
+            &member.clan_tag
+        } else {
+            &member.clan_name
+        };
+        if !clan.is_empty() {
+            help.push_str(": ");
+            help.push_str(clan);
+        }
+    }
+    if visit.api
+        && let Some(locale) = visit.locales.get(&key).filter(|locale| **locale != 0)
+    {
+        help.push_str(" : ");
+        help.push_str(&csf(state, &format!("WOL:Locale{locale:02}")));
+    }
+    help
 }
 
 /// `0x00780E30`: the host (the name up to `'`, at most 10 characters), the
@@ -1936,7 +2100,7 @@ fn game_help(state: &AppState, row: &WolGameRow) -> String {
             &[crate::assets::csf_file::CsfArg::Int(i64::from(row.ping))],
         )
     };
-    format!("{}, {ping}", user_help(state, &host))
+    format!("{}, {ping}", user_help(state, &host, None))
 }
 
 #[cfg(test)]

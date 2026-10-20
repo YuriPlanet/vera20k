@@ -1460,9 +1460,13 @@ impl Simulation {
                     false,
                 )
             }
-            Command::SuspendProduction { category } => {
-                production::suspend_production(self, command_owner, *category)
-            }
+            Command::SuspendProduction { category } => production::suspend_production(
+                &self.interner,
+                &mut self.production,
+                &self.session,
+                command_owner,
+                *category,
+            ),
             Command::TogglePrimaryFactory { entity_id } => {
                 // Event17 4C718F resolves a Building, then6386E0 receives
                 // that pointer (NULL is a no-op). Only afterward4C71A7 tests

@@ -815,7 +815,10 @@ mod tests {
         // Synthetic fixture supplies ART directly, without native read-admission replay.
         rules.install_art_fixture(art);
         // The fixture places ids 1 and 2 by hand; keep the counter clear of them.
-        let (aircraft_id, passenger_id) = (sim.allocate_stable_id(), sim.allocate_stable_id());
+        let (aircraft_id, passenger_id) = (
+            sim.substrate.allocate_stable_id(),
+            sim.substrate.allocate_stable_id(),
+        );
         insert_loaded_paradrop_pair(&mut sim, aircraft_id, passenger_id);
 
         drop_payload(
@@ -896,7 +899,10 @@ mod tests {
                 Some(&sequences),
             ),
         );
-        let (aircraft_id, passenger_id) = (sim.allocate_stable_id(), sim.allocate_stable_id());
+        let (aircraft_id, passenger_id) = (
+            sim.substrate.allocate_stable_id(),
+            sim.substrate.allocate_stable_id(),
+        );
         insert_loaded_paradrop_pair(&mut sim, aircraft_id, passenger_id);
         sim.substrate
             .entities

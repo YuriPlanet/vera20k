@@ -1,6 +1,7 @@
 //! Production campaign restart captures from the first live campaign frame:
 //! B6 with Restart shown, B6 Restart into the restarted mission, and a forced
-//! defeat through the Lose movie to the `TXT_TO_REPLAY` box (optionally Yes).
+//! defeat through the Lose movie to the `TXT_TO_REPLAY` box (optionally Yes),
+//! and the sidebar Briefing tab's mission restate 0x10C over that frame.
 use super::*;
 use crate::ui::shell::abort::AbortButton;
 
@@ -14,12 +15,14 @@ pub enum RestartTarget {
     DefeatPrompt,
     /// Yes on that box; the restarted mission's first live frame.
     DefeatReplayed,
+    /// The sidebar 0xF2 tab pressed and released: the restate briefing 0x10C.
+    Restate,
 }
 
 impl RestartTarget {
     pub(super) fn timeout(self) -> Duration {
         match self {
-            Self::AbortShown => Duration::from_secs(90),
+            Self::AbortShown | Self::Restate => Duration::from_secs(90),
             _ => Duration::from_secs(240),
         }
     }
@@ -129,8 +132,49 @@ impl RestartCapture {
                 Self::lose_current_house(state, route, frame)?;
                 capture.step = Step::AwaitDefeatPrompt;
             }
+            RestartTarget::Restate => {
+                Self::click_briefing_tab(state, route, frame)?;
+                capture.step = Step::Settling(SETTLE_FRAMES);
+            }
         }
         Ok(capture)
+    }
+
+    /// A physical left press and release on the sidebar's 0xF2 tab, through
+    /// the in-game gadget list.
+    fn click_briefing_tab(state: &mut AppState, route: &mut Vec<Value>, frame: u32) -> Result<()> {
+        use crate::app::input::gadget_input;
+        let view = crate::app::presentation::sidebar_render::current_sidebar_view(state)
+            .context("no sidebar view")?;
+        let rect = state
+            .sidebar_frame()
+            .rect_to_frame(view.top_buttons[0].rect);
+        let point = [rect.x + rect.w / 2.0, rect.y + rect.h / 2.0];
+        state.match_state.input.cursor_x = point[0];
+        state.match_state.input.cursor_y = point[1];
+        for pressed in [true, false] {
+            gadget_input::handle_mouse_button_event(
+                state,
+                winit::event::MouseButton::Left,
+                pressed,
+            );
+        }
+        let presentation = &state.match_state.match_presentation;
+        ensure!(
+            presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::MissionBriefing,
+            "the 0xF2 tab did not open the restate briefing"
+        );
+        // ALL01UMD.MAP's MISSIONMD Briefing key.
+        let expected = crate::app::frontend::shell_pass::resolve_csf(state, "Brief:ALL01md");
+        ensure!(
+            presentation.restate_text == expected,
+            "the restate briefing did not resolve Brief:ALL01md"
+        );
+        route.push(
+            json!({"frame": frame, "action": "0xF2 tab press and release",
+            "point": point, "text_chars": presentation.restate_text.chars().count()}),
+        );
+        Ok(())
     }
 
     /// A map's TAction 68 (Lose) through the House outcome owner; the
@@ -317,6 +361,11 @@ impl RestartCapture {
             }
             RestartTarget::DefeatPrompt => {
                 self.step == Step::Settling(0) && state.frontend.shell_message_box.is_some()
+            }
+            RestartTarget::Restate => {
+                self.step == Step::Settling(0)
+                    && state.match_state.match_presentation.in_game_menu
+                        == crate::ui::pause_menu::InGameMenuState::MissionBriefing
             }
             RestartTarget::AbortRestarted | RestartTarget::DefeatReplayed => {
                 self.step == Step::Done && state.frontend.screen == GameScreen::InGame

@@ -354,6 +354,11 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
     };
     match state.match_state.session.freeze_network_start(agreed_seed) {
         Ok(startup) => {
+            if state.match_state.session_mode()
+                == crate::app::match_runtime::session::SessionMode::Wol
+            {
+                crate::app::shell_wol::match_started(state);
+            }
             state.frontend.multiplayer_setup = None;
             state.frontend.network_setup_protocol = None;
             state.frontend.skirmish_preview_texture = None;

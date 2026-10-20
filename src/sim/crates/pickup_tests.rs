@@ -40,7 +40,7 @@ fn place_actor(
     type_name: &str,
 ) -> u64 {
     let type_id = sim.interner.intern(type_name);
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut entity = GameEntity::new_at_frame_zero_for_test(
         id,
         cell.0,

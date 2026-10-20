@@ -4,6 +4,7 @@
 
 use super::helpers::projection_admitted;
 use crate::app::AppState;
+use crate::app::presentation::interpolation::{PointKind, PointPose, PointSample};
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
 };
@@ -15,7 +16,7 @@ use crate::render::tactical_draw_plan::{BlitPolicy, RenderZPolicy, SpriteEncodin
 use crate::render::terrain_draw::TerrainPiece;
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::projectile_type::ProjectileType;
-use crate::sim::projectile::{Projectile, ProjectileCoord, projectile_shp_frame};
+use crate::sim::projectile::{Projectile, ProjectileCoord};
 use crate::util::lepton::absolute_leptons_to_screen;
 use crate::util::native_x87::adjust_for_z_standard;
 
@@ -104,8 +105,19 @@ pub(crate) fn build_projectile_visual_instances(
             .firer_house()
             .and_then(|house| house_colors.get(sim.interner().resolve(house)).copied())
             .unwrap_or(local_scheme);
-        if let Some(object) = projectile_draw_instance(
+        let painted = state
+            .match_state
+            .match_presentation
+            .interpolation
+            .sample_point(
+                PointKind::Bullet,
+                projectile.id(),
+                PointPose::bullet(projectile),
+                sim.session().binary_frame(),
+            );
+        if let Some(object) = projectile_draw_instance_sampled(
             projectile,
+            painted,
             kind,
             type_id,
             scheme,
@@ -133,8 +145,39 @@ pub(crate) fn build_projectile_visual_instances(
 
 /// Shared production adapter used by full SHP/atlas/GPU native comparisons.
 /// Retained Display membership is admission; storage alone never draws a Bullet.
+#[cfg(test)]
 pub(crate) fn projectile_draw_instance(
     projectile: &Projectile,
+    kind: &ProjectileType,
+    type_id: &str,
+    scheme: HouseColorIndex,
+    atlas: Option<&SpriteAtlas>,
+    terrain: &ResolvedTerrainGrid,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+    axis: DepthAxis,
+    order: &NativeDisplayOrder,
+    render_voxel: impl FnOnce(&str, glam::Mat4) -> Option<crate::render::unit_atlas::UnitSpriteEntry>,
+) -> Option<PlannedObjectInstance> {
+    projectile_draw_instance_sampled(
+        projectile,
+        PointPose::bullet(projectile).current(),
+        kind,
+        type_id,
+        scheme,
+        atlas,
+        terrain,
+        camera,
+        viewport,
+        axis,
+        order,
+        render_voxel,
+    )
+}
+
+pub(crate) fn projectile_draw_instance_sampled(
+    projectile: &Projectile,
+    painted: PointSample,
     kind: &ProjectileType,
     type_id: &str,
     scheme: HouseColorIndex,
@@ -157,17 +200,12 @@ pub(crate) fn projectile_draw_instance(
     if kind.inviso || projectile.awaiting_anim() {
         return None;
     }
-    let (x, y) = absolute_leptons_to_screen(
-        projectile.position().x,
-        projectile.position().y,
-        projectile.position().z,
-    );
-    let point = [x, y];
+    let point = painted.screen;
     if !projection_admitted(point, camera, viewport) {
         return None;
     }
     let depth = crate::render::native_z::depth_for_row(
-        point[1] + adjust_for_z_standard(projectile.position().z) as f32,
+        point[1] + painted.lift,
         axis.origin_y,
         axis.world_height,
     );
@@ -176,7 +214,7 @@ pub(crate) fn projectile_draw_instance(
         // palette arms. Its retained LoadVoxelAssets5F8110 pair supplies
         // frame0, diffuse lighting, type Color and no owner/cell lighting.
         let image = kind.voxel_image_load()?;
-        let matrix = crate::render::vxl_raster::projectile_voxel_matrix(projectile.velocity())?;
+        let matrix = painted.voxel_matrix()?;
         let entry = render_voxel(image, matrix)?;
         let runtime_scheme = u32::try_from(kind.color_scheme()).ok()?;
         let remap_row = runtime_scheme / 2 + 1;
@@ -223,17 +261,32 @@ pub(crate) fn projectile_draw_instance(
         };
         return Some(PlannedObjectInstance::object(parent, vec![piece]));
     }
-    let frame = u16::from(projectile_shp_frame(projectile, kind));
+    let frame = u16::from(crate::sim::projectile::projectile_shp_frame_with_velocity(
+        projectile,
+        kind,
+        painted.bullet_velocity(projectile.velocity()),
+    ));
     let entry = atlas?.projectile_sprite(type_id, kind, frame, scheme)?;
     let (ground_z, structural) =
-        super::foot_depth::floor_probe(terrain, projectile.position().x, projectile.position().y);
-    let geometry = geometry(
-        projectile.position(),
+        super::foot_depth::floor_probe(terrain, painted.coord[0], painted.coord[1]);
+    let mut geometry = geometry(
+        painted.projectile_coord(),
         ground_z,
         structural,
         projectile.on_bridge(),
         kind.shadow,
     );
+    // Keep body and projected ground shadow on the same fractional XY sample;
+    // Z lift belongs to the body alone, not to the ground shadow.
+    let raw = geometry.body.point;
+    let delta = [point[0] - raw[0], point[1] - raw[1]];
+    geometry.body.point = point;
+    geometry.body.z_adjust = (-30. - painted.lift).round() as i32;
+    if let Some(shadow) = geometry.shadow.as_mut() {
+        let raw_lift = adjust_for_z_standard(painted.coord[2]) as f32;
+        shadow.point[0] += delta[0];
+        shadow.point[1] += delta[1] + painted.lift - raw_lift;
+    }
     let mut pieces = Vec::with_capacity(2);
     for (piece, geometry) in geometry
         .shadow

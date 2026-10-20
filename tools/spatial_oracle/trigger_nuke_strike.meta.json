@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -34,5 +34,5 @@
     "impact_entry": "0x00467E53"
   },
   "replay_command": "python -m tools.spatial_oracle.trigger_action_values --nuke-strike",
-  "payload_sha256": "d3f2e19840f0764a935d9092a8adf122bec5a35bfef13f356ae0c410ec289494"
+  "payload_sha256": "60da4bf1c7748b8230c5be0e94ca278edd0418a9dcede78909139ea98e3896fb"
 }

@@ -1837,8 +1837,8 @@ pub(crate) fn native_ai_opening_grant(coefficient: i32, money: i32) -> i32 {
 /// the leftover starting-unit budget credited by `seed_starting_extra_units`
 /// (pure integer arithmetic on the native side: `CDQ/SAR/IDIV` budget thirds
 /// and integer cost subtraction, no x87 involvement).
-pub fn apply_skirmish_ai_opening_credits(sim: &mut Simulation, rules: &RuleSet) {
-    for house in sim.houses.values_mut() {
+pub fn apply_skirmish_ai_opening_credits(houses: &mut crate::sim::houses::Houses, rules: &RuleSet) {
+    for house in houses.values_mut() {
         if house.is_human() || house.multiplay_passive() {
             continue;
         }
@@ -4677,7 +4677,7 @@ mod tests {
         sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         sim.session.set_binary_frame_for_test(77);
-        let retained_handle = sim.allocate_stable_id();
+        let retained_handle = sim.substrate.allocate_stable_id();
 
         {
             let (mut scenario_fill, variant_main) = sim.terrain_load_draws();
@@ -4710,7 +4710,7 @@ mod tests {
         assert_eq!(sim.rng_state().scenario, reference.logical_state());
         assert_eq!(sim.session.binary_frame(), 77);
         assert_eq!(retained_handle, 1);
-        assert_eq!(sim.allocate_stable_id(), 2);
+        assert_eq!(sim.substrate.allocate_stable_id(), 2);
     }
 
     #[test]

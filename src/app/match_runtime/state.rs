@@ -178,7 +178,7 @@ mod tests {
     fn retained_pause_does_not_leak_into_result_or_shell_audio() {
         let mut sim = Simulation::with_seed(0);
         sim.publish_scenario_started();
-        sim.pause_scenario(2);
+        sim.pause_scenario_for_test(2);
         assert!(presentation_pause_for_screen(
             &GameScreen::InGame,
             false,
@@ -206,7 +206,7 @@ mod tests {
             false,
             Some(sim.session())
         ));
-        sim.expire_scenario_pause();
+        sim.expire_scenario_pause_for_test();
         assert!(!presentation_pause_for_screen(
             &GameScreen::InGame,
             false,

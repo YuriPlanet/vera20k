@@ -277,7 +277,7 @@ impl Simulation {
         // registration. The native numeric identity is not the Rust handle.
         // Executed constructor/CRC: procedural_drawing_oracle/electric_bolt.
         let native_unique_id = self.next_native_runtime_id();
-        let stable_id = self.allocate_stable_id();
+        let stable_id = self.substrate.allocate_stable_id();
         // 62DD90..62DE14: a supplied target provides GetCoords; a Cell on
         // a structural bridge additionally receives the native bridge height.
         // The existing target-coordinate owner supplies that same Cell result.
@@ -739,7 +739,7 @@ mod tests {
             let y = input["xy"][1].as_i64().unwrap() as i32;
             let z = input["z"].as_i64().unwrap() as i32;
             let mut sim = Simulation::new();
-            let id = sim.allocate_stable_id();
+            let id = sim.substrate.allocate_stable_id();
             let mut entity =
                 GameEntity::test_default(id, "TEST", "A", (x >> 8) as u16, (y >> 8) as u16);
             entity.set_type_ref_for_test(sim.interner.intern("TEST"));
@@ -787,7 +787,7 @@ mod tests {
                 assert_ne!(sim.scenario_rng.logical_state(), before_rng);
             } else {
                 assert_eq!(sim.scenario_rng.logical_state(), before_rng);
-                assert_eq!(sim.allocate_stable_id(), id + 1);
+                assert_eq!(sim.substrate.allocate_stable_id(), id + 1);
             }
         }
     }
@@ -805,7 +805,7 @@ mod tests {
             let mut sim = Simulation::new();
             let owner = sim.interner.intern("A");
             let type_ref = sim.interner.intern("TEST");
-            let id = sim.allocate_stable_id();
+            let id = sim.substrate.allocate_stable_id();
             let entity = GameEntity::new_at_frame_zero_for_test(
                 id,
                 0,
@@ -994,7 +994,7 @@ mod tests {
     fn spawn_returns_some_for_smoke() {
         let rules = build_rules("Smoke", 50);
         let mut sim = Simulation::new();
-        let prior_object_id = sim.allocate_stable_id();
+        let prior_object_id = sim.substrate.allocate_stable_id();
         let id = sim
             .spawn_particle_system(
                 ParticleSystemTypeId(0),

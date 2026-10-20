@@ -1618,7 +1618,7 @@ mod tests {
                 crate::sim::overlay_grid::OverlayGrid::new(terrain.width(), terrain.height());
             overlays.place_overlay(12, 12, 0, 0);
             sim.overlay_grid = Some(overlays);
-            let source = sim.allocate_stable_id();
+            let source = sim.substrate.allocate_stable_id();
             place(
                 &mut sim,
                 source,
@@ -1646,7 +1646,7 @@ mod tests {
             shot.ranged_fuse = true;
             shot.payload.warhead = sim.interner.intern("WALLWH");
             shot.payload.base_damage = 1;
-            let id = sim.allocate_stable_id();
+            let id = sim.substrate.allocate_stable_id();
             sim.admit_projectile(id, shot);
             let mut runtime = SimRuntime::from_simulation(sim);
             runtime.resources.rules = make_rules();
@@ -1824,8 +1824,8 @@ mod tests {
                 "[General]\nVeteranRatio=3.0\n[VehicleTypes]\n0=TEST\n1=VICTIM\n[AircraftTypes]\n0=AIR\n[TEST]\nStrength=300\nPrimary=GUN\n[VICTIM]\nStrength=300\n[AIR]\nStrength=300\n[GUN]\nDamage=10\nROF=100\nRange=10\nSpeed=100\nProjectile=SHOT\nWarhead=WH\n[SHOT]\nArm=10\nRanged=yes\nAA=yes\nAG=yes\n[WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n".replace("Arm=10", &format!("Arm={arm}")));
                 let mut sim = Simulation::new();
                 install_native_size_terrain(&mut sim, 16, 16);
-                let source = sim.allocate_stable_id();
-                let target = sim.allocate_stable_id();
+                let source = sim.substrate.allocate_stable_id();
+                let target = sim.substrate.allocate_stable_id();
                 place(
                     &mut sim,
                     source,
@@ -1933,8 +1933,8 @@ mod tests {
                 terrain_template.width(),
                 terrain_template.height(),
             ));
-            let source = sim.allocate_stable_id();
-            let target = sim.allocate_stable_id();
+            let source = sim.substrate.allocate_stable_id();
+            let target = sim.substrate.allocate_stable_id();
             let z = if voxel { 1000 } else { 100 };
             place(
                 &mut sim,

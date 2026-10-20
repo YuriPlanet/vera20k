@@ -191,7 +191,7 @@ fn compare_original_body_pixels(join_viewport: bool) {
     gi.lifecycle
         .set_object_alive_for_test(actor["alive"].as_bool().unwrap());
     sim.entities_mut_for_test().insert(gi);
-    sim.submit_object_display(1, DisplayLayer::GROUND, Some(&rules));
+    sim.submit_object_display_for_test(1, DisplayLayer::GROUND, Some(&rules));
     let order = NativeDisplayOrder::from_display(sim.display_layers());
     let mut light_grid = CellLightGrid::new();
     light_grid.insert_profiled_light(

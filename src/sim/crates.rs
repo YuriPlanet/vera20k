@@ -542,7 +542,7 @@ pub(crate) fn construct_runtime_overlay(
     // an ordinary crate spends an ID even though Mark immediately UnInit's
     // this transient object. Evidence: trigger_crate money.lifecycle and the
     // shared bridge_constructor corpus. Allocate before a nested CellAnim.
-    let stable_id = sim.allocate_stable_id();
+    let stable_id = sim.substrate.allocate_stable_id();
     let handle = sim
         .load_objects
         .construct_overlay(stable_id, cell, || {

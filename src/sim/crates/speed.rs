@@ -68,7 +68,7 @@ mod tests {
         let owner = sim.interner.intern("Americans");
         let type_id = sim.interner.intern("E1");
         for id in 1..=3 {
-            assert_eq!(sim.allocate_stable_id(), id);
+            assert_eq!(sim.substrate.allocate_stable_id(), id);
             let mut entity = GameEntity::new_at_frame_zero_for_test(
                 id,
                 10,

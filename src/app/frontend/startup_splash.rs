@@ -184,6 +184,7 @@ pub(crate) fn render_and_present(
     batch: &BatchRenderer,
     presenter: &ShellSurfacePresenter,
     depth: &wgpu::TextureView,
+    fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
     splash: &StartupSplashPresentation,
 ) -> Result<()> {
     batch.update_camera(
@@ -239,6 +240,7 @@ pub(crate) fn render_and_present(
         );
     }
     presenter.encode_present(&mut encoder, &output.texture);
+    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present();
     Ok(())

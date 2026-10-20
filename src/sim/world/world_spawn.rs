@@ -213,7 +213,7 @@ impl Simulation {
         vision_range: u16,
         is_voxel: bool,
     ) -> u64 {
-        let stable_id = self.allocate_stable_id();
+        let stable_id = self.substrate.allocate_stable_id();
         let techno_ctor_random_word = resolve_techno_constructor_word(
             &mut self.scenario_rng,
             TechnoConstructorInit::FreshScenario,
@@ -479,7 +479,7 @@ impl Simulation {
                     .map(|obj| (obj.sight.max(0) as u16).min(MAX_SIGHT_RANGE))
                     .unwrap_or_else(|| Self::default_vision_range_for_category(map_ent.category));
 
-                let stable_id = sim.allocate_stable_id();
+                let stable_id = sim.substrate.allocate_stable_id();
                 let owner_id = match owner {
                     MapEntityOwner::Registered(owner) => owner,
                     MapEntityOwner::UnregisteredDiagnostic => sim.interner.intern(&map_ent.owner),

@@ -539,7 +539,7 @@ mod tests {
         ))
         .unwrap();
         let mut sim = crate::sim::world::Simulation::new();
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate_mut_for_test().allocate_stable_id();
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(id, "TEST", "Americans", 4, 5);
         entity.set_type_ref_for_test(sim.intern("TEST"));

@@ -357,6 +357,16 @@ fn native_surface_words(
 #[test]
 #[ignore = "requires GPU and retail assets; Kirov two-frame pose upload and UnitPose palette/depth replay"]
 fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() {
+    kirov_pose_upload_and_replay(false);
+}
+
+#[test]
+#[ignore = "requires GPU and retail assets; sampled bomb transform through pose upload and retained replay"]
+fn render_interpolation_kirov_sample_reaches_pose_upload_and_gpu_pixels() {
+    kirov_pose_upload_and_replay(true);
+}
+
+fn kirov_pose_upload_and_replay(interpolated: bool) {
     let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
@@ -406,17 +416,49 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
         );
         batch.bind_shroud(&gpu.device, Some(&fog));
         let mut cache = VxlPoseFrameCache::default();
+        let mut interpolation =
+            crate::app::presentation::interpolation::RenderInterpolation::new(interpolated);
+        interpolation.observe(&sim, 0, Some(32.), false);
         let mut previous_pixels = None;
         for velocity in [
             ProjectileVelocity::new(0, 0, -1),
             ProjectileVelocity::new(1, 0, 0),
         ] {
+            let previous = sim.projectiles().get(id).unwrap().position();
             sim.projectiles_mut_for_test()
                 .get_mut(id)
                 .unwrap()
                 .set_velocity_for_test(velocity);
+            if interpolated {
+                let mut position = sim.projectiles().get(id).unwrap().position();
+                position.x += 128;
+                sim.projectiles_mut_for_test()
+                    .get_mut(id)
+                    .unwrap()
+                    .set_position_for_test(position);
+                let next_frame = sim.session().binary_frame() + 1;
+                sim.session_mut_for_test()
+                    .set_binary_frame_for_test(next_frame);
+                let now = sim.session().binary_frame() * 32;
+                interpolation.observe(&sim, now, Some(32.), false);
+                interpolation.observe(&sim, now + 16, Some(32.), false);
+            }
             cache.begin_frame();
-            let matrix = projectile_voxel_matrix(velocity).unwrap();
+            use crate::app::presentation::interpolation::{PointKind, PointPose};
+            let painted = interpolation.sample_point(
+                PointKind::Bullet,
+                id,
+                PointPose::bullet(sim.projectiles().get(id).unwrap()),
+                sim.session().binary_frame(),
+            );
+            if interpolated {
+                assert_eq!(
+                    painted.coord[0],
+                    previous.x + 64,
+                    "half-tick sample must not use next Logic position"
+                );
+            }
+            let matrix = painted.voxel_matrix().unwrap();
             let (expected, _) = model
                 .render_matrix(matrix, 0, true, VxlLighting::Diffuse, Some(&vpl))
                 .unwrap();
@@ -427,8 +469,9 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
                 );
             }
             let order = NativeDisplayOrder::from_display(sim.display_layers());
-            let object = projectile_draw_instance(
+            let object = crate::app::presentation::instances::projectile_draw_instance_sampled(
                 sim.projectiles().get(id).unwrap(),
+                painted,
                 kind,
                 "BlimpBombP",
                 HouseColorIndex(8),

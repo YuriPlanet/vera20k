@@ -81,7 +81,7 @@ fn declared_particle(sim: &mut Simulation, rules: &RuleSet, before: &Value) -> P
         particle_type(rules, &before["type"]),
         coords(&before["coords"]),
     );
-    p.stable_id = sim.allocate_stable_id();
+    p.stable_id = sim.substrate.allocate_stable_id();
     p.native_unique_id = before["native_id"].as_i64().unwrap() as i32;
     p.lifetime_remaining = before["remaining_ec"].as_u64().unwrap() as i16;
     p.velocity = bits(&before["velocity_bits"]);
@@ -91,7 +91,12 @@ fn declared_particle(sim: &mut Simulation, rules: &RuleSet, before: &Value) -> P
     [p.drift_x, p.drift_y, p.drift_z] = drift;
     p.marked_for_deletion = before["marked"].as_bool().unwrap();
     p.state_ai_advance = rules.particle_type(p.type_id).state_ai_advance;
-    sim.reveal_particle(p.stable_id());
+    Simulation::reveal_particle(
+        &sim.interner,
+        &sim.terrain_objects,
+        &mut sim.substrate,
+        p.stable_id(),
+    );
     p
 }
 
@@ -176,7 +181,7 @@ fn install_system(
     before: &Value,
 ) -> (u64, Option<u64>) {
     let owner = if input["owner"] == true {
-        let stable = sim.allocate_stable_id();
+        let stable = sim.substrate.allocate_stable_id();
         let house = sim.interner.intern("Neutral");
         let ty = sim.interner.intern("FixtureBuilding");
         let category = match input["owner_kind"].as_str().unwrap_or("building") {

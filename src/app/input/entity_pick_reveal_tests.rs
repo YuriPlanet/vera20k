@@ -239,7 +239,7 @@ fn sov01_trigger_revealed_hill_bunkers_can_be_targeted_without_tank_sight() {
         let point = crate::sim::movement::ground_pose::position_world_coord(&target.position);
         let shrouded = crate::sim::vision::point_is_shrouded(sim.fog(), &cells, viewer, point);
         let (sx, sy) = crate::render::locomotor_visual::ground_screen_position(&target.position);
-        let hover = hover_target_at_point(sim, sx, sy, &viewer_name, false, Some(rules));
+        let hover = hover_target_at_point(&*sim, sx, sy, &viewer_name, false, Some(rules));
         println!(
             "target={} cell=({}, {}) z={} raw_mapped={} native_shrouded={shrouded} hover={hover:?}",
             target.stable_id(),

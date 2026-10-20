@@ -53,7 +53,7 @@ fn map_music_action_follows_native_read_and_queue() {
         let mut sim = Simulation::with_seed(31);
         sim.initialize_trigger_definitions(&map, &TeamAiIniRegistry::default(), None, None);
         sim.classify_map_triggers(None);
-        sim.set_trigger_variable(false, 9, true);
+        sim.set_trigger_variable_for_test(false, 9, true);
         let effects = sim.advance_triggers(None, None, FrameEffects::default());
         assert_eq!(effects.len(), actions.len(), "{case}");
 

@@ -474,7 +474,7 @@ pub(crate) fn admitted_kirov_bomb(
         weapon.bright,
     )
     .with_installed_weapon(Some(sim.intern(weapon_name)));
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate_mut_for_test().allocate_stable_id();
     let velocity = ProjectileVelocity::from_native(std::array::from_fn(|i| {
         crate::util::native_x87::NativeF64Bits::from_bits(
             u64::from_str_radix(shot["launch"]["bits"][i].as_str().unwrap(), 16).unwrap(),

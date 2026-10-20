@@ -143,9 +143,12 @@ impl<'a> SimView<'a> {
 }
 
 impl SimRuntime {
-    /// Clear the exact radar-terrain batch a completed presentation update read.
+    /// Clear the exact radar-terrain batch a completed presentation update read
+    /// ([`DirtyCells::acknowledge_radar`](crate::sim::dirty_cells::DirtyCells::acknowledge_radar)).
+    /// The marks are presentation handoff state, so this consumption cannot
+    /// mutate lockstep state.
     pub fn acknowledge_radar_terrain_dirty(&mut self, generation: u64) -> bool {
-        self.simulation.acknowledge_radar_terrain_dirty(generation)
+        self.simulation.dirty_cells.acknowledge_radar(generation)
     }
 
     /// One Ordinary-lane frame for side binaries (parity-digest, sim-bench):
@@ -1220,7 +1223,7 @@ pub fn finalize_constructed_scenario(
             skirmish_session,
             campaign_new_game_map,
         });
-    sim.discard_lighting_events();
+    sim.lighting_sources.discard_pending();
     output
 }
 #[test]

@@ -1074,7 +1074,7 @@ pub(crate) fn slot_test_fixture() -> (Simulation, RuleSet, u64) {
     }
     rules.install_art_data(art);
     let mut sim = Simulation::new();
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut entity = GameEntity::test_default_of_category(
         id,
         "B",
@@ -1170,7 +1170,7 @@ mod slot_tests {
             for damaged in [false, true] {
                 let mut sim = Simulation::new();
                 let name = row["building"].as_str().unwrap();
-                let id = sim.allocate_stable_id();
+                let id = sim.substrate.allocate_stable_id();
                 let mut building = GameEntity::test_default_of_category(
                     id,
                     name,

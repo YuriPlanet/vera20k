@@ -214,7 +214,7 @@ fn whole_unit_fixture(
     ] {
         let before = &actors[role];
         assert_eq!(before["pointer"], roles[role]);
-        let id = fixture.sim.allocate_stable_id();
+        let id = fixture.sim.substrate.allocate_stable_id();
         pointers.insert(roles[role].as_str().unwrap().to_owned(), id);
         let object = rules.object(before["type_name"].as_str().unwrap()).unwrap();
         let [x, y, z] = xyz(&before["xyz"]);
@@ -313,9 +313,14 @@ fn whole_unit_fixture(
                 None,
                 CellListInsertion::PrependNonBuilding,
             );
-            fixture
-                .sim
-                .submit_object_display(id, DisplayLayer::GROUND, Some(rules));
+            Simulation::submit_object_display(
+                &fixture.sim.interner,
+                &fixture.sim.terrain_objects,
+                &mut fixture.sim.substrate,
+                id,
+                DisplayLayer::GROUND,
+                Some(rules),
+            );
         }
     }
     let native_order = |name: &str| {

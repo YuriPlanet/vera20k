@@ -194,7 +194,7 @@ fn launch_missile(
         Flh::default(),
     )
     .coord;
-    let bullet_id = sim.allocate_stable_id();
+    let bullet_id = sim.substrate.allocate_stable_id();
     let native_unique_id = sim.next_native_runtime_id();
     if let Some(warning) = warning {
         sim.substrate

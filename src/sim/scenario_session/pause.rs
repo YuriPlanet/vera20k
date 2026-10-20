@@ -93,20 +93,10 @@ impl super::ScenarioSession {
     }
 }
 
-/// The app's entry points; the session owns the pause.
+/// The app's entry point; the session owns the pause.
 impl Simulation {
-    /// [`ScenarioSession::pause_scenario`](super::ScenarioSession::pause_scenario).
-    pub fn pause_scenario(&mut self, duration: i32) -> Vec<TriggerEffect> {
-        self.session.pause_scenario(duration)
-    }
-
     /// [`ScenarioSession::resume_scenario`](super::ScenarioSession::resume_scenario).
     pub fn resume_scenario(&mut self) -> Vec<TriggerEffect> {
         self.session.resume_scenario()
-    }
-
-    /// [`ScenarioSession::expire_scenario_pause`](super::ScenarioSession::expire_scenario_pause).
-    pub fn expire_scenario_pause(&mut self) -> Vec<TriggerEffect> {
-        self.session.expire_scenario_pause()
     }
 }

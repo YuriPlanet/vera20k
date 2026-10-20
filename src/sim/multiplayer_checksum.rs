@@ -456,15 +456,15 @@ mod tests {
     ) -> (Simulation, [ChecksumObject; FAMILY_COUNT]) {
         let mut sim = Simulation::with_seed(0x16112026);
 
-        let entity_id = sim.allocate_stable_id();
+        let entity_id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "ORCA", "Americans", 3, 4);
         entity.set_category_for_test(EntityCategory::Aircraft);
         sim.substrate.entities.insert(entity);
 
-        let anim_id = sim.allocate_stable_id();
+        let anim_id = sim.substrate.allocate_stable_id();
         sim.substrate.anims.insert(test_anim(anim_id, 77, 731, -29));
 
-        let particle_id = sim.allocate_stable_id();
+        let particle_id = sim.substrate.allocate_stable_id();
         sim.substrate.particle_systems.insert({
             let mut system = ParticleSystem::test_fixture(
                 particle_id,
@@ -475,7 +475,7 @@ mod tests {
             system
         });
 
-        let terrain_id = sim.allocate_stable_id();
+        let terrain_id = sim.substrate.allocate_stable_id();
         sim.terrain_objects
             .objects_mut_for_test()
             .insert(terrain_id, {
@@ -486,13 +486,13 @@ mod tests {
                 terrain
             });
 
-        let bullet_id = sim.allocate_stable_id();
+        let bullet_id = sim.substrate.allocate_stable_id();
         sim.projectiles.spawn(
             bullet_id,
             test_projectile(ProjectileCoord::new(1234, -567, 0)),
         );
 
-        let wave_id = sim.allocate_stable_id();
+        let wave_id = sim.substrate.allocate_stable_id();
         sim.waves.spawn(
             wave_id,
             Wave::new(
@@ -602,7 +602,7 @@ mod tests {
     #[test]
     fn gsi_16_11_only_anim_minus_two_is_exempt_in_the_live_logic_resolver() {
         let mut sim = Simulation::with_seed(0x16_11);
-        let anim_id = sim.allocate_stable_id();
+        let anim_id = sim.substrate.allocate_stable_id();
         sim.substrate
             .anims
             .insert(test_anim(anim_id, SYNC_EXEMPT_ANIM_ID, 500, 700));
@@ -622,11 +622,11 @@ mod tests {
     fn display_layers_fold_in_layer_order_before_the_logic_vector() {
         use crate::sim::world::display_layers::DisplayLayer;
         let mut sim = Simulation::with_seed(0x64da);
-        let top = sim.allocate_stable_id();
+        let top = sim.substrate.allocate_stable_id();
         sim.substrate.anims.insert(test_anim(top, 5, 40, 50));
-        let surface = sim.allocate_stable_id();
+        let surface = sim.substrate.allocate_stable_id();
         sim.substrate.anims.insert(test_anim(surface, 6, 70, 80));
-        let logic = sim.allocate_stable_id();
+        let logic = sim.substrate.allocate_stable_id();
         sim.substrate.anims.insert(test_anim(logic, 7, 100, 110));
         // Submission order is deliberately the reverse of layer order.
         assert!(
@@ -722,7 +722,7 @@ mod tests {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
         let mut sim = Simulation::with_seed(0x74ab);
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         let tire = VoxelAnimType::from_ini_section(
             "TIRE",
             IniFile::from_str("[TIRE]\nDuration=150\n")

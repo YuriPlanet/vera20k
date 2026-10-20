@@ -1355,9 +1355,9 @@ impl Simulation {
             .entities
             .get(id)
             .map(|entity| (entity.position.rx(), entity.position.ry()));
-        //6F50FA calls the existing cloak/sensor owner before Tag34. The
-        //ordinary stock arm is dormant without a CloakGenerator field;
-        //custom fields retain the owner's StartCloaking/targeter response.
+        //6F50FA calls the existing cloak/sensor owner before Tag34: its
+        //Deselect arm is live, its cloak-field arm dormant without a
+        //CloakGenerator field.
         if let Some(rules) = rules {
             crate::sim::world::techno_ai_cloak::sensor_reevaluate_stock_cloak(
                 self, id, rules, registry,

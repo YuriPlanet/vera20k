@@ -156,7 +156,7 @@ fn retail_transylv_ambient_action_reaches_native_fade_and_large_flash_request() 
     for row in history["rows"].as_array().unwrap() {
         sim.session
             .set_binary_frame_for_test(row["frame"].as_u64().unwrap() as u32);
-        sim.discard_lighting_events();
+        sim.lighting_sources.discard_pending();
         sim.tick_scenario_lighting_transition(&rules);
         let light = sim.session.lighting();
         assert_eq!(

@@ -90,7 +90,10 @@ impl Simulation {
             {
                 skirmish_order[1] = Some(ScenarioPostMapStep::AiOpeningCredits);
             }
-            crate::sim::scenario_bootstrap::apply_skirmish_ai_opening_credits(self, input.rules);
+            crate::sim::scenario_bootstrap::apply_skirmish_ai_opening_credits(
+                &mut self.houses,
+                input.rules,
+            );
             #[cfg(any(test, feature = "test-support"))]
             {
                 skirmish_order[2] = Some(ScenarioPostMapStep::LaunchAlliances);

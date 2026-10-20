@@ -3417,7 +3417,7 @@ mod particle_hash_tests {
     }
 
     fn insert_system(sim: &mut Simulation, mut system: ParticleSystem) -> u64 {
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         system.set_stable_id_for_test(id);
         sim.substrate.particle_systems.insert(system);
         sim.reveal_particle_system(id, None);

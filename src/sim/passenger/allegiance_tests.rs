@@ -112,7 +112,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
             .as_u64()
             .map(|index| houses[index as usize]),
     );
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut building =
         GameEntity::test_default_of_category(id, "B", "", 10, 11, EntityCategory::Structure);
     building.set_type_ref_for_test(sim.interner.intern("B"));
@@ -124,7 +124,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
     let mut cargo = PassengerCargo::new(10, 1.0);
     cargo.garrison_fire_index = integer(&input["fire_index"]) as u8;
     for owner in input["occupant_owners"].as_array().unwrap() {
-        let passenger_id = sim.allocate_stable_id();
+        let passenger_id = sim.substrate.allocate_stable_id();
         let mut passenger = GameEntity::test_default_of_category(
             passenger_id,
             "E1",

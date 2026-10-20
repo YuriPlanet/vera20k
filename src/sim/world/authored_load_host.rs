@@ -109,7 +109,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         if self.sim.native_unique_ids.is_none() {
             return Err(SimulationAuthoredLoadError::MissingNativeIdentity);
         }
-        let stable_id = self.sim.allocate_stable_id();
+        let stable_id = self.sim.substrate.allocate_stable_id();
         let (objects, cursor) = (
             &mut self.sim.load_objects,
             self.sim

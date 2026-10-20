@@ -56,7 +56,7 @@ fn actor(
             "E1"
         });
     let mut entity = GameEntity::new_at_frame_for_test(
-        sim.allocate_stable_id(),
+        sim.substrate.allocate_stable_id(),
         cell.0,
         cell.1,
         0,

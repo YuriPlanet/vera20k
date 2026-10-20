@@ -365,7 +365,7 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
             .unwrap_or_else(|| constant(corpus, "delay_02")),
     ));
     sim.houses.register(house);
-    assert_eq!(sim.allocate_stable_id(), 1);
+    assert_eq!(sim.substrate.allocate_stable_id(), 1);
     let kind = sim.interner.intern("YAREFN");
     let health = int("health", 300);
     let mut building = GameEntity::new_at_frame_zero_for_test(

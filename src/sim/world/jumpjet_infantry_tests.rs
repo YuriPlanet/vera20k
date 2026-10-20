@@ -849,7 +849,7 @@ fn rocketeer_crash_fixture(
             RevealOutcome::Revealed { .. }
         ));
     };
-    assert_eq!(sim.allocate_stable_id(), 1);
+    assert_eq!(sim.substrate.allocate_stable_id(), 1);
     let americans = sim.interner.intern("Americans");
     let jumpjet = sim.interner.intern("JUMPJET");
     let mut rocketeer = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
@@ -930,7 +930,7 @@ fn rocketeer_crash_fixture(
     }
     let shooter_type = sim.interner.intern("SHOOTER");
     let soviets = sim.interner.intern("Soviets");
-    let shooter = sim.allocate_stable_id();
+    let shooter = sim.substrate.allocate_stable_id();
     let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
         shooter,
         40,

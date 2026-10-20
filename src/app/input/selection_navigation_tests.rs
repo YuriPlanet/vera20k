@@ -2218,7 +2218,7 @@ fn snapshot_restores_singleton_anchor_and_retained_layer_order_for_next_key() {
         .max()
         .unwrap()
     {
-        sim.allocate_stable_id();
+        sim.substrate_mut_for_test().allocate_stable_id();
     }
     for actor in &row.inputs.actors {
         sim.register_live_object(actor.id);

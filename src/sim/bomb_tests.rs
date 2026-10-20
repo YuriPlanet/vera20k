@@ -600,7 +600,7 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
         }
         "defuse" => {
             let carrier = ids[1];
-            sim.bomb_defuse(carrier);
+            crate::sim::world::Simulation::bomb_defuse(&mut sim.substrate, &mut sim.bombs, carrier);
             assert!(bomb(&sim, carrier).is_none(), "{name}");
             assert!(!sim.bombs.carriers.contains(&carrier), "{name}");
         }

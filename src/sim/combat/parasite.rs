@@ -13,7 +13,7 @@
 //! killing hit: ObjectClass::ReceiveDamage's exact-zero Destroy (`0x005F57AF`)
 //! runs Detach_All(1), whose announce visits the victim itself; its
 //! FootClass::PointerExpired forwards from Foot+694 to the eater's
-//! ParasiteClass (`0x004D99AA..0x004D99C6`, `Simulation::object_destroy_callback`).
+//! ParasiteClass (`0x004D99AA..0x004D99C6`, `Simulation::detach_all`).
 //! Ghidra plates on those addresses carry the evidence; retail data:
 //! `[ParasiteDog]`, `[Parasite]`, `[BadTeeth]`, `[DroneJump]`.
 //!

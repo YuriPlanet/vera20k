@@ -25,9 +25,12 @@ fn radar_dirty_ack_dedups_one_window_rearms_and_never_changes_hash() {
 
     // A skipped/absent presentation performs no acknowledgement. A stale
     // acknowledgement likewise cannot erase the pending native dirty batch.
-    assert!(!sim.acknowledge_radar_terrain_dirty(generation.wrapping_add(1)));
+    assert!(
+        !sim.dirty_cells
+            .acknowledge_radar(generation.wrapping_add(1))
+    );
     assert_eq!(sim.dirty_cells.radar(), vec![cell, other]);
-    assert!(sim.acknowledge_radar_terrain_dirty(generation));
+    assert!(sim.dirty_cells.acknowledge_radar(generation));
     assert!(sim.dirty_cells.radar().is_empty());
     assert_eq!(sim.state_hash(), baseline_hash);
 
@@ -77,12 +80,12 @@ fn radar_dirty_ack_survives_action40_and_load_rebuild_needs_no_stale_batch() {
     assert!(sim.change_visible_map_area([4, 40, 54, 12], None));
     assert_eq!(sim.playfield_revision, 1);
     assert_eq!(sim.dirty_cells.radar(), vec![(20, 20)]);
-    assert!(sim.acknowledge_radar_terrain_dirty(1));
+    assert!(sim.dirty_cells.acknowledge_radar(1));
 
     sim.dirty_cells.mark_radar([(20, 20)]);
     let hash_with_pending_client_state = sim.state_hash();
     let bytes_with_pending = GameSnapshot::save(&sim, 0, 0, "all06umd.map", 0);
-    assert!(sim.acknowledge_radar_terrain_dirty(2));
+    assert!(sim.dirty_cells.acknowledge_radar(2));
     assert_eq!(sim.state_hash(), hash_with_pending_client_state);
     let bytes_after_ack = GameSnapshot::save(&sim, 0, 0, "all06umd.map", 0);
     assert_eq!(

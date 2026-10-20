@@ -122,7 +122,7 @@ impl Simulation {
         }
         //5FE570 creates with EmptyCell/frame-1, so construction publishes no
         //cell.5FD270 then performs its own requested-cell Terrain admission.
-        let stable_id = self.allocate_stable_id();
+        let stable_id = self.substrate.allocate_stable_id();
         let handle = self
             .load_objects
             .construct_overlay(stable_id, (rx, ry), || {

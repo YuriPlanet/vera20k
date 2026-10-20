@@ -414,7 +414,7 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
         let mut grid = PathGrid::from_resolved_terrain(&terrain);
         grid.set_bridge_cell_decoupled_for_test(3, 2, 0, true, true, 4, true);
         let mut sim = Simulation::with_seed(71);
-        assert_eq!(sim.allocate_stable_id(), 1);
+        assert_eq!(sim.substrate.allocate_stable_id(), 1);
         sim.rebuild_caches_after_load(
             terrain.clone(),
             Default::default(),

@@ -9,9 +9,9 @@ use super::{
     DEVELOPER_OPTIONS_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, LauncherCheckboxId,
     LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
     ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState, PhysicalControlFrame,
-    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SidebarSize,
-    WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL,
-    ZOOM_HELP, ZOOM_LABEL, Zoom,
+    RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
+    SIDEBAR_HELP, SIDEBAR_LABEL, SidebarSize, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
@@ -84,7 +84,7 @@ pub(crate) struct LauncherOptionsLayout {
     /// The Sidebar combo, beside Difficulty as Zoom is beside Visual Details.
     pub(crate) sidebar: RectPx,
     pub(crate) trackbars: [(LauncherTrackbarId, RectPx); 6],
-    pub(crate) checkboxes: [(LauncherCheckboxId, RectPx); 8],
+    pub(crate) checkboxes: [(LauncherCheckboxId, RectPx); 9],
     pub(crate) buttons: [(LauncherParentResult, RectPx); 3],
     /// The mapping the rects are in: [`ShellScale::RETAIL`] centres the
     /// authored dialog in the window, otherwise the authored dialog is
@@ -170,6 +170,11 @@ impl LauncherOptionsLayout {
                 // VERA's Developer Options band under Audio, above the
                 // status line, where the template has nothing.
                 (LauncherCheckboxId::WolTestService, dlu(93, 323, 200, 10)),
+                // Beside Show Hidden, below Scroll Rate and above batch queue.
+                (
+                    LauncherCheckboxId::RenderInterpolation,
+                    dlu(238, 218, 120, 10),
+                ),
             ],
             buttons: [
                 (LauncherParentResult::Keyboard, button(KEYBOARD_BUTTON)),
@@ -335,6 +340,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::FullScreen => FULL_SCREEN_LABEL,
             LauncherCheckboxId::OriginalShape => ORIGINAL_SHAPE_LABEL,
             LauncherCheckboxId::YrOriginalStyle => YR_ORIGINAL_STYLE_LABEL,
+            LauncherCheckboxId::RenderInterpolation => RENDER_INTERPOLATION_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
         }
@@ -376,6 +382,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::FullScreen => self.values.full_screen,
             LauncherCheckboxId::OriginalShape => self.values.original_shape,
             LauncherCheckboxId::YrOriginalStyle => self.values.yr_original_style,
+            LauncherCheckboxId::RenderInterpolation => self.values.render_interpolation,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
         }
@@ -503,6 +510,9 @@ impl OptionsDialogState {
                 LauncherCheckboxId::OriginalShape => LauncherStatusHelp::Text(ORIGINAL_SHAPE_HELP),
                 LauncherCheckboxId::YrOriginalStyle => {
                     LauncherStatusHelp::Text(YR_ORIGINAL_STYLE_HELP)
+                }
+                LauncherCheckboxId::RenderInterpolation => {
+                    LauncherStatusHelp::Text(RENDER_INTERPOLATION_HELP)
                 }
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Text(SHIFT_QUEUE_HELP),
                 LauncherCheckboxId::WolTestService => {
@@ -1048,6 +1058,40 @@ mod tests {
             [
                 LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
                 LauncherOptionsEvent::ShiftQueueChanged(true)
+            ]
+        );
+    }
+
+    #[test]
+    fn render_interpolation_box_has_its_own_hit_target_and_ordered_preview() {
+        let mut state = state();
+        let layout = LauncherOptionsLayout::new(800, 600);
+        let id = LauncherCheckboxId::RenderInterpolation;
+        let rect = layout
+            .checkboxes
+            .iter()
+            .find(|(candidate, _)| *candidate == id)
+            .unwrap()
+            .1;
+        for (other, other_rect) in &layout.checkboxes {
+            if *other != id {
+                assert!(
+                    rect.x + rect.w <= other_rect.x
+                        || other_rect.x + other_rect.w <= rect.x
+                        || rect.y + rect.h <= other_rect.y
+                        || other_rect.y + other_rect.h <= rect.y
+                );
+            }
+        }
+        assert_eq!(state.shell_checkbox_label(id), RENDER_INTERPOLATION_LABEL);
+        assert!(!state.shell_checkbox_checked(id));
+        state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+        assert!(state.shell_checkbox_checked(id));
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
+                LauncherOptionsEvent::RenderInterpolationChanged(true),
             ]
         );
     }

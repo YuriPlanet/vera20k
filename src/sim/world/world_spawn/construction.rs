@@ -53,7 +53,7 @@ impl Simulation {
         let category = EntityCategory::from(obj.category);
         let uses_voxel = object_uses_voxel(type_id, obj, rules);
         let sight_range = (obj.sight.max(0) as u16).min(MAX_SIGHT_RANGE);
-        let stable_id = self.allocate_stable_id();
+        let stable_id = self.substrate.allocate_stable_id();
         let owner_iid = self.interner.intern(owner);
         let type_iid = self.interner.intern(type_id);
         let techno_ctor_random_word =

@@ -34,7 +34,7 @@ impl Simulation {
             .interner
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| object.gap_generator);
-        self.set_building_light_active(id, enabled);
+        self.lighting_sources.set_building_light_active(id, enabled);
         if !enabled && gap {
             self.remove_building_gap(id);
         }

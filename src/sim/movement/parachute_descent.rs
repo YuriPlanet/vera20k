@@ -112,7 +112,14 @@ impl crate::sim::world::Simulation {
             && let Some(layer) = new_layer
         {
             //5F4001..5F400E: resubmit only when the live layer changed.
-            self.submit_object_display(id, layer, Some(rules));
+            Self::submit_object_display(
+                &self.interner,
+                &self.terrain_objects,
+                &mut self.substrate,
+                id,
+                layer,
+                Some(rules),
+            );
         }
         if let Some(health) = self
             .substrate
@@ -198,7 +205,9 @@ impl crate::sim::world::Simulation {
                 // Anim+0xD4 (`ObjectClass::Paradrop @ 0x005F5940`,
                 // `0x005F5AFE..0x005F5B19`). Freeze the same house selection
                 // on the attached canopy after construction.
-                self.set_anim_house_remap(anim_id, owner_house);
+                self.substrate
+                    .anims
+                    .set_anim_house_remap(anim_id, owner_house);
                 Some(anim_id)
             }
             Err(error) => {
@@ -340,7 +349,7 @@ mod canopy_tests {
 
         let mut sim = Simulation::new();
         sim.interner = crate::sim::intern::test_interner();
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         sim.substrate
             .entities
             .insert(GameEntity::test_default(id, "E1", "Americans", 10, 11));

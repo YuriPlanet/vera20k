@@ -670,7 +670,12 @@ fn compare_case(row: &Value) {
             }
             other => panic!("unhandled native entry {other}"),
         });
-        constructors.publish_overlay_constructions(constructed);
+        Simulation::publish_overlay_constructions(
+            &mut constructors.native_unique_ids,
+            &mut constructors.load_objects,
+            &mut constructors.substrate,
+            constructed,
+        );
         if matches!(
             input["entry"].as_str().unwrap(),
             "spread_processor" | "spread_driver" | "growth_then_spread_driver"

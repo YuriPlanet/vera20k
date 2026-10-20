@@ -301,7 +301,12 @@ impl Particle {
             spark_world::constructor_ground_height(sim, x, y)
         })
         .expect("particle construction requires supported ground facts");
-        sim.reveal_particle(particle.stable_id);
+        Simulation::reveal_particle(
+            &sim.interner,
+            &sim.terrain_objects,
+            &mut sim.substrate,
+            particle.stable_id,
+        );
         particle
     }
 
@@ -319,7 +324,7 @@ impl Particle {
         F: FnMut(&Simulation, i32, i32) -> Result<Option<i32>, E>,
     {
         let native_unique_id = sim.next_native_runtime_id();
-        let stable_id = sim.allocate_stable_id();
+        let stable_id = sim.substrate.allocate_stable_id();
         let divisor = if pt.behaves_like == ParticleBehavesLike::Railgun {
             10
         } else {

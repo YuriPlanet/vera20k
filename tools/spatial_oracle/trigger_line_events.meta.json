@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -28,5 +28,5 @@
     "tag_callout": "0x006E53A0"
   },
   "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --line-events",
-  "payload_sha256": "edcc58bdf6c3d613c2b964e9c4b01f8659d669e9e3199c88a64020dce8d22f40"
+  "payload_sha256": "b1be15f25a7da05b912c8c88c4586f6a7952cb392af21a21cbe7cd70aa8f03bc"
 }

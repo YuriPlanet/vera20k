@@ -290,7 +290,7 @@ mod tests {
     }
 
     fn insert_live_system(sim: &mut Simulation, mut system: ParticleSystem) -> u64 {
-        let stable_id = sim.allocate_stable_id();
+        let stable_id = sim.substrate.allocate_stable_id();
         system.stable_id = stable_id;
         sim.substrate.particle_systems.insert(system);
         assert!(sim.reveal_particle_system(stable_id, None));

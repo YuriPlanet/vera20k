@@ -709,11 +709,11 @@ fn robot_tank_state_is_saved_and_hashed() {
     let house = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(house, 0, None, true, 0, 10));
-    let tank = sim.allocate_stable_id();
+    let tank = sim.substrate.allocate_stable_id();
     sim.substrate
         .entities
         .insert(GameEntity::test_default(tank, "ROBO", "Americans", 5, 5));
-    let center = sim.allocate_stable_id();
+    let center = sim.substrate.allocate_stable_id();
     sim.substrate
         .entities
         .insert(GameEntity::test_default_of_category(

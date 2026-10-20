@@ -2074,7 +2074,13 @@ fn paused_category_projection_and_factory_charge_remain_independent() {
         1,
     );
 
-    let paused = suspend_production(&mut sim, "Americans", ProductionCategory::Infantry);
+    let paused = suspend_production(
+        &sim.interner,
+        &mut sim.production,
+        &sim.session,
+        "Americans",
+        ProductionCategory::Infantry,
+    );
     assert!(paused);
 
     // Run the actual frame owner, which now performs revalidation and charging.
@@ -2334,13 +2340,17 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
         false,
     ));
     assert!(suspend_production(
-        &mut sim,
+        &sim.interner,
+        &mut sim.production,
+        &sim.session,
         "Americans",
         ProductionCategory::Vehicle
     ));
     // The factory is already stopped, so a second hold is refused (0x004C9E60).
     assert!(!suspend_production(
-        &mut sim,
+        &sim.interner,
+        &mut sim.production,
+        &sim.session,
         "Americans",
         ProductionCategory::Vehicle
     ));

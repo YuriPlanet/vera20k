@@ -235,7 +235,7 @@ impl Simulation {
             Some(DeathAnimFollowUp::Mutate(house)) => {
                 if let Some(house) = house {
                     self.substrate.set_anim_owner_house(anim, house);
-                    self.set_anim_house_remap(anim, house);
+                    self.substrate.anims.set_anim_house_remap(anim, house);
                 }
                 self.anim_mark_cell_occupancy(anim);
             }

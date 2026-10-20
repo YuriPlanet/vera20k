@@ -535,8 +535,11 @@ impl Simulation {
     /// - an Aircraft's 0 becomes its own What_Action on the Cell under the
     ///   object's GetCoords (vt+0x48, `/256`), asked with 0 as its second
     ///   argument (`0x00417D7C..0x00417DCB`): Move for a player's aircraft
-    ///   over an object it may not attack. Then a NoMove over an object worn
-    ///   as terrain becomes Move (`0x00417EFE..0x00417F39`).
+    ///   over an object it may not attack;
+    /// - then a NoMove over an object worn as terrain becomes Move
+    ///   ([`Self::worn_as_terrain`]): Unit `0x00740440..0x00740476`, Infantry
+    ///   `0x0051F114..0x0051F14F`, Aircraft `0x00417EFE..0x00417F39`. The
+    ///   Infantry deployer rung returns before it.
     ///
     /// The aircraft's cell query passes no Shift. Native asks it with the
     /// keys read live (third argument 0), but Shift's early Move only differs
@@ -578,11 +581,12 @@ impl Simulation {
             return self.aircraft_object_class_action(viewer, id, target, action, rules, registry);
         }
         let human = self.house_is_human_player(entity.owner());
-        match (entity.category(), action) {
+        let action = match (entity.category(), action) {
+            // Returns at once (`0x0051EBCB..0x0051EBD7`), before the rung below.
             (EntityCategory::Infantry, MoveAction::Move)
                 if human && object.deployer && entity.infantry_deploy_doing() =>
             {
-                MoveAction::NoMove
+                return MoveAction::NoMove;
             }
             (EntityCategory::Unit, MoveAction::Move)
                 if human && object.is_simple_deployer && entity.is_fully_deployed() =>
@@ -595,7 +599,38 @@ impl Simulation {
                 MoveAction::NoMove
             }
             _ => action,
+        };
+        // Unit `0x00740440..0x00740476`, Infantry `0x0051F114..0x0051F14F`.
+        if matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Infantry
+        ) && action == MoveAction::NoMove
+            && self.worn_as_terrain(viewer, target, rules)
+        {
+            MoveAction::Move
+        } else {
+            action
         }
+    }
+
+    /// Whether `target` wears Terrain to `viewer`: IsDisguised (vt+0xC4), no
+    /// worn house (vt+0xD0(1)) and a worn type whose RTTI is Terrain
+    /// (vt+0xCC(1), 0x15), as a Mirage worn as a tree. The Unit, Infantry and
+    /// Aircraft tails make a NoMove over it Move.
+    fn worn_as_terrain(&self, viewer: InternedId, target: u64, rules: &RuleSet) -> bool {
+        self.substrate.entities.get(target).is_some_and(|target| {
+            target
+                .disguise
+                .as_ref()
+                .filter(|disguise| disguise.is_disguised())
+                .and_then(|disguise| disguise.type_id())
+                .is_some_and(|worn| {
+                    rules
+                        .terrain_object_type_case_insensitive(self.interner.resolve(worn))
+                        .is_some()
+                })
+                && target.disguise_house(true, Some(viewer), false).is_none()
+        })
     }
 
     /// The Aircraft rungs of [`Self::foot_object_class_action`].
@@ -624,24 +659,7 @@ impl Simulation {
         } else {
             action
         };
-        // IsDisguised (vt+0xC4), no worn house (vt+0xD0(1)) and a worn type
-        // whose RTTI is Terrain (vt+0xCC(1), 0x15): a Mirage worn as a tree.
-        let worn_terrain = || {
-            target_entity
-                .disguise
-                .as_ref()
-                .filter(|disguise| disguise.is_disguised())
-                .and_then(|disguise| disguise.type_id())
-                .is_some_and(|worn| {
-                    rules
-                        .terrain_object_type_case_insensitive(self.interner.resolve(worn))
-                        .is_some()
-                })
-                && target_entity
-                    .disguise_house(true, Some(viewer), false)
-                    .is_none()
-        };
-        if action == MoveAction::NoMove && worn_terrain() {
+        if action == MoveAction::NoMove && self.worn_as_terrain(viewer, target, rules) {
             MoveAction::Move
         } else {
             action

@@ -218,7 +218,7 @@ fn plane_at(sim: &mut Simulation, rules: &RuleSet, at: (u16, u16), passengers: u
 /// finds none free.
 fn fill_spots(sim: &mut Simulation, cell: (u16, u16)) {
     for spot in [2, 3, 4] {
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         let mut blocker = GameEntity::test_default(id, "E1", "Americans", cell.0, cell.1);
         blocker.set_owner_for_test(sim.interner.intern("Americans"));
         blocker.set_type_ref_for_test(sim.interner.intern("E1"));

@@ -715,7 +715,7 @@ mod map_wall_owner_candidate_tests {
                 .raw_additive_intensity
                 > 0
         );
-        sim.discard_lighting_events();
+        sim.lighting_sources_mut_for_test().discard_pending();
         fatal_lamp_stage(&mut sim, &rules, 100);
         apply_lighting_events(&mut lighting, &terrain, &mut sim);
         lighting.refresh(&terrain, &sim, 2);
@@ -819,7 +819,8 @@ mod map_wall_owner_candidate_tests {
             .lighting_mut()
             .set_current_ambient_for_test(90);
         lights.refresh(&terrain, &sim, 2);
-        sim.set_building_light_active(41, false);
+        sim.lighting_sources_mut_for_test()
+            .set_building_light_active(41, false);
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
             sim.session().lighting(),
         ));
@@ -890,7 +891,8 @@ mod map_wall_owner_candidate_tests {
                 > 0
         );
         let distant = lights.grid().cell_light_at((31, 31)).unwrap().clone();
-        sim.destroy_building_light(41);
+        sim.lighting_sources_mut_for_test()
+            .destroy_building_light(41);
         sim.entities_mut_for_test()
             .remove(41)
             .expect("remove live lamp");
@@ -993,7 +995,7 @@ mod map_wall_owner_candidate_tests {
                 2,
                 Some((&terrain, &sim)),
             );
-            sim.discard_lighting_events();
+            sim.lighting_sources_mut_for_test().discard_pending();
             (sim, lights)
         };
         let scalars = |lights: &MatchLighting, cell| {
@@ -1004,7 +1006,8 @@ mod map_wall_owner_candidate_tests {
         let mut replayed = 0;
         for row in rows {
             let (mut sim, mut lights) = world(row);
-            sim.set_building_light_active(41, false);
+            sim.lighting_sources_mut_for_test()
+                .set_building_light_active(41, false);
             apply_lighting_events(&mut lights, &terrain, &mut sim);
             assert_eq!(
                 scalars(&lights, cell_at(int(&row["level"]))),
@@ -1033,7 +1036,8 @@ mod map_wall_owner_candidate_tests {
         sim.publish_relight_profile();
         apply_lighting_events(&mut lights, &terrain, &mut sim);
         assert_eq!(scalars(&lights, cell), lit);
-        sim.set_building_light_active(41, false);
+        sim.lighting_sources_mut_for_test()
+            .set_building_light_active(41, false);
         apply_lighting_events(&mut lights, &terrain, &mut sim);
         let ordinary = row_for(0);
         assert_eq!(
@@ -1077,7 +1081,7 @@ mod map_wall_owner_candidate_tests {
             2,
             Some((&terrain, &sim)),
         );
-        sim.discard_lighting_events();
+        sim.lighting_sources_mut_for_test().discard_pending();
 
         // Actual BeforeDeathEffects callback must publish disable before a
         // later global operation; the frame transaction must retain both.
@@ -1136,8 +1140,12 @@ mod map_wall_owner_candidate_tests {
 
         // An on/off pair has the same final owner state but MUST resample its
         // area, replacing the retained-global common with full-sampling zero.
-        rt.simulation.set_building_light_active(41, true);
-        rt.simulation.set_building_light_active(41, false);
+        rt.simulation
+            .lighting_sources_mut_for_test()
+            .set_building_light_active(41, true);
+        rt.simulation
+            .lighting_sources_mut_for_test()
+            .set_building_light_active(41, false);
         apply_lighting_events(&mut lights, &terrain, &mut rt.simulation);
         assert_eq!(
             lights.grid().cell_light_at((4, 5)).unwrap().common_scalar,
@@ -1180,8 +1188,9 @@ mod map_wall_owner_candidate_tests {
             2,
             Some((&terrain, &sim)),
         );
-        sim.discard_lighting_events();
-        sim.set_building_light_active(41, false);
+        sim.lighting_sources_mut_for_test().discard_pending();
+        sim.lighting_sources_mut_for_test()
+            .set_building_light_active(41, false);
         let radiation = RadDetonation {
             rx: 15,
             ry: 15,
@@ -1195,7 +1204,8 @@ mod map_wall_owner_candidate_tests {
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
             sim.session().lighting(),
         ));
-        sim.set_building_light_active(41, true);
+        sim.lighting_sources_mut_for_test()
+            .set_building_light_active(41, true);
         detonate_radiation(&mut sim, radiation, &rules.radiation);
         assert!(matches!(
             sim.lighting_sources().pending(),
@@ -1427,7 +1437,8 @@ mod map_wall_owner_candidate_tests {
         assert_eq!(restored.point_lights.len(), 1);
         assert_eq!(lit, restored);
 
-        sim.set_building_light_active(41, false);
+        sim.lighting_sources_mut_for_test()
+            .set_building_light_active(41, false);
         let disabled = derive_lighting_view(&config, Some(&sim), 2);
         assert!(disabled.point_lights.is_empty());
         // Repeated allocation/construction must not reactivate an existing614.
@@ -1437,7 +1448,8 @@ mod map_wall_owner_candidate_tests {
                 .point_lights
                 .is_empty()
         );
-        sim.set_building_light_active(41, true);
+        sim.lighting_sources_mut_for_test()
+            .set_building_light_active(41, true);
         fatal_lamp_stage(&mut sim, &rules, 41);
         assert!(
             derive_lighting_view(&config, Some(&sim), 2)

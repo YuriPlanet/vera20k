@@ -20,7 +20,7 @@ fn original_pause_histories_pin_overflow_rearm_nesting_and_world_branch() {
                 "enter" => {
                     let value = step["value"].as_i64().unwrap() as i32;
                     clock.rearm(value, ms);
-                    sim.pause_scenario(value)
+                    sim.pause_scenario_for_test(value)
                 }
                 "exit" => sim.resume_scenario(),
                 "poll"
@@ -28,7 +28,7 @@ fn original_pause_histories_pin_overflow_rearm_nesting_and_world_branch() {
                         && clock.elapsed(ms)
                         && sim.session().scenario_pause_timed() =>
                 {
-                    sim.expire_scenario_pause()
+                    sim.expire_scenario_pause_for_test()
                 }
                 "poll" => Vec::new(),
                 _ => unreachable!(),
@@ -96,8 +96,8 @@ fn original_pause_histories_pin_overflow_rearm_nesting_and_world_branch() {
 #[test]
 fn saved_timed_hold_rearms_zero_without_losing_an_untimed_hold() {
     let mut sim = crate::sim::world::Simulation::with_seed(0);
-    sim.pause_scenario(0);
-    sim.pause_scenario(120);
+    sim.pause_scenario_for_test(0);
+    sim.pause_scenario_for_test(120);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
@@ -107,7 +107,7 @@ fn saved_timed_hold_rearms_zero_without_losing_an_untimed_hold() {
     assert!(restored.session().scenario_pause_timed());
     let clock = ScenarioPauseClock::after_load(999_000); // PostRead starts now, duration0.
     assert!(clock.elapsed(999_000));
-    assert!(restored.expire_scenario_pause().is_empty());
+    assert!(restored.expire_scenario_pause_for_test().is_empty());
     assert!(restored.session().scenario_paused());
     assert!(!restored.session().scenario_pause_timed());
     assert!(

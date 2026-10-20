@@ -184,7 +184,7 @@ fn scene(row: &Value, terminal: bool, rules: &RuleSet) -> (Simulation, u64) {
         target_expiry: TargetExpiryPolicy::Expire,
         collision: ProjectileCollisionPolicy::NONE,
     };
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(id, spawn);
     (sim, id)
 }

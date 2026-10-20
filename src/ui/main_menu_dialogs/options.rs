@@ -67,6 +67,8 @@ pub(crate) const ORIGINAL_SHAPE_HELP: &str =
 pub(crate) const YR_ORIGINAL_STYLE_LABEL: &str = "YR Loading & Menu Movie";
 pub(crate) const YR_ORIGINAL_STYLE_HELP: &str =
     "Show the Yuri's Revenge loading screen and menu movie.";
+pub(crate) const RENDER_INTERPOLATION_LABEL: &str = "Render Interpolation";
+pub(crate) const RENDER_INTERPOLATION_HELP: &str = "Smooth motion between simulation frames. Adds one frame of visual latency; does not increase simulation speed.";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
 pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "Developer Options";
 pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "Offline Internet Test Service";
@@ -347,9 +349,9 @@ pub(crate) enum LauncherCheckboxId {
     /// splash, drawn before any menu, at the next launch.
     ///
     /// User-set scope: this box switches only those two. Every other shell
-    /// screen follows gamemd's ordinary asset lookup, and the Skirmish
-    /// background keeps its fixed RA2 art (see `render::skirmish_shell_chrome`),
-    /// whatever the box says. Widening it needs the user's explicit request.
+    /// screen follows gamemd's ordinary asset lookup, and the Skirmish and WOL
+    /// setup backgrounds keep their fixed RA2 art (see
+    /// `render::skirmish_shell_chrome`), whatever the box says. Widening it needs the user's explicit request.
     YrOriginalStyle,
     /// VERA's own box: Shift + left click on a mobile build cameo queues
     /// several copies instead of gamemd's one. It applies at once.
@@ -358,6 +360,8 @@ pub(crate) enum LauncherCheckboxId {
     /// service instead of showing that WOLAPI is missing. The next Internet
     /// visit reads it.
     WolTestService,
+    /// Client-only smoothing, independent of native simulation and detail.
+    RenderInterpolation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -382,6 +386,7 @@ pub(crate) enum LauncherOptionsEvent {
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
     WolTestServiceChanged(bool),
+    RenderInterpolationChanged(bool),
     ScorePreview(f32),
     SoundPreview(f32),
     VoicePreview(f32),
@@ -416,6 +421,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) full_screen: bool,
     pub(crate) original_shape: bool,
     pub(crate) yr_original_style: bool,
+    pub(crate) render_interpolation: bool,
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
@@ -437,6 +443,7 @@ impl Default for LauncherOptionsValues {
             full_screen: false,
             original_shape: false,
             yr_original_style: false,
+            render_interpolation: false,
             shift_queue: false,
             wol_test_service: false,
             sidebar: SidebarSize::Normal,
@@ -726,6 +733,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
             LauncherCheckboxId::WolTestService => &mut self.values.wol_test_service,
+            LauncherCheckboxId::RenderInterpolation => &mut self.values.render_interpolation,
         };
         *slot = !*slot;
         let checked = *slot;
@@ -747,6 +755,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::WolTestService => self
                 .pending_events
                 .push(LauncherOptionsEvent::WolTestServiceChanged(checked)),
+            LauncherCheckboxId::RenderInterpolation => self
+                .pending_events
+                .push(LauncherOptionsEvent::RenderInterpolationChanged(checked)),
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
             | LauncherCheckboxId::ShowHidden => {}
@@ -1184,6 +1195,41 @@ mod tests {
         assert_eq!(packed.score_volume.to_bits(), 0.0_f32.to_bits());
         assert_eq!(packed.sound_volume.to_bits(), 0.5_f32.to_bits());
         assert_eq!(packed.voice_volume.to_bits(), 0.6_f32.to_bits());
+    }
+
+    #[test]
+    fn original_yr_style_and_render_interpolation_toggle_independently() {
+        let mut state = state(true);
+        let initial = state.values;
+        state.checkbox_mouse_down(LauncherCheckboxId::YrOriginalStyle, frame(5, 5, 220, 20));
+        assert_ne!(state.values.yr_original_style, initial.yr_original_style);
+        assert_eq!(
+            state.values.render_interpolation,
+            initial.render_interpolation
+        );
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
+                LauncherOptionsEvent::YrOriginalStyleChanged(!initial.yr_original_style),
+            ]
+        );
+        state.checkbox_mouse_down(
+            LauncherCheckboxId::RenderInterpolation,
+            frame(5, 5, 220, 20),
+        );
+        assert_ne!(
+            state.values.render_interpolation,
+            initial.render_interpolation
+        );
+        assert_ne!(state.values.yr_original_style, initial.yr_original_style);
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
+                LauncherOptionsEvent::RenderInterpolationChanged(!initial.render_interpolation),
+            ]
+        );
     }
 
     #[test]

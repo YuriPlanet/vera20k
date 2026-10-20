@@ -15,6 +15,7 @@ pub(crate) fn prepare(
     colors: &HouseColorMap,
     wall_ms: u32,
     view: TacticalViewport,
+    interpolation: Option<&super::interpolation::RenderInterpolation>,
 ) -> std::collections::HashMap<u64, Vec<SpriteInstance>> {
     // Tactical6D47A6/6D47CB visits a Techno's manager, then its controller's.
     // Opaque repeated draws at this frame's fixed clock are idempotent: keep
@@ -37,7 +38,23 @@ pub(crate) fn prepare(
     let mut by_entity: std::collections::HashMap<u64, Vec<SpriteInstance>> =
         std::collections::HashMap::new();
     for (controller, (_, after_entity)) in managers {
-        for link in sim.capture_link_coordinates(controller, rules) {
+        for mut link in sim.capture_link_coordinates(controller, rules) {
+            if let Some(cache) = interpolation {
+                use super::interpolation::{PointKind, PointPose};
+                let sample = |kind, coord: DriveCoord| {
+                    let [x, y, z] = cache
+                        .sample_draw_point(
+                            kind,
+                            link.victim,
+                            PointPose::new([coord.x, coord.y, coord.z], 0, Some(controller)),
+                            sim.session().binary_frame(),
+                        )
+                        .coord;
+                    DriveCoord { x, y, z }
+                };
+                link.from = sample(PointKind::ControlSource, link.from);
+                link.to = sample(PointKind::ControlTarget, link.to);
+            }
             let color = colors
                 .get(sim.interner().resolve(link.owner))
                 .copied()

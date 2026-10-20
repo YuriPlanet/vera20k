@@ -13,7 +13,7 @@ python -m pip install -r tools/requirements-test.txt
 ```
 
 Select `VERA20K_GAMEMD_EXE` or `RA2_DIR` as described in
-[native setup](native_oracle.md). Only the two explicitly supported hashes are accepted.
+[native setup](native_oracle.md). Any release carrying the supported game code is accepted.
 Import and `--help` do not read it. Missing/wrong images and invalid requests fail
 with nonzero status, diagnostics on stderr and no JSON evidence on stdout.
 
@@ -35,8 +35,8 @@ decimal or `0x` notation. No timestamps or machine-specific paths affect compari
 ## Scope and coverage
 
 - `sections` reports section index, VA, raw offset/length, virtual size, flags
-  and the SHA-256 of each complete file-backed section. The packet records the
-  actual selected executable hash, including for Steam.
+  and the SHA-256 of each complete file-backed section. The packet's
+  `native_sha256` is the game-code identity, the same for every accepted release.
   A virtual tail is not original file content. Do not convert VA to file offset
   by subtracting the image base: the retail fourth section differs, and `.data`
   includes a large unbacked runtime region.

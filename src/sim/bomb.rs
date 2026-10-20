@@ -444,9 +444,9 @@ impl Simulation {
     }
 
     /// `BombClass::Defuse @ 0x004389B0`: the carrier's bomb is gone, silently.
-    pub fn bomb_defuse(&mut self, carrier: u64) {
-        if self.bombs.carriers.remove(&carrier)
-            && let Some(entity) = self.substrate.entities.get_mut(carrier)
+    pub(crate) fn bomb_defuse(substrate: &mut ObjectSubstrate, bombs: &mut BombList, carrier: u64) {
+        if bombs.carriers.remove(&carrier)
+            && let Some(entity) = substrate.entities.get_mut(carrier)
         {
             entity.bomb = None;
         }

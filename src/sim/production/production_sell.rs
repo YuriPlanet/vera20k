@@ -639,7 +639,7 @@ pub(crate) fn sell_complete(
         return true;
     }
     let refund = techno_refund(sim, rules, id);
-    sim.set_building_light_active(id, false);
+    sim.lighting_sources.set_building_light_active(id, false);
     if let Some(refund) = refund {
         // Add_Credits (`0x0044A222`).
         crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);

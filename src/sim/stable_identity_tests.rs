@@ -55,7 +55,7 @@ fn projectile(source_id: u64) -> ProjectileSpawn {
 fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
     let mut sim = Simulation::new();
 
-    let entity_id = sim.allocate_stable_id();
+    let entity_id = sim.substrate.allocate_stable_id();
     sim.substrate.entities.insert(GameEntity::test_default(
         entity_id,
         "MTNK",
@@ -89,9 +89,9 @@ fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
         .next()
         .expect("constructed terrain");
 
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(projectile_id, projectile(entity_id));
-    let wave_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
     sim.admit_wave(
         wave_id,
         Wave::new(
@@ -134,7 +134,7 @@ fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
         Some((wave_id, wave_id))
     );
     assert_eq!(restored.next_stable_object_id(), next_id);
-    assert_eq!(restored.allocate_stable_id(), next_id);
+    assert_eq!(restored.substrate.allocate_stable_id(), next_id);
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn gsi_05_01_restore_rejects_zero_ids_in_each_added_store() {
 #[test]
 fn gsi_05_01_restore_rejects_mismatch_duplicate_and_counter_behind() {
     let mut mismatch = Simulation::new();
-    let registry_id = mismatch.allocate_stable_id();
+    let registry_id = mismatch.substrate.allocate_stable_id();
     mismatch
         .terrain_objects
         .objects_mut_for_test()
@@ -195,7 +195,7 @@ fn gsi_05_01_restore_rejects_mismatch_duplicate_and_counter_behind() {
     );
 
     let mut duplicate = Simulation::new();
-    let duplicate_id = duplicate.allocate_stable_id();
+    let duplicate_id = duplicate.substrate.allocate_stable_id();
     duplicate
         .projectiles
         .spawn(duplicate_id, projectile(duplicate_id));
@@ -217,7 +217,7 @@ fn gsi_05_01_restore_rejects_mismatch_duplicate_and_counter_behind() {
     );
 
     let mut behind = Simulation::new();
-    let highest_id = behind.allocate_stable_id();
+    let highest_id = behind.substrate.allocate_stable_id();
     behind.waves.spawn(
         highest_id,
         Wave::new(

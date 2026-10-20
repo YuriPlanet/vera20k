@@ -124,7 +124,7 @@ fn fixture() -> (Simulation, RuleSet, InternedId) {
         ));
     sim.session.set_current_house_for_test(Some(owner));
     for actor in 1..=3 {
-        assert_eq!(sim.allocate_stable_id(), actor);
+        assert_eq!(sim.substrate.allocate_stable_id(), actor);
         crate::sim::world::lifecycle_tests::insert_entity(
             &mut sim,
             actor,
@@ -1591,7 +1591,7 @@ fn press_refusals_and_hover_follow_the_selected_paths() {
         (4, EntityCategory::Aircraft),
         (5, EntityCategory::Structure),
     ] {
-        assert_eq!(sim.allocate_stable_id(), id);
+        assert_eq!(sim.substrate.allocate_stable_id(), id);
         crate::sim::world::lifecycle_tests::insert_entity(&mut sim, id, category);
     }
     for cell in [(12, 15), (16, 15), (20, 15), (24, 15)] {

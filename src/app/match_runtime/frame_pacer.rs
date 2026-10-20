@@ -214,12 +214,19 @@ impl LocalFramePacer {
     }
 
     /// Read the same bucket interval used by `should_admit`, for diagnostics.
-    #[cfg(feature = "telemetry-dashboard")]
     pub(crate) fn budget_ms(&self, game_speed: u8) -> Option<f32> {
         (game_speed != 0).then(|| {
             f32::from(game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED))
                 * FRAME_BUCKET_MS as f32
         })
+    }
+
+    /// Read-only presentation phase of the existing bucket-paced frame.
+    /// Use the pacer's bucket origin, not the end of a potentially expensive
+    /// simulation/render preparation, to avoid restarting visual time late.
+    pub(crate) fn interpolation_elapsed_ms(&self, now_ms: u64) -> Option<u32> {
+        self.last_frame_start_bucket
+            .map(|bucket| (now_ms as u32).wrapping_sub(bucket << FRAME_BUCKET_SHIFT))
     }
 
     pub(crate) fn should_admit(&self, now_ms: u64, game_speed: u8, paused: bool) -> bool {
@@ -284,6 +291,16 @@ pub(crate) fn wall_clock_bucket() -> u32 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn render_interpolation_phase_uses_pacing_bucket_and_wraps_with_uptime() {
+        let mut pacer = LocalFramePacer::new();
+        assert_eq!(pacer.interpolation_elapsed_ms(0), None);
+        pacer.record_admitted_frame(31);
+        assert_eq!(pacer.interpolation_elapsed_ms(31), Some(15));
+        assert_eq!(pacer.interpolation_elapsed_ms(47), Some(31));
+        pacer.record_admitted_frame(u64::from(u32::MAX - 7));
+        assert_eq!(pacer.interpolation_elapsed_ms(8), Some(24));
+    }
     #[test]
     fn wall_clock_process_probe() {
         if std::env::var_os("VERA20K_PACING_CLOCK_PROBE").is_some() {

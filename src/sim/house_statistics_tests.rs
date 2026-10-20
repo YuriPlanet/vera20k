@@ -407,7 +407,7 @@ fn native_house_statistics_survive_snapshot_and_retained_ship_terminal_record() 
         assert_eq!(house.stats, stats, "native Built total equals its item sum");
         house.economy.set_score_for_test(score);
         sim.houses.register(house);
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         let mut hull = GameEntity::test_default(id, "AEGIS", "Americans", 113, 59);
         hull.set_type_ref_for_test(sim.interner.intern("AEGIS"));
         hull.set_owner_for_test(owner);

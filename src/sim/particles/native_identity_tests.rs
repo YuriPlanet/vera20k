@@ -263,7 +263,7 @@ fn original_spark_birth_and_first_live_visit_preserve_ids_rng_and_particle_state
 #[test]
 fn stored_system_and_child_native_ids_each_affect_authoritative_hash() {
     let mut sim = Simulation::new();
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut system = ParticleSystem::test_fixture(id, ParticleSystemTypeId(0), IVec3::ZERO);
     system
         .particles

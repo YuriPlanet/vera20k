@@ -85,7 +85,7 @@ pub(in crate::sim) fn assert_entity_state(
 
 fn fixture(row: &Value) -> Simulation {
     let mut sim = Simulation::new();
-    assert_eq!(sim.allocate_stable_id(), 1);
+    assert_eq!(sim.substrate.allocate_stable_id(), 1);
     let owner = sim.interner.intern("Americans");
     let type_ref = sim.interner.intern("MGTK");
     let before = &row["before"];
@@ -135,7 +135,7 @@ fn add_neighbor(
     category: EntityCategory,
     layer: MovementLayer,
 ) {
-    assert_eq!(sim.allocate_stable_id(), id);
+    assert_eq!(sim.substrate.allocate_stable_id(), id);
     let kind = if category == EntityCategory::Infantry {
         "E1"
     } else {

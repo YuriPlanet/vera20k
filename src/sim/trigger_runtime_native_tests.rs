@@ -16,7 +16,7 @@ fn loss_threshold_event_corpus() -> &'static Value {
         crate::test_fixture::json("tools/spatial_oracle/trigger_loss_threshold_events.json");
     assert_eq!(
         corpus["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     corpus
 }
@@ -245,7 +245,7 @@ fn naval_land_events_match_original_signed_tracking_and_country_selection() {
     .unwrap();
     assert_eq!(
         corpus["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     assert_eq!(corpus["country_indices"], json!([0, 7, 0]));
     assert_eq!(corpus["code_unchanged"], true);
@@ -559,7 +559,7 @@ fn funds_event_corpus() -> &'static Value {
     let corpus = crate::test_fixture::json("tools/spatial_oracle/trigger_funds_events.json");
     assert_eq!(
         corpus["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     corpus
 }
@@ -885,7 +885,7 @@ fn building_loss_event_matches_original_tracked_count_and_country_order() {
     .unwrap();
     assert_eq!(
         corpus["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     let controls = corpus["controls"].as_array().unwrap();
     assert_eq!(controls.len(), 14);
@@ -1078,7 +1078,7 @@ fn damage_source_event44_matches_original_registered_house_index() {
     .unwrap();
     assert_eq!(
         corpus["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     assert_eq!(corpus["house_indices"], json!([0, 1, 2]));
     assert_eq!(corpus["country_indices"], json!([0, 7, 0]));
@@ -2276,7 +2276,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
     sim.houses
         .register(HouseState::new(owner, 0, None, false, 0, 10));
     let type_id = sim.interner.intern(&authored.type_id);
-    assert_eq!(sim.allocate_stable_id(), 1);
+    assert_eq!(sim.substrate.allocate_stable_id(), 1);
     let mut entity = GameEntity::new_at_frame_zero_for_test(
         1,
         10,
@@ -2971,7 +2971,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
     ));
     let house = supplied_house(&mut sim, input);
     let tag = sim.shared_trigger_tag(0);
-    let object = sim.allocate_stable_id();
+    let object = sim.substrate.allocate_stable_id();
     let type_id = sim.interner.intern("E1");
     let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
         object,
@@ -4004,7 +4004,7 @@ fn live_instances_match_all_native_supplied_histories_and_serialization() {
     .unwrap();
     assert_eq!(
         damage["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     let destruction = damage["object_destruction_controls"].as_array().unwrap();
     assert_eq!(destruction.len(), 3);
@@ -4104,7 +4104,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                             // lifetime. The shared drain's family admission,
                             // ordering and physical removal are compared; no
                             // concrete Unit destructor parity is claimed.
-                            let id = sim.allocate_stable_id();
+                            let id = sim.substrate.allocate_stable_id();
                             let type_id = sim.interner.intern("E1");
                             let mut object =
                                 crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
@@ -4194,11 +4194,16 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                         )));
                     }
                     "global" | "local" => {
-                        returned = Some(i32::from(sim.set_trigger_variable(
-                            args[0] == "global",
-                            integer(&args[1]),
-                            integer(&args[2]) != 0,
-                        )))
+                        returned = Some(i32::from(
+                            crate::sim::world::Simulation::set_trigger_variable(
+                                &sim.session,
+                                &mut sim.scenario_rng,
+                                &mut sim.trigger_runtime,
+                                args[0] == "global",
+                                integer(&args[1]),
+                                integer(&args[2]) != 0,
+                            ),
+                        ))
                     }
                     "action" => {
                         let action = RuntimeAction {
@@ -4400,7 +4405,7 @@ fn native_trigger_reveal_initial_event48_tags_receive_neutral_discovery_dispatch
             None,
         );
         let typ = sim.interner.intern("GTGCAN");
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::new_at_frame_for_test(
             id,
             integer(&lead["cell"][0]) as u16,

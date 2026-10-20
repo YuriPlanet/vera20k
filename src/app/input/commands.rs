@@ -121,7 +121,7 @@ fn visible_object_under_point(state: &AppState, world_x: f32, world_y: f32) -> O
         .map(|rt| &rt.simulation)?;
     let owner = preferred_local_owner(state)?;
     crate::app::input::entity_pick::hover_target_at_point(
-        sim,
+        crate::app::input::entity_pick::presented(state, sim),
         world_x,
         world_y,
         &owner,

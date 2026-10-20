@@ -48,7 +48,7 @@ fn health_bar_hover_target(
         state.match_state.input.cursor_y,
     );
     let hover = crate::app::input::entity_pick::hover_target_at_point(
-        sim,
+        crate::app::input::entity_pick::presented(state, sim),
         world_x,
         world_y,
         local_owner,
@@ -818,6 +818,29 @@ pub(crate) struct TechnoExtras {
     pub group: StatusTextOverlayInstances,
     ///6F5E8D..5EDE: after health/pips/group, plain600 at the caller point.
     pub talk_bubble: Option<SpriteInstance>,
+}
+
+impl TechnoExtras {
+    /// Move every owned adornment with the prototype's painted body. Native
+    /// status generation and its material/selection/health semantics stay intact.
+    pub(crate) fn translate_for_interpolation(&mut self, offset: [f32; 2]) {
+        for instance in self
+            .bomb_clock
+            .iter_mut()
+            .chain(self.wrench.iter_mut())
+            .chain(self.rank.iter_mut())
+            .chain(self.background.iter_mut())
+            .chain(self.fills.iter_mut())
+            .chain(self.scale.iter_mut())
+            .chain(self.self_heal.iter_mut())
+            .chain(self.group.rectangles.iter_mut())
+            .chain(self.group.text.iter_mut())
+            .chain(self.talk_bubble.iter_mut())
+        {
+            instance.position[0] += offset[0];
+            instance.position[1] += offset[1];
+        }
+    }
 }
 
 /// One Techno DrawExtras6F5190 parent: clock, wrench, rank, then health6F64A0.
@@ -1832,7 +1855,7 @@ mod tests {
         let (sx, sy) = crate::render::locomotor_visual::ground_screen_position(&target.position);
 
         let hover = crate::app::input::entity_pick::hover_target_at_point(
-            sim,
+            &*sim,
             sx,
             sy,
             &viewer_name,

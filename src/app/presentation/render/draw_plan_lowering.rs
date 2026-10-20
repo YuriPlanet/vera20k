@@ -1025,7 +1025,9 @@ mod tests {
         {
             let id = step["actor"].as_u64().map(|index| index + 1);
             match step["op"].as_str().unwrap() {
-                "submit" => sim.submit_object_display(id.unwrap(), DisplayLayer::GROUND, None),
+                "submit" => {
+                    sim.submit_object_display_for_test(id.unwrap(), DisplayLayer::GROUND, None)
+                }
                 "coordinates" => {
                     let entity = sim.entities_mut_for_test().get_mut(id.unwrap()).unwrap();
                     entity.position.set_sub_x_for_test(SimFixed::from_num(

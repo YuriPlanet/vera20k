@@ -215,6 +215,7 @@ impl App {
             session.drive_before_render(state)?;
         }
         state.diag.frame_timer.sample(Instant::now());
+        crate::app::presentation::interpolation::prepare(state, tactical_capture.is_some());
         let tooltip_ms = crate::app::input::tooltips::update(state);
         // The message clock has to observe the focus freeze exactly as it
         // observes a modal pause: a banner on screen when the player Alt+Tabs
@@ -252,6 +253,7 @@ impl App {
                 &state.renderer.batch_renderer,
                 &state.renderer.shell_surface_presenter,
                 &state.renderer.depth_view,
+                &state.renderer.fps_overlay,
                 splash,
             )?;
             state
@@ -570,6 +572,8 @@ impl App {
                     crate::app::frontend::skirmish_shell_render::render_sound_shell(state, &mut encoder, &output.texture)?;
                 } else if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::Diplomacy {
                     crate::app::frontend::skirmish_shell_render::render_diplomacy_shell(state, &mut encoder, &output.texture)?;
+                } else if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::MissionBriefing {
+                    crate::app::frontend::skirmish_shell_render::render_restate_shell(state, &mut encoder, &output.texture)?;
                 } else if matches!(state.match_state.match_presentation.in_game_menu, crate::ui::pause_menu::InGameMenuState::SavedGame(_)) {
                     crate::app::frontend::skirmish_shell_render::render_saved_game_shell(state, &mut encoder, &output.texture)?;
                 } else {
@@ -684,6 +688,12 @@ impl App {
                 }
             }
         }
+        state.renderer.fps_overlay.encode(
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+            &mut encoder,
+            &output.texture,
+        );
         Self::show_os_cursor_only_without_game_cursor(state, game_render_output.is_some());
 
         let entry_sequence_identity = match shell_capture.as_deref_mut() {

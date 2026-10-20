@@ -310,7 +310,7 @@ fn record_last_built_matches_native_class_slots_score_gate_and_rng() {
     let native = &corpus["record_last_built"];
     assert_eq!(
         native["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     let rows = native["controls"].as_array().unwrap();
     assert_eq!(rows.len(), 8);
@@ -789,7 +789,9 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
             .unwrap();
         if user_hold {
             assert!(super::suspend_production(
-                sim,
+                &sim.interner,
+                &mut sim.production,
+                &sim.session,
                 "Russians",
                 ProductionCategory::Infantry
             ));

@@ -1439,7 +1439,7 @@ pub(super) fn emit_admitted_fire(
     // `CreateBullet @ 0x0046B050` (called at `0x006FE55D`) takes the bullet's
     // unique id (`0x00410230`) before the launch math, so a launch that then
     // fails has still spent one.
-    let bullet_id = world.allocate_stable_id();
+    let bullet_id = world.substrate.allocate_stable_id();
     let native_unique_id = world.next_native_runtime_id();
     fireat_estimate_debit(world, rules, snap.stable_id, tarcom, obj, weapon);
     let launched = {

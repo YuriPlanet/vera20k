@@ -84,6 +84,37 @@ impl LightingSources {
         self.pending.push(event);
     }
 
+    /// Drops the events no consumer took.
+    pub fn discard_pending(&mut self) {
+        self.pending.clear();
+    }
+
+    /// Native554A60/A80 suppress repeated writes to an already matching48.
+    /// Death44264C and sell449F1E/44A20B disable before destruction effects.
+    pub fn set_building_light_active(&mut self, id: u64, active: bool) {
+        let Some(source) = self.buildings.get_mut(&id) else {
+            return;
+        };
+        if source.active == active {
+            return;
+        }
+        source.active = active;
+        let source = source.clone();
+        self.pending.push(LightingEvent::Building {
+            id,
+            source: Some(source),
+        });
+    }
+
+    /// Building destructor43BD47 disables, destroys, and clears614. Generic
+    /// Limbo is deliberately not used as an invented source-disable callback.
+    pub fn destroy_building_light(&mut self, id: u64) {
+        if self.buildings.remove(&id).is_some() {
+            self.pending
+                .push(LightingEvent::Building { id, source: None });
+        }
+    }
+
     /// Take the outgoing events, oldest first.
     pub fn take_pending(&mut self) -> Vec<LightingEvent> {
         std::mem::take(&mut self.pending)
@@ -118,13 +149,9 @@ impl Simulation {
                 .get(id)
                 .is_some_and(|entity| !entity.building_art.stuff_enabled())
             {
-                self.set_building_light_active(id, false);
+                self.lighting_sources.set_building_light_active(id, false);
             }
         }
-        self.lighting_sources.pending.clear();
-    }
-
-    pub fn discard_lighting_events(&mut self) {
         self.lighting_sources.pending.clear();
     }
 
@@ -158,33 +185,6 @@ impl Simulation {
             id,
             source: Some(source),
         });
-    }
-
-    /// Native554A60/A80 suppress repeated writes to an already matching48.
-    /// Death44264C and sell449F1E/44A20B disable before destruction effects.
-    pub fn set_building_light_active(&mut self, id: u64, active: bool) {
-        let Some(source) = self.lighting_sources.buildings.get_mut(&id) else {
-            return;
-        };
-        if source.active == active {
-            return;
-        }
-        source.active = active;
-        let source = source.clone();
-        self.lighting_sources.pending.push(LightingEvent::Building {
-            id,
-            source: Some(source),
-        });
-    }
-
-    /// Building destructor43BD47 disables, destroys, and clears614. Generic
-    /// Limbo is deliberately not used as an invented source-disable callback.
-    pub fn destroy_building_light(&mut self, id: u64) {
-        if self.lighting_sources.buildings.remove(&id).is_some() {
-            self.lighting_sources
-                .pending
-                .push(LightingEvent::Building { id, source: None });
-        }
     }
 
     /// Logic55B4C6 and profile53C280->53AD00 must remain in order with source

@@ -332,7 +332,7 @@ mod muzzle_anim_tests {
             } else {
                 "TANK"
             });
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         sim.substrate
             .entities
             .insert(GameEntity::new_at_frame_zero_for_test(

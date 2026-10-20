@@ -136,6 +136,17 @@ pub(crate) fn dispatch_foot_mission(
         }
     };
 
+    // `UnitClass::Mission_Unload @ 0x0073D630` opens by emptying the tank
+    // bunker of a linked Unit (`0x0073D63B..0x0073D66D`), then resumes past its
+    // deploy-fire and transport arms (`0x0073D672`).
+    let bunker_unload = input.category == EntityCategory::Unit
+        && input.mission == Some(MissionType::Unload)
+        && crate::sim::docking::bunker_link::unit_unload_empties_bunker(
+            sim,
+            id,
+            rules,
+            ctx.effects,
+        );
     let mut infantry_guard_handled = false;
     let evaluation = match (input.category, input.mission) {
         // Unit vtable7F5C70+224 -> MissionHarvest73E5E0. No other mission
@@ -567,9 +578,10 @@ pub(crate) fn dispatch_foot_mission(
         // `UnitClass::Mission_Unload @ 0x0073D630` opens with its deploy-fire
         // arm, which returns its own delay.
         (EntityCategory::Unit, Some(MissionType::Unload))
-            if sim.substrate.entities.get(id).is_some_and(|entity| {
-                crate::sim::deploy::unit_fires_on_deploy(sim, entity, rules)
-            }) =>
+            if !bunker_unload
+                && sim.substrate.entities.get(id).is_some_and(|entity| {
+                    crate::sim::deploy::unit_fires_on_deploy(sim, entity, rules)
+                }) =>
         {
             let (delay, changed) =
                 sim.unit_deploy_fire_unload(id, rules, ctx.overlay_registry, ctx.effects);
@@ -584,9 +596,10 @@ pub(crate) fn dispatch_foot_mission(
         // (`Harvester=`), `DeploysInto=` and `IsSimpleDeployer=` branches of
         // the same slot are dispatched to their own owners below.
         (EntityCategory::Unit, Some(MissionType::Unload))
-            if sim.substrate.entities.get(id).is_some_and(|entity| {
-                crate::sim::transport_unload::is_vehicle_transport_type(sim, entity, rules)
-            }) =>
+            if !bunker_unload
+                && sim.substrate.entities.get(id).is_some_and(|entity| {
+                    crate::sim::transport_unload::is_vehicle_transport_type(sim, entity, rules)
+                }) =>
         {
             MissionHandlerEvaluation::cadence(crate::sim::transport_unload::unit_mission_unload(
                 sim,
@@ -630,6 +643,13 @@ pub(crate) fn dispatch_foot_mission(
                 id,
                 ctx.effects,
             ))
+        }
+        // A bunkered Unit with no harvester, DeploysInto= or IsSimpleDeployer=
+        // arm (every retail `Bunkerable=` type) ends in FootClass::Mission_Unload
+        // (`0x0073DED3`, `0x004DA2B0` -> the `0x005B2EF0` stub). Its
+        // EmptyBunker has already queued Move.
+        (EntityCategory::Unit, Some(MissionType::Unload)) if bunker_unload => {
+            MissionHandlerEvaluation::cadence(crate::sim::mission::MISSION_STUB_FRAMES)
         }
         // Guard and Sticky share the UnitClass slot (`MissionClass::AI`'s
         // table `0x005B34E8` sends both to `+0x21C` = `0x00740810`).

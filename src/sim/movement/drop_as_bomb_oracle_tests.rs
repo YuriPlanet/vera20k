@@ -135,7 +135,7 @@ mod tests {
         let house = sim.interner.intern("Americans");
         sim.houses
             .register(HouseState::new(house, 0, None, true, 0, 10));
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         sim.substrate
             .entities
             .insert(GameEntity::test_default(id, "E1", "Americans", 10, 10));

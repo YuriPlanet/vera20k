@@ -110,8 +110,8 @@ pub struct PlanningDrawGraph {
 
 #[derive(Debug, Clone)]
 pub struct PlanningDrawNode {
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) id: u64,
+    /// Stable identity for client-only geometry history, not a second graph.
+    pub id: u64,
     pub coord: DriveCoord,
     pub members: Vec<u64>,
     pub incoming: Vec<PlanningDrawSegment>,
@@ -678,7 +678,6 @@ impl Simulation {
                 || (first_path.pending != -1
                     && positions[&(head, node.id)] as i32 >= first_path.pending);
             nodes.push(PlanningDrawNode {
-                #[cfg(any(test, feature = "test-support"))]
                 id: node.id,
                 coord,
                 members,

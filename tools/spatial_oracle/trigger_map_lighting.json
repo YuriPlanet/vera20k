@@ -3361,7 +3361,7 @@
         "sha256": "b4b84f67b389f076f9f4a54105c56410492f1a1c82fbf2444e734ec8b968d02f"
       }
     ],
-    "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "rates": {
       "rate_f64_le_hex": "000000a09999c93f",
       "step_f64_le_hex": "000000a09999c93f"
@@ -4573,7 +4573,7 @@
       "without_flash_next_reduced": 0,
       "without_flash_next_threshold": 15
     },
-    "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "scope": "Original Warhead ctor/full read and C4 reference selected physical-cache reader; Execute64..66/GetWaypointLocation/Flash body. Retail no-bright arm produces no CombatLight, but the original Flash detail query can mutate shared hysteresis. Declared creation-state controls execute Flash/55AF60; only5FF250 is an observed constructor return boundary. Declared terrain crop and FPS transitions, not played Transylv or render parity.",
     "warhead_inputs": {
       "after": {
@@ -4589,7 +4589,7 @@
       "rules_sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
     }
   },
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "rate_controls": {
     "cases": [
       {
@@ -4687,7 +4687,7 @@
       "rate_f64_le_hex": "9a9999999999c93f",
       "step_f64_le_hex": "9a9999999999b93f"
     },
-    "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "scope": "Original Rules constructor and retained AudioVisual two-key reader66B5D7..66B625; declared ordered cached keys. Physical lexical-empty elision and full Process not included. Cached-empty and malformed float reads expose uninitialized output and are excluded; physical empty omission is separate."
   },
   "retail": {

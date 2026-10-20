@@ -224,7 +224,7 @@ mod tests {
             text.push_str("[Particles]\n0=Smk\n[ParticleSystems]\n0=Sys\n[Smk]\nBehavesLike=Smoke\nMaxEC=10\n[Sys]\nBehavesLike=Smoke\nHoldsWhat=Smk\nLifetime=200\n");
             let rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
             let mut sim = Simulation::new();
-            let id = sim.allocate_stable_id();
+            let id = sim.substrate.allocate_stable_id();
             let mut entity = GameEntity::test_default(
                 id,
                 "GAREFN",

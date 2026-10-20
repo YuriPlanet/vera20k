@@ -4895,7 +4895,7 @@ mod tests {
         );
         assert_eq!(sim.state_hash(), hash);
         assert_eq!(sim.rng_state(), rng);
-        sim.bomb_defuse(carrier);
+        sim.bomb_defuse_for_test(carrier);
         let retired = sim.bomb_observation(MAX_OBSERVATION_SAMPLES + 1);
         assert!(retired.carriers.is_empty());
         assert!(retired.records.is_empty());

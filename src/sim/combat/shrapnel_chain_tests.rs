@@ -641,7 +641,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
             crate::sim::projectile::ProjectileVelocity::new(0, 0, 0),
         )
         .unwrap();
-        let child = scene.world.allocate_stable_id();
+        let child = scene.world.substrate.allocate_stable_id();
         super::projectile_delivery::admit_fired_bullet(
             &mut scene.world,
             &scene.rules,

@@ -15,9 +15,9 @@ and 54 command boundaries, and adds 14 independent Unit NavCom resolver cases
 (46 cases and 74 boundaries total, including four direct timer controls). Its sidecar records the original binary, body spans, startup,
 fixture boundaries and source bindings. The historical Cell payload retains binary identity
 `1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c`.
-The additive controls execute the supported Steam binary
-`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`;
-the sidecar and `transport_native_identity` identify the actual replay input.
+The additive controls were executed with the Steam binary
+`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`, which carries the
+same game code; the sidecar and `transport_native_identity` record that code identity.
 The existing Walk18, default-motion54, CMIN50 and Jumpjet531 corpora retain their
 original values.
 

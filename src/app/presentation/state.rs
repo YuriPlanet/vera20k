@@ -25,6 +25,7 @@ use crate::render::unit_atlas::UnitAtlas;
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 
 pub(crate) struct MatchPresentationState {
+    pub(crate) interpolation: super::interpolation::RenderInterpolation,
     /// Native Techno+3CA waterline cache, captured by drawing and retained in
     /// the snapshot presentation supplement rather than simulation authority.
     pub(crate) sinking_waterlines: std::cell::RefCell<crate::render::sinking::SinkingWaterlines>,
@@ -165,6 +166,10 @@ pub(crate) struct MatchPresentationState {
     pub(crate) abort_buttons:
         crate::ui::shell::button::ShellButtonInteraction<crate::ui::shell::abort::AbortButton>,
     pub(crate) diplomacy: crate::ui::shell::diplomacy::DiplomacyInteraction,
+    /// Restate 0x10C's pointer state.
+    pub(crate) restate: crate::ui::shell::restate::RestateInteraction,
+    /// `[0xB04CA0]`: the briefing text 0x10C shows, resolved once at open.
+    pub(crate) restate_text: String,
     pub(crate) saved_game_browser:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
     /// Client-side in-game Options (0xBBB) state: the six [Options] values plus

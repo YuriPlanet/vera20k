@@ -835,7 +835,7 @@ mod tests {
         let mut sim = Simulation::new();
         let owner = sim.intern("Neutral");
         let type_ref = sim.intern("MAP_OBJECT");
-        let map_object_id = sim.allocate_stable_id();
+        let map_object_id = sim.substrate_mut_for_test().allocate_stable_id();
         sim.entities_mut_for_test()
             .insert(GameEntity::new_at_frame_zero_for_test(
                 map_object_id,

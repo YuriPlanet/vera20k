@@ -547,9 +547,9 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
         cell.speed_costs = crate::map::resolved_terrain::TEST_OPEN_SPEED_COSTS;
         cell.base_speed_costs = cell.speed_costs;
     }
-    let building_id = sim.allocate_stable_id();
+    let building_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, building_id, EntityCategory::Structure);
-    let passenger_id = sim.allocate_stable_id();
+    let passenger_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, passenger_id, EntityCategory::Infantry);
     let building_type = sim.interner.intern("GARRISON");
     let passenger_type = sim.interner.intern("OCCUPANT");
@@ -991,7 +991,7 @@ fn grounded_reveal_keeps_headless_inputs_and_the_drop_z() {
 #[test]
 fn grounded_ramp_position_survives_snapshot_and_idle_continuation() {
     let mut sim = Simulation::with_seed(71);
-    assert_eq!(sim.allocate_stable_id(), 1);
+    assert_eq!(sim.substrate.allocate_stable_id(), 1);
     install_common_raw_terrain(&mut sim, 8, 8, 0, None);
     sim.resolved_terrain
         .as_mut()
@@ -5504,7 +5504,7 @@ fn persistent_bullet_logic_slot_publishes_native_wall_dirty_visits() {
         sim.overlay_grid = Some(grid);
         sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(12, 12));
 
-        let projectile_id = sim.allocate_stable_id();
+        let projectile_id = sim.substrate.allocate_stable_id();
         let impact = ProjectileCoord::new(5 * 256 + 128, 5 * 256 + 128, 0);
         let mut spawn = gsi_05_02_projectile(crate::sim::combat::RAD_NO_ATTACKER, Some(0));
         spawn.origin = impact;
@@ -5685,7 +5685,7 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
         guidance.max_speed = 4;
         guidance.acceleration = 0;
         let source_id = if with_source {
-            let source_id = sim.allocate_stable_id();
+            let source_id = sim.substrate.allocate_stable_id();
             insert_entity(&mut sim, source_id, EntityCategory::Unit);
             let type_ref = sim.interner.intern("MTNK");
             sim.substrate
@@ -5700,7 +5700,7 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
             None
         };
         shot.payload = ProjectilePayload::new(1, sim.interner.intern("WALLWH"), None, false);
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         sim.admit_projectile(id, shot);
         // The native control supplies an in-flight OLD-height boundary.
         // Restore it after admission's independent 46C4F0 launch-floor fixup.
@@ -5799,7 +5799,7 @@ fn homing_mode_one_fuse_snaps_to_cell_location_below_bridge_aim_point() {
     shot.ranged_fuse = true;
     shot.guidance.as_mut().unwrap().max_speed = 4;
     let origin = shot.origin;
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(id, shot);
     sim.projectiles
         .get_mut(id)
@@ -5826,7 +5826,7 @@ fn homing_mode_one_fuse_snaps_to_cell_location_below_bridge_aim_point() {
 fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
     let mut sim = Simulation::new();
 
-    let entity_id = sim.allocate_stable_id();
+    let entity_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, entity_id, EntityCategory::Unit);
     sim.substrate
         .entities
@@ -5836,15 +5836,15 @@ fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
         .set_for_test(Some(TargetKind::Cell(1, 0)));
     sim.register_live_object(entity_id);
 
-    let anim_id = sim.allocate_stable_id();
+    let anim_id = sim.substrate.allocate_stable_id();
     insert_anim(&mut sim, anim_id, true);
     sim.register_live_object(anim_id);
 
-    let particle_id = sim.allocate_stable_id();
+    let particle_id = sim.substrate.allocate_stable_id();
     insert_particle_system(&mut sim, particle_id);
     sim.register_live_object(particle_id);
 
-    let terrain_id = sim.allocate_stable_id();
+    let terrain_id = sim.substrate.allocate_stable_id();
     sim.terrain_objects
         .objects_mut_for_test()
         .insert(terrain_id, {
@@ -5856,10 +5856,10 @@ fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
         });
     assert!(sim.register_terrain_object(terrain_id, None));
 
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(projectile_id, gsi_05_02_projectile(entity_id, None));
 
-    let wave_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
     sim.admit_wave(
         wave_id,
         Wave::new_owned(
@@ -5973,7 +5973,7 @@ fn substrate_registration_and_removal_dispatch_is_order_identical() {
 
     // An id represented nowhere is rejected by both directions and leaves the
     // order untouched.
-    let ghost = sim.allocate_stable_id();
+    let ghost = sim.substrate.allocate_stable_id();
     assert!(!sim.register_live_object(ghost));
     assert!(!sim.unregister_live_object(ghost));
     assert_eq!(sim.live_object_order_snapshot(), mixed);
@@ -6047,7 +6047,7 @@ fn substrate_registration_and_removal_dispatch_is_order_identical() {
 #[test]
 fn gsi_05_02_tail_appends_run_same_pass_and_terminal_current_skips_successor() {
     let mut sim = Simulation::new();
-    let entity_id = sim.allocate_stable_id();
+    let entity_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, entity_id, EntityCategory::Unit);
     sim.register_live_object(entity_id);
 
@@ -6057,9 +6057,9 @@ fn gsi_05_02_tail_appends_run_same_pass_and_terminal_current_skips_successor() {
         visited.push(id);
         let _ = sim.object_ai_visit_one(id, None, ObjectAiCtx::default());
         if id == entity_id {
-            let projectile_id = sim.allocate_stable_id();
+            let projectile_id = sim.substrate.allocate_stable_id();
             sim.admit_projectile(projectile_id, gsi_05_02_projectile(entity_id, None));
-            let wave_id = sim.allocate_stable_id();
+            let wave_id = sim.substrate.allocate_stable_id();
             sim.admit_wave(
                 wave_id,
                 Wave::new(
@@ -6083,9 +6083,9 @@ fn gsi_05_02_tail_appends_run_same_pass_and_terminal_current_skips_successor() {
     assert_eq!(sim.waves.get(wave_id).unwrap().lifetime(), 99);
 
     let mut removal = Simulation::new();
-    let terminal_id = removal.allocate_stable_id();
+    let terminal_id = removal.substrate.allocate_stable_id();
     removal.admit_projectile(terminal_id, gsi_05_02_projectile(0, Some(0)));
-    let successor_id = removal.allocate_stable_id();
+    let successor_id = removal.substrate.allocate_stable_id();
     removal.admit_wave(
         successor_id,
         Wave::new(
@@ -6134,7 +6134,7 @@ fn gsi_05_02_terrain_map_construction_registers_before_later_techno() {
     );
     let terrain_id = *sim.terrain_objects.objects().keys().next().unwrap();
 
-    let entity_id = sim.allocate_stable_id();
+    let entity_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, entity_id, EntityCategory::Unit);
     sim.register_live_object(entity_id);
     assert_eq!(
@@ -6155,7 +6155,7 @@ fn gsi_05_02_lethal_terrain_unregisters_and_inactive_slot_cannot_roundtrip() {
         ))
         .expect("lethal terrain rules");
     let mut sim = Simulation::new();
-    let terrain_id = sim.allocate_stable_id();
+    let terrain_id = sim.substrate.allocate_stable_id();
     let type_ref = sim.interner.intern("TREE01");
     let warhead_ref = sim.interner.intern("WOODWH");
     sim.terrain_objects
@@ -6225,7 +6225,7 @@ fn gsi_05_03_terminal_non_entities_remain_resolvable_until_common_drain() {
         .expect("terminal non-entity rules");
     let mut sim = Simulation::new();
 
-    let terrain_id = sim.allocate_stable_id();
+    let terrain_id = sim.substrate.allocate_stable_id();
     let terrain_type = sim.interner.intern("TREE01");
     let warhead_ref = sim.interner.intern("WOODWH");
     sim.terrain_objects
@@ -6257,11 +6257,11 @@ fn gsi_05_03_terminal_non_entities_remain_resolvable_until_common_drain() {
         crate::sim::world::FrameEffects::default(),
     );
 
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(projectile_id, gsi_05_02_projectile(0, Some(0)));
     assert!(sim.object_ai_visit_one(projectile_id, None, ObjectAiCtx::default()));
 
-    let wave_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
     let mut terminal_wave = Wave::new(
         3,
         ProjectileCoord::new(0, 0, 0),
@@ -6321,7 +6321,7 @@ fn gsi_05_04_ground_source_and_target_retarget_before_removal_without_expiry() {
     sim.session.set_map_height_for_test(16);
     install_common_raw_terrain(&mut sim, 16, 16, 2, None);
 
-    let target_id = sim.allocate_stable_id();
+    let target_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, target_id, EntityCategory::Unit);
     assert!(matches!(
         sim.try_reveal_entity(target_id, request(9, 11, PlacementEvidence::MarkSucceeded)),
@@ -6332,7 +6332,7 @@ fn gsi_05_04_ground_source_and_target_retarget_before_removal_without_expiry() {
         11 * 256 + 64,
         2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
     );
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(
         projectile_id,
         gsi_05_04_guided_projectile(
@@ -6393,7 +6393,7 @@ fn gsi_05_04_building_get_coords_uses_foundation_center_cell() {
     sim.session.set_map_height_for_test(20);
     install_common_raw_terrain(&mut sim, 20, 20, 0, None);
 
-    let target_id = sim.allocate_stable_id();
+    let target_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, target_id, EntityCategory::Structure);
     let gapowr = sim.interner.intern("GAPOWR");
     {
@@ -6405,7 +6405,7 @@ fn gsi_05_04_building_get_coords_uses_foundation_center_cell() {
         sim.try_reveal_entity(target_id, common_raw_request(9, 11, 0, 128, 128)),
         RevealOutcome::Revealed { .. }
     ));
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(
         projectile_id,
         gsi_05_04_guided_projectile(
@@ -6441,13 +6441,13 @@ fn gsi_04_01_cell_target_uses_live_structural_bit() {
         cell.slope_type = 1;
     }
 
-    let target_id = sim.allocate_stable_id();
+    let target_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, target_id, EntityCategory::Unit);
     assert!(matches!(
         sim.try_reveal_entity(target_id, common_raw_request(6, 7, 0, 128, 128)),
         RevealOutcome::Revealed { .. }
     ));
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     let center_x = 6 * 256 + 128;
     let center_y = 7 * 256 + 128;
     let bridge_z = crate::util::lepton::ground_height_leptons(2, 1, center_x, center_y)
@@ -6503,7 +6503,7 @@ fn gsi_05_04_combat_fatal_expiry_keeps_authoritative_cell_target() {
     sim.session.set_map_height_for_test(16);
     install_common_raw_terrain(&mut sim, 16, 16, 0, None);
 
-    let victim_id = sim.allocate_stable_id();
+    let victim_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, victim_id, EntityCategory::Unit);
     let victim_type = sim.interner.intern("VICTIM");
     {
@@ -6516,7 +6516,7 @@ fn gsi_05_04_combat_fatal_expiry_keeps_authoritative_cell_target() {
         RevealOutcome::Revealed { .. }
     ));
 
-    let listener_id = sim.allocate_stable_id();
+    let listener_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(
         listener_id,
         gsi_05_04_guided_projectile(
@@ -6583,9 +6583,9 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
     sim.session.set_map_height_for_test(16);
     install_common_raw_terrain(&mut sim, 16, 16, 0, None);
 
-    let building_id = sim.allocate_stable_id();
+    let building_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, building_id, EntityCategory::Structure);
-    let passenger_id = sim.allocate_stable_id();
+    let passenger_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, passenger_id, EntityCategory::Infantry);
     let building_type = sim.interner.intern("GARRISON");
     let passenger_type = sim.interner.intern("OCCUPANT");
@@ -6638,7 +6638,7 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
         (7, 8),
         (7, 9),
     ] {
-        let blocker_id = sim.allocate_stable_id();
+        let blocker_id = sim.substrate.allocate_stable_id();
         insert_entity(&mut sim, blocker_id, EntityCategory::Unit);
         sim.substrate
             .entities
@@ -6651,7 +6651,7 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
         ));
     }
 
-    let listener_id = sim.allocate_stable_id();
+    let listener_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(
         listener_id,
         gsi_05_04_guided_projectile(
@@ -6711,7 +6711,7 @@ fn assert_unallocated_expiry_retains_live_dummy_identity(through_receiver: bool)
     sim.session.set_map_height_for_test(16);
     install_common_raw_terrain(&mut sim, 16, 16, 0, None);
 
-    let target_id = sim.allocate_stable_id();
+    let target_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, target_id, EntityCategory::Unit);
     assert!(matches!(
         sim.try_reveal_entity(target_id, common_raw_request(8, 8, 0, 128, 64)),
@@ -6727,7 +6727,7 @@ fn assert_unallocated_expiry_retains_live_dummy_identity(through_receiver: bool)
         .expect("terrain")
         .test_set_native_allocated_cells(&allocated);
 
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(
         projectile_id,
         gsi_05_04_guided_projectile(
@@ -6797,14 +6797,14 @@ fn gsi_05_04_sentinel_origin_cell_target_becomes_explicit_null() {
     sim.session.set_map_height_for_test(16);
     install_common_raw_terrain(&mut sim, 16, 16, 0, None);
 
-    let target_id = sim.allocate_stable_id();
+    let target_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, target_id, EntityCategory::Unit);
     assert!(matches!(
         sim.try_reveal_entity(target_id, request(0, 0, PlacementEvidence::MarkSucceeded)),
         RevealOutcome::Revealed { .. }
     ));
 
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(
         projectile_id,
         gsi_05_04_guided_projectile(
@@ -6851,7 +6851,7 @@ fn gsi_05_04_high_flying_source_and_target_become_explicit_null() {
     // (`0x004684FF`), never on the high-flying predicate.
     install_common_raw_terrain(&mut sim, 32, 32, 0, None);
 
-    let target_id = sim.allocate_stable_id();
+    let target_id = sim.substrate.allocate_stable_id();
     install_fly_aircraft(&mut sim, target_id, SimFixed::from_num(208));
     assert!(matches!(
         sim.try_reveal_entity(target_id, request(13, 15, PlacementEvidence::MarkSucceeded)),
@@ -6866,7 +6866,7 @@ fn gsi_05_04_high_flying_source_and_target_become_explicit_null() {
         None,
         crate::sim::world::FrameEffects::default(),
     );
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     let mut spawn = gsi_05_04_guided_projectile(
         target_id,
         ProjectileTarget::Entity(target_id),
@@ -6937,13 +6937,13 @@ fn gsi_05_04_cell_target_cleanup_is_idempotent_across_duplicate_uninit() {
     sim.session.set_map_width_for_test(8);
     sim.session.set_map_height_for_test(8);
 
-    let target_id = sim.allocate_stable_id();
+    let target_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, target_id, EntityCategory::Unit);
     assert!(matches!(
         sim.try_reveal_entity(target_id, request(9, 9, PlacementEvidence::MarkSucceeded)),
         RevealOutcome::Revealed { .. }
     ));
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(
         projectile_id,
         gsi_05_04_guided_projectile(
@@ -6993,10 +6993,10 @@ fn gsi_05_04_projectile_listener_keeps_mixed_object_construction_order() {
     sim.session.set_map_width_for_test(16);
     sim.session.set_map_height_for_test(16);
 
-    let entity_id = sim.allocate_stable_id();
+    let entity_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, entity_id, EntityCategory::Unit);
 
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     let target_id = 5;
     sim.admit_projectile(
         projectile_id,
@@ -7007,11 +7007,11 @@ fn gsi_05_04_projectile_listener_keeps_mixed_object_construction_order() {
         ),
     );
 
-    let anim_id = sim.allocate_stable_id();
+    let anim_id = sim.substrate.allocate_stable_id();
     insert_anim(&mut sim, anim_id, false);
-    let particle_id = sim.allocate_stable_id();
+    let particle_id = sim.substrate.allocate_stable_id();
     insert_particle_system(&mut sim, particle_id);
-    assert_eq!(sim.allocate_stable_id(), target_id);
+    assert_eq!(sim.substrate.allocate_stable_id(), target_id);
     insert_entity(&mut sim, target_id, EntityCategory::Unit);
     let _ = sim.reveal(target_id);
     sim.lifecycle_test_events.clear();
@@ -7089,8 +7089,8 @@ fn gsi_01_05_damage_rules() -> crate::rules::ruleset::RuleSet {
 #[test]
 fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
     let mut sim = Simulation::new();
-    let owner_id = sim.allocate_stable_id();
-    let target_id = sim.allocate_stable_id();
+    let owner_id = sim.substrate.allocate_stable_id();
+    let target_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, owner_id, EntityCategory::Unit);
     insert_entity(&mut sim, target_id, EntityCategory::Unit);
     {
@@ -7109,7 +7109,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
         target.death.set_dying_for_test(true);
     }
 
-    let wave_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
     let wave = Wave::new_owned(
         0,
         owner_id,
@@ -7158,7 +7158,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
 fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls() {
     let rules = gsi_01_05_damage_rules();
     let mut sim = Simulation::new();
-    let owner_id = sim.allocate_stable_id();
+    let owner_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, owner_id, EntityCategory::Unit);
     {
         let owner = sim.substrate.entities.get_mut(owner_id).unwrap();
@@ -7169,7 +7169,7 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
             .attack_target
             .set_for_test(Some(TargetKind::Cell(4, 5)));
     }
-    let receiver_id = sim.allocate_stable_id();
+    let receiver_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, receiver_id, EntityCategory::Unit);
     {
         let receiver = sim.substrate.entities.get_mut(receiver_id).unwrap();
@@ -7181,7 +7181,7 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
         RevealOutcome::Revealed { .. }
     ));
 
-    let wave_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
     let mut wave = Wave::new_owned(
         0,
         owner_id,
@@ -7253,9 +7253,9 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
 #[test]
 fn wave_pointer_expiry_ignores_unrelated_object_and_preserves_owner_link() {
     let mut sim = Simulation::new();
-    let owner_id = sim.allocate_stable_id();
-    let target_id = sim.allocate_stable_id();
-    let unrelated_id = sim.allocate_stable_id();
+    let owner_id = sim.substrate.allocate_stable_id();
+    let target_id = sim.substrate.allocate_stable_id();
+    let unrelated_id = sim.substrate.allocate_stable_id();
     for id in [owner_id, target_id, unrelated_id] {
         insert_entity(&mut sim, id, EntityCategory::Unit);
     }
@@ -7265,7 +7265,7 @@ fn wave_pointer_expiry_ignores_unrelated_object_and_preserves_owner_link() {
         .unwrap()
         .attack_target
         .set_for_test(Some(TargetKind::Entity(target_id)));
-    let wave_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
     sim.admit_wave(
         wave_id,
         Wave::new_owned(
@@ -7290,7 +7290,7 @@ fn wave_pointer_expiry_ignores_unrelated_object_and_preserves_owner_link() {
 fn gsi_01_05_lethal_bullet_commits_receiver_before_retirement_and_double_compaction() {
     let rules = gsi_01_05_damage_rules();
     let mut sim = Simulation::new();
-    let victim_id = sim.allocate_stable_id();
+    let victim_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, victim_id, EntityCategory::Unit);
     let victim_type = sim.interner.intern("VICTIM");
     {
@@ -7303,7 +7303,7 @@ fn gsi_01_05_lethal_bullet_commits_receiver_before_retirement_and_double_compact
         RevealOutcome::Revealed { .. }
     ));
 
-    let successor_id = sim.allocate_stable_id();
+    let successor_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, successor_id, EntityCategory::Unit);
     let successor_type = sim.interner.intern("SUCCESSOR");
     sim.substrate
@@ -7316,7 +7316,7 @@ fn gsi_01_05_lethal_bullet_commits_receiver_before_retirement_and_double_compact
         RevealOutcome::Revealed { .. }
     ));
 
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     let impact = ProjectileCoord::new(5 * 256 + 128, 6 * 256 + 128, 0);
     let mut spawn = gsi_05_02_projectile(crate::sim::combat::RAD_NO_ATTACKER, Some(0));
     spawn.origin = impact;
@@ -7390,7 +7390,7 @@ fn gsi_01_05_lethal_bullet_commits_receiver_before_retirement_and_double_compact
 fn gsi_01_05_terminal_wave_damages_once_before_single_current_removal() {
     let rules = gsi_01_05_damage_rules();
     let mut sim = Simulation::new();
-    let victim_id = sim.allocate_stable_id();
+    let victim_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, victim_id, EntityCategory::Unit);
     let victim_type = sim.interner.intern("VICTIM");
     sim.substrate
@@ -7404,7 +7404,7 @@ fn gsi_01_05_terminal_wave_damages_once_before_single_current_removal() {
         RevealOutcome::Revealed { .. }
     ));
 
-    let successor_id = sim.allocate_stable_id();
+    let successor_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, successor_id, EntityCategory::Unit);
     let successor_type = sim.interner.intern("SUCCESSOR");
     sim.substrate
@@ -7417,8 +7417,8 @@ fn gsi_01_05_terminal_wave_damages_once_before_single_current_removal() {
         RevealOutcome::Revealed { .. }
     ));
 
-    let wave_id = sim.allocate_stable_id();
-    let firer_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
+    let firer_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, firer_id, EntityCategory::Unit);
     sim.substrate
         .entities
@@ -7505,7 +7505,7 @@ fn gsi_01_05_terminal_wave_damages_once_before_single_current_removal() {
 fn terminal_type_zero_wave_with_empty_recorded_vector_has_no_damage_area_tail() {
     let rules = gsi_01_05_damage_rules();
     let mut sim = Simulation::new();
-    let firer_id = sim.allocate_stable_id();
+    let firer_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, firer_id, EntityCategory::Unit);
     {
         let firer = sim.substrate.entities.get_mut(firer_id).unwrap();
@@ -7514,7 +7514,7 @@ fn terminal_type_zero_wave_with_empty_recorded_vector_has_no_damage_area_tail() 
             .attack_target
             .set_for_test(Some(TargetKind::Cell(4, 5)));
     }
-    let wave_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
     let mut wave = Wave::new_owned(
         0,
         firer_id,
@@ -7559,7 +7559,7 @@ fn wave_elite_ambient_damage_carries_within_cell_and_resets_on_next_cell() {
         ))
         .expect("Wave shared-damage fixture");
     let mut sim = Simulation::new();
-    let second_id = sim.allocate_stable_id();
+    let second_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, second_id, EntityCategory::Unit);
     sim.substrate
         .entities
@@ -7571,7 +7571,7 @@ fn wave_elite_ambient_damage_carries_within_cell_and_resets_on_next_cell() {
         RevealOutcome::Revealed { .. }
     ));
 
-    let first_id = sim.allocate_stable_id();
+    let first_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, first_id, EntityCategory::Unit);
     sim.substrate
         .entities
@@ -7583,7 +7583,7 @@ fn wave_elite_ambient_damage_carries_within_cell_and_resets_on_next_cell() {
         RevealOutcome::Revealed { .. }
     ));
 
-    let next_id = sim.allocate_stable_id();
+    let next_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, next_id, EntityCategory::Unit);
     sim.substrate
         .entities
@@ -7595,7 +7595,7 @@ fn wave_elite_ambient_damage_carries_within_cell_and_resets_on_next_cell() {
         RevealOutcome::Revealed { .. }
     ));
 
-    let firer_id = sim.allocate_stable_id();
+    let firer_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, firer_id, EntityCategory::Unit);
     {
         let firer = sim.substrate.entities.get_mut(firer_id).unwrap();
@@ -7606,7 +7606,7 @@ fn wave_elite_ambient_damage_carries_within_cell_and_resets_on_next_cell() {
             .set_for_test(Some(TargetKind::Entity(next_id)));
     }
 
-    let wave_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
     let mut wave = Wave::new_owned(
         0,
         firer_id,
@@ -7695,7 +7695,7 @@ fn wave_shared_damage_passes_a_unit_inside_its_war_factory() {
         .expect("Wave war-factory fixture");
     let mut sim = Simulation::new();
     let unit = |sim: &mut Simulation, kind: &str| {
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         insert_entity(sim, id, EntityCategory::Unit);
         sim.substrate
             .entities
@@ -7710,7 +7710,7 @@ fn wave_shared_damage_passes_a_unit_inside_its_war_factory() {
     };
     let second_id = unit(&mut sim, "SECOND");
     let first_id = unit(&mut sim, "FIRST");
-    let factory_id = sim.allocate_stable_id();
+    let factory_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, factory_id, EntityCategory::Structure);
     {
         let factory = sim.substrate.entities.get_mut(factory_id).unwrap();
@@ -7731,7 +7731,7 @@ fn wave_shared_damage_passes_a_unit_inside_its_war_factory() {
         .insert(factory_id)
         .unwrap();
 
-    let firer_id = sim.allocate_stable_id();
+    let firer_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, firer_id, EntityCategory::Unit);
     {
         let firer = sim.substrate.entities.get_mut(firer_id).unwrap();
@@ -7740,7 +7740,7 @@ fn wave_shared_damage_passes_a_unit_inside_its_war_factory() {
             .attack_target
             .set_for_test(Some(TargetKind::Entity(second_id)));
     }
-    let wave_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
     let mut wave = Wave::new_owned(
         0,
         firer_id,
@@ -7784,7 +7784,7 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
         .expect("Wave Terrain fixture");
         let mut sim = Simulation::new();
 
-        let unit_id = sim.allocate_stable_id();
+        let unit_id = sim.substrate.allocate_stable_id();
         insert_entity(&mut sim, unit_id, EntityCategory::Unit);
         sim.substrate
             .entities
@@ -7796,7 +7796,7 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
             RevealOutcome::Revealed { .. }
         ));
 
-        let building_id = sim.allocate_stable_id();
+        let building_id = sim.substrate.allocate_stable_id();
         insert_entity(&mut sim, building_id, EntityCategory::Structure);
         {
             let building = sim.substrate.entities.get_mut(building_id).unwrap();
@@ -7810,7 +7810,7 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
             RevealOutcome::Revealed { .. }
         ));
 
-        let terrain_id = sim.allocate_stable_id();
+        let terrain_id = sim.substrate.allocate_stable_id();
         sim.terrain_objects.objects_mut_for_test().insert(
             terrain_id,
             TerrainObjectState::for_test(terrain_id, sim.interner.intern("TREE01"), 4, 5),
@@ -7819,7 +7819,7 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
             .cell_index_mut_for_test()
             .insert((4, 5), terrain_id);
 
-        let firer_id = sim.allocate_stable_id();
+        let firer_id = sim.substrate.allocate_stable_id();
         insert_entity(&mut sim, firer_id, EntityCategory::Unit);
         {
             let firer = sim.substrate.entities.get_mut(firer_id).unwrap();
@@ -7828,7 +7828,7 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
                 .attack_target
                 .set_for_test(Some(TargetKind::Entity(building_id)));
         }
-        let wave_id = sim.allocate_stable_id();
+        let wave_id = sim.substrate.allocate_stable_id();
         let mut wave = Wave::new_owned(
             0,
             firer_id,
@@ -7907,7 +7907,7 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
     let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("wall+cliff rules");
     let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
     let mut sim = Simulation::new();
-    let firer_id = sim.allocate_stable_id();
+    let firer_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, firer_id, EntityCategory::Unit);
     {
         let firer = sim.substrate.entities.get_mut(firer_id).unwrap();
@@ -7941,7 +7941,7 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
     );
     sim.overlay_grid = Some(overlay);
 
-    let wave_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
     let mut wave = Wave::new_owned(
         0,
         firer_id,
@@ -8029,7 +8029,7 @@ fn assert_direct_fatal_death_weapon_starts_crater(bridge: bool) {
     sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(10, 10));
     sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(10, 10));
     sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(10, 10);
-    let victim_id = sim.allocate_stable_id();
+    let victim_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, victim_id, EntityCategory::Unit);
     let victim = sim.substrate.entities.get_mut(victim_id).unwrap();
     victim.set_type_ref_for_test(sim.interner.intern("VICTIM"));
@@ -8048,14 +8048,14 @@ fn assert_direct_fatal_death_weapon_starts_crater(bridge: bool) {
             crate::sim::world::FrameEffects::default(),
         );
     } else {
-        let firer_id = sim.allocate_stable_id();
+        let firer_id = sim.substrate.allocate_stable_id();
         insert_entity(&mut sim, firer_id, EntityCategory::Unit);
         let firer = sim.substrate.entities.get_mut(firer_id).unwrap();
         firer.set_type_ref_for_test(sim.interner.intern("FIRER"));
         firer
             .attack_target
             .set_for_test(Some(TargetKind::Entity(victim_id)));
-        let wave_id = sim.allocate_stable_id();
+        let wave_id = sim.substrate.allocate_stable_id();
         let mut wave = Wave::new_owned(
             0,
             firer_id,
@@ -8126,7 +8126,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     }
     rules.install_art_data(art);
     let mut sim = Simulation::new();
-    let firer_id = sim.allocate_stable_id();
+    let firer_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, firer_id, EntityCategory::Unit);
     {
         let firer = sim.substrate.entities.get_mut(firer_id).unwrap();
@@ -8238,7 +8238,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     }
     sim.smudge_grid = Some(smudge);
 
-    let wave_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
     let mut wave = Wave::new_owned(
         0,
         firer_id,
@@ -8450,7 +8450,7 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
     sim.session.set_map_width_for_test(16);
     sim.session.set_map_height_for_test(16);
 
-    let building_id = sim.allocate_stable_id();
+    let building_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, building_id, EntityCategory::Structure);
     let building_type = sim.interner.intern("DUPBLDG");
     {
@@ -8468,8 +8468,8 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
     assert!(sim.substrate.occupancy.contains_entity(4, 5, building_id));
     assert!(sim.substrate.occupancy.contains_entity(5, 5, building_id));
 
-    let wave_id = sim.allocate_stable_id();
-    let firer_id = sim.allocate_stable_id();
+    let wave_id = sim.substrate.allocate_stable_id();
+    let firer_id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, firer_id, EntityCategory::Unit);
     sim.substrate
         .entities
@@ -8534,7 +8534,7 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
 #[test]
 fn gsi_05_02_restore_rejects_each_live_modeled_family_missing_from_logic() {
     let mut terrain = Simulation::new();
-    let terrain_id = terrain.allocate_stable_id();
+    let terrain_id = terrain.substrate.allocate_stable_id();
     terrain
         .terrain_objects
         .objects_mut_for_test()
@@ -8554,7 +8554,7 @@ fn gsi_05_02_restore_rejects_each_live_modeled_family_missing_from_logic() {
     );
 
     let mut projectile = Simulation::new();
-    let projectile_id = projectile.allocate_stable_id();
+    let projectile_id = projectile.substrate.allocate_stable_id();
     projectile
         .projectiles
         .spawn(projectile_id, gsi_05_02_projectile(0, None));
@@ -8567,7 +8567,7 @@ fn gsi_05_02_restore_rejects_each_live_modeled_family_missing_from_logic() {
     );
 
     let mut wave = Simulation::new();
-    let wave_id = wave.allocate_stable_id();
+    let wave_id = wave.substrate.allocate_stable_id();
     wave.waves.spawn(
         wave_id,
         Wave::new(
@@ -9165,7 +9165,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
         .unwrap();
     for (origin_level, destination_level) in [(0, 2), (2, 0)] {
         let mut sim = Simulation::with_seed(0);
-        assert_eq!(sim.allocate_stable_id(), 1);
+        assert_eq!(sim.substrate.allocate_stable_id(), 1);
         install_common_raw_terrain(&mut sim, 8, 8, origin_level, None);
         sim.resolved_terrain
             .as_mut()
@@ -9273,7 +9273,7 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
     use super::display_layers::DisplayLayer;
     let mut sim = Simulation::new();
     for _ in 0..4 {
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         insert_entity(&mut sim, id, EntityCategory::Unit);
         let mut req = common_raw_request(2 + id as u16, 3, 0, 128, 128);
         req.logic_eligible = id != 2;
@@ -9374,7 +9374,7 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
         // consume no Scenario draws, so the complete saved hash can match.
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         for (index, actor) in actors.iter().enumerate() {
-            let id = sim.allocate_stable_id();
+            let id = sim.substrate.allocate_stable_id();
             assert_eq!(id, index as u64 + 1);
             let xyz: [i32; 3] = std::array::from_fn(|i| actor["xyz"][i].as_i64().unwrap() as i32);
             match actor["kind"].as_str().unwrap() {
@@ -9566,7 +9566,7 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
 fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
     use super::display_layers::DisplayLayer;
     let mut sim = Simulation::new();
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, id, EntityCategory::Unit);
     sim.substrate.entities.get_mut(id).unwrap().locomotor =
         Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
@@ -9614,7 +9614,7 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
 fn display_registration_expires_with_a_resubmitted_uninit_owner() {
     use super::display_layers::DisplayLayer;
     let mut sim = Simulation::new();
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     insert_entity(&mut sim, id, EntityCategory::Unit);
     sim.try_reveal_entity(id, common_raw_request(3, 3, 0, 128, 128));
     sim.uninit(id);

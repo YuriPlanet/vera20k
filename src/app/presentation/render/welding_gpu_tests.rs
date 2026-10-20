@@ -142,6 +142,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
         let mut parents = Vec::new();
         build_display_effect_instances(
             &DisplayEffectInputs {
+                interpolation: None,
                 sim: &sim,
                 rules: &rules,
                 camera: view_camera,

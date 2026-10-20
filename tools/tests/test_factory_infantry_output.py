@@ -18,11 +18,11 @@ class ReplayImageAdmissionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Unsupported inspection-owner version'):
                 rt.verify_helpers()
 
-    def test_direct_consumer_and_gate_replays_reject_another_supported_file(self):
+    def test_direct_consumer_and_gate_replays_reject_another_executable_identity(self):
         for control in ('unit_ready_consumer', 'infantry_unlimbo_gate'):
             with self.subTest(control=control), \
-                    mock.patch.object(native, 'image_sha256', return_value=native.STEAM_NATIVE_SHA256), \
-                    mock.patch('sys.argv', ['factory', '--replay', control, '--output', 'unused-steam-replay.json']):
+                    mock.patch.object(native, 'image_sha256', return_value='0' * 64), \
+                    mock.patch('sys.argv', ['factory', '--replay', control, '--output', 'unused-other-replay.json']):
                 with self.assertRaisesRegex(ValueError, 'recorded executable identity'):
                     public.main()
 

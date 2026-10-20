@@ -246,6 +246,7 @@ pub(super) fn build_world_instances(
         let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
             .and_then(|name| runtime.simulation.interner().get(&name));
         instances::DisplayEffectInputs {
+            interpolation: Some(&presentation.interpolation),
             sim: &runtime.simulation,
             rules: &runtime.resources.rules,
             camera: [
@@ -273,7 +274,12 @@ pub(super) fn build_world_instances(
     }
     instances::build_projectile_visual_instances(state, &mut planned_objects, &display_order);
     if let Some(input) = display_inputs.as_ref() {
-        instances::build_parachute_instances(input, &mut planned_objects, &parachute_body_depths);
+        instances::build_parachute_instances(
+            input,
+            &mut planned_objects,
+            &parachute_body_depths,
+            Some(&state.match_state.match_presentation.interpolation),
+        );
     }
 
     // Every dynamic pose consumer, including Bullet46B0C0, has now populated
@@ -369,11 +375,35 @@ pub(super) fn build_world_instances(
                             });
                     }
                 }
+                let painted =
+                    crate::app::presentation::interpolation::screen_position(state, entity);
+                let native = crate::render::locomotor_visual::screen_position(entity);
+                status.translate_for_interpolation([painted.0 - native.0, painted.1 - native.1]);
                 status
             });
         }
     }
     instances::build_weapon_wave_instances(state, &mut planned_objects, &display_order);
+    // Body/canopy builders already sampled their anchors. Cancel the same
+    // sampled height for depth and per-pixel Z rather than the authority's
+    // next height; otherwise climbing units slide through their occluders.
+    if let Some(rt) = state.match_state.sim_runtime.as_ref() {
+        let axis = instances::depth_axis(state);
+        let cache = &state.match_state.match_presentation.interpolation;
+        for object in &mut planned_objects {
+            if let Some(entity) = rt.simulation.entities().get(object.parent.id) {
+                let dz = cache.entity_offset(entity, rt.simulation.session().binary_frame())[2];
+                if dz != 0. {
+                    for piece in &mut object.pieces {
+                        piece.instance.z_adjust -= dz;
+                        piece.instance.depth = (piece.instance.depth
+                            - dz / axis.world_height.max(1.))
+                        .clamp(0.001, 0.999);
+                    }
+                }
+            }
+        }
+    }
     // Native +99 is set before a Building's body opportunity, independently
     // of successful pixels. Empty body frames still have a retained parent.
     let building_body_opportunities = planned_objects
@@ -723,9 +753,24 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         let sim = &runtime.simulation;
         for (id, entity) in sim.entities().iter_sorted() {
             if entity.health.current() != 0
-                && let Some(coords) =
+                && let Some(mut coords) =
                     sim.airstrike_designation_coordinates(id, &runtime.resources.rules)
             {
+                use crate::app::presentation::interpolation::{PointKind, PointPose};
+                for (i, coord) in coords.iter_mut().enumerate() {
+                    let [x, y, z] = state
+                        .match_state
+                        .match_presentation
+                        .interpolation
+                        .sample_draw_point(
+                            PointKind::Airstrike(i as u8),
+                            id,
+                            PointPose::new([coord.x, coord.y, coord.z], 0, None),
+                            sim.session().binary_frame(),
+                        )
+                        .coord;
+                    *coord = crate::sim::components::DriveCoord { x, y, z };
+                }
                 designations.insert(id, coords);
             }
         }
@@ -766,7 +811,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
     };
     let (mut target_line, planning_highlights) = planning_lines::build(state, view);
     target_line.extend(
-        crate::app::presentation::target_lines::build_target_line_instances(
+        crate::app::presentation::target_lines::build_target_line_instances_sampled(
             &state.match_state.match_presentation.target_lines,
             state.match_state.input.planning.active(),
             state
@@ -788,6 +833,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
                 None
             },
             &mut shroud_alpha,
+            Some(&state.match_state.match_presentation.interpolation),
         ),
     );
     target_line.extend(planning_highlights);
@@ -802,7 +848,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         state.match_state.input.selection_order_pending,
     );
     let [factory_rally_first, factory_rally_second] =
-        crate::app::presentation::target_lines::build_factory_rally_line_instances(
+        crate::app::presentation::target_lines::build_factory_rally_line_instances_sampled(
             state
                 .match_state
                 .sim_runtime
@@ -814,6 +860,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
             preferred_local_owner(state).as_deref(),
             view,
             &mut shroud_alpha,
+            Some(&state.match_state.match_presentation.interpolation),
         );
 
     UiInstances {

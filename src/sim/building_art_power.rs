@@ -204,7 +204,7 @@ mod tests {
 
     fn building(current: i32) -> (Simulation, u64) {
         let mut sim = Simulation::new();
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::test_default_of_category(
             id,
             "B",

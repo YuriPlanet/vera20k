@@ -60,14 +60,21 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let mode = mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
     let host = session.host();
     let local = launch.humans.get(launch.local_player_index)?;
-    let map_index = launch.selected_map_file.as_deref().and_then(|file| {
-        state
-            .frontend
-            .scenario_catalog
-            .shell_maps()
-            .iter()
-            .position(|map| map.file_name.eq_ignore_ascii_case(file))
-    });
+    // A guest shows its own copy of the map only when it verified
+    // (0x005E74E0); otherwise its preview is the host's Preview.bin.
+    let local_map = host || protocol.local_map_verified();
+    let map_index = launch
+        .selected_map_file
+        .as_deref()
+        .filter(|_| local_map)
+        .and_then(|file| {
+            state
+                .frontend
+                .scenario_catalog
+                .shell_maps()
+                .iter()
+                .position(|map| map.file_name.eq_ignore_ascii_case(file))
+        });
     let capacity = session.network_setup_capacity()?.clamp(0, 8) as usize;
     let observer_row = session.network_observer_row().map(usize::from);
     let row_limit = session.network_row_limit()?;

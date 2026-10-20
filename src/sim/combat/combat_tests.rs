@@ -7091,10 +7091,10 @@ fn fire_admission_preserves_flat_projectile_layer_through_save_and_retirement() 
         let mut sim = crate::sim::world::Simulation::new();
         sim.interner = interner;
         // Preserve the real firer and target identities across the save.
-        assert_eq!(sim.allocate_stable_id(), 1);
-        assert_eq!(sim.allocate_stable_id(), 2);
+        assert_eq!(sim.substrate.allocate_stable_id(), 1);
+        assert_eq!(sim.substrate.allocate_stable_id(), 2);
         sim.substrate.entities = entities;
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         sim.admit_projectile(id, fire.projectile_spawns[0]);
         let layer = if flat {
             DisplayLayer::SURFACE
@@ -7187,7 +7187,7 @@ fn persistent_projectile_delays_damage_across_save_load_continuation() {
     assert_eq!(fire.projectile_spawns.len(), 1);
 
     let mut sim = crate::sim::world::Simulation::new();
-    let projectile_id = sim.allocate_stable_id();
+    let projectile_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(projectile_id, fire.projectile_spawns[0]);
     let target_positions =
         BTreeMap::from([(2, ProjectileCoord::new(8 * 256 + 128, 5 * 256 + 128, 0))]);
@@ -9028,7 +9028,7 @@ fn projectile_shrapnel_reads_the_bullets_location_not_its_impact() {
     // that prefix, while this fixture isolates the shrapnel Location read.
     let location = ProjectileCoord::new(5 * 256 + 128, 5 * 256 + 128, 1);
     let target = ProjectileTarget::Cell { rx: 8, ry: 5 };
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(
         id,
         ProjectileSpawn {

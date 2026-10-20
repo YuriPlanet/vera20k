@@ -573,7 +573,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .seed_neighbor_counts_for_tests(input["neighbor_seed"].as_u64().unwrap_or(0) as u8);
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         assert_eq!(id, 1);
         insert_entity(&mut sim, id, EntityCategory::Aircraft);
         let before = &row["before"];
@@ -617,7 +617,7 @@ mod tests {
         if input["blocking_unit"].as_bool().unwrap_or(false)
             || input["reserved"].as_bool().unwrap_or(false)
         {
-            let id = sim.allocate_stable_id();
+            let id = sim.substrate.allocate_stable_id();
             insert_entity(
                 &mut sim,
                 id,

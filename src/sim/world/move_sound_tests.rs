@@ -54,7 +54,7 @@ fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 0, 10));
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let xyz: Vec<_> = before["xyz"]
         .as_array()
         .unwrap()

@@ -11,7 +11,7 @@ fn corpus() -> &'static Value {
     let result = crate::test_fixture::json("tools/spatial_oracle/trigger_all_to_hunt.json");
     assert_eq!(
         result["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     result
 }
@@ -98,7 +98,7 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
             .unwrap()
             .iter()
             .map(|actor| {
-                let id = sim.allocate_stable_id();
+                let id = sim.substrate.allocate_stable_id();
                 let owner = houses[actor["owner"].as_u64().unwrap() as usize];
                 let foot = actor["foot"].as_bool().unwrap();
                 let ty = sim.interner.get(if foot { "U" } else { "B" }).unwrap();

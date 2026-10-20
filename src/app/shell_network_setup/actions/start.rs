@@ -252,6 +252,9 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         // Native host completes even after its600-bucket GO reply wait times
         // out. Real queue/transfer service completion is supplied separately.
         protocol.go_deadline = Some(Instant::now() + Duration::from_millis(600 * 16));
+        // Native's offer blocks the dialog until it ends, so Start cannot
+        // follow a pending one; GO drops it.
+        protocol.drop_preview_offer();
     }
     state.frontend.skirmish_preview_texture = None;
     Ok(())

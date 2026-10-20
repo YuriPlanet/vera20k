@@ -30,6 +30,32 @@ mod preview;
 mod text;
 
 pub(crate) use preview::SkirmishPreviewTexture;
+
+/// The preview the setup dialog shows for `file`, decoded the way BC's own
+/// preview is: the LAN host's `[0xAC1154]` for its preview upload.
+pub(crate) fn decode_network_map_preview(
+    state: &AppState,
+    file: &str,
+) -> Option<crate::map::preview::DecodedPreview> {
+    let entry = state
+        .frontend
+        .scenario_catalog
+        .shell_maps()
+        .iter()
+        .find(|entry| entry.file_name.eq_ignore_ascii_case(file))?;
+    let ra2_dir = state
+        .platform
+        .game_config
+        .as_ref()
+        .map(|config| config.paths.ra2_dir.as_path())
+        .or_else(|| {
+            state
+                .process_assets
+                .manager()
+                .map(|assets| assets.ra2_dir())
+        });
+    preview::decode_preview_for_map_entry(entry, ra2_dir, state.process_assets.manager())
+}
 pub(crate) use text::{
     combo_item_label, skirmish_right_panel_label_strings, skirmish_selected_map_name,
 };
@@ -1903,6 +1929,8 @@ mod abort;
 pub(crate) use abort::render_abort_shell;
 mod diplomacy;
 pub(crate) use diplomacy::render_diplomacy_shell;
+mod restate;
+pub(crate) use restate::render_restate_shell;
 mod connection;
 pub(crate) use connection::{connection_shell_drawable, render_connection_shell};
 
@@ -1919,10 +1947,10 @@ mod network_options;
 mod wol_lobby;
 mod wol_login;
 mod wol_options;
-pub(crate) use wol_options::{paint_shell_sound_children, paint_wol_options_children};
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_lobby::{paint_wol_lobby_children, paint_wol_lobby_popup};
 pub(crate) use wol_login::{paint_wol_login_children, wol_button_label_rgb};
+pub(crate) use wol_options::{paint_shell_sound_children, paint_wol_options_children};
 mod multiplayer_setup;
 pub(crate) use keyboard::render_keyboard_shell;
 pub(crate) use multiplayer_setup::render_multiplayer_setup;

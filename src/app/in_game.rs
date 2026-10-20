@@ -78,6 +78,7 @@ impl App {
         state.match_state.match_presentation.pause_menu_interaction = Default::default();
         state.match_state.match_presentation.abort_buttons = Default::default();
         state.match_state.match_presentation.diplomacy = Default::default();
+        state.match_state.match_presentation.restate = Default::default();
         state.match_state.match_presentation.sound_dialog = None;
         state.match_state.match_presentation.saved_game_browser = None;
         state.match_state.network_wait = Default::default();
@@ -344,6 +345,7 @@ impl App {
         state.match_state.match_presentation.pause_menu_interaction = Default::default();
         state.match_state.match_presentation.abort_buttons = Default::default();
         state.match_state.match_presentation.diplomacy = Default::default();
+        state.match_state.match_presentation.restate = Default::default();
         state.match_state.match_presentation.sound_dialog = None;
         if will_be_open {
             // Deactivate683EB0/4AEAD0 tears down drag/capture on the way into

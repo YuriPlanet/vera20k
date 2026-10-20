@@ -473,6 +473,15 @@ impl ObjectSubstrate {
 }
 
 impl ObjectSubstrate {
+    /// Shared identity source for every modeled runtime `AbstractClass` analogue.
+    ///
+    /// `AbstractClass::Create_ID @ 0x00410230` delegates to
+    /// `ScenarioClass::NextUniqueID @ 0x0068BCB0`; individual stores therefore
+    /// must not own independent counters.
+    pub fn allocate_stable_id(&mut self) -> u64 {
+        self.next_stable_object_id.allocate(&self.entities)
+    }
+
     /// Restore-time validation of the substrate's monotonic counters and the
     /// deserialized LogicVector (F13; moved verbatim from
     /// `restore_after_snapshot_load`, which remains the ordered coordinator).

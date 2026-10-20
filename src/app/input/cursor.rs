@@ -290,7 +290,7 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         ));
     }
     let hover = crate::app::input::entity_pick::hover_target_at_point(
-        sim,
+        crate::app::input::entity_pick::presented(state, sim),
         world_x,
         world_y,
         &owner,
@@ -877,11 +877,17 @@ pub(super) fn capability_cursor_for_hover(
     // Hovering an own unit that is NOT selected still takes Select, and a
     // no-selection hover keeps DetermineAction's no-selection Select. An
     // Aircraft cursor owner's 0 there becomes its Cell action instead
-    // (`0x00417D7C`), which the object action below answers.
+    // (`0x00417D7C`), and a Building's stays 0 (`0x0044750D`), which the
+    // object action below answers.
     if hover_is_selected_own_unit(hover, &selected)
         && !best_id
             .and_then(|id| sim.entities().get(id))
-            .is_some_and(|actor| actor.category() == EntityCategory::Aircraft)
+            .is_some_and(|actor| {
+                matches!(
+                    actor.category(),
+                    EntityCategory::Aircraft | EntityCategory::Structure
+                )
+            })
     {
         return CursorFeedbackKind::Invalid;
     }
@@ -890,13 +896,13 @@ pub(super) fn capability_cursor_for_hover(
         | HoverTargetKind::FriendlyStructure
         | HoverTargetKind::EnemyUnit
         | HoverTargetKind::EnemyStructure => {
-            // The ordinary Unit object's class tail is shared with click
-            // dispatch. Another allied House is not an own-object Select:
-            // Techno70059B -> Unit7403EB answers NoMove. Other friendly
-            // class routes retain their existing capability/selection paths
-            // until their own What_Action wrappers are audited. Ivan's
-            // admitted Attack was handled above; its refused attack still
-            // follows the shared Select/NoMove tail instead of inventing one.
+            // The cursor owner's class tail is shared with click dispatch
+            // ([`super::context_order::object_action_answers_friendly`]).
+            // Another allied House is not an own-object Select: Techno70059B
+            // answers 0, which Unit7403EB and Infantry51F05E turn into
+            // NoMove and a Building keeps. Ivan's admitted Attack was handled
+            // above; its refused attack still follows the shared
+            // Select/NoMove tail instead of inventing one.
             let friendly = matches!(
                 hover.kind,
                 HoverTargetKind::FriendlyUnit | HoverTargetKind::FriendlyStructure

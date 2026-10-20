@@ -11,7 +11,7 @@ fn corpus() -> &'static Value {
     let result = crate::test_fixture::json("tools/spatial_oracle/trigger_build_type_events.json");
     assert_eq!(
         result["native_sha256"],
-        "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600"
+        "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c"
     );
     result
 }
@@ -272,7 +272,7 @@ fn building_discovery_updates_last_type_only_after_admission_outside_init() {
         ObjectCategory::Building,
         integer(&source["input"]["initial_house26c"]),
     );
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut entity =
         GameEntity::test_default_of_category(id, &name, "Owner", 10, 10, EntityCategory::Structure);
     entity.set_type_ref_for_test(sim.interner.intern(&name));

@@ -2034,7 +2034,7 @@ fn run_special_detonation_arm(
         SpecialDetonationAction::BombDisarm => {
             // 0x004699C4..0x004699FE: a bombed Object target is defused.
             if let Some(id) = object {
-                world.bomb_defuse(id);
+                Simulation::bomb_defuse(&mut world.substrate, &mut world.bombs, id);
             }
         }
         SpecialDetonationAction::NukeMaker => nuke_maker(world, rules, detonation),
@@ -2144,7 +2144,7 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     );
     let ground = crate::sim::projectile::cell_ground_coord(terrain, rx, ry);
     let origin = ProjectileCoord::new(ground.x, ground.y, ground.z.wrapping_add(altitude));
-    let bullet_id = world.allocate_stable_id();
+    let bullet_id = world.substrate.allocate_stable_id();
     let native_unique_id = world.next_native_runtime_id();
     let velocity = crate::sim::projectile::launch::missile_launch_velocity(FALL_SCALE);
     let payload = ProjectilePayload::new(

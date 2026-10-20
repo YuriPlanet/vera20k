@@ -255,7 +255,14 @@ fn discovered_house_event_runs_from_real_discovery_poll_and_saved_notification()
         .sim;
     restored.restore_after_snapshot_load().unwrap();
     assert!(restored.houses[&houses[1]].discovered_by_current_house());
-    assert!(restored.set_trigger_variable(true, 7, false));
+    assert!(crate::sim::world::Simulation::set_trigger_variable(
+        &restored.session,
+        &mut restored.scenario_rng,
+        &mut restored.trigger_runtime,
+        true,
+        7,
+        false
+    ));
     restored.session.set_binary_frame_for_test(24);
     restored.raise_house_tags(
         houses[0],

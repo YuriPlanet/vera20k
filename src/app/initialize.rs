@@ -130,7 +130,14 @@ impl App {
             RetailOptionsLoad::from_ra2md,
         );
         let profile_screen = options_load.startup_shell_screen;
-        let options_profile = options_load.retained_profile;
+        let mut options_profile = options_load.retained_profile;
+        options_profile.render_interpolation =
+            crate::app::presentation::interpolation::startup_enabled(
+                options_profile.render_interpolation,
+                std::env::var("VERA20K_RENDER_INTERPOLATION")
+                    .ok()
+                    .as_deref(),
+            );
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
         let startup_audio =
@@ -197,6 +204,8 @@ impl App {
         terrain_draw_renderer.generate_ion_blast_frames(&gpu.device, &gpu.queue);
         let combat_light_renderer = crate::render::combat_light::CombatLightRenderer::new(&gpu);
         let mut bit_font = BitFont::fallback_5x7(&gpu.device, &gpu.queue, &batch_renderer);
+        let fps_overlay =
+            crate::app::diagnostics::fps_overlay::FpsOverlay::new(&gpu, &batch_renderer);
         let depth_view: wgpu::TextureView = gpu.create_depth_texture();
         let shell_surface_presenter =
             crate::render::shell_surface_present::ShellSurfacePresenter::new(&gpu)?;
@@ -291,6 +300,7 @@ impl App {
                 &batch_renderer,
                 &shell_surface_presenter,
                 &depth_view,
+                &fps_overlay,
                 splash,
             ) {
                 Ok(()) => splash.mark_presented(Instant::now()),
@@ -524,6 +534,10 @@ impl App {
                 sim_runtime: None,
                 input: crate::app::input::state::MatchInputState::new(hotkey_bindings),
                 match_presentation: crate::app::presentation::state::MatchPresentationState {
+                    interpolation:
+                        crate::app::presentation::interpolation::RenderInterpolation::new(
+                            options_profile.render_interpolation,
+                        ),
                     sinking_waterlines: Default::default(),
                     barrel_image_pitches: Default::default(),
                     building_zshape: None,
@@ -555,6 +569,8 @@ impl App {
                     sound_dialog: None,
                     abort_buttons: Default::default(),
                     diplomacy: Default::default(),
+                    restate: Default::default(),
+                    restate_text: String::new(),
                     saved_game_browser: None,
                     in_game_options: startup_in_game_options,
                     in_game_options_anchor: None,
@@ -713,6 +729,7 @@ impl App {
             renderer: crate::app::renderer_state::RendererState {
                 gpu,
                 batch_renderer,
+                fps_overlay,
                 combat_light_renderer,
                 terrain_draw_renderer,
                 instance_pool: crate::render::batch::InstanceBufferPool::new(),

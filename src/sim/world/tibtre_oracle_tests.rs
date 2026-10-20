@@ -336,7 +336,10 @@ fn forced_spread_matches_original_admission_placement_queues_and_rng() {
             true,
         );
         let succeeded = result.is_some();
-        s.sim.publish_overlay_constructions(
+        crate::sim::world::Simulation::publish_overlay_constructions(
+            &mut s.sim.native_unique_ids,
+            &mut s.sim.load_objects,
+            &mut s.sim.substrate,
             result.and_then(crate::sim::tiberium::TiberiumPlacement::into_overlay_construction),
         );
         assert_eq!(

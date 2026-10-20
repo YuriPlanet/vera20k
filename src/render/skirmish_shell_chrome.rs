@@ -2,10 +2,11 @@
 //!
 //! Packs the shared native shell art into one GPU texture. Screen-specific
 //! entries require active caller evidence and are selected by that screen.
-//! Skirmish setup intentionally uses RA2's MNSCRNS/MNSCRNL backgrounds
-//! through SHELL.PAL as a presentation preference.
-//! User-requested YR parity exception: preserve this RA2 background during
-//! future parity work unless the user explicitly asks to change it.
+//! Skirmish setup and the WOL Custom Match setup dialogs C2/C9 intentionally
+//! use RA2's MNSCRNS/MNSCRNL backgrounds through SHELL.PAL as a presentation
+//! preference; LAN setup BC/BD keeps YR's Cooperative setup art.
+//! User-requested YR parity exception: preserve these RA2 backgrounds during
+//! future parity work unless the user explicitly asks to change them.
 //! Nothing in this atlas follows the YR Loading & Menu Movie option; that
 //! option switches only the startup splash and the menu movie.
 
@@ -229,13 +230,16 @@ impl SkirmishShellChromeAtlas {
     /// at800; small MNSCRNS uses that same setup palette. Native72CF90 frees
     /// the setup pair on return. This retained atlas shares app-owned assets
     /// and does not change the intentional RA2 offline-skirmish selection.
+    ///
+    /// User-requested exception: 60CF00 gives WOL C2/C9 the same 72D030 setup
+    /// art as BC/BD, but VERA paints them with BB's generic RA2 MNSCRNS/MNSCRNL
+    /// through SHELL.PAL, matching the offline Skirmish screen.
     pub fn lan_background(&self, dialog_id: u16, width: u32) -> Option<SkirmishShellChromeEntry> {
         match (dialog_id, width) {
-            (0xBB, 640) => self.generic_background_640_mnscrns_shell,
-            (0xBB, _) => self.generic_background_large_mnscrnl_shell,
-            // 60CF00 gives WOL C2/C9 the same 72D030 setup art as BC/BD.
-            (0xBC | 0xBD | 0xC2 | 0xC9, 640) => self.lan_setup_backgrounds[0],
-            (0xBC | 0xBD | 0xC2 | 0xC9, 800) => self.lan_setup_backgrounds[1],
+            (0xBB | 0xC2 | 0xC9, 640) => self.generic_background_640_mnscrns_shell,
+            (0xBB | 0xC2 | 0xC9, _) => self.generic_background_large_mnscrnl_shell,
+            (0xBC | 0xBD, 640) => self.lan_setup_backgrounds[0],
+            (0xBC | 0xBD, 800) => self.lan_setup_backgrounds[1],
             _ => None,
         }
     }

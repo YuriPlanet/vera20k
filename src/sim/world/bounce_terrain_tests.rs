@@ -88,7 +88,7 @@ fn fixture(case: &Value) -> Simulation {
     if let Some(objects) = case["objects"].as_array() {
         for kind in objects {
             let name = kind.as_str().unwrap();
-            let id = sim.allocate_stable_id();
+            let id = sim.substrate.allocate_stable_id();
             let owner = sim.interner.intern("Neutral");
             let type_ref = sim.interner.intern(name);
             let category = if name == "nonbuilding" {

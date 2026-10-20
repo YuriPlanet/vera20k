@@ -417,12 +417,26 @@ pub(crate) fn render_game(
     if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
         let sim = runtime.view().simulation();
         let rules = &runtime.resources.rules;
+        let interpolation = &state.match_state.match_presentation.interpolation;
         state
             .match_state
             .match_presentation
             .electric_bolts
             .follow_owners(|owner| {
-                crate::sim::combat::electric_bolt::owner_source(sim, rules, owner)
+                let point = crate::sim::combat::electric_bolt::owner_source(sim, rules, owner)?;
+                let [x, y, z] = interpolation
+                    .sample_draw_point(
+                        crate::app::presentation::interpolation::PointKind::BoltSource,
+                        owner.unit,
+                        crate::app::presentation::interpolation::PointPose::new(
+                            [point.x, point.y, point.z],
+                            0,
+                            None,
+                        ),
+                        sim.session().binary_frame(),
+                    )
+                    .coord;
+                Some(crate::sim::projectile::ProjectileCoord::new(x, y, z))
             });
     }
     let presentation = &mut state.match_state.match_presentation;
@@ -454,8 +468,18 @@ pub(crate) fn render_game(
         .as_ref()
         .map(|runtime| runtime.view().simulation());
     let segments = presentation.line_trails.composite(|id| {
-        sim.and_then(|sim| sim.projectiles().get(id))
-            .map(|bullet| bullet.position())
+        let sim = sim?;
+        sim.projectiles().get(id).map(|bullet| {
+            presentation
+                .interpolation
+                .sample_point(
+                    crate::app::presentation::interpolation::PointKind::Bullet,
+                    id,
+                    crate::app::presentation::interpolation::PointPose::bullet(bullet),
+                    sim.session().binary_frame(),
+                )
+                .projectile_coord()
+        })
     });
     let frame_rate = presentation.detail.borrow().frame_rate();
     presentation.radiation_beams.composite(frame_rate, viewport);

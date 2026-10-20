@@ -134,6 +134,7 @@ pub(crate) fn install_world_presentation(
         .map(|runtime| runtime.resources.overlay_registry.clone());
 
     state.match_state.match_presentation.combat_lights.clear();
+    state.match_state.match_presentation.interpolation.clear();
     state.match_state.match_presentation.lasers.clear_on_load();
     state
         .match_state

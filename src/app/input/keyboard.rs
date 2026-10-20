@@ -27,14 +27,26 @@ pub(crate) fn in_game_key_edge(
     edge: InGameKeyEdge<'_>,
     paused_at_event: bool,
 ) {
-    // Process_Command 0x0055DEE0 first runs the chat pre-hook 0x0055E420 and
-    // stops when it zeroed the key. A release still clears held scrolling.
+    // Native chat owns its edit keys before game-local chords or hotkeys.
     if crate::app::input::chat::key_edge(state, &edge) {
         if !edge.state.is_pressed() {
             state.match_state.input.keys_held.remove(&edge.physical);
             if let Some(scroll_key) = hotkeys::physical_scroll_key(edge.physical) {
                 state.match_state.input.keys_held.remove(&scroll_key);
             }
+        }
+        return;
+    }
+    // Local prototype control; consume the chord before retail key dispatch.
+    let modifiers = state.match_state.input.hotkey_modifiers;
+    if edge.physical == KeyCode::KeyI && modifiers.control_key() && modifiers.alt_key() {
+        if edge.state.is_pressed() && !edge.repeat {
+            let enabled = state.match_state.match_presentation.interpolation.toggle();
+            state.persistence.options_profile.render_interpolation = enabled;
+            log::info!(
+                "Render interpolation prototype: {}",
+                if enabled { "ON" } else { "OFF" }
+            );
         }
         return;
     }

@@ -1246,8 +1246,10 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
     assert!(source.active);
     assert_eq!((source.rx, source.ry), (6, 5));
     assert_eq!(authored.lighting_sources.pending().len(), 1);
-    authored.discard_lighting_events();
-    authored.set_building_light_active(authored_id, false);
+    authored.lighting_sources.discard_pending();
+    authored
+        .lighting_sources
+        .set_building_light_active(authored_id, false);
     authored.allocate_building_light(authored_id, &rules);
     assert!(
         !authored.lighting_sources.buildings()[&authored_id].active,

@@ -173,14 +173,14 @@ fn pause_lock_is_synchronous_and_explicit_unlock_keeps_native_prior_gate() {
     assert!(sim.session.input_locked());
     action(&mut sim, 47, 0);
     assert!(!sim.session.input_locked());
-    sim.expire_scenario_pause();
+    sim.session.expire_scenario_pause();
     assert!(!sim.session.input_locked());
 
     action(&mut sim, 46, 0);
     action(&mut sim, 110, 2);
     action(&mut sim, 47, 0);
     // B054CC=1 skips the restore write; it does not force35A2 back to1.
-    sim.expire_scenario_pause();
+    sim.session.expire_scenario_pause();
     assert!(!sim.session.input_locked());
     assert!(!sim.session.scenario_paused());
 }
@@ -212,7 +212,8 @@ fn chrono_and_timed_trigger_share_one_counter_and_preserve_the_outer_lock() {
     assert!(sim.session.scenario_paused());
     assert!(sim.session.input_locked());
     assert!(
-        sim.expire_scenario_pause()
+        sim.session
+            .expire_scenario_pause()
             .contains(&TriggerEffect::ScenarioResume)
     );
     assert!(!sim.session.scenario_paused());

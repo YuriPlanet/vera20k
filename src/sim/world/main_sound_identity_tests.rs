@@ -64,7 +64,7 @@ fn scene(rules: &RuleSet) -> (Simulation, [u64; 2], u64, u64) {
     }
     let owner = sim.interner.get("Local").unwrap();
     let squids = std::array::from_fn(|index| {
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         let mut actor = GameEntity::test_default(id, "SQD", "Local", 10, 10 + index as u16);
         actor.set_owner_for_test(owner);
         actor.set_type_ref_for_test(sim.interner.get("SQD").unwrap());

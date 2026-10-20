@@ -31,6 +31,7 @@ struct ControlledRandomMap {
     capacity: i32,
     staging: crate::map::preview::ScenarioStartStaging,
     image: Vec<u8>,
+    preview_bin: Vec<u8>,
 }
 
 /// Diagnostic file lease, never a map/catalog authority. Existing files are
@@ -145,6 +146,9 @@ pub enum LanTarget {
     /// map change, the host's `'W'` staging, `RandMap.Sed` then
     /// `RandMap.img` at GO, and the match starts on the `'W'` cells.
     GuestRandomMap,
+    /// The same guest on BD once `Preview.bin` arrived: the host's 64-colour
+    /// half-size preview with the `'W'` start markers.
+    GuestRandomMapPreview,
     /// B6 Observe in a two-human LAN match, through the executed DESTRUCT and
     /// the local defeat to the re-armed menu and its Observe-less B6.
     HostObserve,
@@ -224,6 +228,10 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("lan-ingame-taunt", LanTarget::IngameTaunt),
     ("lan-host-random-map", LanTarget::HostRandomMap),
     ("lan-guest-random-map", LanTarget::GuestRandomMap),
+    (
+        "lan-0xbd-random-map-preview",
+        LanTarget::GuestRandomMapPreview,
+    ),
     ("lan-host-observe", LanTarget::HostObserve),
     ("lan-host-observe-offered", LanTarget::HostObserveOffered),
     (
@@ -256,6 +264,9 @@ impl LanTarget {
                 | Self::TransferGo
         )
     }
+    fn random_map_guest(self) -> bool {
+        matches!(self, Self::GuestRandomMap | Self::GuestRandomMapPreview)
+    }
     fn guest(self) -> bool {
         matches!(
             self,
@@ -278,6 +289,7 @@ impl LanTarget {
                 | Self::GuestAbortReturn
                 | Self::RemoteLoadingProgress
                 | Self::GuestRandomMap
+                | Self::GuestRandomMapPreview
                 | Self::JoinDenied
                 | Self::JoinDeniedReturn
                 | Self::JoinTimeoutReturn
@@ -487,7 +499,7 @@ impl LanCapture {
         let file = if self.target.missing_map() {
             self.assert_map_absent(state)?;
             TRANSFER_FILE
-        } else if self.target == LanTarget::GuestRandomMap {
+        } else if self.target.random_map_guest() {
             crate::map::skirmish_scenarios::RANDMAP_SED
         } else {
             let file = values["map"].as_str().context("native map")?;
@@ -671,9 +683,9 @@ impl LanCapture {
             "0x1B kept the peer's acceptance"
         );
         let staging = state.frontend.multiplayer_shell_runtime.start_staging();
-        let published: Vec<String> = self
-            .drain_requests(state)
-            .into_iter()
+        let requests = self.drain_requests(state);
+        let published: Vec<&String> = requests
+            .iter()
             .filter_map(|request| match request {
                 NetworkSetupRequest::PublishStartStaging(text) => Some(text),
                 _ => None,
@@ -681,14 +693,47 @@ impl LanCapture {
             .collect();
         ensure!(
             published.len() == 1
-                && crate::map::preview::ScenarioStartStaging::parse_w_text(&published[0])
+                && crate::map::preview::ScenarioStartStaging::parse_w_text(published[0])
                     == Some(staging)
                 && staging.count >= 2,
             "0x1B did not send the generated staging once: {published:?}"
         );
+        ensure!(
+            requests.last() == Some(&NetworkSetupRequest::OfferPreview),
+            "the 'W' was not followed by the 0x19 offer: {requests:?}"
+        );
+        let w = published[0].clone();
+        // The peer's 0x1A completes the offer: Preview.bin is written from
+        // the host's preview, halved and cut to 64 colours, and sent.
+        let preview_path = Self::isolated_root(state)?.join("Preview.bin");
+        // Only the guests the offer went to count; the host's own index does
+        // not complete it.
+        setup::service_event(state, NetworkSetupEvent::PreviewAcknowledged { index: 0 })?;
+        ensure!(
+            self.drain_requests(state).is_empty(),
+            "the host's own index completed the offer"
+        );
+        setup::service_event(state, NetworkSetupEvent::PreviewAcknowledged { index: 1 })?;
+        ensure!(
+            self.drain_requests(state) == vec![NetworkSetupRequest::SendPreviewFile],
+            "the last 0x1A did not send Preview.bin"
+        );
+        let host_preview = crate::app::frontend::skirmish_shell_render::decode_network_map_preview(
+            state,
+            crate::map::skirmish_scenarios::RANDMAP_SED,
+        )
+        .context("host random-map preview")?;
+        let received = crate::map::preview::preview_bin_blob(&fs::read(&preview_path)?)
+            .and_then(|blob| crate::map::preview::paletted_preview_image(&blob))
+            .context("Preview.bin did not decode")?;
+        ensure!(
+            (received.width, received.height) == (host_preview.width / 2, host_preview.height / 2),
+            "Preview.bin is not the host preview halved"
+        );
         self.route
             .push(json!({"frame":frame,"action":"controlled 0x1B answered",
-            "w":published[0]}));
+            "w":w,"preview_bin":{"bytes":fs::metadata(&preview_path)?.len(),
+            "width":received.width,"height":received.height}}));
         setup::service_event(
             state,
             NetworkSetupEvent::PlayerReady {
@@ -763,16 +808,39 @@ impl LanCapture {
             "controlled random map staged {} starts",
             staging.count
         );
-        let image = crate::assets::pcx_file::encode_direct_rgb(64, 32, &[96; 64 * 32 * 3])?;
+        // The host's preview stand-in: a 138x70 gradient, the size of the
+        // generator's own RandMap.img.
+        let (width, height) = (138u16, 70u16);
+        let mut rgb = Vec::new();
+        for y in 0..height {
+            for x in 0..width {
+                rgb.extend_from_slice(&[(40 + x) as u8, (60 + 2 * y) as u8, ((x + y) / 2) as u8]);
+            }
+        }
+        let image = crate::assets::pcx_file::encode_direct_rgb(width, height, &rgb)?;
+        let mut rgba = Vec::new();
+        for pixel in rgb.chunks_exact(3) {
+            rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 0xFF]);
+        }
+        let preview_bin =
+            crate::map::preview::preview_bin_bytes(&crate::map::preview::create_paletted_preview(
+                &crate::map::preview::DecodedPreview {
+                    width: u32::from(width),
+                    height: u32::from(height),
+                    rgba,
+                },
+                crate::map::preview::PALETTED_PREVIEW_COLORS,
+            ));
         self.route.push(json!({"controlled_random_map":{"seed":options.seed,
             "sed_bytes":sed.len(),"w":staging.to_w_text(),
-            "boundary":"controlled host generation through the production loader, slots 0 and 1 swapped in the W; flat RandMap.img stand-in"}}));
+            "boundary":"controlled host generation through the production loader, slots 0 and 1 swapped in the W; gradient stand-in for the host preview"}}));
         self.random_map_host = Some(ControlledRandomMap {
             digest: options.native_digest(),
             capacity: options.num_players,
             sed,
             staging,
             image,
+            preview_bin,
         });
         Ok(())
     }
@@ -822,6 +890,50 @@ impl LanCapture {
             .context("no controlled random map")?
             .staging;
         setup::service_event(state, NetworkSetupEvent::StartStaging(staging.to_w_text()))?;
+        // The offer that follows: the guest acks and receives Preview.bin.
+        ensure!(
+            state
+                .frontend
+                .network_setup_protocol
+                .as_ref()
+                .is_some_and(|protocol| protocol.received_preview().is_none()),
+            "an unverified map kept a preview"
+        );
+        setup::service_event(state, NetworkSetupEvent::PreviewOffered)?;
+        ensure!(
+            self.drain_requests(state)
+                == vec![
+                    NetworkSetupRequest::AcknowledgePreview,
+                    NetworkSetupRequest::RequestPreviewFile
+                ],
+            "0x19 did not ack and request the file"
+        );
+        setup::service_event(state, NetworkSetupEvent::PreviewOffered)?;
+        ensure!(
+            self.drain_requests(state).is_empty(),
+            "a second 0x19 during the receive was answered"
+        );
+        let preview_bin = &self
+            .random_map_host
+            .as_ref()
+            .context("no controlled random map")?
+            .preview_bin;
+        fs::write(Self::isolated_root(state)?.join("Preview.bin"), preview_bin)?;
+        setup::service_event(
+            state,
+            NetworkSetupEvent::PreviewFileReceived {
+                transferred_file: Some("Preview.bin".into()),
+            },
+        )?;
+        ensure!(
+            state
+                .frontend
+                .network_setup_protocol
+                .as_ref()
+                .and_then(|protocol| protocol.received_preview())
+                .is_some_and(|(_, preview)| (preview.width, preview.height) == (69, 35)),
+            "the guest did not take the host's Preview.bin"
+        );
         ensure!(
             state.frontend.multiplayer_shell_runtime.start_staging() == staging,
             "the guest did not take the host's 'W'"
@@ -1947,7 +2059,7 @@ impl LanCapture {
                         NetworkSetupEvent::ParticipantJoined(self.human(true)?),
                     )?;
                     self.assert_guest_order(state, true)?;
-                    if self.target == LanTarget::GuestRandomMap {
+                    if self.target.random_map_guest() {
                         self.prepare_controlled_random_map(state)?;
                     }
                     let launch = self.host_options(state)?;
@@ -1975,7 +2087,7 @@ impl LanCapture {
                         requests.contains(&NetworkSetupRequest::MapStatus(status)),
                         "production map availability did not publish K{status}"
                     );
-                    if self.target == LanTarget::GuestRandomMap {
+                    if self.target.random_map_guest() {
                         self.guest_takes_start_staging(state, frame, &requests)?;
                     }
                     ensure!(
@@ -1993,9 +2105,10 @@ impl LanCapture {
                 }
             }
             LanPhase::Configured if setup_settled(state, false) => match self.target {
-                LanTarget::Guest | LanTarget::NoMap | LanTarget::TransferEligible => {
-                    self.settle(state)
-                }
+                LanTarget::Guest
+                | LanTarget::NoMap
+                | LanTarget::TransferEligible
+                | LanTarget::GuestRandomMapPreview => self.settle(state),
                 LanTarget::StartPrompt | LanTarget::StartPromptAccepted => {
                     self.drain_requests(state);
                     setup::service_event(state, NetworkSetupEvent::StartPrompt)?;

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -60,5 +60,5 @@
     "rng": "tools/rmg_oracle/gen_rng_vectors.py original Seed/Ranged constants and raw-store observation boundary"
   },
   "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --no-factories-events",
-  "payload_sha256": "8b72aeffc7457a2a4388e5f8ea06b725c009cb91f0e0794ac37b96b0a0e2e982"
+  "payload_sha256": "649550f1fdf27676ca986cf09bb8424cdf6c9e2ff5875e7ad0ddfadd0e782a34"
 }

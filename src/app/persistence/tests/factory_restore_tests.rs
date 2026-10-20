@@ -117,7 +117,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         ));
     // An on-map factory keeps the held build eligible after restore. Its
     // placement uses the same raw fixture boundary as production replay tests.
-    let producer_id = saved.allocate_stable_id();
+    let producer_id = saved.substrate_mut_for_test().allocate_stable_id();
     let producer_type = saved.interner().get("OTHER").unwrap();
     let mut producer = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
         producer_id,

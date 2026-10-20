@@ -250,11 +250,11 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
         .insert_profiled_light((0, 0), [0.512, 0.640, 0.768], 1.0);
     sim.publish_global_lighting(PaletteUpdate::from_scenario(&sim.session().lighting()));
     lights.apply_events(&terrain, sim.lighting_sources().pending());
-    sim.discard_lighting_events();
+    sim.lighting_sources_mut_for_test().discard_pending();
     sim.advance_triggers(None, None, FrameEffects::default());
     assert_eq!(sim.lighting_sources().pending().len(), 3);
     lights.apply_events(&terrain, sim.lighting_sources().pending());
-    sim.discard_lighting_events();
+    sim.lighting_sources_mut_for_test().discard_pending();
     //73 changes normal Ambient after the final RGB publication. Reconciling
     // that state must not infer a new Ion palette operation.
     lights.refresh(&terrain, &sim, 2);

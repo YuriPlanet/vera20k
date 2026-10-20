@@ -51,7 +51,7 @@ fn sinking_waterline_envelope_preserves_native_short_without_changing_simulation
 fn sinking_waterline_load_replaces_presentation_only_after_commit() {
     let rules = load_fixture_rules();
     let mut sim = load_fixture_simulation(true);
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate_mut_for_test().allocate_stable_id();
     let mut entity =
         crate::sim::game_entity::GameEntity::test_default(id, "TEST", "Americans", 0, 0);
     entity.set_type_ref_for_test(sim.intern("TEST"));

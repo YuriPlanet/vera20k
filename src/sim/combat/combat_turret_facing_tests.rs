@@ -385,8 +385,8 @@ TurretAnimIsVoxel={}\n\n\
 /// shot, hull turns, and FacingClass interpolation — turret current and
 /// desired facing and the `+0x6AF` latch, frame for frame, through VERA's
 /// `facing_update` and `apply_unit_facing`. Rows exercising arms VERA does not
-/// model on this path (OmniFire, TurretLocked, a simple deployer,
-/// a Battle Bunker, Magnetron, a NavCom, no weapon) are left out, as are
+/// model on this path (OmniFire, TurretLocked, a Battle Bunker, Magnetron,
+/// a NavCom, no weapon) are left out, as are
 /// targets off the map (negative world coordinates), which VERA's cell
 /// positions cannot hold.
 #[test]
@@ -425,8 +425,6 @@ fn turret_cadence_matches_the_original() {
         if weapon["present"] != 1
             || weapon["omni_fire"] != 0
             || weapon["turret_locked"] != 0
-            || int("simple_deployer") != 0
-            || int("deployed") != 0
             || int("bunkered") != 0
             || int("magnetron") != 0
             || !input["navcom_coord"].is_null()
@@ -441,12 +439,17 @@ fn turret_cadence_matches_the_original() {
             "[General]\nGuardAreaTargetingDelay={}\n\
              [VehicleTypes]\n0=MTNK\n[InfantryTypes]\n[BuildingTypes]\n0=GAPILE\n[AircraftTypes]\n\
              [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=105mm\nROT={rot}\nTurret=yes\n\
-             TurretSpins={}\n\
+             TurretSpins={}\nIsSimpleDeployer={}\n\
              [GAPILE]\nStrength=300\nArmor=heavy\n\
              [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\
              [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
             int("delay"),
-            if turret_spins { "yes" } else { "no" }
+            if turret_spins { "yes" } else { "no" },
+            if int("simple_deployer") != 0 {
+                "yes"
+            } else {
+                "no"
+            }
         )))
         .unwrap();
         let coord = |value: &serde_json::Value| {
@@ -472,6 +475,7 @@ fn turret_cadence_matches_the_original() {
         unit.last_fire_frame.set_for_test(int("last_fire"));
         unit.turret_rotation_latch
             .set_for_test(int("latch_init") != 0);
+        unit.set_unit_simple_deploy_for_test(int("deployed") != 0, false, false);
         let mut target = GameEntity::test_default(2, "GAPILE", "Soviet", 0, 0);
         if !input["target_coord"].is_null() {
             place(&mut target, coord(&input["target_coord"]));

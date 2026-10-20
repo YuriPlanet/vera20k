@@ -29,6 +29,46 @@ pub(crate) struct SkirmishPreviewTexture {
     /// Set when the texture holds a random-map setup preview rather than a
     /// chooser map's thumbnail, carrying the generation it was built from.
     pub setup_preview_generation: Option<u32>,
+    /// Set when the texture holds a LAN guest's received `Preview.bin`,
+    /// carrying its arrival number.
+    pub received_preview: Option<u32>,
+}
+
+/// A LAN guest whose map did not verify shows the host's `Preview.bin`, or
+/// nothing until it arrives (`0x005E1D3B` skips a null preview).
+pub(super) fn ensure_received_preview_texture(state: &mut AppState) {
+    let Some((arrival, preview)) = state
+        .frontend
+        .network_setup_protocol
+        .as_ref()
+        .and_then(|protocol| protocol.received_preview())
+    else {
+        state.frontend.skirmish_preview_texture = None;
+        return;
+    };
+    if state
+        .frontend
+        .skirmish_preview_texture
+        .as_ref()
+        .is_some_and(|texture| texture.received_preview == Some(arrival))
+    {
+        return;
+    }
+    let texture = state.renderer.batch_renderer.create_texture(
+        &state.renderer.gpu,
+        &preview.rgba,
+        preview.width,
+        preview.height,
+    );
+    let (width, height) = (preview.width, preview.height);
+    state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
+        selected_map_idx: usize::MAX,
+        texture,
+        width,
+        height,
+        setup_preview_generation: None,
+        received_preview: Some(arrival),
+    });
 }
 
 pub(super) fn push_start_marker_sprites(
@@ -106,7 +146,9 @@ pub(super) fn selected_preview_texture_is_current(
             // A setup-dialog preview happens to carry the selected index too, so it
             // has to be rejected explicitly or closing the dialog would leave the
             // generated image standing in for the chooser's own thumbnail.
-            cached.setup_preview_generation.is_none() && cached.selected_map_idx == selected_map_idx
+            cached.setup_preview_generation.is_none()
+                && cached.received_preview.is_none()
+                && cached.selected_map_idx == selected_map_idx
         })
 }
 
@@ -250,6 +292,7 @@ pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> b
         width: preview.width,
         height: preview.height,
         setup_preview_generation: Some(generation),
+        received_preview: None,
     });
     true
 }
@@ -341,6 +384,7 @@ pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx:
         width: decoded.width,
         height: decoded.height,
         setup_preview_generation: None,
+        received_preview: None,
     });
 }
 

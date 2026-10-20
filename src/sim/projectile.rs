@@ -2818,6 +2818,16 @@ pub fn projectile_shp_frame(
     projectile: &Projectile,
     projectile_type: &crate::rules::projectile_type::ProjectileType,
 ) -> u8 {
+    projectile_shp_frame_with_velocity(projectile, projectile_type, projectile.velocity)
+}
+
+/// Read-only directional frame selection, also used with client-sampled
+/// velocity. Animation counters stay authoritative; only direction varies.
+pub fn projectile_shp_frame_with_velocity(
+    projectile: &Projectile,
+    projectile_type: &crate::rules::projectile_type::ProjectileType,
+    velocity: ProjectileVelocity,
+) -> u8 {
     if projectile.visual.anim_low != 0 || projectile.visual.anim_high != 0 {
         return projectile.visual.runtime_frame;
     }
@@ -2833,7 +2843,6 @@ pub fn projectile_shp_frame(
     use native_math::{atan, d};
     // FCHS of the velocity Y, `Math::atan2 @ 0x004CAE30`, then the DirStruct
     // word conversion (FSUB pi/2, FMUL, ftol).
-    let velocity = projectile.velocity;
     let word = facing16_from_angle(atan(X::neg(d(velocity.y)), d(velocity.x)));
     // 46805D: the 32-step bucket of the angle word indexes the 0x007F4890 table.
     DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(word))] as u8
@@ -3221,7 +3230,7 @@ mod tests {
     fn simulation_hash_and_save_preserve_pending_projectile() {
         let mut empty = crate::sim::world::Simulation::new();
         let mut sim = crate::sim::world::Simulation::new();
-        let stable_id = sim.allocate_stable_id();
+        let stable_id = sim.substrate.allocate_stable_id();
         sim.admit_projectile(stable_id, spawn(ProjectileTarget::Cell { rx: 1, ry: 0 }));
         // Native in-scenario load restarts Scenario RNG from Seed0. Normalize
         // both controls so this fixture isolates projectile persistence/hash.

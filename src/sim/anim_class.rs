@@ -830,6 +830,38 @@ impl AnimStore {
         Some(anim)
     }
 
+    /// Apply OverlayClass's post-constructor CellAnim writes: `+0xD4` selects
+    /// the Tiberium ConvertClass when present and `+0xFC` receives CellClass's
+    /// current ground Z-adjust (`+0x10A`).
+    pub fn set_cell_anim_draw_authority(
+        &mut self,
+        id: AnimId,
+        remap_color: Option<HouseColorIndex>,
+        z_adjust: i32,
+    ) -> bool {
+        let Some(anim) = self.get_mut(id) else {
+            return false;
+        };
+        anim.remap = remap_color.map(AnimRemap::ColorScheme);
+        anim.z_adjust = z_adjust;
+        true
+    }
+
+    /// A house's colour conversion as the anim's remap (`+0xD4`), frozen at
+    /// the write; later disguise or owner changes must not recolor the anim.
+    /// Unit deploy739C1A/739DFE store the one Techno705D70 returns
+    /// (CustomPalette is not yet represented by this owner; stock SCHP uses
+    /// the house conversion); InfantryClass::ReceiveDamage's InfDeath 9 arm
+    /// the house's colour scheme's (`0x00518AB5..0x00518AC9`,
+    /// `0x00518AE4..0x00518AF9`).
+    pub fn set_anim_house_remap(&mut self, id: AnimId, house: InternedId) -> bool {
+        let Some(anim) = self.get_mut(id) else {
+            return false;
+        };
+        anim.remap = Some(AnimRemap::House(house));
+        true
+    }
+
     pub(crate) fn insert(&mut self, object: AnimObject) -> Option<AnimObject> {
         self.touched.note(object.stable_id, self.anims.len());
         self.anims.insert(object.stable_id, object)
@@ -1452,7 +1484,7 @@ impl Simulation {
             .stop_sound
             .as_deref()
             .map(|sound| self.interner.intern(sound));
-        let stable_id = self.allocate_stable_id();
+        let stable_id = self.substrate.allocate_stable_id();
         if self.substrate.anims.contains_key(stable_id)
             || self.substrate.entities.contains(stable_id)
         {
@@ -2219,7 +2251,14 @@ impl Simulation {
     /// the current type's layer.
     pub(crate) fn submit_anim_display(&mut self, id: AnimId, rules: Option<&RuleSet>) {
         if let Some(layer) = self.anim_display_layer(id, rules) {
-            self.submit_object_display(id, layer, rules);
+            Self::submit_object_display(
+                &self.interner,
+                &self.terrain_objects,
+                &mut self.substrate,
+                id,
+                layer,
+                rules,
+            );
         } else {
             self.substrate.display.remove(id);
         }
@@ -2359,38 +2398,6 @@ impl Simulation {
             anim.runtime.rate_reload = duration;
             anim.runtime.current_frame = frame;
         }
-    }
-
-    /// Apply OverlayClass's post-constructor CellAnim writes: `+0xD4` selects
-    /// the Tiberium ConvertClass when present and `+0xFC` receives CellClass's
-    /// current ground Z-adjust (`+0x10A`).
-    pub fn set_cell_anim_draw_authority(
-        &mut self,
-        id: AnimId,
-        remap_color: Option<HouseColorIndex>,
-        z_adjust: i32,
-    ) -> bool {
-        let Some(anim) = self.substrate.anims.get_mut(id) else {
-            return false;
-        };
-        anim.remap = remap_color.map(AnimRemap::ColorScheme);
-        anim.z_adjust = z_adjust;
-        true
-    }
-
-    /// A house's colour conversion as the anim's remap (`+0xD4`), frozen at
-    /// the write; later disguise or owner changes must not recolor the anim.
-    /// Unit deploy739C1A/739DFE store the one Techno705D70 returns
-    /// (CustomPalette is not yet represented by this owner; stock SCHP uses
-    /// the house conversion); InfantryClass::ReceiveDamage's InfDeath 9 arm
-    /// the house's colour scheme's (`0x00518AB5..0x00518AC9`,
-    /// `0x00518AE4..0x00518AF9`).
-    pub fn set_anim_house_remap(&mut self, id: AnimId, house: InternedId) -> bool {
-        let Some(anim) = self.substrate.anims.get_mut(id) else {
-            return false;
-        };
-        anim.remap = Some(AnimRemap::House(house));
-        true
     }
 
     /// Original43B5E0: caller supplies the target's GetCoords and the name;
@@ -3825,7 +3832,7 @@ mod tests {
                 &[("A", 10), ("A_NEXT", 10)],
             );
             let mut sim = Simulation::with_seed(0);
-            let owner_id = sim.allocate_stable_id();
+            let owner_id = sim.substrate.allocate_stable_id();
             let owner_name = sim.interner.intern("HOUSE");
             let type_ref = sim.interner.intern("UNIT");
             let mut owner = GameEntity::new_at_frame_zero_for_test(
@@ -4013,7 +4020,7 @@ mod tests {
         for name in ["FIRE01", "FIRE02", "FIRE03"] {
             sim.interner.intern(name);
         }
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         let mut building = GameEntity::new_at_frame_zero_for_test(
             id,
             10,
@@ -4136,7 +4143,7 @@ mod tests {
             let ids: Vec<u64> = [(10, 10), (14, 3), (6, 9), (12, 12), (8, 15)]
                 .into_iter()
                 .map(|(rx, ry)| {
-                    let id = sim.allocate_stable_id();
+                    let id = sim.substrate.allocate_stable_id();
                     sim.substrate
                         .entities
                         .insert(GameEntity::new_at_frame_zero_for_test(

@@ -107,7 +107,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
     assert!((0..=1).contains(&count));
     let mut cargo = PassengerCargo::new(1, 0.0);
     for _ in 0..count {
-        let occupant_id = sim.allocate_stable_id();
+        let occupant_id = sim.substrate.allocate_stable_id();
         let mut occupant = GameEntity::test_default_of_category(
             occupant_id,
             "E1",

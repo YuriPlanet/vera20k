@@ -11,7 +11,8 @@ use vera20k::asset_tools::names::NameDict;
 use vera20k::asset_tools::report::{ErrorReport, to_json};
 use vera20k::asset_tools::{
     palette, render_dispatch, retail_corpus, root, verb_art, verb_compare, verb_csf, verb_extract,
-    verb_find, verb_info, verb_ini, verb_ls, verb_palette, verb_parse_check, verb_scan, verb_sound,
+    verb_find, verb_info, verb_ini, verb_ini_expand, verb_ls, verb_palette, verb_parse_check,
+    verb_scan, verb_sound,
 };
 
 const EXIT_FAILED: i32 = 1;
@@ -53,7 +54,13 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
         })?;
     log::info!("retail root {} (from {source:?})", ra2_dir.display());
 
-    let mut manager = root::open_manager(&ra2_dir, cli.all_mixes).map_err(|error| ErrorReport {
+    let source_only = matches!(cli.verb, Verb::IniExpand { .. }) && cli.ini_source_only;
+    let manager = if source_only {
+        root::open_ini_probe_manager(&ra2_dir, cli.all_mixes)
+    } else {
+        root::open_manager(&ra2_dir, cli.all_mixes)
+    };
+    let mut manager = manager.map_err(|error| ErrorReport {
         error,
         hint: Some(format!(
             "check that {} is the install root containing ra2md.mix",
@@ -63,6 +70,17 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
 
     match cli.verb {
         Verb::Help => unreachable!("handled before dispatch"),
+        Verb::IniExpand { name } => {
+            let report = verb_ini_expand::run(
+                &manager,
+                &name,
+                cli.ini_strict,
+                cli.ini_max_depth,
+                cli.all_mixes,
+                source_only,
+            )?;
+            println!("{}", to_json(&report));
+        }
         Verb::IniGet { section, key } => {
             let report = verb_ini::run(
                 &mut manager,

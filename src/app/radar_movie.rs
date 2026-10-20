@@ -399,7 +399,7 @@ mod tests {
             let mut sim = Simulation::with_seed(0);
             sim.session_mut_for_test().set_input_locked_for_test(true);
             if row["initial_hold"].as_bool().unwrap() {
-                sim.pause_scenario(0);
+                sim.pause_scenario_for_test(0);
             }
             let mut log = ReplayLog::new(ReplayHeader {
                 pixel_conversion_bounds: Default::default(),

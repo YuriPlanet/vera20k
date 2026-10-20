@@ -306,7 +306,9 @@ impl Simulation {
         {
             self.set_anim_owner_object(anim, Some(victim), rules);
             if let Some(source) = self.substrate.entities.get(owner) {
-                self.set_anim_house_remap(anim, source.owner());
+                self.substrate
+                    .anims
+                    .set_anim_house_remap(anim, source.owner());
             }
             if let Some(target) = self.substrate.entities.get(victim)
                 && let Some(cell) = self

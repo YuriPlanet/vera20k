@@ -45,7 +45,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
         32,
     ));
-    let miner = sim.allocate_stable_id();
+    let miner = sim.substrate_mut_for_test().allocate_stable_id();
     sim.entities_mut_for_test()
         .insert(crate::sim::game_entity::GameEntity::test_default(
             miner,

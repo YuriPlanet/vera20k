@@ -1569,7 +1569,7 @@ ConditionYellow=50%
         rx: u16,
         ry: u16,
     ) -> u64 {
-        let stable_id = sim.allocate_stable_id();
+        let stable_id = sim.substrate.allocate_stable_id();
         let owner_id = sim.interner.intern(owner_str);
         let type_id = sim.interner.intern(type_ref);
         let obj = rules.object(type_ref).expect("transport type exists");
@@ -1611,7 +1611,7 @@ ConditionYellow=50%
         rx: u16,
         ry: u16,
     ) -> u64 {
-        let stable_id = sim.allocate_stable_id();
+        let stable_id = sim.substrate.allocate_stable_id();
         let owner_id = sim.interner.intern(owner_str);
         let type_id = sim.interner.intern(type_ref);
         let mut ge = GameEntity::test_default(stable_id, type_ref, owner_str, rx, ry);

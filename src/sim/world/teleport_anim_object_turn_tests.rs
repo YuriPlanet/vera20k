@@ -329,7 +329,7 @@ fn retail_cmin_teleport_preserves_departure_cell_through_guidance_and_snapshot()
     let mut sim = relocating_owner(EntityCategory::Unit, "CMIN", (9, 8));
     install_destination_cells(&mut sim, &rules);
     sim.session.set_binary_frame_for_test(1);
-    let bullet_id = sim.allocate_stable_id();
+    let bullet_id = sim.substrate.allocate_stable_id();
     let payload = ProjectilePayload::new(
         weapon.damage,
         sim.intern(weapon.warhead.as_deref().unwrap()),

@@ -15,6 +15,65 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
 
+/// Selection uses the last prepared presentation sample, not a temporary
+/// mutation of authoritative entities. Native callers/tests retain raw geometry.
+pub(crate) trait PickSource: Copy {
+    fn entities(&self) -> &EntityStore;
+    fn screen_position(&self, entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
+        crate::render::locomotor_visual::screen_position(entity)
+    }
+}
+impl PickSource for &EntityStore {
+    fn entities(&self) -> &EntityStore {
+        self
+    }
+}
+
+pub(crate) trait PickWorld: PickSource {
+    fn simulation(&self) -> &crate::sim::world::Simulation;
+}
+impl PickSource for &crate::sim::world::Simulation {
+    fn entities(&self) -> &EntityStore {
+        crate::sim::world::Simulation::entities(self)
+    }
+}
+impl PickWorld for &crate::sim::world::Simulation {
+    fn simulation(&self) -> &crate::sim::world::Simulation {
+        self
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct PresentedWorld<'a> {
+    pub sim: &'a crate::sim::world::Simulation,
+    pub interpolation: &'a crate::app::presentation::interpolation::RenderInterpolation,
+}
+impl PickSource for PresentedWorld<'_> {
+    fn entities(&self) -> &EntityStore {
+        self.sim.entities()
+    }
+    fn screen_position(&self, entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
+        let pose = self
+            .interpolation
+            .sample_entity(entity, self.sim.session().binary_frame());
+        (pose.screen[0], pose.screen[1] - pose.visual_lift)
+    }
+}
+impl PickWorld for PresentedWorld<'_> {
+    fn simulation(&self) -> &crate::sim::world::Simulation {
+        self.sim
+    }
+}
+pub(crate) fn presented<'a>(
+    state: &'a crate::app::AppState,
+    sim: &'a crate::sim::world::Simulation,
+) -> PresentedWorld<'a> {
+    PresentedWorld {
+        sim,
+        interpolation: &state.match_state.match_presentation.interpolation,
+    }
+}
+
 /// Elliptical distance threshold for picking objects at a screen point.
 /// `dx*dx + 0.5*dy*dy < 200` with 0.5 Y-weight compensating for isometric projection.
 /// Max horizontal reach: sqrt(200) ≈ 14px, max vertical reach: sqrt(400) = 20px.
@@ -59,13 +118,14 @@ fn pick_distance_sq(dx: f32, dy: f32) -> f32 {
 /// The object under the cursor that DetermineAction sees, for the cursor and
 /// the click, among those [`pick_admits_object`] admits.
 pub(crate) fn hover_target_at_point(
-    sim: &crate::sim::world::Simulation,
+    source: impl PickWorld,
     world_x: f32,
     world_y: f32,
     local_owner: &str,
     ignore_visibility: bool,
     rules: Option<&RuleSet>,
 ) -> Option<HoverTargetKindWithId> {
+    let sim = source.simulation();
     let cells = crate::app::match_runtime::sim_tick::tactical_cells(sim);
     let player = sim.interner().get(local_owner);
     let fog = (!ignore_visibility).then_some(sim.fog());
@@ -90,11 +150,7 @@ pub(crate) fn hover_target_at_point(
         let is_structure = entity.category() == EntityCategory::Structure;
         let type_str = sim.interner().resolve(entity.type_ref());
         let owner_str = sim.interner().resolve(entity.owner());
-        let (sx, sy) = if is_structure {
-            crate::render::locomotor_visual::screen_position(entity)
-        } else {
-            crate::app::presentation::instances::interpolated_screen_position_entity(entity)
-        };
+        let (sx, sy) = source.screen_position(entity);
         // Hit test: structures use foundation cells, mobile units use elliptical distance.
         if is_structure {
             let foundation = rules
@@ -206,7 +262,7 @@ pub(crate) fn compute_click_selection_snapshot(
 }
 
 pub(crate) fn compute_click_selection_snapshot_with_playfield(
-    entities: &EntityStore,
+    source: impl PickSource,
     encounter_order: &[u64],
     current_selection: &[u64],
     fog: Option<&FogState>,
@@ -221,8 +277,9 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
     require_playfield_membership: bool,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> Option<SelectionMutation> {
+    let entities = source.entities();
     let Some(picked_sid) = pick_entity_at_point(
-        entities,
+        source,
         encounter_order,
         fog,
         local_owner,
@@ -344,7 +401,7 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
 /// object, so the shroud filter above is complete: there is no second, unfiltered
 /// path by which a hidden enemy could enter the list.
 pub(crate) fn band_rect_contains_drawn_object(
-    entities: &EntityStore,
+    source: impl PickSource,
     encounter_order: &[u64],
     fog: Option<(&FogState, &crate::map::houses::HouseAllianceMap)>,
     local_owner: Option<&str>,
@@ -354,6 +411,7 @@ pub(crate) fn band_rect_contains_drawn_object(
     max_y: f32,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
+    let entities = source.entities();
     let local_owner_id = local_owner.and_then(|o| interner.and_then(|i| i.get(o)));
     encounter_order.iter().any(|id| {
         let Some(entity) = entities.get(*id) else {
@@ -362,8 +420,7 @@ pub(crate) fn band_rect_contains_drawn_object(
         if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
             return false;
         }
-        let (sx, sy) =
-            crate::app::presentation::instances::interpolated_screen_position_entity(entity);
+        let (sx, sy) = source.screen_position(entity);
         if !(sx >= min_x && sx <= max_x && sy >= min_y && sy <= max_y) {
             return false;
         }
@@ -489,7 +546,7 @@ pub(crate) fn compute_box_selection_snapshot(
 }
 
 pub(crate) fn compute_box_selection_snapshot_with_playfield(
-    entities: &EntityStore,
+    source: impl PickSource,
     preflight_order: &[u64],
     encounter_order: &[u64],
     current_selection: &[u64],
@@ -506,7 +563,7 @@ pub(crate) fn compute_box_selection_snapshot_with_playfield(
     require_playfield_membership: bool,
 ) -> Option<SelectionMutation> {
     if !band_rect_contains_drawn_object(
-        entities,
+        source,
         preflight_order,
         fog,
         local_owner,
@@ -519,7 +576,7 @@ pub(crate) fn compute_box_selection_snapshot_with_playfield(
         return None;
     }
     let candidates = entities_in_rect(
-        entities,
+        source,
         encounter_order,
         fog.map(|(fog, _)| fog),
         local_owner,
@@ -775,7 +832,7 @@ pub(crate) fn compute_type_select_click_mutation_with_playfield(
 }
 
 pub(crate) fn compute_type_select_box_mutation_with_playfield(
-    entities: &EntityStore,
+    source: impl PickSource,
     screen_order: &[u64],
     scope_order: &[u64],
     current_selection: &[u64],
@@ -790,13 +847,13 @@ pub(crate) fn compute_type_select_box_mutation_with_playfield(
     interner: Option<&crate::sim::intern::StringInterner>,
     require_playfield_membership: bool,
 ) -> SelectionMutation {
+    let entities = source.entities();
     let mut represented_types = Vec::new();
     for &id in screen_order {
         let Some(entity) = entities.get(id) else {
             continue;
         };
-        let (sx, sy) =
-            crate::app::presentation::instances::interpolated_screen_position_entity(entity);
+        let (sx, sy) = source.screen_position(entity);
         if !entity.lifecycle.object_alive() || sx < min_x || sx > max_x || sy < min_y || sy > max_y
         {
             continue;
@@ -858,7 +915,7 @@ fn exact_type_group(
 }
 
 fn entities_in_rect(
-    entities: &EntityStore,
+    source: impl PickSource,
     encounter_order: &[u64],
     _fog: Option<&FogState>,
     local_owner: Option<&str>,
@@ -871,14 +928,14 @@ fn entities_in_rect(
     interner: Option<&crate::sim::intern::StringInterner>,
     require_playfield_membership: bool,
 ) -> Vec<u64> {
+    let entities = source.entities();
     encounter_order
         .iter()
         .filter_map(|entity| {
             let entity = entities.get(*entity)?;
             // Rectangle first, the way the native walk does it: the per-object
             // filter only runs for objects the box actually covers.
-            let (sx, sy) =
-                crate::app::presentation::instances::interpolated_screen_position_entity(entity);
+            let (sx, sy) = source.screen_position(entity);
             if !(sx >= min_x && sx <= max_x && sy >= min_y && sy <= max_y) {
                 return None;
             }
@@ -1055,7 +1112,7 @@ fn click_hits_foundation(
 }
 
 pub(crate) fn pick_entity_at_point(
-    entities: &EntityStore,
+    source: impl PickSource,
     encounter_order: &[u64],
     fog: Option<&FogState>,
     local_owner: Option<&str>,
@@ -1067,6 +1124,7 @@ pub(crate) fn pick_entity_at_point(
     interner: Option<&crate::sim::intern::StringInterner>,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> Option<u64> {
+    let entities = source.entities();
     let cells = terrain.map(|terrain| terrain as &dyn crate::map::terrain::TacticalCellLookup);
     // Elliptical pick distance: dx² + 0.5*dy² < 200, with the 0.5 Y-weight
     // compensating for isometric projection.
@@ -1099,8 +1157,7 @@ pub(crate) fn pick_entity_at_point(
         }
         // Native6DA380 tests lifecycle/cloak after the clicked Cell gate;
         // it does not repeat a raw anchor-cell shroud or discovery test.
-        let (sx, sy) =
-            crate::app::presentation::instances::interpolated_screen_position_entity(entity);
+        let (sx, sy) = source.screen_position(entity);
         let distance = pick_distance_sq(sx - world_x, sy - world_y) as i32;
         if distance < PICK_DISTANCE_THRESHOLD as i32
             && best.is_none_or(|(_, best_distance)| distance < best_distance)

@@ -315,7 +315,39 @@ pub(crate) fn emit_bunker_wall_sound(
     });
 }
 
-/// Normal release4595C0, reached by linked Unit Mission_Unload73D66D.
+/// The head of `UnitClass::Mission_Unload @ 0x0073D630`
+/// (`0x0073D63B..0x0073D66D`): a Unit linked into a tank bunker (`+0x2E4`)
+/// empties the building on its own cell (GetOccupiedCell vt+0x1BC,
+/// `Look_up_building_in_cell @ 0x0047C520`) through
+/// `BuildingClass::EmptyBunker @ 0x004595C0` ([`release_normal`]). Returns
+/// whether the unit was linked: its Unload then resumes at `0x0073D672`,
+/// past the deploy-fire and transport arms.
+pub(crate) fn unit_unload_empties_bunker(
+    sim: &mut Simulation,
+    unit_id: u64,
+    rules: &RuleSet,
+    effects: FrameEffects<'_>,
+) -> bool {
+    let Some(unit) = sim
+        .substrate
+        .entities
+        .get(unit_id)
+        .filter(|unit| unit.bunker.link().installed_in().is_some())
+    else {
+        return false;
+    };
+    if let Some(building) = sim.substrate.occupancy.first_building_on_layer(
+        unit.position.rx(),
+        unit.position.ry(),
+        crate::sim::movement::locomotor::MovementLayer::Ground,
+    ) {
+        release_normal(sim, building, rules, effects);
+    }
+    true
+}
+
+/// Normal release4595C0, reached by linked Unit Mission_Unload73D66D
+/// ([`unit_unload_empties_bunker`]) and the bunker's own unload order.
 /// Unlike sell/death, it clears the unit link before Power_On/Force, then
 /// assigns a nearby destination ([`bunker_exit_cell`]) and queues Move before
 /// clearing the building. The wall-animation projection remains a bounded

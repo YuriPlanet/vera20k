@@ -209,12 +209,18 @@ pub fn enqueue_by_type(
 
 /// The SUSPEND event: `HouseClass::Suspend_Production @ 0x004FA910` puts the
 /// category's running build on hold.
-pub fn suspend_production(sim: &mut Simulation, owner: &str, category: ProductionCategory) -> bool {
-    let Some(owner_id) = sim.interner.get(owner) else {
+pub(crate) fn suspend_production(
+    interner: &StringInterner,
+    production: &mut ProductionState,
+    session: &ScenarioSession,
+    owner: &str,
+    category: ProductionCategory,
+) -> bool {
+    let Some(owner_id) = interner.get(owner) else {
         return false;
     };
-    let frame = sim.session.binary_frame();
-    sim.production
+    let frame = session.binary_frame();
+    production
         .factories_mut()
         .suspend(owner_id, category, frame, true)
 }

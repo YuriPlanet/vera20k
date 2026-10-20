@@ -95,6 +95,8 @@ pub(crate) fn render_multiplayer_setup(
     let sliding = wave.is_some();
     if let Some(index) = view.selected_map_index {
         ensure_map_preview_texture(state, index);
+    } else if !view.host {
+        super::preview::ensure_received_preview_texture(state);
     } else {
         state.frontend.skirmish_preview_texture = None;
     }
@@ -147,8 +149,8 @@ pub(crate) fn render_multiplayer_setup(
     let font = &state.renderer.bit_font;
     let mut art =
         super::launcher_options::launcher_background_instances(atlas, width, height, scale);
-    //72CF40 installs Cooperative setup art for BC/BD; it is independent of
-    // the user's intentional RA2 art choice for offline Skirmish.
+    //72CF40 installs Cooperative setup art for BC/BD. WOL C2/C9 take the
+    // user's intentional RA2 art, as offline Skirmish does.
     if let Some(background) = atlas.lan_background(
         view.page().dialog.0,
         if scale.is_retail() { width } else { 800 },
@@ -430,12 +432,23 @@ pub(crate) fn render_multiplayer_setup(
                     preview.width,
                     preview.height,
                 );
-                if let Some(entry) = view
-                    .selected_map_index
-                    .and_then(|index| state.frontend.scenario_catalog.shell_maps().get(index))
-                    && !super::preview::is_random_map_sentinel_entry(entry)
-                    && let Some(bounds) = entry.preview_source_bounds.as_ref()
-                {
+                // A received preview's markers are the host's 'W' pairs over
+                // its bounds, drawn when 1 <= count <= 8 (0x00640710).
+                let received_bounds = (preview.received_preview.is_some())
+                    .then(|| {
+                        state
+                            .frontend
+                            .multiplayer_shell_runtime
+                            .start_staging()
+                            .preview_source_bounds()
+                    })
+                    .flatten();
+                if let Some(bounds) = received_bounds.as_ref().or_else(|| {
+                    view.selected_map_index
+                        .and_then(|index| state.frontend.scenario_catalog.shell_maps().get(index))
+                        .filter(|entry| !super::preview::is_random_map_sentinel_entry(entry))
+                        .and_then(|entry| entry.preview_source_bounds.as_ref())
+                }) {
                     let fitted = aspect_fit_rect(layout.map_preview, preview.width, preview.height);
                     let positions = project_preview_start_positions(bounds, fitted);
                     push_start_marker_sprites(&mut controls, atlas, &positions, scale, 0.00056);

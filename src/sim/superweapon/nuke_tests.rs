@@ -214,7 +214,7 @@ fn impact_effects_match_native() {
         }
         compared += 1;
         let location = coord(&row["location_after"]);
-        let id = sim.allocate_stable_id();
+        let id = sim.substrate.allocate_stable_id();
         let spawn = nuke_spawn(
             &mut sim.interner,
             "NUKE",
@@ -999,7 +999,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
 /// the production creator. The image bound remains a lib fixture input.
 fn impact_waiting_nuke(sim: &mut Simulation, rules: &RuleSet) -> (u64, AnimId) {
     let at = ProjectileCoord::new(8 * 256 + 128, 8 * 256 + 128, 0);
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut spawn = nuke_spawn(&mut sim.interner, "NUKE", at, rules.weapon("NukePayload"));
     // The shared head fixture aims ten cells east. This local impact must
     // instead retain its own target/reference: the real post-wait ladder
@@ -1339,7 +1339,7 @@ fn nuke_awaited_anim_reference_restore_validates_without_wait_flag() {
     };
     let (rules, mut sim, _) = world_with(rules, 64, &[]);
     // A non-waiting Bullet holding +154 remains a strong native load reference.
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let at = ProjectileCoord::new(8 * 256 + 128, 8 * 256 + 128, 0);
     let spawn = nuke_spawn(&mut sim.interner, "NUKE", at, rules.weapon("NukePayload"));
     sim.admit_projectile(id, spawn);
@@ -1458,7 +1458,7 @@ fn retail_nuke_wait_and_flash_survive_save_and_load() {
     sim.resolve_type_handles(&rules);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let at = ProjectileCoord::new(8 * 256 + 128, 8 * 256 + 128, 0);
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let spawn = nuke_spawn(&mut sim.interner, "NUKE", at, rules.weapon("NukePayload"));
     sim.admit_projectile(id, spawn);
     // The impact as `BulletClass::AI` takes it, then five frames of the wait.

@@ -928,7 +928,8 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
             // The original component starts before the later Building/Foot
             // population. Run its wall Mark material through the shared owner;
             // do not copy its resulting data/122/zone fields from the packet.
-            sim.acknowledge_radar_terrain_dirty(sim.dirty_cells.radar_generation());
+            sim.dirty_cells
+                .acknowledge_radar(sim.dirty_cells.radar_generation());
             for placement in construction["placements"].as_array().unwrap() {
                 let coordinate = (
                     placement["cell"][0].as_u64().unwrap() as u16,
@@ -1030,7 +1031,8 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         sim.mapgen_rng = SimRng::new(seed);
         assert_eq!(rng(sim), case["initial"]["rng"]);
         if case.get("construction").is_none() {
-            sim.acknowledge_radar_terrain_dirty(sim.dirty_cells.radar_generation());
+            sim.dirty_cells
+                .acknowledge_radar(sim.dirty_cells.radar_generation());
         }
         assert_eq!(
             json!(sim.dirty_cells.radar()),

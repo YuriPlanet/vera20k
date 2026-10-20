@@ -90,7 +90,7 @@ fn rules(input: &Value) -> RuleSet {
 /// land speeds for a vehicle's Unlimbo, and the block reads only the source's
 /// class, house and position.
 fn enemy(sim: &mut Simulation, kind: &str, category: EntityCategory, cell: (u16, u16)) -> u64 {
-    let id = sim.allocate_stable_id();
+    let id = sim.substrate.allocate_stable_id();
     let mut entity = GameEntity::test_default(id, kind, "Russians", cell.0, cell.1);
     entity.set_owner_for_test(sim.intern("Russians"));
     entity.set_type_ref_for_test(sim.intern(kind));

@@ -204,7 +204,7 @@ fn tactical_bounded_entity_encounter_order(
         .and_then(|owner| sim.interner().get(owner));
 
     compose_tactical_screen_entity_encounter_order(
-        sim,
+        crate::app::input::entity_pick::presented(state, sim),
         (min_x, min_y, max_x, max_y),
         local_owner.as_deref(),
         local_owner_id,
@@ -217,7 +217,7 @@ fn tactical_bounded_entity_encounter_order(
 }
 
 fn compose_tactical_screen_entity_encounter_order(
-    sim: &crate::sim::world::Simulation,
+    source: impl crate::app::input::entity_pick::PickWorld,
     bounds: (f32, f32, f32, f32),
     local_owner: Option<&str>,
     local_owner_id: Option<InternedId>,
@@ -227,6 +227,7 @@ fn compose_tactical_screen_entity_encounter_order(
     bulk_register_live_buildings: bool,
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> Vec<u64> {
+    let sim = source.simulation();
     let (min_x, min_y, max_x, max_y) = bounds;
     let mut candidates = tactical_entity_encounter_order(sim);
     // Band-box preflight has a separate native bulk Building registration
@@ -266,7 +267,7 @@ fn compose_tactical_screen_entity_encounter_order(
                 if !admitted {
                     return false;
                 }
-                let (x, y) = interpolated_screen_position_entity(entity);
+                let (x, y) = source.screen_position(entity);
                 x >= min_x && x <= max_x && y >= min_y && y <= max_y
             })
         })
@@ -407,12 +408,16 @@ pub(crate) fn apply_shape_z_adjust(depth: f32, z_adjust_px: i32, world_height: f
     (depth + z_adjust_px as f32 / world_height.max(1.0)).clamp(0.001, 0.999)
 }
 
-/// Where this entity is drawn, sub-cell offsets and height lift included.
+/// The authoritative anchor, sub-cell offsets and height lift included.
 ///
 /// Thin wrapper over [`crate::render::locomotor_visual::screen_position`],
 /// which is the single owner of the answer. Callers must NOT apply a height
 /// offset of their own on top — doing that in two places is what used to lift
 /// aircraft twice.
+/// Despite its legacy name, this is not the experimental render interpolation:
+/// native comparisons retain this current-state anchor. Live rendering and
+/// picking use `presentation::interpolation` with explicit client state.
+#[cfg(test)]
 pub(crate) fn interpolated_screen_position_entity(
     entity: &crate::sim::game_entity::GameEntity,
 ) -> (f32, f32) {

@@ -2448,15 +2448,22 @@ impl Simulation {
 
     /// Shared Scenario SetGlobal689670/SetLocal689910 mutation, including
     /// Tag timer resets. Trigger and Team scripts use this same owner.
-    pub fn set_trigger_variable(&mut self, global: bool, index: i32, set: bool) -> bool {
+    pub(crate) fn set_trigger_variable(
+        session: &ScenarioSession,
+        scenario_rng: &mut SimRng,
+        trigger_runtime: &mut TriggerRuntime,
+        global: bool,
+        index: i32,
+        set: bool,
+    ) -> bool {
         let count = if global { SCENARIO_GLOBAL_COUNT } else { 100 };
         if !(0..count as i32).contains(&index) {
             return false;
         }
         let values = if global {
-            &mut self.trigger_runtime.globals_set
+            &mut trigger_runtime.globals_set
         } else {
-            &mut self.trigger_runtime.locals_set
+            &mut trigger_runtime.locals_set
         };
         let previous = values.contains(&(index as u32));
         if set {
@@ -2465,28 +2472,23 @@ impl Simulation {
             values.remove(&(index as u32));
         }
         if previous != set {
-            self.trigger_runtime.dirty[0] = true;
+            trigger_runtime.dirty[0] = true;
             let events = if global { [27, 28] } else { [36, 37] };
             //689670/689910 -> Tag6E57F0/6E5820 ->7263A0/7263D0:
             // Tag registry order, then each reversed live chain, including
             // disabled instances. This differs from Enable53's global array.
             let mut tag_ordinal = 0;
-            while tag_ordinal < self.trigger_runtime.tag_order.len() {
-                let tag = self.trigger_runtime.tag_order[tag_ordinal];
-                let chain = self.trigger_runtime.tag(tag).unwrap().triggers.clone();
+            while tag_ordinal < trigger_runtime.tag_order.len() {
+                let tag = trigger_runtime.tag_order[tag_ordinal];
+                let chain = trigger_runtime.tag(tag).unwrap().triggers.clone();
                 for live in chain {
-                    let typ = self.trigger_runtime.trigger(live).unwrap().type_index;
-                    if self.trigger_runtime.definitions.trigger_types[typ]
+                    let typ = trigger_runtime.trigger(live).unwrap().type_index;
+                    if trigger_runtime.definitions.trigger_types[typ]
                         .events
                         .iter()
                         .any(|e| events.contains(&e.kind) && e.value == index)
                     {
-                        Self::reset_trigger_timers(
-                            &self.session,
-                            &mut self.scenario_rng,
-                            &mut self.trigger_runtime,
-                            live,
-                        );
+                        Self::reset_trigger_timers(session, scenario_rng, trigger_runtime, live);
                     }
                 }
                 tag_ordinal += 1;
@@ -4009,7 +4011,10 @@ impl Simulation {
             ACTION_SET_GLOBAL | ACTION_CLEAR_GLOBAL | ACTION_SET_LOCAL | ACTION_CLEAR_LOCAL => {
                 let global = matches!(action.kind, ACTION_SET_GLOBAL | ACTION_CLEAR_GLOBAL);
                 if let Some(index) = value {
-                    self.set_trigger_variable(
+                    Self::set_trigger_variable(
+                        &self.session,
+                        &mut self.scenario_rng,
+                        &mut self.trigger_runtime,
                         global,
                         index,
                         matches!(action.kind, ACTION_SET_GLOBAL | ACTION_SET_LOCAL),

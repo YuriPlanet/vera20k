@@ -180,12 +180,24 @@ fn tactical_cell_tip_text(
 /// Display4AE4F0's tactical region text. World is in projected world pixels,
 /// shared with the ordinary tactical pointer picker. Source:
 /// `python -m tools.native_inspect disasm 0x4AE4F0 --bytes 0x1B5`.
+#[cfg(test)]
 fn tactical_world_tip_text(
     view: crate::sim::runtime::SimView<'_>,
     rules: &crate::rules::ruleset::RuleSet,
     csf: Option<&crate::assets::csf_file::CsfFile>,
     world: (f32, f32),
     cursor_coordinates: bool,
+) -> String {
+    tactical_world_tip_text_sampled(view, rules, csf, world, cursor_coordinates, None)
+}
+
+fn tactical_world_tip_text_sampled(
+    view: crate::sim::runtime::SimView<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    csf: Option<&crate::assets::csf_file::CsfFile>,
+    world: (f32, f32),
+    cursor_coordinates: bool,
+    interpolation: Option<&crate::app::presentation::interpolation::RenderInterpolation>,
 ) -> String {
     let Some((terrain, viewer)) = view.resolved_terrain().zip(view.session().current_house())
     else {
@@ -209,8 +221,12 @@ fn tactical_world_tip_text(
     // and foundation fallback, instead of keeping a tooltip object pointer.
     let sim = view.simulation();
     let order = crate::app::presentation::instances::tactical_entity_encounter_order(sim);
+    let native = crate::app::presentation::interpolation::RenderInterpolation::new(false);
     let picked = crate::app::input::entity_pick::pick_entity_at_point(
-        view.entities(),
+        crate::app::input::entity_pick::PresentedWorld {
+            sim,
+            interpolation: interpolation.unwrap_or(&native),
+        },
         &order,
         Some(view.fog()),
         Some(view.interner().resolve(viewer)),
@@ -294,12 +310,13 @@ fn tactical_tip_text(state: &AppState) -> String {
         input.cursor_x,
         input.cursor_y,
     );
-    tactical_world_tip_text(
+    tactical_world_tip_text_sampled(
         view,
         rules,
         state.process_assets.csf.as_ref(),
         world,
         input.cursor_coordinates,
+        Some(&state.match_state.match_presentation.interpolation),
     )
 }
 
