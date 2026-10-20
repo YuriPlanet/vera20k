@@ -43,6 +43,11 @@ pub(crate) fn pose(
     let point_y = adjust_for_z_standard(height);
     //73C423/73C468/73C472: high flight has no mask; positive low flight
     //sets key -1, while a grounded mask has its own high-bit cache entry.
+    // Residual: 73C43F..73C457 takes that key change only for BalloonHover
+    // (+D6A) or SpeedType Track/Wheel (+67C 1/2); other Jumpjets (stock
+    // SCHP, SHAD, HIND) keep the plain cached key with the mask present.
+    // Unported: those types take this path while grounded or in low flight,
+    // likely a cached rather than fresh mask (a pixel-level difference).
     let high_flying = crate::sim::movement::air_movement::object_flight_predicate(
         context.marked,
         || height,
