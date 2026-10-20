@@ -33,6 +33,47 @@ The generated `package-manifest.json` records the binary, asset and archive hash
 The tool refuses a nonempty unrelated output directory. `--replace` only replaces
 a previous output carrying this tool's ownership manifest.
 
+## Run in the Mac iPhone Simulator
+
+Build the separate Rust `aarch64-apple-ios-sim` target with
+`IPHONEOS_DEPLOYMENT_TARGET=16.0`, then select simulator mode and a separate output:
+
+```sh
+python3 tools/ios/package.py \
+  --simulator \
+  --executable /absolute/path/to/aarch64-apple-ios-sim/release/vera20k \
+  --asset-root /absolute/path/to/local/retail-assets \
+  --output /absolute/path/to/ios-mini-simulator
+```
+
+This requires an arm64 `IOSSIMULATOR` binary, sets the bundle platform to
+`iPhoneSimulator`, and signs the app ad hoc without a development profile. Device
+signing arguments are rejected in this mode. Install the generated `.app` using
+`xcrun simctl install SIMULATOR_UDID /absolute/path/to/ios-mini-simulator/Payload/VERA20k.app`,
+then launch with `xcrun simctl launch SIMULATOR_UDID org.yuriplanet.vera20k.ios.mini`.
+The archive is named `VERA20k-ios-mini-simulator.ipa` and is only for the simulator.
+Keep an existing signed device package in its original output directory.
+
+Simulator acceptance establishes that the menu and map work in the Mac's iPhone
+runtime. Physical-iPhone installation, memory use, touch behavior, and stability
+remain separate checks.
+
+### Local acceptance, 2026-10-20
+
+The release build was installed in the dedicated `VERA20k iOS Mini` simulator
+(iPhone 16 Pro, iOS 26.5). The normal route through the main menu, Single Player,
+Skirmish, and Start Game loaded the two-player map labelled `火線衝突(2)`, with the map,
+starting units, MCV, and sidebar visible. A tap selected the MCV. Screenshots and
+the runtime log are retained in the local ignored
+`target/ios-mini-simulator-20261020/` directory.
+
+Both arm64 device and arm64 simulator release builds passed, as did the five iOS
+bootstrap/touch tests and three keyboard tests. The signed device app installed,
+but its first launch was blocked by the device's developer-trust requirement.
+Physical-device launch acceptance was deferred at the user's request because
+the phone was being used for another test. The simulator result does not establish
+physical-device performance or battle stability.
+
 ## Sign for a real device
 
 The unsigned stage is useful for inspection, but cannot launch on an iPhone. Use

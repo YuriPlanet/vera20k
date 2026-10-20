@@ -2,7 +2,8 @@
 """Stage a native Rust iOS executable and local retail assets as an app and IPA.
 
 This does not compile, register devices, request profiles, install, or upload an app.
-The supplied executable must use the aarch64-apple-ios target, not a simulator target.
+The default executable target is aarch64-apple-ios. Use --simulator explicitly for
+an aarch64-apple-ios-sim executable and a separate simulator output directory.
 """
 
 import argparse
@@ -67,7 +68,7 @@ def contains(parent, child):
     return parent == child or parent in child.parents
 
 
-def check_output(output, replace):
+def check_output(output, replace, expected_platform):
     if output.is_symlink():
         raise PackageError("output must not be a symlink")
     if not output.exists():
@@ -84,22 +85,25 @@ def check_output(output, replace):
         raise PackageError("output belongs to another tool")
     if not replace:
         raise PackageError("output already contains a package; use --replace to rebuild it")
+    if manifest.get("executable", {}).get("platform") != expected_platform:
+        raise PackageError("refusing to replace a package for a different platform; use a separate output")
 
 
-def inspect_binary(executable, minimum_ios):
+def inspect_binary(executable, minimum_ios, simulator=False):
     description = run(["/usr/bin/file", "-b", str(executable)]).decode().strip()
     if "Mach-O 64-bit executable arm64" not in description:
         raise PackageError("executable must be a thin arm64 Mach-O executable: " + description)
     build = run(["xcrun", "vtool", "-show-build", str(executable)]).decode()
-    if not re.search(r"\bplatform\s+IOS\b", build):
-        raise PackageError("executable is not built for iOS devices (platform IOS required)")
+    platform = "IOSSIMULATOR" if simulator else "IOS"
+    if not re.search(r"\bplatform\s+" + platform + r"\b", build):
+        raise PackageError("executable has the wrong platform ({} required)".format(platform))
     match = re.search(r"\bminos\s+([\d.]+)", build)
     if not match:
         raise PackageError("could not read the executable's minimum iOS version")
     binary_minimum = match.group(1)
     if version_tuple(binary_minimum) > version_tuple(minimum_ios):
         raise PackageError("binary requires iOS {}; raise --minimum-ios to match".format(binary_minimum))
-    return {"architecture": "arm64", "platform": "IOS", "minimum_ios": binary_minimum}
+    return {"architecture": "arm64", "platform": platform, "minimum_ios": binary_minimum}
 
 
 def signing_inputs(identity, profile_path, bundle_id, device_udid):
@@ -197,7 +201,7 @@ def info_plist(args):
         "CFBundleName": "VERA20k",
         "CFBundlePackageType": "APPL",
         "CFBundleShortVersionString": args.version,
-        "CFBundleSupportedPlatforms": ["iPhoneOS"],
+        "CFBundleSupportedPlatforms": ["iPhoneSimulator" if args.simulator else "iPhoneOS"],
         "CFBundleVersion": args.build_number,
         "LSRequiresIPhoneOS": True,
         "MinimumOSVersion": args.minimum_ios,
@@ -222,7 +226,10 @@ def package(args):
         raise PackageError("the iOS mini app requires --minimum-ios 16.0 or newer")
     if not re.fullmatch(r"\d+(?:\.\d+){0,2}", args.build_number):
         raise PackageError("--build-number must contain one to three numeric components")
-    check_output(args.output, args.replace)
+    if args.simulator and (args.provisioning_profile or args.device_udid or args.signing_identity):
+        raise PackageError("--simulator uses ad hoc signing; omit profile, identity, and device UDID")
+    platform = "IOSSIMULATOR" if args.simulator else "IOS"
+    check_output(args.output, args.replace, platform)
     executable = args.executable.resolve(strict=True)
     asset_root = args.asset_root.resolve(strict=True)
     output = args.output.resolve()
@@ -235,7 +242,7 @@ def package(args):
     missing = sorted(required - present)
     if missing:
         raise PackageError("asset-root is missing retail files: " + ", ".join(missing))
-    binary = inspect_binary(executable, args.minimum_ios)
+    binary = inspect_binary(executable, args.minimum_ios, args.simulator)
     signing = signing_inputs(args.signing_identity, args.provisioning_profile,
                              args.bundle_id, args.device_udid)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -262,8 +269,12 @@ def package(args):
             run(["codesign", "--force", "--sign", signing["identity"], "--timestamp=none",
                  "--generate-entitlement-der", "--entitlements", str(entitlements_path), str(app)])
             run(["codesign", "--verify", "--strict", "--verbose=2", str(app)])
-        ipa = staging / "VERA20k-ios-mini.ipa"
-        print("Writing {} IPA...".format("signed" if signing else "unsigned"), flush=True)
+        elif args.simulator:
+            run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(app)])
+            run(["codesign", "--verify", "--strict", "--verbose=2", str(app)])
+        ipa = staging / ("VERA20k-ios-mini-simulator.ipa" if args.simulator else "VERA20k-ios-mini.ipa")
+        signing_mode = "simulator-ad-hoc" if args.simulator else "provisioned" if signing else "unsigned"
+        print("Writing {} IPA...".format(signing_mode), flush=True)
         with zipfile.ZipFile(ipa, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as archive:
             for path in sorted((staging / "Payload").rglob("*")):
                 if path.is_file():
@@ -273,7 +284,8 @@ def package(args):
             "created_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "bundle_id": args.bundle_id,
             "minimum_ios": args.minimum_ios,
-            "signed": bool(signing),
+            "signed": bool(signing) or args.simulator,
+            "signing_mode": signing_mode,
             "signing_team": signing["team"] if signing else None,
             "profile_expiration": signing["expiration"] if signing else None,
             "executable_source": str(executable),
@@ -287,14 +299,16 @@ def package(args):
         }
         (staging / MARKER).write_text(json.dumps(manifest, indent=2) + "\n")
         # Recheck ownership before replacing a previous generated package.
-        check_output(args.output, args.replace)
+        check_output(args.output, args.replace, platform)
         if output.exists():
             shutil.rmtree(output)
         staging.rename(output)
         print("App: " + str(output / "Payload" / APP_NAME))
         print("IPA: " + str(output / ipa.name))
-        print("Status: " + ("signed; device launch still needs validation" if signing
-                            else "unsigned; obtain a device profile and sign before installing"))
+        status = ("simulator only; launch still needs validation" if args.simulator else
+                  "signed; device launch still needs validation" if signing else
+                  "unsigned; obtain a device profile and sign before installing")
+        print("Status: " + status)
     finally:
         if staging.exists():
             shutil.rmtree(staging)
@@ -303,7 +317,7 @@ def package(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--executable", required=True, type=absolute_path,
-                        help="absolute path to the aarch64-apple-ios Rust binary")
+                        help="absolute Rust binary path (device target unless --simulator)")
     parser.add_argument("--asset-root", required=True, type=absolute_path,
                         help="absolute path to local retail game files; symlinks are dereferenced")
     parser.add_argument("--output", required=True, type=absolute_path,
@@ -312,6 +326,8 @@ def main():
     parser.add_argument("--minimum-ios", type=version, default="16.0")
     parser.add_argument("--version", type=version, default="0.1.0")
     parser.add_argument("--build-number", default="1")
+    parser.add_argument("--simulator", action="store_true",
+                        help="require an arm64 iOS Simulator binary and sign ad hoc; use a separate output")
     parser.add_argument("--signing-identity", help="exact installed identity name or SHA-1 hash")
     parser.add_argument("--provisioning-profile", type=absolute_path,
                         help="current iOS development/ad hoc provisioning profile")
