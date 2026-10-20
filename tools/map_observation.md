@@ -662,14 +662,15 @@ Optional `--terrain-template /absolute/extracted/Hills.map` retains that physica
 map's terrain packs, scenery, lighting and waypoints; the template must admit
 the fixed scene around `(48,48)`. Set the profile's selected map to the result.
 DRON, DroneJump and its ART keep their retail fields. The fixture explicitly
-overrides MTNK's primary to SonicZap and SonicZap's damage to4 so a normal shot
+overrides MTNK's primary to SonicZap and SonicZap's damage to 4 so a normal shot
 can exercise the production parasite-release receiver while both actors survive.
 `observe_disguise_inputs` retains the existing read-only SHP-frame projection. Exact
-release/idle steps must be inspected from the run. The example Stop at49 is based
+release/idle steps must be inspected from the run. The example Stop at step 49 is based
 on the retained Hills scene: change it if a different terrain template shifts the
 hit, since a type selector cannot bind a still-limboed DRON. The profile does not
 prescribe a successful hit or native timing and is not an original scene/pixel
 comparison.
+
 The [building power-status profile](map_observation.building-power-status.example.json)
 selects an ordinary full-health owned GAPOWR in the existing clear-ground scene:
 

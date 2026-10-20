@@ -10030,6 +10030,7 @@ mod tests {
         // 444 -> 445: retained per-pass BuildingType light integers.
         // 445 -> 446: the House array's registration order.
         // 446 -> 447: terrain objects and ore growth have their own owners.
-        assert_eq!(super::SNAPSHOT_VERSION, 447);
+        // 447 -> 448: retained Unit firing counter through parasite release.
+        assert_eq!(super::SNAPSHOT_VERSION, 448);
     }
 }
