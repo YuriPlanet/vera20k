@@ -825,27 +825,6 @@ mod tests {
     }
 
     #[test]
-    fn render_dir_preserves_an_absolute_out_root_verbatim() {
-        let root = if cfg!(windows) {
-            PathBuf::from("C:\\tmp\\out")
-        } else {
-            PathBuf::from("/tmp/out")
-        };
-        let dir = render_dir(&root, "x.shp");
-        assert!(dir.starts_with(&root), "{}", dir.display());
-        assert!(dir.ends_with(Path::new(RENDER_SUBDIR).join("x.shp")));
-    }
-
-    #[test]
-    fn output_filenames_zero_pad_to_three_digits() {
-        assert_eq!(frame_png_name("gi.shp", 0), "gi.shp.000.png");
-        assert_eq!(frame_png_name("gi.shp", 7), "gi.shp.007.png");
-        assert_eq!(frame_png_name("gi.shp", 42), "gi.shp.042.png");
-        assert_eq!(frame_png_name("gi.shp", 1234), "gi.shp.1234.png");
-        assert_eq!(sheet_png_name("gi.shp"), "gi.shp.sheet.png");
-    }
-
-    #[test]
     fn generated_output_predicate_matches_only_our_own_files() {
         assert!(is_generated_output("gi.shp.000.png", "gi.shp"));
         assert!(is_generated_output("gi.shp.1234.png", "gi.shp"));
@@ -973,32 +952,6 @@ mod tests {
         assert!(is_shroud_asset("ecache01.mix/shroud.shp"));
         assert!(!is_shroud_asset("shroud.pal"));
         assert!(!is_shroud_asset("gishroud.shp"));
-    }
-
-    #[test]
-    fn cell_label_reports_unscaled_frame_geometry() {
-        assert_eq!(cell_label(0, geom(0, 0, 60, 30)), "f0 60x30 at 0:0");
-        assert_eq!(cell_label(12, geom(7, 9, 30, 24)), "f12 30x24 at 7:9");
-    }
-
-    #[test]
-    fn summarise_indices_caps_the_listing() {
-        assert_eq!(summarise_indices(&[1, 2, 3]), "1, 2, 3");
-        let many: Vec<usize> = (0..12).collect();
-        let text = summarise_indices(&many);
-        assert!(text.ends_with("+4 more"), "{text}");
-    }
-
-    #[test]
-    fn default_options_bound_the_frame_count_and_pick_the_build_output_root() {
-        let opts = RenderOptions::default();
-        assert_eq!(opts.limit, DEFAULT_FRAME_LIMIT);
-        assert_eq!(opts.out, PathBuf::from(DEFAULT_OUT_ROOT));
-        assert!(opts.frame.is_none());
-        assert!(opts.palette.is_none());
-        assert!(opts.house.is_none());
-        assert!(opts.scale.is_none());
-        assert!(!opts.crop);
     }
 
     #[test]

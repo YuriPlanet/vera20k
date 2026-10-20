@@ -1041,7 +1041,7 @@ pub(super) mod retail_tests {
             .sim()
             .houses
             .iter()
-            .find(|(name, house)| **name != owner && !house.multiplay_passive)
+            .find(|(name, house)| **name != owner && !house.multiplay_passive())
             .map(|(name, _)| scenario.sim().interner.resolve(*name).to_owned())
             .expect("the computer house");
         let runtime = &mut scenario.runtime;

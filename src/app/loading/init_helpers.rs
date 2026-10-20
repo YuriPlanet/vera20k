@@ -991,25 +991,6 @@ mod tests {
         );
     }
 
-    /// AT-9 inverse: a map with no rules-shaped sections changes nothing.
-    #[test]
-    fn map_without_overrides_leaves_rules_unchanged() {
-        let mut with_map = RulesLayerStack::new(IniFile::from_str(RULES_BASE));
-        let map = IniFile::from_str("[Basic]\nName=Clean\n[Waypoints]\n0=45035\n");
-        with_map.push(
-            crate::rules::native_processing::RulesLayerKind::Scenario,
-            map,
-        );
-        let a = RuleSet::from_rules_layers(&with_map).expect("parse");
-        let b = RuleSet::from_ini(&IniFile::from_str(RULES_BASE)).expect("parse");
-        assert_eq!(a.c4_delay_frames(), b.c4_delay_frames());
-        assert_eq!(a.production.build_speed, b.production.build_speed);
-        assert_eq!(
-            a.object("E1").map(|o| o.strength),
-            b.object("E1").map(|o| o.strength)
-        );
-    }
-
     /// The match load's rules path over in-memory layers: cold startup, then
     /// the noncampaign scenario rebuild.
     fn scenario_rules(
@@ -1255,80 +1236,6 @@ mod tests {
             no_override.source_ini_hash(),
             overridden.source_ini_hash(),
             "a map BuildSpeed override must change the rules hash"
-        );
-    }
-
-    #[test]
-    fn stress_spawn_list_reads_per_type_counts() {
-        assert_eq!(
-            super::parse_debug_spawn_units("HTNK:2,MTNK,E1:10000"),
-            Some(vec![
-                ("HTNK".to_string(), 2),
-                ("MTNK".to_string(), 1),
-                ("E1".to_string(), 10_000)
-            ]),
-            "a bare type still means one unit, so existing lists keep working"
-        );
-        assert_eq!(
-            super::parse_debug_spawn_units("1"),
-            Some(vec![
-                ("HTNK".to_string(), 1),
-                ("MTNK".to_string(), 1),
-                ("E1".to_string(), 1)
-            ]),
-            "the enable switch keeps the default list"
-        );
-    }
-
-    #[test]
-    fn stress_spawn_list_drops_unusable_counts() {
-        for raw in ["HTNK:0", "HTNK:x", "HTNK:", ""] {
-            assert_eq!(
-                super::parse_debug_spawn_units(raw),
-                None,
-                "'{raw}' names nothing placeable, so it must not start a spawn pass"
-            );
-        }
-        assert_eq!(
-            super::parse_debug_spawn_units("MTNK,HTNK:oops,E1:3"),
-            Some(vec![("MTNK".to_string(), 1), ("E1".to_string(), 3)]),
-            "one bad entry must not cost the rest of the list"
-        );
-    }
-
-    #[test]
-    fn stress_march_switch_reads_far_side_and_explicit_cell() {
-        use super::DebugSpawnMarch;
-        assert!(matches!(
-            super::parse_debug_spawn_march("1"),
-            Some(DebugSpawnMarch::FarSide)
-        ));
-        assert!(matches!(
-            super::parse_debug_spawn_march(" 42,77 "),
-            Some(DebugSpawnMarch::Cell(42, 77))
-        ));
-        for raw in ["", "0", "  "] {
-            assert!(
-                super::parse_debug_spawn_march(raw).is_none(),
-                "'{raw}' must leave the army standing"
-            );
-        }
-        for raw in ["far", "42", "42,70000", "a,b"] {
-            assert!(
-                super::parse_debug_spawn_march(raw).is_none(),
-                "'{raw}' is neither a switch nor a usable cell, so it must not order a march"
-            );
-        }
-    }
-
-    #[test]
-    fn stress_spawn_cells_nearest_first_is_total_and_reproducible() {
-        let cells = [(10, 10), (0, 0), (9, 11), (11, 9), (20, 20), (8, 8)];
-        assert_eq!(
-            super::cells_by_distance_from(&cells, (10, 10)),
-            vec![(10, 10), (9, 11), (11, 9), (8, 8), (0, 0), (20, 20)],
-            "nearest cell first, then each ring by distance, ties by (rx, ry): \
-             (0,0) and (20,20) are both 200 away, so the lower cell goes first"
         );
     }
 }

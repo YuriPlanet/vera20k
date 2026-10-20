@@ -727,8 +727,8 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
             ),
         );
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.is_human = input["human"].as_i64().unwrap_or(0) != 0;
-        house.player_control = input["player_control"].as_i64().unwrap_or(0) != 0;
+        house.set_is_human_for_test(input["human"].as_i64().unwrap_or(0) != 0);
+        house.set_player_control_for_test(input["player_control"].as_i64().unwrap_or(0) != 0);
         let id = discovery_building(&mut sim, owner, input);
         assert_eq!(rng_hashes(&sim), row["rng_before"]);
         let ((_, calls), draws) = crate::sim::rng::trace_draws(|| {

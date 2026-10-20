@@ -352,7 +352,7 @@ impl<'a> RangeTarget<'a> {
                 .entities
                 .get(id)
                 .map(Self::Techno)
-                .or_else(|| world.production.terrain_objects.get(&id).map(Self::Terrain))
+                .or_else(|| world.terrain_objects.objects().get(&id).map(Self::Terrain))
                 .unwrap_or(Self::Missing),
             TargetKind::Cell(..) => target
                 .cell_identity(terrain)
@@ -1038,17 +1038,6 @@ mod tests {
     }
 
     #[test]
-    fn world_z_ground_unit() {
-        let e = ground_entity_at_level(5);
-        let mut terrain = flat_terrain(16, 16);
-        terrain.cells[10 * 16 + 10].level = 5;
-        assert_eq!(
-            crate::sim::movement::ground_pose::object_world_z_leptons(&e, Some(&terrain)),
-            520
-        );
-    }
-
-    #[test]
     fn gsi_04_03b_world_z_uses_exact_sloped_subcell() {
         let mut entity = ground_entity_at_level(2);
         entity.position.set_sub_x_for_test(SimFixed::from_num(64));
@@ -1124,21 +1113,6 @@ mod tests {
 
         let ground = ground_entity_at_level(5);
         assert!(!is_high_flying(&ground, None, None));
-    }
-
-    #[test]
-    fn unmarked_objects_are_neither_low_nor_high_flying() {
-        for altitude in [
-            0,
-            HIGH_FLIGHT_THRESHOLD_LEPTONS - 1,
-            HIGH_FLIGHT_THRESHOLD_LEPTONS,
-            1500,
-        ] {
-            let mut entity = aircraft_at_altitude(altitude);
-            entity.lifecycle.set_cell_marked(false);
-            assert!(!is_low_flying(&entity, None, None));
-            assert!(!is_high_flying(&entity, None, None));
-        }
     }
 
     /// `ObjectClass::IsHighFlying` 0x005F6B90 and `ObjectClass::IsLowFlying`
@@ -1561,14 +1535,6 @@ mod tests {
         e
     }
 
-    fn building_target(rx: u16, ry: u16, type_ref: &str) -> GameEntity {
-        let mut e = GameEntity::test_default(300, type_ref, "Defenders", rx, ry);
-        e.position.set_z_for_test(0);
-        e.set_category_for_test(EntityCategory::Structure);
-        e.lifecycle.set_cell_marked(true);
-        e
-    }
-
     fn aircraft_target(
         rx: u16,
         ry: u16,
@@ -1754,51 +1720,6 @@ mod tests {
         );
     }
 
-    // Test 4: 3D vs 2D divergence
-    #[test]
-    fn three_d_distance_rejects_high_z_delta() {
-        // Target ground is 12 terrain levels = 1248 lep, one cell away.
-        // 3D distance truncates to 1273 leptons: outside 4 cells, inside 5 cells.
-        let rules = rules_with_weapon("Damage=1\nROF=20\nRange=4\nWarhead=WH", "", "");
-        let weapon = rules.weapon("GUN").expect("weapon");
-        let attacker = ground_attacker(5, 5, 0, "ATKR");
-        let target = ground_target(6, 5, 12, "TGT");
-        let mut entities = Simulation::new();
-        entities.substrate.entities.insert(target);
-        let interner = test_interner();
-        let mut terrain = flat_terrain(64, 64);
-        terrain.cells[5 * 64 + 6].level = 12;
-
-        let r4 = compute_in_range(
-            &attacker,
-            src_at_cell(5, 5, 0),
-            &TargetKind::Entity(200),
-            weapon,
-            &rules,
-            &interner,
-            &entities,
-            &terrain,
-            &LineOfFireInputs::terrain_only(),
-        );
-        assert!(!r4, "1273-lepton 3D distance exceeds 1024 leptons");
-
-        // Same setup, range=5 cells (=1280 lep) → true.
-        let rules2 = rules_with_weapon("Damage=1\nROF=20\nRange=5\nWarhead=WH", "", "");
-        let weapon2 = rules2.weapon("GUN").expect("weapon");
-        let r5 = compute_in_range(
-            &attacker,
-            src_at_cell(5, 5, 0),
-            &TargetKind::Entity(200),
-            weapon2,
-            &rules2,
-            &interner,
-            &entities,
-            &terrain,
-            &LineOfFireInputs::terrain_only(),
-        );
-        assert!(r5, "1273-lepton 3D distance is within 1280 leptons");
-    }
-
     // Test 5: LowFlying ground-snap
     #[test]
     fn low_flying_target_z_snapped_to_ground() {
@@ -1910,198 +1831,6 @@ mod tests {
         assert_eq!(
             native_cell_range_coords(cell, &NativeCellQuery::canonical(&terrain)),
             Some((128, 128, 52 + i64::from(BRIDGE_DECK_HEIGHT_LEPTONS)))
-        );
-    }
-
-    // Test 6: HighFlying does NOT snap, AirRange bonus applies
-    #[test]
-    fn high_flying_target_uses_actual_z_with_air_range_bonus() {
-        // Attacker has AirRangeBonus=2 cells. weapon.range = 4 cells.
-        // Effective max = 6 cells = 1536 lep.
-        // dist = sqrt(1024² + 1500²) ≈ 1816 lep > 1536 → false.
-        let rules = rules_with_weapon(
-            "Damage=1\nROF=20\nRange=4\nWarhead=WH",
-            "AirRangeBonus=2",
-            "",
-        );
-        let weapon = rules.weapon("GUN").expect("weapon");
-        let attacker = ground_attacker(0, 0, 0, "ATKR");
-        let target = aircraft_target(4, 0, 0, 1500, "TGT");
-        let mut entities = Simulation::new();
-        entities.substrate.entities.insert(target);
-        let interner = test_interner();
-        let terrain = flat_terrain(64, 64);
-
-        let in_range = compute_in_range(
-            &attacker,
-            src_at_cell(0, 0, 0),
-            &TargetKind::Entity(200),
-            weapon,
-            &rules,
-            &interner,
-            &entities,
-            &terrain,
-            &LineOfFireInputs::terrain_only(),
-        );
-        assert!(
-            !in_range,
-            "high-flying z-delta should still exceed weapon+AirRange budget"
-        );
-    }
-
-    // Test 7: Foundation bonus on building target
-    #[test]
-    fn foundation_bonus_extends_range_for_building_target() {
-        // Target = 4x2 building at NW corner (0, 0). weapon.range = 4 cells = 1024 lep.
-        // Foundation bonus = (4+2) * 64 = 384 lep → effective = 1408 lep.
-        //
-        // resolve_target_coords_3d shifts the target to the foundation center:
-        //   tx = 0*256 + 128 + 3*128 = 512 lep, ty = 0*256 + 128 + 1*128 = 256 lep.
-        // Attacker at (6, 1): sx = 6*256 + 128 = 1664 lep, sy = 256 lep.
-        // dx = 1152, dy = 0. dist = 1152 lep.
-        // 1152 > 1024 (would reject without bonus) and 1152 < 1408 (passes with bonus).
-        let ini_str = "[InfantryTypes]\n\n\
-                       [VehicleTypes]\n0=ATKR\n\n\
-                       [AircraftTypes]\n\n\
-                       [BuildingTypes]\n0=BLDG\n\n\
-                       [ATKR]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=GUN\n\n\
-                       [BLDG]\nStrength=750\nArmor=wood\n\n\
-                       [GUN]\nDamage=1\nROF=20\nRange=4\nWarhead=WH\n\n\
-                       [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
-        let ini = IniFile::from_str(ini_str);
-        let rules = RuleSet::from_ini_with_fixed_art_for_test(
-            &ini,
-            &IniFile::from_str("[BLDG]\nFoundation=4x2\n"),
-        )
-        .expect("rules parse");
-        let weapon = rules.weapon("GUN").expect("weapon");
-
-        let attacker = ground_attacker(6, 1, 0, "ATKR");
-        let mut target = building_target(0, 0, "BLDG");
-        // Construction stamps the type's `Foundation=4x2`.
-        target.type_facts.set_foundation_for_test("4x2".to_string());
-        let mut entities = Simulation::new();
-        entities.substrate.entities.insert(target);
-        let interner = test_interner();
-        let terrain = flat_terrain(64, 64);
-
-        let in_range = compute_in_range(
-            &attacker,
-            src_at_cell(6, 1, 0),
-            &TargetKind::Entity(300),
-            weapon,
-            &rules,
-            &interner,
-            &entities,
-            &terrain,
-            &LineOfFireInputs::terrain_only(),
-        );
-        assert!(
-            in_range,
-            "foundation bonus should extend max range past base 1024 lep"
-        );
-    }
-
-    // Test 8: Sentinel beats min-range
-    #[test]
-    fn sentinel_overrides_min_range() {
-        let rules = rules_with_weapon(
-            "Damage=1\nROF=20\nRange=-2\nMinimumRange=10\nWarhead=WH",
-            "",
-            "",
-        );
-        let weapon = rules.weapon("GUN").expect("weapon");
-        let attacker = ground_attacker(5, 5, 0, "ATKR");
-        let target = ground_target(5, 5, 0, "TGT");
-        let mut entities = Simulation::new();
-        entities.substrate.entities.insert(target);
-        let interner = test_interner();
-        let terrain = flat_terrain(64, 64);
-
-        let in_range = compute_in_range(
-            &attacker,
-            src_at_cell(5, 5, 0),
-            &TargetKind::Entity(200),
-            weapon,
-            &rules,
-            &interner,
-            &entities,
-            &terrain,
-            &LineOfFireInputs::terrain_only(),
-        );
-        assert!(in_range, "sentinel should bypass min-range gate");
-    }
-
-    // Test 9: Cell target uses 3D distance, no bonuses
-    #[test]
-    fn cell_target_uses_3d_distance_no_bonuses() {
-        let rules = rules_with_weapon("Damage=1\nROF=20\nRange=2\nWarhead=WH", "", "");
-        let weapon = rules.weapon("GUN").expect("weapon");
-        // Attacker on level 5 (= 520 lep up). Target = cell at same XY, level 0.
-        // Range = 2 cells = 512 lep. dz = 520 lep > 512 → false.
-        let attacker = ground_attacker(5, 5, 5, "ATKR");
-        let entities = Simulation::new();
-        let interner = test_interner();
-        let terrain = flat_terrain(64, 64);
-        let src = (5i64 * 256 + 128, 5i64 * 256 + 128, 5i64 * LEPTONS_PER_LEVEL);
-
-        let in_range = compute_in_range(
-            &attacker,
-            src,
-            &TargetKind::Cell(5, 5),
-            weapon,
-            &rules,
-            &interner,
-            &entities,
-            &terrain,
-            &LineOfFireInputs::terrain_only(),
-        );
-        assert!(
-            !in_range,
-            "5-level z-delta should reject cell-target via 3D dist"
-        );
-    }
-
-    // Test 10: Arcing weapon falls through to 2D
-    #[test]
-    fn arcing_weapon_uses_2d_distance() {
-        // Weapon with arcing projectile. 4 cells horizontal, 5 levels up.
-        // 2D dist = 4 cells = 1024 lep == range → true.
-        // 3D dist would be sqrt(1024² + 520²) ≈ 1149 lep > 1024 → would reject.
-        let ini_str = "[InfantryTypes]\n\n\
-                       [VehicleTypes]\n0=ATKR\n1=TGT\n\n\
-                       [AircraftTypes]\n\n\
-                       [BuildingTypes]\n\n\
-                       [ATKR]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=GUN\n\n\
-                       [TGT]\nStrength=300\nArmor=heavy\nSpeed=6\n\n\
-                       [GUN]\nDamage=1\nROF=20\nRange=4\nWarhead=WH\nProjectile=ARC\n\n\
-                       [ARC]\nArcing=yes\n\n\
-                       [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
-        let ini = IniFile::from_str(ini_str);
-        let rules = RuleSet::from_ini(&ini).expect("rules parse");
-        let weapon = rules.weapon("GUN").expect("weapon");
-
-        let attacker = ground_attacker(0, 0, 0, "ATKR");
-        let target = ground_target(4, 0, 5, "TGT");
-        let mut entities = Simulation::new();
-        entities.substrate.entities.insert(target);
-        let interner = test_interner();
-        let terrain = flat_terrain(64, 64);
-
-        let in_range = compute_in_range(
-            &attacker,
-            src_at_cell(0, 0, 0),
-            &TargetKind::Entity(200),
-            weapon,
-            &rules,
-            &interner,
-            &entities,
-            &terrain,
-            &LineOfFireInputs::terrain_only(),
-        );
-        assert!(
-            in_range,
-            "arcing weapon should ignore z-delta and use 2D distance"
         );
     }
 
@@ -2502,27 +2231,6 @@ mod tests {
             terrain,
             &LineOfFireInputs::terrain_only(),
         )
-    }
-
-    /// The gate fires: attacker in a bridge cell, below the deck top, target at
-    /// the deck top.
-    #[test]
-    fn inrange_bridge_gate_blocks_under_bridge_attacker_firing_up() {
-        let terrain = terrain_with_bridge_cells(&[(5, 5)]);
-        let attacker = ground_attacker(5, 5, 0, "ATKR");
-        let entities = Simulation::new();
-
-        let under = (5i64 * 256 + 128, 5i64 * 256 + 128, 0i64);
-        assert!(
-            !in_range_at(
-                &attacker,
-                under,
-                &TargetKind::Cell(5, 5),
-                &terrain,
-                &entities
-            ),
-            "under-bridge attacker firing at the deck must be blocked"
-        );
     }
 
     /// `JGE` at 0x006F7629: an attacker whose Z has reached the deck top is

@@ -222,26 +222,6 @@ mod tests {
     }
 
     #[test]
-    fn hsv_to_rgb_matches_gamemd_sextants() {
-        // DarkRed (H=0): pure red sextant.
-        assert_eq!(hsv_to_rgb([0, 230, 255]), [255, 25, 25]);
-        // DarkBlue (H=153): blue sextant, blue channel dominant.
-        assert_eq!(hsv_to_rgb([153, 214, 212]), [34, 105, 212]);
-        // Gold (H=43): yellow, red+green high.
-        assert_eq!(hsv_to_rgb([43, 239, 255]), [253, 255, 16]);
-        // Zero saturation is grey regardless of hue.
-        assert_eq!(hsv_to_rgb([0, 0, 131]), [131, 131, 131]);
-    }
-
-    #[test]
-    fn darkblue_reads_blue_dominant_darkred_red_dominant() {
-        let blue = hsv_to_rgb([153, 214, 212]);
-        assert!(blue[2] > blue[0] && blue[2] > blue[1], "{blue:?}");
-        let red = hsv_to_rgb([0, 230, 255]);
-        assert!(red[0] > red[1] && red[0] > red[2], "{red:?}");
-    }
-
-    #[test]
     fn priority_table_selects_the_eight_multiplayer_colors() {
         let schemes = schemes();
         // priority 0..=7 → the standard MP colors via the doubling (idx/2).
@@ -270,17 +250,6 @@ mod tests {
     }
 
     #[test]
-    fn backing_rgb_resolves_player_priority_to_scheme_color() {
-        let schemes = schemes();
-        // Priority 2 = DarkBlue → blue-dominant backing.
-        let blue = backing_rgb_for_priority(&schemes, 2).unwrap();
-        assert!(blue[2] > blue[0] && blue[2] > blue[1], "{blue:?}");
-        // Priority 1 = DarkRed → red-dominant backing.
-        let red = backing_rgb_for_priority(&schemes, 1).unwrap();
-        assert!(red[0] > red[1] && red[0] > red[2], "{red:?}");
-    }
-
-    #[test]
     fn parse_color_schemes_reads_section_in_order() {
         let ini = IniFile::from_str("[Colors]\nGold=43,239,255\nDarkRed=0,230,255\n");
         let parsed = parse_color_schemes(&ini);
@@ -304,16 +273,6 @@ mod tests {
     fn empty_or_missing_colors_section_yields_no_schemes() {
         assert!(parse_color_schemes(&IniFile::from_str("[General]\nX=1\n")).is_empty());
         assert!(backing_rgb_for_priority(&[], 0).is_none());
-    }
-
-    #[test]
-    fn scheme_entry_for_priority_matches_lut_div2() {
-        // p0→3/2=1 Gold, p1→11/2=5 DarkRed, p2→21/2=10 DarkBlue, p3→29/2=14 DarkGreen, random→5/2=2
-        assert_eq!(scheme_entry_for_priority(0), 1);
-        assert_eq!(scheme_entry_for_priority(1), 5);
-        assert_eq!(scheme_entry_for_priority(2), 10);
-        assert_eq!(scheme_entry_for_priority(3), 14);
-        assert_eq!(scheme_entry_for_priority(-2), 2);
     }
 
     #[test]

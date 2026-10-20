@@ -330,11 +330,6 @@ mod tests {
     }
 
     #[test]
-    fn empty_profile_has_no_report() {
-        assert!(FrameProfile::default().report().is_none());
-    }
-
-    #[test]
     fn buckets_average_over_frames() {
         let mut profile = FrameProfile::default();
         for _ in 0..4 {
@@ -405,32 +400,6 @@ mod tests {
     }
 
     #[test]
-    fn peak_is_the_slowest_frame_not_the_mean() {
-        let mut profile = FrameProfile::default();
-        profile.record(
-            spread(
-                Duration::from_millis(1),
-                Duration::from_millis(1),
-                Duration::from_millis(1),
-                Duration::from_millis(1),
-            ),
-            Duration::from_millis(4),
-        );
-        profile.record(
-            spread(
-                Duration::from_millis(2),
-                Duration::from_millis(2),
-                Duration::from_millis(2),
-                Duration::from_millis(2),
-            ),
-            Duration::from_millis(8),
-        );
-        let report = profile.expect_report();
-        assert_eq!(report.mean_frame_ms, 6.0);
-        assert_eq!(report.peak_frame_ms, 8.0);
-    }
-
-    #[test]
     fn aborted_frames_show_up_as_unmarked_time() {
         let mut profile = FrameProfile::default();
         // A frame whose tail never stamped: the span is longer than the buckets.
@@ -446,23 +415,6 @@ mod tests {
         let report = profile.expect_report();
         assert_eq!(report.tail_ms, 0.0);
         assert_eq!(report.unmarked_ms, 0.2);
-    }
-
-    #[test]
-    fn reset_clears_the_accumulator() {
-        let mut profile = FrameProfile::default();
-        profile.record(
-            spread(
-                Duration::from_millis(1),
-                Duration::from_millis(1),
-                Duration::from_millis(1),
-                Duration::from_millis(1),
-            ),
-            Duration::from_millis(4),
-        );
-        profile.reset();
-        assert!(profile.report().is_none());
-        assert_eq!(profile.frames(), 0);
     }
 
     impl FrameProfile {

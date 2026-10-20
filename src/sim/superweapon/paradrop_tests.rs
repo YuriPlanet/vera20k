@@ -341,7 +341,10 @@ fn launch_cases_five_and_six_match_native() {
         if let Some(tile) = tile {
             set_tile(&mut sim, TARGET, tile);
         }
-        sim.houses.get_mut(&americans).unwrap().side_index = int(&row["side"]) as i32;
+        sim.houses
+            .get_mut(&americans)
+            .unwrap()
+            .set_side_index_for_test(int(&row["side"]) as i32);
         let sw_type = if charged {
             charge_super(&mut sim, americans, name)
         } else {
@@ -572,7 +575,10 @@ fn send_paradrop_planes_matches_native() {
             authored_replayed += 1;
         }
         let waypoint_edge = u8::try_from(int(&row["waypoint_edge"])).unwrap_or(u8::MAX);
-        sim.houses.get_mut(&americans).unwrap().waypoint_edge = waypoint_edge;
+        sim.houses
+            .get_mut(&americans)
+            .unwrap()
+            .set_waypoint_edge_for_test(waypoint_edge);
         let own = edge(pick);
         if !(0..=3).contains(&house_edge) {
             assert_eq!(own, Edge::own_edge(waypoint_edge), "{row}");
@@ -1006,8 +1012,8 @@ fn spawn_parachuted_matches_native() {
             panic!("one passenger");
         };
         let house = sim.houses.get_mut(&americans).unwrap();
-        house.is_human = flag(row, "human");
-        house.player_control = flag(row, "player_control");
+        house.set_is_human_for_test(flag(row, "human"));
+        house.set_player_control_for_test(flag(row, "player_control"));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
                 int(&row["game_mode"]) != 0,
@@ -1197,8 +1203,14 @@ fn retail_computer_paradrops_conscripts_past_the_enemy_base() {
     };
     let (rules, mut sim, americans) = paradrop_world(rules);
     let russians: InternedId = sim.interner.intern("Russians");
-    sim.houses.get_mut(&russians).unwrap().enemy_house = Some(americans);
-    sim.houses.get_mut(&americans).unwrap().base_center = Some(TARGET);
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_enemy_house_for_test(Some(americans));
+    sim.houses
+        .get_mut(&americans)
+        .unwrap()
+        .set_base_center_for_test(Some(TARGET));
     let sw_type = charge_super(&mut sim, russians, PARADROP);
 
     super::super::ai_fire::try_fire(

@@ -41,12 +41,12 @@ pub(crate) fn rival_arena_with_size(rules: &RuleSet, seed: u64, size: u16) -> Si
     for (name, human) in [("Russians", false), ("Americans", true)] {
         let id = sim.interner.intern(name);
         let mut house = crate::sim::house_state::HouseState::new(id, 0, None, human, 0, 10);
-        house.difficulty = crate::sim::house_state::HouseDifficulty::Normal;
-        house.current_iq = if human {
+        house.set_difficulty_for_test(crate::sim::house_state::HouseDifficulty::Normal);
+        house.set_current_iq_for_test(if human {
             0
         } else {
             rules.general.max_iq_levels
-        };
+        });
         sim.houses.register(house);
     }
     sim
@@ -371,7 +371,7 @@ pub fn retail_harrier_dock_scene(
     for (index, name) in ["Player", "Enemy"].into_iter().enumerate() {
         let id = sim.interner.intern(name);
         let mut house = HouseState::new(id, index as i32, None, true, 0, 10);
-        house.multiplay_passive = true;
+        house.set_multiplay_passive_for_test(true);
         sim.houses.register(house);
         owners.push(id);
     }

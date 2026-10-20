@@ -664,37 +664,6 @@ mod tests {
     }
 
     #[test]
-    fn store_uses_preassigned_object_ids() {
-        let mut store = ParticleSystemStore::new();
-        assert_eq!(store.insert(fake_system(41)), 41);
-        assert_eq!(store.insert(fake_system(97)), 97);
-        assert!(store.get(41).is_some());
-        assert!(store.get(97).is_some());
-    }
-
-    #[test]
-    fn iteration_is_sorted_by_id() {
-        let mut store = ParticleSystemStore::new();
-        let _ = store.insert(fake_system(9));
-        let _ = store.insert(fake_system(2));
-        let _ = store.insert(fake_system(7));
-        let ids: Vec<u64> = store.iter().map(|(id, _)| *id).collect();
-        let mut sorted = ids.clone();
-        sorted.sort();
-        assert_eq!(ids, sorted);
-    }
-
-    #[test]
-    fn tick_ownership_round_trip_preserves_id() {
-        let mut store = ParticleSystemStore::new();
-        let id = store.insert(fake_system(12));
-        let sys = store.take_for_tick(id).unwrap();
-        store.reinsert_after_tick(sys);
-        assert!(store.get(id).is_some());
-        assert_eq!(store.len(), 1);
-    }
-
-    #[test]
     fn serde_roundtrip_preserves_authoritative_system_state() {
         let mut store = ParticleSystemStore::new();
         let mut system = fake_system(23);

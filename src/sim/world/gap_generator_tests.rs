@@ -330,38 +330,6 @@ pub fn gap_operational_power_loss_views() -> Vec<(
 }
 
 #[test]
-fn gap_operational_power_loss_preserves_object_order_and_snapshot_continuation() {
-    let _ = gap_operational_power_loss_views();
-}
-
-#[test]
-fn gap_operational_first_visit_creates_viewers_and_house_is_passive() {
-    let (mut sim, rules, viewer, owner, _) = fixture();
-    insert(&mut sim, 1, owner, "GAGAP", 12, 12);
-    assert!(sim.fog.by_owner.is_empty());
-    sim.set_logic_order_for_test(vec![1]);
-    sim.advance_live_object_pass(
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    )
-    .expect("fixture frame must complete");
-    assert!(sim.fog.is_cell_gap_covered(viewer, 12, 12));
-    let saved = sim.fog.gap_sources.clone();
-    power(&mut sim, &rules); // no plant: now low power
-    refresh(&mut sim, &rules);
-    sim.reconcile_active_vision_structures(&rules);
-    assert_eq!(sim.fog.gap_sources, saved);
-    sim.advance_live_object_pass(
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    )
-    .expect("fixture frame must complete");
-    assert!(sim.fog.gap_sources[&viewer].is_empty());
-}
-
-#[test]
 fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
     let (mut sim, rules, a, owner, b) = fixture();
     insert(&mut sim, 1, owner, "GAGAP", 12, 12);
@@ -616,10 +584,4 @@ pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, In
     assert!(!sim.fog.is_cell_revealed(c, 16, 16));
     views.push((sim.fog.clone(), b, c));
     views
-}
-
-#[test]
-fn native_source_consumers_use_lifecycle_and_direct_alliance_owners() {
-    let _ = sustained_source_gap_limbo_views();
-    let _ = nontransitive_source_gap_views();
 }

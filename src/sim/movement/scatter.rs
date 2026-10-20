@@ -130,7 +130,7 @@ impl ScatterTechno {
             // inference. The value is already saved/restored by HouseState.
             house_iq: houses
                 .get(&entity.owner())
-                .map_or(0, |house| house.current_iq),
+                .map_or(0, |house| house.current_iq()),
         }
     }
 }

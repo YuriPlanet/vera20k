@@ -55,7 +55,7 @@ impl Simulation {
                         x,
                         y,
                         Ground,
-                        self.production.terrain_object_cells.get(&(x, y)).copied(),
+                        self.terrain_objects.cell_index().get(&(x, y)).copied(),
                     )
                     .map(|o| format!("{o:?}"))
                     .collect();

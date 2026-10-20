@@ -104,7 +104,7 @@ pub(crate) fn launched_stock_submarine_torpedo(
     }
     let owner = sim.substrate.entities.get(source).unwrap().owner();
     let target_owner = sim.substrate.entities.get(target).unwrap().owner();
-    assert!(sim.houses.get(&owner).unwrap().is_human);
+    assert!(sim.houses.get(&owner).unwrap().is_human());
     assert_ne!(owner, target_owner);
     for cell in [(10, 10), (16, 10)] {
         assert!(

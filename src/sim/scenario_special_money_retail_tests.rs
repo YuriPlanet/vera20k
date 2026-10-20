@@ -82,10 +82,10 @@ fn neutral_refinery_spy_entry_cannot_steal_the_participants_starting_cash() {
     assert!(!target_type.radar && target_type.power <= 0);
     assert!(!rules.is_build_tech("NAREFN") && target_type.super_weapon.is_none());
     assert!(sim.infiltrator_building_action(spy, refinery, rules));
-    assert!(sim.houses[&neutral].multiplay_passive && sim.houses[&special].multiplay_passive);
-    assert_eq!(sim.houses[&player].economy.credits(), 5000);
-    assert_eq!(sim.houses[&computer].economy.credits(), 5000);
-    let initial_neutral_cash = sim.houses[&neutral].economy.credits();
+    assert!(sim.houses[&neutral].multiplay_passive() && sim.houses[&special].multiplay_passive());
+    assert_eq!(sim.houses[&player].economy().credits(), 5000);
+    assert_eq!(sim.houses[&computer].economy().credits(), 5000);
+    let initial_neutral_cash = sim.houses[&neutral].economy().credits();
 
     // The consumed whole native4571E0 control uses balance0/percent.5 and
     // transfers zero. Initial target cash0 comes from the constructor/caller
@@ -132,7 +132,7 @@ fn neutral_refinery_spy_entry_cannot_steal_the_participants_starting_cash() {
             break;
         }
         assert_eq!(
-            sim.houses[&neutral].economy.credits(),
+            sim.houses[&neutral].economy().credits(),
             initial_neutral_cash,
             "no intervening Neutral income/spend before the actual spy entry"
         );
@@ -153,11 +153,11 @@ fn neutral_refinery_spy_entry_cannot_steal_the_participants_starting_cash() {
     let sim = scene.sim();
     assert_eq!(sim.entities().get(refinery).unwrap().owner(), neutral);
     assert_eq!(
-        sim.houses[&player].economy.credits(),
+        sim.houses[&player].economy().credits(),
         5000 + gain as i32,
         "a Neutral refinery starts with ctor cash0, not participant launch money; initial Neutral={initial_neutral_cash}"
     );
-    assert_eq!(sim.houses[&neutral].economy.credits(), 0);
-    assert_eq!(sim.houses[&neutral].economy.spent_credits(), 0);
-    assert_eq!(sim.houses[&special].economy.credits(), 0);
+    assert_eq!(sim.houses[&neutral].economy().credits(), 0);
+    assert_eq!(sim.houses[&neutral].economy().spent_credits(), 0);
+    assert_eq!(sim.houses[&special].economy().credits(), 0);
 }

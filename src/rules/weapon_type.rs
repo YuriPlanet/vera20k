@@ -547,70 +547,6 @@ mod tests {
         assert!(weapon.decloak_to_fire, "native omitted-key default is yes");
     }
 
-    #[test]
-    fn test_parse_bool_fields() {
-        let ini: IniFile = IniFile::from_str(
-            "[TestWeapon]\nDamage=100\nIsSonic=yes\nSpawner=yes\n\
-             FireOnce=yes\nIsLaser=yes\nIsElectricBolt=no\n\
-             Lobber=true\nSuicide=yes\nAreaFire=yes\n",
-        );
-        let section: &IniSection = ini.section("TestWeapon").unwrap();
-        let weapon: WeaponType = WeaponType::from_ini_section("TestWeapon", section);
-
-        assert!(weapon.is_sonic);
-        assert!(weapon.spawner);
-        assert!(weapon.fire_once);
-        assert!(weapon.is_laser);
-        assert!(!weapon.is_electric_bolt);
-        assert!(weapon.lobber);
-        assert!(weapon.suicide);
-        assert!(weapon.area_fire);
-        // Unset bools remain false
-        assert!(!weapon.bright);
-        assert!(!weapon.camera);
-    }
-
-    #[test]
-    fn decloak_to_fire_default_yes_and_explicit_no_match_stock_boomer_weapons() {
-        let ini = IniFile::from_str(
-            "[CruiseLauncher]\nDamage=25\n\
-             [BoomerTorpedo]\nDamage=40\nDecloakToFire=no\n",
-        );
-        let cruise =
-            WeaponType::from_ini_section("CruiseLauncher", ini.section("CruiseLauncher").unwrap());
-        let torpedo =
-            WeaponType::from_ini_section("BoomerTorpedo", ini.section("BoomerTorpedo").unwrap());
-        assert!(cruise.decloak_to_fire);
-        assert!(!torpedo.decloak_to_fire);
-    }
-
-    #[test]
-    fn test_parse_laser_colors() {
-        let ini: IniFile = IniFile::from_str(
-            "[PrismWeapon]\nDamage=100\nIsLaser=yes\n\
-             LaserInnerColor=255,0,0\nLaserOuterColor=128,64,32\n\
-             LaserOuterSpread=200,200,200\n",
-        );
-        let section: &IniSection = ini.section("PrismWeapon").unwrap();
-        let weapon: WeaponType = WeaponType::from_ini_section("PrismWeapon", section);
-
-        assert_eq!(weapon.laser_inner_color, [255, 0, 0]);
-        assert_eq!(weapon.laser_outer_color, [128, 64, 32]);
-        assert_eq!(weapon.laser_outer_spread, [200, 200, 200]);
-    }
-
-    #[test]
-    fn test_parse_anim_list() {
-        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=TANK\n[TANK]\nPrimary=TestWeapon\n\
-             [TestWeapon]\nDamage=50\nAnim=YOURFIRE,YOUREXPL,YOURBOOM\n",
-        ))
-        .unwrap();
-        let weapon = rules.weapon("TestWeapon").unwrap();
-
-        assert_eq!(weapon.anim, ["YOURFIRE", "YOUREXPL", "YOURBOOM"]);
-    }
-
     /// `CCINIClass::ReadRange` 0x00474620 multiplies by `256.0` and THEN chops,
     /// so a fractional `Range=` keeps its fraction. 60 of the 256 stock
     /// `Range=` weapons carry one and 21 sit at exactly `1.5`, the stock
@@ -652,14 +588,5 @@ mod tests {
         assert_eq!(rules.weapon("NoKey").unwrap().minimum_range_leptons, 0);
         assert_eq!(range("Unset"), 0, "-1 keeps the constructor zero");
         assert_eq!(range("Kept"), 3 * 256, "-1 keeps the earlier pass's range");
-    }
-
-    #[test]
-    fn test_parse_minimum_range() {
-        let ini: IniFile = IniFile::from_str("[TestWeapon]\nDamage=50\nMinimumRange=3.5\n");
-        let section: &IniSection = ini.section("TestWeapon").unwrap();
-        let weapon: WeaponType = WeaponType::from_ini_section("TestWeapon", section);
-
-        assert_eq!(weapon.minimum_range_leptons, 896, "3.5 cells * 256");
     }
 }

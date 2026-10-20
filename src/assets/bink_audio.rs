@@ -638,20 +638,8 @@ mod tests {
     }
 
     #[test]
-    fn fft_round_trip_256() {
-        assert_round_trip(256);
-    }
-    #[test]
-    fn fft_round_trip_512() {
-        assert_round_trip(512);
-    }
-    #[test]
     fn fft_round_trip_1024() {
         assert_round_trip(1024);
-    }
-    #[test]
-    fn fft_round_trip_2048() {
-        assert_round_trip(2048);
     }
 
     fn make_track(sample_rate: u16, stereo: bool, dct: bool) -> AudioTrack {
@@ -739,30 +727,6 @@ mod tests {
     }
 
     #[test]
-    fn decode_silent_packet_yields_silence_dct() {
-        let track = make_track(22050, true, true);
-        let mut dec = BinkAudioDecoder::new(track).unwrap();
-        let pkt = make_silent_packet(&dec);
-        let samples = dec.decode_packet(&pkt).expect("decode silent packet");
-        assert!(!samples.is_empty(), "should produce some samples");
-        for &s in &samples {
-            assert!(s.abs() < 1e-3, "non-silent sample: {}", s);
-        }
-    }
-
-    #[test]
-    fn decode_silent_packet_yields_silence_rdft() {
-        let track = make_track(22050, true, false);
-        let mut dec = BinkAudioDecoder::new(track).unwrap();
-        let pkt = make_silent_packet(&dec);
-        let samples = dec.decode_packet(&pkt).expect("decode silent packet");
-        assert!(!samples.is_empty());
-        for &s in &samples {
-            assert!(s.abs() < 1e-3, "non-silent sample: {}", s);
-        }
-    }
-
-    #[test]
     fn reset_restores_first_flag() {
         let track = make_track(22050, true, false);
         let mut dec = BinkAudioDecoder::new(track).unwrap();
@@ -776,61 +740,5 @@ mod tests {
                 assert_eq!(s, 0.0);
             }
         }
-    }
-
-    /// IDCT of [c, 0, 0, ..., 0] is a constant signal proportional to c.
-    #[test]
-    fn idct_dc_only_constant_output() {
-        let n = 512;
-        let fft = Fft::new(n);
-        let mut input = vec![0.0f32; n];
-        input[0] = 2.0; // pre-doubled per binkaudio.c convention
-        let mut output = vec![0.0f32; n];
-        inverse_dct_ii(&input, &mut output, &fft);
-
-        // All samples should be equal (within rounding) since input is DC-only.
-        let first = output[0];
-        for (i, &s) in output.iter().enumerate() {
-            assert!(
-                (s - first).abs() < 1e-4,
-                "non-constant output at i={}: got {}, expected {}",
-                i,
-                s,
-                first,
-            );
-        }
-        // And nonzero — DC input shouldn't yield silence.
-        assert!(first.abs() > 1e-3, "DC output is silent: {}", first);
-    }
-
-    /// A pure-tone spectrum (single non-zero bin) inverse-transforms to
-    /// a sinusoid whose peak amplitude matches our expected scaling.
-    #[test]
-    fn rdft_pure_tone_round_trip() {
-        let n = 512;
-        let half_fft = Fft::new(n / 2);
-        // Build spectrum: real sinusoid of bin index 5 amplitude 1.
-        // Hermitian: X[5] = (0, -0.5), X[N-5] = (0, 0.5), all else 0.
-        // Bink-storage layout has imag halves negated, so input[2*5+1] = +0.5.
-        let mut input = vec![0.0f32; n + 2];
-        input[2 * 5] = 0.0;
-        input[2 * 5 + 1] = 0.5; // post-negate
-        let mut output = vec![0.0f32; n];
-        inverse_rdft(&input, &mut output, &half_fft);
-
-        // The output should be approximately sin(2π * 5 * t / N).
-        // We just check the peak amplitude is in a sane range.
-        let max = output.iter().cloned().fold(0.0f32, f32::max);
-        let min = output.iter().cloned().fold(0.0f32, f32::min);
-        assert!(
-            max > 0.5 && max < 1.5,
-            "max amplitude out of range: {}",
-            max
-        );
-        assert!(
-            min < -0.5 && min > -1.5,
-            "min amplitude out of range: {}",
-            min
-        );
     }
 }

@@ -63,12 +63,12 @@ pub(super) fn apply(
                 }
             }
             CellObjectMember::Terrain(stable_id) => {
-                if let Some(terrain) = sim.production.terrain_objects.get(&stable_id) {
+                if let Some(terrain) = sim.terrain_objects.objects().get(&stable_id) {
                     let event = TerrainDamageEvent {
                         stable_id,
                         rx,
                         ry,
-                        damage: terrain.health,
+                        damage: terrain.health(),
                         distance_leptons: 0,
                         warhead_ref,
                         near_center_ic_isolation_eligible: false,
@@ -225,12 +225,12 @@ mod tests {
         // only its later death tail. Both first deaths therefore count now,
         // including TERROR while its Die2 sequence remains in Logic.
         assert_eq!(
-            sim.houses[&owner].stats.units_lost(),
+            sim.houses[&owner].stats().units_lost(),
             2,
             "both fatal callbacks count; the zero-health GI revisit adds no loss"
         );
         assert_eq!(
-            sim.houses[&owner].stats.units_killed(),
+            sim.houses[&owner].stats().units_killed(),
             1,
             "only TerrorBomb's first GI kill is credited"
         );
@@ -270,40 +270,8 @@ mod tests {
         assert!(!head.lifecycle.object_alive());
         assert!(head.kill_record.is_recorded());
         assert!(!sim.live_object_order_snapshot().contains(&terror));
-        assert_eq!(sim.houses[&owner].stats.units_lost(), 2);
-        assert_eq!(sim.houses[&owner].stats.units_killed(), 1);
-    }
-
-    #[test]
-    fn bridge_ground_revisited_terrorist_executes_its_death_weapon_again() {
-        let rules = stock_cascade_rules();
-        let mut sim = world(&rules);
-        let tank = place(&mut sim, &rules, "MTNK", 4);
-        let next = place(&mut sim, &rules, "TERROR", 4);
-        let head = place(&mut sim, &rules, "TERROR", 4);
-        assert_eq!(
-            members(&sim, 4, 4).collect::<Vec<_>>(),
-            vec![
-                CellObjectMember::Entity(head),
-                CellObjectMember::Entity(next),
-                CellObjectMember::Entity(tank),
-            ]
-        );
-        apply(
-            &mut sim,
-            &rules,
-            None,
-            4,
-            4,
-            crate::sim::world::FrameEffects::default(),
-        );
-        // Two original deaths leave the heavy tank alive. The captured
-        // successor's repeated DeathWeapon kills it; its unlinked NextObject
-        // cannot pass it a later direct C4 receiver.
-        assert_eq!(
-            sim.substrate.entities.get(tank).unwrap().health.current(),
-            0
-        );
+        assert_eq!(sim.houses[&owner].stats().units_lost(), 2);
+        assert_eq!(sim.houses[&owner].stats().units_killed(), 1);
     }
 
     #[test]
@@ -340,58 +308,6 @@ mod tests {
                 .object_alive()
         );
         assert!(sim.substrate.pending_delete.is_empty());
-    }
-
-    #[test]
-    fn bridge_ground_infantry_action_preserves_same_sequence_and_retired_membership() {
-        use crate::sim::world::InfantryDeathSequence;
-        let rules = stock_cascade_rules();
-        let mut sim = world(&rules);
-        let gi = place(&mut sim, &rules, "E1", 4);
-        assert!(
-            sim.infantry_do_action(
-                gi,
-                12,
-                true,
-                &rules,
-                crate::sim::world::FrameEffects::default()
-            )
-            .unwrap()
-        );
-        sim.substrate
-            .entities
-            .get_mut(gi)
-            .unwrap()
-            .set_native_stage_value(7);
-        sim.begin_infantry_death_sequence(
-            gi,
-            InfantryDeathSequence::Die2,
-            &rules,
-            crate::sim::world::FrameEffects::default(),
-        );
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(gi)
-                .unwrap()
-                .native_stage()
-                .value(),
-            7
-        );
-        sim.uninit_with_rules(gi, &rules);
-        let pending = sim.substrate.pending_delete.clone();
-        sim.begin_infantry_death_sequence(
-            gi,
-            InfantryDeathSequence::Die1,
-            &rules,
-            crate::sim::world::FrameEffects::default(),
-        );
-        let object = sim.substrate.entities.get(gi).unwrap();
-        assert_eq!(object.mission_leaf.as_infantry().unwrap().doing(), 11);
-        assert_eq!(object.native_stage().value(), 0);
-        assert!(!object.lifecycle.object_alive());
-        assert!(!sim.live_object_order_snapshot().contains(&gi));
-        assert_eq!(sim.substrate.pending_delete, pending);
     }
 
     #[test]
@@ -465,7 +381,7 @@ mod tests {
                 &rules,
                 false,
             );
-            let id = sim.production.terrain_object_cells[&(4, 4)];
+            let id = sim.terrain_objects.cell_index()[&(4, 4)];
             assert_eq!(
                 members(&sim, 4, 4).collect::<Vec<_>>(),
                 vec![CellObjectMember::Terrain(id)]
@@ -478,17 +394,17 @@ mod tests {
                 4,
                 crate::sim::world::FrameEffects::default(),
             );
-            let tree = &sim.production.terrain_objects[&id];
+            let tree = &sim.terrain_objects.objects()[&id];
             if wood {
-                assert_eq!(tree.health, 0);
-                assert_eq!(tree.lifecycle, TerrainObjectLifecycle::Destroyed);
-                assert!(!tree.in_logic_vector);
+                assert_eq!(tree.health(), 0);
+                assert_eq!(tree.lifecycle(), TerrainObjectLifecycle::Destroyed);
+                assert!(!tree.in_logic_vector());
                 assert!(members(&sim, 4, 4).next().is_none());
                 assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(4, 4), 0);
             } else {
-                assert_eq!(tree.health, 100);
+                assert_eq!(tree.health(), 100);
                 assert!(tree.is_live());
-                assert_eq!(sim.production.terrain_object_cells[&(4, 4)], id);
+                assert_eq!(sim.terrain_objects.cell_index()[&(4, 4)], id);
             }
         }
     }

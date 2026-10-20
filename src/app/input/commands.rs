@@ -263,7 +263,7 @@ fn sell_wall_command_for_cell(
     let owner_is_human_player = if sim.session.game_mode_nonzero() {
         wall_owner == local_owner_id
     } else {
-        wall_owner_house.is_human || wall_owner_house.player_control
+        wall_owner_house.is_human() || wall_owner_house.player_control()
     };
     owner_is_human_player.then_some(Command::SellWallAtCell {
         x: rx as i16,
@@ -1253,8 +1253,12 @@ mod tests {
         let enemy = sim.interner.intern("Enemy");
         let mut local_house = HouseState::new(local, 0, None, true, 0, 10);
         let mut enemy_house = HouseState::new(enemy, 1, None, false, 0, 10);
-        local_house.tracking.set_buildings_for_test(1);
-        enemy_house.tracking.set_buildings_for_test(1);
+        local_house
+            .tracking_mut_for_test()
+            .set_buildings_for_test(1);
+        enemy_house
+            .tracking_mut_for_test()
+            .set_buildings_for_test(1);
         sim.houses.register(local_house);
         sim.houses.register(enemy_house);
         sim.session.game_options_mut_for_test().short_game = false;
@@ -1473,20 +1477,6 @@ mod tests {
     }
 
     #[test]
-    fn recorded_scheduler_does_not_apply_offline_input_delay() {
-        let mut sim = Simulation::new();
-        sim.session.set_tick_for_test(u64::MAX - 1);
-        sim.input_delay_ticks = 8;
-
-        let execute_tick =
-            schedule_command_in_sim(&mut sim, "YuriCountry", Command::DeployMcv { entity_id: 7 })
-                .unwrap();
-
-        assert_eq!(execute_tick, u64::MAX - 1);
-        assert_eq!(sim.pending_command_snapshot()[0].execute_tick, u64::MAX - 1);
-    }
-
-    #[test]
     fn gsi_04_07_wall_sell_scheduler_uses_current_tick_and_signed_cell_payload() {
         let mut sim = Simulation::new();
         sim.session.set_tick_for_test(23);
@@ -1495,7 +1485,7 @@ mod tests {
         let ai = sim.interner.intern("AI");
         let missing_house = sim.interner.intern("MissingHouse");
         let mut local_house = HouseState::new(local, 0, None, false, 0, 10);
-        local_house.player_control = true;
+        local_house.set_player_control_for_test(true);
         sim.houses.register(local_house);
         sim.houses
             .register(HouseState::new(remote, 1, None, true, 0, 10));

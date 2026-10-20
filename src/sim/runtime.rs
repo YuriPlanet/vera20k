@@ -296,10 +296,10 @@ mod tests {
         .expect("staged map-roster construction");
         let selected = sim.interner.get("Alpha").unwrap();
         assert_eq!(sim.session.current_house(), Some(selected));
-        assert!(sim.houses[&selected].is_human && sim.houses[&selected].player_control);
+        assert!(sim.houses[&selected].is_human() && sim.houses[&selected].player_control());
         let first = sim.interner.get("Zulu").unwrap();
         assert_eq!(sim.houses.order(), [first, selected]);
-        assert!(!sim.houses[&first].is_human && !sim.houses[&first].player_control);
+        assert!(!sim.houses[&first].is_human() && !sim.houses[&first].player_control());
     }
 
     /// F07 matrix: the runtime always uses bound navigation and resources —
@@ -818,7 +818,7 @@ pub fn initialize_native_tiberium_queues(
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     native_rect: (u16, u16),
 ) -> Option<crate::sim::ore_growth::NativeTiberiumRebuildStats> {
-    sim.production.ore_growth_config =
+    sim.ore_growth_config =
         crate::sim::ore_growth::OreGrowthConfig::resolve(basic, special_flags, &sim.session);
     let (width, height) = overlay_grid
         .map(|grid| (grid.width(), grid.height()))
@@ -828,13 +828,13 @@ pub fn initialize_native_tiberium_queues(
                 .map(|terrain| (terrain.width(), terrain.height()))
         })
         .unwrap_or((0, 0));
-    sim.production.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(width, height);
+    sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(width, height);
     // `CellClass+0xE4 FirstObject != 0` at this point: terrain objects plus
     // every ground-list Techno already constructed (none on an authored load,
     // the generator's own Technos on a generated one).
     let mut source_object_cells = sim
-        .production
-        .terrain_object_cells
+        .terrain_objects
+        .cell_index()
         .keys()
         .copied()
         .collect::<std::collections::BTreeSet<_>>();
@@ -846,22 +846,23 @@ pub fn initialize_native_tiberium_queues(
     let Some(overlay_grid) = overlay_grid else {
         // No overlay grid: no stores to seed, but keep the `[Map] Size` rect
         // so a later snapshot restore rebuilds from it, not the storage dims.
-        sim.production
-            .ore_growth_state
-            .reset_native_tiberium_classes_for_rect(native_rect, 0, sim.session.binary_frame());
+        sim.ore_growth_state.reset_native_tiberium_classes_for_rect(
+            native_rect,
+            0,
+            sim.session.binary_frame(),
+        );
         return None;
     };
     Some(
-        sim.production
-            .ore_growth_state
+        sim.ore_growth_state
             .rebuild_native_tiberium_queues_from_overlays(
                 overlay_grid,
                 overlay_registry,
                 &rules.tiberium_types,
                 sim.resolved_terrain.as_ref(),
                 &source_object_cells,
-                sim.production.ore_growth_config.grows,
-                sim.production.ore_growth_config.spreads,
+                sim.ore_growth_config.grows(),
+                sim.ore_growth_config.spreads(),
                 sim.session.binary_frame(),
                 native_rect,
             ),
@@ -1160,7 +1161,7 @@ pub fn finalize_constructed_scenario(
                 let country = sim
                     .houses
                     .get(&entity.owner())
-                    .and_then(|house| house.country)
+                    .and_then(|house| house.country())
                     .map(|country| sim.interner.resolve(country));
                 map_wall_owner_candidate_from_building(
                     entity,

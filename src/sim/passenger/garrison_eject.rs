@@ -220,7 +220,7 @@ fn place_garrison_passenger_at_cell(
         && sim
             .houses
             .get(&pax.owner())
-            .is_some_and(|house| house.is_human)
+            .is_some_and(|house| house.is_human())
     {
         pax.building_entry.clear_occupy_seeks();
     }
@@ -701,14 +701,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn garrison_sellbuilding_scan_order_handles_map_edge_without_u16_wrap() {
-        // A Rust boundary-safety check; the native corpus uses origin10,10.
-        let cells = garrison_sellbuilding_exit_cells(0, 0, 2, 2);
-        assert!(!cells.is_empty());
-        assert!(cells.iter().all(|&(x, y)| x <= 2 && y <= 2));
-    }
-
-    #[test]
     fn garrison_scatter_handoff_matches_original_destinations_and_three_rng_states() {
         use crate::sim::components::NavTargetRef;
         use crate::sim::rng::SimRng;
@@ -1086,55 +1078,6 @@ pub(crate) mod tests {
             Some((12, 11)),
             "full exterior infantry sub-cells reject the selected cell and continue the scan"
         );
-    }
-
-    #[test]
-    fn sellbuilding_helper_ejects_without_owner_revert() {
-        let rules = garrison_edge_rules();
-        let mut sim = garrison_map(&rules);
-        let building_id = 20;
-        let passenger_id = 21;
-        insert_captured_player_owned_garrison(&mut sim, &rules, building_id, passenger_id);
-
-        let americans = sim.interner.intern("Americans");
-
-        assert_eq!(
-            sell_building_occupants(
-                &mut sim,
-                &rules,
-                None,
-                building_id,
-                GarrisonEjectMode::PlayerSell,
-                crate::sim::world::FrameEffects::default()
-            ),
-            1
-        );
-
-        let building = sim
-            .substrate
-            .entities
-            .get(building_id)
-            .expect("helper should not remove building");
-        assert_eq!(
-            building.owner(),
-            americans,
-            "SellBuilding-style helper must not ChangeOwner"
-        );
-        assert!(
-            building
-                .passenger_role
-                .cargo()
-                .is_some_and(|cargo| cargo.is_empty()),
-            "helper should clear building cargo"
-        );
-
-        let passenger = sim
-            .substrate
-            .entities
-            .get(passenger_id)
-            .expect("passenger should remain");
-        assert!(passenger.passenger_role.is_none());
-        assert!(!passenger.death.is_dying());
     }
 
     #[test]

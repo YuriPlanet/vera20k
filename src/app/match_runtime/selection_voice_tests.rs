@@ -242,7 +242,7 @@ fn simulation(
     let owner = sim.interner.intern(owner_name);
     let type_ref = sim.interner.intern(type_id);
     let mut house = HouseState::new(owner, 0, None, owner == local, 0, 10);
-    house.multiplay_passive = passive;
+    house.set_multiplay_passive_for_test(passive);
     sim.houses.register(house);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
@@ -450,7 +450,7 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
     }
     let live_rng = sim.rng_state();
     let live_hash = sim.state_hash();
-    let mut restored = GameSnapshot::load_validated(&bytes, 0, rules_hash, &sim.session.map_name())
+    let mut restored = GameSnapshot::load_validated(&bytes, 0, rules_hash, sim.session.map_name())
         .unwrap()
         .sim;
     assert_ne!(

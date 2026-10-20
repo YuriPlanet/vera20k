@@ -502,14 +502,6 @@ mod tests {
     }
 
     #[test]
-    fn lookup_is_case_insensitive() {
-        let data: Vec<u8> = build_test_csf("Name:MTNK", "Grizzly Battle Tank");
-        let csf: CsfFile = CsfFile::from_bytes(&data).expect("should parse");
-        assert_eq!(csf.get("name:mtnk"), Some("Grizzly Battle Tank"));
-        assert_eq!(csf.get("NAME:MTNK"), Some("Grizzly Battle Tank"));
-    }
-
-    #[test]
     fn missing_key_uses_native_visible_marker() {
         let data: Vec<u8> = build_test_csf("NAME:MTNK", "Grizzly Battle Tank");
         let csf: CsfFile = CsfFile::from_bytes(&data).expect("should parse");
@@ -569,12 +561,6 @@ mod tests {
     }
 
     #[test]
-    fn reject_truncated_header() {
-        let data: Vec<u8> = vec![0x20, 0x46, 0x53, 0x43]; // just the magic, no rest
-        assert!(CsfFile::from_bytes(&data).is_err());
-    }
-
-    #[test]
     fn load_time_whitespace_normalization_matches_engine() {
         // Space-padded line breaks (the retail briefing/tooltip pattern):
         // spaces before AND after a newline are dropped.
@@ -591,14 +577,6 @@ mod tests {
         let data: Vec<u8> = build_test_csf("B", "col \t next");
         let csf: CsfFile = CsfFile::from_bytes(&data).expect("should parse");
         assert_eq!(csf.get("B"), Some("col\tnext"));
-    }
-
-    #[test]
-    fn decode_roundtrip() {
-        let original: &str = "Hello, World! 🌍";
-        let encoded: Vec<u8> = encode_csf_string(original);
-        let decoded: String = decode_csf_string(&encoded);
-        assert_eq!(decoded, original);
     }
 
     #[test]

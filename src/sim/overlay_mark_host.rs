@@ -85,7 +85,7 @@ impl<'a> SimulationMarkHost<'a> {
         let mut detach_trace = Vec::new();
         let mut host = SimulationWallRuntimeHost {
             entities: &mut sim.substrate.entities,
-            target_terrain_objects: &sim.production.terrain_objects,
+            target_terrain_objects: sim.terrain_objects.objects(),
             #[cfg(any(test, feature = "test-support"))]
             detach_trace: &mut detach_trace,
             radar_dirty_cells: &mut sim.radar_terrain_dirty_cells,

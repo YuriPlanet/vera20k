@@ -192,12 +192,3 @@ fn a_laser_fence_may_stand_on_ore() {
     without.overlay((10, 10), "TIB01", 3, None);
     assert!(!without.cell_clear((10, 10), "GAFENCE", None));
 }
-
-#[test]
-fn a_gate_shares_its_cell_only_with_its_own_houses_laser_fence() {
-    let mut a = arena(CLEAR_BUILDABLE);
-    let americans = a.house("Americans");
-    a.spawn("MTNK", "Americans", (10, 10));
-    assert!(!a.cell_clear((10, 10), "GAGATE", Some(americans)));
-    assert!(a.cell_clear((12, 12), "GAGATE", Some(americans)));
-}

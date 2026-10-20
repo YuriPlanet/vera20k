@@ -885,7 +885,7 @@ mod retail_construction_tests {
             .sim()
             .houses
             .iter()
-            .filter(|(_, house)| !house.is_controlled_by_human(true) && !house.multiplay_passive)
+            .filter(|(_, house)| !house.is_controlled_by_human(true) && !house.multiplay_passive())
             .map(|(&id, _)| id)
             .collect();
         assert_eq!(computers.len(), opponents.len());
@@ -956,7 +956,7 @@ mod retail_construction_tests {
                     "frame {frame} {}: {buildings} buildings, {foot} foot, {teams} live teams \
                      ({members} members), choices {:?}",
                     sim.interner.resolve(owner),
-                    house.ai_unit_choices,
+                    house.ai_unit_choices(),
                 );
             }
             for team in sim.team_script_vm.teams_in_order() {
@@ -991,7 +991,7 @@ mod retail_construction_tests {
     ) -> (crate::sim::intern::InternedId, Vec<u64>) {
         let house = house_of(sim, country);
         let (bx, by) = sim.houses[&house]
-            .base_center
+            .base_center()
             .expect("the base has a centre");
         let cells = (0..900).map(|n| (i32::from(bx) + n % 30 - 15, i32::from(by) + n / 30 - 15));
         let spawned = spawn_on_free_cells(sim, rules, house, cells, types);
@@ -1003,7 +1003,7 @@ mod retail_construction_tests {
         let country_id = sim.interner.get(country).expect("retail country interned");
         sim.houses
             .iter()
-            .find(|(_, house)| house.country == Some(country_id))
+            .find(|(_, house)| house.country() == Some(country_id))
             .map(|(&id, _)| id)
             .expect("a house of the country")
     }
@@ -1619,7 +1619,7 @@ mod retail_construction_tests {
         let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
         let yuri = house_of(sim, "YuriCountry");
         let (bx, by) = sim.houses[&yuri]
-            .base_center
+            .base_center()
             .expect("the base has a centre");
         // A 2x2 foundation inside a free 4x4 square, so a tank can reach it.
         let open = |sim: &Simulation, rx: i32, ry: i32| {
@@ -2095,7 +2095,7 @@ mod retail_construction_tests {
         // Deploy's (-1, -1), and a cell of drift.
         let yard = resources.rules.object("NACNST").expect("retail NACNST");
         let (bx, by) = sim.houses[&soviet]
-            .base_center
+            .base_center()
             .expect("the base has a centre");
         let mut around: Vec<(i32, i32)> = (0..1681).map(|n| (n % 41 - 20, n / 41 - 20)).collect();
         around.sort_by_key(|&(dx, dy)| (dx * dx + dy * dy, dy, dx));
@@ -2894,7 +2894,7 @@ mod retail_construction_tests {
             sim.houses
                 .get_mut(&soviet)
                 .unwrap()
-                .economy
+                .economy_mut()
                 .set_credits_for_test(credits);
             assert_eq!(
                 crate::sim::ai_build_need::check_build_need(sim, rules, soviet),
@@ -2928,7 +2928,7 @@ mod retail_construction_tests {
             }
             if chosen.is_none()
                 && managed.is_some()
-                && sim.houses[&soviet].ai_production.building_choice() == refinery
+                && sim.houses[&soviet].ai_production().building_choice() == refinery
             {
                 chosen = Some(frame);
             }
@@ -2950,7 +2950,7 @@ mod retail_construction_tests {
         }
         let calls = MANAGE_CALLS.take().unwrap_or(0);
         let sim = scenario.sim();
-        let hunting = sim.houses[&soviet].strategy_emergency.all_to_hunt_bias;
+        let hunting = sim.houses[&soviet].strategy_emergency().all_to_hunt_bias();
         let yards = of_type(sim, "NACNST", false).len();
         eprintln!(
             "base standing at {standing:?}; Manage_Build_Queue first at {managed:?} ({calls} \

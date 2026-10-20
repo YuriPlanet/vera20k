@@ -352,8 +352,8 @@ mod map_wall_owner_candidate_tests {
         let wall_type = scene.runtime.simulation.interner.intern("GAWALL");
         let rules = &scene.runtime.resources.rules;
         assert_eq!(rules.object("GAWALL").unwrap().cost, 100);
-        let credits_before = scene.sim().houses[&computer].economy.credits();
-        let spent_before = scene.sim().houses[&computer].economy.spent_credits();
+        let credits_before = scene.sim().houses[&computer].economy().credits();
+        let spent_before = scene.sim().houses[&computer].economy().spent_credits();
         let cost = scene
             .sim()
             .cost_of(computer, rules.object("GAWALL").unwrap(), rules);
@@ -393,11 +393,11 @@ mod map_wall_owner_candidate_tests {
         }
         let product = ready.expect("ordinary Computer factory must finish its paid GAWALL");
         assert_eq!(
-            scene.sim().houses[&computer].economy.credits(),
+            scene.sim().houses[&computer].economy().credits(),
             credits_before - cost
         );
         assert_eq!(
-            scene.sim().houses[&computer].economy.spent_credits(),
+            scene.sim().houses[&computer].economy().spent_credits(),
             spent_before + cost
         );
         let command = CommandEnvelope::new(
@@ -468,11 +468,11 @@ mod map_wall_owner_candidate_tests {
             "abandoned product cleanup"
         );
         assert_eq!(
-            scene.sim().houses[&computer].economy.credits(),
+            scene.sim().houses[&computer].economy().credits(),
             credits_before
         );
         assert_eq!(
-            scene.sim().houses[&computer].economy.spent_credits(),
+            scene.sim().houses[&computer].economy().spent_credits(),
             spent_before + cost
         );
         let wall = scene.sim().overlay_grid.as_ref().unwrap().cell(90, 44);
@@ -597,7 +597,7 @@ mod map_wall_owner_candidate_tests {
         );
         assert_eq!(constructed, 3);
         assert_eq!(
-            sim.production.terrain_object_cells,
+            *sim.terrain_objects().cell_index(),
             BTreeMap::from([((1, 1), 1), ((2, 1), 2), ((3, 1), 3)]),
             "recognized Terrain entries construct in source order while UNKNOWN is skipped"
         );
@@ -789,7 +789,7 @@ mod map_wall_owner_candidate_tests {
         lights.refresh(&terrain, &sim, 2);
         sim.set_building_light_active(41, false);
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-            &sim.session.lighting(),
+            sim.session.lighting(),
         ));
         assert!(!sim.lighting_sources.pending.is_empty());
         sim.radiation.apply_detonation(
@@ -800,7 +800,7 @@ mod map_wall_owner_candidate_tests {
                 spread: 1,
             },
             0,
-            &sim.session.theater(),
+            sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1045,7 +1045,7 @@ mod map_wall_owner_candidate_tests {
         sim.session.lighting_mut().set_current_ambient_for_test(30);
         sim.session.lighting_mut().set_target_ambient_for_test(30);
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-            &sim.session.lighting(),
+            sim.session.lighting(),
         ));
         let mut rt = crate::sim::runtime::SimRuntime::from_simulation(sim);
         rt.resources.rules = rules;
@@ -1142,20 +1142,20 @@ mod map_wall_owner_candidate_tests {
         sim.radiation.apply_detonation(
             radiation,
             0,
-            &sim.session.theater(),
+            sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
         );
         sim.session.lighting_mut().set_current_ambient_for_test(250);
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-            &sim.session.lighting(),
+            sim.session.lighting(),
         ));
         sim.set_building_light_active(41, true);
         sim.radiation.apply_detonation(
             radiation,
             0,
-            &sim.session.theater(),
+            sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1229,7 +1229,7 @@ mod map_wall_owner_candidate_tests {
             .lighting_mut()
             .select(ScenarioLightingProfile::Ion);
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-            &sim.session.lighting(),
+            sim.session.lighting(),
         ));
         seed_live_lamp(&mut sim, &rules);
         apply_lighting_events(&mut lights, &terrain, &mut sim);
@@ -1258,7 +1258,7 @@ mod map_wall_owner_candidate_tests {
             .lighting_mut()
             .select(ScenarioLightingProfile::Normal);
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-            &sim.session.lighting(),
+            sim.session.lighting(),
         ));
         apply_lighting_events(&mut lights, &terrain, &mut sim);
         let restored = lights.grid().cell_light_at((4, 5)).unwrap();
@@ -1456,7 +1456,7 @@ mod map_wall_owner_candidate_tests {
                 spread: 10,
             },
             0,
-            &sim.session.theater(),
+            sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1506,7 +1506,7 @@ mod map_wall_owner_candidate_tests {
         sim.radiation.apply_detonation(
             detonation,
             0,
-            &sim.session.theater(),
+            sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1517,7 +1517,7 @@ mod map_wall_owner_candidate_tests {
         sim.radiation.apply_detonation(
             detonation,
             0,
-            &sim.session.theater(),
+            sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,

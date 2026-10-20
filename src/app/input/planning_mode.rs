@@ -970,7 +970,10 @@ mod tests {
                     .register(HouseState::new(owner, 0, None, slot == index, 0, 10));
             }
             sim.session.set_current_house_for_test(Some(local));
-            sim.houses.get_mut(&local).unwrap().is_defeated = case["initial"]["session300"] != 0;
+            sim.houses
+                .get_mut(&local)
+                .unwrap()
+                .set_is_defeated_for_test(case["initial"]["session300"] != 0);
             let before_rng = sim.rng_state();
             let mut input = PlanningInputState::default();
             input.restore_active(case["initial"]["active"].as_bool().unwrap());
@@ -990,7 +993,10 @@ mod tests {
                         // The native component starts after the House flag
                         // store. Its production trigger is tested through the
                         // real lifecycle/House rung in planning_defeat_tests.
-                        sim.houses.get_mut(&local).unwrap().is_defeated = true;
+                        sim.houses
+                            .get_mut(&local)
+                            .unwrap()
+                            .set_is_defeated_for_test(true);
                         Some(false)
                     }
                     "keyboard_press" => input.key_transition(true, KeyCode::KeyZ, true, false),

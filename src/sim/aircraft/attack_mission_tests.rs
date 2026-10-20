@@ -349,8 +349,8 @@ fn original_state10_rows() {
                 0,
                 1,
             );
-            house.is_human = get("house_1ec").as_i64().unwrap() != 0;
-            house.player_control = get("house_1ed").as_i64().unwrap() != 0;
+            house.set_is_human_for_test(get("house_1ec").as_i64().unwrap() != 0);
+            house.set_player_control_for_test(get("house_1ed").as_i64().unwrap() != 0);
             let facts = ExitFacts {
                 ammo: ammo.current(),
                 target: get("target").as_bool().unwrap(),

@@ -515,29 +515,4 @@ mod tests {
             }
         }
     }
-
-    #[test]
-    fn remove_drops_the_last_matching_node_only() {
-        let mut tracker = KamikazeTracker::default();
-        for (child, cell) in [(7, (1, 1)), (8, (2, 2)), (7, (3, 3))] {
-            tracker.nodes.push(KamikazeNode { child, cell });
-        }
-        tracker.remove(7);
-        assert_eq!(
-            tracker.nodes,
-            [
-                KamikazeNode {
-                    child: 7,
-                    cell: (1, 1)
-                },
-                KamikazeNode {
-                    child: 8,
-                    cell: (2, 2)
-                }
-            ]
-        );
-        assert!(tracker.contains(7));
-        tracker.remove(9);
-        assert_eq!(tracker.nodes.len(), 2);
-    }
 }

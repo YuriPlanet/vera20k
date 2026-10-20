@@ -139,7 +139,7 @@ impl Simulation {
             is_human: self
                 .houses
                 .get(&actor.owner())
-                .is_some_and(|house| house.is_human),
+                .is_some_and(|house| house.is_human()),
             passive: actor.passive_scan.acquired(),
         };
         Some((facts, target))
@@ -391,7 +391,7 @@ impl Simulation {
                 TargetKind::Cell(..) => true,
                 TargetKind::Entity(target) => {
                     self.substrate.entities.contains(target)
-                        || self.production.terrain_objects.contains_key(&target)
+                        || self.terrain_objects.objects().contains_key(&target)
                 }
             }
             && self.resolved_terrain.is_some()

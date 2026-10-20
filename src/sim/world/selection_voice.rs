@@ -74,7 +74,7 @@ impl Simulation {
         let passive = self
             .houses
             .get(&entity.owner())
-            .is_some_and(|house| house.multiplay_passive);
+            .is_some_and(|house| house.multiplay_passive());
         if !voices_enabled || (!human_player && !passive) {
             return None;
         }

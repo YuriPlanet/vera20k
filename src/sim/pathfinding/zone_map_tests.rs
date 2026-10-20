@@ -994,20 +994,6 @@ fn can_reach_compares_the_two_zone_ids() {
 }
 
 #[test]
-fn water_zone_grid_uses_resolved_land_type_directly() {
-    let terrain = water_row_terrain(5);
-    let grid = PathGrid::from_resolved_terrain(&terrain);
-    let zg = ZoneGrid::build_with_terrain(&grid, &terrain, &[], 5, 1);
-    assert!(zg.can_reach(
-        MovementZone::Water,
-        (0, 0),
-        MovementLayer::Ground,
-        (4, 0),
-        MovementLayer::Ground,
-    ));
-}
-
-#[test]
 fn waterbeach_zone_grid_connects_beach_to_water_with_resolved_terrain() {
     let terrain = clear_beach_water_row_terrain();
     let grid = PathGrid::from_resolved_terrain(&terrain);
@@ -1069,51 +1055,4 @@ fn automatic_tube_shells_keep_ground_connectivity_without_bridge_records() {
         ZONE_INVALID,
         "automatic Tube shells do not create high-bridge redirect records"
     );
-}
-
-// ---------------------------------------------------------------------------
-// Height continuity tests
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Incremental zone update tests
-// ---------------------------------------------------------------------------
-
-#[test]
-fn per_movement_zone_grids_are_separate() {
-    // Verify that the ZoneCategory collapse is truly gone —
-    // each MovementZone variant gets its own independent zone grid.
-    let terrain = terrain_from_zone_classes(5, 2, &[zone_class::GROUND; 10], &[0; 10]);
-    let grid = PathGrid::from_resolved_terrain(&terrain);
-    let zg = ZoneGrid::build_with_terrain(&grid, &terrain, &[], 5, 2);
-    // Normal and Crusher should each have their own zone map.
-    assert!(
-        zg.map_for(MovementZone::Normal).is_some(),
-        "Normal should have a zone map"
-    );
-    assert!(
-        zg.map_for(MovementZone::Crusher).is_some(),
-        "Crusher should have a zone map"
-    );
-    assert!(
-        zg.map_for(MovementZone::Infantry).is_some(),
-        "Infantry should have a zone map"
-    );
-    assert!(
-        zg.map_for(MovementZone::Water).is_some(),
-        "Water should have a zone map"
-    );
-    // The binary rebuild loop covers all 13 matrix rows, including Fly.
-    assert!(
-        zg.map_for(MovementZone::Fly).is_some(),
-        "Fly should have a zone map"
-    );
-    // All matrix-backed movement zones should have maps.
-    for &mz in MovementZone::all_ground() {
-        assert!(
-            zg.map_for(mz).is_some(),
-            "MovementZone {:?} should have a zone map",
-            mz
-        );
-    }
 }

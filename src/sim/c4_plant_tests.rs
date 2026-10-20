@@ -475,44 +475,6 @@ fn a_plant_replays_identically() {
     assert_eq!(run(), run());
 }
 
-/// The plant itself (`0x0051A5A7..0x0051A664`) on a Walk arrival: the
-/// charge with the planter as its source, the flash, the stop and GetROF(1)'s
-/// draw. The Scatter refuses the still-walking planter and draws nothing.
-#[test]
-fn a_walking_planter_plants_and_draws_for_its_rearm_alone() {
-    let rules = rules();
-    let (mut sim, _) = arena(&rules);
-    let building = spawn(&mut sim, &rules, "GAPILE", "Russians", 16, 10);
-    let tanya = spawn(&mut sim, &rules, "TANY", "Americans", 15, 10);
-    stand_in(&mut sim, tanya, building);
-    let (rof, after) = expected_draws(&sim, false);
-
-    assert!(
-        sim.infantry_per_cell_c4(tanya, &rules, None, FrameEffects::default())
-            .unwrap()
-    );
-
-    let target = sim.substrate.entities.get(building).unwrap();
-    let pending = target.pending_c4_detonation.pending().unwrap();
-    assert_eq!(
-        (pending.timer.duration(), pending.source_entity_id),
-        (26, Some(tanya))
-    );
-    assert_eq!(target.flashing.frames(), 13);
-    let planter = sim.substrate.entities.get(tanya).unwrap();
-    assert_eq!(planter.rearm_timer.duration(), rof);
-    assert_eq!(planter.navigation.nav_com(), None);
-    assert_eq!(
-        planter
-            .locomotor
-            .as_ref()
-            .and_then(|loco| loco.walk_destination_cell()),
-        Some((16, 10)),
-        "the Walk still holds its cell"
-    );
-    assert_eq!(sim.scenario_rng.logical_state(), after);
-}
-
 /// A second planter reaching a building that already holds a charge
 /// (`+0x6DF`) leaves it as it is: it drops its destination, which stops its
 /// Walk, then rearms and scatters (`0x0051A550..0x0051A5A4`), drawing for

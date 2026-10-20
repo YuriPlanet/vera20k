@@ -935,7 +935,7 @@ fn compare_authored_natural_phases(
     let hash = sim.state_hash();
     let rules = &scene.runtime.resources.rules;
     let registry = &scene.runtime.resources.overlay_registry;
-    let mut state = sim.production.ore_growth_state.clone();
+    let mut state = sim.ore_growth_state.clone();
     let mut grid = sim.overlay_grid.as_ref().unwrap().clone();
     let mut terrain = sim.resolved_terrain.as_ref().unwrap().clone();
     terrain.bind_shared_cell_dummy(terrain.shared_cell_dummy().fork_query_identity());
@@ -945,13 +945,13 @@ fn compare_authored_natural_phases(
         &sim.substrate.raw_cell_occupation,
         rules,
         &sim.interner,
-        &sim.production.terrain_object_cells,
+        sim.terrain_objects.cell_index(),
     );
     let seed = native["inputs"]["seed"].as_u64().unwrap();
     let mut rng = SimRng::new(seed);
     let main = MainRng::new(seed);
     let mapgen = SimRng::new(seed);
-    let config = &sim.production.ore_growth_config;
+    let config = &sim.ore_growth_config;
     assert_eq!(
         config.grows,
         native["inputs"]["session"]["basic_growth_enabled"]
@@ -1007,7 +1007,7 @@ fn compare_authored_natural_phases(
                 registry,
                 &rules.tiberium_types,
                 Some(&terrain),
-                &sim.production.tiberium_spawning_terrain_cells,
+                sim.terrain_objects.spawning_cells(),
                 Some(objects),
                 &mut rng,
                 frame,
@@ -1023,7 +1023,7 @@ fn compare_authored_natural_phases(
                 registry,
                 &rules.tiberium_types,
                 Some(&terrain),
-                &sim.production.tiberium_spawning_terrain_cells,
+                sim.terrain_objects.spawning_cells(),
                 Some(objects),
                 &mut rng,
                 frame,
@@ -1225,11 +1225,11 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
         );
     }
     let riparius = rules.tiberium_types.id_by_name("Riparius").unwrap();
-    assert!(scene.sim().production.ore_growth_config.grows);
-    assert!(scene.sim().production.ore_growth_config.spreads);
-    assert!(scene.sim().production.ore_growth_config.tiberium_grows_flag);
+    assert!(scene.sim().ore_growth_config.grows);
+    assert!(scene.sim().ore_growth_config.spreads);
+    assert!(scene.sim().ore_growth_config.tiberium_grows_flag);
 
-    let state = &scene.sim().production.ore_growth_state;
+    let state = &scene.sim().ore_growth_state;
     assert_eq!(
         json!([state.native_rect().0, state.native_rect().1]),
         native["native_rect"]
@@ -1246,7 +1246,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
         &scene.sim().substrate.raw_cell_occupation,
         rules,
         &scene.sim().interner,
-        &scene.sim().production.terrain_object_cells,
+        scene.sim().terrain_objects.cell_index(),
     );
     let occupied = objects.object_view().occupied_ground_cells().collect();
     let admission =
@@ -1431,12 +1431,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
         grid.pending_dirty_cells().is_empty(),
         "frame finalizer transferred the render facts"
     );
-    let class = &scene
-        .sim()
-        .production
-        .ore_growth_state
-        .native_tiberium_state()
-        .classes[riparius.0 as usize];
+    let class = &scene.sim().ore_growth_state.native_tiberium_state().classes[riparius.0 as usize];
     assert!(
         initial_growth != queue_state(&class.growth, &class.growth_bitmap)
             || initial_spread != queue_state(&class.spread, &class.spread_bitmap)

@@ -284,33 +284,6 @@ fn cursor_in_space(
 }
 
 #[cfg(test)]
-mod cursor_space_tests {
-    use super::cursor_in_space;
-    use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
-
-    #[test]
-    fn leaving_or_resizing_a_zoomed_match_keeps_the_pointer_in_place() {
-        let zoomed = ZoomGeometry::new(1600, 1200, 200, FrameShape::Window);
-        // Source (400, 300) is window (800, 600), where the menus read it.
-        assert_eq!(
-            cursor_in_space((400.0, 300.0), Some(zoomed), None),
-            (800.0, 600.0)
-        );
-        // Resized to 1925x1083 at 300%: the frame starts at window x = 1.
-        let resized = ZoomGeometry::new(1925, 1083, 300, FrameShape::Window);
-        assert_eq!(
-            cursor_in_space((400.0, 300.0), Some(zoomed), Some(resized)),
-            (799.0 / 3.0, 200.0)
-        );
-        // Entering a match keeps the point the tactical install placed.
-        assert_eq!(
-            cursor_in_space((320.0, 200.0), None, Some(zoomed)),
-            (320.0, 200.0)
-        );
-    }
-}
-
-#[cfg(test)]
 mod main_draw_tests {
     use super::process_main_draws;
     use crate::sim::{

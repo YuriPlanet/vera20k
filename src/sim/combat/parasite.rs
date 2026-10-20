@@ -1035,8 +1035,8 @@ impl Simulation {
         if !naval {
             if owner_entity.is_some_and(|o| o.category() == EntityCategory::Unit)
                 && self
-                    .production
-                    .terrain_object_cells
+                    .terrain_objects
+                    .cell_index()
                     .contains_key(&(cell.0 as u16, cell.1 as u16))
             {
                 return false;

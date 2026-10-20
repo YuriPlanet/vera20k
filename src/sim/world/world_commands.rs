@@ -744,9 +744,9 @@ impl Simulation {
             return false;
         };
         let owner_admitted = if self.session.game_mode_nonzero() {
-            owner_house.is_human
+            owner_house.is_human()
         } else {
-            owner_house.is_human || owner_house.player_control
+            owner_house.is_human() || owner_house.player_control()
         };
         if !owner_admitted || !overlays.flags(overlay_id).is_some_and(|flags| flags.wall) {
             return false;
@@ -799,7 +799,7 @@ impl Simulation {
             let visit = {
                 let mut host = SimulationWallRuntimeHost {
                     entities: &mut self.substrate.entities,
-                    target_terrain_objects: &self.production.terrain_objects,
+                    target_terrain_objects: self.terrain_objects.objects(),
                     #[cfg(any(test, feature = "test-support"))]
                     detach_trace: &mut detach_trace,
                     radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
@@ -2284,10 +2284,10 @@ impl Simulation {
             e.lifecycle.object_alive() && e.health.current() != 0 && !e.lifecycle.in_limbo()
         } else {
             // Event4C7225..725D reads Object lifetime/Health, not Techno RTTI.
-            self.production
-                .terrain_objects
+            self.terrain_objects
+                .objects()
                 .get(&stable_id)
-                .is_some_and(|target| target.is_live() && target.health != 0)
+                .is_some_and(|target| target.is_live() && target.health() != 0)
         }
     }
 
@@ -2371,7 +2371,7 @@ impl Simulation {
         token.filter(|token| match *token {
             combat::TargetKind::Entity(id) => {
                 self.substrate.entities.contains(id)
-                    || self.production.terrain_objects.contains_key(&id)
+                    || self.terrain_objects.objects().contains_key(&id)
             }
             combat::TargetKind::Cell(..) => true,
         })
@@ -2884,96 +2884,44 @@ mod tests {
         }
     }
 
+    /// An unarmed unit (no Primary, so CanAutoDeployHere rejects it) and an
+    /// enemy bunker each refuse admission and leave the machine idle.
     #[test]
-    fn enter_bunker_admits_and_starts_install_machine() {
+    fn enter_bunker_rejects_an_unarmed_unit_or_an_enemy_bunker() {
         use crate::sim::docking::bunker_install::BunkerState;
         use crate::sim::docking::bunker_link::BunkerLink;
         let rules = bunker_rules();
-        let mut sim = Simulation::new();
-        spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
-        spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 14, 14);
+        for (bunker_owner, unit_type) in [("Americans", "NOGUN"), ("Soviets", "TANK")] {
+            let mut sim = Simulation::new();
+            spawn_bunker_struct(&mut sim, 2, bunker_owner, 10, 10);
+            spawn_bunkerable(&mut sim, 1, "Americans", unit_type, 14, 14);
 
-        let applied = sim.apply_command(
-            "Americans",
-            &Command::EnterBunker {
-                unit_id: 1,
-                bunker_id: 2,
-            },
-            Some(&rules),
-        );
+            let applied = sim.apply_command(
+                "Americans",
+                &Command::EnterBunker {
+                    unit_id: 1,
+                    bunker_id: 2,
+                },
+                Some(&rules),
+            );
 
-        assert!(applied);
-        let unit = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(unit.bunker.link(), BunkerLink::Approaching(2));
-        assert_eq!(
-            unit.mission.queued(),
-            MissionId::from_known(MissionType::Enter)
-        );
-        let rt = sim
-            .substrate
-            .entities
-            .get(2)
-            .unwrap()
-            .bunker_runtime
-            .unwrap();
-        assert_eq!(rt.state(), BunkerState::ArriveWait);
-        assert_eq!(rt.installing_unit(), Some(1));
-    }
-
-    #[test]
-    fn enter_bunker_rejects_unit_without_a_weapon() {
-        use crate::sim::docking::bunker_install::BunkerState;
-        use crate::sim::docking::bunker_link::BunkerLink;
-        let rules = bunker_rules();
-        let mut sim = Simulation::new();
-        spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
-        // Bunkerable but no Primary → CanAutoDeployHere rejects it.
-        spawn_bunkerable(&mut sim, 1, "Americans", "NOGUN", 14, 14);
-
-        let applied = sim.apply_command(
-            "Americans",
-            &Command::EnterBunker {
-                unit_id: 1,
-                bunker_id: 2,
-            },
-            Some(&rules),
-        );
-
-        assert!(!applied);
-        assert_eq!(
-            sim.substrate.entities.get(1).unwrap().bunker.link(),
-            BunkerLink::None
-        );
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(2)
-                .unwrap()
-                .bunker_runtime
-                .unwrap()
-                .state(),
-            BunkerState::Idle,
-            "rejected admission leaves the machine idle"
-        );
-    }
-
-    #[test]
-    fn enter_enemy_bunker_is_rejected() {
-        let rules = bunker_rules();
-        let mut sim = Simulation::new();
-        spawn_bunker_struct(&mut sim, 2, "Soviets", 10, 10);
-        spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 14, 14);
-
-        let applied = sim.apply_command(
-            "Americans",
-            &Command::EnterBunker {
-                unit_id: 1,
-                bunker_id: 2,
-            },
-            Some(&rules),
-        );
-
-        assert!(!applied, "cannot bunker into an enemy building");
+            assert!(!applied, "{bunker_owner} bunker, {unit_type}");
+            assert_eq!(
+                sim.substrate.entities.get(1).unwrap().bunker.link(),
+                BunkerLink::None
+            );
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(2)
+                    .unwrap()
+                    .bunker_runtime
+                    .unwrap()
+                    .state(),
+                BunkerState::Idle,
+                "rejected admission leaves the machine idle"
+            );
+        }
     }
 
     #[test]

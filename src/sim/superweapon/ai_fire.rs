@@ -245,7 +245,7 @@ fn rally_target(
     registry: Option<&OverlayTypeRegistry>,
 ) -> Option<(u16, u16)> {
     let house = sim.houses.get(&owner)?;
-    let enemy = house.enemy_house?;
+    let enemy = house.enemy_house()?;
     let preferred = house.preferred_super_weapon_target();
     let kind = house.preferred_super_weapon_target_kind();
     //509968..5099E6 /509E00: the enemy gate precedes this preference.
@@ -345,7 +345,7 @@ fn offensive_target(
     sw: &crate::rules::superweapon_type::SuperWeaponType,
 ) -> Option<(u16, u16)> {
     let house = sim.houses.get(&owner)?;
-    let enemy = house.enemy_house?;
+    let enemy = house.enemy_house()?;
     let mut best = 0;
     let mut picks = Vec::new();
     let sites: Vec<_> = super::targeting::launch_sites(sim, rules, owner, sw)
@@ -415,8 +415,8 @@ fn rally_entry(
             && entity.is_object_alive()
             && !entity.lifecycle.in_limbo();
         let candidate = standing
-            || (house.difficulty == HouseDifficulty::Hard
-                && sim.production.factories.is_building(id));
+            || (house.difficulty() == HouseDifficulty::Hard
+                && sim.production.factories().is_building(id));
         let ty = sim.interner.object_type(entity.type_ref(), rules);
         (candidate, rally_value(entity.category(), ty, rules, house))
     } else {
@@ -591,7 +591,7 @@ fn ground_rally_seed(houses: &crate::sim::houses::Houses, owner: InternedId) -> 
         return (0, 0);
     };
     house
-        .enemy_house
+        .enemy_house()
         .and_then(|enemy| houses.get(&enemy))
         .unwrap_or(house)
         .base_origin()
@@ -677,7 +677,7 @@ fn psychic_dominator_target(
     if super::psychic_dominator::active(sim) {
         return None;
     }
-    sim.houses.get(&owner)?.enemy_house?;
+    sim.houses.get(&owner)?.enemy_house()?;
     if sim.houses.get(&owner)?.preferred_super_weapon_target() != (0, 0) {
         return None;
     }

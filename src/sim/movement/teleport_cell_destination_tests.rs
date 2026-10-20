@@ -143,7 +143,9 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
     sim.overlay_grid = Some(overlays);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, None, input["human"].as_bool().unwrap(), 0, 10);
-    house.player_control = row["human_input"]["player_control_byte"].as_u64().unwrap() != 0;
+    house.set_player_control_for_test(
+        row["human_input"]["player_control_byte"].as_u64().unwrap() != 0,
+    );
     sim.houses.register(house);
     assert_eq!(row["human_input"]["house_index"], 0);
     assert_eq!(row["human_input"]["player_control_byte"], 0);

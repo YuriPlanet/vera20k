@@ -1667,13 +1667,13 @@ impl Simulation {
                 let Some(house) = self.houses.get(&owner) else {
                     return false;
                 };
-                if house.tracking.buildings() <= 0 {
+                if house.tracking().buildings() <= 0 {
                     return true;
                 }
                 let Some(rules) = rules else {
                     return false;
                 };
-                !house.base_projection.buildings().iter().any(|&id| {
+                !house.base_projection().buildings().iter().any(|&id| {
                     self.substrate.entities.get(id).is_some_and(|building| {
                         !building.lifecycle.in_limbo()
                             && self
@@ -1781,7 +1781,7 @@ impl Simulation {
                 let count = self.houses.get(&owner).map_or(0, |house| {
                     self.interner.get(type_name).map_or(0, |id| {
                         house
-                            .tracking
+                            .tracking()
                             .active_count(crate::map::entities::EntityCategory::Structure, id)
                     })
                 });
@@ -1805,9 +1805,9 @@ impl Simulation {
                     return false;
                 };
                 let losses = if condition.kind == 15 {
-                    house.stats.buildings_lost()
+                    house.stats().buildings_lost()
                 } else {
-                    house.stats.units_lost()
+                    house.stats().units_lost()
                 };
                 (losses as i32) >= condition.value
             }
@@ -1848,17 +1848,17 @@ impl Simulation {
                         .is_none_or(|house| match condition.kind {
                             3 => house.building_capture_notified(),
                             5 => house.discovered_by_current_house(),
-                            9 => house.tracking.units_destroyed(),
-                            10 => house.tracking.buildings() <= 0,
-                            11 => house.tracking.all_destroyed(),
-                            55 => house.tracking.navy() <= 0,
+                            9 => house.tracking().units_destroyed(),
+                            10 => house.tracking().buildings() <= 0,
+                            11 => house.tracking().all_destroyed(),
+                            55 => house.tracking().navy() <= 0,
                             56 => {
                                 house
-                                    .tracking
+                                    .tracking()
                                     .vehicles()
-                                    .wrapping_sub(house.tracking.navy())
+                                    .wrapping_sub(house.tracking().navy())
                                     <= 0
-                                    && house.tracking.infantry() <= 0
+                                    && house.tracking().infantry() <= 0
                             }
                             _ => unreachable!(),
                         })
@@ -2957,7 +2957,7 @@ impl Simulation {
                 else {
                     return false;
                 };
-                house.strategy_emergency.set_state_four();
+                house.strategy_emergency_mut().set_state_four();
             }
             12 => {
                 // Steam3e81a617..08600, Execute6DF051..6DF08F: reverse
@@ -3846,7 +3846,7 @@ impl Simulation {
                     .get(&owner)
                     .map(|house| {
                         house
-                            .base_projection
+                            .base_projection()
                             .buildings()
                             .iter()
                             .rev()
@@ -3902,9 +3902,7 @@ impl Simulation {
                 let Some(value) = value else {
                     return false;
                 };
-                self.production
-                    .ore_growth_config
-                    .set_enabled_from_trigger(value);
+                self.ore_growth_config.set_enabled_from_trigger(value);
             }
             88 => {
                 let (Some(rules), Some(index), Some(waypoint)) =
@@ -3964,7 +3962,7 @@ impl Simulation {
                     return false;
                 };
                 match action.kind {
-                    76 => house.team_creation.set_trigger_ratio(value),
+                    76 => house.team_creation_mut().set_trigger_ratio(value),
                     77 => house.set_aircraft_team_ratio(value),
                     78 => house.set_infantry_team_ratio(value),
                     79 => house.set_unit_team_ratio(value),
@@ -4464,7 +4462,7 @@ impl Simulation {
                 // waypoint and writes only `HouseClass+0x5494` through
                 // `FUN_0050DFE0`.
                 if let Some(house) = self.houses.get_mut(&house_id) {
-                    house.alternate_base_center = (cell.0 as u16, cell.1 as u16);
+                    house.set_alternate_base((cell.0 as u16, cell.1 as u16));
                 }
             }
             ACTION_CLEAR_ALTERNATE_BASE => {
@@ -4475,7 +4473,7 @@ impl Simulation {
                 // case 138 calls `FUN_006E4540`, which writes packed zero only
                 // to `HouseClass+0x5494` through `FUN_0050DFF0`.
                 if let Some(house) = self.houses.get_mut(&house_id) {
-                    house.alternate_base_center = (0, 0);
+                    house.clear_alternate_base();
                 }
             }
             1 | 2 | ACTION_ANNOUNCE_WIN | ACTION_ANNOUNCE_LOSE | ACTION_END_SCENARIO => {

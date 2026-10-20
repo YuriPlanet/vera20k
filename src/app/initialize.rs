@@ -920,7 +920,7 @@ mod tests {
                     .sim()
                     .houses
                     .values()
-                    .filter(|house| !house.multiplay_passive)
+                    .filter(|house| !house.multiplay_passive())
                     .count(),
                 if previous_empty_opponent { 2 } else { 1 }
             );
@@ -963,7 +963,7 @@ mod tests {
                     assert!(!output.tick.terminal_score_finalized);
                     assert!(loaded.sim().ready_outcome_for_owner(owner).is_none());
                     let house = &loaded.sim().houses[&owner];
-                    assert!(!house.has_won() && !house.has_lost() && !house.is_defeated);
+                    assert!(!house.has_won() && !house.has_lost() && !house.is_defeated());
                     assert!(
                         house.outcome().is_none(),
                         "no hidden false outcome on frame {frame}"

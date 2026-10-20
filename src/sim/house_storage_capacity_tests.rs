@@ -69,7 +69,7 @@ fn capacity_matches_original_signed_transfer_slices() {
             .spawn_object_limbo_at_height("CAP", "Americans", 14, 10, 0, 0, &rules)
             .unwrap();
         assert_eq!(
-            sim.houses[&owner].tracking.storage_capacity(),
+            sim.houses[&owner].tracking().storage_capacity(),
             base,
             "construction is not admission"
         );
@@ -78,11 +78,11 @@ fn capacity_matches_original_signed_transfer_slices() {
             RevealOutcome::Revealed { .. }
         ));
         if remove {
-            assert_eq!(sim.houses[&owner].tracking.storage_capacity(), 100);
+            assert_eq!(sim.houses[&owner].tracking().storage_capacity(), 100);
             sim.techno_limbo_with_rules(target, &rules, None);
         }
         assert_eq!(
-            sim.houses[&owner].tracking.storage_capacity(),
+            sim.houses[&owner].tracking().storage_capacity(),
             i32::try_from(row["output"]["capacity"].as_i64().unwrap()).unwrap(),
             "{} Storage={storage}",
             row["input"]["source"]
@@ -109,7 +109,7 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
         sim.try_reveal_entity_with_context(target, rejected, UninitContext::with_rules(&rules)),
         RevealOutcome::Failed(_)
     ));
-    assert_eq!(sim.houses[&first].tracking.storage_capacity(), 0);
+    assert_eq!(sim.houses[&first].tracking().storage_capacity(), 0);
     assert!(matches!(
         sim.reveal_entity_with_rules(target, &rules),
         RevealOutcome::Revealed { .. }
@@ -121,7 +121,7 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
     sim.spawn_object_at_height("CARGO", "Americans", 30, 10, 0, 0, &rules)
         .unwrap();
     assert_eq!(
-        sim.houses[&first].tracking.storage_capacity(),
+        sim.houses[&first].tracking().storage_capacity(),
         23,
         "mobile cargo is not House capacity"
     );
@@ -132,39 +132,39 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
         .spawn_object_at_height("INSIG", "Americans", 22, 10, 0, 0, &rules)
         .unwrap();
     assert_eq!(
-        sim.houses[&first].tracking.storage_capacity(),
+        sim.houses[&first].tracking().storage_capacity(),
         41,
         "score filters do not suppress capacity"
     );
     sim.change_owner_with_rules(target, second, &rules, None, FrameEffects::default());
     assert_eq!(
         (
-            sim.houses[&first].tracking.storage_capacity(),
-            sim.houses[&second].tracking.storage_capacity()
+            sim.houses[&first].tracking().storage_capacity(),
+            sim.houses[&second].tracking().storage_capacity()
         ),
         (18, 23)
     );
     sim.techno_limbo_with_rules(target, &rules, None);
     sim.techno_limbo_with_rules(target, &rules, None);
-    assert_eq!(sim.houses[&second].tracking.storage_capacity(), 0);
+    assert_eq!(sim.houses[&second].tracking().storage_capacity(), 0);
     sim.change_owner_with_rules(target, first, &rules, None, FrameEffects::default());
     assert_eq!(
-        sim.houses[&first].tracking.storage_capacity(),
+        sim.houses[&first].tracking().storage_capacity(),
         18,
         "limbo transfer has no capacity effect"
     );
     sim.uninit_with_rules(target, &rules);
     sim.flush_pending_delete();
     assert_eq!(
-        sim.houses[&first].tracking.storage_capacity(),
+        sim.houses[&first].tracking().storage_capacity(),
         18,
         "destructor does not subtract again"
     );
     sim.uninit_with_rules(dont, &rules);
     sim.uninit_with_rules(insignificant, &rules);
-    assert_eq!(sim.houses[&first].tracking.storage_capacity(), 0);
+    assert_eq!(sim.houses[&first].tracking().storage_capacity(), 0);
     sim.flush_pending_delete();
-    assert_eq!(sim.houses[&first].tracking.storage_capacity(), 0);
+    assert_eq!(sim.houses[&first].tracking().storage_capacity(), 0);
 }
 
 #[test]
@@ -179,27 +179,27 @@ fn capacity_and_future_type_input_survive_snapshot_and_affect_hash() {
     let future = sim
         .spawn_object_limbo_at_height("CAP", "Americans", 18, 10, 0, 0, &rules)
         .unwrap();
-    assert_eq!(sim.houses[&owner].tracking.storage_capacity(), -17);
+    assert_eq!(sim.houses[&owner].tracking().storage_capacity(), -17);
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "retained-capacity", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
-    assert_eq!(restored.houses[&owner].tracking.storage_capacity(), -17);
+    assert_eq!(restored.houses[&owner].tracking().storage_capacity(), -17);
     assert_eq!(restored.state_hash(), hash);
     // Owner-local component perturbations prove both retained bytes are hashed.
     restored
         .houses
         .get_mut(&owner)
         .unwrap()
-        .tracking
+        .tracking_mut()
         .storage_capacity = -16;
     assert_ne!(restored.state_hash(), hash);
     restored
         .houses
         .get_mut(&owner)
         .unwrap()
-        .tracking
+        .tracking_mut()
         .storage_capacity = -17;
     let facts = restored
         .substrate
@@ -231,14 +231,14 @@ fn capacity_and_future_type_input_survive_snapshot_and_affect_hash() {
             candidate.reveal_entity_with_rules(future, &rules),
             RevealOutcome::Revealed { .. }
         ));
-        assert_eq!(candidate.houses[&owner].tracking.storage_capacity(), 6);
+        assert_eq!(candidate.houses[&owner].tracking().storage_capacity(), 6);
         candidate.uninit_with_rules(first, &rules);
-        assert_eq!(candidate.houses[&owner].tracking.storage_capacity(), -17);
+        assert_eq!(candidate.houses[&owner].tracking().storage_capacity(), -17);
         candidate.uninit_with_rules(base, &rules);
-        assert_eq!(candidate.houses[&owner].tracking.storage_capacity(), 23);
+        assert_eq!(candidate.houses[&owner].tracking().storage_capacity(), 23);
         candidate.uninit_with_rules(future, &rules);
         candidate.flush_pending_delete();
-        assert_eq!(candidate.houses[&owner].tracking.storage_capacity(), 0);
+        assert_eq!(candidate.houses[&owner].tracking().storage_capacity(), 0);
     }
     assert_eq!(sim.state_hash(), restored.state_hash());
 }

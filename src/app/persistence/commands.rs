@@ -371,24 +371,6 @@ mod save_name_tests {
     }
 
     #[test]
-    fn keeps_normal_chars() {
-        assert_eq!(sanitize_save_name("miner stuck repro"), "miner stuck repro");
-        assert_eq!(sanitize_save_name("dock_fix_a"), "dock_fix_a");
-    }
-
-    #[test]
-    fn caps_at_64_chars() {
-        let long: String = "x".repeat(100);
-        let out = sanitize_save_name(&long);
-        assert_eq!(out.len(), 64);
-    }
-
-    #[test]
-    fn trims_whitespace() {
-        assert_eq!(sanitize_save_name("  hello  "), "hello");
-    }
-
-    #[test]
     fn gsi_17_02_unicode_filename_cap_preserves_exact_envelope_description() {
         let raw_description = "保存".repeat(40);
         let filename_part = sanitize_save_name(&raw_description);

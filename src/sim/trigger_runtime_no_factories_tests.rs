@@ -157,7 +157,7 @@ fn no_factories_event_matches_original_incoming_house_list_and_raw_class() {
             sim.houses
                 .get_mut(&houses[index])
                 .unwrap()
-                .tracking
+                .tracking_mut()
                 .set_buildings_for_test(int(&house["tracked_buildings"]));
         }
         sim.houses.reorder_for_test(
@@ -289,11 +289,13 @@ fn fire_sale_action_matches_original_selector_state_and_unchanged_timer() {
             .map(|slot| houses[slot as usize]);
         for (index, owner) in houses.iter().enumerate() {
             let house = sim.houses.get_mut(owner).unwrap();
-            house.strategy_emergency.mode = int(&case["modes_before"][index]);
-            house.strategy_timer = CdTimer::from_raw(
+            house
+                .strategy_emergency_mut()
+                .set_mode_for_test(int(&case["modes_before"][index]));
+            house.set_strategy_timer_for_test(CdTimer::from_raw(
                 int(&case["strategy_timers_before"][index][0]),
                 int(&case["strategy_timers_before"][index][2]),
-            );
+            ));
         }
         let before: Vec<_> = houses
             .iter()
@@ -454,14 +456,14 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
     sim.change_owner_with_rules(factory, other, &rules, None, FrameEffects::default());
     assert!(
         !sim.houses[&house]
-            .base_projection
+            .base_projection()
             .buildings()
             .contains(&factory)
     );
     sim.change_owner_with_rules(factory, house, &rules, None, FrameEffects::default());
     assert!(
         sim.houses[&house]
-            .base_projection
+            .base_projection()
             .buildings()
             .contains(&factory)
     );
@@ -469,22 +471,25 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
     sim.raise_house_tags(house, Some(&rules), None, FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(delayed).unwrap().enabled);
     sim.techno_limbo_with_context(factory, UninitContext::new(Some(&rules), None));
-    assert_eq!(sim.houses[&house].tracking.buildings(), 3);
+    assert_eq!(sim.houses[&house].tracking().buildings(), 3);
     sim.session.set_binary_frame_for_test(24);
     sim.raise_house_tags(house, Some(&rules), None, FrameEffects::default());
     assert!(sim.trigger_runtime.trigger(delayed).unwrap().enabled);
-    assert_eq!(sim.houses[&house].strategy_emergency.mode(), 0);
-    sim.houses.get_mut(&house).unwrap().strategy_timer = CdTimer::started(1000, 109);
+    assert_eq!(sim.houses[&house].strategy_emergency().mode(), 0);
+    sim.houses
+        .get_mut(&house)
+        .unwrap()
+        .set_strategy_timer_for_test(CdTimer::started(1000, 109));
     let saved = GameSnapshot::save(&sim, 0, 0, "SOV02SMD.MAP", 0);
     let mut sim = GameSnapshot::load(&saved).unwrap().sim;
     sim.restore_after_snapshot_load().unwrap();
     sim.resolve_type_handles(&rules);
-    let timer = sim.houses[&house].strategy_timer;
+    let timer = *sim.houses[&house].strategy_timer();
     for (frame, mode) in [(698, 0), (700, 4)] {
         sim.session.set_binary_frame_for_test(frame);
         sim.advance_triggers(Some(&rules), None, FrameEffects::default());
-        assert_eq!(sim.houses[&house].strategy_emergency.mode(), mode);
-        assert_eq!(sim.houses[&house].strategy_timer, timer);
+        assert_eq!(sim.houses[&house].strategy_emergency().mode(), mode);
+        assert_eq!(*sim.houses[&house].strategy_timer(), timer);
         assert!(
             plain
                 .iter()
@@ -502,7 +507,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
         FrameEffects::default(),
     );
     assert_rng_state(&sim, &native["native_rng"]["before"]);
-    assert!(!sim.houses[&house].strategy_emergency.all_to_hunt_bias());
+    assert!(!sim.houses[&house].strategy_emergency().all_to_hunt_bias());
     sim.session.set_binary_frame_for_test(1109);
     let (_, draws) = crate::sim::rng::trace_draws(|| {
         crate::sim::house_strategy::update_strategy(
@@ -519,10 +524,10 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
     );
     assert_rng_state(&sim, &native["native_rng"]["after"]);
     assert_eq!(
-        sim.houses[&house].strategy_timer,
+        *sim.houses[&house].strategy_timer(),
         CdTimer::started(1109, int(&native["delay"]))
     );
-    assert!(sim.houses[&house].strategy_emergency.all_to_hunt_bias());
+    assert!(sim.houses[&house].strategy_emergency().all_to_hunt_bias());
     assert!(
         plain
             .iter()

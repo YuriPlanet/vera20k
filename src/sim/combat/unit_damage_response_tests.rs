@@ -187,7 +187,10 @@ fn computer_crusher_charges_a_crushable_attacker() {
     );
     assert!(!charge(10, &|sim, _, gi| {
         let owner = sim.interner.get("Russians").unwrap();
-        sim.houses.get_mut(&owner).unwrap().is_human = true;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_is_human_for_test(true);
         gi
     }));
     assert!(!charge(10, &|sim, rhino, gi| {
@@ -212,12 +215,18 @@ fn computer_crusher_charges_a_crushable_attacker() {
     }));
     assert!(!charge(10, &|sim, _, gi| {
         let owner = sim.interner.get("Russians").unwrap();
-        sim.houses.get_mut(&owner).unwrap().difficulty = HouseDifficulty::Easy;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_difficulty_for_test(HouseDifficulty::Easy);
         gi
     }));
     assert!(!charge(10, &|sim, _, gi| {
         let owner = sim.interner.get("Russians").unwrap();
-        sim.houses.get_mut(&owner).unwrap().current_iq = 1;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_current_iq_for_test(1);
         gi
     }));
     assert!(!charge(10, &|sim, rhino, gi| {

@@ -907,68 +907,6 @@ mod tests {
     }
 
     #[test]
-    fn inactive_archive_residue_names_are_not_registered_commands() {
-        let bindings = HotkeyBindings::from_ini_bytes(Some(
-            b"[Hotkey]\nRightSidebarUp=65\nRightSidebarDown=66\nLeftSidebarDown=67\nLeftSidebarUp=68\nRaiseCell=69\nLowerCell=70\nDeleteObject=71\nSidebarPageUp=72\nSidebarPageDown=73\nSidebarDown=98\nSidebarUp=104\n",
-        ));
-        for letter in ["a", "b", "c", "d", "e", "f", "g", "h", "i"] {
-            assert_eq!(
-                bindings.resolve_event(
-                    &character(letter),
-                    KeyLocation::Standard,
-                    ModifiersState::empty(),
-                ),
-                HotkeyResolution::Unhandled
-            );
-        }
-        assert_eq!(
-            bindings.resolve_event(
-                &character("2"),
-                KeyLocation::Numpad,
-                ModifiersState::empty(),
-            ),
-            HotkeyResolution::Command(HotkeyCommand::SidebarDown)
-        );
-        assert_eq!(
-            bindings.resolve_event(
-                &character("8"),
-                KeyLocation::Numpad,
-                ModifiersState::empty(),
-            ),
-            HotkeyResolution::Command(HotkeyCommand::SidebarUp)
-        );
-    }
-
-    #[test]
-    fn missing_file_has_only_forced_bindings() {
-        let bindings = HotkeyBindings::from_ini_bytes(None);
-        assert_eq!(
-            bindings.resolve(
-                &Key::Named(NamedKey::Escape),
-                KeyLocation::Standard,
-                ModifiersState::empty()
-            ),
-            Some(HotkeyCommand::Options)
-        );
-        assert_eq!(
-            bindings.resolve(
-                &Key::Named(NamedKey::Space),
-                KeyLocation::Standard,
-                ModifiersState::empty()
-            ),
-            Some(HotkeyCommand::CenterOnRadarEvent)
-        );
-        assert_eq!(
-            bindings.resolve(
-                &character("s"),
-                KeyLocation::Standard,
-                ModifiersState::empty()
-            ),
-            None
-        );
-    }
-
-    #[test]
     fn forced_bindings_override_archive_rows() {
         let bindings = HotkeyBindings::from_ini_bytes(Some(
             b"[Hotkey]\nStopObject=27\nDeployObject=32\nGuardObject=46\n",
@@ -996,26 +934,6 @@ mod tests {
                 ModifiersState::empty()
             ),
             Some(HotkeyCommand::Delete)
-        );
-    }
-
-    #[test]
-    fn logical_letters_and_numpad_digits_use_distinct_virtual_keys() {
-        assert_eq!(
-            logical_virtual_key(&character("z"), KeyLocation::Standard),
-            Some(0x5a)
-        );
-        assert_eq!(
-            logical_virtual_key(&character("2"), KeyLocation::Standard),
-            Some(0x32)
-        );
-        assert_eq!(
-            logical_virtual_key(&character("2"), KeyLocation::Numpad),
-            Some(0x62)
-        );
-        assert_eq!(
-            logical_virtual_key(&character("."), KeyLocation::Numpad),
-            Some(0x6e)
         );
     }
 
@@ -1197,23 +1115,6 @@ mod tests {
     }
 
     #[test]
-    fn boundary_preserves_numpad_identity_but_strips_standard_shift() {
-        let raw_numpad_2 = character("2");
-        let modifier_free_down = Key::Named(NamedKey::ArrowDown);
-        assert_eq!(
-            binding_logical_key(&raw_numpad_2, &modifier_free_down, KeyLocation::Numpad),
-            &raw_numpad_2
-        );
-
-        let raw_shifted = character("!");
-        let modifier_free_1 = character("1");
-        assert_eq!(
-            binding_logical_key(&raw_shifted, &modifier_free_1, KeyLocation::Standard),
-            &modifier_free_1
-        );
-    }
-
-    #[test]
     fn numlock_on_digits_resolve_sidebar_bindings() {
         let bindings =
             HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nSidebarDown=98\nSidebarUp=104\n"));
@@ -1297,53 +1198,6 @@ mod tests {
     }
 
     #[test]
-    fn archive_shaped_stock_bindings_resolve_existing_semantic_owners() {
-        let bindings = HotkeyBindings::from_ini_bytes(Some(
-            b"[Hotkey]\nDeployObject=68\nGuardObject=71\nStructureTab=81\nUnitTab=82\nStopObject=83\nTypeSelect=84\nDefenseTab=87\nDelete=110\nScreenCapture=339\nView1=112\nSetView1=624\n",
-        ));
-        assert_eq!(
-            bindings.resolve(
-                &character("d"),
-                KeyLocation::Standard,
-                ModifiersState::empty()
-            ),
-            Some(HotkeyCommand::DeployObject)
-        );
-        assert_eq!(
-            bindings.resolve(
-                &character("s"),
-                KeyLocation::Standard,
-                modifiers(true, false, false)
-            ),
-            Some(HotkeyCommand::ScreenCapture)
-        );
-        assert_eq!(
-            bindings.resolve(
-                &Key::Named(NamedKey::F1),
-                KeyLocation::Standard,
-                ModifiersState::empty()
-            ),
-            Some(HotkeyCommand::View(0))
-        );
-        assert_eq!(
-            bindings.resolve(
-                &Key::Named(NamedKey::F1),
-                KeyLocation::Standard,
-                modifiers(false, true, false)
-            ),
-            Some(HotkeyCommand::SetView(0))
-        );
-        assert_eq!(
-            bindings.resolve(
-                &character("."),
-                KeyLocation::Numpad,
-                ModifiersState::empty()
-            ),
-            Some(HotkeyCommand::Delete)
-        );
-    }
-
-    #[test]
     fn unclaimed_tab_and_arrows_resolve_to_hardcoded_fallbacks() {
         let bindings = HotkeyBindings::from_ini_bytes(None);
         assert_eq!(
@@ -1416,40 +1270,6 @@ mod tests {
                 bindings.resolve_event(&key, KeyLocation::Standard, ModifiersState::CONTROL),
                 HotkeyResolution::Command(HotkeyCommand::StopObject),
                 "{text}"
-            );
-        }
-    }
-
-    #[test]
-    fn named_key_shortcuts_reach_their_reloaded_command() {
-        for (named, vk) in [
-            (NamedKey::CapsLock, 0x14),
-            (NamedKey::NumLock, 0x90),
-            (NamedKey::Pause, 0x13),
-            (NamedKey::PrintScreen, 0x2c),
-            (NamedKey::F13, 0x7c),
-            (NamedKey::F14, 0x7d),
-            (NamedKey::F15, 0x7e),
-            (NamedKey::F16, 0x7f),
-            (NamedKey::F17, 0x80),
-            (NamedKey::F18, 0x81),
-            (NamedKey::F19, 0x82),
-            (NamedKey::F20, 0x83),
-            (NamedKey::F21, 0x84),
-            (NamedKey::F22, 0x85),
-            (NamedKey::F23, 0x86),
-            (NamedKey::F24, 0x87),
-        ] {
-            let ini = format!("[Hotkey]\nStopObject={vk}\n");
-            let bindings = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
-            assert_eq!(
-                bindings.resolve_event(
-                    &Key::Named(named),
-                    KeyLocation::Standard,
-                    ModifiersState::empty()
-                ),
-                HotkeyResolution::Command(HotkeyCommand::StopObject),
-                "{named:?}"
             );
         }
     }

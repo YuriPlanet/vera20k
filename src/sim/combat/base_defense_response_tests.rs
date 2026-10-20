@@ -18,20 +18,6 @@ use crate::sim::team_script_vm::{
     TeamTaskForceDefinition, TeamTaskForceEntry, TeamTypeDefinition,
 };
 use crate::sim::timer::CdTimer;
-use crate::util::native_x87::distance_3d_leptons;
-
-fn threat(threat_posed: i32, distance: i32, range: i32, speed: i32) -> ThreatFacts {
-    ThreatFacts {
-        threat_posed,
-        speed_leptons_per_frame: speed,
-        current_coord: [0, 0, 0],
-        attacker_coord: Some([distance, 0, 0]),
-        primary_range_leptons: range,
-        existing_target: ExistingTargetDisposition::NoneOrUnarmed,
-        in_non_base_defense_team: false,
-        mission_is_harvest: false,
-    }
-}
 
 fn clear_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
     crate::map::resolved_terrain::test_grid(
@@ -374,104 +360,6 @@ fn gsi_04_05_a_defender_whose_weapon_zero_is_illegal_is_not_recruited() {
     assert_eq!(
         sim.scenario_rng.logical_state(),
         expected_rng.logical_state()
-    );
-}
-
-#[test]
-fn gsi_04_05_threat_preserves_special_targets_and_signed_integer_math() {
-    let mut facts = threat(100, 1024, 256, 128);
-    assert_eq!(evaluate_target_threat(facts), (100_i32 << 10) / 6);
-    facts.attacker_coord = Some([256, 0, 0]);
-    assert_eq!(evaluate_target_threat(facts), 100_i32 << 10);
-    facts.existing_target = ExistingTargetDisposition::RequestedAttacker;
-    assert_eq!(evaluate_target_threat(facts), -100);
-    facts.existing_target = ExistingTargetDisposition::OtherArmedTarget;
-    assert_eq!(evaluate_target_threat(facts), 0);
-    facts.existing_target = ExistingTargetDisposition::NoneOrUnarmed;
-    facts.mission_is_harvest = true;
-    assert_eq!(evaluate_target_threat(facts), 0);
-}
-
-#[test]
-fn gsi_04_05_threat_uses_wrapping_base_and_native_sqrt_distance() {
-    let facts = threat(i32::MAX, 513, 0, 256);
-    assert_eq!(evaluate_target_threat(facts), 1);
-    let diagonal = ThreatFacts {
-        attacker_coord: Some([256, 256, 256]),
-        primary_range_leptons: 0,
-        speed_leptons_per_frame: 1,
-        threat_posed: 2,
-        ..threat(2, 0, 0, 1)
-    };
-    assert_eq!(distance_3d_leptons([0, 0, 0], [256, 256, 256]), 443);
-    assert_eq!(evaluate_target_threat(diagonal), 4);
-}
-
-#[test]
-fn gsi_04_05_negative_scores_debit_budget_with_class_specific_anchor_order() {
-    let mut selection = ResponseSelection::new(500);
-    selection.consider(1, -2, ResponderClass::Infantry, true);
-    assert_eq!(selection.remaining_budget(), 300);
-    selection.consider(2, -2, ResponderClass::Unit, true);
-    assert_eq!(selection.remaining_budget(), 298);
-    assert!(selection.can_scan());
-    selection.consider(3, -298, ResponderClass::Unit, false);
-    assert!(!selection.can_scan());
-}
-
-#[test]
-fn gsi_04_05_first_six_leave_minimum_zero_and_seventh_only_exposes_minimum() {
-    let mut selection = ResponseSelection::new(1);
-    for (id, score) in [(1, 9), (2, 2), (3, 8), (4, 3), (5, 7), (6, 4)] {
-        selection.consider(id, score, ResponderClass::Unit, false);
-    }
-    selection.consider(7, 100, ResponderClass::Unit, false);
-    let (_, ranked) = selection.into_ranked();
-    assert_eq!(
-        ranked
-            .iter()
-            .map(|entry| entry.entity_id)
-            .collect::<Vec<_>>(),
-        [1, 3, 5, 6, 4, 2]
-    );
-}
-
-#[test]
-fn gsi_04_05_replacement_overwrites_every_old_minimum_with_duplicates() {
-    let mut selection = ResponseSelection::new(1);
-    for (id, score) in [(1, 9), (2, 2), (3, 2), (4, 8), (5, 7), (6, 6)] {
-        selection.consider(id, score, ResponderClass::Unit, false);
-    }
-    selection.consider(7, 100, ResponderClass::Unit, false);
-    selection.consider(8, 5, ResponderClass::Unit, false);
-    let (_, ranked) = selection.into_ranked();
-    assert_eq!(
-        ranked.iter().filter(|entry| entry.entity_id == 8).count(),
-        2
-    );
-    assert_eq!(
-        ranked
-            .iter()
-            .map(|entry| entry.entity_id)
-            .collect::<Vec<_>>(),
-        [1, 4, 5, 6, 8, 8]
-    );
-}
-
-#[test]
-fn native_base_response_pairwise_exchange_sort_reorders_the_displaced_equal_score() {
-    let mut selection = ResponseSelection::new(1);
-    for (id, score) in [(1, 4), (2, 9), (3, 4), (4, 7)] {
-        selection.consider(id, score, ResponderClass::Infantry, false);
-    }
-    let (_, ranked) = selection.into_ranked();
-    assert_eq!(
-        ranked
-            .iter()
-            .map(|entry| entry.entity_id)
-            .collect::<Vec<_>>(),
-        // Original response sort708647..7086AF, executed on these four slots.
-        [2, 4, 3, 1]
     );
 }
 

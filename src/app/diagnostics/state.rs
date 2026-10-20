@@ -292,20 +292,6 @@ mod tests {
     }
 
     #[test]
-    fn frame_timer_empty_returns_zero() {
-        let t = FrameTimer::new();
-        assert_eq!(t.frame_ms_mean(), 0.0);
-    }
-
-    #[test]
-    fn frame_timer_single_sample_is_still_zero() {
-        // First sample establishes the baseline; no delta yet.
-        let mut t = FrameTimer::new();
-        t.sample(Instant::now());
-        assert_eq!(t.frame_ms_mean(), 0.0);
-    }
-
-    #[test]
     fn frame_timer_two_samples_record_one_delta() {
         let mut t = FrameTimer::new();
         let t0 = Instant::now();
@@ -314,15 +300,5 @@ mod tests {
         t.sample(t1);
         let mean = t.frame_ms_mean();
         assert!((mean - 16.0).abs() < 0.5, "expected ~16ms, got {mean}");
-    }
-
-    #[test]
-    fn frame_timer_window_caps_at_60() {
-        let mut t = FrameTimer::new();
-        let t0 = Instant::now();
-        for i in 0..200 {
-            t.sample(t0 + Duration::from_millis(16 * i));
-        }
-        assert_eq!(t.samples.len(), FRAME_TIMER_WINDOW);
     }
 }

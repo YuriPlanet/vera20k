@@ -45,9 +45,9 @@ fn quarry_terms_and_acceptance_match_the_original() {
     let other = interner.intern("Other");
     for (number, row) in rows("quarry_terms").iter().enumerate() {
         let mut house = HouseState::new(scanner, 0, None, false, 0, 10);
-        house.enemy_house = flag(&row["enemy"]).then_some(enemy);
+        house.set_enemy_house_for_test(flag(&row["enemy"]).then_some(enemy));
         if flag(&row["bias"]) {
-            house.strategy_emergency.set_all_to_hunt_bias();
+            house.strategy_emergency_mut().set_all_to_hunt_bias();
         }
         let owner = if flag(&row["enemy_owns"]) {
             enemy

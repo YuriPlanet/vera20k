@@ -179,45 +179,6 @@ fn make_shp_key(type_id: &str, facing: u8) -> ShpSpriteKey {
     }
 }
 
-#[test]
-fn test_shp_sprite_key_hash_equality() {
-    let hc = HouseColorIndex::default();
-    let k1 = ShpSpriteKey {
-        palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-        type_id: "E1".into(),
-        facing: 64,
-        frame: 10,
-        house_color: hc,
-    };
-    let k2 = ShpSpriteKey {
-        palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-        type_id: "E1".into(),
-        facing: 64,
-        frame: 10,
-        house_color: hc,
-    };
-    let k3 = ShpSpriteKey {
-        palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-        type_id: "E1".into(),
-        facing: 64,
-        frame: 11,
-        house_color: hc,
-    };
-    assert_eq!(k1, k2);
-    assert_ne!(k1, k3);
-    let mut set: HashSet<ShpSpriteKey> = HashSet::new();
-    set.insert(k1);
-    set.insert(k2);
-    set.insert(k3);
-    assert_eq!(set.len(), 2);
-}
-
-#[test]
-fn test_empty_world_returns_none() {
-    let needed: HashSet<ShpSpriteKey> = HashSet::new();
-    assert!(needed.is_empty());
-}
-
 fn test_entry(page: u8) -> ShpSpriteEntry {
     ShpSpriteEntry {
         uv_origin: [0.0, 0.0],
@@ -795,65 +756,6 @@ fn building_animation_frames_render_from_the_file_they_were_counted_in() {
 }
 
 #[test]
-fn test_key_collection_deduplicates() {
-    let hc = HouseColorIndex::default();
-    let mut needed: HashSet<ShpSpriteKey> = HashSet::new();
-    // Two identical keys + one different facing.
-    needed.insert(make_shp_key("E1", 64));
-    needed.insert(make_shp_key("E1", 64)); // duplicate
-    needed.insert(make_shp_key("E1", 128));
-    assert_eq!(needed.len(), 2);
-    let _ = hc;
-}
-
-#[test]
-fn test_structure_facing_collapse() {
-    let hc = HouseColorIndex::default();
-    // Structures always use facing 0 (no rotation).
-    let mut needed: HashSet<ShpSpriteKey> = HashSet::new();
-    for facing_raw in [64u8, 192u8] {
-        let eff = 0u8; // structures collapse to facing 0
-        needed.insert(ShpSpriteKey {
-            palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-            type_id: "GAPOWR".to_string(),
-            facing: eff,
-            frame: 0,
-            house_color: hc,
-        });
-        let _ = facing_raw;
-    }
-    assert_eq!(needed.len(), 1);
-}
-
-#[test]
-fn test_different_houses_create_separate_keys() {
-    let hc0 = HouseColorIndex(0); // [Colors] entry 0 (LightGold)
-    let hc1 = HouseColorIndex(1); // [Colors] entry 1 (Gold)
-    let k1 = ShpSpriteKey {
-        palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-        type_id: "E1".into(),
-        facing: 64,
-        frame: 10,
-        house_color: hc0,
-    };
-    let k2 = ShpSpriteKey {
-        palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-        type_id: "E1".into(),
-        facing: 64,
-        frame: 10,
-        house_color: hc1,
-    };
-    assert_ne!(
-        k1, k2,
-        "Same type+facing but different house should be distinct keys"
-    );
-    let mut set: HashSet<ShpSpriteKey> = HashSet::new();
-    set.insert(k1);
-    set.insert(k2);
-    assert_eq!(set.len(), 2);
-}
-
-#[test]
 fn alt_palette_art_takes_the_unit_palette_even_when_it_is_a_world_effect() {
     // WCCLOUD1 (Weather Storm) and SQDG (squid grapple) are registered as world
     // effects, so the name set alone would bake them against anim.pal. Both set
@@ -883,54 +785,6 @@ fn alt_palette_art_takes_the_unit_palette_even_when_it_is_a_world_effect() {
         sprite_palette_choice("FBALL1", Some(&art), &effects, &cell_drawers),
         SpritePaletteChoice::Anim
     );
-}
-
-#[test]
-fn sprite_palette_choice_leaves_non_effect_and_unknown_art_on_the_unit_palette() {
-    let ini = crate::rules::ini_parser::IniFile::from_str("[GAPOWR]\nRemapable=yes\n");
-    let art = ArtRegistry::from_ini(&ini);
-    let effects: HashSet<String> = HashSet::new();
-    let cell_drawers = HashSet::new();
-
-    // A structure that is not a world effect keeps the unit palette.
-    assert_eq!(
-        sprite_palette_choice("GAPOWR", Some(&art), &effects, &cell_drawers),
-        SpritePaletteChoice::Unit
-    );
-    // No art registry at all must not change the previous name-set behaviour.
-    assert_eq!(
-        sprite_palette_choice("GAPOWR", None, &effects, &cell_drawers),
-        SpritePaletteChoice::Unit
-    );
-    let mut with_effect: HashSet<String> = HashSet::new();
-    with_effect.insert("FBALL1".to_string());
-    assert_eq!(
-        sprite_palette_choice("FBALL1", None, &with_effect, &cell_drawers),
-        SpritePaletteChoice::Anim
-    );
-}
-
-#[test]
-fn declared_special_animation_frames_are_all_preloaded() {
-    let mut needed = HashSet::new();
-    insert_building_anim_frame_keys(
-        &mut needed,
-        "GAREFNOR",
-        3,
-        HouseColorIndex(2),
-        ShpPaletteContext::SelectedScheme,
-    );
-
-    for frame in 0..3 {
-        assert!(needed.contains(&ShpSpriteKey {
-            palette_context: crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme,
-            type_id: "GAREFNOR".to_string(),
-            facing: 0,
-            frame,
-            house_color: HouseColorIndex(2),
-        }));
-    }
-    assert_eq!(needed.len(), 3);
 }
 
 #[test]

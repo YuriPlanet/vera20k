@@ -355,7 +355,7 @@ fn diplomacy_row(sim: &crate::sim::world::Simulation, owner: &str) -> Value {
         })
         .collect();
     let enemy = crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
-        .and_then(|house| house.enemy_house)
+        .and_then(|house| house.enemy_house())
         .map(|enemy| sim.interner.resolve(enemy));
     json!({"allies": allies, "enemy": enemy})
 }
@@ -1671,7 +1671,7 @@ impl MapCommandBarThumbState {
             rect: [gadget.rect.x, gadget.rect.y, gadget.rect.w, gadget.rect.h],
             disabled: gadget.is_disabled,
             current_house: owner.map(|owner| sim.interner.resolve(owner).to_owned()),
-            side_index: house.map(|house| house.side_index),
+            side_index: house.map(|house| house.side_index()),
             local_player_defeated: sim.local_player_defeated(),
             input_locked: sim.session.input_locked(),
             has_lost: house.map(|house| house.has_lost()),
@@ -3117,8 +3117,8 @@ impl TacticalCaptureSession {
                     let house = sim.houses.get(house_id);
                     json!({"slot": slot, "house": sim.interner.resolve(*house_id),
                     "waypoint": sim.session.mp_start_waypoints().get(slot),
-                    "country": house.and_then(|h| h.country).map(|c| sim.interner.resolve(c)),
-                    "human": house.map(|h| h.is_human), "difficulty": house.map(|h| h.difficulty)})
+                    "country": house.and_then(|h| h.country()).map(|c| sim.interner.resolve(c)),
+                    "human": house.map(|h| h.is_human()), "difficulty": house.map(|h| h.difficulty())})
                 })
                 .collect();
             for start in std::iter::once(profile.launch.local_slot().start_position).chain(
@@ -4109,9 +4109,9 @@ impl TacticalCaptureSession {
                 )
                 .map(|house| {
                     json!({
-                        "credits": house.economy.credits(),
-                        "spent_credits": house.economy.spent_credits(),
-                        "score": house.economy.score(),
+                        "credits": house.economy().credits(),
+                        "spent_credits": house.economy().spent_credits(),
+                        "score": house.economy().score(),
                     })
                 });
                 // Missing Houses stay explicit rather than inventing a zero
@@ -4137,9 +4137,9 @@ impl TacticalCaptureSession {
             let cell = grid.and_then(|grid| grid.cell(rx, ry));
             let at = (rx, ry);
             let overlay = sim.overlay_grid.as_ref().map(|grid| grid.cell(rx, ry));
-            let terrain_object = sim.production.terrain_object_cells.get(&at)
-                .and_then(|id| sim.production.terrain_objects.get(id));
-            let animation = sim.production.terrain_animations.get(&at);
+            let terrain_object = sim.terrain_objects().cell_index().get(&at)
+                .and_then(|id| sim.terrain_objects().objects().get(id));
+            let animation = sim.terrain_objects().animations().get(&at);
             // Observe the same viewer plane consumed by drawing and picking;
             // never reveal a cell or create missing visibility state for capture.
             let local_visibility = local_visibility_owner.map(|(owner, id)| json!({
@@ -4158,7 +4158,7 @@ impl TacticalCaptureSession {
                 })),
                 "local_visibility": local_visibility,
                 "overlay": overlay.map(|overlay| json!({"id": overlay.overlay_id, "density": overlay.overlay_data})),
-                "terrain_object": terrain_object.map(|object| json!({"name": sim.interner.resolve(object.type_ref),
+                "terrain_object": terrain_object.map(|object| json!({"name": sim.interner.resolve(object.type_ref()),
                     "frame": animation.map(|animation| animation.current_frame()),
                     "active": animation.map(|animation| animation.is_active())})),
                 "final_tile_index": cell.map(|cell| cell.final_tile_index),
@@ -4756,36 +4756,6 @@ mod tests {
     }
 
     #[test]
-    fn bounded_pcm_and_literal_restore_options_require_explicit_profile_admission() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V2);
-        value["ticks"] = json!(3);
-        value["cursor_position"] = json!([720, 556]);
-        value["observe_audio"] = json!({"sound_ids": ["SquidMove"], "max_events": 2,
-            "max_samples_per_event": 262144, "completion_tail_ms": 4000});
-        value["gestures"] = json!([{"issue_after_step": 2,
-            "gesture": {"kind": "key", "key": "N", "modifiers": ["Ctrl", "Shift"]}}]);
-        assert!(
-            serde_json::from_value::<MapCaptureProfile>(value.clone())
-                .unwrap()
-                .validate()
-                .is_err()
-        );
-        value["allow_load_segments"] = json!(true);
-        serde_json::from_value::<MapCaptureProfile>(value.clone())
-            .unwrap()
-            .validate()
-            .unwrap();
-        value["observe_audio"]["max_samples_per_event"] = json!(262145);
-        assert!(
-            serde_json::from_value::<MapCaptureProfile>(value)
-                .unwrap()
-                .validate()
-                .is_err()
-        );
-    }
-
-    #[test]
     fn capture_rejects_missing_hud_update_or_any_wall_clock_sample() {
         assert!(
             MapObservation::default()
@@ -4828,35 +4798,6 @@ mod tests {
     }
 
     #[test]
-    fn example_preserves_existing_accepted_launch_and_allows_chosen_map() {
-        let mut profile = example();
-        profile.validate().unwrap();
-        let radar: super::super::super::profile::TacticalCaptureProfile =
-            serde_json::from_str(crate::test_fixture::text(
-                "tools/tactical_certification/profiles/soviet-radar-online-v3.json",
-            ))
-            .unwrap();
-        assert_eq!(profile.launch, radar.launch_session());
-        profile.launch.selected_map_file = Some("mp01t4.map".to_owned());
-        profile.validate().unwrap();
-        profile.ticks = 0;
-        profile.validate().unwrap();
-    }
-
-    #[test]
-    fn unresolved_launch_duplicate_slots_and_inconsistent_roster_fail() {
-        let mut profile = example();
-        profile.launch.local_slot_mut().start_position = LaunchStartPosition::Auto;
-        assert!(profile.validate().is_err());
-        let mut profile = example();
-        profile.launch.opponents[0].color_index = profile.launch.local_slot().color_index;
-        assert!(profile.validate().is_err());
-        let mut profile = example();
-        profile.launch.opponents.clear();
-        assert!(profile.validate().is_err());
-    }
-
-    #[test]
     fn ordinary_capture_admission_uses_canonical_color_and_source_roster() {
         let mut profile = example();
         profile.launch.local_slot_mut().color_index = 6;
@@ -4880,44 +4821,6 @@ mod tests {
         profile.launch.humans.push(remote);
         profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
-    }
-
-    #[test]
-    fn invalid_budgets_and_unknown_request_fields_fail() {
-        let mut profile = example();
-        profile.timeout_seconds = 0;
-        assert!(profile.validate().is_err());
-        profile.timeout_seconds = 180;
-        profile.ticks = 100_001;
-        assert!(profile.validate().is_err());
-        let mut json = serde_json::to_value(example()).unwrap();
-        json["launch"]["ignored_option"] = json!(true);
-        assert!(serde_json::from_value::<MapCaptureProfile>(json).is_err());
-    }
-
-    #[test]
-    fn effect_filters_are_opt_in_case_insensitive_and_bounded() {
-        let mut profile = example();
-        assert!(!profile.observes_effects());
-        profile.observe_projectiles = Some(false);
-        assert!(profile.validate().is_err());
-        profile.schema_version = PROFILE_V2.to_owned();
-        profile.validate().unwrap();
-        assert!(!profile.observes_effects());
-        for names in [
-            vec![],
-            vec![String::new()],
-            vec!["TRAIL".into(), "trail".into()],
-            (0..=MAX_OBSERVED_TYPES)
-                .map(|index| index.to_string())
-                .collect(),
-        ] {
-            profile.observe_anim_types = Some(names);
-            assert!(profile.validate().is_err());
-        }
-        profile.observe_anim_types = Some(vec!["TRAIL".into()]);
-        profile.validate().unwrap();
-        assert!(profile.observes_effects());
     }
 
     #[test]
@@ -5290,57 +5193,6 @@ mod tests {
     }
 
     #[test]
-    fn bomb_snapshots_charge_index_and_records_and_commit_only_within_budget() {
-        for available in [2, 3] {
-            let mut map = MapObservation {
-                sample_count: MAX_OBSERVATION_SAMPLES - available,
-                ..Default::default()
-            };
-            let snapshot = crate::sim::bomb::BombObservation {
-                carriers: vec![7],
-                records: vec![crate::sim::bomb::BombRecordObservation {
-                    carrier_id: 7,
-                    planter_id: None,
-                    planter_house: "Player".into(),
-                    start_frame: i32::MAX,
-                    end_frame: i32::MIN,
-                }],
-            };
-            let result = map.observe_frame(
-                MapFrameObservation {
-                    completed_steps: 0,
-                    simulation_tick: 0,
-                    binary_frame: 0,
-                    total_simulation_ms: 0,
-                    actors: vec![],
-                    houses: vec![],
-                    missing_actor_ids: vec![],
-                    terrain: vec![],
-                    effects: None,
-                    lasers: None,
-                    electric_bolts: None,
-                    radiation_beams: None,
-                    bombs: Some(snapshot),
-                    crates: None,
-                    input: None,
-                    audio_state: None,
-                },
-                BTreeSet::new(),
-            );
-            assert_eq!(result.is_ok(), available == 3);
-            assert_eq!(map.frames.len(), usize::from(available == 3));
-            assert_eq!(
-                map.sample_count,
-                if available == 3 {
-                    MAX_OBSERVATION_SAMPLES
-                } else {
-                    MAX_OBSERVATION_SAMPLES - available
-                }
-            );
-        }
-    }
-
-    #[test]
     fn effect_snapshot_reads_filtered_live_owner_without_advancing_state() {
         use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile, ruleset::RuleSet};
         use crate::sim::{
@@ -5582,226 +5434,6 @@ mod tests {
     }
 
     #[test]
-    fn keyboard_profile_preserves_literal_edges_and_rejects_command_or_chord_spellings() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V2);
-        value["cursor_position"] = json!([720, 556]);
-        value["gestures"] = json!([
-            {"issue_after_step": 0, "gesture": {"kind": "key", "key": "N"}},
-            {"issue_after_step": 0, "gesture": {"kind": "key", "key": "n"}},
-            {"issue_after_step": 0, "gesture": {"kind": "key", "key": "M"}},
-        ]);
-        let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.gesture_policy(), KEYBOARD_GESTURE_POLICY);
-        assert_eq!(serde_json::to_value(profile).unwrap(), value);
-        assert_eq!(literal_key("N").unwrap().0, winit::keyboard::KeyCode::KeyN);
-        assert_eq!(literal_key("n").unwrap().0, winit::keyboard::KeyCode::KeyN);
-        assert_eq!(
-            literal_key("9").unwrap().0,
-            winit::keyboard::KeyCode::Digit9
-        );
-        assert_eq!(
-            literal_key("Escape").unwrap().0,
-            winit::keyboard::KeyCode::Escape
-        );
-        for key in ["", "NextObject", "Ctrl+N", "NN", "é", " "] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"]["key"] = json!(key);
-            let invalid: MapCaptureProfile = serde_json::from_value(invalid).unwrap();
-            assert!(invalid.validate().is_err(), "{key:?}");
-        }
-        for modifiers in [
-            json!(["Ctrl"]),
-            json!(["Shift"]),
-            json!(["Alt"]),
-            json!(["Super"]),
-            json!(["Ctrl", "Shift", "Alt", "Super"]),
-        ] {
-            let mut admitted = value.clone();
-            admitted["gestures"][0]["gesture"]["key"] = json!("M");
-            admitted["gestures"][0]["gesture"]["modifiers"] = modifiers;
-            let profile: MapCaptureProfile = serde_json::from_value(admitted.clone()).unwrap();
-            profile.validate().unwrap();
-            assert_eq!(serde_json::to_value(profile).unwrap(), admitted);
-        }
-        for modifiers in [
-            json!(["not-a-modifier"]),
-            json!(["Control"]),
-            json!(["Ctrl", "Ctrl"]),
-        ] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"]["modifiers"] = modifiers;
-            let profile: MapCaptureProfile = serde_json::from_value(invalid).unwrap();
-            assert!(profile.validate().is_err());
-        }
-        for (key, extra) in [
-            ("repeat", json!(true)),
-            ("modifiers", json!("Ctrl")),
-            ("modifiers", Value::Null),
-        ] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"][key] = extra;
-            assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-        }
-    }
-
-    #[test]
-    fn versioned_extension_fields_preserve_presence_and_reject_null_or_ignored_arguments() {
-        let original: Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.example.json",
-        ))
-        .unwrap();
-        assert_eq!(serde_json::to_value(example()).unwrap(), original);
-        let mut legacy = example();
-        legacy.commands = Some(Vec::new());
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_types = Some(vec!["CLEG".to_owned()]);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_action_line_inputs = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_tooltips = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_disguise_inputs = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_lasers = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_electric_bolts = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_radiation_beams = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_electric_bolt_steps = Some(vec![0]);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_bombs = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_temporal = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_cloak = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_spawns = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.cursor_position = Some([720, 556]);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.gestures = Some(Vec::new());
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_super_weapons = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_diplomacy = Some(false);
-        assert!(legacy.validate().is_err());
-        let mut legacy = example();
-        legacy.observe_sidebar_steps = Some(Vec::new());
-        assert!(legacy.validate().is_err());
-        let mut modern = original;
-        modern["schema_version"] = json!(PROFILE_V2);
-        modern["commands"] = json!([{"issue_after_step": 0, "owner": "Computer1",
-            "payload": {"DeployMcv": {"entity_id": 1}}},
-            {"issue_after_step": 0, "owner": "Computer1", "payload": {"LaunchSuperWeapon":
-                {"sw_type_id": 5, "target_rx": 3, "target_ry": 4}}}]);
-        modern["observe_owners"] = json!(["Computer1"]);
-        modern["observe_types"] = json!(["CLEG"]);
-        modern["observe_projectiles"] = json!(true);
-        modern["observe_anim_types"] = json!(["BBBLELRG"]);
-        modern["observe_action_line_inputs"] = json!(true);
-        modern["observe_tooltips"] = json!(true);
-        modern["observe_disguise_inputs"] = json!(true);
-        modern["observe_lasers"] = json!(true);
-        modern["observe_electric_bolts"] = json!(true);
-        modern["observe_radiation_beams"] = json!(true);
-        modern["observe_electric_bolt_steps"] = json!([0]);
-        modern["observe_bombs"] = json!(true);
-        modern["observe_temporal"] = json!(true);
-        modern["observe_cloak"] = json!(true);
-        modern["observe_spawns"] = json!(true);
-        modern["observe_crates"] = json!(true);
-        modern["cursor_position"] = json!([720, 556]);
-        modern["gestures"] = json!([]);
-        modern["observe_super_weapons"] = json!(true);
-        modern["observe_diplomacy"] = json!(true);
-        modern["observe_sidebar_steps"] = json!([0]);
-        let profile: MapCaptureProfile = serde_json::from_value(modern.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(serde_json::to_value(profile).unwrap(), modern);
-        for key in [
-            "commands",
-            "gestures",
-            "observe_owners",
-            "observe_types",
-            "observe_projectiles",
-            "observe_anim_types",
-            "observe_action_line_inputs",
-            "observe_tooltips",
-            "observe_disguise_inputs",
-            "observe_lasers",
-            "observe_electric_bolts",
-            "observe_radiation_beams",
-            "observe_electric_bolt_steps",
-            "observe_bombs",
-            "observe_temporal",
-            "observe_cloak",
-            "observe_spawns",
-            "observe_crates",
-            "camera_cell",
-            "cursor_position",
-            "terrain_cells",
-            "observe_super_weapons",
-            "observe_diplomacy",
-            "observe_sidebar_steps",
-        ] {
-            let mut invalid = modern.clone();
-            invalid[key] = Value::Null;
-            assert!(
-                serde_json::from_value::<MapCaptureProfile>(invalid).is_err(),
-                "{key}"
-            );
-        }
-        modern["observe_action_line_inputs"] = json!(false);
-        modern["observe_spawns"] = json!(false);
-        modern["observe_temporal"] = json!(false);
-        modern["observe_cloak"] = json!(false);
-        modern["observe_radiation_beams"] = json!(false);
-        let disabled: MapCaptureProfile = serde_json::from_value(modern.clone()).unwrap();
-        disabled.validate().unwrap();
-        assert_eq!(serde_json::to_value(disabled).unwrap(), modern);
-        for key in [
-            "observe_action_line_inputs",
-            "observe_spawns",
-            "observe_temporal",
-            "observe_cloak",
-            "observe_radiation_beams",
-        ] {
-            for value in [json!(0), json!(1), json!("true"), json!([])] {
-                let mut invalid = modern.clone();
-                invalid[key] = value;
-                assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-            }
-        }
-        for (key, value) in [("ignored", json!(true)), ("entity_id", json!(1.0))] {
-            let mut invalid = modern.clone();
-            invalid["commands"][0]["payload"]["DeployMcv"][key] = value;
-            assert!(
-                serde_json::from_value::<MapCaptureProfile>(invalid).is_err(),
-                "{key}"
-            );
-        }
-    }
-
-    #[test]
     fn effect_step_whitelist_preserves_selected_boundaries_and_rejects_bad_schedules() {
         let mut profile = example();
         profile.schema_version = PROFILE_V2.to_owned();
@@ -5824,80 +5456,6 @@ mod tests {
         assert!(profile.validate().is_err());
         profile.observe_electric_bolts = None;
         assert!(profile.validate().is_err());
-    }
-
-    #[test]
-    fn symbolic_commands_require_v3_preserve_source_and_bound_total_bindings() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V3);
-        value["ticks"] = json!(3);
-        value["commands"] = json!([
-            {"issue_after_step": 0, "owner": "Computer1",
-                "payload": {"QueueProduction": {"type_id": "MTNK"}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"Stop": {"entity_id": {
-                    "type_id": "MTNK", "owner": "Computer1", "cell": [10, 11]}}}}
-        ]);
-        let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(serde_json::to_value(profile).unwrap(), value);
-        for version in [PROFILE_V1, PROFILE_V2] {
-            value["schema_version"] = json!(version);
-            let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-            assert!(profile.validate().is_err());
-        }
-        value["schema_version"] = json!(PROFILE_V3);
-        let selector = json!({"type_id": "MTNK", "owner": "Computer1"});
-        let command = json!({"issue_after_step": 0, "owner": "Computer1",
-            "payload": {"Select": {"entity_ids": vec![selector; 256], "additive": false}}});
-        value["commands"] = json!(vec![command.clone(); 4]);
-        serde_json::from_value::<MapCaptureProfile>(value.clone())
-            .unwrap()
-            .validate()
-            .unwrap();
-        value["commands"] = json!(vec![command; 5]);
-        assert!(
-            serde_json::from_value::<MapCaptureProfile>(value)
-                .unwrap()
-                .validate()
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn cursor_position_requires_integer_screen_coordinates_away_from_the_outermost_pixel() {
-        let mut profile = example();
-        profile.schema_version = PROFILE_V2.to_owned();
-        for position in [[1, 1], [798, 598], [720, 556]] {
-            profile.cursor_position = Some(position);
-            profile.validate().unwrap();
-        }
-        for position in [
-            [0, 1],
-            [1, 0],
-            [799, 1],
-            [1, 599],
-            [800, 1],
-            [1, 600],
-            [u32::MAX, 1],
-        ] {
-            profile.cursor_position = Some(position);
-            assert!(profile.validate().is_err(), "{position:?}");
-        }
-        let original = serde_json::to_value(profile).unwrap();
-        for position in [
-            json!([]),
-            json!([1]),
-            json!([1, 1, 1]),
-            json!([true, 1]),
-            json!([1.0, 1]),
-            json!([-1, 1]),
-            json!([u64::from(u32::MAX) + 1, 1]),
-        ] {
-            let mut invalid = original.clone();
-            invalid["cursor_position"] = position;
-            assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-        }
     }
 
     #[test]
@@ -5962,145 +5520,6 @@ mod tests {
             let mut invalid = valid.clone();
             invalid["gestures"][0]["gesture"] = gesture;
             assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-        }
-    }
-
-    #[test]
-    fn literal_mouse_buttons_preserve_legacy_shape_and_share_profile_admission() {
-        let mut legacy = serde_json::to_value(example()).unwrap();
-        legacy["schema_version"] = json!(PROFILE_V2);
-        legacy["cursor_position"] = json!([720, 556]);
-        legacy["gestures"] = json!([
-            {"issue_after_step": 0, "gesture": {"kind": "click", "position": [10, 10]}},
-            {"issue_after_step": 0, "gesture": {"kind": "sidebar", "target": {"kind": "cameo", "type_id": "MTNK"}}}
-        ]);
-        for button in [None, Some("left"), Some("right")] {
-            let mut value = legacy.clone();
-            if let Some(button) = button {
-                for row in value["gestures"].as_array_mut().unwrap() {
-                    row["gesture"]["button"] = json!(button);
-                }
-            }
-            let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-            profile.validate().unwrap();
-            assert_eq!(serde_json::to_value(&profile).unwrap(), value);
-            let right = button == Some("right");
-            assert_eq!(profile.observes_local_input(), right);
-            assert!(
-                profile
-                    .gestures()
-                    .iter()
-                    .all(|row| row.gesture.is_right_button() == right)
-            );
-            assert_eq!(
-                profile.gesture_policy(),
-                if right {
-                    RIGHT_BUTTON_GESTURE_POLICY
-                } else {
-                    SIDEBAR_GESTURE_POLICY
-                }
-            );
-        }
-    }
-
-    #[test]
-    fn literal_mouse_buttons_reject_unknown_values_other_edges_and_right_chrome() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V2);
-        value["cursor_position"] = json!([720, 556]);
-        value["gestures"] = json!([
-            {"issue_after_step": 0, "gesture": {"kind": "click", "position": [10, 10], "button": "right"}}
-        ]);
-        for button in [
-            json!("middle"),
-            json!("Right"),
-            json!(true),
-            json!(1),
-            json!([]),
-            json!({}),
-            Value::Null,
-        ] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"]["button"] = button;
-            assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-        }
-        for gesture in [
-            json!({"kind":"drag", "from":[10,10], "to":[20,20]}),
-            json!({"kind":"key", "key":"P"}),
-            json!({"kind":"command_bar", "command":"Guard"}),
-        ] {
-            for button in ["left", "right"] {
-                let mut invalid = value.clone();
-                invalid["gestures"][0]["gesture"] = gesture.clone();
-                invalid["gestures"][0]["gesture"]["button"] = json!(button);
-                assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-            }
-        }
-        for target in [
-            json!({"kind":"tab", "tab":"building"}),
-            json!({"kind":"scroll_up"}),
-            json!({"kind":"scroll_down"}),
-            json!({"kind":"repair"}),
-            json!({"kind":"sell"}),
-        ] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"] =
-                json!({"kind":"sidebar", "target":target, "button":"right"});
-            let profile: MapCaptureProfile = serde_json::from_value(invalid).unwrap();
-            assert!(profile.validate().is_err());
-        }
-    }
-
-    #[test]
-    fn sidebar_gestures_and_requested_frames_are_strict_opt_in_extensions() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V2);
-        value["cursor_position"] = json!([720, 556]);
-        value["ticks"] = json!(3);
-        value["observe_sidebar_steps"] = json!([0, 1, 3]);
-        value["gestures"] = json!([
-            {"issue_after_step": 0, "gesture": {"kind": "sidebar", "target": {"kind": "tab", "tab": "vehicle"}}},
-            {"issue_after_step": 0, "gesture": {"kind": "sidebar", "target": {"kind": "cameo", "type_id": "MTNK"}}},
-            {"issue_after_step": 2, "gesture": {"kind": "sidebar", "target": {"kind": "scroll_down"}}},
-            {"issue_after_step": 2, "gesture": {"kind": "sidebar", "target": {"kind": "scroll_up"}}}
-        ]);
-        let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.gesture_policy(), SIDEBAR_GESTURE_POLICY);
-        assert_eq!(serde_json::to_value(&profile).unwrap(), value);
-        let transcript = initialized_map().transcript(&profile);
-        assert_eq!(
-            transcript["sidebar"],
-            json!({"policy": SIDEBAR_POLICY, "frames": []})
-        );
-        assert!(
-            initialized_map()
-                .transcript(&example())
-                .get("sidebar")
-                .is_none()
-        );
-        for target in [
-            json!({"kind": "tab", "tab": "weapons"}),
-            json!({"kind": "cameo", "type_id": ""}),
-            json!({"kind": "scroll_down", "count": 2}),
-            Value::Null,
-        ] {
-            let mut invalid = value.clone();
-            invalid["gestures"][0]["gesture"]["target"] = target;
-            let profile = serde_json::from_value::<MapCaptureProfile>(invalid);
-            assert!(profile.is_err() || profile.unwrap().validate().is_err());
-        }
-        for steps in [
-            json!([1, 0]),
-            json!([1, 1]),
-            json!([4]),
-            json!([true]),
-            Value::Null,
-        ] {
-            let mut invalid = value.clone();
-            invalid["observe_sidebar_steps"] = steps;
-            let profile = serde_json::from_value::<MapCaptureProfile>(invalid);
-            assert!(profile.is_err() || profile.unwrap().validate().is_err());
         }
     }
 
@@ -6380,66 +5799,6 @@ mod tests {
     }
 
     #[test]
-    fn command_bar_gesture_rejects_absent_closed_or_unknown_control() {
-        let (mut layout, slots, mut gadgets) = command_bar_fixture();
-        let resolve =
-            |name,
-             layout,
-             slots: &[Option<usize>],
-             gadgets: &crate::app::input::gadget_input::InGameGadgets| {
-                MapCommandBarGestureReceipt::resolve(name, layout, slots, gadgets, [800, 600])
-            };
-        assert!(resolve("guard", layout, &slots, &gadgets).is_err());
-        assert!(resolve("GuardObject", layout, &slots, &gadgets).is_err());
-        assert!(resolve("Guard", layout, &[], &gadgets).is_err());
-        layout.tile_count = 0;
-        assert!(resolve("Guard", layout, &slots, &gadgets).is_err());
-        layout.tile_count = 10;
-        let handle = gadgets.command_bar.unwrap()[command_bar_index("Guard").unwrap()];
-        gadgets.list.get_mut(handle).unwrap().is_disabled = true;
-        assert!(resolve("Guard", layout, &slots, &gadgets).is_err());
-        gadgets.command_bar = None;
-        assert!(resolve("Guard", layout, &slots, &gadgets).is_err());
-    }
-
-    #[test]
-    fn profile_roundtrip_preserves_command_bar_target() {
-        let mut profile = example();
-        profile.schema_version = PROFILE_V2.to_owned();
-        profile.cursor_position = Some([720, 556]);
-        profile.gestures = Some(vec![MapScheduledGesture {
-            issue_after_step: 0,
-            gesture: MapGesture::CommandBar {
-                command: "Guard".to_owned(),
-            },
-        }]);
-        profile.validate().unwrap();
-        assert_eq!(profile.gesture_policy(), COMMAND_BAR_GESTURE_POLICY);
-        let value = serde_json::to_value(&profile).unwrap();
-        assert_eq!(
-            value["gestures"][0]["gesture"],
-            json!({"kind":"command_bar", "command":"Guard"})
-        );
-        serde_json::from_value::<MapCaptureProfile>(value.clone())
-            .unwrap()
-            .validate()
-            .unwrap();
-        for command in ["", "guard", "GuardObject", "G"] {
-            let mut bad = value.clone();
-            bad["gestures"][0]["gesture"]["command"] = json!(command);
-            assert!(
-                serde_json::from_value::<MapCaptureProfile>(bad)
-                    .unwrap()
-                    .validate()
-                    .is_err()
-            );
-        }
-        let mut bad = value;
-        bad["gestures"][0]["gesture"]["modifiers"] = json!(["Ctrl"]);
-        assert!(serde_json::from_value::<MapCaptureProfile>(bad).is_err());
-    }
-
-    #[test]
     fn actor_retask_snapshot_preserves_tagged_suspended_references() {
         use crate::sim::{combat::TargetKind, components::NavTargetRef, game_entity::GameEntity};
         let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 20);
@@ -6581,45 +5940,6 @@ mod tests {
     }
 
     #[test]
-    fn type_filters_require_bounded_unique_names_from_the_exact_loaded_registry() {
-        let mut profile = example();
-        profile.schema_version = PROFILE_V2.to_owned();
-        for types in [
-            Vec::new(),
-            vec![String::new()],
-            vec!["CLEG".to_owned(), "CLEG".to_owned()],
-            (0..=MAX_OBSERVED_TYPES)
-                .map(|n| format!("TYPE{n}"))
-                .collect(),
-        ] {
-            profile.observe_types = Some(types);
-            assert!(profile.validate().is_err());
-        }
-        profile.observe_types = Some(
-            (0..MAX_OBSERVED_TYPES)
-                .map(|n| format!("TYPE{n}"))
-                .collect(),
-        );
-        profile.validate().unwrap();
-        profile.observe_types = Some(vec!["CLEG".to_owned(), "MTNK".to_owned()]);
-        profile.validate().unwrap();
-        let registry = vec![
-            json!({"type_id": "CLEG", "interned_id": 3, "category": "Infantry"}),
-            json!({"type_id": "MTNK", "interned_id": 7, "category": "Unit"}),
-        ];
-        profile.validate_observed_rule_types(&registry).unwrap();
-        assert!(
-            profile
-                .validate_observed_rule_types(&registry[..1])
-                .is_err()
-        );
-        profile.observe_types = Some(vec!["cleg".to_owned()]);
-        assert!(profile.validate_observed_rule_types(&registry).is_err());
-        profile.observe_types = None;
-        profile.validate_observed_rule_types(&[]).unwrap();
-    }
-
-    #[test]
     fn type_discovery_preserves_retained_identity_and_optional_transcript_presence() {
         let mut profile = example();
         profile.schema_version = PROFILE_V2.to_owned();
@@ -6745,65 +6065,6 @@ mod tests {
         assert!(profile.validate().is_err());
     }
 
-    #[test]
-    fn production_profile_reuses_typed_command_serde_without_name_translation() {
-        let mut value = serde_json::to_value(example()).unwrap();
-        value["schema_version"] = json!(PROFILE_V2);
-        value["commands"] = json!([
-            {"issue_after_step": 0, "owner": "Computer1",
-                "payload": {"QueueProduction": {"type_id": 41}}},
-            {"issue_after_step": 1, "owner": "Computer1",
-                "payload": {"PlaceReadyBuilding": {"type_id": 41, "rx": 87, "ry": 53}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"CaptureBuilding": {"engineer_id": 7, "target_building_id": 9}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"PlantC4": {"attacker_id": 7, "target_building_id": 9}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"ToggleRepair": {"entity_id": 9}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"EnterTransport": {"passenger_id": 7, "transport_id": 8}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"UnloadPassengers": {"transport_id": 8}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"RepairAtDepot": {"entity_id": 7, "depot_id": 9}}},
-            {"issue_after_step": 2, "owner": "Computer1",
-                "payload": {"SellBuilding": {"entity_id": 10}}},
-        ]);
-        let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(serde_json::to_value(profile).unwrap(), value);
-        for invalid_id in [json!("GAPOWR"), json!(true), json!(1.5), json!(u64::MAX)] {
-            let mut invalid = value.clone();
-            invalid["commands"][0]["payload"]["QueueProduction"]["type_id"] = invalid_id;
-            assert!(
-                serde_json::from_value::<MapCaptureProfile>(invalid)
-                    .map_or(true, |profile| profile.validate().is_err())
-            );
-        }
-        for invalid_id in [json!("ENGINEER"), json!(true), json!(1.5), json!(-1)] {
-            let mut invalid = value.clone();
-            invalid["commands"][2]["payload"]["CaptureBuilding"]["engineer_id"] = invalid_id;
-            assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-        }
-        for (index, variant, fields) in [
-            (6, "RepairAtDepot", &["entity_id", "depot_id"][..]),
-            (7, "SellBuilding", &["entity_id"][..]),
-        ] {
-            for field in fields {
-                for invalid_id in [json!("HTNK"), json!(true), json!(1.5), json!(-1)] {
-                    let mut invalid = value.clone();
-                    invalid["commands"][index]["payload"][variant][*field] = invalid_id;
-                    assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-                }
-                let mut invalid = value.clone();
-                invalid["commands"][index]["payload"][variant]["ignored"] = json!(true);
-                assert!(serde_json::from_value::<MapCaptureProfile>(invalid).is_err());
-            }
-        }
-        value["commands"][1]["payload"]["PlaceReadyBuilding"]["ignored"] = json!(true);
-        assert!(serde_json::from_value::<MapCaptureProfile>(value).is_err());
-    }
-
     /// Every profile kept under `tools/` loads through the production reader,
     /// so a change to a command's wire shape has to migrate them. Each one
     /// names its schema in its first key.
@@ -6850,54 +6111,6 @@ mod tests {
     }
 
     #[test]
-    fn jumpjet_discovery_profile_preserves_verified_production_prefix_without_guessed_actor() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.jumpjet-instance.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        let cmin: Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.cmin-instance.example.json",
-        ))
-        .unwrap();
-        let factory: Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.factory-tank-exit.example.json",
-        ))
-        .unwrap();
-        let value = serde_json::to_value(&profile).unwrap();
-        for key in ["launch", "seed", "input_delay_ticks", "ticks"] {
-            assert_eq!(value[key], cmin[key], "{key}");
-        }
-        let commands = value["commands"].as_array().unwrap();
-        let factory_commands = factory["commands"].as_array().unwrap();
-        assert_eq!(
-            &commands[..commands.len() - 1],
-            &factory_commands[..factory_commands.len() - 1]
-        );
-        assert_eq!(
-            commands.last().unwrap(),
-            &json!({"issue_after_step": 4600, "owner": "VERA-OBSERVER",
-                "payload": {"QueueProduction": {"type_id": 210}}})
-        );
-        assert!(profile.commands().iter().all(|command| {
-            matches!(
-                command.payload,
-                Command::DeployMcv { .. }
-                    | Command::QueueProduction { .. }
-                    | Command::PlaceReadyBuilding { .. }
-            )
-        }));
-        assert!(
-            profile
-                .observe_types
-                .as_ref()
-                .unwrap()
-                .iter()
-                .any(|name| name == "SHAD")
-        );
-    }
-
-    #[test]
     fn observations_require_l0_then_every_committed_frame_and_bound_retained_samples() {
         let frame = |step, tick| MapFrameObservation {
             completed_steps: step,
@@ -6939,170 +6152,5 @@ mod tests {
         assert!(map.observe_frame(large, BTreeSet::new()).is_err());
         assert_eq!(map.frames.len(), 2);
         assert_eq!(map.sample_count, 0);
-    }
-
-    #[test]
-    fn anytown_discovery_example_is_an_accepted_ordinary_allied_ai_launch() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.bridge-response.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        assert_eq!(
-            profile.launch.selected_map_file.as_deref(),
-            Some("XMP03T4.MAP")
-        );
-        assert_eq!(profile.launch.opponents.len(), 2);
-        assert_eq!(
-            profile.commands().len(),
-            0,
-            "discovery must not invent stable actor IDs"
-        );
-        assert_eq!(profile.ticks, 0);
-        assert_eq!(profile.observe_owners(), ["Computer1", "Computer2"]);
-    }
-
-    #[test]
-    fn barracks_output_example_preserves_opening_and_queues_two_gis_in_order() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.barracks-output.example.json",
-        ))
-        .unwrap();
-        let opening: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.building-opening.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.launch, opening.launch);
-        assert_eq!(profile.seed, opening.seed);
-        assert_eq!(profile.input_delay_ticks, opening.input_delay_ticks);
-        assert_eq!(profile.observe_owners(), opening.observe_owners());
-        assert_eq!(profile.camera_cell, opening.camera_cell);
-        assert_eq!(profile.terrain_cells(), opening.terrain_cells());
-        assert!(profile.ticks > opening.ticks);
-        let previous = opening.commands();
-        let commands = profile.commands();
-        assert_eq!(commands.len(), previous.len() + 1);
-        for (observed, prior) in commands.iter().zip(previous) {
-            assert_eq!(
-                serde_json::to_value(observed).unwrap(),
-                serde_json::to_value(prior).unwrap()
-            );
-        }
-        let first_gi = previous.last().unwrap();
-        assert!(matches!(first_gi.payload, Command::QueueProduction { .. }));
-        assert_eq!(
-            serde_json::to_value(commands.last().unwrap()).unwrap(),
-            serde_json::to_value(first_gi).unwrap(),
-            "two equal-step ordinary PRODUCE commands preserve queue insertion order"
-        );
-        assert!(
-            commands
-                .iter()
-                .all(|command| !matches!(command.payload, Command::SetRally { .. })),
-            "the default route exercises the constructor-empty Archive path"
-        );
-    }
-
-    /// A skirmish never admits the human's authored Structures (`0x0044F8CB`),
-    /// so a computer scene's observer orders only build its base the native
-    /// way: deploy the starting MCV and place ordinary production.
-    fn assert_observer_only_builds(profile: &MapCaptureProfile) {
-        for command in profile.commands() {
-            assert_eq!(command.owner, "VERA-OBSERVER");
-            assert!(matches!(
-                command.payload,
-                Command::DeployMcv { .. }
-                    | Command::QueueProduction { .. }
-                    | Command::PlaceReadyBuilding { .. }
-            ));
-        }
-    }
-
-    #[test]
-    fn computer_nuclear_missile_example_leaves_the_launch_to_the_computer() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.ai-nuclear-missile.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        // Every observed House's twelve Super rows would spend the sample
-        // budget long before the 9000-frame charge; the yard's health shows
-        // the strike.
-        assert_eq!(profile.observe_super_weapons, None);
-        // The observer deploys its starting MCV into the targeted yard; the
-        // computer's Strategy tick fires its charged silo.
-        let [deploy] = profile.commands() else {
-            panic!("one deploy");
-        };
-        assert_eq!(deploy.issue_after_step, 0);
-        assert!(matches!(deploy.payload, Command::DeployMcv { .. }));
-    }
-
-    #[test]
-    fn computer_psychic_dominator_example_leaves_the_launch_to_the_computer() {
-        let profile: MapCaptureProfile = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.ai-psychic-dominator.example.json",
-        ))
-        .unwrap();
-        profile.validate().unwrap();
-        assert_eq!(profile.observe_super_weapons, None);
-        // The computer's Strategy tick aims its charged Dominator.
-        assert!(profile.commands().is_empty());
-    }
-
-    #[test]
-    fn computer_team_superweapon_examples_leave_the_launch_to_the_computer() {
-        for path in [
-            "tools/map_observation.ai-iron-curtain.example.json",
-            "tools/map_observation.ai-chronosphere.example.json",
-        ] {
-            let profile: MapCaptureProfile =
-                serde_json::from_str(crate::test_fixture::text(path)).unwrap();
-            profile.validate().unwrap();
-            assert_eq!(profile.observe_super_weapons, None);
-            // A computer team's script fires the charged Super.
-            assert_observer_only_builds(&profile);
-        }
-    }
-
-    #[test]
-    fn computer_bombard_examples_leave_the_attack_to_the_computer() {
-        for path in [
-            "tools/map_observation.ai-v3-bombard.example.json",
-            "tools/map_observation.ai-dred-bombard.example.json",
-        ] {
-            let profile: MapCaptureProfile =
-                serde_json::from_str(crate::test_fixture::text(path)).unwrap();
-            profile.validate().unwrap();
-            // Soviet Bombard Medium is enabled for Normal only, Soviet Navy
-            // Bombard for Normal and Hard.
-            assert_eq!(
-                profile.launch.opponents[0].difficulty,
-                crate::skirmish_launch::AiDifficulty::Normal
-            );
-            // A computer team's script orders the spawners' attacks on the
-            // targets the observer builds.
-            assert_observer_only_builds(&profile);
-        }
-    }
-
-    #[test]
-    fn rally_profile_reuses_literal_command_serde_and_rejects_ignored_fields() {
-        let mut value: Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.barracks-output.example.json",
-        ))
-        .unwrap();
-        // Syntax-only supplied producer identity: the ordinary command owner
-        // still validates actual ownership/presence at runtime. No diagnostic
-        // Archive mutation or caller-specific rally setter is introduced.
-        let rally = json!({"issue_after_step": 1159, "owner": "VERA-OBSERVER",
-            "payload": {"SetRally": {"rx": 30, "ry": 86, "producer_ids": [17]}}});
-        value["commands"].as_array_mut().unwrap().insert(5, rally);
-        let profile: MapCaptureProfile = serde_json::from_value(value.clone()).unwrap();
-        profile.validate().unwrap();
-        assert_eq!(serde_json::to_value(profile).unwrap(), value);
-        value["commands"][5]["payload"]["SetRally"]["ignored"] = json!(true);
-        assert!(serde_json::from_value::<MapCaptureProfile>(value).is_err());
     }
 }

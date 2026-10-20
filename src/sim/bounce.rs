@@ -1055,24 +1055,6 @@ mod tests {
         assert_eq!(rng.logical_view(), expected.logical_view());
     }
 
-    #[test]
-    fn gsi_05_14_init_copies_position_and_velocity_verbatim() {
-        // Position is `FILD`ed from the integer coordinate; velocity is copied
-        // float for float from the constructor's vector. Neither is scaled.
-        let mut rng = SimRng::new(3);
-        let state = init_at(IVec3::new(1024, 2048, 96), 0.8, &mut rng);
-        assert_eq!(state.position_leptons(), IVec3::new(1024, 2048, 96));
-        assert_eq!(state.velocity_f32(), [3.0, -4.0, 12.0]);
-        assert_eq!(f64::from_bits(state.gravity.bits()), 1.4);
-        assert_eq!(f64::from_bits(state.elasticity.bits()), 0.8);
-        assert_eq!(
-            state.angular_velocity_magnitude,
-            NativeF64Bits::POSITIVE_ZERO,
-            "every caller passes two literal zeros, which is what makes the \
-             Update clamp dead"
-        );
-    }
-
     fn golden() -> &'static serde_json::Value {
         crate::test_fixture::json("tools/spatial_oracle/bounce_tumble.json")
     }

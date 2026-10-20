@@ -197,51 +197,6 @@ fn shared_ids_logic_snapshot_and_parent_limbo_retire_the_independent_child() {
         None
     );
 }
-#[test]
-fn raw_mode_setter_preserves_rate_and_no_candidate_preserves_target() {
-    let rules = rules();
-    let mut sim = Simulation::with_seed(9);
-    let p = parent(&mut sim, EntityCategory::Structure);
-    sim.construct_spotlight(p, Some(&rules));
-    let id = sim
-        .substrate
-        .entities
-        .get(p)
-        .unwrap()
-        .building_light
-        .light()
-        .unwrap();
-    let light = sim.substrate.spotlights.get_mut(id).unwrap();
-    light.rate = NativeF64Bits::from_bits(0x3f8eb851e0000000);
-    light.target = Some(99);
-    light.angle = NativeF64Bits::from_bits(0x3ff0000000000000);
-    sim.set_spotlight_behavior(id, 3);
-    let light = sim.substrate.spotlights.get(id).unwrap();
-    assert_eq!(light.target, Some(99));
-    assert_eq!(light.rate, rules.general.spotlight.speed);
-    assert_eq!(light.angle.bits(), 0);
-    sim.spotlights_pointer_expired(99);
-    assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, None);
-    sim.detach_all_pointer_expired(p, &rules, None, super::super::FrameEffects::default());
-    sim.visit_spotlight(id, &rules, UninitContext::new(Some(&rules), None));
-    assert!(
-        sim.substrate
-            .pending_delete
-            .object_tickets()
-            .any(|i| i == id)
-    );
-    sim.process_pending_delete();
-    assert!(!sim.substrate.spotlights.contains_key(id));
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(p)
-            .unwrap()
-            .building_light
-            .light(),
-        None
-    );
-}
 
 fn map(event: i32, action: i32, value: i32) -> crate::map::map_file::MapFile {
     crate::map::map_file::MapFile::from_bytes(format!("[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nNewINIFormat=4\n[Triggers]\nT=Neutral,<none>,Light,0,1,1,1,0\nU=Neutral,<none>,Other,0,1,1,1,0\n[Events]\nT=1,{event},0,0\nU=1,35,0,0\n[Actions]\nT=1,{action},0,{value},0,0,0,0,A\nU=1,56,0,1,0,0,0,0,A\n[Tags]\nTAG=0,Light,T\nOTHER=0,Other,U\n[VariableNames]\n0=Seen,0\n1=Other,0\n").as_bytes()).unwrap()

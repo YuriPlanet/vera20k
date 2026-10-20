@@ -134,7 +134,7 @@ pub(crate) fn ai_queue_hunt(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         && sim
             .houses
             .get(&entity.owner())
-            .is_some_and(|house| house.build_const_order.is_empty())
+            .is_some_and(|house| house.build_const_order().is_empty())
         && !matches!(
             entity.mission.current().known(),
             Some(MissionType::Hunt | MissionType::Unload)

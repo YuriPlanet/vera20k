@@ -160,8 +160,8 @@ pub(crate) fn find_base_building_site(
     };
     let mut world = SimSiteWorld::new(sim, rules, owner, ty, registry);
     let perimeter: Vec<(i16, i16)> = house
-        .base_reservation
-        .perimeter_cells
+        .base_reservation()
+        .perimeter_cells()
         .iter()
         .map(|&packed| unpack_base_plan_cell(packed))
         .collect();
@@ -169,7 +169,7 @@ pub(crate) fn find_base_building_site(
     ordinary_site(
         &mut world,
         &SiteSearch {
-            center: signed(house.base_plan_center),
+            center: signed(house.base_plan_center()),
             origin: signed(house.base_origin()),
             perimeter: &perimeter,
             spacing: rules.ai_base_spacing,
@@ -419,7 +419,7 @@ impl SiteWorld for SimSiteWorld<'_> {
             reservation_arg: house_index,
             reservations: Some(&sim.substrate.base_reservations),
             occupancy: Some(&sim.substrate.occupancy),
-            terrain_object_cells: Some(&sim.production.terrain_object_cells),
+            terrain_object_cells: Some(sim.terrain_objects.cell_index()),
             resolved_terrain: sim.resolved_terrain.as_ref(),
             overlay_grid: sim.overlay_grid.as_ref(),
             playfield_bounds: sim.playfield_bounds,

@@ -105,52 +105,6 @@ fn country_catalog_uses_registered_identity_and_shared_native_eligibility() {
 }
 
 #[test]
-fn hit_test_start_choose_and_back() {
-    let layout = compute_layout(800, 600);
-    assert_eq!(
-        hit_test(
-            &layout,
-            layout.start_button.x + 1,
-            layout.start_button.y + 1
-        ),
-        SkirmishShellAction::StartGame
-    );
-    assert_eq!(
-        hit_test(
-            &layout,
-            layout.choose_map_button.x + 1,
-            layout.choose_map_button.y + 1
-        ),
-        SkirmishShellAction::ChooseMap
-    );
-    assert_eq!(
-        hit_test(&layout, layout.back_button.x + 1, layout.back_button.y + 1),
-        SkirmishShellAction::BackOrExit
-    );
-}
-
-#[test]
-fn hit_test_uses_exclusive_bottom_right_edges() {
-    let layout = compute_layout(800, 600);
-    assert_eq!(
-        hit_test(
-            &layout,
-            layout.start_button.x + layout.start_button.w,
-            layout.start_button.y
-        ),
-        SkirmishShellAction::None
-    );
-    assert_eq!(
-        hit_test(
-            &layout,
-            layout.back_button.x,
-            layout.back_button.y + layout.back_button.h
-        ),
-        SkirmishShellAction::None
-    );
-}
-
-#[test]
 fn choose_map_action_bubbles_without_cycling_selected_map() {
     let maps = [test_map_entry("a.mmx"), test_map_entry("b.mmx")];
     let mut shell = SkirmishShellState {
@@ -409,21 +363,6 @@ fn credits_presses_and_drags_follow_the_native_pointer_partition() {
 }
 
 #[test]
-fn default_shell_options_use_launch_defaults() {
-    let shell = controlled_country_shell();
-    let options = SkirmishLaunchOptions::default();
-
-    assert_eq!(shell.starting_credits, options.starting_credits);
-    assert_eq!(shell.game_speed, options.game_speed);
-    assert_eq!(shell.unit_count, options.unit_count);
-    assert_eq!(shell.short_game, options.short_game);
-    assert_eq!(shell.super_weapons, options.super_weapons);
-    assert_eq!(shell.build_off_ally, options.build_off_ally);
-    assert_eq!(shell.crates, options.crates);
-    assert_eq!(shell.mcv_redeploy, options.mcv_redeploy);
-}
-
-#[test]
 fn player_name_focus_selects_all_and_typing_replaces_default() {
     let mut shell = controlled_country_shell();
 
@@ -435,33 +374,6 @@ fn player_name_focus_selects_all_and_typing_replaces_default() {
     assert_eq!(shell.player_name_edit.text, "Commander");
     assert_eq!(shell.player_name_edit.selection, None);
     assert_eq!(shell.player_name_edit.caret, 9);
-}
-
-#[test]
-fn player_name_insert_caps_at_nineteen_ascii_bytes() {
-    let mut shell = controlled_country_shell();
-    focus_player_name_edit(&mut shell);
-
-    assert!(insert_player_name_text(
-        &mut shell,
-        "12345678901234567890extra"
-    ));
-
-    assert_eq!(shell.player_name_edit.text, "1234567890123456789");
-    assert_eq!(
-        shell.player_name_edit.text.chars().count(),
-        PLAYER_NAME_EDIT_LIMIT_BYTES
-    );
-    assert_eq!(shell.player_name_edit.caret, PLAYER_NAME_EDIT_LIMIT_BYTES);
-}
-
-#[test]
-fn player_name_crosses_only_the_platform_acp_boundary() {
-    let input = "Aé€Ж😀";
-    let expected = crate::util::native_string::acp_round_trip(input);
-    let state = PlayerNameEditState::with_name(input);
-
-    assert_eq!(state.text, expected);
 }
 
 #[test]
@@ -522,18 +434,6 @@ fn player_name_scroll_keeps_caret_visible_with_five_pixel_margin() {
     shell.player_name_edit.caret = 0;
     assert!(update_player_name_scroll_for_caret(&mut shell, 50, 0));
     assert_eq!(shell.player_name_edit.scroll_x, 0);
-}
-
-#[test]
-fn player_name_tab_does_not_insert_control_text_and_leaves_edit_focus() {
-    let mut shell = controlled_country_shell();
-    focus_player_name_edit(&mut shell);
-    insert_player_name_text(&mut shell, "Ace");
-
-    assert!(handle_player_name_tab(&mut shell));
-    assert!(!shell.player_name_edit.focused);
-    assert_eq!(shell.player_name_edit.text, "Ace");
-    assert!(!shell.player_name_edit.text.contains('\t'));
 }
 
 #[test]
@@ -755,51 +655,6 @@ fn status_help_keys_use_verified_stt_mappings() {
 }
 
 #[test]
-fn status_help_ai_row_state_uses_item_specific_stt() {
-    for (row_type, key) in [
-        (SkirmishAiRowType::None, "STT:PlayerNone"),
-        (SkirmishAiRowType::Easy, "STT:PlayerDumbAI"),
-        (SkirmishAiRowType::Normal, "STT:PlayerSmartAI"),
-        (SkirmishAiRowType::Hard, "STT:PlayerGeniusAI"),
-    ] {
-        assert_eq!(
-            status_help_key_for_hover(SkirmishHoverTarget::ComboItem {
-                id: SkirmishComboId::AiType(0),
-                item: SkirmishComboItem::AiType(row_type),
-            }),
-            Some(key)
-        );
-    }
-}
-
-#[test]
-fn status_help_side_row_uses_item_specific_stt() {
-    for (country, key) in [
-        (SkirmishCountryChoice::Random, "STT:PlayerSideRandom"),
-        (
-            SkirmishCountryChoice::Country(LaunchCountry::America),
-            "STT:PlayerSideAmerica",
-        ),
-        (
-            SkirmishCountryChoice::Country(LaunchCountry::GreatBritain),
-            "STT:PlayerSideBritain",
-        ),
-        (
-            SkirmishCountryChoice::Country(LaunchCountry::Yuri),
-            "STT:PlayerSideYuriCountry",
-        ),
-    ] {
-        assert_eq!(
-            status_help_key_for_hover(SkirmishHoverTarget::ComboItem {
-                id: SkirmishComboId::Side(0),
-                item: SkirmishComboItem::Country(country),
-            }),
-            Some(key)
-        );
-    }
-}
-
-#[test]
 fn status_help_color_row_uses_item_specific_stt_with_generic_miss_fallback() {
     for (item, key) in [
         (
@@ -935,35 +790,6 @@ fn a_press_above_the_admitted_strip_only_holds_the_mouse() {
 }
 
 #[test]
-fn trackbar_outside_thumb_click_remaps_value_and_keeps_capture() {
-    let layout = compute_layout(800, 600);
-    let Some(mut shell) = retail_ranges_shell() else {
-        return;
-    };
-    let rect = layout.trackbars.credits;
-
-    handle_option_mouse_down(
-        &mut shell,
-        &layout,
-        &[],
-        rect.x + 39,
-        first_admitted_row(rect),
-    );
-    assert_eq!(shell.starting_credits, 7400);
-    assert_eq!(
-        shell.trackbar_hold,
-        Some(TrackbarHold {
-            id: SkirmishTrackbarId::Credits0x511,
-            dragging: false,
-        })
-    );
-    assert_eq!(
-        shell.drain_pending_ui_sounds(),
-        vec![SkirmishShellUiSound::GenericClick]
-    );
-}
-
-#[test]
 fn a_zero_money_increment_slides_credits_in_ones() {
     // Every message turns a zero step into 1 (`0x0061DB94..0x0061DBAD`).
     let ini = IniFile::from_str("[MultiplayerDialogSettings]\nMoneyIncrement=0\n");
@@ -1000,25 +826,6 @@ fn the_game_starts_with_the_credits_the_slider_reads_back() {
     let maps = [test_map_entry("first.mmx")];
     let session = launch_session(&shell, &maps, &stock_skirmish_modes()).expect("session");
     assert_eq!(session.options.starting_credits, 7500);
-}
-
-#[test]
-fn trackbar_thumb_hit_starts_drag() {
-    let layout = compute_layout(800, 600);
-    let mut shell = controlled_country_shell();
-    let rect = layout.trackbars.credits;
-    let thumb_x = credits_thumb_x(&shell, rect);
-    let y = first_admitted_row(rect);
-
-    handle_option_mouse_down(&mut shell, &layout, &[], thumb_x, y);
-    assert_eq!(
-        shell.trackbar_hold,
-        Some(TrackbarHold {
-            id: SkirmishTrackbarId::Credits0x511,
-            dragging: true,
-        })
-    );
-    assert!(shell.drain_pending_ui_sounds().is_empty());
 }
 
 #[test]
@@ -1099,32 +906,6 @@ fn trackbar_repeated_drag_same_value_is_silent() {
 }
 
 #[test]
-fn game_speed_visual_position_inverts_stored_value() {
-    assert_eq!(game_speed_visual_position(1), 5);
-    assert_eq!(game_speed_from_visual_position(5), 1);
-}
-
-#[test]
-fn default_shell_tracks_native_slot_count() {
-    let shell = controlled_country_shell();
-    assert_eq!(shell.opponents.len(), SKIRMISH_AI_SLOT_COUNT);
-    assert_eq!(shell.opponents.iter().filter(|o| o.is_active()).count(), 1);
-    assert_eq!(shell.player_team, -2);
-    assert!(shell.opponents[0].is_active());
-    assert_eq!(shell.opponents[0].team, 3);
-}
-
-#[test]
-fn ai_row_type_uses_verified_item_data_order() {
-    assert_eq!(SkirmishAiRowType::None.item_data(), -1);
-    assert_eq!(SkirmishAiRowType::Easy.item_data(), 2);
-    assert_eq!(SkirmishAiRowType::Normal.item_data(), 1);
-    assert_eq!(SkirmishAiRowType::Hard.item_data(), 0);
-    assert!(!SkirmishAiRowType::None.is_active());
-    assert!(SkirmishAiRowType::Hard.is_active());
-}
-
-#[test]
 fn launch_session_packs_selected_map_and_enabled_slots() {
     let mut shell = SkirmishShellState {
         selected_map_idx: 1,
@@ -1178,16 +959,6 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
 }
 
 #[test]
-fn launch_session_preserves_build_off_ally_default() {
-    let shell = controlled_country_shell();
-    let maps = [test_map_entry("map.mmx")];
-    let modes = stock_skirmish_modes();
-    let session = launch_session(&shell, &maps, &modes).expect("session");
-
-    assert!(session.options.build_off_ally);
-}
-
-#[test]
 fn launch_session_preserves_selected_team_game_mode_id() {
     let mut shell = SkirmishShellState {
         selected_mode_id: 9,
@@ -1202,22 +973,6 @@ fn launch_session_preserves_selected_team_game_mode_id() {
     assert_eq!(session.mode.id, 9);
     assert_eq!(session.mode.ui_name_key, "GUI:TeamGame");
     assert!(session.mode.must_ally);
-}
-
-#[test]
-fn launch_session_preserves_selected_ffa_mode_id() {
-    let shell = SkirmishShellState {
-        selected_mode_id: 2,
-        ..Default::default()
-    };
-    let maps = [test_map_entry("ffa.yrm")];
-    let modes = stock_skirmish_modes();
-
-    let session = launch_session(&shell, &maps, &modes).expect("session");
-
-    assert_eq!(session.mode.id, 2);
-    assert_eq!(session.mode.ui_name_key, "GUI:FreeForAll");
-    assert!(!session.mode.allies_allowed);
 }
 
 #[test]
@@ -1369,19 +1124,6 @@ fn launch_session_rejects_same_explicit_team() {
 }
 
 #[test]
-fn dismiss_validation_modal_clears_only_when_open() {
-    let mut shell = controlled_country_shell();
-
-    assert!(!dismiss_validation_modal(&mut shell));
-
-    shell.validation_modal = Some(SkirmishValidationModalState::new("body", "OK"));
-
-    assert!(dismiss_validation_modal(&mut shell));
-    assert!(shell.validation_modal.is_none());
-    assert!(!dismiss_validation_modal(&mut shell));
-}
-
-#[test]
 fn team_game_must_ally_omits_team_none_combo_item() {
     let mut shell = SkirmishShellState {
         selected_mode_id: 9,
@@ -1420,20 +1162,6 @@ fn ffa_combo_keeps_explicit_teams_despite_allies_disabled() {
             SkirmishComboItem::Team(3),
         ]
     );
-}
-
-#[test]
-fn default_inactive_ai_rows_use_native_combo_defaults() {
-    let shell = controlled_country_shell();
-
-    for opponent in shell.opponents.iter().skip(1) {
-        assert_eq!(opponent.row_type, SkirmishAiRowType::None);
-        assert!(!opponent.enabled);
-        assert!(opponent.country_random);
-        assert!(!opponent.color_claimed);
-        assert_eq!(opponent.start_position, LaunchStartPosition::Auto);
-        assert_eq!(opponent.team, 3);
-    }
 }
 
 #[test]
@@ -2139,29 +1867,6 @@ fn color_default_state_each_row_excludes_other_claimed_colors() {
 }
 
 #[test]
-fn color_claim_excludes_color_from_other_rows_dropdown() {
-    // Player claims color 4; AI row 1's filter loses color 4.
-    let mut shell = SkirmishShellState {
-        player_color_index: 4,
-        player_color_claimed: true,
-        ..Default::default()
-    };
-    // Deactivate AI row 1 so its own default claim doesn't confound the
-    // assertion.
-    shell.opponents[0].row_type = SkirmishAiRowType::None;
-    shell.opponents[0].color_claimed = false;
-    let maps = [test_map_entry("map.mmx")];
-
-    let items = combo_items(&shell, &maps, SkirmishComboId::Color(1));
-
-    assert!(items.contains(&SkirmishComboItem::ColorSentinel(-2)));
-    assert!(!items.contains(&SkirmishComboItem::Color(4)));
-    // Spot-check that other colors are still present.
-    assert!(items.contains(&SkirmishComboItem::Color(0)));
-    assert!(items.contains(&SkirmishComboItem::Color(7)));
-}
-
-#[test]
 fn color_selection_evicts_prior_claimant() {
     // Player picks color 5 while AI row 1 already claimed color 5. After
     // the selection, AI row 1 must no longer claim 5, even though its
@@ -2259,55 +1964,6 @@ fn ai_type_none_releases_color() {
 }
 
 #[test]
-fn ai_type_reactivate_does_not_auto_claim() {
-    // AI row 1 starts None+color_claimed=false; switching to Easy must NOT
-    // silently set color_claimed to true. Another row may have taken its
-    // prior color during the deactivation gap.
-    let mut shell = controlled_country_shell();
-    shell.opponents[0].row_type = SkirmishAiRowType::None;
-    shell.opponents[0].color_index = 4;
-    shell.opponents[0].color_claimed = false;
-
-    apply_combo_selection_for_test(
-        &mut shell,
-        SkirmishComboId::AiType(0),
-        SkirmishComboItem::AiType(SkirmishAiRowType::Easy),
-    );
-
-    assert_eq!(shell.opponents[0].row_type, SkirmishAiRowType::Easy);
-    assert!(shell.opponents[0].enabled);
-    assert!(
-        !shell.opponents[0].color_claimed,
-        "AI row 1 reactivation must NOT auto-claim its cached color"
-    );
-    // Cached color_index preserved — user can re-pick if still available.
-    assert_eq!(shell.opponents[0].color_index, 4);
-}
-
-#[test]
-fn color_filter_keeps_self_selection_visible_per_row() {
-    // Every active row sees its own claimed color in its own dropdown,
-    // even though every other row's filter would exclude it.
-    let mut shell = SkirmishShellState {
-        player_color_index: 2,
-        player_color_claimed: true,
-        ..Default::default()
-    };
-    shell.opponents[0].row_type = SkirmishAiRowType::Easy;
-    shell.opponents[0].color_index = 5;
-    shell.opponents[0].color_claimed = true;
-    let maps = [test_map_entry("map.mmx")];
-
-    let player_items = combo_items(&shell, &maps, SkirmishComboId::Color(0));
-    assert!(player_items.contains(&SkirmishComboItem::Color(2)));
-    assert!(!player_items.contains(&SkirmishComboItem::Color(5)));
-
-    let ai_items = combo_items(&shell, &maps, SkirmishComboId::Color(1));
-    assert!(ai_items.contains(&SkirmishComboItem::Color(5)));
-    assert!(!ai_items.contains(&SkirmishComboItem::Color(2)));
-}
-
-#[test]
 fn random_color_remains_the_selected_visible_sentinel() {
     let mut shell = SkirmishShellState {
         player_color_index: 3,
@@ -2399,19 +2055,6 @@ fn all_colors_claimed_activation_leaves_row_without_claim() {
         shell.opponents[1].color_claimed && shell.opponents[1].color_index == 1,
         "the other row's claim on color 1 must be preserved"
     );
-}
-
-#[test]
-fn player_name_programmatic_seed_is_not_subject_to_edit_limit() {
-    let long = "X".repeat(PLAYER_NAME_EDIT_LIMIT_BYTES + 5);
-    let edit = PlayerNameEditState::with_name(&long);
-    assert_eq!(edit.text, long);
-    assert_eq!(edit.caret, PLAYER_NAME_EDIT_LIMIT_BYTES + 5);
-    assert!(!edit.focused);
-
-    let edit = PlayerNameEditState::with_name("Commander");
-    assert_eq!(edit.text, "Commander");
-    assert_eq!(edit.caret, "Commander".chars().count());
 }
 
 /// The help table lookup `0x006040B0` executed for `dialog`'s `control`

@@ -49,10 +49,10 @@ fn live_shot<'r>(
             .get(id)
             .map(|target| (target_coords(target), target.type_ref()))
             .or_else(|| {
-                let terrain = world.production.terrain_objects.get(&id)?;
+                let terrain = world.terrain_objects.objects().get(&id)?;
                 Some((
                     resolve_target_coords(&TargetKind::Entity(id), world)?,
-                    terrain.type_ref,
+                    terrain.type_ref(),
                 ))
             }),
         Some(TargetKind::Cell(rx, ry)) => Some((cell_center_coords(rx, ry), entity.type_ref())),

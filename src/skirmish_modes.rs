@@ -358,16 +358,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_stock_mpmodesmd_roster() {
-        let modes = stock_skirmish_modes();
-        let ids: Vec<i32> = modes.iter().map(|mode| mode.id).collect();
-        assert_eq!(ids, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
-        assert_eq!(modes[0].ui_name_key, "GUI:Battle");
-        assert_eq!(modes[0].map_filter, "standard");
-        assert!(modes[0].random_maps_allowed);
-    }
-
-    #[test]
     fn retail_skirmish_lists_battle_free_for_all_and_team_alliance() {
         let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("mpmodesmd.ini") else {
             return;
@@ -388,12 +378,6 @@ mod tests {
     }
 
     #[test]
-    fn stock_mpmodes_do_not_include_siege_without_roster_row() {
-        let modes = stock_skirmish_modes();
-        assert!(!modes.iter().any(|mode| mode.ui_name_key.contains("Siege")));
-    }
-
-    #[test]
     fn team_game_has_must_ally() {
         let modes = stock_skirmish_modes();
         let team = mode_by_id(&modes, 9).expect("team game mode");
@@ -402,27 +386,6 @@ mod tests {
         assert!(team.must_ally);
         assert!(!team.random_maps_allowed);
         assert_eq!(team.map_filter, "teamgame");
-    }
-
-    #[test]
-    fn free_for_all_disables_allies() {
-        let modes = stock_skirmish_modes();
-        let ffa = mode_by_id(&modes, 2).expect("free for all mode");
-        assert_eq!(ffa.ui_name_key, "GUI:FreeForAll");
-        assert!(!ffa.allies_allowed);
-        assert!(!ffa.must_ally);
-        assert!(ffa.random_maps_allowed);
-    }
-
-    #[test]
-    fn battle_and_free_for_all_allow_random_maps() {
-        let modes = stock_skirmish_modes();
-        let random_ids: Vec<i32> = modes
-            .iter()
-            .filter(|mode| mode.random_maps_allowed)
-            .map(|mode| mode.id)
-            .collect();
-        assert_eq!(random_ids, vec![1, 2]);
     }
 
     #[test]

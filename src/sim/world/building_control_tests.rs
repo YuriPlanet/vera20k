@@ -59,7 +59,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         0,
         1,
     );
-    house.player_control = input["player_control"].as_bool().unwrap_or(false);
+    house.set_player_control_for_test(input["player_control"].as_bool().unwrap_or(false));
     sim.houses.register(house);
     sim.session.set_current_house_for_test(Some(owner));
     sim.session.set_game_mode(

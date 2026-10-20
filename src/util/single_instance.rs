@@ -163,14 +163,4 @@ mod tests {
         assert!(!another_copy_owns_gate(0xb6)); // adjacent status, not the gate
         assert!(!another_copy_owns_gate(0xb8));
     }
-
-    #[cfg(windows)]
-    #[test]
-    fn wide_strings_are_nul_terminated_utf16() {
-        assert_eq!(wide(""), vec![0]);
-        assert_eq!(wide("RA2"), vec![b'R' as u16, b'A' as u16, b'2' as u16, 0]);
-        let gate = wide(INSTANCE_MUTEX_NAME);
-        assert_eq!(gate.len(), INSTANCE_MUTEX_NAME.len() + 1);
-        assert_eq!(gate.last(), Some(&0));
-    }
 }

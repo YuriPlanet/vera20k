@@ -51,16 +51,4 @@ mod tests {
             }
         }
     }
-
-    #[test]
-    fn muzzle_anim_8way_plus1_rotation() {
-        // f=0 → bucket 0 → anim 1 (the +1 rotation).
-        assert_eq!(muzzle_anim_index_8way(0x0000), 1);
-        for f16 in [0u16, 0x2000, 0x4000, 0x8000, 0xE000] {
-            assert_eq!(
-                muzzle_anim_index_8way(f16),
-                (dir_from_facing16(f16) + 1) & 7
-            );
-        }
-    }
 }

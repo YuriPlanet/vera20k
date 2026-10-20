@@ -825,7 +825,7 @@ impl Simulation {
         context: UninitContext<'_>,
     ) {
         if let Some(state) = house.and_then(|house| self.houses.get_mut(&house)) {
-            state.map_is_clear = true;
+            state.mark_map_clear();
         }
         let Some(player) = self.session.current_house() else {
             return;
@@ -977,7 +977,7 @@ impl Simulation {
         rules: &RuleSet,
     ) {
         if let Some(owner) = incoming.and_then(|owner| self.houses.get_mut(&owner)) {
-            owner.map_is_clear = false;
+            owner.mark_map_shrouded();
         }
         if incoming.is_some() && incoming != self.session.current_house() {
             return;
@@ -1056,7 +1056,11 @@ impl Simulation {
         if transition != vision::MapTransition::Reshroud
             && let Some(house) = self.houses.get_mut(&owner)
         {
-            house.map_is_clear = !reset;
+            if reset {
+                house.mark_map_shrouded();
+            } else {
+                house.mark_map_clear();
+            }
         }
         if self.fog.width != 0
             && self.fog.height != 0
@@ -1127,7 +1131,7 @@ impl Simulation {
             let old_spy_sat_active = self
                 .houses
                 .get(&owner)
-                .is_some_and(|house| house.spy_sat_active);
+                .is_some_and(|house| house.spy_sat_active());
             let (gaps, admitted_gap) = self.prepare_spy_sat_gap_reentry(owner, rules);
             // RESIDUAL: the other callers of `0x004ADCD0` do not run its
             // `RevealToAll=` branch. MakeAlly (`0x004F9F4F`) and MakeEnemy
@@ -1692,7 +1696,7 @@ impl Simulation {
         let passive_owners = self
             .houses
             .iter()
-            .filter(|(_, house)| house.multiplay_passive)
+            .filter(|(_, house)| house.multiplay_passive())
             .map(|(&owner, _)| owner)
             .collect();
         vision::VisionConfig::new(

@@ -413,8 +413,8 @@ impl Fixture {
             .set_binary_frame_for_test(int(&prior["frame"]) as u32);
         for (house, native) in houses.iter().zip(prior["houses"].as_array().unwrap()) {
             let state = sim.houses.get_mut(house).unwrap();
-            state.stats = MatchStatistics::from_totals_for_test(0, 0, 0, 0, 0);
-            state.economy.set_score_for_test(0);
+            state.set_stats_for_test(MatchStatistics::from_totals_for_test(0, 0, 0, 0, 0));
+            state.economy_mut().set_score_for_test(0);
             let mut power = serde_json::to_value(PowerState::default()).unwrap();
             power["total_output"] = native["power"].clone();
             power["total_drain"] = native["drain"].clone();
@@ -990,30 +990,30 @@ impl Fixture {
             let house = &self.sim.houses[owner];
             assert_eq!(
                 house
-                    .tracking
+                    .tracking()
                     .active_count(EntityCategory::Structure, type_ref),
                 int(&native["live_buildings"]),
                 "{boundary}: live presence"
             );
             assert_eq!(
                 house
-                    .tracking
+                    .tracking()
                     .owned_count(EntityCategory::Structure, type_ref),
                 int(&native["owned_buildings"]),
                 "{boundary}: retained ownership"
             );
             assert_eq!(
-                house.tracking.buildings(),
+                house.tracking().buildings(),
                 int(&native["tracked_buildings"]),
                 "{boundary}: tracking"
             );
             assert_eq!(
-                house.stats.buildings_lost(),
+                house.stats().buildings_lost(),
                 int(&native["losses"]) as u32,
                 "{boundary}: losses"
             );
             assert_eq!(
-                house.economy.score(),
+                house.economy().score(),
                 int(&native["score"]),
                 "{boundary}: credit"
             );
@@ -1541,22 +1541,17 @@ impl Fixture {
     }
 }
 
+/// The ready MTNK shot runs building fires, crew and deferred cleanup, with
+/// and without the stock smudges joined.
 #[test]
 fn original_ready_mtnk_shot_runs_building_fires_crew_and_deferred_cleanup() {
-    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+    for path in [
         "tools/spatial_oracle/building_death_anims_joined.json",
-    ))
-    .unwrap();
-    assert_ready_fatal_routes(&corpus);
-}
-
-#[test]
-fn original_stock_smudges_join_ready_shot_crew_and_deferred_cleanup() {
-    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/building_death_anims_joined_stock_smudges.json",
-    ))
-    .unwrap();
-    assert_ready_fatal_routes(&corpus);
+    ] {
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(path)).unwrap();
+        assert_ready_fatal_routes(&corpus);
+    }
 }
 
 fn assert_ready_fatal_routes(corpus: &Value) {

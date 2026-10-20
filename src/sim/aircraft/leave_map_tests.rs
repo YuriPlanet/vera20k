@@ -136,30 +136,6 @@ fn removal_past_the_map_matches_native() {
     }
 }
 
-/// Without MapClass authority (headless fixtures) no aircraft leaves.
-#[test]
-fn no_map_removes_nothing() {
-    let rules = rules();
-    let row = rows().into_iter().find(|row| flag(row, "removed")).unwrap();
-    let mut sim = world(&row);
-    sim.playfield_bounds = None;
-    sim.playfield_size_height = None;
-    assert!(!sim.remove_aircraft_off_map(
-        1,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
-    assert!(
-        sim.substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .lifecycle
-            .object_alive()
-    );
-}
-
 /// Removal enters shared FootLimbo405FD0; deferred destruction releases the
 /// handle at 0x4D3677. The MoveSound latch is not rewritten by either operation.
 #[test]

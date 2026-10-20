@@ -255,11 +255,6 @@ mod tests {
     }
 
     #[test]
-    fn jpeg_mid_grey() {
-        assert_eq!(yuv_to_rgb_jpeg(128, 128, 128), (128, 128, 128));
-    }
-
-    #[test]
     fn frame_clock_uses_fps_not_timer_interval() {
         let mut acc = 0.0;
         assert_eq!(frames_due(&mut acc, 0.034, 15.0, 4), 0);

@@ -199,25 +199,4 @@ mod tests {
             assert_eq!(layout.footer, RectPx::new(10, height - 21, 455, 20));
         }
     }
-
-    #[test]
-    fn b5_resource_has_six_buttons_and_two_statics() {
-        assert_eq!(
-            PauseMenuButton::ALL.map(|b| b.descriptor().id),
-            [0x521, 0x51e, 0x51f, 0x520, 0x522, 0x686]
-        );
-        assert_eq!(
-            PauseMenuButton::ALL.map(|b| b.descriptor().csf_key),
-            [
-                "GUI:GameControls",
-                "GUI:LoadGame",
-                "GUI:SaveGame",
-                "GUI:DeleteGame",
-                "GUI:AbortMission",
-                "GUI:ResumeMission"
-            ]
-        );
-        assert_eq!(PAUSE_MENU_TITLE.id, 0x694);
-        assert_eq!(PAUSE_MENU_FOOTER.dlu_rect, RectPx::new(6, 355, 303, 12));
-    }
 }

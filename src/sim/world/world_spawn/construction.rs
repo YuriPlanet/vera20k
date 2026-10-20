@@ -265,7 +265,7 @@ impl Simulation {
             // slot +0x24 can); only retail [SPY], an Infantry, sets the keys.
             if obj.can_disguise
                 && obj.perma_disguise
-                && let Some(side) = self.houses.get(&ge.owner()).map(|h| h.side_index)
+                && let Some(side) = self.houses.get(&ge.owner()).map(|h| h.side_index())
             {
                 let worn = rules.general.infantry_disguises[match side {
                     0 => 0,

@@ -234,7 +234,7 @@ fn toggle_repair_matches_the_original() {
         sim.session
             .set_current_house_for_test((input["player"] == true).then_some(owner));
         let mut house = HouseState::new(owner, 0, None, input["human"] == true, 0, 10);
-        house.player_control = input["player_control"] == true;
+        house.set_player_control_for_test(input["player_control"] == true);
         sim.houses.register(house);
         let kind = sim.interner.intern("YAREFN");
         let mut building = GameEntity::new_at_frame_zero_for_test(
@@ -253,8 +253,8 @@ fn toggle_repair_matches_the_original() {
         );
         building.repairing.set_for_test(input["repairing"] == 1);
         sim.substrate.entities.insert(building);
-        let timer_before = sim.houses[&owner].repair_latch_timer;
-        let latch_before = sim.houses[&owner].repair_start_latch;
+        let timer_before = *sim.houses[&owner].repair_latch_timer();
+        let latch_before = sim.houses[&owner].repair_start_latch();
         let (admitted, draws) = crate::sim::rng::trace_draws(|| {
             production::toggle_repair(&mut sim, &rules, 1, control)
         });
@@ -264,11 +264,13 @@ fn toggle_repair_matches_the_original() {
             "{name}: manual ToggleRepair spends no RNG"
         );
         assert_eq!(
-            sim.houses[&owner].repair_latch_timer, timer_before,
+            *sim.houses[&owner].repair_latch_timer(),
+            timer_before,
             "{name}"
         );
         assert_eq!(
-            sim.houses[&owner].repair_start_latch, latch_before,
+            sim.houses[&owner].repair_start_latch(),
+            latch_before,
             "{name}"
         );
         assert_eq!(
@@ -349,14 +351,14 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
         int("balance", 5000),
         10,
     );
-    house.player_control = flag("player_control", false);
-    house.current_iq = int("current_iq", 2);
-    house.authored_iq = 2;
-    house.repair_start_latch = flag("latched", false);
+    house.set_player_control_for_test(flag("player_control", false));
+    house.set_current_iq_for_test(int("current_iq", 2));
+    house.set_authored_iq_for_test(2);
+    house.set_repair_start_latch_for_test(flag("latched", false));
     let timer = input["timer"].as_array().map_or([0, 0], |timer| {
         [timer[0].as_i64().unwrap(), timer[2].as_i64().unwrap()]
     });
-    house.repair_latch_timer = CdTimer::from_raw(timer[0] as i32, timer[1] as i32);
+    house.set_repair_latch_timer_for_test(CdTimer::from_raw(timer[0] as i32, timer[1] as i32));
     house.set_repair_delay_for_test(f64::from_bits(
         input["delay"]
             .as_u64()
@@ -494,12 +496,12 @@ fn update_repair_and_power_matches_the_original() {
         );
         assert_eq!(
             json!([
-                house.economy.credits(),
-                house.economy.spent_credits(),
-                u8::from(house.repair_start_latch),
+                house.economy().credits(),
+                house.economy().spent_credits(),
+                u8::from(house.repair_start_latch()),
                 [
-                    house.repair_latch_timer.start_frame(),
-                    house.repair_latch_timer.duration()
+                    house.repair_latch_timer().start_frame(),
+                    house.repair_latch_timer().duration()
                 ],
             ]),
             json!([row["balance"], row["spent"], row["latched"], row["timer"]]),
@@ -624,11 +626,11 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
                 json!([
                     building.health.current(),
                     u8::from(building.repairing.is_on()),
-                    house.economy.credits(),
-                    u8::from(house.repair_start_latch),
+                    house.economy().credits(),
+                    u8::from(house.repair_start_latch()),
                     [
-                        house.repair_latch_timer.start_frame(),
-                        house.repair_latch_timer.duration()
+                        house.repair_latch_timer().start_frame(),
+                        house.repair_latch_timer().duration()
                     ],
                 ]),
                 json!([
@@ -666,14 +668,14 @@ fn the_auto_repair_latch_releases_on_the_original_timer() {
     for row in corpus()["release"].as_array().unwrap() {
         let input = &row["input"];
         let mut house = HouseState::new(Default::default(), 0, None, false, 0, 10);
-        house.repair_start_latch = input["latched"] == 1;
-        house.repair_latch_timer = CdTimer::from_raw(
+        house.set_repair_start_latch_for_test(input["latched"] == 1);
+        house.set_repair_latch_timer_for_test(CdTimer::from_raw(
             input["timer"][0].as_i64().unwrap() as i32,
             input["timer"][1].as_i64().unwrap() as i32,
-        );
+        ));
         house.release_repair_latch(input["frame"].as_u64().unwrap() as u32);
         assert_eq!(
-            u8::from(house.repair_start_latch),
+            u8::from(house.repair_start_latch()),
             row["latched"].as_u64().unwrap() as u8,
             "{}",
             input["name"]

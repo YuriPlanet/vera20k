@@ -43,7 +43,7 @@ fn arena(rules: &RuleSet) -> Simulation {
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.intern_rule_type_ids(rules);
     for house in sim.houses.values_mut() {
-        house.country = Some(house.name);
+        house.set_country_for_test(Some(house.name()));
     }
     sim.session
         .set_current_house_for_test(sim.interner.get("Americans"));

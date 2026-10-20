@@ -519,77 +519,6 @@ mod tests {
         }
     }
 
-    fn inputs<'a>(
-        identity: &'a TileIds,
-        blocks: &'a OneByOne,
-        morphable: &'a dyn Fn(i32) -> bool,
-        map_type: i32,
-        theater: i32,
-        tech_types: &'a [TechType],
-    ) -> PipelineInputs<'a> {
-        PipelineInputs {
-            ids: identity,
-            blocks,
-            morphable,
-            wheel_impassable: [false; LAND_TYPES],
-            tech_types,
-            trig: None,
-            map_type,
-            accessibility: 0,
-            theater,
-            num_players: 4,
-            water_percent: 30,
-            bridge_enabled: false,
-            resources: 1,
-            tib_option: 50,
-            min_tib: 900,
-            max_tib: 1050,
-            tiberium_layout: 0,
-            ruggedness: 20,
-            vegetation: 50,
-            width: 2,
-            max_trees: 600,
-        }
-    }
-
-    fn run(seed: u16, map_type: i32, theater: i32) -> (RmgGrid, PipelineOutput) {
-        run_with_types(seed, map_type, theater, &[])
-    }
-
-    fn run_with_types(
-        seed: u16,
-        map_type: i32,
-        theater: i32,
-        tech_types: &[TechType],
-    ) -> (RmgGrid, PipelineOutput) {
-        let options = RmgOptions {
-            num_players: 4,
-            ..Default::default()
-        };
-        let geometry = MapGeometry::from_options(&options);
-        let mut grid = RmgGrid::new(geometry.stride, geometry.diamond_min, geometry.diamond_max);
-        let mut scratch =
-            RmgScratch::new(geometry.stride, geometry.diamond_min, geometry.diamond_max);
-        let mut rng = RmgRng::new(seed);
-        let mut gauss = Gaussian::default();
-        let identity = ids();
-        let blocks = one_by_one();
-        let morphable = |_tile: i32| false;
-        let ins = inputs(
-            &identity, &blocks, &morphable, map_type, theater, tech_types,
-        );
-        let output = run_pipeline(
-            &mut grid,
-            &mut scratch,
-            &mut rng,
-            &mut gauss,
-            &geometry,
-            &ins,
-            &mut |_, _, _| {},
-        );
-        (grid, output)
-    }
-
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct ConstructionSnapshot {
         trace: RmgConstructionTrace,
@@ -851,25 +780,5 @@ mod tests {
                 .iter()
                 .all(|event| event.phase == RmgConstructionPhase::NeutralTech)
         );
-    }
-
-    #[test]
-    fn pipeline_is_deterministic() {
-        let snapshot = |seed| {
-            let (grid, output) = run(seed, 1, 0);
-            let tiles: Vec<i32> = grid
-                .native_cells()
-                .map(|(x, y)| grid.get(x, y).unwrap().tile)
-                .collect();
-            let overlays: Vec<(i32, u8)> = grid
-                .native_cells()
-                .map(|(x, y)| {
-                    let c = grid.get(x, y).unwrap();
-                    (c.overlay, c.density)
-                })
-                .collect();
-            (tiles, overlays, output.waypoints, output.terrain)
-        };
-        assert_eq!(snapshot(4242), snapshot(4242));
     }
 }

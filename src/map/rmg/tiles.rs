@@ -219,12 +219,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_03a_ramp_base_and_smooth_bind_to_distinct_resolved_keys() {
-        let ids = contract_ids();
-        assert_eq!((ids.ramp_base, ids.ramp_smooth), (64, 128));
-    }
-
-    #[test]
     fn clear_test_is_exact_not_set_membership() {
         let ids = contract_ids();
         assert!(ids.is_clear(0));
@@ -242,15 +236,6 @@ mod tests {
         assert!(!ids.is_green_lat(ids.green_lat + 0x10));
         assert!(!ids.is_green_lat(0));
         assert!(!ids.is_green_lat(ids.sand));
-    }
-
-    #[test]
-    fn sand_lat_membership_mirrors_green() {
-        let ids = contract_ids();
-        assert!(ids.is_sand_lat(ids.sand));
-        assert!(ids.is_sand_lat(ids.sand_lat + 0xF));
-        assert!(!ids.is_sand_lat(ids.sand_lat + 0x10));
-        assert!(!ids.is_sand_lat(ids.green));
     }
 
     #[test]

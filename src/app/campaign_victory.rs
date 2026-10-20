@@ -233,7 +233,7 @@ impl App {
                             .resources
                             .rules
                             .side_name(crate::rules::ruleset::SideIdx(
-                                u8::try_from(house.side_index).ok()?,
+                                u8::try_from(house.side_index()).ok()?,
                             ))
                     });
                 let current = sim.session.map_name();

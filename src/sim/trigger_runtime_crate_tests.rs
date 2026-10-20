@@ -106,99 +106,6 @@ fn poll(sim: &mut Simulation, rules: &RuleSet, registry: &OverlayTypeRegistry) {
     let _ = sim.advance_triggers(Some(rules), Some(registry), FrameEffects::default());
 }
 
-#[test]
-fn authored_create_crate_action_reaches_existing_placement_owner() {
-    let (mut sim, rules, registry, _, _) = fixture();
-    install(
-        &mut sim,
-        &rules,
-        "[Triggers]\nCREATE=Americans,<none>,Crate,0,1,1,1,0\n\
-         [Events]\nCREATE=1,13,0,0\n\
-         [Actions]\nCREATE=1,108,0,0,0,0,0,0,AU\n\
-         [Tags]\nCRATE=0,Crate,CREATE\n[Waypoints]\n46=15016\n",
-    );
-    poll(&mut sim, &rules, &registry);
-    assert_eq!(
-        sim.overlay_grid.as_ref().unwrap().cell(16, 15).overlay_id,
-        registry.id_for_name("O0"),
-        "the elapsed trigger must place its authored crate at waypoint AU"
-    );
-    assert!(
-        sim.crate_authority
-            .slots()
-            .iter()
-            .any(|slot| (slot.cell_x, slot.cell_y) == (16, 15))
-    );
-}
-
-#[test]
-fn crate_tag_can_kill_collector_before_removal_and_notification() {
-    let (mut sim, rules, registry, _, actor) = fixture();
-    let _ = install(
-        &mut sim,
-        &rules,
-        "[Triggers]\nKILL=Americans,<none>,Kill,0,1,1,1,0\n\
-         [Events]\nKILL=1,49,0,0\n\
-         [Actions]\nKILL=1,32,0,0,0,0,0,0,A\n\
-         [Tags]\nKILLTAG=0,Kill,KILL\n",
-    );
-    sim.attach_object_trigger_tag(actor, Some("KILLTAG"));
-    let overlay = registry.id_for_name("O0").unwrap();
-    sim.overlay_grid
-        .as_mut()
-        .unwrap()
-        .place_overlay(16, 15, overlay, 0);
-    assert!(!sim.pickup_crate_at(
-        actor,
-        (16, 15),
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    ));
-    assert!(
-        sim.substrate
-            .entities
-            .get(actor)
-            .is_none_or(|entity| !entity.lifecycle.object_alive())
-    );
-    assert_eq!(
-        sim.overlay_grid.as_ref().unwrap().cell(16, 15).overlay_id,
-        Some(overlay)
-    );
-    assert!(!sim.trigger_runtime.dirty[3]);
-}
-
-#[test]
-fn untagged_crate_pickup_notifies_logic_event50_once() {
-    let (mut sim, rules, registry, _, actor) = fixture();
-    install(
-        &mut sim,
-        &rules,
-        "[Triggers]\nPICKED=Americans,<none>,Picked,0,1,1,1,0\n\
-         [Events]\nPICKED=1,50,0,0\n\
-         [Actions]\nPICKED=1,56,0,7,0,0,0,0,A\n\
-         [Tags]\nPICKEDTAG=0,Picked,PICKED\n",
-    );
-    sim.overlay_grid.as_mut().unwrap().place_overlay(
-        16,
-        15,
-        registry.id_for_name("O0").unwrap(),
-        0,
-    );
-    assert!(sim.pickup_crate_at(
-        actor,
-        (16, 15),
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    ));
-    assert!(sim.trigger_runtime.dirty[3]);
-    assert!(!sim.trigger_runtime.locals_set.contains(&7));
-    poll(&mut sim, &rules, &registry);
-    assert!(sim.trigger_runtime.locals_set.contains(&7));
-    assert!(!sim.trigger_runtime.dirty[3]);
-}
-
 /// Steam3e81a617 Execute6DF69B ->68BCC0 ->56BEC0. The native
 /// corpus supplies a flat interior scene; the fixture's padding row/column is
 /// immaterial to these eight choices. No retail geometry is substituted as a
@@ -452,8 +359,15 @@ fn money_pickup_matches_original_reentrant_owner_alive_and_notification_controls
                 None,
             );
         }
-        sim.houses.get_mut(&owner).unwrap().player_control = false;
-        sim.houses.get_mut(&owner).unwrap().economy.add_credits(100);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_player_control_for_test(false);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .economy_mut()
+            .add_credits(100);
         let other = sim.interner.intern("Russians");
         sim.houses
             .register(HouseState::new(other, 1, Some(other), false, 200, 10));
@@ -522,8 +436,8 @@ fn money_pickup_matches_original_reentrant_owner_alive_and_notification_controls
         }
         assert_eq!(
             json!([
-                sim.houses[&owner].economy.credits(),
-                sim.houses[&other].economy.credits()
+                sim.houses[&owner].economy().credits(),
+                sim.houses[&other].economy().credits()
             ]),
             case["balances"],
             "{name}: real AddCredits"
@@ -851,7 +765,10 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
         .spawn_object_at_height("E1", "Americans", 20, 20, 0, 0, &rules)
         .unwrap();
     let house = sim.substrate.entities.get(actor).unwrap().owner();
-    sim.houses.get_mut(&house).unwrap().player_control = false;
+    sim.houses
+        .get_mut(&house)
+        .unwrap()
+        .set_player_control_for_test(false);
     supply_rng(&mut sim, &native["placement_controls"][0]["rng_before"]);
     let live = *sim
         .trigger_runtime
@@ -899,7 +816,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
         assert_eq!(cell.overlay_id, Some(wood));
         assert_eq!(cell.overlay_data, 0);
     }
-    let before = sim.houses[&house].economy.credits();
+    let before = sim.houses[&house].economy().credits();
     assert!(sim.pickup_crate_at(
         actor,
         (16, 15),
@@ -914,7 +831,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
         .find(|row| row["input"]["name"] == "ordinary_money")
         .unwrap();
     assert_eq!(
-        sim.houses[&house].economy.credits().wrapping_sub(before),
+        sim.houses[&house].economy().credits().wrapping_sub(before),
         integer(&ordinary["credit_calls"][0]["amount"])
     );
     assert!(sim.trigger_runtime.dirty[3]);

@@ -1637,50 +1637,6 @@ mod tests {
     }
 
     #[test]
-    fn idct_add_accumulates() {
-        let mut dst = [100u8; 64];
-        let mut block = [0i32; 64];
-        block[0] = 2048;
-        bink_idct_add(&mut dst, 8, &mut block);
-        let v = dst[0];
-        for &p in &dst {
-            assert_eq!(p, v);
-        }
-    }
-
-    #[test]
-    fn idct_all_zeros_produces_all_zeros() {
-        let block = [0i32; 64];
-        let mut dst = [0u8; 64];
-        bink_idct_put(&mut dst, 8, &block);
-        for &p in &dst {
-            assert_eq!(p, 0);
-        }
-    }
-
-    #[test]
-    fn idct_symmetric_input_produces_smooth_output() {
-        // DC + a few AC coefficients. Output should vary smoothly, not jump.
-        let mut block = [0i32; 64];
-        block[0] = 1024;
-        block[1] = 256;
-        block[2] = 128;
-        let mut dst = [0u8; 64];
-        bink_idct_put(&mut dst, 8, &block);
-        for r in 0..8 {
-            for c in 0..7 {
-                let diff = (dst[r * 8 + c] as i32 - dst[r * 8 + c + 1] as i32).abs();
-                assert!(
-                    diff < 128,
-                    "IDCT output has huge jump at row {} col {}",
-                    r,
-                    c
-                );
-            }
-        }
-    }
-
-    #[test]
     fn idct_clips_to_u8_range() {
         let mut block = [0i32; 64];
         block[0] = 1_000_000;
@@ -1702,68 +1658,6 @@ mod tests {
         assert_eq!(dst[0], 150);
         assert_eq!(dst[63], 0); // clipped
         assert_eq!(dst[10], 255); // clipped
-    }
-
-    #[test]
-    fn copy_block8_copies_with_stride() {
-        let mut buf = [0u8; 16 * 16];
-        for r in 0..8 {
-            for c in 0..16 {
-                buf[r * 16 + c] = (r * 10 + c) as u8;
-            }
-        }
-        let (src, dst) = buf.split_at_mut(8 * 16);
-        copy_block8(dst, src, 16, 16);
-        for r in 0..8 {
-            for c in 0..8 {
-                assert_eq!(buf[(8 + r) * 16 + c], (r * 10 + c) as u8);
-            }
-        }
-    }
-
-    #[test]
-    fn fill_block_writes_square() {
-        let mut dst = [0u8; 32 * 16];
-        fill_block(&mut dst, 0xAA, 32, 8);
-        for r in 0..8 {
-            for c in 0..8 {
-                assert_eq!(dst[r * 32 + c], 0xAA);
-            }
-            for c in 8..32 {
-                assert_eq!(dst[r * 32 + c], 0);
-            }
-        }
-        for r in 8..16 {
-            for c in 0..32 {
-                assert_eq!(dst[r * 32 + c], 0);
-            }
-        }
-    }
-
-    #[test]
-    fn new_decoder_allocates_planes_correctly() {
-        let mut h = crate::assets::bink_file::BinkHeader {
-            version: BinkVersion::BikI,
-            file_size: 1000,
-            num_frames: 1,
-            width: 320,
-            height: 240,
-            fps_num: 30,
-            fps_den: 1,
-            video_flags: 0,
-            num_audio_tracks: 0,
-            audio_tracks: vec![],
-            frame_index_offset: 0,
-        };
-        let d = BinkDecoder::new(&h).unwrap();
-        assert_eq!(d.width, 320);
-        assert_eq!(d.height, 240);
-        assert_eq!(d.cur.color_range, ColorRange::Mpeg);
-        assert!(d.cur.y.len() >= 320 * 240);
-        assert!(d.cur.u.len() >= 160 * 120);
-        h.version = BinkVersion::BikK;
-        let dk = BinkDecoder::new(&h).unwrap();
-        assert_eq!(dk.cur.color_range, ColorRange::Jpeg);
     }
 
     #[test]

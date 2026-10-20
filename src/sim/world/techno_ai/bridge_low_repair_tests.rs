@@ -389,11 +389,11 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
     );
     let ships = |sim: &crate::sim::world::Simulation| {
         sim.houses[&owner]
-            .tracking
+            .tracking()
             .active_count(crate::map::entities::EntityCategory::Unit, ship_type)
     };
     let other_ships = ships(&runtime.simulation) - 1;
-    let initial_losses = runtime.simulation.houses[&owner].stats.units_lost();
+    let initial_losses = runtime.simulation.houses[&owner].stats().units_lost();
     let ship_delay: usize = std::env::var("VERA20K_LOW_NAVAL_DELAY")
         .ok()
         .map(|value| value.parse().unwrap())
@@ -480,7 +480,7 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
         trace.push(json!({
             "frame":frame,"binary_frame":scene.sim().session.binary_frame(),
             "before":before,"after":actor,"engineer_present":engineer_present,
-            "owner_losses":scene.sim().houses[&owner].stats.units_lost(),
+            "owner_losses":scene.sim().houses[&owner].stats().units_lost(),
             "lifecycle":format!("{lifetime:?}"),
             "fire_sources":output.fire_events.iter().map(|event|event.attacker_id).collect::<Vec<_>>(),
         }));
@@ -718,8 +718,8 @@ fn retail_shrapnel_repair_reaches_moving_water_neighbor() {
             "restored frame{frame}"
         );
         assert_eq!(
-            scene.sim().houses[&owner].stats,
-            second.houses[&owner].stats
+            scene.sim().houses[&owner].stats(),
+            second.houses[&owner].stats()
         );
         if scene.sim().entities().contains(ship) {
             assert_retained_naval_ship(scene.sim(), ship, &native["after_damage"], initial_losses);
@@ -795,7 +795,7 @@ fn assert_retained_naval_ship(
     assert!(loco.destination().is_none());
     assert_eq!(native["destination"], json!([0, 0, 0]));
     assert_eq!(
-        sim.houses[&actor.owner()].stats.units_lost() - initial_losses,
+        sim.houses[&actor.owner()].stats().units_lost() - initial_losses,
         native["owner_losses"].as_u64().unwrap() as u32
     );
     assert_eq!(
@@ -845,7 +845,7 @@ fn assert_naval_cleanup(
     assert!(sim.display_layers().layer_of(id).is_none());
     assert_eq!(native["layer"], -1);
     assert_eq!(
-        sim.houses[&owner].stats.units_lost() - initial_losses,
+        sim.houses[&owner].stats().units_lost() - initial_losses,
         native["owner_losses"].as_u64().unwrap() as u32
     );
     assert!(!sim.entities().contains(id));

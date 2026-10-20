@@ -300,7 +300,7 @@ impl Simulation {
         } else {
             self.houses
                 .get(&owner)
-                .is_some_and(|house| house.player_control)
+                .is_some_and(|house| house.player_control())
         }
     }
 
@@ -417,7 +417,7 @@ impl Simulation {
             let passive_occupation = self
                 .houses
                 .get(&target.owner())
-                .is_some_and(|house| house.multiplay_passive)
+                .is_some_and(|house| house.multiplay_passive())
                 && object.can_be_occupied
                 && !target.is_warped_out();
             if !allied && !passive_occupation {
@@ -611,7 +611,7 @@ impl Simulation {
         if self
             .houses
             .get(&new_owner)
-            .is_some_and(|h| h.multiplay_passive)
+            .is_some_and(|h| h.multiplay_passive())
         {
             return;
         }
@@ -753,7 +753,7 @@ impl Simulation {
                     && self
                         .houses
                         .get(&building.owner())
-                        .is_some_and(|house| house.multiplay_passive));
+                        .is_some_and(|house| house.multiplay_passive()));
             let full = building.health.current() == object.strength;
             let refused_capture = building.mission.current().known() == Some(MissionType::Selling)
                 || building.is_warped_out();
@@ -1110,7 +1110,10 @@ mod repair_notification_tests {
                     owner, 0, None, false, 0, 0,
                 ));
         }
-        sim.houses.get_mut(&player).unwrap().player_control = true;
+        sim.houses
+            .get_mut(&player)
+            .unwrap()
+            .set_player_control_for_test(true);
         sim.announce_bridge_repair(ai, (7, 8), (8, 8));
         assert!(
             matches!(

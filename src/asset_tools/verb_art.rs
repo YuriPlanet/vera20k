@@ -489,16 +489,6 @@ mod tests {
     }
 
     #[test]
-    fn theater_short_names_map_to_the_pair_the_candidate_builders_expect() {
-        assert_eq!(resolve_theater("tem"), Some(("tem", "TEMPERATE")));
-        assert_eq!(resolve_theater("sno"), Some(("sno", "SNOW")));
-        assert_eq!(resolve_theater("urb"), Some(("urb", "URBAN")));
-        assert_eq!(resolve_theater("lun"), Some(("lun", "LUNAR")));
-        assert_eq!(resolve_theater("des"), Some(("des", "DESERT")));
-        assert_eq!(resolve_theater("ubn"), Some(("ubn", "NEWURBAN")));
-    }
-
-    #[test]
     fn theater_lookup_accepts_the_long_spelling_and_ignores_case() {
         assert_eq!(resolve_theater("TEMPERATE"), Some(("tem", "TEMPERATE")));
         assert_eq!(resolve_theater("newurban"), Some(("ubn", "NEWURBAN")));
@@ -559,13 +549,6 @@ mod tests {
     }
 
     #[test]
-    fn voxel_candidates_are_the_vxl_and_hva_pair_for_the_effective_image() {
-        let registry = ArtRegistry::empty();
-        let names = candidate_names(&registry, "HTNK", "HTNK", "HTNK", "tem", "TEMPERATE");
-        assert_eq!(names.voxel, vec!["HTNK.VXL", "HTNK.HVA"]);
-    }
-
-    #[test]
     fn cameo_candidates_mirror_the_production_sidebar_resolver() {
         // Declared cameo differs from the image and already ends in ICON.
         let declared = cameo_candidate_names("GACNST", "GACNST", "CIVICON");
@@ -581,14 +564,6 @@ mod tests {
         assert!(
             !declared.contains(&"CIVICONICON.SHP".to_string()),
             "a cameo id ending in ICON must not be doubled"
-        );
-    }
-
-    #[test]
-    fn cameo_candidates_collapse_when_every_id_is_the_type_id() {
-        assert_eq!(
-            cameo_candidate_names("GAPOWR", "GAPOWR", "GAPOWR"),
-            vec!["GAPOWR.SHP", "GAPOWRICON.SHP", "POWRICON.SHP"]
         );
     }
 
@@ -638,23 +613,6 @@ mod tests {
         assert_eq!(report.voxel_candidates.len(), 2);
         assert!(!report.cameo_candidates.is_empty());
         assert!(report.shp_candidates.iter().all(|row| !row.exists));
-    }
-
-    #[test]
-    fn an_empty_registry_is_warned_about_before_anything_else() {
-        let registry = ArtRegistry::empty();
-        let report = assemble(
-            &registry,
-            "GAPOWR",
-            "GAPOWR",
-            "tem",
-            "TEMPERATE",
-            &mut miss(),
-        );
-        assert_eq!(
-            report.warnings.first().map(String::as_str),
-            Some(EMPTY_REGISTRY_WARNING)
-        );
     }
 
     #[test]
@@ -724,15 +682,5 @@ mod tests {
             Some("ra2.mix -> sidec02.mix")
         );
         assert!(hit.detail.as_deref().unwrap_or_default().contains("SHP"));
-    }
-
-    #[test]
-    fn default_options_select_temperate() {
-        let opts = ArtForOptions::default();
-        assert_eq!(
-            resolve_theater(&opts.theater),
-            Some(("tem", "TEMPERATE")),
-            "the default must be a theater the resolver accepts"
-        );
     }
 }

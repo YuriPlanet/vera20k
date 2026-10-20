@@ -1268,7 +1268,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
             }
         );
         let americans = sim.interner.get("Americans").expect("interned");
-        let list = sim.houses[&americans].base_projection.buildings();
+        let list = sim.houses[&americans].base_projection().buildings();
         let order: Vec<u64> = list
             .iter()
             .copied()

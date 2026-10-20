@@ -5,13 +5,17 @@ use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
 use crate::sim::occupancy::CellListInsertion;
 use crate::util::fixed_math::SimFixed;
 
+/// The numeric results and repair projection, the playfield boundary
+/// permissions and the actual blocker movement state.
 #[test]
-fn unit_entry_preserves_original_numeric_results_and_repair_projection() {
-    compare_rows(
-        crate::test_fixture::text("tools/spatial_oracle/unit_entry.json"),
-        150,
-        true,
-    );
+fn unit_entry_matches_original_results_boundaries_and_blocker_motion() {
+    for (path, count) in [
+        ("tools/spatial_oracle/unit_entry.json", 150),
+        ("tools/spatial_oracle/unit_entry_boundary.json", 100),
+        ("tools/spatial_oracle/unit_entry_motion.json", 56),
+    ] {
+        compare_rows(crate::test_fixture::text(path), count, true);
+    }
 }
 
 #[test]
@@ -21,24 +25,6 @@ fn unit_entry_matches_original_height_bridge_and_tube_traversal() {
         crate::test_fixture::text("tools/spatial_oracle/unit_entry_traversal.json"),
         328,
         false,
-    );
-}
-
-#[test]
-fn unit_entry_matches_original_playfield_boundary_permissions() {
-    compare_rows(
-        crate::test_fixture::text("tools/spatial_oracle/unit_entry_boundary.json"),
-        100,
-        true,
-    );
-}
-
-#[test]
-fn unit_entry_reads_actual_blocker_movement_state() {
-    compare_rows(
-        crate::test_fixture::text("tools/spatial_oracle/unit_entry_motion.json"),
-        56,
-        true,
     );
 }
 
@@ -361,7 +347,9 @@ fn a_crusher_meets_a_terrain_object_with_its_weapon() {
         sim.substrate.entities.insert(unit);
         sim.mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 100)
             .unwrap();
-        sim.production.terrain_object_cells.insert((11, 10), 900);
+        sim.terrain_objects
+            .cell_index_mut_for_test()
+            .insert((11, 10), 900);
         let cell = sim
             .resolved_terrain
             .as_ref()
@@ -866,8 +854,12 @@ fn row_entry_input(
     }
 }
 
+/// The live vehicle-building entry decision: a contacted mover skips the
+/// east columns but keeps the west, an empty bunker skips where an occupied
+/// one blocks, and the row skip needs the same candidate building and a rows
+/// value.
 #[test]
-fn contacted_vehicle_row_skip_opens_east_columns_but_keeps_west() {
+fn live_vehicle_building_entry_rows_contact_and_bunker_occupancy() {
     let contacted = VehicleBuildingEntryBranch::RadioContact {
         mover_has_contact: true,
     };
@@ -888,10 +880,7 @@ fn contacted_vehicle_row_skip_opens_east_columns_but_keeps_west() {
         )),
         BuildingOccupantEntryDecision::KeepBlocker
     );
-}
 
-#[test]
-fn empty_vs_occupied_bunker_uses_explicit_runtime_occupant_arg() {
     let mut empty = row_entry_input(VehicleBuildingEntryBranch::UnitRepairOrBunker, 10);
     empty.number_impassable_rows = 0;
     empty.is_bunker = true;
@@ -909,10 +898,7 @@ fn empty_vs_occupied_bunker_uses_explicit_runtime_occupant_arg() {
         decide_live_vehicle_building_entry(occupied),
         BuildingOccupantEntryDecision::KeepBlocker
     );
-}
 
-#[test]
-fn row_helper_requires_same_candidate_building_and_rows_value() {
     let mut other_building = row_entry_input(VehicleBuildingEntryBranch::UnitRepairOrBunker, 11);
     other_building.is_unit_repair = true;
     other_building.candidate_building_id = Some(200);

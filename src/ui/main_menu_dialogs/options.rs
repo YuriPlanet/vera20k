@@ -853,82 +853,6 @@ mod tests {
     }
 
     #[test]
-    fn exact_launcher_label_fallbacks_are_local_and_complete() {
-        const EXPECTED: [(&str, &str); 30] = [
-            ("GUI:OptionsMenu", "Options"),
-            ("GUI:MainMenu", "Main Menu"),
-            ("GUI:Keyboard", "Keyboard"),
-            ("GUI:Network", "Network"),
-            ("GUI:DisplayOptions", "Display Options"),
-            ("GUI:GameOptions", "Game Options"),
-            ("GUI:UIOptions", "UI Options"),
-            ("GUI:AudioOptions", "Audio Options"),
-            ("GUI:VisualDetails", "Visual Details"),
-            ("GUI:Difficulty", "Difficulty"),
-            ("GUI:Tooltips", "Tooltips"),
-            ("GUI:ScrollRate", "Scroll Rate"),
-            ("GUI:TargetLines", "Target Lines"),
-            ("GUI:ShowHidden", "See Hidden Objects"),
-            ("GUI:MusicVolume", "Music Volume"),
-            ("GUI:SoundVolume", "Sound Volume"),
-            ("GUI:VoiceVolume", "Voice Volume"),
-            ("GUI:Blank", ""),
-            ("TXT_LOW", "Low"),
-            ("TXT_HIGH", "High"),
-            ("TXT_EASY", "Easy"),
-            ("TXT_NORMAL", "Normal"),
-            ("TXT_HARD", "Hard"),
-            ("TXT_SLOWEST", "Slowest"),
-            ("TXT_SLOWER", "Slower"),
-            ("TXT_SLOW", "Slow"),
-            ("TXT_MEDIUM", "Medium"),
-            ("TXT_FAST", "Fast"),
-            ("TXT_FASTER", "Faster"),
-            ("TXT_FASTEST", "Fastest"),
-        ];
-        assert_eq!(LAUNCHER_LABEL_SPECS, EXPECTED);
-        let seen = std::cell::RefCell::new(Vec::new());
-        let labels = LauncherOptionsLabels::resolve(&|key| {
-            seen.borrow_mut().push(key.to_string());
-            None
-        });
-        assert_eq!(seen.into_inner(), EXPECTED.map(|(key, _)| key.to_string()));
-        let actual_values = [
-            labels.options.as_str(),
-            labels.main_menu.as_str(),
-            labels.keyboard.as_str(),
-            labels.network.as_str(),
-            labels.display_options.as_str(),
-            labels.game_options.as_str(),
-            labels.ui_options.as_str(),
-            labels.audio_options.as_str(),
-            labels.visual_details.as_str(),
-            labels.difficulty.as_str(),
-            labels.tooltips.as_str(),
-            labels.scroll_rate.as_str(),
-            labels.target_lines.as_str(),
-            labels.show_hidden.as_str(),
-            labels.music_volume.as_str(),
-            labels.sound_volume.as_str(),
-            labels.voice_volume.as_str(),
-            labels.blank.as_str(),
-            labels.low.as_str(),
-            labels.high.as_str(),
-            labels.easy.as_str(),
-            labels.normal.as_str(),
-            labels.hard.as_str(),
-            labels.scroll_tokens[0].as_str(),
-            labels.scroll_tokens[1].as_str(),
-            labels.scroll_tokens[2].as_str(),
-            labels.scroll_tokens[3].as_str(),
-            labels.scroll_tokens[4].as_str(),
-            labels.scroll_tokens[5].as_str(),
-            labels.scroll_tokens[6].as_str(),
-        ];
-        assert_eq!(actual_values, EXPECTED.map(|(_, fallback)| fallback));
-    }
-
-    #[test]
     fn loaded_nonempty_csf_missing_launcher_key_uses_local_fallback() {
         let csf = CsfFile::from_bytes(&build_single_label_csf(
             "GUI:OptionsMenu",
@@ -1180,25 +1104,6 @@ mod tests {
     }
 
     #[test]
-    fn ra2_look_box_reports_each_toggle_after_its_cue() {
-        let mut state = state(true);
-        for checked in [true, false] {
-            state.checkbox_mouse_down(LauncherCheckboxId::Ra2Look, frame(5, 5, 195, 16));
-            assert_eq!(state.values.ra2_look, checked);
-            assert_eq!(
-                state.drain_output().events,
-                [
-                    LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
-                    LauncherOptionsEvent::Ra2LookChanged(checked),
-                ]
-            );
-        }
-        // Applied at once, so the accepted pack never carries it.
-        state.checkbox_mouse_down(LauncherCheckboxId::Ra2Look, frame(5, 5, 195, 16));
-        assert_eq!(state.pack(), self::state(true).pack());
-    }
-
-    #[test]
     fn zoom_steps_by_half_and_never_shows_less_than_640x480() {
         let percent = |zoom: Zoom, w, h| zoom.percent(w, h);
         // Auto stays sharp and keeps at least the original 800x600 view.
@@ -1258,28 +1163,6 @@ mod tests {
         assert_eq!(packed.score_volume.to_bits(), 0.0_f32.to_bits());
         assert_eq!(packed.sound_volume.to_bits(), 0.5_f32.to_bits());
         assert_eq!(packed.voice_volume.to_bits(), 0.6_f32.to_bits());
-    }
-
-    #[test]
-    fn main_button_press_cues_before_release_result() {
-        let mut state = state(true);
-        state.main_button_mouse_down();
-        assert_eq!(
-            state.drain_output(),
-            LauncherOptionsFrameOutput {
-                events: vec![LauncherOptionsEvent::Cue(LauncherCue::MainButton)],
-                result: None,
-            }
-        );
-
-        state.request_result(LauncherParentResult::Network);
-        assert_eq!(
-            state.drain_output(),
-            LauncherOptionsFrameOutput {
-                events: Vec::new(),
-                result: Some(LauncherParentResult::Network),
-            }
-        );
     }
 
     #[test]

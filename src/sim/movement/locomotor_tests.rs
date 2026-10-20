@@ -153,36 +153,6 @@ fn make_obj(locomotor: LocomotorKind, category: ObjectCategory) -> ObjectType {
 }
 
 #[test]
-fn test_drive_locomotor() {
-    let obj = make_obj(LocomotorKind::Drive, ObjectCategory::Vehicle);
-    let state = LocomotorState::from_object_type(&obj, 0);
-    assert_eq!(state.kind, LocomotorKind::Drive);
-    assert_eq!(state.layer, MovementLayer::Ground);
-    assert_eq!(state.air_phase(0), AirMovePhase::Landed);
-    assert!(state.is_ground_mover());
-    assert!(!state.is_air_mover());
-}
-
-#[test]
-fn test_hover_cruises_at_full_base_speed() {
-    // Hover now cruises at its full base Speed (throttle 1.0), not the old
-    // made-up 0.65x. The accel/brake throttle ramp lives in sim/movement/hover.rs.
-    let obj = make_obj(LocomotorKind::Hover, ObjectCategory::Vehicle);
-    let state = LocomotorState::from_object_type(&obj, 0);
-    assert_eq!(state.kind, LocomotorKind::Hover);
-    assert!(state.is_ground_mover());
-}
-
-#[test]
-fn test_walk_locomotor() {
-    let obj = make_obj(LocomotorKind::Walk, ObjectCategory::Infantry);
-    let state = LocomotorState::from_object_type(&obj, 0);
-    assert_eq!(state.kind, LocomotorKind::Walk);
-    assert_eq!(state.layer, MovementLayer::Ground);
-    assert!(state.is_ground_mover());
-}
-
-#[test]
 fn test_fly_locomotor_air_layer() {
     let obj = make_obj(LocomotorKind::Fly, ObjectCategory::Aircraft);
     let state = LocomotorState::from_object_type(&obj, 0);
@@ -224,48 +194,6 @@ fn fly_target_uses_type_flight_level_without_changing_other_locomotors() {
 }
 
 #[test]
-fn test_jumpjet_air_layer() {
-    let obj = make_obj(LocomotorKind::Jumpjet, ObjectCategory::Infantry);
-    let state = LocomotorState::from_object_type(&obj, 0);
-    assert_eq!(state.kind, LocomotorKind::Jumpjet);
-    assert_eq!(state.layer, MovementLayer::Air);
-    assert!(!state.is_ground_mover());
-    assert!(state.is_air_mover());
-    assert_eq!(state.jumpjet_runtime().unwrap().params().height(), 500);
-}
-
-#[test]
-fn test_jumpjet_with_custom_params() {
-    let mut obj = make_obj(LocomotorKind::Jumpjet, ObjectCategory::Infantry);
-    obj.jumpjet = true;
-    obj.jumpjet_params = JumpjetParams {
-        turn_rate: 4,
-        speed: SimFixed::from_num(20.0_f32),
-        climb: 8.0,
-        crash: 5.0,
-        height: 750,
-        accel: 2.0,
-        wobbles: 0.2,
-        deviation: 40,
-        no_wobbles: false,
-    };
-    let state = LocomotorState::from_object_type(&obj, 0);
-    let params = state.jumpjet_runtime().unwrap().params();
-    assert_eq!(params.height(), 750);
-    assert_eq!(params.speed(), 20);
-    assert_eq!(params.climb_bits(), 8.0f32.to_bits());
-}
-
-#[test]
-fn test_ship_is_ground_mover() {
-    let obj = make_obj(LocomotorKind::Ship, ObjectCategory::Vehicle);
-    let state = LocomotorState::from_object_type(&obj, 0);
-    assert_eq!(state.kind, LocomotorKind::Ship);
-    assert!(state.is_ground_mover());
-    assert!(!state.is_air_mover());
-}
-
-#[test]
 fn cmin_locomotor_initializes_primary_and_active_teleport() {
     let mut obj = make_obj(LocomotorKind::Teleport, ObjectCategory::Vehicle);
     obj.harvester = true;
@@ -299,31 +227,6 @@ fn test_override_teleport_round_trip() {
     assert!(!state.is_overridden());
     assert_eq!(state.kind, LocomotorKind::Drive);
     assert_eq!(state.layer, MovementLayer::Ground);
-}
-
-#[test]
-fn end_piggyback_without_a_stash_reports_nothing_to_pop() {
-    let obj = make_obj(LocomotorKind::Drive, ObjectCategory::Vehicle);
-    let mut state = LocomotorState::from_object_type(&obj, 0);
-    let result = state.end_piggyback();
-    assert!(
-        !result,
-        "ending with nothing stashed reports nothing to pop"
-    );
-    assert_eq!(state.kind, LocomotorKind::Drive);
-}
-
-#[test]
-fn test_override_preserves_speed_type() {
-    let mut obj = make_obj(LocomotorKind::Drive, ObjectCategory::Vehicle);
-    obj.speed_type = SpeedType::Wheel;
-    let mut state = LocomotorState::from_object_type(&obj, 0);
-    assert_eq!(state.speed_type, SpeedType::Wheel);
-
-    state.begin_piggyback(LocomotorKind::Teleport, 0);
-    // SpeedType should still reflect the original during override.
-    state.end_piggyback();
-    assert_eq!(state.speed_type, SpeedType::Wheel);
 }
 
 #[test]

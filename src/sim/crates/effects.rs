@@ -317,7 +317,7 @@ pub(super) fn choose_unit_crate_type<'r>(
         let tracked = |category: EntityCategory, type_id: &str| -> i32 {
             sim.interner
                 .get(type_id)
-                .map_or(0, |type_id| house.tracking.owned_count(category, type_id))
+                .map_or(0, |type_id| house.tracking().owned_count(category, type_id))
         };
         let has_conyard = rules
             .build_const_types

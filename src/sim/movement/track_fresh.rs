@@ -1374,8 +1374,8 @@ impl Simulation {
         if let Some(object) = nearest {
             return Some(BlockingObject::Entity(object));
         }
-        self.production
-            .terrain_object_cells
+        self.terrain_objects
+            .cell_index()
             .get(&cell)
             .copied()
             .map(BlockingObject::Terrain)
@@ -1440,7 +1440,7 @@ mod tests {
             ),
             1
         );
-        let tree = sim.production.terrain_object_cells[&(11, 10)];
+        let tree = sim.terrain_objects.cell_index()[&(11, 10)];
         assert!(!sim.substrate.entities.contains(tree));
         let cell = sim
             .resolved_terrain
@@ -1523,13 +1523,13 @@ mod tests {
                 fired_at_tree |= sim.fire_events.iter().any(|event| {
                     event.attacker_id == tank && event.target == TargetKind::Entity(tree)
                 });
-                if !sim.production.terrain_object_cells.contains_key(&(11, 10)) {
+                if !sim.terrain_objects.cell_index().contains_key(&(11, 10)) {
                     break;
                 }
             }
             assert!(fired_at_tree, "the retained Object target reaches FireAt");
             assert!(
-                !sim.production.terrain_object_cells.contains_key(&(11, 10)),
+                !sim.terrain_objects.cell_index().contains_key(&(11, 10)),
                 "the existing Terrain receiver takes the cannon's Wood damage"
             );
             let actor = sim.substrate.entities.get(tank).unwrap();

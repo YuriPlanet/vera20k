@@ -147,7 +147,7 @@ fn hash_house_ai_activation_fields(
     house.ai_activation().production.hash(hasher);
     house.ai_activation().autocreate_allowed.hash(hasher);
     house.ai_activation().ai_triggers_active.hash(hasher);
-    house.current_iq.hash(hasher);
+    house.current_iq().hash(hasher);
 }
 
 #[cfg(test)]
@@ -1020,33 +1020,33 @@ impl Simulation {
                 b"house-spatial-threat-v1".hash(hasher);
                 threat.hash(hasher);
             }
-            house.economy.credits().hash(hasher);
+            house.economy().credits().hash(hasher);
             // The sole cash balance retains its original position in the hash stream.
-            house.economy.spent_credits().hash(hasher);
+            house.economy().spent_credits().hash(hasher);
             // The score feeds the terminal Scenario draw.
-            house.economy.score().hash(hasher);
+            house.economy().score().hash(hasher);
             // House504080/503040 preserves the kill, loss and built totals
             // through native load. The retained-ship chain needs both its
             // initial and terminal loss. Preserve zero streams.
-            if house.stats != crate::sim::house_state::MatchStatistics::default() {
+            if *house.stats() != crate::sim::house_state::MatchStatistics::default() {
                 b"house-match-statistics-v1".hash(hasher);
-                house.stats.hash(hasher);
+                house.stats().hash(hasher);
             }
-            house.side_index.hash(hasher);
-            house.is_human.hash(hasher);
-            house.player_control.hash(hasher);
-            (house.difficulty as i32).hash(hasher);
+            house.side_index().hash(hasher);
+            house.is_human().hash(hasher);
+            house.player_control().hash(hasher);
+            (house.difficulty() as i32).hash(hasher);
             house.rof_bias().bits().hash(hasher);
-            house.is_defeated.hash(hasher);
+            house.is_defeated().hash(hasher);
             if house.is_to_die() {
                 b"house-flag-to-die-v1".hash(hasher);
             }
             house.has_won().hash(hasher);
             house.has_lost().hash(hasher);
             house.outcome().hash(hasher);
-            house.map_is_clear.hash(hasher);
-            house.spy_sat_active.hash(hasher);
-            house.tracking.hash_defeat_counters(hasher);
+            house.map_is_clear().hash(hasher);
+            house.spy_sat_active().hash(hasher);
+            house.tracking().hash_defeat_counters(hasher);
             if house.tech_recheck_pending() {
                 b"house-tech-recheck-v1".hash(hasher);
             }
@@ -1058,17 +1058,17 @@ impl Simulation {
                 house.self_heal_infantry().hash(hasher);
                 house.self_heal_units().hash(hasher);
             }
-            house.tech_level.hash(hasher);
+            house.tech_level().hash(hasher);
             hash_house_ai_activation_fields(house, hasher);
-            house.strategy_emergency.hash(hasher);
-            house.grudge_scores.len().hash(hasher);
-            for (other, score) in &house.grudge_scores {
+            house.strategy_emergency().hash(hasher);
+            house.grudge_scores().len().hash(hasher);
+            for (other, score) in house.grudge_scores() {
                 other.hash(hasher);
                 score.hash(hasher);
             }
-            house.enemy_house.hash(hasher);
+            house.enemy_house().hash(hasher);
 
-            if let Some((rx, ry)) = house.base_center {
+            if let Some((rx, ry)) = house.base_center() {
                 1u8.hash(hasher);
                 rx.hash(hasher);
                 ry.hash(hasher);
@@ -1079,44 +1079,44 @@ impl Simulation {
                 b"house-base-radius-v1".hash(hasher);
                 house.base_radius().hash(hasher);
             }
-            house.alternate_base_center.hash(hasher);
-            if !house.build_const_order.is_empty() {
+            house.alternate_base_center().hash(hasher);
+            if !house.build_const_order().is_empty() {
                 b"naval-build-const-house-v1".hash(hasher);
-                house.build_const_order.len().hash(hasher);
-                for stable_id in &house.build_const_order {
+                house.build_const_order().len().hash(hasher);
+                for stable_id in house.build_const_order() {
                     stable_id.hash(hasher);
                 }
             }
-            if !house.base_projection.buildings().is_empty() {
+            if !house.base_projection().buildings().is_empty() {
                 b"house-buildings-v1".hash(hasher);
-                house.base_projection.buildings().hash(hasher);
+                house.base_projection().buildings().hash(hasher);
             }
-            if !house.base_projection.factory_plants().is_empty() {
+            if !house.base_projection().factory_plants().is_empty() {
                 b"house-factory-plants-v1".hash(hasher);
-                house.base_projection.factory_plants().hash(hasher);
+                house.base_projection().factory_plants().hash(hasher);
             }
-            house.base_plan.percent_built.hash(hasher);
-            house.base_plan.nodes.len().hash(hasher);
-            for node in &house.base_plan.nodes {
+            house.base_plan().percent_built().hash(hasher);
+            house.base_plan().nodes().len().hash(hasher);
+            for node in house.base_plan().nodes() {
                 node.type_or_control.hash(hasher);
                 node.packed_cell.hash(hasher);
                 node.filled.hash(hasher);
                 node.retry_count.hash(hasher);
             }
-            house.base_plan_center.hash(hasher);
-            house.base_reservation.hash(hasher);
-            house.waypoint_edge.hash(hasher);
+            house.base_plan_center().hash(hasher);
+            house.base_reservation().hash(hasher);
+            house.waypoint_edge().hash(hasher);
             // `HouseClass+0x242`, the sticky harvester no-ore latch — a
             // raw House byte in the native save block and lockstep CRC.
-            house.harvester_no_ore.hash(hasher);
+            house.harvester_no_ore().hash(hasher);
             // `HouseClass+0x57D4` funds-nag TimerStruct and the
             // `[0xA8F040]` low-power guard (`HouseClass::Update
             // 0x004F8B3C..0x004F8DAB`): both live in the native save.
             // Folded with a 64-bit start, as before the timer was a
             // `CdTimer`.
-            i64::from(house.eva_funds_timer.start_frame()).hash(hasher);
-            house.eva_funds_timer.duration().hash(hasher);
-            house.eva_low_power_guard.hash(hasher);
+            i64::from(house.eva_funds_timer().start_frame()).hash(hasher);
+            house.eva_funds_timer().duration().hash(hasher);
+            house.eva_low_power_guard().hash(hasher);
             house.hash_event_notifications(hasher);
             house.hash_production_history(hasher);
             house.hash_lost_building(hasher);
@@ -1128,51 +1128,54 @@ impl Simulation {
             house.hash_allow_win_tags(hasher);
             house.hash_super_weapon_targets(hasher);
             house.repair_delay().to_bits().hash(hasher);
-            house.repair_start_latch.hash(hasher);
-            i64::from(house.repair_latch_timer.start_frame()).hash(hasher);
-            house.repair_latch_timer.duration().hash(hasher);
+            house.repair_start_latch().hash(hasher);
+            i64::from(house.repair_latch_timer().start_frame()).hash(hasher);
+            house.repair_latch_timer().duration().hash(hasher);
             // Tagged and folded only off their constructor values, so a house
             // without computer production hashes as earlier schemas did.
-            let gatherers = house.tracking.resource_gatherers();
-            if house.ai_production != Default::default() || gatherers != 0 {
+            let gatherers = house.tracking().resource_gatherers();
+            if *house.ai_production() != Default::default() || gatherers != 0 {
                 b"ai-base-building-v1".hash(hasher);
-                house.ai_production.hash(hasher);
+                house.ai_production().hash(hasher);
                 gatherers.hash(hasher);
             }
-            let forces = house.tracking.force_values();
+            let forces = house.tracking().force_values();
             if forces != Default::default() {
                 b"house-force-values-v1".hash(hasher);
                 forces.hash(hasher);
             }
-            let docks = house.tracking.airport_docks();
+            let docks = house.tracking().airport_docks();
             if docks != 0 {
                 b"house-airport-docks-v1".hash(hasher);
                 docks.hash(hasher);
             }
-            let factories = house.tracking.factories();
+            let factories = house.tracking().factories();
             if factories != [0; 5] {
                 b"house-factory-counters-v1".hash(hasher);
                 factories.hash(hasher);
             }
-            let war_factories = house.tracking.war_factories();
+            let war_factories = house.tracking().war_factories();
             if war_factories != 0 {
                 b"house-war-factories-v1".hash(hasher);
                 war_factories.hash(hasher);
             }
-            if house.strategy_timer != crate::sim::house_state::strategy_timer_at_construction() {
+            if *house.strategy_timer() != crate::sim::house_state::strategy_timer_at_construction()
+            {
                 b"house-strategy-timer-v1".hash(hasher);
-                house.strategy_timer.hash(hasher);
+                house.strategy_timer().hash(hasher);
             }
-            house.team_creation.hash_state(hasher);
-            if house.ai_unit_choices != Default::default() {
+            house.team_creation().hash_state(hasher);
+            if *house.ai_unit_choices() != Default::default() {
                 b"house-ai-unit-choices-v1".hash(hasher);
-                house.ai_unit_choices.hash(hasher);
+                house.ai_unit_choices().hash(hasher);
             }
-            house.tracking.hash_ai_team_counters(hasher);
+            house.tracking().hash_ai_team_counters(hasher);
         }
     }
 
-    /// Hash all production-related state: queues, held objects, resources.
+    /// Hash production (primary flags, the enqueue stamp, the factory
+    /// registry), then ore growth and the terrain objects; the fold order is
+    /// part of the hash contract.
     fn hash_production(&self, hasher: &mut impl Hasher) {
         let retired_tiberium_fold = false;
         // The queue-of-record lives in the factory registry (active build = `Factory`
@@ -1182,33 +1185,16 @@ impl Simulation {
         // the sidebar ETA derives it from `progress` at view time and it is
         // intentionally NOT hashed (the 18->19 shape change).
         self.production.hash_primary_factories(hasher);
-        self.production.next_enqueue_order.hash(hasher);
+        self.production.next_enqueue_order().hash(hasher);
         self.hash_factory_registry(hasher); // P5b: the authoritative factory registry
 
         // Live ore/gem identity and quantity are folded by `hash_overlay_grid`.
-        self.production.ore_growth_config.hash_enabled(hasher);
-        self.production
-            .ore_growth_state
+        self.ore_growth_config.hash_enabled(hasher);
+        self.ore_growth_state
             .hash_state(hasher, retired_tiberium_fold);
-        // Hash retained terrain animations, including TIBTRE ore generators.
-        for (&(rx, ry), spawner) in &self.production.terrain_animations {
-            rx.hash(hasher);
-            ry.hash(hasher);
-            spawner.hash(hasher);
-        }
-        for (&stable_id, terrain) in &self.production.terrain_objects {
-            stable_id.hash(hasher);
-            terrain.hash(hasher);
-        }
-        for (&(rx, ry), &stable_id) in &self.production.terrain_object_cells {
-            rx.hash(hasher);
-            ry.hash(hasher);
-            stable_id.hash(hasher);
-        }
-        for &(rx, ry) in &self.production.tiberium_spawning_terrain_cells {
-            rx.hash(hasher);
-            ry.hash(hasher);
-        }
+        // Retained terrain animations (TIBTRE ore generators among them),
+        // the objects and their cell and spawner indexes.
+        self.terrain_objects.hash_state(hasher);
         if retired_tiberium_fold {
             // The fallback ore overlay id: `None` unless terrain spawners were
             // seeded from a registry, which the pinned fixtures never did.
@@ -1222,7 +1208,7 @@ impl Simulation {
     /// contract. Explicit-field folding (NOT `#[derive(Hash)]`) so the Option
     /// presence tags fold distinctly, consistent with the rest of this file.
     fn hash_factory_registry(&self, hasher: &mut impl Hasher) {
-        for (holder, f) in self.production.factories.holders_insertion_ordered() {
+        for (holder, f) in self.production.factories().holders_insertion_ordered() {
             // The building that holds a computer's factory (`BuildingClass+0x524`);
             // a House's factory folds as earlier schemas did.
             if let crate::sim::production::FactoryHolder::Building(building) = holder {
@@ -2587,63 +2573,63 @@ mod lifecycle_hash_tests {
     }
 
     #[test]
-    fn lifecycle_authority_each_axis_changes_state_hash() {
-        assert_entity_mutation_changes_hash(|entity| {
-            entity
-                .lifecycle
-                .set_object_alive_for_test(!entity.lifecycle.object_alive());
-        });
-        assert_entity_mutation_changes_hash(|entity| {
-            entity
-                .lifecycle
-                .set_in_limbo_for_test(!entity.lifecycle.in_limbo());
-        });
-        assert_entity_mutation_changes_hash(|entity| {
-            entity
-                .lifecycle
-                .set_cell_marked(!entity.lifecycle.cell_marked());
-        });
-        assert_entity_mutation_changes_hash(|entity| {
-            entity.death.set_dying_for_test(!entity.death.is_dying());
-        });
-        assert_entity_mutation_changes_hash(|entity| {
-            entity
-                .removal_facts
-                .set_dirty_rect_eligible_for_test(!entity.removal_facts.dirty_rect_eligible());
-        });
-        assert_entity_mutation_changes_hash(|entity| {
-            entity
-                .kill_record
-                .set_destruction_recorded_for_test(!entity.kill_record.is_recorded());
-        });
-        assert_entity_mutation_changes_hash(|entity| {
-            entity
-                .removal_facts
-                .set_occupier_for_test(!entity.removal_facts.occupier());
-        });
-        assert_entity_mutation_changes_hash(|entity| {
-            entity.set_in_playfield(!entity.in_playfield());
-        });
-        assert_entity_mutation_changes_hash(|entity| {
-            entity.passive_scan.timer_mut_for_test().arm(7, 12);
-        });
-    }
+    fn lifecycle_authority_axes_and_pending_queue_change_state_hash() {
+        {
+            assert_entity_mutation_changes_hash(|entity| {
+                entity
+                    .lifecycle
+                    .set_object_alive_for_test(!entity.lifecycle.object_alive());
+            });
+            assert_entity_mutation_changes_hash(|entity| {
+                entity
+                    .lifecycle
+                    .set_in_limbo_for_test(!entity.lifecycle.in_limbo());
+            });
+            assert_entity_mutation_changes_hash(|entity| {
+                entity
+                    .lifecycle
+                    .set_cell_marked(!entity.lifecycle.cell_marked());
+            });
+            assert_entity_mutation_changes_hash(|entity| {
+                entity.death.set_dying_for_test(!entity.death.is_dying());
+            });
+            assert_entity_mutation_changes_hash(|entity| {
+                entity
+                    .removal_facts
+                    .set_dirty_rect_eligible_for_test(!entity.removal_facts.dirty_rect_eligible());
+            });
+            assert_entity_mutation_changes_hash(|entity| {
+                entity
+                    .kill_record
+                    .set_destruction_recorded_for_test(!entity.kill_record.is_recorded());
+            });
+            assert_entity_mutation_changes_hash(|entity| {
+                entity
+                    .removal_facts
+                    .set_occupier_for_test(!entity.removal_facts.occupier());
+            });
+            assert_entity_mutation_changes_hash(|entity| {
+                entity.set_in_playfield(!entity.in_playfield());
+            });
+            assert_entity_mutation_changes_hash(|entity| {
+                entity.passive_scan.timer_mut_for_test().arm(7, 12);
+            });
+        }
+        {
+            let mut empty = Simulation::new();
+            let empty_hash = empty.state_hash();
 
-    #[test]
-    fn lifecycle_authority_pending_queue_order_and_length_change_state_hash() {
-        let mut empty = Simulation::new();
-        let empty_hash = empty.state_hash();
+            empty.substrate.pending_delete.queue_object(1);
+            let one_hash = empty.state_hash();
+            empty.substrate.pending_delete.queue_object(2);
+            let ordered_hash = empty.state_hash();
+            empty.substrate.pending_delete.swap_for_test(0, 1);
+            let reversed_hash = empty.state_hash();
 
-        empty.substrate.pending_delete.queue_object(1);
-        let one_hash = empty.state_hash();
-        empty.substrate.pending_delete.queue_object(2);
-        let ordered_hash = empty.state_hash();
-        empty.substrate.pending_delete.swap_for_test(0, 1);
-        let reversed_hash = empty.state_hash();
-
-        assert_ne!(empty_hash, one_hash);
-        assert_ne!(one_hash, ordered_hash);
-        assert_ne!(ordered_hash, reversed_hash);
+            assert_ne!(empty_hash, one_hash);
+            assert_ne!(one_hash, ordered_hash);
+            assert_ne!(ordered_hash, reversed_hash);
+        }
     }
 }
 
@@ -2769,90 +2755,86 @@ mod mission_authority_hash_tests {
     }
 
     #[test]
-    fn every_unit_mission_leaf_field_changes_state_hash() {
-        let base = MissionLeafState::unit_raw_for_test(1, 2, 3, 4);
-        let base_hash = hash_leaf(base);
-        for (field, variant) in [
-            (
-                "deploy begin active",
-                MissionLeafState::unit_raw_for_test(5, 2, 3, 4),
-            ),
-            (
-                "deploy reverse active",
-                MissionLeafState::unit_raw_for_test(1, 5, 3, 4),
-            ),
-            (
-                "tracker byte 18",
-                MissionLeafState::unit_raw_for_test(1, 2, 5, 4),
-            ),
-            (
-                "tracker byte 19",
-                MissionLeafState::unit_raw_for_test(1, 2, 3, 5),
-            ),
-        ] {
+    fn every_class_mission_leaf_field_changes_state_hash() {
+        {
+            let base = MissionLeafState::unit_raw_for_test(1, 2, 3, 4);
+            let base_hash = hash_leaf(base);
+            for (field, variant) in [
+                (
+                    "deploy begin active",
+                    MissionLeafState::unit_raw_for_test(5, 2, 3, 4),
+                ),
+                (
+                    "deploy reverse active",
+                    MissionLeafState::unit_raw_for_test(1, 5, 3, 4),
+                ),
+                (
+                    "tracker byte 18",
+                    MissionLeafState::unit_raw_for_test(1, 2, 5, 4),
+                ),
+                (
+                    "tracker byte 19",
+                    MissionLeafState::unit_raw_for_test(1, 2, 3, 5),
+                ),
+            ] {
+                assert_ne!(
+                    base_hash,
+                    hash_leaf(variant),
+                    "Unit {field} must contribute to the state hash"
+                );
+            }
+        }
+        {
+            let base = MissionLeafState::infantry_raw_for_test(7, 12);
+            let base_hash = hash_leaf(base);
+            let mut water = base;
+            water.set_infantry_water_state(false);
+            let mut land = base;
+            land.set_infantry_water_state(true);
+            for (field, variant) in [
+                (
+                    "firing sequence latch",
+                    MissionLeafState::infantry_raw_for_test(8, 12),
+                ),
+                ("Doing", MissionLeafState::infantry_raw_for_test(7, 13)),
+                ("water state", water),
+                ("land state", land),
+            ] {
+                assert_ne!(
+                    base_hash,
+                    hash_leaf(variant),
+                    "Infantry {field} must contribute to the state hash"
+                );
+            }
+            assert_ne!(hash_leaf(water), hash_leaf(land));
+        }
+        {
+            let base = MissionLeafState::aircraft_raw_for_test(9, 10);
+            let base_hash = hash_leaf(base);
+            for (field, variant) in [
+                (
+                    "action latch",
+                    MissionLeafState::aircraft_raw_for_test(10, 10),
+                ),
+                (
+                    "transition ready latch",
+                    MissionLeafState::aircraft_raw_for_test(9, 11),
+                ),
+            ] {
+                assert_ne!(
+                    base_hash,
+                    hash_leaf(variant),
+                    "Aircraft {field} must contribute to the state hash"
+                );
+            }
+        }
+        {
             assert_ne!(
-                base_hash,
-                hash_leaf(variant),
-                "Unit {field} must contribute to the state hash"
+                hash_leaf(MissionLeafState::building_raw_for_test(0)),
+                hash_leaf(MissionLeafState::building_raw_for_test(1)),
+                "Building ready latch must contribute to the state hash"
             );
         }
-    }
-
-    #[test]
-    fn every_infantry_mission_leaf_field_changes_state_hash() {
-        let base = MissionLeafState::infantry_raw_for_test(7, 12);
-        let base_hash = hash_leaf(base);
-        let mut water = base;
-        water.set_infantry_water_state(false);
-        let mut land = base;
-        land.set_infantry_water_state(true);
-        for (field, variant) in [
-            (
-                "firing sequence latch",
-                MissionLeafState::infantry_raw_for_test(8, 12),
-            ),
-            ("Doing", MissionLeafState::infantry_raw_for_test(7, 13)),
-            ("water state", water),
-            ("land state", land),
-        ] {
-            assert_ne!(
-                base_hash,
-                hash_leaf(variant),
-                "Infantry {field} must contribute to the state hash"
-            );
-        }
-        assert_ne!(hash_leaf(water), hash_leaf(land));
-    }
-
-    #[test]
-    fn every_aircraft_mission_leaf_field_changes_state_hash() {
-        let base = MissionLeafState::aircraft_raw_for_test(9, 10);
-        let base_hash = hash_leaf(base);
-        for (field, variant) in [
-            (
-                "action latch",
-                MissionLeafState::aircraft_raw_for_test(10, 10),
-            ),
-            (
-                "transition ready latch",
-                MissionLeafState::aircraft_raw_for_test(9, 11),
-            ),
-        ] {
-            assert_ne!(
-                base_hash,
-                hash_leaf(variant),
-                "Aircraft {field} must contribute to the state hash"
-            );
-        }
-    }
-
-    #[test]
-    fn building_mission_leaf_ready_latch_changes_state_hash() {
-        assert_ne!(
-            hash_leaf(MissionLeafState::building_raw_for_test(0)),
-            hash_leaf(MissionLeafState::building_raw_for_test(1)),
-            "Building ready latch must contribute to the state hash"
-        );
     }
 
     #[test]
@@ -3074,48 +3056,7 @@ mod track_authority_hash_tests {
 #[cfg(test)]
 mod state_hash_field_tests {
     use super::Simulation;
-    use crate::rules::locomotor_type::LocomotorKind;
-    use crate::sim::components::DriveCoord;
     use crate::sim::game_entity::GameEntity;
-    use crate::sim::movement::locomotor::LocomotorState;
-    use crate::sim::movement::track_process::TrackFamily;
-
-    /// A factory's rally point is its ArchiveTarget cell, folded with the
-    /// base-defence state.
-    #[test]
-    fn factory_rally_point_changes_state_hash() {
-        let factory = GameEntity::test_default(1, "GAWEAP", "Americans", 10, 10);
-        let mut rallied = factory.clone();
-        rallied.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(30, 31)));
-        let mut sim_a = Simulation::new();
-        let mut sim_b = Simulation::new();
-        sim_a.substrate.entities.insert(factory);
-        sim_b.substrate.entities.insert(rallied);
-        assert_ne!(sim_a.state_hash(), sim_b.state_hash());
-    }
-
-    #[test]
-    fn drive_locomotion_state_changes_state_hash() {
-        let mut sim_a = Simulation::new();
-        let mut sim_b = Simulation::new();
-        let mut entity_a = GameEntity::test_default(1, "AMCV", "Americans", 10, 10);
-        entity_a.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
-        let mut entity_b = entity_a.clone();
-        entity_b
-            .navigation
-            .path_replay
-            .set_directions_for_test(vec![2, 2, 2, 2, 2]);
-        let loco = entity_b.locomotor.as_mut().unwrap();
-        loco.ensure_installed_track_state();
-        loco.store_track_destination(TrackFamily::Drive, Some(DriveCoord::cell(45, 40, 0)));
-        let mut progress = loco.track_progress(TrackFamily::Drive).unwrap();
-        progress.set_residual(3);
-        loco.store_track_progress(TrackFamily::Drive, progress);
-        sim_a.substrate.entities.insert(entity_a);
-        sim_b.substrate.entities.insert(entity_b);
-
-        assert_ne!(sim_a.state_hash(), sim_b.state_hash());
-    }
 
     #[test]
     fn drive_accelerates_changes_state_hash() {
@@ -3131,103 +3072,178 @@ mod state_hash_field_tests {
     }
 
     #[test]
-    fn house_difficulty_changes_state_hash() {
+    fn house_fields_change_state_hash() {
         use crate::sim::house_state::{HouseDifficulty, HouseState};
 
-        let mut sim_a = Simulation::new();
-        let mut sim_b = Simulation::new();
-        let owner_a = sim_a.interner.intern("Computer1");
-        let owner_b = sim_b.interner.intern("Computer1");
-        assert_eq!(owner_a, owner_b);
-        sim_a
-            .houses
-            .register(HouseState::new(owner_a, 0, None, false, 0, 10));
-        let mut hard_house = HouseState::new(owner_b, 0, None, false, 0, 10);
-        hard_house.difficulty = HouseDifficulty::Hard;
-        sim_b.houses.register(hard_house);
+        {
+            let mut sim_a = Simulation::new();
+            let mut sim_b = Simulation::new();
+            let owner_a = sim_a.interner.intern("Computer1");
+            let owner_b = sim_b.interner.intern("Computer1");
+            assert_eq!(owner_a, owner_b);
+            sim_a
+                .houses
+                .register(HouseState::new(owner_a, 0, None, false, 0, 10));
+            let mut hard_house = HouseState::new(owner_b, 0, None, false, 0, 10);
+            hard_house.set_difficulty_for_test(HouseDifficulty::Hard);
+            sim_b.houses.register(hard_house);
 
-        assert_ne!(sim_a.state_hash(), sim_b.state_hash());
-    }
+            assert_ne!(sim_a.state_hash(), sim_b.state_hash());
+        }
+        {
+            // Same stored difficulty, different bias: only the game-mode arm of
+            // `set_difficulty` folds the country's ROF into `HouseClass+0x1A8`.
+            let hashes: Vec<u64> = [false, true]
+                .into_iter()
+                .map(|game_mode_nonzero| {
+                    let mut sim = Simulation::new();
+                    let owner = sim.interner.intern("Computer1");
+                    let mut house = HouseState::new(owner, 0, None, false, 0, 10);
+                    let mut general = crate::rules::ruleset::GeneralRules::default();
+                    general.difficulty_rows =
+                        [0.8, 1.0, 1.2].map(|rof| crate::rules::ruleset::DifficultyRules {
+                            rof,
+                            ..Default::default()
+                        });
+                    house.set_difficulty(
+                        HouseDifficulty::Hard,
+                        &general,
+                        crate::rules::ruleset::CountryDifficultyBiases {
+                            rof: crate::util::native_x87::NativeF64Bits::from_bits(
+                                0.9_f64.to_bits(),
+                            ),
+                            ..Default::default()
+                        },
+                        game_mode_nonzero,
+                        0,
+                        0,
+                    );
+                    sim.houses.register(house);
+                    sim.state_hash()
+                })
+                .collect();
+            assert_ne!(hashes[0], hashes[1]);
+        }
+        {
+            let mut baseline = Simulation::new();
+            let mut changed = Simulation::new();
+            let owner = baseline.interner.intern("Computer1");
+            let changed_owner = changed.interner.intern("Computer1");
+            assert_eq!(owner, changed_owner);
+            let mut house = HouseState::new(owner, 0, None, false, 0, 10);
+            house.set_base_center_for_test(Some((41, 52)));
+            let mut changed_house = house.clone();
+            changed_house.set_alternate_base_center_for_test((93, 106));
+            baseline.houses.register(house);
+            changed.houses.register(changed_house);
 
-    #[test]
-    fn house_rof_bias_changes_state_hash_at_its_difficulty() {
-        use crate::sim::house_state::{HouseDifficulty, HouseState};
+            assert_ne!(baseline.state_hash(), changed.state_hash());
+            assert_eq!(
+                baseline.houses[&owner].base_center(),
+                changed.houses[&owner].base_center()
+            );
+        }
+        {
+            let mut sim_a = Simulation::new();
+            let mut sim_b = Simulation::new();
+            let owner_a = sim_a.interner.intern("Computer1");
+            let owner_b = sim_b.interner.intern("Computer1");
+            assert_eq!(owner_a, owner_b);
+            sim_a
+                .houses
+                .register(HouseState::new(owner_a, 0, None, false, 0, 10));
+            let mut changed = HouseState::new(owner_b, 0, None, false, 0, 10);
+            changed.base_reservation_mut().update_bounds(3, 4, 5, 6);
+            changed
+                .base_reservation_mut()
+                .append_perimeter_cell_if_absent(u32::from(3u16) | (u32::from(4u16) << 16));
+            sim_b.houses.register(changed);
 
-        // Same stored difficulty, different bias: only the game-mode arm of
-        // `set_difficulty` folds the country's ROF into `HouseClass+0x1A8`.
-        let hashes: Vec<u64> = [false, true]
-            .into_iter()
-            .map(|game_mode_nonzero| {
+            assert_ne!(sim_a.state_hash(), sim_b.state_hash());
+        }
+        {
+            fn fixture() -> (Simulation, crate::sim::intern::InternedId) {
                 let mut sim = Simulation::new();
                 let owner = sim.interner.intern("Computer1");
-                let mut house = HouseState::new(owner, 0, None, false, 0, 10);
-                let mut general = crate::rules::ruleset::GeneralRules::default();
-                general.difficulty_rows =
-                    [0.8, 1.0, 1.2].map(|rof| crate::rules::ruleset::DifficultyRules {
-                        rof,
-                        ..Default::default()
-                    });
-                house.set_difficulty(
-                    HouseDifficulty::Hard,
-                    &general,
-                    crate::rules::ruleset::CountryDifficultyBiases {
-                        rof: crate::util::native_x87::NativeF64Bits::from_bits(0.9_f64.to_bits()),
-                        ..Default::default()
-                    },
-                    game_mode_nonzero,
-                    0,
-                    0,
-                );
-                sim.houses.register(house);
-                sim.state_hash()
-            })
-            .collect();
-        assert_ne!(hashes[0], hashes[1]);
-    }
+                sim.houses
+                    .register(HouseState::new(owner, 0, None, false, 0, 10));
+                (sim, owner)
+            }
 
-    #[test]
-    fn alternate_base_center_changes_state_hash_without_changing_primary_center() {
-        use crate::sim::house_state::HouseState;
+            let (baseline, _) = fixture();
+            let baseline_hash = baseline.state_hash();
 
-        let mut baseline = Simulation::new();
-        let mut changed = Simulation::new();
-        let owner = baseline.interner.intern("Computer1");
-        let changed_owner = changed.interner.intern("Computer1");
-        assert_eq!(owner, changed_owner);
-        let mut house = HouseState::new(owner, 0, None, false, 0, 10);
-        house.base_center = Some((41, 52));
-        let mut changed_house = house.clone();
-        changed_house.alternate_base_center = (93, 106);
-        baseline.houses.register(house);
-        changed.houses.register(changed_house);
+            let (mut mode, owner) = fixture();
+            mode.houses
+                .get_mut(&owner)
+                .unwrap()
+                .strategy_emergency_mut()
+                .set_state_four();
+            assert_ne!(baseline_hash, mode.state_hash(), "mode is hashed");
 
-        assert_ne!(baseline.state_hash(), changed.state_hash());
-        assert_eq!(
-            baseline.houses[&owner].base_center,
-            changed.houses[&owner].base_center
-        );
-    }
+            let (mut bias, owner) = fixture();
+            bias.houses
+                .get_mut(&owner)
+                .unwrap()
+                .strategy_emergency_mut()
+                .set_all_to_hunt_bias();
+            assert_ne!(baseline_hash, bias.state_hash(), "bias latch is hashed");
 
-    #[test]
-    fn gsi_04_05_base_reservation_state_changes_world_hash() {
-        use crate::sim::house_state::HouseState;
+            let (mut attack_frame, owner) = fixture();
+            attack_frame
+                .houses
+                .get_mut(&owner)
+                .unwrap()
+                .strategy_emergency_mut()
+                .note_building_attack(-17);
+            assert_ne!(
+                baseline_hash,
+                attack_frame.state_hash(),
+                "last Building attack frame is hashed"
+            );
 
-        let mut sim_a = Simulation::new();
-        let mut sim_b = Simulation::new();
-        let owner_a = sim_a.interner.intern("Computer1");
-        let owner_b = sim_b.interner.intern("Computer1");
-        assert_eq!(owner_a, owner_b);
-        sim_a
-            .houses
-            .register(HouseState::new(owner_a, 0, None, false, 0, 10));
-        let mut changed = HouseState::new(owner_b, 0, None, false, 0, 10);
-        changed.base_reservation.update_bounds(3, 4, 5, 6);
-        changed
-            .base_reservation
-            .append_perimeter_cell_if_absent(u32::from(3u16) | (u32::from(4u16) << 16));
-        sim_b.houses.register(changed);
+            let (mut attacker_index, owner) = fixture();
+            attacker_index
+                .houses
+                .get_mut(&owner)
+                .unwrap()
+                .strategy_emergency_mut()
+                .note_building_attacker(2);
+            assert_ne!(
+                baseline_hash,
+                attacker_index.state_hash(),
+                "last attacker House index is hashed"
+            );
 
-        assert_ne!(sim_a.state_hash(), sim_b.state_hash());
+            let (mut timer, owner) = fixture();
+            timer
+                .houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_strategy_timer_for_test(crate::sim::timer::CdTimer::started(12, 106));
+            assert_ne!(
+                baseline_hash,
+                timer.state_hash(),
+                "Strategy timer is hashed"
+            );
+        }
+        {
+            let mut north = Simulation::new();
+            let mut south = Simulation::new();
+            let north_owner = north.interner.intern("Player");
+            let south_owner = south.interner.intern("Player");
+            assert_eq!(north_owner, south_owner);
+
+            let mut north_house = HouseState::new(north_owner, 0, None, true, 0, 10);
+            north_house.set_waypoint_edge_for_test(0);
+            north.houses.register(north_house);
+
+            let mut south_house = HouseState::new(south_owner, 0, None, true, 0, 10);
+            south_house.set_waypoint_edge_for_test(2);
+            south.houses.register(south_house);
+
+            assert_ne!(north.state_hash(), south.state_hash());
+        }
     }
 
     #[test]
@@ -3239,8 +3255,10 @@ mod state_hash_field_tests {
             let mut sim = Simulation::new();
             let owner = sim.interner.intern("Computer1");
             let mut house = HouseState::new(owner, 0, None, false, 0, 10);
-            house.base_plan.percent_built = percent_built;
-            house.base_plan.nodes = nodes;
+            house
+                .base_plan_mut()
+                .set_percent_built_for_test(percent_built);
+            house.base_plan_mut().set_nodes_for_test(nodes);
             sim.houses.register(house);
             sim
         }
@@ -3367,73 +3385,6 @@ mod state_hash_field_tests {
     }
 
     #[test]
-    fn gsi_04_05_house_strategy_emergency_fields_each_change_world_hash() {
-        use crate::sim::house_state::HouseState;
-
-        fn fixture() -> (Simulation, crate::sim::intern::InternedId) {
-            let mut sim = Simulation::new();
-            let owner = sim.interner.intern("Computer1");
-            sim.houses
-                .register(HouseState::new(owner, 0, None, false, 0, 10));
-            (sim, owner)
-        }
-
-        let (baseline, _) = fixture();
-        let baseline_hash = baseline.state_hash();
-
-        let (mut mode, owner) = fixture();
-        mode.houses.get_mut(&owner).unwrap().strategy_emergency.mode = 4;
-        assert_ne!(baseline_hash, mode.state_hash(), "mode is hashed");
-
-        let (mut bias, owner) = fixture();
-        bias.houses
-            .get_mut(&owner)
-            .unwrap()
-            .strategy_emergency
-            .all_to_hunt_bias = true;
-        assert_ne!(baseline_hash, bias.state_hash(), "bias latch is hashed");
-
-        let (mut attack_frame, owner) = fixture();
-        attack_frame
-            .houses
-            .get_mut(&owner)
-            .unwrap()
-            .strategy_emergency
-            .last_building_attack_frame = -17;
-        assert_ne!(
-            baseline_hash,
-            attack_frame.state_hash(),
-            "last Building attack frame is hashed"
-        );
-
-        let (mut attacker_index, owner) = fixture();
-        attacker_index
-            .houses
-            .get_mut(&owner)
-            .unwrap()
-            .strategy_emergency
-            .last_attacker_house_index = 2;
-        assert_ne!(
-            baseline_hash,
-            attacker_index.state_hash(),
-            "last attacker House index is hashed"
-        );
-
-        let (mut timer, owner) = fixture();
-        timer
-            .houses
-            .get_mut(&owner)
-            .unwrap()
-            .strategy_timer
-            .start(12, 106);
-        assert_ne!(
-            baseline_hash,
-            timer.state_hash(),
-            "Strategy timer is hashed"
-        );
-    }
-
-    #[test]
     fn gsi_04_05_techno_base_defense_state_changes_world_hash() {
         let mut baseline = Simulation::new();
         let entity = crate::sim::game_entity::GameEntity::test_default(1, "E1", "Computer1", 3, 4);
@@ -3451,27 +3402,6 @@ mod state_hash_field_tests {
             .set_cooldown_for_test(crate::sim::timer::CdTimer::started(12, 225));
         changed.substrate.entities.insert(entity);
         assert_ne!(baseline_hash, changed.state_hash());
-    }
-
-    #[test]
-    fn gsi_04_16_waypoint_edge_is_lockstep_hash_authority() {
-        use crate::sim::house_state::HouseState;
-
-        let mut north = Simulation::new();
-        let mut south = Simulation::new();
-        let north_owner = north.interner.intern("Player");
-        let south_owner = south.interner.intern("Player");
-        assert_eq!(north_owner, south_owner);
-
-        let mut north_house = HouseState::new(north_owner, 0, None, true, 0, 10);
-        north_house.waypoint_edge = 0;
-        north.houses.register(north_house);
-
-        let mut south_house = HouseState::new(south_owner, 0, None, true, 0, 10);
-        south_house.waypoint_edge = 2;
-        south.houses.register(south_house);
-
-        assert_ne!(north.state_hash(), south.state_hash());
     }
 }
 
@@ -3495,22 +3425,6 @@ mod particle_hash_tests {
         sim.particle_systems_mut().insert(system);
         sim.reveal_particle_system(id, None);
         id
-    }
-
-    #[test]
-    fn empty_particle_store_hashes_consistently() {
-        let a = Simulation::new();
-        let b = Simulation::new();
-        assert_eq!(a.state_hash(), b.state_hash());
-    }
-
-    #[test]
-    fn particle_state_changes_hash() {
-        let mut sim = Simulation::new();
-        let h1 = sim.state_hash();
-        insert_system(&mut sim, fake_system(IVec3::new(100, 0, 0)));
-        let h2 = sim.state_hash();
-        assert_ne!(h1, h2);
     }
 
     fn particle_with_spark(spark: Option<SparkRuntimeState>) -> Particle {
@@ -3622,31 +3536,6 @@ mod particle_hash_tests {
     }
 
     #[test]
-    fn terrain_animations_included_in_state_hash() {
-        use crate::sim::terrain_spawn::TerrainAnimationState;
-
-        let mut sim_a = Simulation::new();
-        let sim_b = Simulation::new();
-        let type_ref = sim_a.interner.intern("TIBTRE01");
-        sim_a.production.terrain_animations.insert(
-            (10, 10),
-            TerrainAnimationState::new(
-                type_ref,
-                crate::util::native_x87::NativeF32Bits::from_bits(0x3b44_9ba6),
-                3,
-                22,
-                0,
-            ),
-        );
-
-        assert_ne!(
-            sim_a.state_hash(),
-            sim_b.state_hash(),
-            "terrain_animations must affect state hash",
-        );
-    }
-
-    #[test]
     fn terrain_spawner_active_fields_change_state_hash() {
         use crate::sim::terrain_spawn::TerrainAnimationState;
 
@@ -3661,15 +3550,18 @@ mod particle_hash_tests {
             0,
         );
         sim_a
-            .production
-            .terrain_animations
+            .terrain_objects
+            .animations_mut_for_test()
             .insert((10, 10), state.clone());
-        sim_b.production.terrain_animations.insert((10, 10), state);
+        sim_b
+            .terrain_objects
+            .animations_mut_for_test()
+            .insert((10, 10), state);
         assert_eq!(sim_a.state_hash(), sim_b.state_hash());
 
         let spawner_b = sim_b
-            .production
-            .terrain_animations
+            .terrain_objects
+            .animations_mut_for_test()
             .get_mut(&(10, 10))
             .unwrap();
         spawner_b.advance_for_test(0, &mut crate::sim::rng::SimRng::new(0));
@@ -3887,55 +3779,55 @@ mod infantry_hash_tests {
     }
 
     #[test]
-    fn infantry_fear_and_prone_change_hash() {
-        let mut sim_a = Simulation::new();
-        let mut sim_b = Simulation::new();
-        let mut a = hash_entity(&mut sim_a, EntityCategory::Infantry);
-        let b = hash_entity(&mut sim_b, EntityCategory::Infantry);
-        a.infantry = Some({
-            let mut runtime = InfantryRuntime::new();
-            runtime.set_fear_level_for_test(10);
-            runtime.set_is_prone_for_test(false);
-            runtime
-        });
-        sim_a.substrate.entities.insert(a);
-        sim_b.substrate.entities.insert(b);
-        assert_ne!(sim_a.state_hash(), sim_b.state_hash());
+    fn infantry_fear_prone_and_cell_entry_blocked_change_hash() {
+        {
+            let mut sim_a = Simulation::new();
+            let mut sim_b = Simulation::new();
+            let mut a = hash_entity(&mut sim_a, EntityCategory::Infantry);
+            let b = hash_entity(&mut sim_b, EntityCategory::Infantry);
+            a.infantry = Some({
+                let mut runtime = InfantryRuntime::new();
+                runtime.set_fear_level_for_test(10);
+                runtime.set_is_prone_for_test(false);
+                runtime
+            });
+            sim_a.substrate.entities.insert(a);
+            sim_b.substrate.entities.insert(b);
+            assert_ne!(sim_a.state_hash(), sim_b.state_hash());
 
-        let mut sim_a = Simulation::new();
-        let mut sim_b = Simulation::new();
-        let mut a = hash_entity(&mut sim_a, EntityCategory::Infantry);
-        let b = hash_entity(&mut sim_b, EntityCategory::Infantry);
-        a.infantry = Some({
-            let mut runtime = InfantryRuntime::new();
-            runtime.set_fear_level_for_test(0);
-            runtime.set_is_prone_for_test(true);
-            runtime
-        });
-        sim_a.substrate.entities.insert(a);
-        sim_b.substrate.entities.insert(b);
-        assert_ne!(sim_a.state_hash(), sim_b.state_hash());
-    }
-
-    #[test]
-    fn infantry_cell_entry_blocked_changes_hash_only_when_set() {
-        let mut sim_a = Simulation::new();
-        let mut sim_b = Simulation::new();
-        let mut a = hash_entity(&mut sim_a, EntityCategory::Infantry);
-        let b = hash_entity(&mut sim_b, EntityCategory::Infantry);
-        a.infantry = Some({
-            let mut runtime = InfantryRuntime::new();
-            runtime.set_cell_entry_blocked_for_test(true);
-            runtime
-        });
-        sim_a.substrate.entities.insert(a);
-        sim_b.substrate.entities.insert(b);
-        assert_ne!(sim_a.state_hash(), sim_b.state_hash());
-        // A clear byte folds nothing: prior streams keep their pins.
-        let mut sim_c = Simulation::new();
-        let c = hash_entity(&mut sim_c, EntityCategory::Infantry);
-        sim_c.substrate.entities.insert(c);
-        assert_eq!(sim_b.state_hash(), sim_c.state_hash());
+            let mut sim_a = Simulation::new();
+            let mut sim_b = Simulation::new();
+            let mut a = hash_entity(&mut sim_a, EntityCategory::Infantry);
+            let b = hash_entity(&mut sim_b, EntityCategory::Infantry);
+            a.infantry = Some({
+                let mut runtime = InfantryRuntime::new();
+                runtime.set_fear_level_for_test(0);
+                runtime.set_is_prone_for_test(true);
+                runtime
+            });
+            sim_a.substrate.entities.insert(a);
+            sim_b.substrate.entities.insert(b);
+            assert_ne!(sim_a.state_hash(), sim_b.state_hash());
+        }
+        {
+            let mut sim_a = Simulation::new();
+            let mut sim_b = Simulation::new();
+            let mut a = hash_entity(&mut sim_a, EntityCategory::Infantry);
+            let b = hash_entity(&mut sim_b, EntityCategory::Infantry);
+            a.infantry = Some({
+                let mut runtime = InfantryRuntime::new();
+                runtime.set_cell_entry_blocked_for_test(true);
+                runtime
+            });
+            sim_a.substrate.entities.insert(a);
+            sim_b.substrate.entities.insert(b);
+            assert_ne!(sim_a.state_hash(), sim_b.state_hash());
+            // A clear byte folds nothing: prior streams keep their pins.
+            let mut sim_c = Simulation::new();
+            let c = hash_entity(&mut sim_c, EntityCategory::Infantry);
+            sim_c.substrate.entities.insert(c);
+            assert_eq!(sim_b.state_hash(), sim_c.state_hash());
+        }
     }
 
     #[test]
@@ -4215,31 +4107,31 @@ mod bridge_state_hash_tests {
             "bridge endpoint record kind must contribute to state hash",
         );
     }
+
+    #[test]
+    fn one_advance_is_one_wrapping_native_frame_for_any_host_duration() {
+        {
+            let mut sim = Simulation::new();
+            let host_durations = [0, 1, 22, 67, 1_000, u32::MAX];
+            for (index, tick_ms) in host_durations.into_iter().enumerate() {
+                sim.advance_tick(&[], None, None, None, tick_ms);
+                assert_eq!(sim.session.binary_frame(), index as u32 + 1);
+            }
+        }
+        {
+            let mut sim = Simulation::new();
+            sim.session.set_binary_frame_for_test(u32::MAX);
+
+            sim.advance_tick(&[], None, None, None, 22);
+
+            assert_eq!(sim.session.binary_frame(), 0);
+        }
+    }
 }
 
 #[cfg(test)]
 mod native_frame_tests {
     use super::Simulation;
-
-    #[test]
-    fn one_advance_is_one_native_frame_for_any_host_duration() {
-        let mut sim = Simulation::new();
-        let host_durations = [0, 1, 22, 67, 1_000, u32::MAX];
-        for (index, tick_ms) in host_durations.into_iter().enumerate() {
-            sim.advance_tick(&[], None, None, None, tick_ms);
-            assert_eq!(sim.session.binary_frame(), index as u32 + 1);
-        }
-    }
-
-    #[test]
-    fn native_frame_wraps_after_u32_max() {
-        let mut sim = Simulation::new();
-        sim.session.set_binary_frame_for_test(u32::MAX);
-
-        sim.advance_tick(&[], None, None, None, 22);
-
-        assert_eq!(sim.session.binary_frame(), 0);
-    }
 
     #[test]
     fn native_frame_changes_state_hash() {
@@ -4293,49 +4185,30 @@ mod rocking_hash_tests {
     }
 
     #[test]
-    fn rocking_state_contributes_to_hash() {
-        let a = make_sim_with_one_vehicle();
-        let b = make_sim_with_one_vehicle();
-        assert_eq!(a.state_hash(), b.state_hash());
+    fn rocking_none_and_angle_contribute_to_hash() {
+        {
+            let a = make_sim_with_one_vehicle();
+            let b = make_sim_with_one_vehicle();
+            assert_eq!(a.state_hash(), b.state_hash());
 
-        // Mutate only the rocking state of one — hashes must diverge.
-        let mut a = a;
-        let id = a.substrate.entities.values().next().unwrap().stable_id();
-        a.substrate.entities.get_mut(id).unwrap().rocking = Some({
-            let mut value = RockingState::default();
-            value.set_angle_sideways(SimFixed::lit("0.1"));
-            value
-        });
-        assert_ne!(a.state_hash(), b.state_hash());
-    }
-
-    #[test]
-    fn rocking_velocity_contributes_to_hash() {
-        let mut a = make_sim_with_one_vehicle();
-        let mut b = make_sim_with_one_vehicle();
-        let id_a = a.substrate.entities.values().next().unwrap().stable_id();
-        let id_b = b.substrate.entities.values().next().unwrap().stable_id();
-        a.substrate.entities.get_mut(id_a).unwrap().rocking = Some({
-            let mut value = RockingState::default();
-            value.set_vel_sideways_for_test(SimFixed::lit("0.01"));
-            value
-        });
-        b.substrate.entities.get_mut(id_b).unwrap().rocking = Some({
-            let mut value = RockingState::default();
-            value.set_vel_sideways_for_test(SimFixed::lit("0.02"));
-            value
-        });
-        assert_ne!(a.state_hash(), b.state_hash());
-    }
-
-    #[test]
-    fn rocking_none_vs_default_contributes_to_hash() {
-        let mut a = make_sim_with_one_vehicle();
-        let b = make_sim_with_one_vehicle();
-        let id = a.substrate.entities.values().next().unwrap().stable_id();
-        a.substrate.entities.get_mut(id).unwrap().rocking = Some(RockingState::default());
-        // a has Some(default), b has None — hashes must diverge.
-        assert_ne!(a.state_hash(), b.state_hash());
+            // Mutate only the rocking state of one — hashes must diverge.
+            let mut a = a;
+            let id = a.substrate.entities.values().next().unwrap().stable_id();
+            a.substrate.entities.get_mut(id).unwrap().rocking = Some({
+                let mut value = RockingState::default();
+                value.set_angle_sideways(SimFixed::lit("0.1"));
+                value
+            });
+            assert_ne!(a.state_hash(), b.state_hash());
+        }
+        {
+            let mut a = make_sim_with_one_vehicle();
+            let b = make_sim_with_one_vehicle();
+            let id = a.substrate.entities.values().next().unwrap().stable_id();
+            a.substrate.entities.get_mut(id).unwrap().rocking = Some(RockingState::default());
+            // a has Some(default), b has None — hashes must diverge.
+            assert_ne!(a.state_hash(), b.state_hash());
+        }
     }
 }
 
@@ -4407,50 +4280,50 @@ mod passenger_cargo_hash_tests {
     }
 
     #[test]
-    fn per_entry_size_mapping_changes_hash_even_when_total_matches() {
-        let a = sim_with_sizes(1.0, 3.0);
-        let b = sim_with_sizes(3.0, 1.0);
+    fn passenger_cargo_size_mapping_and_owner_relation_change_hash() {
+        {
+            let a = sim_with_sizes(1.0, 3.0);
+            let b = sim_with_sizes(3.0, 1.0);
 
-        assert_ne!(a.state_hash(), b.state_hash());
-    }
-
-    #[test]
-    fn cargo_owner_parent_relation_changes_hash_without_erasing_cargo() {
-        let mut sim = sim_with_sizes(1.0, 3.0);
-        let outside = sim.state_hash();
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .passenger_role
-            .set_inside_transport(20, false);
-        let inside = sim.state_hash();
-        assert_ne!(inside, outside);
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .passenger_role
-            .set_inside_transport(21, false);
-        assert_ne!(sim.state_hash(), inside);
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .passenger_role
-            .clear_carrier_relation();
-        assert_eq!(sim.state_hash(), outside);
-        assert_eq!(
+            assert_ne!(a.state_hash(), b.state_hash());
+        }
+        {
+            let mut sim = sim_with_sizes(1.0, 3.0);
+            let outside = sim.state_hash();
             sim.substrate
                 .entities
-                .get(1)
+                .get_mut(1)
                 .unwrap()
                 .passenger_role
-                .cargo()
+                .set_inside_transport(20, false);
+            let inside = sim.state_hash();
+            assert_ne!(inside, outside);
+            sim.substrate
+                .entities
+                .get_mut(1)
                 .unwrap()
-                .passengers(),
-            [11, 10]
-        );
+                .passenger_role
+                .set_inside_transport(21, false);
+            assert_ne!(sim.state_hash(), inside);
+            sim.substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .passenger_role
+                .clear_carrier_relation();
+            assert_eq!(sim.state_hash(), outside);
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(1)
+                    .unwrap()
+                    .passenger_role
+                    .cargo()
+                    .unwrap()
+                    .passengers(),
+                [11, 10]
+            );
+        }
     }
 }
 

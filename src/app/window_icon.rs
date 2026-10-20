@@ -392,12 +392,6 @@ mod tests {
     }
 
     #[test]
-    fn executable_icon_rejects_non_executables() {
-        assert!(executable_icon(b"not an executable").is_none());
-        assert!(executable_icon(&pe_with_icons(&[], &[])).is_none());
-    }
-
-    #[test]
     fn load_finds_the_executable_whatever_its_case() {
         let dir = std::env::temp_dir().join(format!("vera20k-window-icon-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

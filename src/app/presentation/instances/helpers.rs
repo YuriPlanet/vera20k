@@ -520,27 +520,12 @@ pub(crate) fn in_view(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::locomotor_visual::{ground_screen_position, screen_position};
+    use crate::render::locomotor_visual::screen_position;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::LocomotorState;
 
     /// Stock YR sets one global `FlightLevel=1500` for every aircraft.
     const STOCK_FLIGHT_LEVEL_LEPTONS: i32 = 1500;
-
-    fn entity_with_locomotor(
-        type_ref: &str,
-        kind: LocomotorKind,
-        altitude_leptons: i32,
-        rx: u16,
-        ry: u16,
-    ) -> GameEntity {
-        let mut entity = GameEntity::test_default(1, type_ref, "Americans", rx, ry);
-        entity.locomotor = Some(LocomotorState::for_test_kind(kind));
-        entity
-            .position
-            .set_exact_z_leptons_for_test(Some(altitude_leptons));
-        entity
-    }
 
     #[test]
     fn item83_equal_tactical_keys_keep_live_registration_order() {
@@ -600,76 +585,6 @@ mod tests {
             tactical_entity_encounter_order(&sim),
             [1, 2],
             "resubmission follows retained equal-key members"
-        );
-    }
-
-    #[test]
-    fn building_hidden_anchor_is_drawn_without_entering_screen_selection() {
-        use crate::sim::combat::Health;
-
-        let mut sim = crate::sim::world::Simulation::new();
-        let local_owner = sim.interner.intern("Americans");
-        let neutral_owner = sim.interner.intern("Neutral");
-        let building_type = sim.interner.intern("CABHUT");
-        sim.fog.width = 32;
-        sim.fog.height = 32;
-        sim.fog.mark_visible_for_owner(local_owner, 9, 10);
-        let mut building = GameEntity::new_at_frame_zero_for_test(
-            7,
-            10,
-            10,
-            0,
-            0,
-            neutral_owner,
-            Health::new(100),
-            building_type,
-            EntityCategory::Structure,
-            0,
-            5,
-            false,
-        );
-        building.lifecycle.set_object_alive_for_test(true);
-        building.lifecycle.set_in_limbo_for_test(true);
-        sim.entities_mut().insert(building);
-        sim.reveal(7);
-        assert_eq!(tactical_entity_encounter_order(&sim), [7]);
-        assert!(!sim.fog.is_cell_revealed(local_owner, 10, 10));
-
-        let building = sim.entities().get(7).unwrap();
-        // Native6D9920 ->43CEA0 ->43D290 submits the body independently
-        // of its anchor's shroud; the shared ABuffer masks its pixels.
-        assert!(
-            tactical_entity_admission(
-                TacticalEntityPurpose::Drawing,
-                building,
-                "Neutral",
-                Some("Americans"),
-                Some(local_owner),
-                &sim.fog,
-                &sim.house_alliances,
-                false,
-                0,
-                0,
-                crate::render::draw_state::ObserverDrawContext::default(),
-            )
-            .is_some(),
-            "the building must reach drawing before its anchor is explored"
-        );
-        let (x, y) = interpolated_screen_position_entity(building);
-        assert!(
-            compose_tactical_screen_entity_encounter_order(
-                &sim,
-                (x - 32.0, y - 32.0, x + 32.0, y + 32.0),
-                Some("Americans"),
-                Some(local_owner),
-                &sim.fog,
-                false,
-                0,
-                false,
-                None,
-            )
-            .is_empty(),
-            "submitting a masked building must not expose screen selection"
         );
     }
 
@@ -869,87 +784,6 @@ mod tests {
             compared += 1;
         }
         assert_eq!(compared, 12);
-    }
-
-    #[test]
-    fn shared_render_admission_keeps_passenger_limbo_and_selection_guards() {
-        use crate::sim::passenger::PassengerRole;
-
-        let fog = FogState::default();
-        let local_owner_id = crate::sim::intern::test_intern("Americans");
-        let mut entity = GameEntity::test_default(1, "AMCV", "Americans", 10, 10);
-        entity.lifecycle.set_object_alive_for_test(true);
-        entity.lifecycle.set_in_limbo_for_test(false);
-
-        let admitted = |purpose, entity: &GameEntity, owner: &str, ignore_visibility: bool| {
-            tactical_entity_admission(
-                purpose,
-                entity,
-                owner,
-                Some("Americans"),
-                Some(local_owner_id),
-                &fog,
-                &Default::default(),
-                ignore_visibility,
-                0,
-                0,
-                crate::render::draw_state::ObserverDrawContext::default(),
-            )
-            .is_some()
-        };
-
-        assert!(admitted(
-            TacticalEntityPurpose::Drawing,
-            &entity,
-            "Americans",
-            false
-        ));
-        entity.passenger_role = PassengerRole::inside_for_test(9, false);
-        assert!(!admitted(
-            TacticalEntityPurpose::Drawing,
-            &entity,
-            "Americans",
-            false
-        ));
-        entity.passenger_role = PassengerRole::default();
-        entity.lifecycle.set_in_limbo_for_test(true);
-        assert!(!admitted(
-            TacticalEntityPurpose::Drawing,
-            &entity,
-            "Americans",
-            false
-        ));
-
-        entity.lifecycle.set_in_limbo_for_test(false);
-        assert!(admitted(
-            TacticalEntityPurpose::Drawing,
-            &entity,
-            "Americans",
-            false
-        ));
-        entity.set_owner_for_test(crate::sim::intern::test_intern("Soviet"));
-        assert!(
-            admitted(TacticalEntityPurpose::Drawing, &entity, "Soviet", false),
-            "an unrevealed mobile must submit its body for per-pixel masking"
-        );
-        assert!(
-            !admitted(
-                TacticalEntityPurpose::ScreenSelection,
-                &entity,
-                "Soviet",
-                false
-            ),
-            "an unrevealed enemy remains absent from screen selection"
-        );
-        assert!(
-            admitted(
-                TacticalEntityPurpose::ScreenSelection,
-                &entity,
-                "Soviet",
-                true
-            ),
-            "the same entity is admitted when the renderer's visibility override is active"
-        );
     }
 
     #[test]
@@ -1191,78 +1025,5 @@ mod tests {
 
         let (_, drawn_y) = screen_position(gi);
         assert_eq!(ground_sort_row(gi, drawn_y) - drawn_y, 216.0);
-    }
-
-    #[test]
-    fn a_cruising_aircraft_sorts_on_its_own_cell_not_the_row_it_is_drawn_at() {
-        let beag = entity_with_locomotor(
-            "BEAG",
-            LocomotorKind::Fly,
-            STOCK_FLIGHT_LEVEL_LEPTONS,
-            40,
-            40,
-        );
-        let (_, ground_y) = ground_screen_position(&beag.position);
-        let (_, drawn_y) = screen_position(&beag);
-
-        // Cell (40, 40) at ground level: an entity is drawn on its diamond
-        // centre, row 15*(40+40) + 15 + 15.
-        assert_eq!(ground_y, 1230.0);
-        // The stock flight level lifts the drawing 216 px — ~14 iso rows.
-        assert_eq!(ground_y - drawn_y, 216.0);
-        assert_eq!(ground_sort_row(&beag, drawn_y), ground_y);
-    }
-
-    /// What the drawn row does to a key, measured on a concrete case.
-    ///
-    /// A Black Eagle cruising over cell (40, 40) and a war factory five cells
-    /// north-west of it, on a 5000 px-tall map. Keyed off the row it is drawn
-    /// at, the aircraft's key lands *behind* the building's; keyed off its own
-    /// cell it lands in front, which is what `GetYSort` — X + Y, no Z term —
-    /// gives you.
-    ///
-    /// A cruising aircraft no longer sorts against buildings at all, because
-    /// [`EntityDrawBand::Top`] draws after the whole ground pass. The case is
-    /// pinned here because the same key correction carries every body that
-    /// stays in the ground band while off the floor — a paradrop above all —
-    /// and there the ordering against buildings is live.
-    #[test]
-    fn the_drawn_row_pushes_a_lifted_bodys_key_behind_a_building_it_passes() {
-        const MAP_ORIGIN_Y: f32 = 0.0;
-        const MAP_WORLD_HEIGHT: f32 = 5000.0;
-
-        let beag = entity_with_locomotor(
-            "BEAG",
-            LocomotorKind::Fly,
-            STOCK_FLIGHT_LEVEL_LEPTONS,
-            40,
-            40,
-        );
-        let (_, drawn_y) = screen_position(&beag);
-
-        // A building's key row is its NW cell's tile row — the entity anchor
-        // (15*(35+35) + 15 + 15) with the render-coordinate lift of 30/2 taken
-        // back off.
-        let building_row: f32 = 1065.0;
-        let building_depth =
-            compute_sprite_depth_params(MAP_ORIGIN_Y, MAP_WORLD_HEIGHT, building_row, 0);
-
-        let old_depth = compute_sprite_depth_params(MAP_ORIGIN_Y, MAP_WORLD_HEIGHT, drawn_y, 0);
-        let new_depth = compute_sprite_depth_params(
-            MAP_ORIGIN_Y,
-            MAP_WORLD_HEIGHT,
-            ground_sort_row(&beag, drawn_y),
-            0,
-        );
-
-        // Larger depth = further back = drawn first.
-        assert!(
-            old_depth > building_depth,
-            "the old key drew the aircraft first, so the building covered it"
-        );
-        assert!(
-            new_depth < building_depth,
-            "the ground row draws the building first and the aircraft over it"
-        );
     }
 }

@@ -1059,7 +1059,7 @@ fn owned_live_buildings(
     sim.houses
         .get(&owner)
         .into_iter()
-        .flat_map(|house| house.base_projection.buildings())
+        .flat_map(|house| house.base_projection().buildings())
         .filter_map(|&id| sim.substrate.entities.get(id))
         .filter(move |building| {
             building.category() == crate::map::entities::EntityCategory::Structure
@@ -1094,7 +1094,7 @@ fn owned_building_present(sim: &Simulation, rules: &RuleSet, owner: InternedId, 
         .zip(sim.houses.get(&owner))
         .is_some_and(|(building, house)| {
             house
-                .tracking
+                .tracking()
                 .active_count(EntityCategory::Structure, building)
                 > 0
         })
@@ -1181,7 +1181,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    let defeated = house.is_defeated;
+    let defeated = house.is_defeated();
     let low_power = sim
         .power_states
         .get(&owner)
@@ -1234,7 +1234,7 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if house.is_defeated {
+    if house.is_defeated() {
         return;
     }
     //50B2C7..50B305 uses the power ratio even for an unpowered Super type.
@@ -1272,7 +1272,7 @@ fn grant_super(
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    let passive = house.multiplay_passive;
+    let passive = house.multiplay_passive();
     let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
         return false;
     };

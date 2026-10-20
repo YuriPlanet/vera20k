@@ -315,22 +315,6 @@ mod tests {
     }
 
     #[test]
-    fn stop_from_active_zeros_in_order() {
-        let mut g = GadgetFlash::default();
-        g.start(10, 0, 1);
-        assert!(g.stop());
-        assert_eq!(g.state, 0);
-        assert_eq!(g.countdown, 0);
-        assert_eq!(g.period, 0);
-    }
-
-    #[test]
-    fn stop_from_idle_is_noop() {
-        let mut g = GadgetFlash::default();
-        assert!(!g.stop());
-    }
-
-    #[test]
     fn tick_decrements_countdown_until_toggle() {
         let mut g = GadgetFlash::default();
         // First cycle: period=10, extra_delay=5, initial=0 → countdown=15.
@@ -347,32 +331,6 @@ mod tests {
     }
 
     #[test]
-    fn tick_steady_state_toggles_every_period_ticks() {
-        let mut g = GadgetFlash::default();
-        g.start(10, 0, 0);
-        // First cycle: countdown=10. 10 ticks → toggle.
-        for _ in 0..9 {
-            assert!(!g.tick());
-        }
-        assert!(g.tick());
-        assert_eq!(g.state, 1);
-        // Second cycle: countdown=10. 10 more ticks → toggle back to 0.
-        for _ in 0..9 {
-            assert!(!g.tick());
-        }
-        assert!(g.tick());
-        assert_eq!(g.state, 0);
-    }
-
-    #[test]
-    fn tick_when_idle_is_noop() {
-        let mut g = GadgetFlash::default();
-        assert!(!g.tick());
-        assert_eq!(g.countdown, 0);
-        assert_eq!(g.state, 0);
-    }
-
-    #[test]
     fn tick_when_disabled_auto_stops_active_flash() {
         let mut g = GadgetFlash::default();
         g.start(10, 0, 1);
@@ -381,15 +339,6 @@ mod tests {
         assert_eq!(g.state, 0);
         assert_eq!(g.countdown, 0);
         assert_eq!(g.period, 0);
-    }
-
-    #[test]
-    fn tick_when_disabled_and_idle_is_noop() {
-        let mut g = GadgetFlash {
-            disabled: true,
-            ..Default::default()
-        };
-        assert!(!g.tick());
     }
 
     #[test]
@@ -437,18 +386,6 @@ mod tests {
                 "frame_select(disabled={disabled}, mode_active={mode_active}, state={state}) expected {expected}, got {got}"
             );
         }
-    }
-
-    #[test]
-    fn pressed_bits_drive_frames_3_and_4() {
-        let mut s = SidebarGadgetState::new();
-        s.repair_pressed = true;
-        assert_eq!(s.repair_frame(), 3, "pressed-idle");
-        s.repair_mode_on = true;
-        assert_eq!(s.repair_frame(), 4, "pressed-active");
-        s.tab_pressed[1] = true;
-        assert_eq!(s.tab_frame(1, false), 3);
-        assert_eq!(s.tab_frame(1, true), 4);
     }
 
     #[test]

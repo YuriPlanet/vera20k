@@ -448,17 +448,17 @@ fn record_kill_credit(
     if let Some(killer) = killer_owner
         && let Some(house) = houses.get_mut(&killer)
     {
-        house.economy.add_score(points);
+        house.economy_mut().add_score(points);
     }
     if !insignificant_building {
         if let Some(house) = houses.get_mut(&victim.owner()) {
-            house.stats.record_loss(victim.category());
+            house.stats_mut().record_loss(victim.category());
         }
         if count_killer
             && let Some(killer) = killer_owner
             && let Some(house) = houses.get_mut(&killer)
         {
-            house.stats.record_kill(victim.category());
+            house.stats_mut().record_kill(victim.category());
         }
     }
 }

@@ -67,7 +67,7 @@ impl Simulation {
             let buildings = self
                 .houses
                 .get(&owner)
-                .map_or(&[][..], |house| house.base_projection.buildings());
+                .map_or(&[][..], |house| house.base_projection().buildings());
             for &building in buildings {
                 let Some(building) = self.substrate.entities.get(building) else {
                     continue;

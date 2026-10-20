@@ -327,8 +327,7 @@ mod tests {
         )
         .expect("a grid seeds the native queues");
         let queue_bitmaps = |sim: &Simulation| {
-            sim.production
-                .ore_growth_state
+            sim.ore_growth_state
                 .native_tiberium_state()
                 .classes
                 .iter()

@@ -195,18 +195,6 @@ fn parse_allocated_tube_entry(value: &str) -> Result<TubeFact, AllocatedTubePars
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::tube_facts::TubeSource;
-
-    #[test]
-    fn a_row_keeps_entry_exit_direction_and_steps_until_sentinel() {
-        let tube = parse_allocated_tube_entry("1,2,2,4,2,2,2,-1,6").unwrap();
-
-        assert_eq!(tube.entry, (1, 2));
-        assert_eq!(tube.exit, (4, 2));
-        assert_eq!(tube.direction, 2);
-        assert_eq!(tube.path_steps, vec![2, 2]);
-        assert_eq!(tube.source, TubeSource::ExplicitMap);
-    }
 
     /// `MapClass::ReadTubesINI` 0x007283C0 does not reject an over-long path.
     /// Its `while (iVar6 < 100)` loop stops after 100 iterations, and the

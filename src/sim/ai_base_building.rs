@@ -157,7 +157,7 @@ pub(crate) fn economy_state_machine(
     if house.is_controlled_by_human(game_mode_nonzero) || !game_mode_nonzero {
         return;
     }
-    let mode = house.ai_production.mode;
+    let mode = house.ai_production().mode;
     let money = crate::sim::credit_income::available_money(sim, owner);
     let cutoff = rules.general.ai_alternate_production_credit_cutoff;
     let next = match mode {
@@ -172,7 +172,7 @@ pub(crate) fn economy_state_machine(
                 types.iter().any(|name| {
                     sim.interner.get(name).is_some_and(|id| {
                         house
-                            .tracking
+                            .tracking()
                             .active_count(crate::map::entities::EntityCategory::Structure, id)
                             > 0
                     })
@@ -198,7 +198,7 @@ pub(crate) fn economy_state_machine(
     if let Some(next) = next
         && let Some(house) = sim.houses.get_mut(&owner)
     {
-        house.ai_production.mode = next;
+        house.ai_production_mut().mode = next;
     }
 }
 
@@ -226,7 +226,7 @@ pub(crate) fn update_production_choices(
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if house.is_controlled_by_human(game_mode_nonzero) || house.multiplay_passive {
+    if house.is_controlled_by_human(game_mode_nonzero) || house.multiplay_passive() {
         return;
     }
     if (sim.session.binary_frame() as i32) % 8 != 0 {
@@ -244,7 +244,7 @@ pub(crate) fn update_production_choices(
     ];
     // A campaign runs mode 0's choices (`0x004F9099..0x004F90A1`).
     let mode = if game_mode_nonzero {
-        house.ai_production.mode
+        house.ai_production().mode
     } else {
         0
     };
@@ -258,7 +258,7 @@ pub(crate) fn update_production_choices(
             let choice = sim
                 .houses
                 .get(&owner)
-                .map_or(-1, |house| house.ai_production.building_choice);
+                .map_or(-1, |house| house.ai_production().building_choice);
             let buildable = rules
                 .building_type_at(choice)
                 .is_some_and(|ty| find_factory(sim, rules, owner, ty, true, true, true).is_some());
@@ -271,7 +271,7 @@ pub(crate) fn update_production_choices(
             if !unit_choice_is_harvester(sim, rules, owner) {
                 choose_units(sim, &[UnitChoiceKind::Infantry, UnitChoiceKind::Aircraft]);
             }
-            let Some(choices) = sim.houses.get(&owner).map(|house| house.ai_unit_choices) else {
+            let Some(choices) = sim.houses.get(&owner).map(|house| house.ai_unit_choices()) else {
                 return;
             };
             let none_chosen = ALL.iter().all(|&kind| choices.get(kind) == -1);
@@ -305,7 +305,7 @@ fn unit_choice_is_harvester(sim: &Simulation, rules: &RuleSet, owner: InternedId
     );
     crate::sim::ai_buildable::first_owner_compatible_harvester(rules, country_bit)
         .and_then(|harvester| rules.type_array_index(ObjectCategory::Vehicle, &harvester.id))
-        .is_some_and(|index| index == house.ai_unit_choices.get(UnitChoiceKind::Unit))
+        .is_some_and(|index| index == house.ai_unit_choices().get(UnitChoiceKind::Unit))
 }
 
 /// `HouseClass::AI_Choose_Building @ 0x004FE3E0`.
@@ -320,10 +320,10 @@ pub(crate) fn choose_building(
     };
     // `0x004FE3E9..0x004FE416`: a choice already waits, the house has no
     // Construction Yard (`+0x60`, the ConYards count), or no node is open.
-    if house.ai_production.building_choice != -1 || house.build_const_order.is_empty() {
+    if house.ai_production().building_choice != -1 || house.build_const_order().is_empty() {
         return;
     }
-    let naval_allowed = house.ai_production.naval_allowed;
+    let naval_allowed = house.ai_production().naval_allowed;
     let Some(mut index) = find_node(sim, rules, owner, -1, registry) else {
         return;
     };
@@ -362,7 +362,7 @@ pub(crate) fn choose_building(
         });
         if draw < percent && build_walls(sim, rules, owner, index) {
             if let Some(house) = sim.houses.get_mut(&owner) {
-                house.base_plan.remove_equal(node);
+                house.base_plan_mut().remove_equal(node);
             }
             return;
         }
@@ -390,7 +390,7 @@ pub(crate) fn choose_building(
         // `0x004FE893..0x004FE943`: the plant takes the node's index, the
         // node and the rest shift up.
         if let Some(house) = sim.houses.get_mut(&owner) {
-            house.base_plan.nodes.insert(
+            house.base_plan_mut().insert(
                 index,
                 BasePlanNode {
                     type_or_control: plant,
@@ -404,7 +404,7 @@ pub(crate) fn choose_building(
     }
     // `0x004FEA3C..0x004FEA42`.
     if let Some(house) = sim.houses.get_mut(&owner) {
-        house.ai_production.building_choice = node.type_or_control;
+        house.ai_production_mut().building_choice = node.type_or_control;
     }
 }
 
@@ -437,7 +437,7 @@ fn power_plant_to_splice(
     let plants = &rules.general.building_types;
     let index = |name: Option<&str>| name.and_then(|name| rules.building_type_index(name));
     // A missing plant is dereferenced natively (module residual): no splice.
-    match house.side_index {
+    match house.side_index() {
         0 => index(plants.gdi_power_plant.as_deref()),
         2 => index(plants.third_power_plant.as_deref()),
         // `0x004FE7A7..0x004FE85D`: the list handed to `0x00505360` holds the
@@ -511,7 +511,7 @@ pub(crate) fn exit_building(
     };
     economy_state_machine(sim, rules, owner, true);
     if let Some(house) = sim.houses.get_mut(&owner) {
-        house.ai_production.clear_building_choice();
+        house.ai_production_mut().clear_building_choice();
     }
     // `0x0042EB20` with the product type's index (`+0xDF8`): the node or none.
     let node = rules
@@ -524,7 +524,7 @@ pub(crate) fn exit_building(
             if let Some(index) = node
                 && let Some(house) = sim.houses.get_mut(&owner)
             {
-                house.base_plan.count_placement_failure(
+                house.base_plan_mut().count_placement_failure(
                     index,
                     game_mode_nonzero,
                     rules.general.maximum_building_placement_failures,
@@ -582,8 +582,10 @@ fn building_site(
     if let Some(index) = node
         && let Some(house) = sim.houses.get_mut(&owner)
     {
-        house.base_plan.nodes[index].packed_cell =
-            pack_base_plan_cell(i32::from(site.0), i32::from(site.1));
+        house.base_plan_mut().assign_site(
+            index,
+            pack_base_plan_cell(i32::from(site.0), i32::from(site.1)),
+        );
     }
     site
 }
@@ -692,7 +694,7 @@ fn forget_failed_site(
         remove_node(sim, owner, index);
     } else if let Some(house) = sim.houses.get_mut(&owner) {
         house
-            .base_plan
+            .base_plan_mut()
             .clear_failed_site(pack_base_plan_cell(i32::from(site.0), i32::from(site.1)));
     }
 }
@@ -723,17 +725,22 @@ fn carry_wall_tower_site(
         return;
     };
     let defense = house
-        .base_plan
-        .nodes
-        .iter_mut()
+        .base_plan()
+        .nodes()
+        .iter()
+        .enumerate()
         .skip(index + 1)
-        .find(|next| {
+        .find(|(_, next)| {
             rules
                 .building_type_at(next.type_or_control)
                 .is_some_and(|ty| ty.is_base_defense)
-        });
+        })
+        .map(|(defense, _)| defense);
     if let Some(defense) = defense {
-        defense.packed_cell = pack_base_plan_cell(i32::from(site.0), i32::from(site.1));
+        house.base_plan_mut().assign_site(
+            defense,
+            pack_base_plan_cell(i32::from(site.0), i32::from(site.1)),
+        );
     }
 }
 
@@ -749,13 +756,13 @@ pub(crate) fn suggest_new_object<'r>(
 ) -> Option<&'r ObjectType> {
     let house = sim.houses.get(&owner)?;
     let unit_choice = |kind: UnitChoiceKind| {
-        rules.type_array_at(kind.category(), house.ai_unit_choices.get(kind))
+        rules.type_array_at(kind.category(), house.ai_unit_choices().get(kind))
     };
     // Steam3e81a617..08600, two-level tables4FBE0C/4FBDF8. This one
     // consumer and factory accounting accept object/type aliases, unlike
     // FindFactory's exact class comparison. Other RTTIs return null.
     match FactoryType::for_production_rtti(factory_rtti)? {
-        FactoryType::BuildingType => rules.building_type_at(house.ai_production.building_choice),
+        FactoryType::BuildingType => rules.building_type_at(house.ai_production().building_choice),
         FactoryType::UnitType => unit_choice(UnitChoiceKind::Unit),
         FactoryType::InfantryType => unit_choice(UnitChoiceKind::Infantry),
         FactoryType::AircraftType => unit_choice(UnitChoiceKind::Aircraft),
@@ -777,7 +784,7 @@ pub(crate) fn find_node(
     let game_mode_nonzero = sim.session.game_mode_nonzero();
     let mut index = 0;
     // The count is re-read every step (`0x0042EBAE`).
-    while index < sim.houses.get(&owner)?.base_plan.nodes.len() {
+    while index < sim.houses.get(&owner)?.base_plan().nodes().len() {
         let node = plan_node(sim, owner, index);
         if wanted == -1 {
             if !node_satisfied(sim, rules, owner, &node, registry) {
@@ -786,7 +793,7 @@ pub(crate) fn find_node(
                 }
                 if node_may_replan(sim, rules, owner, &node) {
                     if let Some(house) = sim.houses.get_mut(&owner) {
-                        house.base_plan.nodes[index].packed_cell = 0;
+                        house.base_plan_mut().assign_site(index, 0);
                     }
                     return Some(index);
                 }
@@ -888,8 +895,8 @@ fn node_may_replan(
         // The Recalc preflight validated this row before the plan existed.
         return rules
             .ai_slave_miner_number
-            .get(house.difficulty.table_index())
-            .is_some_and(|&allowed| house.tracking.resource_gatherers() < allowed);
+            .get(house.difficulty().table_index())
+            .is_some_and(|&allowed| house.tracking().resource_gatherers() < allowed);
     }
     if !sim.session.game_mode_nonzero() {
         return true;
@@ -923,14 +930,14 @@ fn node_may_replan(
         return true;
     }
     house
-        .strategy_emergency
-        .last_building_attack_frame
+        .strategy_emergency()
+        .last_building_attack_frame()
         .wrapping_add(rules.general.ai_restrict_replace_time)
         <= sim.session.binary_frame() as i32
 }
 
 fn plan_node(sim: &Simulation, owner: InternedId, index: usize) -> BasePlanNode {
-    sim.houses[&owner].base_plan.nodes[index]
+    sim.houses[&owner].base_plan().nodes()[index]
 }
 
 /// `HouseClass::AI_BuildWalls @ 0x0050C340` for house `owner`'s node at
@@ -941,8 +948,8 @@ fn build_walls(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, index: 
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    let wall = wall_type(rules, house.side_index);
-    let nodes = &house.base_plan.nodes;
+    let wall = wall_type(rules, house.side_index());
+    let nodes = house.base_plan().nodes();
     let walls = wall_nodes(nodes, index, wall, |at| {
         let building = sim
             .substrate
@@ -961,7 +968,7 @@ fn build_walls(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, index: 
     };
     if let Some(house) = sim.houses.get_mut(&owner) {
         for node in walls {
-            house.base_plan.insert_after(at, node);
+            house.base_plan_mut().insert_after(at, node);
         }
     }
     true
@@ -1029,7 +1036,7 @@ fn wall_nodes(
 /// ([`crate::sim::base_plan::BasePlanState::remove`]).
 fn remove_node(sim: &mut Simulation, owner: InternedId, index: usize) {
     if let Some(house) = sim.houses.get_mut(&owner) {
-        house.base_plan.remove(index);
+        house.base_plan_mut().remove(index);
     }
 }
 

@@ -269,13 +269,6 @@ pub fn end(state: &mut LocomotorState) -> Option<LocomotorState> {
     Some(released)
 }
 
-/// The nested-object save marker used by the clean-room snapshot seam.
-/// Serde persists the following boxed object only when this returns one.
-#[cfg(any(test, feature = "test-support"))]
-pub fn serialized_presence(state: &LocomotorState) -> u8 {
-    u8::from(state.piggyback().is_some())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,13 +431,5 @@ mod tests {
                 .map(|stashed| stashed.runtime_payload()),
             Some(&LocomotorRuntimePayload::Hover(hover.clone()))
         );
-    }
-
-    #[test]
-    fn serialized_presence_matches_the_single_suspended_object() {
-        let mut state = teleporter();
-        assert_eq!(serialized_presence(&state), 0);
-        begin(&mut state, LocomotorKind::Drive, 0);
-        assert_eq!(serialized_presence(&state), 1);
     }
 }

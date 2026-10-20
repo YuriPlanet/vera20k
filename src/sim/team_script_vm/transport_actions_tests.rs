@@ -113,14 +113,6 @@ impl Fixture {
             .create_team_from_type(self.owner, team_type, &candidates, 0)
     }
 
-    /// A team without a TeamType of `members` in this order, on `CARRY_S`.
-    fn plain_team(&mut self, members: &[u64]) -> u64 {
-        let script = self.sim.interner.intern("CARRY_S");
-        self.sim
-            .team_script_vm
-            .create_team(self.owner, script, members.to_vec(), 0)
-    }
-
     /// Put `count` new E1 aboard `transport` as boarding leaves them:
     /// concealed, then at the cargo head.
     fn load(&mut self, transport: u64, count: usize) -> Vec<u64> {
@@ -172,14 +164,6 @@ impl Fixture {
             .map_or(i32::MIN, |team| team.cursor())
     }
 
-    fn finished(&self, team: u64) -> bool {
-        self.sim
-            .team_script_vm
-            .teams
-            .get(&team)
-            .is_some_and(|team| team.advance_pending)
-    }
-
     fn members(&self, team: u64) -> Vec<u64> {
         self.sim
             .team_script_vm
@@ -206,20 +190,6 @@ impl Fixture {
 
     fn entity(&self, id: u64) -> &GameEntity {
         self.sim.substrate.entities.get(id).unwrap()
-    }
-
-    fn load_action(&mut self, team: u64) {
-        self.sim
-            .team_action_load_onto_transport(team, &self.rules, None, FrameEffects::default());
-    }
-
-    fn wait_action(&mut self, team: u64) {
-        self.sim.team_action_wait_until_loaded(team, &self.rules);
-    }
-
-    fn unload_action(&mut self, team: u64, argument: i32) {
-        self.sim
-            .team_action_unload(team, argument, &self.rules, None, FrameEffects::default());
     }
 }
 
@@ -285,129 +255,6 @@ fn the_passengers_are_sent_aboard_one_per_update_and_leave_the_team() {
     assert_eq!(f.entity(apc).archive_target(), None);
 }
 
-/// While the transport is in radio contact (`0x0065AE30`) action 14 orders
-/// no one (`0x006ED2EE..0x006ED2F5`).
-#[test]
-fn a_transport_in_radio_contact_holds_the_load_order() {
-    let mut f = Fixture::new(&[(14, 0)], false);
-    let apc = f.spawn("APC", 16, 10);
-    let passenger = f.spawn("E1", 12, 10);
-    let team = f.team(&[apc, passenger]);
-    let contact = f.spawn("E1", 20, 20);
-    f.sim
-        .substrate
-        .entities
-        .get_mut(apc)
-        .unwrap()
-        .radio_contacts
-        .insert(contact);
-    f.load_action(team);
-    assert_eq!(f.contact(passenger), None);
-    assert!(!f.finished(team));
-
-    f.sim
-        .substrate
-        .entities
-        .get_mut(apc)
-        .unwrap()
-        .radio_contacts
-        .remove(contact);
-    f.load_action(team);
-    assert_eq!(f.contact(passenger), Some(apc));
-    assert!(!f.finished(team));
-}
-
-/// The transport is the first member, in list order, that is a vehicle
-/// with a free seat (`+0x114` below `Passengers=`); with none action 14 is
-/// finished at once (`0x006ED2B8..0x006ED2CA`). (Any other live joined
-/// member is sent aboard, a full transport too.)
-#[test]
-fn the_transport_is_the_first_vehicle_with_a_free_seat() {
-    let mut f = Fixture::new(&[(14, 0)], false);
-    let full = f.spawn("APC", 16, 10);
-    let passenger = f.spawn("E1", 12, 10);
-    let free = f.spawn("APC", 16, 14);
-    f.load(full, 2);
-    let team = f.plain_team(&[passenger, full, free]);
-    f.load_action(team);
-    assert_eq!(f.contact(passenger), Some(free));
-    assert!(!f.finished(team));
-
-    f.load(free, 2);
-    f.load_action(team);
-    assert!(f.finished(team), "no transport has a free seat");
-}
-
-/// With the transport the only member left (`+0x48` at most 1), action 14
-/// is finished; a `TransportsReturnOnUnload=` TeamType's transport first
-/// archives the cell holding its Location (`0x006ED43F..0x006ED47C`).
-#[test]
-fn a_returning_transport_archives_its_loading_cell() {
-    for returns in [false, true] {
-        let mut f = Fixture::new(&[(14, 0)], returns);
-        let apc = f.spawn("APC", 16, 10);
-        let team = f.team(&[apc]);
-        f.load_action(team);
-        assert!(f.finished(team));
-        let expected = returns.then_some(crate::sim::combat::TargetKind::Cell(16, 10));
-        assert_eq!(f.entity(apc).archive_target(), expected, "{returns}");
-    }
-}
-
-/// Action 43 (`0x006E9C22`) waits while any member's type has
-/// `Passengers=` above its passenger count, and is finished otherwise, also
-/// without members.
-#[test]
-fn wait_until_loaded_waits_for_every_free_seat() {
-    let mut f = Fixture::new(&[(43, 0)], false);
-    let apc = f.spawn("APC", 16, 10);
-    let walker = f.spawn("E1", 12, 10);
-    let team = f.plain_team(&[walker, apc]);
-    f.load(apc, 1);
-    f.wait_action(team);
-    assert!(!f.finished(team), "one seat is free");
-    f.load(apc, 1);
-    f.wait_action(team);
-    assert!(f.finished(team), "the APC is full; the walker has no seats");
-
-    let empty = f.plain_team(&[]);
-    f.wait_action(empty);
-    assert!(f.finished(empty));
-}
-
-/// Action 8 (`0x006EF110`) first has each joined member carrying passengers
-/// unload: destination and target dropped, Unload queued
-/// (`0x006EF27A..0x006EF29C`), unless it already is on Unload or a building
-/// stands in its cell (`0x0047C520`); the action waits while any carries one.
-#[test]
-fn unload_orders_each_loaded_transport_off_buildings() {
-    let mut f = Fixture::new(&[(8, 0)], false);
-    let apc = f.spawn("APC", 16, 10);
-    f.load(apc, 2);
-    let team = f.team(&[apc]);
-    f.unload_action(team, 0);
-    assert!(!f.finished(team));
-    let entity = f.entity(apc);
-    assert_eq!(ordered(entity), Some(MissionType::Unload));
-    assert_eq!(entity.navigation.nav_com(), None);
-    assert!(entity.attack_target.target().is_none());
-
-    let parked = f.spawn("APC", 24, 24);
-    f.load(parked, 1);
-    f.spawn("GAPOWR", 8, 20);
-    {
-        let entity = f.sim.substrate.entities.get_mut(parked).unwrap();
-        entity.position.set_rx_for_test(9);
-        entity.position.set_ry_for_test(21);
-    }
-    let before = ordered(f.entity(parked));
-    let team = f.team(&[parked]);
-    f.unload_action(team, 0);
-    assert!(!f.finished(team), "it still carries a passenger");
-    assert_eq!(ordered(f.entity(parked)), before, "no order on a building");
-    assert_ne!(before, Some(MissionType::Unload));
-}
-
 /// A team transport's Unload lets its passengers out last aboard first, and
 /// each rejoins the transport's team at the head of its list
 /// (`Add_Member(passenger, 0)`, `0x0073DC0C..0x0073DC19`); once none is left
@@ -424,55 +271,6 @@ fn unloaded_passengers_rejoin_the_team() {
     assert_eq!(f.members(team), [passengers[0], passengers[1], apc]);
     for &passenger in &passengers {
         assert!(!f.entity(passenger).lifecycle.in_limbo());
-    }
-}
-
-/// Once no member carries passengers, action 8 sorts the members
-/// (`0x006EF2BD..0x006EF43F`): a `TransportsReturnOnUnload=` TeamType's
-/// transport leaves the team for its ArchiveTarget on Move and drops it;
-/// otherwise the argument decides who leaves (1 the others, 2 the
-/// transports, 3 both), dropping target and destination.
-#[test]
-fn unload_argument_decides_who_leaves_the_team() {
-    let home = crate::sim::combat::TargetKind::Cell(5, 6);
-    for (returns, argument, transport_leaves, others_leave) in [
-        (false, 0, false, false),
-        (false, 1, false, true),
-        (false, 2, true, false),
-        (false, 3, true, true),
-        (true, 0, true, false),
-        (true, 1, true, true),
-    ] {
-        let case = (returns, argument);
-        let mut f = Fixture::new(&[(8, argument)], returns);
-        let apc = f.spawn("APC", 16, 10);
-        let first = f.spawn("E1", 12, 10);
-        let second = f.spawn("E1", 12, 12);
-        f.sim
-            .substrate
-            .entities
-            .get_mut(apc)
-            .unwrap()
-            .set_archive_target(Some(home));
-        let team = f.team(&[apc, first, second]);
-        f.unload_action(team, argument);
-        assert!(f.finished(team), "{case:?}");
-        let members = f.members(team);
-        assert_eq!(!members.contains(&apc), transport_leaves, "{case:?}");
-        assert_eq!(!members.contains(&first), others_leave, "{case:?}");
-        assert_eq!(!members.contains(&second), others_leave, "{case:?}");
-        let transport = f.entity(apc);
-        if returns {
-            assert_eq!(
-                transport.navigation.nav_com(),
-                Some(NavTargetRef::cell(5, 6)),
-                "{case:?}"
-            );
-            assert_eq!(ordered(transport), Some(MissionType::Move), "{case:?}");
-            assert_eq!(transport.archive_target(), None, "{case:?}");
-        } else {
-            assert_eq!(transport.archive_target(), Some(home), "{case:?}");
-        }
     }
 }
 

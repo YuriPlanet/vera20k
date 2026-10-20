@@ -158,7 +158,12 @@ impl Replay {
                 control["deploys_into"] == true
             );
             let owner = entity.owner();
-            scene.sim.houses.get_mut(&owner).unwrap().current_iq = int(&control["house_iq"]);
+            scene
+                .sim
+                .houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_current_iq_for_test(int(&control["house_iq"]));
         }
         // Unit construction consumes shared stream work in Rust. All fixture
         // allocations precede the declared original Scenario seed/prestate.
@@ -478,30 +483,22 @@ impl Replay {
     }
 }
 
+/// The attack-expiry/idle/harvest corpus, then the area-guard transition
+/// corpus read under the same reader receipts.
 #[test]
-fn area_guard_harvest_transition_matches_original_executable_steps() {
-    let native = crate::test_fixture::json("tools/spatial_oracle/harvest_area_guard.json");
-    assert_eq!(native["reader_receipts"], corpus()["reader_receipts"]);
-    let rows = native["rows"].as_array().unwrap();
-    assert_eq!(rows.len(), 6);
-    for row in rows {
-        let name = row["input"]["name"].as_str().unwrap();
-        let mut replay = Replay::new(row);
-        replay.compare(&row["before"], &row["input"], &format!("{name}: initial"));
-        for (index, step) in row["steps"].as_array().unwrap().iter().enumerate() {
-            let context = format!("{name}: step {index} {}", step["input"]["op"]);
-            replay.step(step, &context);
-            replay.compare(&step["after"], &row["input"], &context);
-        }
-    }
-}
-
-#[test]
-fn attack_expiry_idle_and_harvest_match_original_executable_steps() {
+fn attack_expiry_idle_area_guard_and_harvest_match_original_executable_steps() {
     let corpus = corpus();
     assert_eq!(corpus["row_count"], 53);
+    let area_guard = crate::test_fixture::json("tools/spatial_oracle/harvest_area_guard.json");
+    assert_eq!(area_guard["reader_receipts"], corpus["reader_receipts"]);
+    assert_eq!(area_guard["rows"].as_array().unwrap().len(), 6);
     let mut compared = 0;
-    for row in corpus["rows"].as_array().unwrap() {
+    for row in corpus["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(area_guard["rows"].as_array().unwrap())
+    {
         let name = row["input"]["name"].as_str().unwrap();
         let mut replay = Replay::new(row);
         replay.compare(&row["before"], &row["input"], &format!("{name}: initial"));
@@ -512,27 +509,7 @@ fn attack_expiry_idle_and_harvest_match_original_executable_steps() {
         }
         compared += 1;
     }
-    assert_eq!(compared, 53);
-}
-
-#[test]
-fn shared_unit_idle_setter_admission_matches_original_controls() {
-    let corpus = corpus();
-    let mut compared = 0;
-    for row in corpus["rows"].as_array().unwrap() {
-        if row["input"].get("idle_control").is_none() {
-            continue;
-        }
-        let name = row["input"]["name"].as_str().unwrap();
-        let mut replay = Replay::new(row);
-        replay.compare(&row["before"], &row["input"], &format!("{name}: initial"));
-        for step in row["steps"].as_array().unwrap() {
-            replay.step(step, name);
-            replay.compare(&step["after"], &row["input"], name);
-        }
-        compared += 1;
-    }
-    assert_eq!(compared, 10);
+    assert_eq!(compared, 53 + 6);
 }
 
 #[test]

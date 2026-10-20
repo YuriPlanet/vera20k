@@ -93,7 +93,7 @@ fn build_synthetic_simulation(seed: u32) -> Simulation {
         // the defeat scan would read both houses as owning nothing and resolve the
         // match on tick 1, freezing the committed-tick counter. Passive houses are
         // exempt from defeat evaluation, keeping every tick committable.
-        house.multiplay_passive = true;
+        house.make_multiplay_passive();
         sim.houses.register(house);
 
         let type_ref = sim.interner.intern("GACNST");

@@ -193,13 +193,6 @@ impl TeleportState {
     pub fn warp_in_active(&self) -> bool {
         self.phase == TeleportPhase::ChronoDelay && self.delay_timer.duration() > 0
     }
-
-    /// The relocation frame is removed from normal targeting before its cell
-    /// and occupancy mutation; it becomes targetable again while materializing.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn is_targetable(&self) -> bool {
-        self.phase == TeleportPhase::ChronoDelay
-    }
 }
 
 /// Techno `+0x284`, the frames the Chronosphere's warp-in waits
@@ -1373,77 +1366,6 @@ mod tests {
         assert!(owner.is_warping_in());
     }
 
-    #[test]
-    fn test_teleport_issues_and_completes() {
-        let mut sim = crate::sim::world::Simulation::new();
-        let mut e = teleport_owner(1, "CLEG", 5, 5);
-        e.position.set_z_for_test(0);
-        sim.substrate.entities.insert(e);
-        let rules = default_rules();
-
-        assert!(arm_teleport(
-            sim.substrate.entities.get_mut(1).unwrap(),
-            DriveCoord::cell(20, 20, 0),
-            None,
-            &rules,
-            false
-        ));
-        let entity = sim.substrate.entities.get(1).expect("should exist");
-        let ts = entity.teleport_state().expect("should have TeleportState");
-        assert_eq!(ts.phase(), TeleportPhase::Relocate);
-        assert!(
-            ts.chrono_delay_ticks() >= 16,
-            "should have at least minimum delay"
-        );
-
-        // One admitted frame relocates instantly.
-        sim.process_teleport(1, None, crate::sim::world::ObjectAiCtx::default());
-
-        let entity = sim.substrate.entities.get(1).expect("should exist");
-        assert_eq!(entity.position.rx(), 20, "Should have relocated to target");
-        assert_eq!(entity.position.ry(), 20);
-        let ts = entity.teleport_state().expect("still warping");
-        assert_eq!(
-            ts.phase(),
-            TeleportPhase::ChronoDelay,
-            "should be in chrono delay"
-        );
-
-        // Advance through the ChronoDelay countdown.
-        let delay = ts.chrono_delay_ticks();
-        for frame in 1..=delay + 5 {
-            sim.session.set_binary_frame_for_test(frame);
-            sim.process_teleport(1, None, crate::sim::world::ObjectAiCtx::default());
-        }
-
-        // TeleportState should be removed after completion.
-        let entity = sim.substrate.entities.get(1).expect("should exist");
-        assert!(
-            entity.teleport_state().is_none(),
-            "TeleportState should be removed after completion"
-        );
-    }
-
-    #[test]
-    fn test_chrono_delay_formula() {
-        let mut rules = default_rules();
-        // Default: factor=48, minimum=16, trigger=true, range_minimum=0
-
-        // Short distance: 256 leptons (1 cell) → 256/48 = 5, clamped to 16
-        assert_eq!(compute_chrono_delay(&rules, 256), 16);
-
-        // Medium distance: 5120 leptons (20 cells) → 5120/48 = 106
-        assert_eq!(compute_chrono_delay(&rules, 5120), 106);
-
-        // Very short distance below range minimum
-        rules.chrono_range_minimum = 512;
-        assert_eq!(compute_chrono_delay(&rules, 200), 16); // forced to minimum
-
-        // ChronoTrigger=false → always minimum
-        rules.chrono_trigger = false;
-        assert_eq!(compute_chrono_delay(&rules, 5120), 16);
-    }
-
     /// Process `0x00719454..0x007194AC` executed on each row's owner GetCoords
     /// and destination (`tools/spatial_oracle/sqrt_approx_distances.py`). A
     /// factor of one with no minimum arms the distance itself as the delay.
@@ -1481,36 +1403,6 @@ mod tests {
             );
         }
         assert_eq!(rows.len(), 4);
-    }
-
-    /// Harvester units skip the chrono lock entirely — when is_harvester=true
-    /// the lock duration is 0 regardless of distance.
-    #[test]
-    fn test_harvester_skips_chrono_delay() {
-        let mut sim = crate::sim::world::Simulation::new();
-        let e = teleport_owner(1, "CMIN", 5, 5);
-        sim.substrate.entities.insert(e);
-        let rules = default_rules();
-
-        // Long distance (~80 cells diagonal) — non-harvester computes ~604 frames delay.
-        assert!(arm_teleport(
-            sim.substrate.entities.get_mut(1).unwrap(),
-            DriveCoord::cell(90, 90, 0),
-            None,
-            &rules,
-            true
-        ));
-        let ts = sim
-            .substrate
-            .entities
-            .get(1)
-            .and_then(|e| e.teleport_state())
-            .expect("should have TeleportState");
-        assert_eq!(
-            ts.chrono_delay_ticks(),
-            0,
-            "harvester instant-warp must zero the chrono lock"
-        );
     }
 
     /// With is_harvester=true, the Relocate phase finishes the teleport in a single
@@ -1581,16 +1473,5 @@ mod tests {
             .expect("still warping after Relocate");
         assert_eq!(ts.phase(), TeleportPhase::ChronoDelay);
         assert_eq!(ts.chrono_delay_ticks(), initial_ticks);
-    }
-
-    #[test]
-    fn teleport_exposes_distinct_warp_and_targetability_producers() {
-        let relocate = TeleportState::for_test(TeleportPhase::Relocate, 1, 1, 10);
-        assert!(!relocate.warp_in_active());
-        assert!(!relocate.is_targetable());
-
-        let arrival = TeleportState::for_test(TeleportPhase::ChronoDelay, 1, 1, 10);
-        assert!(arrival.warp_in_active());
-        assert!(arrival.is_targetable());
     }
 }

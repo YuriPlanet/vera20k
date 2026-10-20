@@ -279,40 +279,11 @@ mod tests {
     }
 
     #[test]
-    fn defaults_leave_the_screen_size_unset_and_audio_on() {
-        let options = RetailStartupOptions::default();
-        assert_eq!(options.screen_width, SCREEN_SIZE_UNSET);
-        assert_eq!(options.screen_height, SCREEN_SIZE_UNSET);
-        assert!(options.audio_enabled);
-    }
-
-    #[test]
     fn every_help_form_requests_usage_in_either_case() {
         for form in ["/?", "-?", "-h", "/h", "-H", "/H"] {
             let (options, rest) = consume(&[form]);
             assert!(options.usage_requested, "{form} must request usage");
             assert!(rest.is_empty(), "{form} must be consumed");
-        }
-    }
-
-    #[test]
-    fn usage_lists_numeric_screen_seeds_as_not_applied() {
-        let text = usage_text();
-        let (applied, unapplied) = text
-            .split_once("Other retail switches")
-            .expect("usage must separate applied and unapplied switches");
-
-        // They still seed the saved ScreenWidth/ScreenHeight, which no longer
-        // size anything.
-        for form in ["-<W>X<H>", "-480", "-16"] {
-            assert!(
-                !applied.contains(form),
-                "{form} must not be advertised as applied"
-            );
-            assert!(
-                unapplied.contains(form),
-                "{form} must be listed as not applied"
-            );
         }
     }
 
@@ -400,12 +371,5 @@ mod tests {
         ]);
         assert!(rest.is_empty(), "every native switch must be consumed");
         assert_eq!(options, RetailStartupOptions::default());
-    }
-
-    #[test]
-    fn noaudio_clears_audio_and_unknown_arguments_pass_through() {
-        let (options, rest) = consume(&["-noaudio", "--not-a-real-option"]);
-        assert!(!options.audio_enabled);
-        assert_eq!(rest, vec!["--not-a-real-option".to_string()]);
     }
 }

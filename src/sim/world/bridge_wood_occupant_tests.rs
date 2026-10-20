@@ -252,10 +252,10 @@ fn snapshot(
         "ground_head":object_name(sim.cell_objects(current,MovementLayer::Ground).next(),actors),
         "object_next":object_name(sim.next_cell_object(CellObjectMember::Entity(actors[0])),actors),
         "deferred_count":actors.iter().filter(|id| sim.substrate.pending_delete.contains_object(id)).count(),
-        "owner_losses":sim.houses[&owner].stats.units_lost()-initial_losses,
+        "owner_losses":sim.houses[&owner].stats().units_lost()-initial_losses,
         // Native House+5574 counts on-map units. EntityStore's type index
         // counts stored objects, including these retained dead receivers.
-        "owner_active_units":sim.houses[&owner].tracking.active_for_test().0-other_active_units,
+        "owner_active_units":sim.houses[&owner].tracking().active_for_test().0-other_active_units,
         "current_land":terrain.cell(current.0,current.1).unwrap().land_type,
         "impact_land":terrain.cell(115,59).unwrap().land_type,
         "target":target_name(actor.attack_target.target().as_ref()),
@@ -487,9 +487,9 @@ fn retail_wood_occupants_match_native_list_lifetime_detach_and_rng() {
         );
         let sim = scene.sim();
         let actor = sim.substrate.entities.get(actors[0]).unwrap();
-        let initial_losses = sim.houses[&actor.owner()].stats.units_lost();
+        let initial_losses = sim.houses[&actor.owner()].stats().units_lost();
         let other_active_units =
-            sim.houses[&actor.owner()].tracking.active_for_test().0 - actors.len() as i32;
+            sim.houses[&actor.owner()].tracking().active_for_test().0 - actors.len() as i32;
         let effects = EffectBoundary::capture(sim);
         for stage in case["stages"].as_array().unwrap() {
             let context = format!("{name}/{}", stage["stage"].as_str().unwrap());
@@ -607,8 +607,8 @@ fn retail_wood_hut_collapse_matches_native_live_occupants_and_animation_order() 
         );
         let sim = scene.sim();
         let owner = sim.substrate.entities.get(actors[0]).unwrap().owner();
-        let initial_losses = sim.houses[&owner].stats.units_lost();
-        let other_units = sim.houses[&owner].tracking.active_for_test().0 - actors.len() as i32;
+        let initial_losses = sim.houses[&owner].stats().units_lost();
+        let other_units = sim.houses[&owner].tracking().active_for_test().0 - actors.len() as i32;
         let effects = EffectBoundary::capture(sim);
         assert_state(
             sim,

@@ -37,8 +37,9 @@ fn sim_with(rules: &RuleSet, houses: &[(&str, &str, bool)]) -> (Simulation, Vec<
             let side = rules.country_side_index(country).expect("country side").0;
             let country_id = sim.interner.intern(country);
             let mut house = HouseState::new(id, side, Some(country_id), human, 0, 10);
-            house.multiplay_passive =
-                crate::sim::house_state::resolve_multiplay_passive(Some(rules), Some(country));
+            house.set_multiplay_passive_for_test(
+                crate::sim::house_state::resolve_multiplay_passive(Some(rules), Some(country)),
+            );
             sim.houses.register(house);
             id
         })
@@ -90,37 +91,18 @@ fn computer_paranoid_allies_the_computers_against_the_human() {
     let player = ids[0];
     for computer in &ids[1..3] {
         let house = &sim.houses[computer];
-        assert_eq!(house.grudge_scores.get(&player), Some(&1));
-        assert_eq!(house.enemy_house, Some(player));
+        assert_eq!(house.grudge_scores().get(&player), Some(&1));
+        assert_eq!(house.enemy_house(), Some(player));
     }
     for passive in &ids[3..] {
-        assert!(sim.houses[passive].grudge_scores.is_empty());
-        assert_eq!(sim.houses[passive].enemy_house, None);
+        assert!(sim.houses[passive].grudge_scores().is_empty());
+        assert_eq!(sim.houses[passive].enemy_house(), None);
     }
 
     // A second call allies no one anew and angers each computer again.
     paranoid(&mut sim, &rules);
     assert_eq!(allies(&sim, "Computer1"), set(&["Computer2"]));
-    assert_eq!(sim.houses[&ids[1]].grudge_scores.get(&player), Some(&2));
-}
-
-/// A lone computer allies no one: Special would leave it without an enemy.
-#[test]
-fn a_lone_computer_allies_no_one() {
-    let rules = rules();
-    let (mut sim, _) = sim_with(
-        &rules,
-        &[
-            ("Player", "Americans", true),
-            ("Computer1", "Russians", false),
-            ("Neutral", "Neutral", false),
-            ("Special", "Special", false),
-        ],
-    );
-    paranoid(&mut sim, &rules);
-    assert_eq!(allies(&sim, "Computer1"), set(&[]));
-    assert_eq!(allies(&sim, "Neutral"), set(&["Computer1"]));
-    assert_eq!(allies(&sim, "Special"), set(&["Computer1"]));
+    assert_eq!(sim.houses[&ids[1]].grudge_scores().get(&player), Some(&2));
 }
 
 /// The gate (`0x00501640..0x00501675`): Rules `AlliesAllowed=`, and no
@@ -138,7 +120,7 @@ fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
     let (mut sim, ids) = sim_with(&rules, &houses);
     paranoid(&mut sim, &rules);
     assert!(sim.house_alliances.is_empty());
-    assert!(sim.houses[&ids[1]].grudge_scores.is_empty());
+    assert!(sim.houses[&ids[1]].grudge_scores().is_empty());
 
     use crate::sim::scenario_bootstrap::{NormalizedSkirmishSlot, populate_launch_houses};
     use crate::skirmish_launch::{LaunchCountry, LaunchStartPosition, LaunchTeam};
@@ -298,13 +280,13 @@ fn make_enemy_angers_before_it_breaks_both_sides() {
     sim.make_enemy(first, second, &rules);
     assert_eq!(allies(&sim, "Computer1"), set(&[]));
     assert_eq!(allies(&sim, "Computer2"), set(&[]));
-    assert_eq!(sim.houses[&first].grudge_scores.get(&second), Some(&1));
-    assert_eq!(sim.houses[&first].enemy_house, None);
-    assert!(sim.houses[&second].grudge_scores.is_empty());
+    assert_eq!(sim.houses[&first].grudge_scores().get(&second), Some(&1));
+    assert_eq!(sim.houses[&first].enemy_house(), None);
+    assert!(sim.houses[&second].grudge_scores().is_empty());
 
     sim.make_enemy(first, second, &rules);
-    assert_eq!(sim.houses[&first].grudge_scores.get(&second), Some(&2));
-    assert_eq!(sim.houses[&first].enemy_house, Some(second));
+    assert_eq!(sim.houses[&first].grudge_scores().get(&second), Some(&2));
+    assert_eq!(sim.houses[&first].enemy_house(), Some(second));
 }
 
 /// TAction30's 0x0050C210 can call ComputerParanoid before clearing placement

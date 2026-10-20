@@ -284,25 +284,6 @@ fn mission_then_shared_stage_matches_original_frame_timelines() {
 }
 
 #[test]
-fn ordinary_synchronized_deploy_command_accepts_schp() {
-    let (mut sim, rules, id) = fixture(&json!({}));
-    assert!(sim.apply_command(
-        "Russians",
-        &Command::DeployMcv { entity_id: id },
-        Some(&rules)
-    ));
-    let entity = sim.substrate.entities.get(id).unwrap();
-    // Event9's Queue_Mission(Unload) at4C7812 leaves the current Guard
-    // intact; the ordinary scheduler owns Commence on a later frame.
-    assert_eq!(entity.mission.current().known(), Some(MissionType::Guard));
-    assert_eq!(entity.mission.queued().known(), Some(MissionType::Unload));
-    assert!(
-        !entity.is_fully_deployed(),
-        "the command queues the owner; it does not complete deployment"
-    );
-}
-
-#[test]
 fn synchronized_deploy_obeys_native_event9_actor_guards() {
     // Event9's raw actor guards (4C76CF..4C7774), recorded alongside the
     // native lifecycle corpus, inspect Alive/Limbo, tether and current

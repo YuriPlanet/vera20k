@@ -44,21 +44,21 @@ fn bridge_neighbor_terrain_retains_native_surface_coords_through_damage_and_rest
             &rules,
             false,
         );
-        let id = sim.production.terrain_object_cells[&(10, 20)];
-        let coord = sim.production.terrain_objects[&id].world_coord();
+        let id = sim.terrain_objects.cell_index()[&(10, 20)];
+        let coord = sim.terrain_objects.objects()[&id].world_coord();
         assert_eq!(
             serde_json::json!([coord.x, coord.y, coord.z]),
             row["placement"],
             "{input}"
         );
-        let mut higher = sim.production.terrain_objects[&id].clone();
+        let mut higher = sim.terrain_objects.objects()[&id].clone();
         higher.world_z_leptons += 1;
         let hash = |tree: &TerrainObjectState| {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             tree.hash(&mut hasher);
             hasher.finish()
         };
-        assert_ne!(hash(&higher), hash(&sim.production.terrain_objects[&id]));
+        assert_ne!(hash(&higher), hash(&sim.terrain_objects.objects()[&id]));
 
         let cell = sim
             .resolved_terrain
@@ -73,7 +73,7 @@ fn bridge_neighbor_terrain_retains_native_surface_coords_through_damage_and_rest
             serde_json::json!([
                 coord.x,
                 coord.y,
-                sim.production.terrain_objects[&id].world_coord().z
+                sim.terrain_objects.objects()[&id].world_coord().z
             ]),
             row["after_ground_change"],
             "{input}"
@@ -88,7 +88,7 @@ fn bridge_neighbor_terrain_retains_native_surface_coords_through_damage_and_rest
             &rules,
         );
         assert_eq!(
-            restored.production.terrain_objects[&id].world_coord(),
+            restored.terrain_objects.objects()[&id].world_coord(),
             coord,
             "{input}"
         );
@@ -118,8 +118,8 @@ fn bridge_neighbor_terrain_retains_native_surface_coords_through_damage_and_rest
                 ..AoELayerContext::default()
             },
             Some(TerrainCollectionView {
-                objects: &restored.production.terrain_objects,
-                cells: &restored.production.terrain_object_cells,
+                objects: restored.terrain_objects.objects(),
+                cells: restored.terrain_objects.cell_index(),
             }),
         );
         let terrain_hit = result

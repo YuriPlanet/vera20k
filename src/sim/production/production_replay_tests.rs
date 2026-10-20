@@ -257,7 +257,7 @@ fn retail_builds_step_at_the_native_frames() {
 
         let factory_state = |sim: &Simulation| {
             sim.production
-                .factories
+                .factories()
                 .iter_insertion_ordered()
                 .into_iter()
                 .find(|f| f.owner == owner && f.category == category)

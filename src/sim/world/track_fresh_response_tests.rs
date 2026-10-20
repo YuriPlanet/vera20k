@@ -96,7 +96,7 @@ fn unit(
     rules.general.close_enough = input["close_enough"].as_i64().unwrap_or(576) as i32;
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
-    house.player_control = true;
+    house.set_player_control_for_test(true);
     sim.houses.register(house);
     // Map load wires the four [General] slope keys into the live config.
     let general = &rules.general;

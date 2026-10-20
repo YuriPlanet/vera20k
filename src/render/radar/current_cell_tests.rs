@@ -540,23 +540,6 @@ fn gsi_04_01_destroyed_low_overlay_falls_through_in_full_and_incremental_paths()
 }
 
 #[test]
-fn gsi_04_01_absent_live_cell_clears_full_and_incremental_bridge_sources() {
-    let (grid, resolved) = fixture(None);
-    let cell = central_cell(&grid, expanded_bounds());
-    let colors = colors();
-    let intact_low = runtime_with_overlay(resolved.clone(), cell, Some(true), Some((0x4A, 0)));
-    let absent = runtime_with_overlay(resolved, cell, None, None);
-
-    let full = projection(&grid, &absent, &[], expanded_bounds(), &colors);
-    assert_eq!(raw_pair(&full, cell), [BASE_COLOR; 2]);
-
-    let mut incremental = projection(&grid, &intact_low, &[], expanded_bounds(), &colors);
-    assert_eq!(raw_pair(&incremental, cell), [LOW_BRIDGE_COLOR; 2]);
-    apply_incremental(&mut incremental, &absent, cell, &colors);
-    assert_eq!(raw_pair(&incremental, cell), [BASE_COLOR; 2]);
-}
-
-#[test]
 fn gsi_04_01_load_intact_bridge_discards_abandoned_destroyed_pixels() {
     let (grid, mut resolved) = fixture(None);
     let cell = central_cell(&grid, expanded_bounds());

@@ -253,7 +253,7 @@ fn assert_retained_roles(sim: &Simulation, parent_id: u64, upgrade_id: u64, held
     assert!(held.lifecycle.in_limbo() && !held.lifecycle.cell_marked());
     assert_eq!(
         sim.production
-            .factories
+            .factories()
             .view(held.owner(), ProductionCategory::Building)
             .unwrap()
             .object
@@ -271,8 +271,8 @@ fn held_factory_and_attached_upgrade_stay_off_navigation_through_frame_and_resto
     sim.session.set_map_width_for_test(16);
     sim.session.set_map_height_for_test(16);
     sim.session.game_options_mut_for_test().crates = false;
-    sim.production.ore_growth_config.grows = false;
-    sim.production.ore_growth_config.spreads = false;
+    sim.ore_growth_config.set_grows_for_test(false);
+    sim.ore_growth_config.set_spreads_for_test(false);
     let terrain = gsi_04_10_clear_terrain(16, 16);
     sim.install_resolved_terrain_for_new_map(terrain.clone());
     let overlay_grid = OverlayGrid::from_overlay_entries(&[], 16, 16);
@@ -314,7 +314,7 @@ fn held_factory_and_attached_upgrade_stay_off_navigation_through_frame_and_resto
     ));
     let held_id = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Building)
         .unwrap()
         .object

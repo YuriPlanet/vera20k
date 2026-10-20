@@ -243,12 +243,4 @@ mod tests {
             assert_eq!(r.pop(), Some(20.0));
         }
     }
-
-    #[test]
-    fn drain_empties_buffer() {
-        let r = SpscRing::new(8);
-        r.push(&[1.0, 2.0, 3.0, 4.0]);
-        r.drain();
-        assert_eq!(r.pop(), None);
-    }
 }

@@ -405,7 +405,7 @@ fn stop_fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         .get_or_register_for_test(owner, || {
             crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 1)
         })
-        .base_projection
+        .base_projection_mut()
         .replace_buildings_for_test(list);
     (sim, rules)
 }

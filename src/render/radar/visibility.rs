@@ -24,7 +24,7 @@ pub(super) fn radar_owner_is_human_player(
     } else {
         houses
             .get(&owner)
-            .is_some_and(|house| house.is_human || house.player_control)
+            .is_some_and(|house| house.is_human() || house.player_control())
     }
 }
 

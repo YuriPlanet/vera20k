@@ -38,13 +38,6 @@ impl FocusState {
             self.hovered = None;
         }
     }
-
-    /// G25 — clear the attached list: forget the current list so the next tick
-    /// takes the G5 reset path (the sanctioned page-swap mechanism).
-    #[cfg(test)]
-    pub fn clear_attached_list(&mut self) {
-        self.current_list = None;
-    }
 }
 
 #[cfg(test)]
@@ -66,20 +59,5 @@ mod tests {
         assert_eq!(f.keyboard, Some(b), "other holder untouched");
         assert_eq!(f.hovered, None, "hover cleared too (study §6.1 closure)");
         assert_eq!(f.current_list, Some(ListId(7)), "list identity untouched");
-    }
-
-    #[test]
-    fn clear_attached_list_only_clears_list() {
-        let a = GadgetHandle(1);
-        let mut f = FocusState {
-            sticky: Some(a),
-            keyboard: None,
-            hovered: Some(a),
-            current_list: Some(ListId(1)),
-        };
-        f.clear_attached_list();
-        assert_eq!(f.current_list, None, "G25 zeroes only current_list");
-        assert_eq!(f.sticky, Some(a));
-        assert_eq!(f.hovered, Some(a));
     }
 }

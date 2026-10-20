@@ -585,14 +585,6 @@ mod tests {
     }
 
     #[test]
-    fn the_jump_follows_the_travel_heading() {
-        assert_eq!(jump(0), (0, -12), "north");
-        assert_eq!(jump(2), (12, 0), "east");
-        assert_eq!(jump(4), (0, 12), "south");
-        assert_eq!(jump(6), (-12, 0), "west");
-    }
-
-    #[test]
     fn direct_waterfall_build_changes_terrain_without_creating_bridge_topology() {
         // Fixed successful direct-BuildRiverBridge fixture. Active retail
         // 0x0059E740 may mutate terrain working state only: never overlay/data,

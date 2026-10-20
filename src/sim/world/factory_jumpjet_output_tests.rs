@@ -40,16 +40,14 @@ struct Rocketeer {
     sound_releases: u32,
 }
 
+/// Without a rally the two paid Rocketeers release their Barracks in
+/// flight; with one they fly to the rally after release.
 #[test]
 #[ignore = "slow; run when changing what it covers"]
-fn no_rally_two_paid_rocketeers_release_their_barracks_in_flight() {
-    two_paid_rocketeers(None);
-}
-
-#[test]
-#[ignore = "slow; run when changing what it covers"]
-fn rally_two_paid_rocketeers_fly_to_the_rally_after_release() {
-    two_paid_rocketeers(Some((10, 18)));
+fn two_paid_rocketeers_release_their_barracks_then_fly_to_any_rally() {
+    for rally in [None, Some((10, 18))] {
+        two_paid_rocketeers(rally);
+    }
 }
 
 fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
@@ -66,7 +64,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     install_ground(&mut sim, &rules, &terrain_rules, None);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(owner), true, 10_000, 10);
-    house.difficulty = HouseDifficulty::Hard;
+    house.set_difficulty_for_test(HouseDifficulty::Hard);
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
     sim.session.set_current_house_for_test(Some(owner));
@@ -120,7 +118,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     sim.advance_tick(&commands, Some(&rules), None, Some(&registry), TICK_MS);
     let first = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .and_then(|view| view.object)
         .and_then(|object| object.entity_id)
@@ -147,7 +145,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
         let log = radio::take_transmit_log();
         if let Some(held) = sim
             .production
-            .factories
+            .factories()
             .view(owner, ProductionCategory::Infantry)
             .and_then(|view| view.object)
             .and_then(|object| object.entity_id)
@@ -322,7 +320,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     );
     let factory = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry);
     assert!(factory.is_none_or(|view| view.object.is_none() && view.queue.is_empty()));
 }

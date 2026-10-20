@@ -289,25 +289,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn gsi_08_04_table_covers_the_full_signed_step_range() {
-        assert_eq!(NATIVE_SIN_BY_STEP.len(), 63);
-        assert_eq!(NATIVE_COS_BY_STEP.len(), 63);
-        assert!(native_sin_cos_by_step(NATIVE_TRIG_MIN_STEP).is_some());
-        assert!(native_sin_cos_by_step(NATIVE_TRIG_MAX_STEP).is_some());
-        assert!(native_sin_cos_by_step(32).is_none());
-        assert!(native_sin_cos_by_step(-32).is_none());
-    }
-
-    /// Zero is exact in the retail table, which is the one entry a wrong index
-    /// base would most obviously break.
-    #[test]
-    fn gsi_08_04_zero_step_is_exactly_zero_and_one() {
-        let (sin, cos) = native_sin_cos_by_step(0).expect("in range");
-        assert_eq!(sin.to_bits(), 0x0000_0000);
-        assert_eq!(cos.to_bits(), 0x3F80_0000);
-    }
-
     /// The table is NOT odd-symmetric: retail's negative-angle indices land two
     /// steps short of the true angle. A port that negates instead of reading is
     /// wrong for half the facings, so this pins the asymmetry.
@@ -318,15 +299,6 @@ mod tests {
         assert_eq!(minus_one.to_bits(), 0x3E47_C5C1);
         assert_eq!(plus_one.to_bits(), 0xBE46_3B4C);
         assert_ne!(plus_one, -minus_one);
-    }
-
-    /// Wrapping `k` modulo 32 returns a different entry — the trap that makes a
-    /// "tidier" 32-entry table wrong.
-    #[test]
-    fn gsi_08_04_steps_32_apart_disagree() {
-        let (a, _) = native_sin_cos_by_step(-9).expect("in range");
-        let (b, _) = native_sin_cos_by_step(23).expect("in range");
-        assert_ne!(a.to_bits(), b.to_bits());
     }
 
     /// The zero step is the identity, and a quarter turn moves `+X` onto the

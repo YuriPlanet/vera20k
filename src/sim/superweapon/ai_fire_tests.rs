@@ -120,10 +120,20 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
                 .register(HouseState::new(owner, 0, None, false, 0, 10));
         }
         let input = &control["input"];
-        sim.houses.get_mut(&computer).unwrap().difficulty =
-            HouseDifficulty::from_native(int(&input["difficulty"])).unwrap();
-        sim.houses.get_mut(&computer).unwrap().enemy_house = Some(enemy);
-        sim.houses.get_mut(&enemy).unwrap().base_center = Some(wide(cell(&input["enemy_base"])));
+        sim.houses
+            .get_mut(&computer)
+            .unwrap()
+            .set_difficulty_for_test(
+                HouseDifficulty::from_native(int(&input["difficulty"])).unwrap(),
+            );
+        sim.houses
+            .get_mut(&computer)
+            .unwrap()
+            .set_enemy_house_for_test(Some(enemy));
+        sim.houses
+            .get_mut(&enemy)
+            .unwrap()
+            .set_base_center_for_test(Some(wide(cell(&input["enemy_base"]))));
         sim.houses
             .get_mut(&enemy)
             .unwrap()
@@ -377,7 +387,9 @@ fn the_best_rally_target_matches_native() {
     for row in rows {
         let rules = catalog_rules(&oracle, Some(&row["values"]), "");
         let mut house = HouseState::new(owner, 0, None, false, 0, 10);
-        house.difficulty = HouseDifficulty::from_native(int(&row["difficulty"])).unwrap();
+        house.set_difficulty_for_test(
+            HouseDifficulty::from_native(int(&row["difficulty"])).unwrap(),
+        );
         let entries: Vec<RallyEntry> = row["objects"]
             .as_array()
             .unwrap()
@@ -399,7 +411,8 @@ fn the_best_rally_target_matches_native() {
                 );
                 RallyEntry {
                     candidate: enemy
-                        && (standing || (house.difficulty == HouseDifficulty::Hard && being_built)),
+                        && (standing
+                            || (house.difficulty() == HouseDifficulty::Hard && being_built)),
                     value: if enemy {
                         rally_value(category, rules.object(name), &rules, &house)
                     } else {
@@ -470,8 +483,8 @@ fn the_try_fire_arms_match_native() {
                 .register(HouseState::new(id, 0, None, human, 0, 10));
         }
         let house = sim.houses.get_mut(&computer).unwrap();
-        house.player_control = flag(&row["control"]);
-        house.enemy_house = (int(&row["enemy_index"]) != -1).then_some(enemy);
+        house.set_player_control_for_test(flag(&row["control"]));
+        house.set_enemy_house_for_test((int(&row["enemy_index"]) != -1).then_some(enemy));
         house.alert_super_weapon_defense(wide(cell(&row["defense"])), int(&row["defense_frame"]));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
@@ -567,12 +580,14 @@ fn the_ground_rally_point_matches_native() {
         ] {
             let mut house = HouseState::new(id, 0, None, false, 0, 10);
             let base = wide(cell(base));
-            house.base_center = (base != (0, 0)).then_some(base);
-            house.alternate_base_center = wide(cell(alternate));
+            house.set_base_center_for_test((base != (0, 0)).then_some(base));
+            house.set_alternate_base_center_for_test(wide(cell(alternate)));
             houses.register(house);
         }
-        houses.get_mut(&computer).unwrap().enemy_house =
-            (int(&row["enemy_index"]) != -1).then_some(enemy);
+        houses
+            .get_mut(&computer)
+            .unwrap()
+            .set_enemy_house_for_test((int(&row["enemy_index"]) != -1).then_some(enemy));
         let events = row["events"].as_array().unwrap();
         let find = &events[0];
         assert_eq!(find[0], "find_nearby");
@@ -843,8 +858,8 @@ fn retail_skirmish() -> Option<(RuleSet, Simulation, InternedId, InternedId)> {
             .register(HouseState::new(id, side, None, human, 0, 10));
     }
     let house = sim.houses.get_mut(&americans).unwrap();
-    house.difficulty = HouseDifficulty::Hard;
-    house.enemy_house = Some(russians);
+    house.set_difficulty_for_test(HouseDifficulty::Hard);
+    house.set_enemy_house_for_test(Some(russians));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options_mut_for_test().super_weapons = true;
@@ -931,7 +946,7 @@ fn retail_walk_reads_each_object() {
     // A factory builds the limbo tank: running, it is a Hard house's
     // candidate; idle, held or finished it is not, nor for a Normal house.
     let htnk = sim.interner.intern("HTNK");
-    let factories = &mut sim.production.factories;
+    let factories = sim.production.factories_mut();
     assert!(factories.test_enqueue_kernel(russians, ProductionCategory::Vehicle, htnk, 1, 900));
     let factory = factories
         .test_factory_mut(russians, ProductionCategory::Vehicle)
@@ -941,7 +956,7 @@ fn retail_walk_reads_each_object() {
     let set = |sim: &mut Simulation, rate, suspended, progress| {
         let factory = sim
             .production
-            .factories
+            .factories_mut()
             .test_factory_mut(russians, ProductionCategory::Vehicle)
             .unwrap();
         (
@@ -952,9 +967,15 @@ fn retail_walk_reads_each_object() {
     };
     set(&mut sim, 5, false, 0);
     assert_eq!(fact(&sim, built), (true, 2, false));
-    sim.houses.get_mut(&americans).unwrap().difficulty = HouseDifficulty::Normal;
+    sim.houses
+        .get_mut(&americans)
+        .unwrap()
+        .set_difficulty_for_test(HouseDifficulty::Normal);
     assert_eq!(fact(&sim, built), (false, 2, false), "Normal");
-    sim.houses.get_mut(&americans).unwrap().difficulty = HouseDifficulty::Hard;
+    sim.houses
+        .get_mut(&americans)
+        .unwrap()
+        .set_difficulty_for_test(HouseDifficulty::Hard);
     set(&mut sim, 5, true, crate::sim::production::PRODUCTION_STEPS);
     assert_eq!(fact(&sim, built), (false, 2, false), "completed");
     set(&mut sim, 5, true, 1);
@@ -1058,9 +1079,9 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
         )),
         sim.power_states.get(&americans),
         (
-            sim.houses[&americans].is_defeated,
-            sim.houses[&americans].enemy_house,
-            sim.houses[&americans].strategy_timer
+            sim.houses[&americans].is_defeated(),
+            sim.houses[&americans].enemy_house(),
+            sim.houses[&americans].strategy_timer()
         )
     );
     // The yard's centre cell.
@@ -1117,8 +1138,10 @@ fn the_psychic_dominator_target_matches_native() {
             sim.houses
                 .register(HouseState::new(id, 0, None, false, 0, 10));
         }
-        sim.houses.get_mut(&computer).unwrap().enemy_house =
-            (int(&row["enemy_index"]) != -1).then_some(enemy);
+        sim.houses
+            .get_mut(&computer)
+            .unwrap()
+            .set_enemy_house_for_test((int(&row["enemy_index"]) != -1).then_some(enemy));
         // `+0x5788` bit 2: the computer counts the third house an ally.
         sim.house_alliances
             .entry(COMPUTER.to_ascii_uppercase())

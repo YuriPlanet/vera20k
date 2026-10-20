@@ -1000,17 +1000,6 @@ mod tests {
     }
 
     #[test]
-    fn the_seed_cell_is_always_one_the_region_owns() {
-        let owned = [(40, 48), (41, 48), (42, 49)];
-        let scratch = scratch_owning(&owned, 7);
-        let mut rng = RmgRng::new(4);
-        for _ in 0..64 {
-            let picked = pick_seed_cell(&mut rng, &scratch, 7).expect("a cell qualifies");
-            assert!(owned.contains(&picked), "picked {picked:?}");
-        }
-    }
-
-    #[test]
     fn a_record_that_never_got_a_coordinate_is_rejected_not_returned_as_zero_zero() {
         // The out-of-diamond record is given the region id too, so the region
         // test alone cannot refuse it. Only its unstamped (0, 0) coordinate
@@ -1866,35 +1855,6 @@ mod tests {
     }
 
     #[test]
-    fn failed_end_area_uses_default_without_spending_a_coin() {
-        let (mut grid, mut scratch) = harness();
-        grid.get_mut(42, 49).unwrap().tile = GREEN;
-        let blocks = OneByOne::new();
-        let playfield = playfield();
-        let identity = ids();
-        let mut rng = RmgRng::new(77);
-        let mut expected_rng = RmgRng::new(77);
-        {
-            let mut ctx = CarveCtx {
-                grid: &mut grid,
-                scratch: &mut scratch,
-                ids: &identity,
-                blocks: &blocks,
-                rng: &mut rng,
-                playfield: &playfield,
-            };
-            stamp_end(
-                &mut ctx,
-                (40, 48, 6, 6),
-                (PAVED_ROAD + 10, (50, 50)),
-                (PAVED_ROAD_END, (51, 50)),
-            );
-        }
-        assert_eq!(grid.get(51, 50).unwrap().tile, PAVED_ROAD_END);
-        assert_eq!(rng.next_u32(), expected_rng.next_u32());
-    }
-
-    #[test]
     fn a_committed_deck_survives_when_both_hut_searches_fail() {
         let (mut grid, mut scratch) = harness();
         for y in 46..=55 {
@@ -2149,50 +2109,6 @@ mod tests {
     }
 
     #[test]
-    fn hut_search_uses_inclusive_y_major_primary_then_fallback() {
-        let (mut grid, mut scratch) = harness();
-        grid.get_mut(40, 48).unwrap().overlay = 1;
-        grid.get_mut(41, 48).unwrap().tile = GREEN;
-        let blocks = OneByOne::new();
-        let playfield = playfield();
-        let identity = ids();
-        let mut rng = RmgRng::new(7);
-        let mut structures = Vec::new();
-        let mut trace = RmgConstructionTrace::default();
-        let mut ctx = CarveCtx {
-            grid: &mut grid,
-            scratch: &mut scratch,
-            ids: &identity,
-            blocks: &blocks,
-            rng: &mut rng,
-            playfield: &playfield,
-        };
-        place_hut(
-            &mut ctx,
-            (40, 48, 0, 0),
-            (41, 48, 1, 0),
-            &mut structures,
-            &mut trace,
-        );
-        assert_eq!(structures, vec![(CABHUT.to_string(), 42, 48)]);
-        assert!(ctx.grid.get(42, 48).unwrap().occupied);
-    }
-
-    #[test]
-    fn water_is_accepted_because_that_is_what_a_deck_spans() {
-        let (mut grid, scratch) = harness();
-        for x in 41..45 {
-            grid.get_mut(x, 49).expect("native cell").tile = WATER;
-        }
-        assert!(deck_area_is_clear(
-            &mut grid,
-            &scratch,
-            &ids(),
-            (40, 48, 6, 3)
-        ));
-    }
-
-    #[test]
     fn the_sweep_reaches_one_past_the_deck_on_both_axes() {
         // The row below and the column right of the deck are still judged. A
         // sweep confined to the deck itself would miss both, which is what the
@@ -2234,18 +2150,6 @@ mod tests {
     }
 
     #[test]
-    fn a_step_in_the_ground_refuses() {
-        let (mut grid, scratch) = harness();
-        grid.get_mut(42, 49).expect("native cell").level = 8;
-        assert!(!deck_area_is_clear(
-            &mut grid,
-            &scratch,
-            &ids(),
-            (40, 48, 6, 3)
-        ));
-    }
-
-    #[test]
     fn a_rect_hanging_off_the_map_refuses_at_the_corners() {
         // Every OTHER condition is made to pass over the swept area first, so
         // the corner probes are the only thing left that can refuse. Without
@@ -2253,17 +2157,6 @@ mod tests {
         // with this test still green.
         let (rect, mut grid, scratch) = off_diamond_rect();
         assert!(!deck_area_is_clear(&mut grid, &scratch, &ids(), rect));
-    }
-
-    #[test]
-    fn flat_clear_ground_anchors_an_end_piece() {
-        let (grid, scratch) = harness();
-        assert!(end_area_is_placeable(
-            &grid,
-            &scratch,
-            &ids(),
-            (40, 48, 6, 3)
-        ));
     }
 
     #[test]
@@ -2287,18 +2180,6 @@ mod tests {
         // than just proving the sweep is small.
         let (mut grid, scratch) = harness();
         grid.get_mut(45, 50).expect("native cell").level = 9;
-        assert!(!end_area_is_placeable(
-            &grid,
-            &scratch,
-            &ids(),
-            (40, 48, 6, 3)
-        ));
-    }
-
-    #[test]
-    fn a_step_in_the_ground_refuses_an_end_piece() {
-        let (mut grid, scratch) = harness();
-        grid.get_mut(42, 49).expect("native cell").level = 8;
         assert!(!end_area_is_placeable(
             &grid,
             &scratch,

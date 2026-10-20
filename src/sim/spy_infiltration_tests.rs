@@ -118,8 +118,8 @@ pub fn replay(row: &Value) -> Replay {
     let infiltrator = sim.interner.intern("H1");
     let building = sim.spawn_object("B", "H0", 37, 52, 0, &rules).unwrap();
     let house = sim.houses.get_mut(&owner).unwrap();
-    house.spy_sat_active = flag(&row["owner"]["spy_sat"]);
-    house.map_is_clear = true;
+    house.set_spy_sat_active_for_test(flag(&row["owner"]["spy_sat"]));
+    house.set_map_is_clear_for_test(true);
     sim.power_states
         .insert(owner, PowerState::settled_for_test());
     if let Some(state) = row["super"].as_object() {
@@ -207,7 +207,7 @@ fn infiltrate_matches_the_original() {
             "{name}: infiltrator House tech request"
         );
         assert_eq!(
-            [victim.economy.credits(), victim.economy.spent_credits()],
+            [victim.economy().credits(), victim.economy().spent_credits()],
             [
                 int(&expected["owner"]["balance"]),
                 int(&expected["owner"]["spent"])
@@ -215,7 +215,7 @@ fn infiltrate_matches_the_original() {
             "{name}: the owner's money"
         );
         assert_eq!(
-            spy.economy.credits(),
+            spy.economy().credits(),
             int(&expected["infiltrator"]["balance"]),
             "{name}: the spy's money"
         );
@@ -261,7 +261,7 @@ fn infiltrate_matches_the_original() {
             .unwrap()
             .iter()
             .any(|event| event[0] == "reset_shroud");
-        assert_eq!(!victim.map_is_clear, reshrouded, "{name}: Reset_Shroud");
+        assert_eq!(!victim.map_is_clear(), reshrouded, "{name}: Reset_Shroud");
         if let Some(state) = expected.get("super") {
             let sw = sim.interner.get("SW0").unwrap();
             let instance = &sim.super_weapons[&owner][&sw];

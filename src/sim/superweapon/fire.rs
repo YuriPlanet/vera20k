@@ -399,12 +399,12 @@ fn alert_super_weapon_defense(
     let Some(house) = sim.houses.get(&house_id) else {
         return;
     };
-    if house.multiplay_passive || house.is_human || !sw.ai_defend_against {
+    if house.multiplay_passive() || house.is_human() || !sw.ai_defend_against {
         return;
     }
     let base = house.base_origin();
     let probability = house.difficulty_value(&rules.general.ai_super_defense_probability);
-    let first_yard = house.build_const_order.first().copied();
+    let first_yard = house.build_const_order().first().copied();
     let terrain = sim.resolved_terrain.as_ref();
     let cell_coords = |(x, y): (u16, u16)| {
         let coord = crate::sim::projectile::cell_ground_coord(terrain, x, y);

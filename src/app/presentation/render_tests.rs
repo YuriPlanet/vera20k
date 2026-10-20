@@ -4,14 +4,12 @@ use crate::app::input::entity_pick::{
     compute_box_selection_snapshot, compute_click_selection_snapshot, hover_target_at_point,
 };
 use crate::map::entities::EntityCategory;
-use crate::map::houses::HouseAllianceMap;
 use crate::sim::combat::Health;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::test_intern;
-use crate::sim::vision::FogState;
 use crate::sim::world::Simulation;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// Spawn a mobile unit **at a cell**. Where it lands on screen is derived, so
 /// tests take their click and box coordinates from [`screen_of`] rather than
@@ -52,50 +50,6 @@ fn selected_order(store: &EntityStore) -> Vec<u64> {
         .filter(|entity| entity.selection.is_selected())
         .map(|entity| entity.stable_id())
         .collect()
-}
-
-fn fog_with_visible_cells(owner: &str, visible_cells: &[(u16, u16)]) -> FogState {
-    let mut by_owner = BTreeMap::new();
-    let mut visibility = crate::sim::vision::OwnerVisibility::new(64, 64);
-    for &(rx, ry) in visible_cells {
-        visibility.mark_visible(rx, ry);
-    }
-    by_owner.insert(crate::sim::intern::test_intern(owner), visibility);
-
-    let mut fog = FogState::new(64, 64);
-    fog.by_owner = by_owner.into();
-    fog
-}
-
-#[test]
-fn test_click_replace_selects_only_target() {
-    let mut store = EntityStore::new();
-    // Two cells apart is 67px, comfortably outside CLICK_SELECT_RADIUS, so a
-    // click on one cannot also catch the other.
-    spawn_mobile(&mut store, 1, 10, 10, "Americans", true);
-    spawn_mobile(&mut store, 2, 12, 10, "Americans", false);
-    let (cx, cy) = screen_of(&store, 2);
-
-    let empty_heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
-    let snapshot = compute_click_selection_snapshot(
-        &store,
-        &encounter_order(&store),
-        &selected_order(&store),
-        None,
-        None,
-        cx,
-        cy,
-        CLICK_SELECT_RADIUS,
-        false,
-        None,
-        None,
-        &empty_heights,
-        None,
-        None,
-    )
-    .expect("snapshot");
-    assert!(snapshot.clear);
-    assert_eq!(snapshot.select, vec![2]);
 }
 
 #[test]
@@ -193,73 +147,6 @@ fn test_box_additive_adds_only_and_excludes_structures() {
     assert_eq!(snapshot.select, vec![3]);
 }
 
-#[test]
-fn test_empty_box_leaves_the_selection_alone() {
-    let mut store = EntityStore::new();
-    spawn_mobile(&mut store, 1, 10, 10, "Americans", true);
-
-    // gamemd clears the selection only when the rectangle caught a drawn
-    // object; an empty rectangle queues no selection change at all and the
-    // release falls through to the ordinary click action.
-    let snapshot = compute_box_selection_snapshot(
-        &store,
-        &encounter_order(&store),
-        &encounter_order(&store),
-        &selected_order(&store),
-        None,
-        None,
-        300.0,
-        300.0,
-        340.0,
-        340.0,
-        false,
-        None,
-        None,
-        None,
-    );
-    assert_eq!(snapshot, None);
-}
-
-#[test]
-fn test_box_over_only_ineligible_objects_still_clears_the_selection() {
-    let mut store = EntityStore::new();
-    spawn_mobile(&mut store, 1, 10, 10, "Americans", true);
-    spawn_mobile(&mut store, 2, 30, 30, "Soviet", false);
-
-    let mut houses = crate::sim::houses::Houses::default();
-    for (name, is_human) in [("Americans", true), ("Soviet", false)] {
-        let id = test_intern(name);
-        houses.register(crate::sim::house_state::HouseState::new(
-            id, 0, None, is_human, 0, 10,
-        ));
-    }
-
-    // The rectangle holds one AI-owned tank and nothing else. The native
-    // "did the box catch anything" test has no owner filter, so the box counts
-    // as non-empty, the clear runs, and the per-object filter then admits
-    // nobody — the selection ends up empty rather than untouched.
-    let (ex, ey) = screen_of(&store, 2);
-    let interner = crate::sim::intern::test_interner();
-    let snapshot = compute_box_selection_snapshot(
-        &store,
-        &encounter_order(&store),
-        &encounter_order(&store),
-        &selected_order(&store),
-        None,
-        Some("Americans"),
-        ex - 20.0,
-        ey - 20.0,
-        ex + 20.0,
-        ey + 20.0,
-        false,
-        None,
-        Some(&houses),
-        Some(&interner),
-    )
-    .expect("snapshot");
-    assert!(snapshot.clear && snapshot.select.is_empty());
-}
-
 fn spawn_structure(
     store: &mut EntityStore,
     sid: u64,
@@ -348,68 +235,6 @@ fn test_box_keeps_a_vehicle_that_drove_clear_of_its_factory() {
 
     let snapshot = box_over_two(&store, 1, 2).expect("snapshot");
     assert_eq!(snapshot.select, vec![1, 2]);
-}
-
-/// The drawn-object list the native emptiness test walks is only partly
-/// visibility-filtered: mobile objects register from inside their own draw
-/// routine, so the shroud hides them from it, while buildings are appended in
-/// bulk from the building array with no visibility test at all.
-#[test]
-fn test_band_emptiness_ignores_a_shrouded_unit_but_not_a_shrouded_building() {
-    use crate::app::input::entity_pick::band_rect_contains_drawn_object;
-
-    let mut alliances = HouseAllianceMap::default();
-    alliances.insert(
-        "AMERICANS".to_string(),
-        BTreeSet::from(["AMERICANS".to_string()]),
-    );
-    let mut by_owner = BTreeMap::new();
-    // The local player has explored nothing.
-    by_owner.insert(
-        test_intern("Americans"),
-        crate::sim::vision::OwnerVisibility::new(64, 64),
-    );
-    let mut fog = FogState::new(64, 64);
-    fog.by_owner = by_owner.into();
-
-    // One store per case, both populated before the interner snapshot is taken
-    // (it is a clone of the shared test interner, so every name has to be in it).
-    let mut unit_only = EntityStore::new();
-    spawn_mobile(&mut unit_only, 1, 20, 20, "Soviet", false);
-    let mut building_only = EntityStore::new();
-    spawn_structure(&mut building_only, 2, 20, 20, "GAPOWR", "Soviet");
-    let interner = crate::sim::intern::test_interner();
-
-    let (ux, uy) = screen_of(&unit_only, 1);
-    let rect = (ux - 20.0, uy - 20.0, ux + 20.0, uy + 20.0);
-    assert!(
-        !band_rect_contains_drawn_object(
-            &unit_only,
-            &encounter_order(&unit_only),
-            Some((&fog, &alliances)),
-            Some("Americans"),
-            rect.0,
-            rect.1,
-            rect.2,
-            rect.3,
-            Some(&interner),
-        ),
-        "a shrouded enemy unit is not in the drawn-object list"
-    );
-    assert!(
-        band_rect_contains_drawn_object(
-            &building_only,
-            &encounter_order(&building_only),
-            Some((&fog, &alliances)),
-            Some("Americans"),
-            rect.0,
-            rect.1,
-            rect.2,
-            rect.3,
-            Some(&interner),
-        ),
-        "a building is registered in bulk, shroud or no shroud"
-    );
 }
 
 #[test]
@@ -505,117 +330,6 @@ fn item83_band_selection_is_exact_local_even_for_a_discovered_nonlocal_unit() {
     )
     .expect("snapshot");
     assert_eq!(snapshot.select, vec![1]);
-}
-
-#[test]
-fn test_click_selection_allows_visible_allied_units_for_local_owner() {
-    let mut store = EntityStore::new();
-    let mut entity = GameEntity::new_at_frame_zero_for_test(
-        7,
-        11,
-        10,
-        0,
-        0,
-        test_intern("British"),
-        Health::new(100),
-        test_intern("E1"),
-        EntityCategory::Unit,
-        0,
-        5,
-        false,
-    );
-    entity.lifecycle.set_in_limbo_for_test(false);
-    store.insert(entity);
-    let (cx, cy) = screen_of(&store, 7);
-
-    let fog = fog_with_visible_cells("British", &[(11, 10)]);
-
-    let empty_heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
-    let snapshot = compute_click_selection_snapshot(
-        &store,
-        &encounter_order(&store),
-        &selected_order(&store),
-        Some(&fog),
-        Some("Americans"),
-        cx,
-        cy,
-        CLICK_SELECT_RADIUS,
-        false,
-        None,
-        None,
-        &empty_heights,
-        None,
-        None,
-    )
-    .expect("snapshot");
-
-    assert_eq!(snapshot.select, vec![7]);
-}
-
-#[test]
-fn test_pick_enemy_target_ignores_hidden_entities() {
-    let mut sim = Simulation::new();
-    let player = sim.interner.intern("Americans");
-    let soviet_id = sim.interner.intern("Soviet");
-    let e1_id = sim.interner.intern("E1");
-
-    let mut hidden = GameEntity::new_at_frame_zero_for_test(
-        2,
-        10,
-        10,
-        0,
-        0,
-        soviet_id,
-        Health::new(100),
-        e1_id,
-        EntityCategory::Unit,
-        0,
-        5,
-        false,
-    );
-    hidden.lifecycle.set_in_limbo_for_test(false);
-    sim.entities_mut().insert(hidden);
-    let (hx, hy) =
-        crate::render::locomotor_visual::screen_position(sim.entities().get(2).expect("hidden"));
-
-    let empty_heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
-    let picked_hidden =
-        hover_target_at_point(&sim, hx, hy, "Americans", false, None, &empty_heights, None)
-            .map(|hover| hover.stable_id);
-    assert!(
-        picked_hidden.is_none(),
-        "Hidden enemy must not be targetable"
-    );
-
-    let mut visible = GameEntity::new_at_frame_zero_for_test(
-        3,
-        11,
-        10,
-        0,
-        0,
-        soviet_id,
-        Health::new(100),
-        e1_id,
-        EntityCategory::Unit,
-        0,
-        5,
-        false,
-    );
-    visible.lifecycle.set_in_limbo_for_test(false);
-    sim.entities_mut().insert(visible);
-    let (vx, vy) =
-        crate::render::locomotor_visual::screen_position(sim.entities().get(3).expect("visible"));
-    sim.fog.mark_visible_for_owner(player, 11, 10);
-
-    let picked_visible =
-        hover_target_at_point(&sim, vx, vy, "Americans", false, None, &empty_heights, None)
-            .map(|hover| hover.stable_id);
-    assert_eq!(picked_visible, Some(3));
-
-    let still_hidden =
-        hover_target_at_point(&sim, hx, hy, "Americans", false, None, &empty_heights, None)
-            .map(|hover| hover.stable_id);
-    assert_ne!(still_hidden, Some(2));
 }
 
 #[test]

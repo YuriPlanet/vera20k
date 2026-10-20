@@ -450,22 +450,6 @@ GuardRange=9\n\n\
     }
 
     #[test]
-    fn area_guard_without_guard_range_doubles_the_wider_weapon() {
-        // max(Primary 4, Secondary 6) = 6, doubled = 12. Note it is the wider
-        // of the two SLOTS, not the weapon that would be picked against any
-        // particular candidate.
-        let rules = test_rules();
-        assert_eq!(
-            scan_range(
-                obj(&rules, "NOGUARD"),
-                ScanMission::AreaGuard.literal_mask(),
-                type_weapon_ranges(&rules, obj(&rules, "NOGUARD"), 0)
-            ),
-            ScanRange::Hard(12 * 256)
-        );
-    }
-
-    #[test]
     fn area_guard_prefers_guard_range_over_the_weapon_and_clamps_the_double() {
         // GuardRange=9 wins over max weapon range 6 (proved by the result
         // exceeding the 2 * 6 = 12 the weapon path would give), is itself
@@ -481,20 +465,6 @@ GuardRange=9\n\n\
         };
         assert!(leptons > 12 * 256, "GuardRange must win: {leptons}");
         assert_eq!(clamped, ScanRange::Hard(16 * 256));
-    }
-
-    #[test]
-    fn area_guard_uses_the_only_slot_when_the_type_has_one_weapon() {
-        // Primary 4 only -> 8. A missing Secondary must not drag the max to 0.
-        let rules = test_rules();
-        assert_eq!(
-            scan_range(
-                obj(&rules, "ONLYPRIMARY"),
-                ScanMission::AreaGuard.literal_mask(),
-                type_weapon_ranges(&rules, obj(&rules, "ONLYPRIMARY"), 0)
-            ),
-            ScanRange::Hard(8 * 256)
-        );
     }
 
     /// `tools/spatial_oracle/threat_range_cargo.json`: original

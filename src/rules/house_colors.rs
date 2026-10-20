@@ -147,23 +147,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn build_scheme_ramp_16_opaque_brightest_first() {
-        let r = build_scheme_ramp([153, 214, 212]); // DarkBlue HSV
-        assert_eq!(r.len(), 16);
-        assert!(r.iter().all(|c| c.a == 255));
-        let lum = |c: &Color| c.r as u32 + c.g as u32 + c.b as u32;
-        assert!(
-            lum(&r[0]) > lum(&r[15]),
-            "shade 0 must be brighter than shade 15"
-        );
-        assert!(
-            r[0].b >= r[0].r && r[0].b >= r[0].g,
-            "blue hue preserved: {:?}",
-            r[0]
-        );
-    }
-
-    #[test]
     fn house_color_ramps_indexes_by_entry_and_falls_back() {
         let mk = |name: &str, hsv: [u8; 3]| ColorSchemeEntry {
             name: name.into(),

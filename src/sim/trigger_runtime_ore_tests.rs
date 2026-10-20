@@ -62,15 +62,13 @@ fn scene(rules: &RuleSet) -> Simulation {
     sim.session.set_tiberium_spreads_flag_for_test(false);
     sim.install_resolved_terrain_for_new_map(test_grid(16, 16, test_flat_cell));
     sim.overlay_grid = Some(OverlayGrid::new(16, 16));
-    sim.production.ore_growth_config = OreGrowthConfig {
-        grows: true,
-        spreads: false,
-        tiberium_grows_flag: true,
-    };
-    sim.production.ore_growth_state = OreGrowthState::new(16, 16);
-    sim.production
-        .ore_growth_state
-        .reset_native_tiberium_classes_for_rect((8, 8), rules.tiberium_types.len(), 0);
+    sim.ore_growth_config = OreGrowthConfig::for_test(true, false, true);
+    sim.ore_growth_state = OreGrowthState::new(16, 16);
+    sim.ore_growth_state.reset_native_tiberium_classes_for_rect(
+        (8, 8),
+        rules.tiberium_types.len(),
+        0,
+    );
     waypoints(&mut sim, &[(0, (8, 8)), (1, (8, 9))]);
     sim
 }
@@ -121,8 +119,7 @@ fn seed_growth(
 ) {
     let type_id = rules.tiberium_types.id_by_name("Riparius").unwrap();
     assert!(
-        sim.production
-            .ore_growth_state
+        sim.ore_growth_state
             .add_native_growth_queue_cell(
                 sim.overlay_grid.as_ref().unwrap(),
                 registry,
@@ -160,21 +157,18 @@ fn thirteen_original_growth_byte_controls_preserve_queues_timers_rng_and_other_f
         sim.session.set_binary_frame_for_test(73);
         ore(&mut sim, registry, (8, 8), 5);
         seed_growth(&mut sim, &rules, registry, (8, 8));
-        let queues = serde_json::to_value(&sim.production.ore_growth_state).unwrap();
+        let queues = serde_json::to_value(&sim.ore_growth_state).unwrap();
         let previous_rng = rng(&sim);
         let hash = sim.state_hash();
         let entry = action(86, raw, "A");
         assert_eq!(entry.value, Some(parsed));
         // Native reads no Rules, actor, House or waypoint for86.
         assert!(run(&mut sim, &entry, None, None));
-        assert_eq!(sim.production.ore_growth_config.grows, expected, "{raw}");
-        assert!(!sim.production.ore_growth_config.spreads);
-        assert!(sim.production.ore_growth_config.tiberium_grows_flag);
+        assert_eq!(sim.ore_growth_config.grows(), expected, "{raw}");
+        assert!(!sim.ore_growth_config.spreads());
+        assert!(sim.ore_growth_config.tiberium_grows_flag());
         assert!(sim.session.tiberium_grows_flag() && !sim.session.tiberium_spreads_flag());
-        assert_eq!(
-            serde_json::to_value(&sim.production.ore_growth_state).unwrap(),
-            queues
-        );
+        assert_eq!(serde_json::to_value(&sim.ore_growth_state).unwrap(), queues);
         assert_eq!(rng(&sim), previous_rng);
         assert_eq!(sim.session.binary_frame(), 73);
         assert_eq!(
@@ -191,7 +185,7 @@ fn primary_waypoint_and_109_bites_reach_one_centre_without_radius_mutation() {
     ore(&mut sim, registry, (8, 8), 255);
     ore(&mut sim, registry, (8, 9), 200);
     waypoints(&mut sim, &[(0, (8, 9)), (1, (8, 8))]);
-    let queues = serde_json::to_value(&sim.production.ore_growth_state).unwrap();
+    let queues = serde_json::to_value(&sim.ore_growth_state).unwrap();
     let previous_rng = rng(&sim);
     // Raw density255 distinguishes109 unit reductions from a single bite or
     // a bounded "clear" approximation.146 is the instruction-derived byte
@@ -206,10 +200,7 @@ fn primary_waypoint_and_109_bites_reach_one_centre_without_radius_mutation() {
     assert_eq!(grid.cell(8, 8).overlay_data, 146);
     assert!(grid.cell(8, 8).overlay_id.is_some());
     assert_eq!(grid.cell(8, 9).overlay_data, 200);
-    assert_eq!(
-        serde_json::to_value(&sim.production.ore_growth_state).unwrap(),
-        queues
-    );
+    assert_eq!(serde_json::to_value(&sim.ore_growth_state).unwrap(), queues);
     assert_eq!(rng(&sim), previous_rng);
 }
 
@@ -223,8 +214,8 @@ fn retail_layered_centre_removal_keeps_neighbors_and_uses_existing_spread_radar_
     let registry = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let rules = retail.rules;
     let mut sim = scene(&rules);
-    sim.production.ore_growth_config.grows = false;
-    sim.production.ore_growth_config.spreads = true;
+    sim.ore_growth_config.set_grows_for_test(false);
+    sim.ore_growth_config.set_spreads_for_test(true);
     sim.session.set_tiberium_spreads_flag_for_test(true);
     let center = (8, 8);
     ore(&mut sim, &registry, center, 11);
@@ -236,8 +227,7 @@ fn retail_layered_centre_removal_keeps_neighbors_and_uses_existing_spread_radar_
         ore(&mut sim, &registry, cell, 11);
     }
     let type_id = rules.tiberium_types.id_by_name("Riparius").unwrap();
-    sim.production
-        .ore_growth_state
+    sim.ore_growth_state
         .mark_native_spread_bitmap_for_tests(type_id.0 as usize, center);
     sim.radar_terrain_dirty_cells.clear();
     sim.tactical_dirty_cells.clear();
@@ -256,11 +246,7 @@ fn retail_layered_centre_removal_keeps_neighbors_and_uses_existing_spread_radar_
         assert_eq!(grid.cell(cell.0, cell.1).overlay_data, 11);
         assert!(grid.cell(cell.0, cell.1).overlay_id.is_some());
     }
-    let state = &sim
-        .production
-        .ore_growth_state
-        .native_tiberium_state()
-        .classes[type_id.0 as usize];
+    let state = &sim.ore_growth_state.native_tiberium_state().classes[type_id.0 as usize];
     assert!(!state.spread_bitmap.contains(&center));
     assert_eq!(state.spread_bitmap.len(), 8);
     assert!(
@@ -327,7 +313,7 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
     waypoints(&mut sim, &[(0, (8, 9)), (1, (8, 8))]);
     sim.session.set_started(true);
     sim.advance_triggers(Some(&rules), Some(registry), FrameEffects::default());
-    assert!(!sim.production.ore_growth_config.grows);
+    assert!(!sim.ore_growth_config.grows());
     assert!(sim.trigger_runtime.logic_tags.is_empty());
     assert!(
         sim.overlay_grid
@@ -341,7 +327,7 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
         sim.overlay_grid.as_ref().unwrap().cell(8, 9).overlay_data,
         5
     );
-    let queues = serde_json::to_value(&sim.production.ore_growth_state).unwrap();
+    let queues = serde_json::to_value(&sim.ore_growth_state).unwrap();
     let frame = sim
         .advance_app_frame(
             &[],
@@ -353,10 +339,7 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
         )
         .unwrap();
     assert!(frame.tick.frame_committed);
-    assert_eq!(
-        serde_json::to_value(&sim.production.ore_growth_state).unwrap(),
-        queues
-    );
+    assert_eq!(serde_json::to_value(&sim.ore_growth_state).unwrap(), queues);
     let saved = GameSnapshot::save(&sim, 0, 0, "Paused ore", 0);
     let mut restored = GameSnapshot::load(&saved).unwrap().sim;
     restored.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
@@ -371,9 +354,9 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
         .restore_map_authority_after_snapshot_load(&rules, registry, None)
         .unwrap();
     restored.resolve_type_handles(&rules);
-    assert!(!restored.production.ore_growth_config.grows);
-    assert!(!restored.production.ore_growth_config.spreads);
-    assert!(restored.production.ore_growth_config.tiberium_grows_flag);
+    assert!(!restored.ore_growth_config.grows());
+    assert!(!restored.ore_growth_config.spreads());
+    assert!(restored.ore_growth_config.tiberium_grows_flag());
     restored.session.set_started(true);
     assert!(run(&mut restored, &action(86, "257", "A"), None, None));
     let current_frame = restored.session.binary_frame() as i32;
@@ -388,11 +371,7 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
         )
         .unwrap();
     assert!(frame.tick.frame_committed);
-    let states = &restored
-        .production
-        .ore_growth_state
-        .native_tiberium_state()
-        .classes;
+    let states = &restored.ore_growth_state.native_tiberium_state().classes;
     assert!(!states.is_empty());
     for state in states {
         assert_eq!(state.growth_timer.start_frame(), current_frame);

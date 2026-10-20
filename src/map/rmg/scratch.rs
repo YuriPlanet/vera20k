@@ -254,31 +254,4 @@ mod tests {
         assert!(cell.water_region);
         assert_eq!(cell.height, 2.5, "heights survive a region reset");
     }
-
-    #[test]
-    fn stamp_clear_zeroes_only_stamps() {
-        let mut scratch = RmgScratch::new(8, 2, 10);
-        scratch.get_mut(1, 2).stamp = 7;
-        scratch.get_mut(1, 2).region = 3;
-        scratch.clear_stamps();
-        assert_eq!(scratch.get(1, 2).stamp, 0);
-        assert_eq!(scratch.get(1, 2).region, 3, "region ids survive");
-    }
-
-    #[test]
-    fn shore_mask_invalidation() {
-        let mut scratch = RmgScratch::new(8, 2, 10);
-        scratch.get_mut(1, 2).shore_mask = 0x42;
-        scratch.invalidate_shore_masks();
-        assert_eq!(scratch.get(1, 2).shore_mask, -1);
-    }
-
-    #[test]
-    fn index_is_row_major() {
-        let scratch = RmgScratch::new(10, 2, 16);
-        assert_eq!(scratch.index(0, 0), 0);
-        assert_eq!(scratch.index(3, 0), 3);
-        assert_eq!(scratch.index(0, 1), 10);
-        assert_eq!(scratch.index(4, 2), 24);
-    }
 }

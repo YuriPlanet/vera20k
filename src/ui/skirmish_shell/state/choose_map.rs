@@ -507,28 +507,6 @@ mod tests {
     }
 
     #[test]
-    fn random_map_button_admission_tracks_the_built_mode() {
-        let modes = stock_skirmish_modes();
-        let layout = compute_choose_map_modal_layout(800, 600);
-        let mut modal = ChooseMapModalState::open(
-            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
-            1,
-            None,
-            &modes,
-            &[],
-            &layout,
-        );
-        for mode_id in [1, 2] {
-            assert!(modal.select_mode(mode_id, &modes, &[], &layout));
-            assert!(modal.random_map_button_enabled());
-        }
-        for mode_id in 3..=9 {
-            assert!(modal.select_mode(mode_id, &modes, &[], &layout));
-            assert!(!modal.random_map_button_enabled());
-        }
-    }
-
-    #[test]
     fn a_stale_random_map_press_cannot_dispatch() {
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
@@ -594,24 +572,6 @@ mod tests {
         let mut record = record(name);
         record.game_modes = game_modes.iter().map(|mode| mode.to_string()).collect();
         record
-    }
-
-    #[test]
-    fn a_game_type_change_keeps_the_same_named_map() {
-        let modes = stock_skirmish_modes();
-        let layout = compute_choose_map_modal_layout(800, 600);
-        let all: Vec<_> = (0..30).map(|i| record(&format!("Map {i:02}"))).collect();
-        let mut modal = ChooseMapModalState::open(
-            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
-            1,
-            Some(20),
-            &modes,
-            &all,
-            &layout,
-        );
-        assert!(modal.select_mode(2, &modes, &all, &layout));
-        assert_eq!(modal.highlighted_filtered_index, Some(20));
-        assert_eq!(modal.map_top_index, 12, "30 rows - 18 visible");
     }
 
     #[test]

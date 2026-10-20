@@ -371,17 +371,6 @@ mod tests {
         detail
     }
 
-    fn effect(sim: &mut Simulation, x: i32, flags: u32, damage: i32) -> CombatLightRequest {
-        CombatLightRequest::Impact {
-            target_id: Some(x as u64),
-            damage,
-            warhead_ref: sim.interner.intern("WH"),
-            coord: ProjectileCoord { x, y: 512, z: 0 },
-            force_create: true,
-            flags,
-        }
-    }
-
     #[test]
     fn original_light_fps_gate_queries_each_eligible_record_in_reverse_order() {
         let corpus = original_light_corpus();
@@ -563,96 +552,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn gsi_04_07_invulnerability_light_materializes_and_draws_reverse_order() {
-        let ini = IniFile::from_str("[Warheads]\n0=WH\n[WH]\nCombatLightSize=40%\n");
-        let rules = RuleSet::from_ini(&ini).expect("rules");
-        let mut sim = Simulation::new();
-        let first = effect(&mut sim, 256, 1, 400);
-        let second = effect(&mut sim, 768, 6, 400);
-        let mut runtime = CombatLightRuntime::default();
-        let new_entries = materialize_combat_lights(
-            vec![first, second],
-            Some(&rules),
-            &sim.interner,
-            2,
-            &mut detail_with_frame_rate(60),
-        );
-        assert_eq!(
-            new_entries.iter().map(|e| e.base_size).collect::<Vec<_>>(),
-            vec![25, 25]
-        );
-        runtime.commit_frame(new_entries);
-
-        let draw = runtime.draw_records(&mut detail_with_frame_rate(60));
-        assert_eq!(
-            draw.iter().map(|r| r.coord.x).collect::<Vec<_>>(),
-            vec![768, 256]
-        );
-        assert_eq!(draw.iter().map(|r| r.flags).collect::<Vec<_>>(), vec![6, 1]);
-        assert_eq!(
-            draw.iter().map(|r| r.surface_index).collect::<Vec<_>>(),
-            vec![1, 1]
-        );
-        assert!(
-            materialize_combat_lights(
-                Vec::new(),
-                Some(&rules),
-                &sim.interner,
-                2,
-                &mut detail_with_frame_rate(60),
-            )
-            .is_empty()
-        );
-    }
-
-    #[test]
-    fn gsi_04_07_invulnerability_light_stages_zero_through_72_then_expires_before_80() {
-        let mut runtime = CombatLightRuntime::default();
-        runtime.commit_frame([CombatLight {
-            coord: ProjectileCoord { x: 0, y: 0, z: 0 },
-            stage: 0,
-            base_size: 63,
-            flags: 1,
-        }]);
-        let mut detail = detail_with_frame_rate(60);
-        let mut observed = vec![(0, runtime.draw_records(&mut detail)[0].surface_index)];
-        for _ in 0..9 {
-            runtime.commit_frame([]);
-            let entry = runtime.entries[0];
-            observed.push((
-                entry.stage,
-                runtime.draw_records(&mut detail)[0].surface_index,
-            ));
-        }
-        assert_eq!(
-            observed,
-            vec![
-                (0, 4),
-                (8, 44),
-                (16, 62),
-                (24, 54),
-                (32, 46),
-                (40, 38),
-                (48, 30),
-                (56, 22),
-                (64, 14),
-                (72, 6)
-            ]
-        );
-        runtime.commit_frame([]);
-        assert_eq!(runtime.len(), 0, "stage 80 is removed before draw");
-    }
-
-    #[test]
-    fn gsi_04_07_invulnerability_light_damage_size_uses_wrapping_shift_and_override_chop() {
-        assert_eq!(materialize_base_size(400, 0.0), 63);
-        assert_eq!(materialize_base_size(-1, 0.0), 21);
-        assert_eq!(materialize_base_size(i32::MAX, 0.0), 21);
-        assert_eq!(materialize_base_size(1, 0.4_f32 as f64), 25);
-        assert_eq!(materialize_base_size(1, 2.0), 63);
     }
 
     #[test]

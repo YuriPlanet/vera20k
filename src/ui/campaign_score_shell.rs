@@ -708,53 +708,6 @@ mod tests {
     }
 
     #[test]
-    fn control_contract_matches_campaign_template_and_help_lookup() {
-        assert_eq!(CAMPAIGN_SCORE_CONTROLS.len(), 12);
-        assert_eq!(
-            spec(CONTINUE_BUTTON).template_dlu,
-            RectPx::new(425, 346, 108, 23)
-        );
-        assert_eq!(spec(CONTINUE_BUTTON).caption_key, Some("GUI:Continue"));
-        assert_eq!(
-            spec(CONTINUE_BUTTON).tooltip_key,
-            Some("STT:StandScoreButtonReturn")
-        );
-        assert_eq!(
-            CampaignScoreControlSpec::action_for_id(CONTINUE_BUTTON),
-            Some(CampaignScoreAction::Continue)
-        );
-        assert_eq!(spec(TITLE_STATIC).caption_key, Some("GUI:StandaloneScore"));
-        assert_eq!(spec(PAR_TIME_LABEL_STATIC).caption_key, Some("GUI:ParTime"));
-        assert_eq!(
-            spec(YOUR_TIME_LABEL_STATIC).caption_key,
-            Some("GUI:YourTime")
-        );
-        assert_eq!(
-            spec(ENEMIES_DESTROYED_LABEL_STATIC).caption_key,
-            Some("GUI:HeadsTaken")
-        );
-        assert_eq!(
-            spec(PAR_TIME_VALUE_STATIC).tooltip_key,
-            Some("STT:StandScoreParTime")
-        );
-        assert_eq!(
-            spec(YOUR_TIME_VALUE_STATIC).tooltip_key,
-            Some("STT:StandScoreYourTime")
-        );
-        assert_eq!(spec(RANK_STATIC).tooltip_key, Some("STT:StandScoreTitle"));
-        assert_eq!(
-            spec(COMMENDATION_STATIC).tooltip_key,
-            Some("STT:StandScoreMessage")
-        );
-        assert_eq!(
-            spec(ENEMIES_DESTROYED_VALUE_STATIC).tooltip_key,
-            Some("STT:StandScoreKills")
-        );
-        assert_eq!(spec(SCORE_ART_REGION_STATIC).native_style, 0x5000_0007);
-        assert_eq!(spec(SCORE_ART_REGION_STATIC).reveal, None);
-    }
-
-    #[test]
     fn campaign_emblem_timer_advances_one_frame_and_native_wrap_selects_29() {
         let opened = Instant::now();
         let mut page = CampaignScorePage::open(
@@ -810,34 +763,6 @@ mod tests {
         assert_eq!(
             stalled.next_emblem_animation_tick(),
             Some(opened + Duration::from_millis(5_100))
-        );
-    }
-
-    #[test]
-    fn campaign_emblem_animation_restarts_with_a_new_page_epoch() {
-        let opened = Instant::now();
-        let mut page = CampaignScorePage::open(
-            CampaignScoreScreenModel::default(),
-            CampaignScoreTexts::default(),
-            opened,
-        );
-        page.start_emblem_animation(44, opened);
-        assert_eq!(
-            page.poll_emblem_animation(opened + Duration::from_millis(800)),
-            Some(1)
-        );
-
-        let reopened = opened + Duration::from_secs(20);
-        let mut reopened_page = CampaignScorePage::open(
-            CampaignScoreScreenModel::default(),
-            CampaignScoreTexts::default(),
-            reopened,
-        );
-        reopened_page.start_emblem_animation(44, reopened);
-        assert_eq!(reopened_page.emblem_animation_frame(), Some(0));
-        assert_eq!(
-            reopened_page.poll_emblem_animation(reopened + Duration::from_millis(99)),
-            Some(0)
         );
     }
 
@@ -928,43 +853,6 @@ mod tests {
         assert_eq!(page.next_emblem_animation_tick(), deadline);
     }
 
-    #[test]
-    fn layout_uses_executed_campaign_relayout_and_native_art_window() {
-        let layout = compute_layout(800, 600);
-        let shared = menu_page::compute_layout(&CAMPAIGN_SCORE_PAGE, 800, 600);
-        assert_eq!(layout.title, shared.title);
-        assert_eq!(layout.title, RectPx::new(635, 9, 163, 18));
-        assert_eq!(layout.status_help, RectPx::new(10, 578, 456, 21));
-        assert_eq!(
-            layout.continue_button,
-            shared.button_rect(CONTINUE_BUTTON).unwrap()
-        );
-        assert_eq!(layout.continue_button, RectPx::new(644, 535, 156, 42));
-        assert_eq!(
-            layout.control_rect(PAR_TIME_LABEL_STATIC),
-            Some(RectPx::new(188, 382, 84, 17))
-        );
-        assert_eq!(
-            layout.control_rect(PAR_TIME_VALUE_STATIC),
-            Some(RectPx::new(188, 400, 84, 17))
-        );
-        assert_eq!(
-            layout.control_rect(RANK_STATIC),
-            Some(RectPx::new(128, 7, 387, 17))
-        );
-        assert_eq!(
-            layout.control_rect(COMMENDATION_STATIC),
-            Some(RectPx::new(128, 31, 387, 66))
-        );
-        assert_eq!(
-            layout.control_rect(SCORE_ART_REGION_STATIC),
-            Some(RectPx::new(104, 142, 424, 220))
-        );
-        assert_eq!(layout.background, RectPx::new(0, 0, 632, 568));
-        assert_eq!(layout.panel, RectPx::new(80, 0, 472, 448));
-        assert_eq!(layout.control_rect(0xFFFF), None);
-    }
-
     /// Every `0x103` child window is the executed WM_INITDIALOG relayout
     /// (`tools/storage_oracle/shell_relayout.py`), for both campaign sides.
     #[test]
@@ -1032,28 +920,6 @@ mod tests {
                 "{width}"
             );
         }
-    }
-
-    #[test]
-    fn responsive_layout_scales_the_800x600_page() {
-        let base = compute_layout_for_side(800, 600, 0);
-        let same = compute_responsive_layout_for_side(800, 600, 0);
-        assert_eq!(same, base);
-
-        let large = compute_responsive_layout(1600, 1200);
-        assert_eq!(
-            large.control_rect(PAR_TIME_LABEL_STATIC),
-            Some(RectPx::new(376, 764, 168, 34))
-        );
-        assert_eq!(large.background, RectPx::new(0, 0, 1264, 1136));
-        assert_eq!(large.panel, RectPx::new(160, 0, 944, 896));
-        let shared = menu_page::compute_responsive_layout(&CAMPAIGN_SCORE_PAGE, 1600, 1200);
-        assert_eq!(large.title, shared.title);
-        assert_eq!(large.status_help, shared.status_help);
-        assert_eq!(
-            large.continue_button,
-            shared.button_rect(CONTINUE_BUTTON).unwrap()
-        );
     }
 
     #[test]

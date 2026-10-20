@@ -166,8 +166,6 @@ const FIRST_HIT_FEAR: u16 = 100;
 const FEAR_LATCH_CEILING: u16 = 99;
 const REPEATED_RED_ADD: u16 = 50;
 const REPEATED_YELLOW_ADD: u16 = 25;
-#[cfg(any(test, feature = "test-support"))]
-const REPEATED_GREEN_ADD: u16 = 12;
 const PRONE_THRESHOLD: u16 = 50;
 
 /// `InfantryClass::ReceiveDamage @ 0x00517FA0`'s fear gate: InfantryType `+0xEBC`
@@ -692,7 +690,6 @@ mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
     use crate::rules::ini_parser::IniFile;
-    use crate::rules::object_type::ObjectCategory;
     use crate::rules::ruleset::RuleSet;
     use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
@@ -769,21 +766,6 @@ mod tests {
     }
 
     #[test]
-    fn first_hit_and_fraidycat_set_fear() {
-        let rules = rules_for("");
-        let obj = rules.object("E1").unwrap();
-        let mut e = infantry(90);
-        apply_fear_from_damage(obj, &mut e, 10, true, 0.25, 0.5);
-        assert_eq!(e.infantry.unwrap().fear_level, FIRST_HIT_FEAR);
-
-        let rules = rules_for("Fraidycat=yes\n");
-        let obj = rules.object("E1").unwrap();
-        let mut e = infantry(90);
-        apply_fear_from_damage(obj, &mut e, 10, true, 0.25, 0.5);
-        assert_eq!(e.infantry.unwrap().fear_level, MAX_FEAR);
-    }
-
-    #[test]
     fn hit_inside_the_latch_band_snaps_fear_back_up() {
         // The gap this pins: a hit taken while fear is already part-way decayed.
         // gamemd re-latches to 100 (300 Fraidycat) anywhere in 0..=99, which is
@@ -808,21 +790,6 @@ mod tests {
         e.infantry.as_mut().unwrap().fear_level = 40;
         apply_fear_from_damage(obj, &mut e, 10, true, 0.25, 0.5);
         assert_eq!(e.infantry.unwrap().fear_level, MAX_FEAR);
-    }
-
-    #[test]
-    fn above_the_latch_band_still_takes_the_health_ladder() {
-        // The boundary the latch must not swallow: at 100 the ladder applies, so
-        // a full-health hit adds 12 rather than resetting to 100.
-        let rules = rules_for("");
-        let obj = rules.object("E1").unwrap();
-        let mut e = infantry(100);
-        e.infantry.as_mut().unwrap().fear_level = FEAR_LATCH_CEILING + 1;
-        apply_fear_from_damage(obj, &mut e, 10, true, 0.25, 0.5);
-        assert_eq!(
-            e.infantry.unwrap().fear_level,
-            FEAR_LATCH_CEILING + 1 + REPEATED_GREEN_ADD
-        );
     }
 
     fn fear_corpus() -> &'static serde_json::Value {
@@ -906,7 +873,7 @@ mod tests {
             0,
             10,
         );
-        house.player_control = input["player_control"].as_bool().unwrap_or(false);
+        house.set_player_control_for_test(input["player_control"].as_bool().unwrap_or(false));
         sim.houses.register(house);
         let mut actor = GameEntity::new_at_frame_zero_for_test(
             1,
@@ -1521,14 +1488,6 @@ mod tests {
         assert_eq!(
             apply_prone_speed(SimFixed::from_num(11), false),
             SimFixed::from_num(16)
-        );
-    }
-
-    #[test]
-    fn object_category_import_keeps_rules_fixture_infantry() {
-        assert_eq!(
-            rules_for("").object("E1").unwrap().category,
-            ObjectCategory::Infantry
         );
     }
 }

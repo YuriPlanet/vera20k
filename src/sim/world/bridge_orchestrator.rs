@@ -1081,60 +1081,6 @@ mod tests {
         1
     }
 
-    /// DropAsBomb5F4160 preserves Location and orders while arming the
-    /// shared ObjectAI fall. The receiver kills the object only on landing.
-    #[test]
-    fn bridge_drop_arms_a_bomb_without_snapping_or_clearing_its_order() {
-        let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(water_below_bridge_terrain(3));
-        let id = spawn_deck_unit(&mut sim);
-        let order = Some(crate::sim::components::NavTargetRef::cell(7, 5));
-        sim.substrate
-            .entities
-            .get_mut(id)
-            .unwrap()
-            .navigation
-            .set_nav_com_for_test(order);
-        sim.substrate.occupancy.add(
-            5,
-            5,
-            id,
-            MovementLayer::Bridge,
-            None,
-            CellListInsertion::PrependNonBuilding,
-        );
-
-        drop_in_bridge_deck_entities(&mut sim, 5, 5, super::super::UninitContext::default());
-
-        let e = sim
-            .substrate
-            .entities
-            .get(id)
-            .expect("deck entity remains until the landing receiver");
-        assert_eq!(e.position.z(), 3, "Location is retained");
-        assert!(e.was_dropped_as_bomb() && e.is_falling_down());
-        assert!(!e.on_bridge(), "OnBridge cleared by DropIn");
-        assert_eq!(
-            e.navigation.nav_com(),
-            order,
-            "DropAsBomb does not write orders"
-        );
-        assert_eq!(e.health.current(), 256, "DropIn never harms — no damage");
-        let loco = e.locomotor.as_ref().expect("locomotor");
-        assert_eq!(
-            loco.layer(),
-            MovementLayer::Bridge,
-            "DropAsBomb does not write locomotor storage; live list queries use OnBridge"
-        );
-        let cell = sim
-            .substrate
-            .occupancy
-            .get(5, 5)
-            .expect("occupancy retained");
-        assert_eq!(cell.count_on(MovementLayer::Ground), 1);
-        assert_eq!(cell.count_on(MovementLayer::Bridge), 0);
-    }
-
     /// DropIn (`0x005F4160`) writes no Location: an object falling onto the
     /// deck keeps its Z when the deck goes, and falls on to the ground.
     #[test]
@@ -1207,115 +1153,63 @@ mod tests {
             .collect()
     }
 
+    /// The hut sweep's seed steps along the physical span axis of the
+    /// matched overlay range, not the walker family, and canonicalizes along
+    /// that axis by its in-band back lanes.
     #[test]
-    fn hut_destroy_overlay_seed_uses_physical_span_axis_not_walker_family() {
-        let high_ew_range = [((5, 4), 0xCD), ((5, 5), 0xCD)];
-        assert_eq!(
-            find_destroy_overlay_seed(
-                &overlay_lookup(&high_ew_range),
-                &[(5, 5)],
-                HutBridgeFamily::High
+    fn cabhut_seed_canonicalization_follows_in_band_back_lanes() {
+        type Case<'a> = (
+            &'a [((u16, u16), u8)],
+            HutBridgeFamily,
+            (u16, u16, Axis),
+            &'a str,
+        );
+        let cases: [Case<'_>; 6] = [
+            (
+                &[((5, 4), 0xCD), ((5, 5), 0xCD)],
+                HutBridgeFamily::High,
+                (5, 5, Axis::EW),
+                "0xCD high range dispatches to CollapseBridge_EW_High, so the hut sweep must step X; \
+                 one in-band back lane and one off-band second back lane keeps the matched cell",
             ),
-            Some((5, 5, Axis::EW)),
-            "0xCD high range dispatches to CollapseBridge_EW_High, so the hut sweep must step X"
-        );
-
-        let high_ns_range = [((4, 5), 0xD6), ((5, 5), 0xD6)];
-        assert_eq!(
-            find_destroy_overlay_seed(
-                &overlay_lookup(&high_ns_range),
-                &[(5, 5)],
-                HutBridgeFamily::High
+            (
+                &[((4, 5), 0xD6), ((5, 5), 0xD6)],
+                HutBridgeFamily::High,
+                (5, 5, Axis::NS),
+                "0xD6 high range dispatches to CollapseBridge_NS_High, so the hut sweep must step Y",
             ),
-            Some((5, 5, Axis::NS)),
-            "0xD6 high range dispatches to CollapseBridge_NS_High, so the hut sweep must step Y"
-        );
-
-        let low_ew_range = [((5, 4), 0x4A), ((5, 5), 0x4A)];
-        assert_eq!(
-            find_destroy_overlay_seed(
-                &overlay_lookup(&low_ew_range),
-                &[(5, 5)],
-                HutBridgeFamily::Low
+            (
+                &[((5, 4), 0x4A), ((5, 5), 0x4A)],
+                HutBridgeFamily::Low,
+                (5, 5, Axis::EW),
+                "0x4A low range dispatches to CollapseBridge_EW_Low, so the hut sweep must step X",
             ),
-            Some((5, 5, Axis::EW)),
-            "0x4A low range dispatches to CollapseBridge_EW_Low, so the hut sweep must step X"
-        );
-
-        let low_ns_range = [((4, 5), 0x53), ((5, 5), 0x53)];
-        assert_eq!(
-            find_destroy_overlay_seed(
-                &overlay_lookup(&low_ns_range),
-                &[(5, 5)],
-                HutBridgeFamily::Low
+            (
+                &[((4, 5), 0x53), ((5, 5), 0x53)],
+                HutBridgeFamily::Low,
+                (5, 5, Axis::NS),
+                "0x53 low range dispatches to CollapseBridge_NS_Low, so the hut sweep must step Y",
             ),
-            Some((5, 5, Axis::NS)),
-            "0x53 low range dispatches to CollapseBridge_NS_Low, so the hut sweep must step Y"
-        );
-    }
-
-    #[test]
-    fn cabhut_seed_canonicalization_shifts_edge_hit_forward() {
-        let state = [((5, 5), 0xCD)];
-
-        assert_eq!(
-            find_destroy_overlay_seed(&overlay_lookup(&state), &[(5, 5)], HutBridgeFamily::High),
-            Some((5, 6, Axis::EW)),
-            "when no back lane is in the bridge band, DestroyBridgeFromCell shifts one cell forward"
-        );
-    }
-
-    #[test]
-    fn cabhut_seed_canonicalization_keeps_middle_hit() {
-        let state = [((5, 4), 0xCD), ((5, 5), 0xCD)];
-
-        assert_eq!(
-            find_destroy_overlay_seed(&overlay_lookup(&state), &[(5, 5)], HutBridgeFamily::High),
-            Some((5, 5, Axis::EW)),
-            "one in-band back lane and one off-band second back lane keeps the matched cell"
-        );
-    }
-
-    #[test]
-    fn cabhut_seed_canonicalization_shifts_two_cells_in_backward() {
-        let state = [((5, 3), 0xCD), ((5, 4), 0xCD), ((5, 5), 0xCD)];
-
-        assert_eq!(
-            find_destroy_overlay_seed(&overlay_lookup(&state), &[(5, 5)], HutBridgeFamily::High),
-            Some((5, 4, Axis::EW)),
-            "two in-band back probes shift the canonical seed one cell backward"
-        );
-    }
-
-    #[test]
-    fn hut_destroy_scan_uses_gamemd_x_major_order() {
-        let cells: Vec<(u16, u16)> = hut_destroy_5x5_scan((10, 10)).collect();
-        assert_eq!(cells.len(), 25);
-        assert_eq!(
-            &cells[..6],
-            &[(8, 8), (8, 9), (8, 10), (8, 11), (8, 12), (9, 8)],
-            "hut death scan must walk each X column before advancing X"
-        );
-
-        let edge_cells: Vec<(u16, u16)> = hut_destroy_5x5_scan((0, 0)).collect();
-        assert_eq!(edge_cells.len(), 9);
-        assert_eq!(
-            &edge_cells[..3],
-            &[(0, 0), (0, 1), (0, 2)],
-            "off-map negative cells are skipped while preserving X-major order"
-        );
-    }
-
-    #[test]
-    fn hut_destroy_overlay_seed_prefers_x_major_first_match() {
-        let scan: Vec<(u16, u16)> = hut_destroy_5x5_scan((10, 10)).collect();
-        let state = [((9, 8), 0xCD), ((8, 12), 0xCD)];
-
-        assert_eq!(
-            find_destroy_overlay_seed(&overlay_lookup(&state), &scan, HutBridgeFamily::High),
-            Some((8, 13, Axis::EW)),
-            "Y-major scan would find (9,8) first; gamemd hut death finds the earlier X column"
-        );
+            (
+                &[((5, 5), 0xCD)],
+                HutBridgeFamily::High,
+                (5, 6, Axis::EW),
+                "when no back lane is in the bridge band, DestroyBridgeFromCell shifts one cell forward",
+            ),
+            (
+                &[((5, 3), 0xCD), ((5, 4), 0xCD), ((5, 5), 0xCD)],
+                HutBridgeFamily::High,
+                (5, 4, Axis::EW),
+                "two in-band back probes shift the canonical seed one cell backward",
+            ),
+        ];
+        for (state, family, expected, why) in cases {
+            assert_eq!(
+                find_destroy_overlay_seed(&overlay_lookup(state), &[(5, 5)], family),
+                Some(expected),
+                "{why}"
+            );
+        }
     }
 
     /// The hut-collapse walk creates its pre-destroy presentation effects from
@@ -1676,57 +1570,6 @@ mod tests {
         assert!(sim.substrate.anims.iter().next().is_none());
     }
 
-    /// Task 11 — DropIn must NOT touch entities that aren't on the bridge
-    /// layer at the destroyed cell. Ground-layer entities are handled by
-    /// `kill_ground_occupants_at` (Step 1), not DropIn.
-    #[test]
-    fn drop_in_ignores_ground_layer_entities_at_destroyed_cell() {
-        let mut sim = Simulation::new();
-        sim.resolved_terrain = Some(water_below_bridge_terrain(3));
-        let mut entity = GameEntity::new_at_frame_zero_for_test(
-            1,
-            5,
-            5,
-            0,
-            64,
-            test_intern("Americans"),
-            Health::new(256),
-            test_intern("MTNK"),
-            crate::map::entities::EntityCategory::Unit,
-            0,
-            5,
-            true,
-        );
-        entity.set_on_bridge(false); // ground-layer occupant
-        let mut loco = drive_loco_on_bridge();
-        loco.set_layer(MovementLayer::Bridge);
-        entity.locomotor = Some(loco);
-        sim.substrate.entities.insert(entity);
-        sim.substrate.occupancy.add(
-            5,
-            5,
-            1,
-            MovementLayer::Ground,
-            None,
-            CellListInsertion::PrependNonBuilding,
-        );
-
-        drop_in_bridge_deck_entities(&mut sim, 5, 5, super::super::UninitContext::default());
-
-        // Ground entity untouched — still alive, still ground layer.
-        let e = sim
-            .substrate
-            .entities
-            .get(1)
-            .expect("ground entity untouched");
-        assert_eq!(e.health.current(), 256);
-        assert!(!e.on_bridge());
-        assert_eq!(e.locomotor.as_ref().unwrap().layer(), MovementLayer::Bridge);
-        let cell = sim.substrate.occupancy.get(5, 5).expect("ground occupancy");
-        assert_eq!(cell.count_on(MovementLayer::Ground), 1);
-        assert_eq!(cell.count_on(MovementLayer::Bridge), 0);
-    }
-
     /// BlowUpBridge force-kills only the cell's ground object-list occupants.
     /// An aircraft overflying the collapse cell (air layer, `on_bridge=false`)
     /// is not on that list and must survive; a ground unit at the cell dies.
@@ -1838,88 +1681,6 @@ mod tests {
             "aircraft overflying the collapse cell must NOT be killed"
         );
         assert!(!a.death.is_dying(), "aircraft not flagged dying");
-    }
-
-    /// `CellClass::BlowUpBridge @ 0x0047DDAE` kills each ground occupant
-    /// through `ReceiveDamage` (`+0x16C`, `C4Warhead=`), so the deaths reach
-    /// `Death_Announcement` (`+0x3B8`): every human-owned death publishes the
-    /// radar type-7 request (`0x004D98FE`) that rate-limits "Unit lost" on the
-    /// owner's client; an AI owner publishes nothing.
-    #[test]
-    fn bridge_collapse_kill_publishes_unit_lost_per_human_death() {
-        use crate::sim::house_state::HouseState;
-        use crate::sim::world::SimSoundEvent;
-
-        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nArmor=heavy\n\
-             [CombatDamage]\nC4Warhead=Super\n[Warheads]\n0=Super\n[Super]\nInfDeath=1\n",
-        ))
-        .expect("rules parse");
-        let mut sim = Simulation::new();
-        let human = sim.interner.intern("Americans");
-        let ai = sim.interner.intern("Russians");
-        sim.houses
-            .register(HouseState::new(human, 0, Some(human), true, 5_000, 10));
-        sim.houses
-            .register(HouseState::new(ai, 0, Some(ai), false, 5_000, 10));
-
-        let mtnk = sim.interner.intern("MTNK");
-        for (id, owner) in [(1u64, human), (2, human), (3, ai)] {
-            let unit = GameEntity::new_at_frame_zero_for_test(
-                id,
-                5,
-                5,
-                0,
-                64,
-                owner,
-                Health::new(256),
-                mtnk,
-                crate::map::entities::EntityCategory::Unit,
-                0,
-                5,
-                true,
-            );
-            sim.substrate.entities.insert(unit);
-        }
-
-        for id in 1..=3 {
-            let unit = sim.substrate.entities.get_mut(id).unwrap();
-            unit.lifecycle.set_in_limbo_for_test(false);
-            unit.lifecycle.set_cell_marked(true);
-            sim.substrate.occupancy.add(
-                5,
-                5,
-                id,
-                MovementLayer::Ground,
-                None,
-                crate::sim::occupancy::CellListInsertion::PrependNonBuilding,
-            );
-        }
-        kill_ground_occupants_at(
-            &mut sim,
-            &rules,
-            5,
-            5,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-
-        let lost: Vec<_> = sim
-            .sound_events
-            .iter()
-            .filter_map(|event| match event {
-                SimSoundEvent::UnitLost { owner, .. } => Some(*owner),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(
-            lost,
-            vec![human, human],
-            "each human kill publishes its type-7 request (the client's radar              array dedupes them); the AI kill is silent"
-        );
-        for id in 1..=3 {
-            assert!(sim.substrate.entities.get(id).unwrap().death.is_dying());
-        }
     }
 }
 

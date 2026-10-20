@@ -37,7 +37,7 @@ struct HouseFactoryAbandonment {
 
 impl HouseFactoryAbandonment {
     fn capture(sim: &Simulation, owner: InternedId, category: ProductionCategory) -> Option<Self> {
-        let factory = sim.production.factories.view(owner, category)?;
+        let factory = sim.production.factories().view(owner, category)?;
         Some(Self {
             owner,
             category,
@@ -135,7 +135,7 @@ pub fn enqueue_by_type(
         return false;
     };
     let type_interned = sim.interner.intern(type_id);
-    if let Some((active, suspended)) = sim.production.factories.active_object(owner_id, category)
+    if let Some((active, suspended)) = sim.production.factories().active_object(owner_id, category)
         && active == type_interned
         && suspended
     {
@@ -145,7 +145,7 @@ pub fn enqueue_by_type(
         let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner_id, obj));
         let frame = sim.session.binary_frame();
         let money = crate::sim::credit_income::available_money(sim, owner_id);
-        sim.production.factories.resume(
+        sim.production.factories_mut().resume(
             FactoryHolder::House(owner_id, category),
             time_to_build,
             frame,
@@ -155,10 +155,10 @@ pub fn enqueue_by_type(
         publish_cameo_factory_link(sim, owner_id, category, type_interned);
         return true;
     }
-    let enqueue_order = sim.production.next_enqueue_order;
+    let enqueue_order = sim.production.next_enqueue_order();
     let cost = sim.cost_of(owner_id, obj, rules);
     let at_build_limit = check_build_limit(sim, rules, owner_id, obj);
-    let outcome = sim.production.factories.enqueue(
+    let outcome = sim.production.factories_mut().enqueue(
         owner_id,
         category,
         type_interned,
@@ -172,7 +172,7 @@ pub fn enqueue_by_type(
             .push(SimSoundEvent::ProductionRefused { owner: owner_id });
         return false;
     }
-    sim.production.next_enqueue_order = enqueue_order.saturating_add(1);
+    sim.production.spend_enqueue_order();
     if outcome == EnqueueOutcome::Started {
         start_active_production(
             sim,
@@ -195,7 +195,7 @@ pub fn suspend_production(sim: &mut Simulation, owner: &str, category: Productio
     };
     let frame = sim.session.binary_frame();
     sim.production
-        .factories
+        .factories_mut()
         .suspend(owner_id, category, frame, true)
 }
 
@@ -231,7 +231,7 @@ pub(super) fn start_active_production(
 ) -> Option<u64> {
     let owner_id = sim
         .production
-        .factories
+        .factories()
         .factory(holder)
         .map(|factory| factory.owner)?;
     let obj = sim.object_type(type_id, rules)?;
@@ -244,7 +244,7 @@ pub(super) fn start_active_production(
         sim.construct_object_limbo_at_height(&type_name, &owner, 0, 0, 0, 0, rules, effects)?;
     let linked = sim
         .production
-        .factories
+        .factories_mut()
         .link_active_entity(holder, stable_id);
     if linked != Some(stable_id) {
         let _ = sim.discard_constructed_limbo(stable_id, Some(rules), effects);
@@ -254,7 +254,7 @@ pub(super) fn start_active_production(
     let frame = sim.session.binary_frame();
     let money = crate::sim::credit_income::available_money(sim, owner_id);
     sim.production
-        .factories
+        .factories_mut()
         .resume(holder, time_to_build, frame, held_start, money);
     if let FactoryHolder::House(owner, category) = holder {
         publish_cameo_factory_link(sim, owner, category, type_id);
@@ -274,7 +274,7 @@ fn publish_cameo_factory_link(
     if sim.session.current_house() != Some(owner) {
         return;
     }
-    if let Some(factory) = sim.production.factories.view(owner, category) {
+    if let Some(factory) = sim.production.factories().view(owner, category) {
         sim.lifecycle_outputs.push(
             crate::sim::world::LifecycleOutput::ProductionFactoryLinked {
                 owner,
@@ -305,7 +305,7 @@ pub(super) fn settle_abandoned(
         .map(|object| object.category);
     refund_abandoned(sim, rules, owner_id, abandoned.type_id, abandoned.balance);
     sim.production
-        .factories
+        .factories_mut()
         .reset_for_abandon(holder, sim.session.binary_frame());
     let game_mode_nonzero = sim.session.game_mode_nonzero();
     if let Some(category) = category
@@ -313,8 +313,8 @@ pub(super) fn settle_abandoned(
         && !house.is_controlled_by_human(game_mode_nonzero)
     {
         match UnitChoiceKind::of(category) {
-            Some(kind) => house.ai_unit_choices.clear(kind),
-            None => house.ai_production.clear_building_choice(),
+            Some(kind) => house.ai_unit_choices_mut().clear(kind),
+            None => house.ai_production_mut().clear_building_choice(),
         }
     }
     //4CA0E3..4CA109 brackets the scalar destructor AND final held=NULL.
@@ -328,7 +328,7 @@ pub(super) fn settle_abandoned(
                 "AbandonProduction destroys the held limbo object"
             );
         }
-        sim.production.factories.finish_abandon(holder);
+        sim.production.factories_mut().finish_abandon(holder);
     });
 }
 
@@ -344,7 +344,7 @@ pub(crate) fn abandon_house_factories(
     owner: InternedId,
     effects: FrameEffects<'_>,
 ) {
-    for holder in sim.production.factories.owner_holders_last_first(owner) {
+    for holder in sim.production.factories().owner_holders_last_first(owner) {
         abandon_production(sim, rules, holder, owner, effects);
     }
 }
@@ -359,10 +359,10 @@ pub(super) fn abandon_production(
     owner: InternedId,
     effects: FrameEffects<'_>,
 ) {
-    if let Some(abandoned) = sim.production.factories.pending_abandonment(holder) {
+    if let Some(abandoned) = sim.production.factories().pending_abandonment(holder) {
         settle_abandoned(sim, rules, owner, holder, abandoned, effects);
     }
-    sim.production.factories.remove_factory(holder);
+    sim.production.factories_mut().remove_factory(holder);
 }
 
 /// The AbandonProduction refund: the object's Cost_Of for its owner now, less the
@@ -436,7 +436,7 @@ pub fn cancel_production_for_owner(
     let abandonment = HouseFactoryAbandonment::capture(sim, owner_id, category);
     let outcome = sim
         .production
-        .factories
+        .factories_mut()
         .cancel_one(owner_id, category, type_id, all, build_cat);
     match outcome {
         CancelOutcome::NoMatch => false,
@@ -474,14 +474,14 @@ fn finish_house_abandon(
 ) {
     let queued = sim
         .production
-        .factories
+        .factories()
         .view(owner_id, category)
         .is_some_and(|factory| !factory.queue.is_empty());
     if queued {
         start_next_queued(sim, rules, owner_id, category, effects);
     } else {
         sim.production
-            .factories
+            .factories_mut()
             .remove_factory(FactoryHolder::House(owner_id, category));
     }
 }
@@ -496,7 +496,11 @@ pub(super) fn start_next_queued(
     category: ProductionCategory,
     effects: FrameEffects<'_>,
 ) {
-    if let Some(type_id) = sim.production.factories.start_next_queued(owner, category) {
+    if let Some(type_id) = sim
+        .production
+        .factories_mut()
+        .start_next_queued(owner, category)
+    {
         let owner = sim.interner.resolve(owner).to_owned();
         let type_id = sim.interner.resolve(type_id).to_owned();
         let _ = enqueue_by_type(sim, rules, &owner, &type_id, effects, true);
@@ -510,7 +514,7 @@ pub(super) fn active_entity_id(
     category: ProductionCategory,
 ) -> Option<u64> {
     sim.production
-        .factories
+        .factories()
         .view(owner_id, category)
         .and_then(|view| view.object.and_then(|object| object.entity_id))
         .filter(|&stable_id| sim.substrate.entities.contains(stable_id))
@@ -524,7 +528,7 @@ pub(super) fn publish_completion(
 ) {
     let Some(type_id) = sim
         .production
-        .factories
+        .factories()
         .view(owner, category)
         .and_then(|view| view.object.map(|object| object.type_id))
     else {
@@ -532,7 +536,7 @@ pub(super) fn publish_completion(
     };
     if !sim
         .production
-        .factories
+        .factories_mut()
         .account_completed_object_once(owner, category)
     {
         return;
@@ -558,7 +562,7 @@ pub(in crate::sim) fn release_delivered_mobile(
 ) {
     let product = sim
         .production
-        .factories
+        .factories()
         .view(owner, category)
         .and_then(|factory| factory.object)
         .map(|object| {
@@ -567,7 +571,7 @@ pub(in crate::sim) fn release_delivered_mobile(
                 .expect("a factory product owns its constructed identity")
         });
     sim.production
-        .factories
+        .factories_mut()
         .complete_production(owner, category, sim.session.binary_frame());
     let owner_name = sim.interner.resolve(owner).to_owned();
     let _ = cancel_production_for_owner(
@@ -706,7 +710,7 @@ impl ReadyFactoryObject {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        sim.production.factories.complete_production(
+        sim.production.factories_mut().complete_production(
             self.owner,
             self.category,
             sim.session.binary_frame(),
@@ -766,7 +770,7 @@ pub(super) fn ready_object(
 ) -> Option<ReadyFactoryObject> {
     let object = sim
         .production
-        .factories
+        .factories()
         .view(owner, category)?
         .complete_object()?;
     if object.type_id != type_id {
@@ -814,14 +818,18 @@ pub fn complete_held_building_for_test(
         .object_type(type_id, rules)
         .expect("completed-building fixture type");
     let (category, cost) = (production_category_for_object(object), object.cost.max(0));
-    let enqueue_order = sim.production.next_enqueue_order;
+    let enqueue_order = sim.production.next_enqueue_order();
     assert!(
-        sim.production
-            .factories
-            .test_enqueue_kernel(owner, category, type_id, enqueue_order, cost),
+        sim.production.factories_mut().test_enqueue_kernel(
+            owner,
+            category,
+            type_id,
+            enqueue_order,
+            cost
+        ),
         "the fixture arms one fresh factory head"
     );
-    sim.production.next_enqueue_order = enqueue_order.saturating_add(1);
+    sim.production.spend_enqueue_order();
     let held = start_active_production(
         sim,
         rules,
@@ -831,11 +839,15 @@ pub fn complete_held_building_for_test(
         false,
     )
     .expect("the fixture constructs its object at StartProduction");
-    assert!(sim.production.factories.test_arm_ready(owner, category));
+    assert!(
+        sim.production
+            .factories_mut()
+            .test_arm_ready(owner, category)
+    );
     super::production_queue::publish_production_changes(sim, rules);
     assert!(
         sim.production
-            .factories
+            .factories()
             .view(owner, category)
             .and_then(|factory| factory.complete_object())
             .is_some_and(|object| object.completion_accounted),
@@ -882,7 +894,7 @@ pub(in crate::sim) fn update_factory_queue(
 ) {
     let queued: Vec<_> = sim
         .production
-        .factories
+        .factories()
         .view(owner, category)
         .map(|factory| factory.queue.iter().map(|entry| entry.type_id).collect())
         .unwrap_or_default();
@@ -892,13 +904,13 @@ pub(in crate::sim) fn update_factory_queue(
         });
         if lost {
             sim.production
-                .factories
+                .factories_mut()
                 .remove_queued(owner, category, index);
         }
     }
     let active = sim
         .production
-        .factories
+        .factories()
         .view(owner, category)
         .and_then(|factory| factory.object.map(|object| object.type_id));
     if active.is_some_and(|type_id| {
@@ -908,7 +920,7 @@ pub(in crate::sim) fn update_factory_queue(
     }) {
         if let Some(abandoned) = sim
             .production
-            .factories
+            .factories()
             .pending_abandonment(FactoryHolder::House(owner, category))
         {
             settle_abandoned(
@@ -929,20 +941,20 @@ pub(in crate::sim) fn update_factory_queue(
         if find_factory(sim, rules, owner, object, true, true, true).is_none() {
             let frame = sim.session.binary_frame();
             sim.production
-                .factories
+                .factories_mut()
                 .suspend(owner, category, frame, false);
             //509252..50926E requests repaint of the active strip, without
             //selection/EVA/membership changes. The client already redraws its
             //existing FactoryView each frame; no second dirty-state owner.
         } else if sim
             .production
-            .factories
+            .factories()
             .automatic_resume_pending(owner, category)
         {
             let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner, object));
             let frame = sim.session.binary_frame();
             let money = crate::sim::credit_income::available_money(sim, owner);
-            sim.production.factories.resume(
+            sim.production.factories_mut().resume(
                 FactoryHolder::House(owner, category),
                 time_to_build,
                 frame,
@@ -953,14 +965,14 @@ pub(in crate::sim) fn update_factory_queue(
     }
     if sim
         .production
-        .factories
+        .factories()
         .view(owner, category)
         .is_some_and(|factory| factory.object.is_none() && factory.queue.is_empty())
     {
         // Scalar Factory expiry clears the House pointer, without SidebarAbandon.
         // Existing cameo identity/live checks reject any stale raw link.
         sim.production
-            .factories
+            .factories_mut()
             .remove_factory(FactoryHolder::House(owner, category));
     }
 }
@@ -997,7 +1009,7 @@ pub(in crate::sim) fn detach_building_production(
     for &category in categories {
         let Some(type_id) = sim
             .production
-            .factories
+            .factories()
             .view(owner, category)
             .and_then(|factory| factory.object.map(|object| object.type_id))
         else {
@@ -1029,7 +1041,7 @@ pub(in crate::sim) fn detach_building_production(
 /// The global FactoryAI charge sweep55B66A runs after all live-object
 /// callbacks and before the late House strip recheck/command tail.
 pub(in crate::sim) fn step_factories(sim: &mut Simulation) {
-    let mut registry = std::mem::take(&mut sim.production.factories);
+    let mut registry = std::mem::take(sim.production.factories_mut());
     registry.step_all(&mut sim.houses, sim.session.binary_frame());
     #[cfg(feature = "debug-tools")]
     if let Some(owner) = sim.trainer_owner()
@@ -1037,7 +1049,7 @@ pub(in crate::sim) fn step_factories(sim: &mut Simulation) {
     {
         registry.debug_complete(&mut sim.houses, sim.session.binary_frame(), owner);
     }
-    sim.production.factories = registry;
+    *sim.production.factories_mut() = registry;
 }
 
 /// `StripClass::Recalculate @ 0x006AA600` over the builds of every human
@@ -1069,24 +1081,24 @@ pub(in crate::sim) fn recalculate_strips(
     owner: InternedId,
 ) -> Vec<crate::sim::command::CommandEnvelope> {
     use crate::sim::command::{Command, CommandEnvelope};
-    if !sim.houses.get(&owner).is_some_and(|house| house.is_human) {
+    if !sim.houses.get(&owner).is_some_and(|house| house.is_human()) {
         return Vec::new();
     }
     let mut abandons = Vec::new();
-    for (factory_owner, category, types) in sim.production.factories.house_build_types() {
+    for (factory_owner, category, types) in sim.production.factories().house_build_types() {
         if factory_owner != owner {
             continue;
         }
         let active = sim
             .production
-            .factories
+            .factories()
             .active_object(owner, category)
             .map(|(type_id, ..)| type_id);
         let kind = match category {
             ProductionCategory::Defense => ProductionCategory::Building,
             other => other,
         };
-        let kind_factory = sim.production.factories.view(owner, kind).is_some();
+        let kind_factory = sim.production.factories().view(owner, kind).is_some();
         for type_id in types {
             let kept = sim
                 .object_type(type_id, rules)
@@ -1126,9 +1138,9 @@ pub(in crate::sim) fn refresh_factory_rates_for_house(
     rules: &RuleSet,
     owner: InternedId,
 ) {
-    let mut registry = std::mem::take(&mut sim.production.factories);
+    let mut registry = std::mem::take(sim.production.factories_mut());
     registry.refresh_rates_for_house(sim, rules, owner);
-    sim.production.factories = registry;
+    *sim.production.factories_mut() = registry;
 }
 
 /// A saved relationship that the live factory operations cannot publish.
@@ -1157,7 +1169,7 @@ pub fn validate_restored_factory_state(
 
     let fail = |owner, reason| FactoryRestoreError { owner, reason };
     let mut roots = BTreeSet::new();
-    for (&holder, factory) in sim.production.factories.keyed_factories() {
+    for (&holder, factory) in sim.production.factories().keyed_factories() {
         let (owner, category) = (factory.owner, factory.category);
         match holder {
             FactoryHolder::House(key_owner, key_category) => {
@@ -1269,7 +1281,7 @@ pub fn validate_restored_factory_state(
 
     // Restrict only factory roots: native manager pointers elsewhere can alias
     // without implying reciprocal ownership, and ordinary limbo is not a root.
-    for (_, factory) in sim.production.factories.keyed_factories() {
+    for (_, factory) in sim.production.factories().keyed_factories() {
         let owner = factory.owner;
         let Some(parent) = factory.object.as_ref().and_then(|object| object.entity_id) else {
             continue;

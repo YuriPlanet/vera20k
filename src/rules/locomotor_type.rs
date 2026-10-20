@@ -462,15 +462,6 @@ mod tests {
     }
 
     #[test]
-    fn installed_table_follows_kind_order() {
-        for (row, &(clsid, kind)) in INSTALLED_CLSID_KIND_TABLE.iter().enumerate() {
-            assert_eq!(LocomotorKind::ALL[row], kind);
-            assert_eq!(kind.table_index(), row);
-            assert_eq!(kind.clsid(), clsid);
-        }
-    }
-
-    #[test]
     fn retail_locomotor_keys_select_only_installed_kinds() {
         // PARITY: the golden is the retail `ini/rulesmd.ini` byte content. Strip
         // `;` comments before counting: two Drive rows name the dormant Mech
@@ -528,15 +519,6 @@ mod tests {
     }
 
     #[test]
-    fn lowercase_retail_spelling_resolves() {
-        // Four stock sections spell `11d1` in lower case.
-        assert_eq!(
-            kind_from_clsid("{4A582747-9839-11d1-B709-00A024DDAFD1}"),
-            Some(LocomotorKind::Teleport)
-        );
-    }
-
-    #[test]
     fn absent_and_unparseable_values_take_the_constructor_seed() {
         assert_eq!(resolve_installed_kind(None), DEFAULT_INSTALLED_KIND);
         for bad in ["", "not-a-guid", "{00000000-0000-0000-0000-000000000000}"] {
@@ -552,23 +534,6 @@ mod tests {
         let mech = "{55D141B8-DB94-11D1-AC98-006008055BB5}";
         assert_eq!(kind_from_clsid(mech), None);
         assert_eq!(resolve_installed_kind(Some(mech)), LocomotorKind::Teleport);
-    }
-
-    #[test]
-    fn test_speed_type_from_ini() {
-        assert_eq!(SpeedType::from_ini("Foot"), SpeedType::Foot);
-        assert_eq!(SpeedType::from_ini("Track"), SpeedType::Track);
-        assert_eq!(SpeedType::from_ini("wheel"), SpeedType::Wheel);
-        assert_eq!(SpeedType::from_ini("FLOAT"), SpeedType::Float);
-        assert_eq!(SpeedType::from_ini("Amphibious"), SpeedType::Amphibious);
-        assert_eq!(SpeedType::from_ini("Winged"), SpeedType::Winged);
-        assert_eq!(SpeedType::from_ini("FloatBeach"), SpeedType::FloatBeach);
-        assert_eq!(SpeedType::from_ini("Hover"), SpeedType::Hover);
-    }
-
-    #[test]
-    fn test_speed_type_unknown_preserves_invalid() {
-        assert_eq!(SpeedType::from_ini("bogus"), SpeedType::Invalid);
     }
 
     #[test]

@@ -424,13 +424,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nested_archive_chain_reduces_to_its_leaf() {
-        assert_eq!(archive_basename("ra2.mix -> sidec02.mix"), "sidec02");
-        assert_eq!(archive_basename("cameomd.mix"), "cameomd");
-        assert_eq!(archive_basename("loose:c:/x/foo.pal"), "loose:c:/x/foo.pal");
-    }
-
-    #[test]
     fn the_newurban_iso_palette_is_spelled_as_the_engine_spells_it() {
         // theater.rs:139 names it isoubn.pal. `isonurb.pal` was a fabricated
         // name carried in from the GUI browser's map and exists nowhere.

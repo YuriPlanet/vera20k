@@ -102,7 +102,7 @@ pub(crate) fn factory_ai(
     };
     if sim
         .production
-        .factories
+        .factories()
         .building_factory(building)
         .is_some()
     {
@@ -124,7 +124,7 @@ fn exit_finished_object(
 ) {
     let Some(object) = sim
         .production
-        .factories
+        .factories()
         .building_factory(building)
         .filter(|factory| factory.progress >= PRODUCTION_STEPS)
         .and_then(|factory| factory.object.clone())
@@ -153,7 +153,9 @@ fn exit_finished_object(
             record_last_built(sim, rules, owner, object);
             // CompletedProduction lets the placed object go; the delete
             // finds none to abandon.
-            sim.production.factories.remove_building_factory(building);
+            sim.production
+                .factories_mut()
+                .remove_building_factory(building);
         }
         BuildingExit::TryLater => {
             let frame = sim.session.binary_frame() as i32;
@@ -169,7 +171,7 @@ fn exit_finished_object(
                 .object_type(object.type_id, rules)
                 .is_some_and(|ty| ty.category == ObjectCategory::Building && ty.naval);
             if naval_building && let Some(house) = sim.houses.get_mut(&owner) {
-                house.ai_production.forbid_naval();
+                house.ai_production_mut().forbid_naval();
             }
             abandon_production(
                 sim,
@@ -196,7 +198,7 @@ fn abandon_stopped_factory(
     }
     let stopped = sim
         .production
-        .factories
+        .factories()
         .building_factory(building)
         .is_some_and(|factory| !factory.view().is_running());
     if stopped {
@@ -240,9 +242,9 @@ fn start_factory(
     let cost = sim.cost_of(owner, object, rules);
     // The FactoryClass constructor joins the factory vector
     // (`0x004C9974..0x004C9989`) before StartProduction constructs the object.
-    let insertion_seq = sim.production.next_enqueue_order;
-    sim.production.next_enqueue_order = insertion_seq.saturating_add(1);
-    sim.production.factories.create_building_factory(
+    let insertion_seq = sim.production.next_enqueue_order();
+    sim.production.spend_enqueue_order();
+    sim.production.factories_mut().create_building_factory(
         building,
         owner,
         category,
@@ -261,7 +263,9 @@ fn start_factory(
     .is_none()
     {
         // `0x004503A7 -> 0x004502DC`: deleted, nothing held to abandon.
-        sim.production.factories.remove_building_factory(building);
+        sim.production
+            .factories_mut()
+            .remove_building_factory(building);
     }
 }
 
@@ -313,7 +317,7 @@ pub(crate) fn detach_all(
     building: u64,
     effects: FrameEffects<'_>,
 ) {
-    let Some(factory) = sim.production.factories.building_factory(building) else {
+    let Some(factory) = sim.production.factories().building_factory(building) else {
         return;
     };
     let owner = factory.owner;
@@ -329,19 +333,19 @@ pub(crate) fn detach_all(
             let holder = FactoryHolder::Building(building);
             let object = sim
                 .production
-                .factories
+                .factories()
                 .pending_abandonment(holder)
                 .and_then(|abandoned| abandoned.entity_id);
             sim.production
-                .factories
+                .factories_mut()
                 .reset_for_abandon(holder, sim.session.binary_frame());
             sim.with_object_placement_scope(|sim| {
                 if let Some(object) = object {
                     let _ = sim.discard_constructed_limbo(object, rules, effects);
                 }
-                sim.production.factories.finish_abandon(holder);
+                sim.production.factories_mut().finish_abandon(holder);
             });
-            sim.production.factories.remove_factory(holder);
+            sim.production.factories_mut().remove_factory(holder);
         }
     }
 }

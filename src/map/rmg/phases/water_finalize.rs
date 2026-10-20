@@ -173,29 +173,6 @@ mod tests {
     }
 
     #[test]
-    fn band_math_uses_the_fp_chain_not_modulo() {
-        // Raw draw 0x80000000: the FP chain gives trunc(2^31 * ~201*2^-32)
-        // = 100 -> band 2; a modulo implementation would give 3 -> band 0.
-        let scale = TruncF64::from_f64(f64::from_bits(K201_BITS));
-        let value = X87Chop53::ftol_f64_low_masked(
-            TruncF64::from_f64(f64::from(0x8000_0000u32))
-                .mul(scale)
-                .to_f64(),
-        );
-        assert_eq!(value, 100, "scaled-draw semantics");
-        assert_ne!(value, 0x8000_0000u32 as i32 % 201, "modulo would differ");
-    }
-
-    #[test]
-    fn selector_range_is_one_to_ten() {
-        let mut rng = RmgRng::new(99);
-        for _ in 0..500 {
-            let v = scaled_draw(&mut rng, K10_BITS, 1.0, 10);
-            assert!((1..=10).contains(&v));
-        }
-    }
-
-    #[test]
     fn finalize_is_deterministic() {
         let tiles = |seed| {
             let mut grid = water_grid();

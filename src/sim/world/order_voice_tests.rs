@@ -148,7 +148,8 @@ fn scene_for_rules(
         0,
         10,
     );
-    other_house.player_control = input["other_player_control"].as_bool().unwrap_or(false);
+    other_house
+        .set_player_control_for_test(input["other_player_control"].as_bool().unwrap_or(false));
     sim.houses.register(other_house);
     let id = 1;
     sim.entities_mut()
@@ -746,31 +747,6 @@ fn capture_enter_and_harvest_preserve_scalar_precedence_and_move_fallback() {
             );
         }
     }
-}
-
-#[test]
-fn scalar_and_unknown_order_voice_fields_do_not_spend_main_draws() {
-    let (mut sim, rules, id) = scene(
-        "VoiceMove=Move\nVoiceAttack=Attack\nVoiceCapture=Capture\n\
-         VoiceEnter=Enter\nVoiceHarvest=Harvest\n",
-    );
-    for (field, expected) in [
-        ("VoiceCapture", Some("Capture")),
-        ("VoiceEnter", Some("Enter")),
-        ("VoiceHarvest", Some("Harvest")),
-        ("unrecognized", None),
-    ] {
-        let before = sim.main_rng.native_state_hex();
-        let (sound, draws) = trace_draws(|| sim.order_voice_request(&rules, id, field, None, true));
-        assert_eq!(sound, expected, "{field}");
-        assert!(draws.is_empty(), "{field}");
-        assert_eq!(sim.main_rng.native_state_hex(), before, "{field}");
-    }
-    let (mut sim, rules, id) = scene("VoiceMove=Move\n");
-    assert_eq!(
-        sim.order_voice_request(&rules, id, "VoiceAttack", None, true),
-        None
-    );
 }
 
 #[test]

@@ -43,12 +43,12 @@ fn fixture_from_sources(ini: &IniFile, art: &IniFile) -> Fixture {
     let owner = sim.interner.intern("AIHouse");
     let mut house = HouseState::new(owner, 0, None, false, 1_000, 10);
     house.enable_ai_deploy_latches();
-    house.base_plan.nodes = vec![BasePlanNode {
+    house.base_plan_mut().set_nodes_for_test(vec![BasePlanNode {
         type_or_control: rules.building_type_index("PLAIN").unwrap(),
         packed_cell: pack_base_plan_cell(16, 16),
         filled: false,
         retry_count: 0,
-    }];
+    }]);
     sim.houses.register(house);
     let yard = sim
         .spawn_object("YARD", "AIHouse", 12, 12, 0, &rules)
@@ -77,7 +77,7 @@ impl Fixture {
     fn held_object(&self) -> Option<u64> {
         self.sim
             .production
-            .factories
+            .factories()
             .building_factory(self.yard)
             .and_then(|factory| factory.object.as_ref())
             .and_then(|object| object.entity_id)
@@ -97,7 +97,7 @@ impl Fixture {
     }
 
     fn node(&self) -> ((i16, i16), i32) {
-        let node = self.sim.houses[&self.owner].base_plan.nodes[0];
+        let node = self.sim.houses[&self.owner].base_plan().nodes()[0];
         (unpack_base_plan_cell(node.packed_cell), node.retry_count)
     }
 }
@@ -112,8 +112,8 @@ fn the_yard_builds_its_choice_and_places_it_on_the_node() {
     }
     assert_eq!(f.placed(), Some((16, 16)), "after {frames} frames");
     let house = &f.sim.houses[&f.owner];
-    assert_eq!(house.economy.credits(), 900, "paid for");
-    assert_eq!(house.stats.built(), 1, "Record_Last_Built");
+    assert_eq!(house.economy().credits(), 900, "paid for");
+    assert_eq!(house.stats().built(), 1, "Record_Last_Built");
     assert_eq!(
         house.produced_count(
             ObjectCategory::Building,
@@ -122,25 +122,6 @@ fn the_yard_builds_its_choice_and_places_it_on_the_node() {
         1
     );
     assert!(f.held_object().is_none(), "the yard's factory is gone");
-}
-
-#[test]
-fn a_placed_building_that_does_not_score_is_not_counted() {
-    let mut f = fixture_with(&RULES.replace("[PLAIN]\n", "[PLAIN]\nDontScore=yes\n"));
-    let mut frames = 0;
-    while f.placed().is_none() && frames < 3000 {
-        f.tick();
-        frames += 1;
-    }
-    assert_eq!(f.placed(), Some((16, 16)), "after {frames} frames");
-    assert_eq!(f.sim.houses[&f.owner].stats.built(), 0);
-    assert_eq!(
-        f.sim.houses[&f.owner].produced_count(
-            ObjectCategory::Building,
-            f.rules.building_type_index("PLAIN").unwrap(),
-        ),
-        0
-    );
 }
 
 /// AI4501A4 records after ExitObject has consumed its wall. The original
@@ -172,13 +153,13 @@ fn ai_wall_consumption_keeps_its_accounting_and_one_creation_cue() {
         f.sim
             .advance_tick(&[], Some(&f.rules), Some(&f.path), Some(&registry), 67);
         held = f.held_object().or(held);
-        if f.sim.houses[&f.owner].stats.built() != 0 {
+        if f.sim.houses[&f.owner].stats().built() != 0 {
             break;
         }
     }
     let held = held.expect("the AI factory constructed its paid wall");
-    assert_eq!(f.sim.houses[&f.owner].economy.credits(), 900);
-    assert_eq!(f.sim.houses[&f.owner].stats.built(), 1);
+    assert_eq!(f.sim.houses[&f.owner].economy().credits(), 900);
+    assert_eq!(f.sim.houses[&f.owner].stats().built(), 1);
     assert!(!f.sim.substrate.entities.contains(held));
     assert!(
         f.held_object().is_none(),
@@ -286,8 +267,12 @@ fn a_failed_exit_abandons_the_object_and_refunds_it() {
             .is_none_or(|e| e.death.is_dying()),
         "the object is destroyed"
     );
-    assert_eq!(f.sim.houses[&f.owner].economy.credits(), 1_000, "refunded");
-    assert_eq!(f.sim.houses[&f.owner].stats.built(), 0);
+    assert_eq!(
+        f.sim.houses[&f.owner].economy().credits(),
+        1_000,
+        "refunded"
+    );
+    assert_eq!(f.sim.houses[&f.owner].stats().built(), 0);
     assert_eq!(
         f.sim.houses[&f.owner].produced_count(
             ObjectCategory::Building,

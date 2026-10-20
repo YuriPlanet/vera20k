@@ -453,7 +453,7 @@ impl Simulation {
                     .entities
                     .get(owner)
                     .and_then(|e| self.houses.get(&e.owner()))
-                    .is_some_and(|h| h.is_human)
+                    .is_some_and(|h| h.is_human())
             {
                 // IsHumanPlayer50B6F0 in skirmish means this machine's local
                 // house. The common sound boundary resolves that audience;

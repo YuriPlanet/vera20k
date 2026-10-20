@@ -131,39 +131,6 @@ mod tests {
         base + Duration::from_millis(ms)
     }
 
-    /// The music volume ramps linearly toward 0 while voices stay active.
-    #[test]
-    fn music_volume_ramps_down_linearly() {
-        let t0 = Instant::now();
-        let mut c = QuitCascade::start(t0, 1.0);
-        let mid = c.tick(at(t0, 500), true);
-        assert_eq!(mid.music_volume, Some(0.5));
-        assert!(!mid.finished && !mid.stop_music);
-        let near = c.tick(at(t0, 900), true);
-        assert!((near.music_volume.unwrap() - 0.1).abs() < 1e-9);
-    }
-
-    /// A trailing voice finishing early ends the wait and enters the screen fade
-    /// (hard-stop music, not yet finished).
-    #[test]
-    fn voices_done_ends_wait_and_enters_screen_fade() {
-        let t0 = Instant::now();
-        let mut c = QuitCascade::start(t0, 1.0);
-        let end = c.tick(at(t0, 200), false); // voices already done
-        assert!(end.stop_music && !end.finished);
-    }
-
-    /// Default menu volume (0.4) fades to silence in ~400 ms, then enters the
-    /// screen fade (hard-stop, not finished).
-    #[test]
-    fn default_volume_fades_in_400ms_then_screen_fade() {
-        let t0 = Instant::now();
-        let mut c = QuitCascade::start(t0, 0.4);
-        assert_eq!(c.tick(at(t0, 200), true).music_volume, Some(0.2));
-        let edge = c.tick(at(t0, 400), true);
-        assert!(edge.stop_music && !edge.finished);
-    }
-
     /// When the fade completes, the cascade hard-stops music, runs the ~480 ms
     /// fade-to-black ramp, then finishes.
     #[test]

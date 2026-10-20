@@ -22,7 +22,10 @@ fn gsi_04_07_wall_sell_raw_lockstep_replay_converges_with_semantic_execution() {
         let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);
         let mut sim = Simulation::new();
         let (wall_owner, receiver) = gsi_04_07_wall_sell_seed_houses(&mut sim);
-        sim.houses.get_mut(&receiver).unwrap().player_control = true;
+        sim.houses
+            .get_mut(&receiver)
+            .unwrap()
+            .set_player_control_for_test(true);
         let mut grid = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
         grid.place_owned_wall(1, 1, 2, 0, wall_owner);
         sim.overlay_grid = Some(grid);

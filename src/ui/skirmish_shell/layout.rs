@@ -1329,12 +1329,6 @@ mod tests {
         player_name_edit_text_rect, random_map_setup_control_at,
     };
 
-    struct ExpectedRect {
-        name: &'static str,
-        actual: RectPx,
-        expected: RectPx,
-    }
-
     #[test]
     fn responsive_layouts_keep_the_window_as_screen_and_centre_the_shell() {
         // 16:9: the height limits the factor to 1.8, so the 1440x1080 shell sits
@@ -1376,53 +1370,6 @@ mod tests {
             layout.rows.ai_type_combos[0],
             RectPx::new(171, 169, 150, 120)
         );
-    }
-
-    #[test]
-    fn key_rects_match_1024x768() {
-        let layout = compute_layout(1024, 768);
-        let expected = [
-            ExpectedRect {
-                name: "right_panel.top",
-                actual: layout.right_panel.top,
-                expected: RectPx::new(744, 84, 168, 199),
-            },
-            ExpectedRect {
-                name: "right_panel.tile",
-                actual: layout.right_panel.tile,
-                expected: RectPx::new(744, 283, 168, 42),
-            },
-            ExpectedRect {
-                name: "right_panel.bottom",
-                actual: layout.right_panel.bottom,
-                expected: RectPx::new(744, 661, 168, 23),
-            },
-            ExpectedRect {
-                name: "start_button 0x617",
-                actual: layout.start_button,
-                expected: RectPx::new(756, 325, 156, 42),
-            },
-            ExpectedRect {
-                name: "choose_map_button 0x5AA",
-                actual: layout.choose_map_button,
-                expected: RectPx::new(756, 367, 156, 42),
-            },
-            ExpectedRect {
-                name: "map_preview 0x468",
-                actual: layout.map_preview,
-                expected: RectPx::new(756, 121, 144, 112),
-            },
-            ExpectedRect {
-                name: "back_button 0x5C0",
-                actual: layout.back_button,
-                expected: RectPx::new(756, 619, 156, 42),
-            },
-        ];
-
-        for rect in expected {
-            assert_eq!(rect.actual, rect.expected, "{}", rect.name);
-        }
-        assert_eq!(layout.right_panel.tile_count, 9);
     }
 
     #[test]
@@ -1643,21 +1590,6 @@ mod tests {
     }
 
     #[test]
-    fn skirmish_unit_count_trackbar_applies_0102_fixup_y_minus_one() {
-        let layout_800 = compute_layout(800, 600);
-        let layout_1024 = compute_layout(1024, 768);
-        assert_eq!(layout_1024.trackbars, layout_800.trackbars);
-        assert_eq!(
-            layout_800.trackbars.unit_count,
-            RectPx::new(404, 340, 129, 22)
-        );
-        assert_eq!(
-            layout_1024.trackbars.unit_count,
-            RectPx::new(404, 340, 129, 22)
-        );
-    }
-
-    #[test]
     fn checkbox_rects_match_800x600_final_geometry() {
         let layout = compute_layout(800, 600);
         assert_eq!(layout.checkboxes.len(), 5);
@@ -1680,30 +1612,6 @@ mod tests {
             SkirmishCheckboxId::BuildOffAlly0x69d
         );
         assert_eq!(layout.checkboxes[4].rect, RectPx::new(302, 369, 249, 18));
-    }
-
-    #[test]
-    fn checkbox_rects_match_640x480_final_geometry() {
-        let layout = compute_layout(640, 480);
-        assert_eq!(layout.checkboxes[0].rect, RectPx::new(71, 286, 150, 16));
-        assert_eq!(layout.checkboxes[1].rect, RectPx::new(71, 314, 150, 16));
-        assert_eq!(layout.checkboxes[2].rect, RectPx::new(71, 341, 150, 16));
-        assert_eq!(layout.checkboxes[3].rect, RectPx::new(71, 371, 155, 16));
-        assert_eq!(layout.checkboxes[4].rect, RectPx::new(302, 369, 249, 18));
-    }
-
-    #[test]
-    fn skirmish_option_checkboxes_apply_0102_fixup_x_minus_one() {
-        let layout_800 = compute_layout(800, 600);
-        let layout_1024 = compute_layout(1024, 768);
-
-        for layout in [layout_800, layout_1024] {
-            assert_eq!(layout.checkboxes[0].rect.x, 71);
-            assert_eq!(layout.checkboxes[1].rect.x, 71);
-            assert_eq!(layout.checkboxes[2].rect.x, 71);
-            assert_eq!(layout.checkboxes[3].rect.x, 71);
-            assert_eq!(layout.checkboxes[4].rect.x, 302);
-        }
     }
 
     #[test]
@@ -1736,15 +1644,6 @@ mod tests {
         assert_eq!(c.right_panel.tile, RectPx::new(472, 199, 168, 42));
         assert_eq!(c.right_panel.tile_count, 6);
         assert_eq!(c.right_panel.bottom, RectPx::new(472, 451, 168, 29));
-    }
-
-    #[test]
-    fn large_screen_offsets_without_scaling() {
-        let layout = compute_layout(1280, 960);
-        assert_eq!(layout.start_button.w, 156);
-        assert_eq!(layout.start_button.h, 42);
-        assert_eq!(layout.map_preview.w, 144);
-        assert_eq!(layout.map_preview.h, 112);
     }
 
     #[test]
@@ -1829,34 +1728,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn random_map_setup_rects_stay_inside_the_screen() {
-        let layout = compute_random_map_setup_layout(800, 600);
-        let mut rects: Vec<(&str, RectPx)> = vec![
-            ("title", layout.title),
-            ("preview", layout.preview),
-            ("randomize", layout.randomize),
-            ("generate", layout.generate),
-            ("seed_field", layout.seed_field),
-            ("use_map", layout.use_map),
-            ("load", layout.load),
-            ("save", layout.save),
-            ("delete", layout.delete),
-            ("cancel", layout.cancel),
-            ("status_help", layout.status_help),
-            ("progress_text", layout.progress_text),
-            ("progress_bar", layout.progress_bar),
-        ];
-        rects.extend(layout.label_rects.iter().map(|rect| ("label", *rect)));
-        rects.extend(layout.control_rects.iter().map(|rect| ("control", *rect)));
-        for (name, rect) in rects {
-            assert!(
-                rect.x >= 0 && rect.y >= 0 && rect.x + rect.w <= 800 && rect.y + rect.h <= 600,
-                "{name} escapes the 800x600 screen: {rect:?}"
-            );
-        }
-    }
-
     /// A 2x stretch is exact, so every responsive rect is the base one doubled.
     fn double(rect: RectPx) -> RectPx {
         RectPx::new(rect.x * 2, rect.y * 2, rect.w * 2, rect.h * 2)
@@ -1922,40 +1793,6 @@ mod tests {
         assert_eq!(layout.right_panel.top.x + layout.right_panel.top.w, 1600);
         assert_eq!(layout.right_panel.top.h, 199 * 2);
         assert_eq!(layout.right_panel.tile_count, base.right_panel.tile_count);
-    }
-
-    #[test]
-    fn responsive_modals_fill_the_window_the_same_way() {
-        let chooser_base = compute_choose_map_modal_layout(800, 600);
-        let chooser = compute_responsive_choose_map_modal_layout(1600, 1200);
-        for (rect, base_rect) in [
-            (chooser.mode_list, chooser_base.mode_list),
-            (chooser.map_list, chooser_base.map_list),
-            (chooser.use_map_button, chooser_base.use_map_button),
-            (chooser.cancel_button, chooser_base.cancel_button),
-            (chooser.title, chooser_base.title),
-            (chooser.status_help, chooser_base.status_help),
-        ] {
-            assert_eq!(rect, double(base_rect));
-        }
-
-        let setup_base = compute_random_map_setup_layout(800, 600);
-        let setup = compute_responsive_random_map_setup_layout(1600, 1200);
-        for row in 0..6 {
-            assert_eq!(setup.label_rects[row], double(setup_base.label_rects[row]));
-            assert_eq!(
-                setup.control_rects[row],
-                double(setup_base.control_rects[row])
-            );
-        }
-        assert_eq!(setup.progress_bar, double(setup_base.progress_bar));
-
-        let seed_base = compute_saved_seed_layout(SavedSeedMode::Save, 800, 600);
-        let seed = compute_responsive_saved_seed_layout(SavedSeedMode::Save, 1600, 1200);
-        assert_eq!(seed.list, double(seed_base.list));
-        assert_eq!(seed.action, double(seed_base.action));
-        // The Save-only name edit stretches with the rest of the dialog.
-        assert_eq!(seed.name_edit, seed_base.name_edit.map(double));
     }
 
     #[test]

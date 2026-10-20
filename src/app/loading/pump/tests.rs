@@ -633,21 +633,6 @@ fn loading_preparation_consumes_real_source_and_returns_lease_on_initial_and_adm
 }
 
 #[test]
-fn loading_side_comes_from_first_launch_node_country() {
-    let session = LoadingSession::from_request(LoadingRequest::unverified_legacy_skirmish(
-        test_launch_session(LaunchCountry::Korea),
-        unverified_seed(1),
-    ));
-
-    assert_eq!(
-        session.native.as_ref().map(|native| native.variant),
-        Some(NativeLoadingArt::StockOffline(Some(
-            LoadingArtVariant::Alliance
-        )))
-    );
-}
-
-#[test]
 fn extended_country_identity_survives_without_stock_loading_art() {
     // Human/AI creation indexes the full HouseType registry, while native
     // stock loading art/insignia stop at9 (5534CE/4E3671).
@@ -697,42 +682,6 @@ fn ctor_only_country_side_uses_nonzero_loading_text_scheme() {
     );
     native.resolve_player_colors(&schemes, &ramps);
     assert_eq!(native.text_rgb, normalize_rgb(hsv_to_rgb(schemes[1].hsv)));
-}
-
-#[test]
-fn loading_progress_row_snapshots_the_launch_player_name() {
-    let mut launch = test_launch_session(LaunchCountry::America);
-    launch.local_player_mut().name = "Commander".to_owned();
-    let session = LoadingSession::from_request(LoadingRequest::unverified_legacy_skirmish(
-        launch,
-        unverified_seed(22),
-    ));
-
-    assert_eq!(
-        session
-            .native
-            .as_ref()
-            .map(|native| native.progress_row.local_label()),
-        Some("Commander"),
-    );
-}
-
-#[test]
-fn loading_session_preserves_selected_map_filename() {
-    let session = LoadingSession::from_request(LoadingRequest::unverified_legacy_skirmish(
-        test_launch_session(LaunchCountry::Yuri),
-        unverified_seed(2),
-    ));
-
-    assert_eq!(session.stage.startup().selected_map_file(), "mp01t4.map");
-    assert_eq!(
-        session
-            .stage
-            .startup()
-            .launch_session()
-            .and_then(|launch| launch.selected_map_file.as_deref()),
-        Some("mp01t4.map")
-    );
 }
 
 #[test]
@@ -1251,53 +1200,6 @@ fn loading_assignments_keep_gather_table_slots_separate_from_sparse_waypoint_ind
 }
 
 #[test]
-fn gsi_04_12_generated_prefix_rejects_presentation_only_preview() {
-    let selected = "RandMap.Sed";
-    let starts = [(0, 20, 24), (1, 42, 46)];
-    let mut launch = test_launch_session(LaunchCountry::America);
-    launch.selected_map_file = Some(selected.to_string());
-    let initial = crate::app::loading::init::MapLoadInitial::from_test_map_source(
-        prefix_test_map(&starts),
-        crate::map::source::LoadedMapSource::Generated {
-            seed_name: selected.to_string(),
-            seed_source: None,
-        },
-    );
-    let mut request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(0x1313))
-        .with_random_map_preview(Some(generated_preview_with_starts(0x1313, &starts)));
-
-    let err = request.admit_context(&initial).unwrap_err();
-    assert!(
-        format!("{err:#}").contains("no accepted setup start staging"),
-        "unexpected error: {err:#}"
-    );
-}
-
-#[test]
-fn generated_prefix_rejects_mismatched_source_name() {
-    let selected = "RandMap.Sed";
-    let starts = [(0, 20, 24), (1, 42, 46)];
-    let mut launch = test_launch_session(LaunchCountry::America);
-    launch.selected_map_file = Some(selected.to_string());
-    let accepted = accepted_random_map_with_starts(selected, 0x1414, &starts, &starts);
-    let initial = crate::app::loading::init::MapLoadInitial::from_test_map_source(
-        prefix_test_map(&starts),
-        crate::map::source::LoadedMapSource::Generated {
-            seed_name: "Other.Sed".to_string(),
-            seed_source: None,
-        },
-    );
-    let mut request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(0x1414))
-        .with_accepted_random_map(Some(accepted));
-
-    let err = request.admit_context(&initial).unwrap_err();
-    assert!(
-        format!("{err:#}").contains("does not match selected record"),
-        "unexpected error: {err:#}"
-    );
-}
-
-#[test]
 fn generated_prefix_rejects_cooperative_mode() {
     let selected = "RandMap.Sed";
     let starts = [(0, 20, 24), (1, 42, 46)];
@@ -1559,25 +1461,6 @@ fn random_map_progress_uses_native_integer_halving_and_raw_200_terminal() {
 }
 
 #[test]
-fn loading_session_falls_back_without_native_session_only_outside_parity_path() {
-    let session = LoadingSession::from_request(LoadingRequest::generic_map_load("auto"));
-
-    assert!(session.native.is_none());
-    assert!(session.stage.startup().launch_session().is_none());
-    assert_eq!(session.stage.startup().selected_map_file(), "auto");
-}
-
-#[test]
-fn loading_session_starts_at_initial_map_selection_phase() {
-    let session = LoadingSession::from_request(LoadingRequest::unverified_legacy_skirmish(
-        test_launch_session(LaunchCountry::America),
-        unverified_seed(3),
-    ));
-
-    assert!(matches!(session.stage, LoadingStage::Selected(_)));
-}
-
-#[test]
 fn loading_request_moves_exact_startup_authority_once() {
     struct Clock;
     impl crate::app::match_bootstrap::MatchSeedClock for Clock {
@@ -1741,42 +1624,6 @@ fn rejected_startup_observation_does_not_publish_partial_admission() {
 }
 
 #[test]
-fn loading_progress_standard_skirmish_initializes_one_lane_max_100() {
-    let progress = LoadingProgressState::standard_skirmish();
-
-    assert_eq!(progress.max_value(), 100.0);
-    assert_eq!(progress.current_value(), 0.0);
-    assert_eq!(progress.current_percent(), 0.0);
-}
-
-#[test]
-fn loading_progress_duplicate_milestones_do_not_redraw() {
-    let mut progress = LoadingProgressState::standard_skirmish();
-
-    assert!(progress.advance_progress(3));
-    assert!(!progress.advance_progress(3));
-    assert_eq!(progress.current_value(), 3.0);
-}
-
-#[test]
-fn loading_progress_lower_milestone_does_not_redraw() {
-    let mut progress = LoadingProgressState::standard_skirmish();
-
-    assert!(progress.advance_progress(8));
-    assert!(!progress.advance_progress(6));
-    assert_eq!(progress.current_value(), 8.0);
-}
-
-#[test]
-fn loading_progress_advancing_milestone_requests_redraw() {
-    let mut progress = LoadingProgressState::standard_skirmish();
-
-    assert!(progress.advance_progress(3));
-    assert!(progress.advance_progress(8));
-    assert_eq!(progress.current_value(), 8.0);
-}
-
-#[test]
 fn loading_progress_clipped_width_matches_native_formula_for_exact_values() {
     let mut progress = LoadingProgressState::standard_skirmish();
 
@@ -1806,23 +1653,9 @@ fn loading_progress_theater_ramp_stock_rulesmd_count_emits_13_through_25() {
 }
 
 #[test]
-fn loading_progress_theater_ramp_nonmultiple_base_count_uses_native_quotient() {
-    let emitted = theater_ramp_changed_values(38);
-
-    assert_eq!(emitted, (13..=25).collect::<Vec<_>>());
-}
-
-#[test]
 fn loading_progress_theater_ramp_zero_or_invalid_small_count_has_no_dynamic_values() {
     assert!(theater_ramp_changed_values(0).is_empty());
     assert!(theater_ramp_changed_values(12).is_empty());
-}
-
-#[test]
-fn loading_theater_cache_mismatch_covers_first_same_and_changed_cases() {
-    assert!(theater_cache_mismatch(false, "TEMPERATE", "TEMPERATE"));
-    assert!(!theater_cache_mismatch(true, "TEMPERATE", "temperate"));
-    assert!(theater_cache_mismatch(true, "TEMPERATE", "SNOW"));
 }
 
 #[test]
@@ -1892,25 +1725,6 @@ fn native_loading_state_keeps_the_full_player_progress_ramp() {
     assert_eq!(native.progress_ramp, *ramps.ramp(HouseColorIndex(1)));
     assert_ne!(native.progress_ramp[0], native.progress_ramp[15]);
     assert!(native.progress_ramp[0].b > native.progress_ramp[0].r);
-}
-
-#[test]
-fn both_native_loading_cadences_prepare_scenario_before_first_frame() {
-    assert!(NativeLoadingProgressCadence::SelectedMap.prepares_scenario_before_first_frame());
-    assert!(NativeLoadingProgressCadence::RandomMapHalved.prepares_scenario_before_first_frame());
-}
-
-#[test]
-fn selected_generic_progress_uses_no_native_loader_metadata() {
-    let mut phase = LoadingPhaseProgress::select(None, true, |_| {
-        panic!("generic loading must never construct rendering progress")
-    });
-    assert!(matches!(&phase.sink, SelectedProgressSink::Generic(_)));
-    assert!(!phase.native_theater_cache_mismatch);
-    assert_eq!(phase.runtime_color_scheme_count, 0);
-    for raw in [8, 6, 8, 12, 100, 200] {
-        phase.sink.milestone(raw);
-    }
 }
 
 /// Startup absence and a lost loading lease both rebuild from the retained

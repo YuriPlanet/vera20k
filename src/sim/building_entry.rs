@@ -432,7 +432,10 @@ impl Simulation {
         else {
             return;
         };
-        if self.houses.get(&owner).is_some_and(|house| house.is_human)
+        if self
+            .houses
+            .get(&owner)
+            .is_some_and(|house| house.is_human())
             && let Some(passenger) = self.substrate.entities.get_mut(stable_id)
         {
             passenger.building_entry.clear_absorber_seek();

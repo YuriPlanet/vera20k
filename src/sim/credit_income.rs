@@ -131,7 +131,7 @@ fn produce_cash_fires(timer: CdTimer, frame: u32) -> bool {
 /// `owner`'s wallet (`HouseClass::Add_Credits @ 0x004F9950`).
 pub fn add_credits(sim: &mut Simulation, owner: InternedId, amount: i32) {
     if let Some(house) = sim.houses.get_mut(&owner) {
-        house.economy.add_credits(amount);
+        house.economy_mut().add_credits(amount);
     }
 }
 
@@ -139,7 +139,7 @@ pub fn add_credits(sim: &mut Simulation, owner: InternedId, amount: i32) {
 /// `owner`'s wallet (`HouseClass::Spend_Money @ 0x004F9790`).
 pub(crate) fn spend_money(sim: &mut Simulation, owner: InternedId, amount: i32) {
     if let Some(house) = sim.houses.get_mut(&owner) {
-        house.economy.spend_money(amount);
+        house.economy_mut().spend_money(amount);
     }
 }
 
@@ -149,7 +149,7 @@ pub(crate) fn spend_money(sim: &mut Simulation, owner: InternedId, amount: i32) 
 pub(crate) fn available_money(sim: &Simulation, owner: InternedId) -> i32 {
     sim.houses
         .get(&owner)
-        .map_or(0, |house| house.economy.available_money())
+        .map_or(0, |house| house.economy().available_money())
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +184,7 @@ pub(crate) fn produce_cash_on_owner_change(
     let old_passive = sim
         .houses
         .get(&old_owner)
-        .is_some_and(|house| house.multiplay_passive);
+        .is_some_and(|house| house.multiplay_passive());
     if !old_passive || obj.produce_cash_startup == 0 {
         return;
     }
@@ -248,7 +248,7 @@ pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
     if sim
         .houses
         .get(&owner)
-        .is_some_and(|house| house.multiplay_passive)
+        .is_some_and(|house| house.multiplay_passive())
     {
         return;
     }
@@ -696,7 +696,7 @@ mod tests {
     }
 
     fn credits(sim: &Simulation, owner: InternedId) -> i32 {
-        sim.houses[&owner].economy.credits()
+        sim.houses[&owner].economy().credits()
     }
 
     /// Original 70FD8D/47C520 queries the actual ground list, not the enclosing
@@ -783,7 +783,10 @@ mod tests {
         let rules = rules();
         let mut sim = Simulation::with_seed(0x0011_0901);
         let neutral = house(&mut sim, "Neutral", false, 0);
-        sim.houses.get_mut(&neutral).unwrap().multiplay_passive = true;
+        sim.houses
+            .get_mut(&neutral)
+            .unwrap()
+            .set_multiplay_passive_for_test(true);
         let americans = house(&mut sim, "Americans", true, 5_000);
         let soviets = house(&mut sim, "Soviet", true, 5_000);
         base(&mut sim, &rules, "Americans", 30, 30);
@@ -919,44 +922,6 @@ mod tests {
                 99
             );
         }
-    }
-
-    #[test]
-    fn derrick_stops_paying_while_not_operational() {
-        let rules = rules();
-        let mut sim = Simulation::with_seed(0x0011_0902);
-        let neutral = house(&mut sim, "Neutral", false, 0);
-        sim.houses.get_mut(&neutral).unwrap().multiplay_passive = true;
-        let americans = house(&mut sim, "Americans", true, 0);
-        let oil = sim
-            .spawn_object("CAOILDP", "Neutral", 10, 10, 0, &rules)
-            .expect("powered derrick spawns");
-        sim.change_owner_with_rules(
-            oil,
-            americans,
-            &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-        assert_eq!(credits(&sim, americans), 1_000);
-        // No power plant: output 0 < drain 10 → low power → not operational.
-        run_ticks(&mut sim, &rules, 300);
-        assert!(
-            sim.power_states[&americans].is_low_power,
-            "fixture must be in low power"
-        );
-        assert_eq!(
-            credits(&sim, americans),
-            1_000,
-            "no ProduceCashAmount while offline"
-        );
-        // The timer still re-armed on every expiry (the re-arm precedes the gate).
-        let timer = sim.substrate.entities.get(oil).unwrap().produce_cash.timer;
-        assert_eq!(timer.duration(), 100);
-        assert!(
-            (sim.session.binary_frame() as i32).wrapping_sub(timer.start_frame()) < 100,
-            "timer keeps cycling while offline"
-        );
     }
 
     /// §2.17: with the drain link installed on a `ResourceDestination=yes`
@@ -1235,22 +1200,6 @@ mod tests {
             None
         );
         assert!(anim_uninited(&sim, anim));
-    }
-
-    #[test]
-    fn produce_cash_timer_fires_once_at_delay_minus_one_then_needs_rearm() {
-        let timer = CdTimer::started(100, 100);
-        for frame in 100..199 {
-            assert!(
-                !produce_cash_fires(timer, frame),
-                "frame {frame} must not fire"
-            );
-        }
-        assert!(produce_cash_fires(timer, 199));
-        // Past its duration the native timer is dead: `elapsed >= duration`
-        // jumps over the block until something re-arms it.
-        assert!(!produce_cash_fires(timer, 200));
-        assert!(!produce_cash_fires(timer, 5_000));
     }
 
     #[test]

@@ -306,7 +306,7 @@ impl Simulation {
         self.substrate
             .occupancy
             .first_building_on_layer(cell.0, cell.1, MovementLayer::Ground)
-            .or_else(|| self.production.terrain_object_cells.get(&cell).copied())
+            .or_else(|| self.terrain_objects.cell_index().get(&cell).copied())
     }
 
     /// `Location` (`+0x9C`) of a Techno, or of a Terrain object while it is
@@ -318,8 +318,8 @@ impl Simulation {
             return (!entity.lifecycle.in_limbo()).then(|| Self::movement_sound_world(entity));
         }
         let terrain = self
-            .production
             .terrain_objects
+            .objects()
             .get(&id)
             .filter(|terrain| terrain.is_live())?;
         let coord = terrain.world_coord();

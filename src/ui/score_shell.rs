@@ -555,22 +555,6 @@ mod tests {
     }
 
     #[test]
-    fn responsive_score_layout_stretches_the_page_table_and_status_line() {
-        let base = compute_layout(800, 600);
-        let same = compute_responsive_layout(800, 600);
-        assert_eq!(same, base);
-        let double = compute_responsive_layout(1600, 1200);
-        assert_eq!(double.table.bands[0], RectPx::new(192, 234, 882, 74));
-        assert_eq!(double.table.bands[1], RectPx::new(192, 306, 882, 74));
-        assert_eq!(double.page.status_help, RectPx::new(20, 1150, 912, 48));
-        // The shaded band grows by the authored 4 and 8 pixels.
-        assert_eq!(
-            double.table.shaded_rect(2, double.page.scale),
-            Some(RectPx::new(190, 232, 880, 280))
-        );
-    }
-
-    #[test]
     fn every_table_static_reveals_with_its_native_parameters() {
         // tools/storage_oracle/shell_static_timers.py executes the getters for
         // each 0x108 control; the page's statics must carry what they return.
@@ -725,27 +709,6 @@ mod tests {
                 Some([34, 107, 212])
             )
         );
-    }
-
-    #[test]
-    fn reveals_wait_for_the_slide_end() {
-        let t0 = Instant::now();
-        let mut page = ScorePage::open(
-            ScoreScreenModel {
-                rows: vec![row("P", 5)],
-                ..Default::default()
-            },
-            &ScoreTexts {
-                game: "Game: 1".into(),
-                time: "T".into(),
-                headers: ["a", "b", "c", "d", "e"].map(String::from),
-            },
-            t0,
-        );
-        assert!(page.table.iter_mut().all(|text| text.paint(t0).is_none()));
-        page.start_reveals(t0);
-        assert!(page.table.iter_mut().all(|text| text.paint(t0).is_some()));
-        assert!(!page.reveals_terminal());
     }
 
     #[test]

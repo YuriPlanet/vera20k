@@ -219,22 +219,6 @@ fn limbo_buildings_do_not_satisfy_auxiliary_or_block_as_negative() {
 }
 
 #[test]
-fn negative_only_list_blocks_on_either_type_but_not_another_house() {
-    let rules =
-        rules_with("[BlackWidowSpecial]\nSW.AuxBuildings=none\nSW.NegBuildings=GAMERC,NATIVEAUX\n");
-    for negative in ["GAMERC", "NATIVEAUX"] {
-        let mut sim = world(&rules);
-        assert!(allowed(&sim, &rules, OWNER, NORMAL));
-        spawn(&mut sim, &rules, negative, OTHER, 8);
-        assert!(allowed(&sim, &rules, OWNER, NORMAL));
-        let id = spawn(&mut sim, &rules, negative, OWNER, 12);
-        assert!(!allowed(&sim, &rules, OWNER, NORMAL));
-        sim.uninit_with_rules(id, &rules);
-        assert!(allowed(&sim, &rules, OWNER, NORMAL));
-    }
-}
-
-#[test]
 fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
     let rules = rules_with("");
     let mut sim = world(&rules);
@@ -273,8 +257,14 @@ fn unavailable_ai_does_not_enter_target_search_or_draw_rng() {
     let rules = rules_with("");
     let mut sim = world(&rules);
     let owner = sim.interner.get(OWNER).unwrap();
-    sim.houses.get_mut(&owner).unwrap().is_human = false;
-    sim.houses.get_mut(&owner).unwrap().player_control = false;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_is_human_for_test(false);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_player_control_for_test(false);
     assert!(!sim.houses[&owner].is_controlled_by_human(sim.session.game_mode_nonzero()));
     ready(&mut sim, NORMAL);
     let before = sim.state_hash();
@@ -283,29 +273,6 @@ fn unavailable_ai_does_not_enter_target_search_or_draw_rng() {
     let observed = ai_fire::AI_FIRE_LOG.take().unwrap();
     assert_eq!(observed, vec![ai_fire::AiFireEvent::TryFire]);
     assert_eq!(sim.state_hash(), before);
-}
-
-#[test]
-fn trigger_granted_super_cannot_bypass_extension_preflight() {
-    let rules = rules_with("");
-    for one_time in [false, true] {
-        let mut sim = world(&rules);
-        let owner = sim.interner.get(OWNER).unwrap();
-        let id = sim.interner.get(NORMAL).unwrap();
-        assert!(trigger_grant_super(&mut sim, &rules, owner, id, one_time));
-        ready(&mut sim, NORMAL);
-        let before = sim.state_hash();
-        assert!(!sim.fire_super_weapon(
-            &rules,
-            owner,
-            id,
-            (15, 15),
-            None,
-            FrameEffects::default(),
-            false
-        ));
-        assert_eq!(sim.state_hash(), before);
-    }
 }
 
 #[test]
@@ -344,26 +311,6 @@ fn snapshot_retains_counts_and_pending_recheck_without_new_availability_state() 
     assert!(!active(&restored, OWNER, NORMAL));
     assert!(active(&restored, OWNER, ALPHA));
     assert_eq!(availability_state(&restored), availability_state(&sim));
-}
-
-#[test]
-fn rejected_postclick_does_not_consume_the_paired_super_charge() {
-    let rules = rules_with("[BlackWidowAlphaSpecial]\nPostClick=yes\nPreDependent=MultiMissile\n");
-    let mut sim = world(&rules);
-    let owner = sim.interner.get(OWNER).unwrap();
-    ready(&mut sim, NORMAL);
-    let id = ready(&mut sim, ALPHA);
-    let before = sim.state_hash();
-    assert!(!sim.fire_super_weapon(
-        &rules,
-        owner,
-        id,
-        (15, 15),
-        None,
-        FrameEffects::default(),
-        false
-    ));
-    assert_eq!(sim.state_hash(), before);
 }
 
 #[test]

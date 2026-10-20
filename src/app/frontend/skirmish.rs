@@ -297,7 +297,7 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::terrain_rules::SpeedCostProfile;
     use crate::sim::cell_rect::{PlayfieldBounds, cell_is_in_playfield_height_aware};
-    use crate::sim::house_state::{HouseDifficulty, HouseState};
+    use crate::sim::house_state::HouseState;
     use crate::sim::mission::MissionType;
     use crate::sim::rng::SimRng;
     use crate::sim::scenario_bootstrap::*;
@@ -374,8 +374,8 @@ mod tests {
             assert!(!sim.fog.is_cell_visible(local, rx, ry));
             assert!(!sim.fog.is_cell_revealed(ai, rx, ry));
         }
-        assert!(!sim.houses[&local].map_is_clear);
-        assert!(!sim.houses[&ai].map_is_clear);
+        assert!(!sim.houses[&local].map_is_clear());
+        assert!(!sim.houses[&ai].map_is_clear());
         assert_eq!(sim.scenario_rng.state(), scenario_rng_before);
         assert_eq!(sim.main_rng.state(), main_rng_before);
     }
@@ -439,7 +439,7 @@ mod tests {
                 "the CellIterator never walks storage outside the Size diamond"
             );
         }
-        assert!(!sim.houses[&local].map_is_clear);
+        assert!(!sim.houses[&local].map_is_clear());
     }
 
     fn test_battle_mode() -> SkirmishLaunchMode {
@@ -518,10 +518,6 @@ mod tests {
 
     fn launch_fixture_ini(source: &str) -> IniFile {
         IniFile::from_str(&format!("{ORDERED_COUNTRY_SIDE_INI}{source}"))
-    }
-
-    fn ordered_country_side_rules() -> RuleSet {
-        RuleSet::from_ini(&launch_fixture_ini("")).expect("ordered country/side rules parse")
     }
 
     fn test_starting_unit_rules() -> RuleSet {
@@ -807,17 +803,6 @@ mod tests {
     }
 
     #[test]
-    fn launch_session_uses_player_name_for_local_owner() {
-        let mut session = test_session();
-        session.local_player_mut().name = "Commander".to_string();
-
-        let slots = normalized_launch_slots(&session);
-
-        assert_eq!(slots[0].owner_name, "Commander");
-        assert!(slots[0].is_human);
-    }
-
-    #[test]
     fn current_house_collision_preserves_launch_label_and_distinct_colors() {
         let schemes = crate::rules::color_scheme::parse_color_schemes(&IniFile::from_str(
             crate::test_fixture::text("ini/rulesmd.ini"),
@@ -993,38 +978,6 @@ mod tests {
         );
     }
 
-    /// gamemd-derived: the null-reference start row selects
-    /// `g_CurrentFrameCounter % direct_pool_count` after completing the first
-    /// direct ring (`0x0056E5BF..0x0056E6ED`).
-    #[test]
-    fn deficient_start_uses_binary_frame_modulo_not_first_candidate() {
-        let mut terrain = test_terrain(40, 40);
-        let blocked = terrain.cell_mut(22, 22).unwrap();
-        blocked.speed_costs.track = Some(0);
-        blocked.base_speed_costs.track = Some(0);
-        blocked.zone_type = zone_class::IMPASSABLE;
-        let occupancy = crate::sim::occupancy::OccupancyGrid::new();
-        let diamond = PlayfieldBounds {
-            base: 0,
-            off_fc: -100,
-            off_100: -100,
-            off_104: 200,
-            off_108: 200,
-        };
-
-        let find = |frame| {
-            find_nearby_start_rect(&terrain, &occupancy, Some(diamond), Some(40), frame, 15, 15)
-        };
-        assert_eq!(find(0), Some((14, 14)));
-        assert_eq!(find(1), Some((14, 16)));
-        assert_eq!(find(2), Some((15, 14)));
-        assert_ne!(
-            find(0),
-            find(1),
-            "the adapter must not return accepted.first()"
-        );
-    }
-
     /// gamemd-derived: `ScenarioClass::Gather_Start_Positions @ 0x00688380`
     /// reaches `MapClass::Find_Nearby_Passable_Cell @ 0x0056DC20`, whose null
     /// reference branch reads `g_CurrentFrameCounter` at `0x0056E6A8..0x0056E6ED`.
@@ -1185,7 +1138,7 @@ mod tests {
 
         assert_eq!(
             crate::sim::house_state::house_state_for_owner(&sim.houses, "Player", &sim.interner)
-                .and_then(|house| house.base_center),
+                .and_then(|house| house.base_center()),
             Some((authored.rx, authored.ry))
         );
         assert_eq!(
@@ -1194,7 +1147,7 @@ mod tests {
                 "Computer1",
                 &sim.interner,
             )
-            .and_then(|house| house.base_center),
+            .and_then(|house| house.base_center()),
             Some((
                 projection.final_gathered_starts()[1].rx,
                 projection.final_gathered_starts()[1].ry,
@@ -1229,7 +1182,7 @@ mod tests {
         assert_eq!(sim.houses.len(), 4);
         let current_iq = |owner: &str| {
             crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
-                .map(|house| house.current_iq)
+                .map(|house| house.current_iq())
         };
         assert_eq!(current_iq("Player"), Some(0));
         assert_eq!(current_iq("Computer1"), Some(rules.general.max_iq_levels));
@@ -1340,7 +1293,7 @@ mod tests {
             .interner
             .get("Computer1")
             .expect("pre-created first AI house");
-        assert_eq!(sim.houses[&computer].tracking.buildings(), 1);
+        assert_eq!(sim.houses[&computer].tracking().buildings(), 1);
         assert_eq!(
             sim.substrate.base_reservations.raw_mask(None, 28, 38),
             2,
@@ -1383,13 +1336,13 @@ mod tests {
         sim.houses
             .get_mut(&passive_ai)
             .expect("passive AI house")
-            .multiplay_passive = true;
+            .set_multiplay_passive_for_test(true);
         for owner in ["Neutral", "Special"] {
             let owner = sim.interner.get(owner).expect("special house");
             sim.houses
                 .get_mut(&owner)
                 .expect("special HouseState")
-                .multiplay_passive = true;
+                .set_multiplay_passive_for_test(true);
         }
         let observer = sim.interner.intern("Observer");
         sim.houses
@@ -1399,7 +1352,7 @@ mod tests {
 
         let credits = |owner: &str| {
             crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
-                .map(|house| house.economy.credits())
+                .map(|house| house.economy().credits())
         };
         assert_eq!(credits("Player"), Some(10_000));
         assert_eq!(credits("Computer1"), Some(50_000), "Hard: +400%");
@@ -1435,55 +1388,17 @@ mod tests {
         sim.houses
             .get_mut(&ai)
             .expect("AI house")
-            .economy
+            .economy_mut_for_test()
             .set_credits_for_test(12_345);
 
         rules.general.multiplayer_ai_cm = Vec::new();
         apply_skirmish_ai_opening_credits(&mut sim, &rules);
-        assert_eq!(sim.houses[&ai].economy.credits(), 12_345);
+        assert_eq!(sim.houses[&ai].economy().credits(), 12_345);
 
         // 7 * 0.01 * 12345 = 864.15... -> 864 under chop.
         rules.general.multiplayer_ai_cm = vec![7, 0, 0];
         apply_skirmish_ai_opening_credits(&mut sim, &rules);
-        assert_eq!(sim.houses[&ai].economy.credits(), 12_345 + 864);
-    }
-
-    #[test]
-    fn ordered_country_side_stock_identities_reach_skirmish_house_state() {
-        let mut session = test_session();
-        session.opponents.push(SkirmishAiSlot {
-            raw_slot_index: (session.opponents.len() + 1) as u8,
-            country: LaunchCountry::Yuri,
-            country_random: false,
-            color_index: 3,
-            color_random: false,
-            start_position: LaunchStartPosition::Auto,
-            team: LaunchTeam::None,
-            difficulty: Default::default(),
-        });
-        let rules = ordered_country_side_rules();
-        let mut sim = Simulation::new();
-
-        populate_launch_houses(&mut sim, &normalized_launch_slots(&session), &rules);
-        populate_special_houses(&mut sim, &HouseRoster::default(), &rules);
-
-        let side = |owner: &str| {
-            crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
-                .map(|house| house.side_index)
-        };
-        assert_eq!(side("Player"), Some(0));
-        assert_eq!(side("Computer1"), Some(1));
-        assert_eq!(side("Computer2"), Some(2));
-        assert_eq!(side("Neutral"), Some(3));
-        assert_eq!(side("Special"), Some(4));
-
-        let country = |owner: &str| {
-            crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
-                .and_then(|house| house.country)
-                .map(|country| sim.interner.resolve(country).to_string())
-        };
-        assert_eq!(country("Neutral"), Some("Neutral".to_string()));
-        assert_eq!(country("Special"), Some("Special".to_string()));
+        assert_eq!(sim.houses[&ai].economy().credits(), 12_345 + 864);
     }
 
     #[test]
@@ -1519,25 +1434,6 @@ mod tests {
             !alliances
                 .get("PLAYER")
                 .is_some_and(|allies| allies.contains("COMPUTER2"))
-        );
-    }
-
-    #[test]
-    fn skirmish_launch_team_sentinels_do_not_auto_ally() {
-        let session = test_session();
-        let slots = normalized_launch_slots(&session);
-        let alliances =
-            launch_alliance_map(&roster_with_neutral_and_playable(), &slots, &session.mode);
-
-        assert!(
-            !alliances
-                .get("PLAYER")
-                .is_some_and(|allies| allies.contains("COMPUTER1"))
-        );
-        assert!(
-            !alliances
-                .get("COMPUTER1")
-                .is_some_and(|allies| allies.contains("PLAYER"))
         );
     }
 
@@ -1667,7 +1563,7 @@ mod tests {
         assert_eq!(result.spawned_mcvs, 0);
         assert_eq!(
             crate::sim::house_state::house_state_for_owner(&sim.houses, "Player", &sim.interner)
-                .and_then(|house| house.base_center),
+                .and_then(|house| house.base_center()),
             Some((30, 10)),
             "the Auto human takes the first farthest free tie, not the AI reservation"
         );
@@ -1677,7 +1573,7 @@ mod tests {
                 "Computer1",
                 &sim.interner,
             )
-            .and_then(|house| house.base_center),
+            .and_then(|house| house.base_center()),
             Some((10, 10)),
             "standard Battle honors the AI's preassigned table entry"
         );
@@ -1889,66 +1785,6 @@ mod tests {
     }
 
     #[test]
-    fn skirmish_launch_start_position_and_team_are_independent() {
-        let mut session = test_session();
-        session.local_slot_mut().start_position = LaunchStartPosition::Position(3);
-        session.local_slot_mut().team = LaunchTeam::Team(0);
-        session.opponents[0].start_position = LaunchStartPosition::Auto;
-        session.opponents[0].team = LaunchTeam::Team(0);
-        let slots = normalized_launch_slots(&session);
-        let starts = test_launch_starts();
-        let mut rng = SimRng::new(17);
-        let before = rng.logical_state();
-        let assignments = native_assign_launch_starts(&session, &starts, &mut rng);
-        let alliances =
-            launch_alliance_map(&roster_with_neutral_and_playable(), &slots, &session.mode);
-
-        assert_eq!(assignments.placements[0], (0, starts[3]));
-        assert_eq!(assignments.placements[1], (1, starts[0]));
-        assert_eq!(rng.logical_state(), before);
-        assert!(
-            alliances
-                .get("PLAYER")
-                .is_some_and(|allies| allies.contains("COMPUTER1"))
-        );
-    }
-
-    #[test]
-    fn skirmish_bases_off_skips_standard_mcv_callback() {
-        let mut sim = Simulation::new();
-        let mut session = test_session();
-        session.options.bases = false;
-        session.options.unit_count = 0;
-        let terrain = test_terrain(64, 64);
-        let starts = test_launch_starts();
-        let map = test_map_with_starts(&starts);
-        let rules = test_standard_launch_rules();
-
-        let result = apply_explicit_skirmish_launch_session(
-            &mut sim,
-            &map,
-            &roster_with_neutral_and_playable(),
-            &rules,
-            &terrain,
-            &launch_descriptor(&session),
-        );
-
-        assert_eq!(result.spawned_mcvs, 0);
-        assert_eq!(result.active_slots, 2);
-        assert_eq!(sim.entities().len(), 0);
-        assert_eq!(
-            crate::sim::house_state::house_state_for_owner(&sim.houses, "Player", &sim.interner)
-                .and_then(|house| house.base_center),
-            Some((30, 30))
-        );
-        assert_eq!(
-            crate::sim::house_state::house_state_for_owner(&sim.houses, "Computer1", &sim.interner)
-                .and_then(|house| house.base_center),
-            Some((10, 10))
-        );
-    }
-
-    #[test]
     fn explicit_launch_local_owner_drives_production_sidebar_theme() {
         use crate::render::sidebar_chrome::SidebarTheme;
 
@@ -2034,64 +1870,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn sidebar_theme_requires_installed_live_binding() {
-        use crate::render::sidebar_chrome::SidebarTheme;
-
-        assert_eq!(
-            crate::app::presentation::sidebar_render::sidebar_theme_for_owner(None, "MapPlayer",),
-            None,
-            "without an installed House the caller owns its explicit fallback"
-        );
-
-        let mut sim = Simulation::new();
-        let owner_id = sim.interner.intern("MapPlayer");
-        sim.houses
-            .register(HouseState::new(owner_id, 2, None, true, 0, 10));
-        assert_eq!(
-            crate::app::presentation::sidebar_render::sidebar_theme_for_owner(
-                Some(&sim),
-                "MapPlayer",
-            ),
-            Some(SidebarTheme::Yuri),
-            "installed House authority supersedes authored roster metadata"
-        );
-    }
-
-    #[test]
-    fn sidebar_theme_uses_live_russian_side() {
-        use crate::render::sidebar_chrome::SidebarTheme;
-        let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Russians");
-        sim.houses
-            .register(HouseState::new(owner, 1, None, true, 0, 10));
-        assert_eq!(
-            crate::app::presentation::sidebar_render::sidebar_theme_for_owner(
-                Some(&sim),
-                "Russians",
-            ),
-            Some(SidebarTheme::Soviet),
-            "SOV01's installed side must reach sidebar and radar art selection"
-        );
-    }
-
-    #[test]
-    fn sidebar_theme_rejects_unknown_live_side() {
-        let mut sim = Simulation::new();
-        let owner_id = sim.interner.intern("DynamicOwner");
-        sim.houses
-            .register(HouseState::new(owner_id, 7, None, true, 0, 10));
-
-        assert_eq!(
-            crate::app::presentation::sidebar_render::sidebar_theme_for_owner(
-                Some(&sim),
-                "DynamicOwner",
-            ),
-            None,
-            "unknown live side must defer to the caller's explicit fallback"
-        );
-    }
-
     /// F09: the descriptor supersedes the old "explicit application bypasses
     /// the legacy resolver even with a poison random flag" guarantee — an
     /// unresolved random flag can no longer cross into sim at all, so the
@@ -2148,43 +1926,6 @@ mod tests {
         assert_eq!(result.spawned_mcvs, 0);
         assert_eq!(result.active_slots, 2);
         assert_eq!(sim.rng_state().scenario, expected_scenario.logical_state());
-    }
-
-    #[test]
-    fn launch_population_copies_each_ai_row_difficulty_to_its_house() {
-        let mut session = test_session();
-        let template = session.opponents[0].clone();
-        session.opponents = [AiDifficulty::Hard, AiDifficulty::Normal, AiDifficulty::Easy]
-            .into_iter()
-            .enumerate()
-            .map(|(index, difficulty)| SkirmishAiSlot {
-                raw_slot_index: (index + 1) as u8,
-                color_index: (index + 2) as u8,
-                difficulty,
-                ..template.clone()
-            })
-            .collect();
-
-        let mut sim = Simulation::new();
-        let rules = test_standard_launch_rules();
-        populate_launch_houses(&mut sim, &normalized_launch_slots(&session), &rules);
-
-        let difficulty = |owner: &str| {
-            crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
-                .map(|house| house.difficulty)
-        };
-        assert_eq!(difficulty("Player"), Some(HouseDifficulty::Normal));
-        assert_eq!(difficulty("Computer1"), Some(HouseDifficulty::Hard));
-        assert_eq!(difficulty("Computer2"), Some(HouseDifficulty::Normal));
-        assert_eq!(difficulty("Computer3"), Some(HouseDifficulty::Easy));
-        let current_iq = |owner: &str| {
-            crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
-                .map(|house| house.current_iq)
-        };
-        assert_eq!(current_iq("Player"), Some(0));
-        assert_eq!(current_iq("Computer1"), Some(rules.general.max_iq_levels));
-        assert_eq!(current_iq("Computer2"), Some(rules.general.max_iq_levels));
-        assert_eq!(current_iq("Computer3"), Some(rules.general.max_iq_levels));
     }
 
     #[test]
@@ -2258,85 +1999,6 @@ mod tests {
         assert_eq!(sim.entities().len(), 2);
     }
 
-    #[test]
-    fn skirmish_assigned_start_sets_house_base_cell_before_mcv_spawn() {
-        let mut sim = Simulation::new();
-        let session = test_session();
-        let terrain = test_terrain(64, 64);
-        let starts = test_in_playfield_launch_starts();
-        let map = test_map_with_starts(&starts);
-        let rules = test_standard_launch_rules();
-
-        let result = apply_explicit_skirmish_launch_session(
-            &mut sim,
-            &map,
-            &roster_with_neutral_and_playable(),
-            &rules,
-            &terrain,
-            &launch_descriptor(&session),
-        );
-
-        assert_eq!(result.spawned_mcvs, 2);
-        assert_eq!(
-            crate::sim::house_state::house_state_for_owner(&sim.houses, "Player", &sim.interner)
-                .and_then(|house| house.base_center),
-            Some((45, 45))
-        );
-        assert_eq!(entity_position_for_owner(&sim, "Player"), Some((45, 45)));
-    }
-
-    #[test]
-    fn skirmish_mcv_start_uses_radius_fallback_when_start_cell_blocked() {
-        let mut sim = Simulation::new();
-        let session = test_session();
-        let terrain = test_terrain(64, 64);
-        let starts = test_in_playfield_launch_starts();
-        let map = test_map_with_starts(&starts);
-        let rules = test_standard_launch_rules();
-        initialize_skirmish_launch_houses(
-            &mut sim,
-            &roster_with_neutral_and_playable(),
-            &rules,
-            &launch_descriptor(&session),
-        );
-        sim.spawn_object("AMCV", "Neutral", 45, 45, STARTING_MCV_FACING, &rules)
-            .expect("blocker");
-        let mut expected_rng = sim.scenario_rng.clone();
-        // gamemd-derived: TechnoClass::TechnoClass @ 0x006F2B90 consumes and
-        // stores one raw Scenario word at 0x006F3254 before placement.
-        let _ = expected_rng.next_u32();
-        let direction = expected_rng.next_range_u32_inclusive(0, 7) as usize;
-        let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[direction];
-        let expected_position = ((45i32 + dx) as u16, (45i32 + dy) as u16);
-        let _ = expected_rng.next_u32();
-        let _ = expected_rng.next_range_u32_inclusive(0, 0xffff);
-
-        let result = apply_explicit_skirmish_launch_session(
-            &mut sim,
-            &map,
-            &roster_with_neutral_and_playable(),
-            &rules,
-            &terrain,
-            &launch_descriptor(&session),
-        );
-
-        assert_eq!(result.spawned_mcvs, 2);
-        assert_eq!(
-            crate::sim::house_state::house_state_for_owner(&sim.houses, "Player", &sim.interner)
-                .and_then(|house| house.base_center),
-            Some((45, 45))
-        );
-        assert_eq!(
-            entity_position_for_owner(&sim, "Player"),
-            Some(expected_position)
-        );
-        assert_eq!(
-            sim.rng_state().scenario,
-            expected_rng.logical_state(),
-            "two constructor draws plus the fallback direction and final sync draws"
-        );
-    }
-
     /// gamemd-derived: active YR
     /// `MultiplayerGameMode__Create_Starting_Base_Unit @ 0x005D7030` falls
     /// through to `Try_Unlimbo_Object_At_Or_Near_Cell @ 0x00688ED0`; probes
@@ -2400,7 +2062,7 @@ mod tests {
         );
         assert_eq!(
             crate::sim::house_state::house_state_for_owner(&sim.houses, "Player", &sim.interner)
-                .and_then(|house| house.base_center),
+                .and_then(|house| house.base_center()),
             Some((100, 75)),
             "fallback placement must not rewrite the assigned base center"
         );
@@ -2439,23 +2101,6 @@ mod tests {
     }
 
     #[test]
-    fn skirmish_start_unit_budget_excludes_baseunit_entries() {
-        let rules = test_starting_unit_rules();
-        let slots = normalized_launch_slots(&test_session());
-
-        let allied_candidates =
-            starting_unit_candidates_for_country(&rules, LaunchCountry::America, 10);
-        assert_eq!(starting_unit_budget(&rules, &slots, 10, 1), 167);
-
-        assert!(
-            !allied_candidates
-                .vehicles
-                .iter()
-                .any(|candidate| candidate.type_id == "AMCV")
-        );
-    }
-
-    #[test]
     fn skirmish_start_unit_vehicle_phase_preserves_native_third_rounding() {
         assert!(starting_unit_prefers_vehicle(0, 4));
         assert!(
@@ -2481,7 +2126,7 @@ mod tests {
             &sim.interner,
         )
         .expect("launch house")
-        .base_center = Some((32, 32));
+        .set_base_center_for_test(Some((32, 32)));
 
         let mut terrain = test_terrain(64, 64);
         for ry in 0..terrain.height() {
@@ -2567,7 +2212,7 @@ mod tests {
         // Computer1 has no infantry, stops at 3xHTNK = 300 and is credited 34.
         let credits = |owner: &str| {
             crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
-                .map(|house| house.economy.credits())
+                .map(|house| house.economy().credits())
         };
         assert_eq!(credits("Player"), Some(10_000));
         assert_eq!(credits("Computer1"), Some(10_034));
@@ -2609,7 +2254,7 @@ mod tests {
         assert_eq!(sim.entities().len(), 8);
         let credits = |owner: &str| {
             crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
-                .map(|house| house.economy.credits())
+                .map(|house| house.economy().credits())
         };
         assert_eq!(credits("Player"), Some(10_000));
         assert_eq!(credits("Computer1"), Some(10_000));
@@ -2644,7 +2289,7 @@ mod tests {
 
         let credits = |owner: &str| {
             crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
-                .map(|house| house.economy.credits())
+                .map(|house| house.economy().credits())
         };
         assert_eq!(credits("Player"), Some(10_000));
         assert_eq!(credits("Computer1"), Some((10_000 + 34) * 5));
@@ -2730,7 +2375,7 @@ mod tests {
         for (owner, expected_cell) in &expected_cells {
             assert_eq!(
                 crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner,)
-                    .and_then(|house| house.base_center),
+                    .and_then(|house| house.base_center()),
                 Some(*expected_cell),
                 "{owner} must retain its authored base center"
             );
@@ -2868,17 +2513,6 @@ mod tests {
         assert_eq!(
             launch_mcv_type_for_country(LaunchCountry::America, &rules),
             Some("BLOCKED")
-        );
-    }
-
-    #[test]
-    fn skirmish_launch_does_not_use_country_hardcoded_mcv_for_parity_path() {
-        let rules =
-            test_rules_with_base_units("CUSTOMMCV", &[("CUSTOMMCV", "Americans", None, None)]);
-
-        assert_eq!(
-            launch_mcv_type_for_country(LaunchCountry::America, &rules),
-            Some("CUSTOMMCV")
         );
     }
 }

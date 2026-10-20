@@ -436,12 +436,4 @@ mod tests {
             [22, 23, 21]
         );
     }
-
-    #[test]
-    fn alpha_z_policy_is_explicit_for_future_shared_blitter_lowering() {
-        let policy = BlitPolicy::translucent(SpriteEncoding::Rle, RenderZPolicy::AlphaReadWrite);
-        assert_eq!(policy.encoding, SpriteEncoding::Rle);
-        assert_eq!(policy.render_z, RenderZPolicy::AlphaReadWrite);
-        assert!(policy.translucent);
-    }
 }

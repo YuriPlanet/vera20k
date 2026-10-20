@@ -62,7 +62,7 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(owner), route == "player", 5000, 10);
-    house.current_iq = 0;
+    house.set_current_iq_for_test(0);
     sim.houses.register(house);
     let id = prior_building(&mut sim, rules, name, 6, 9);
     let yard = prior_building(&mut sim, rules, "GACNST", 12, 12);

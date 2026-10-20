@@ -1585,20 +1585,20 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
     let roster = sim.houses.order().iter().map(|id| {
         let house = sim.houses.get(id).context("registered House missing from live roster")?;
         let native_id = house.native_unique_id().context("registered House has no native identity")?;
-        let team_timer = house.team_creation.timer();
+        let team_timer = house.team_creation().timer();
         let attack_timer = house.native_attack_timer().map(|(timer, value)| json!({
             "start_frame": timer.start_frame(), "duration": timer.duration(), "value": value}));
         Ok(json!({"name": sim.interner.resolve(*id), "native_unique_id": native_id,
             "house_type": sim.interner.resolve(house.house_type_id()),
-            "country": house.country.map(|country| sim.interner.resolve(country)),
-            "side_index": house.side_index, "is_human": house.is_human,
-            "player_control": house.player_control, "difficulty": house.difficulty as i32,
-            "credits": house.economy.credits(), "scenario_credits": house.economy.scenario_credits(),
-            "tech_level": house.tech_level, "authored_iq": house.authored_iq, "current_iq": house.current_iq,
+            "country": house.country().map(|country| sim.interner.resolve(country)),
+            "side_index": house.side_index(), "is_human": house.is_human(),
+            "player_control": house.player_control(), "difficulty": house.difficulty() as i32,
+            "credits": house.economy().credits(), "scenario_credits": house.economy().scenario_credits(),
+            "tech_level": house.tech_level(), "authored_iq": house.authored_iq(), "current_iq": house.current_iq(),
             "authored_edge": house.authored_edge(), "scenario_team_ratios": house.scenario_team_ratios(),
             "scalar_difficulty_bits": house.scalar_difficulty_biases().map(|value| format!("{:016x}", value.bits())),
             "attack_timer": attack_timer,
-            "team_creation": {"ratio": house.team_creation.ratio(),
+            "team_creation": {"ratio": house.team_creation().ratio(),
                 "start_frame": team_timer.start_frame(), "duration": team_timer.duration()},
         }))
     }).collect::<Result<Vec<_>>>()?;

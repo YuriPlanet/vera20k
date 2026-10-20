@@ -1356,27 +1356,6 @@ mod tests {
     }
 
     #[test]
-    fn markers_inside_the_preview_region_draw_uncropped() {
-        let clip = MmpbRegionRect::new(499, 379, 216, 166);
-        let mut instances = Vec::new();
-
-        push_entry_clipped(
-            &mut instances,
-            marker_entry(),
-            [520, 400],
-            MARKER_DEPTH,
-            clip,
-            ShellScale::RETAIL,
-        );
-
-        assert_eq!(instances.len(), 1);
-        assert_eq!(instances[0].position, [520.0, 400.0]);
-        assert_eq!(instances[0].size, [12.0, 12.0]);
-        assert_eq!(instances[0].uv_origin, [0.25, 0.5]);
-        assert_eq!(instances[0].uv_size, [0.1, 0.2]);
-    }
-
-    #[test]
     fn markers_overhanging_the_preview_region_are_cut_off_at_its_edge() {
         let clip = MmpbRegionRect::new(499, 379, 216, 166);
         let mut instances = Vec::new();

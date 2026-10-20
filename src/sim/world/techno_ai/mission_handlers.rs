@@ -1044,7 +1044,7 @@ fn infantry_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> Missi
     let teamed = sim.team_script_vm.team_for_member(id).is_some();
     let object = sim.object_type(entity.type_ref(), rules);
     let area_guard = if !human && !teamed {
-        house.is_some_and(|house| house.current_iq >= rules.general.iq_guard_area)
+        house.is_some_and(|house| house.current_iq() >= rules.general.iq_guard_area)
             && entity.slave.owner().is_none()
             && object.is_some_and(|object| {
                 crate::sim::combat::combat_weapon::is_armed(entity, object)
@@ -2359,12 +2359,12 @@ fn harvester_guard_override_requeues_harvest(sim: &Simulation, id: u64, rules: &
         .filter(|house| !house.is_controlled_by_human(sim.session.game_mode_nonzero()))
     {
         // Arm (ii), `0x00740880..0x0074092C`.
-        return house.tracking.owns_any_building(
+        return house.tracking().owns_any_building(
             unit_type
                 .dock
                 .iter()
                 .filter_map(|name| sim.interner.get(name)),
-        ) && !house.harvester_no_ore;
+        ) && !house.harvester_no_ore();
     }
     if !unit_type.teleporter {
         return false;
@@ -2869,29 +2869,37 @@ mod terrain_target_tests {
             .set_for_test(Some(TargetKind::Entity(2)));
         sim.substrate.entities.insert(actor);
         let tree_type = sim.interner.intern("TREE01");
-        sim.production
-            .terrain_objects
+        sim.terrain_objects
+            .objects_mut_for_test()
             .insert(2, TerrainObjectState::for_test(2, tree_type, 7, 5));
 
         assert!(!attack_target_is_stale(&sim, 1));
         assert!(foot_dispatch_in_cadence_band(&sim, &rules, 1));
-        sim.production.terrain_objects.get_mut(&2).unwrap().health = 0;
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .get_mut(&2)
+            .unwrap()
+            .set_health_for_test(0);
         assert!(attack_target_is_stale(&sim, 1));
         // Coordinate virtuals remain readable while expiry still holds the
         // Object; presence and coordinate resolution are different questions.
         assert!(foot_dispatch_in_cadence_band(&sim, &rules, 1));
-        let tree = sim.production.terrain_objects.get_mut(&2).unwrap();
-        tree.health = 100;
-        tree.lifecycle = TerrainObjectLifecycle::Limbo;
+        let tree = sim
+            .terrain_objects
+            .objects_mut_for_test()
+            .get_mut(&2)
+            .unwrap();
+        tree.set_health_for_test(100);
+        tree.set_lifecycle_for_test(TerrainObjectLifecycle::Limbo);
         // Object Alive remains set in Limbo; only UnInit clears it.
         assert!(!attack_target_is_stale(&sim, 1));
-        sim.production
-            .terrain_objects
+        sim.terrain_objects
+            .objects_mut_for_test()
             .get_mut(&2)
             .unwrap()
-            .lifecycle = TerrainObjectLifecycle::Destroyed;
+            .set_lifecycle_for_test(TerrainObjectLifecycle::Destroyed);
         assert!(attack_target_is_stale(&sim, 1));
-        sim.production.terrain_objects.remove(&2);
+        sim.terrain_objects.objects_mut_for_test().remove(&2);
         assert!(attack_target_is_stale(&sim, 1));
         assert!(!foot_dispatch_in_cadence_band(&sim, &rules, 1));
     }

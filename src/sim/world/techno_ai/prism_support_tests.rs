@@ -203,7 +203,7 @@ impl Fixture {
             spawned.push(id);
         }
         // Unlimbo's House+68 appends, in spawn order.
-        assert_eq!(sim.houses[&owner].base_projection.buildings(), spawned);
+        assert_eq!(sim.houses[&owner].base_projection().buildings(), spawned);
         let target = sim
             .spawn_object("SHED", "Russians", 15, 12, 0, &rules)
             .unwrap();
@@ -251,7 +251,7 @@ impl Fixture {
                 .houses
                 .get_mut(&owner)
                 .unwrap()
-                .base_projection
+                .base_projection_mut()
                 .replace_buildings_for_test(ids);
         }
         fixture
@@ -891,7 +891,7 @@ fn prism_cadence_matches_the_original() {
                 .map(|building| fixture.id(building.as_str().unwrap()))
                 .collect(),
             None => fixture.sim.houses[&fixture.owner]
-                .base_projection
+                .base_projection()
                 .buildings()
                 .to_vec(),
         };

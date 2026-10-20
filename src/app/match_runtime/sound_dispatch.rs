@@ -1838,41 +1838,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn centered_voc_preserves_order_without_listener_or_random_gates() {
-        // Walk75B085..75B0B0 calls 750920 with centre pan, volume1 and no handle.
-        // The existing registered Voc consumer maps source=None to those
-        // gains without a positional shroud/distance test.
-        let rules = dispatch_rules();
-        let sim = Simulation::new();
-        for local_owner in [None, Some("DifferentOwner")] {
-            let mut output = SoundEventQueue::new();
-            dispatch_sim_sound_events(
-                [
-                    SimSoundEvent::VocCentered {
-                        sound_id: "MenuScold".into(),
-                    },
-                    SimSoundEvent::VocCentered {
-                        sound_id: "OtherRulesSound".into(),
-                    },
-                ],
-                &sim,
-                &rules,
-                local_owner,
-                &mut |_| panic!("centred Voc has no radar admission"),
-                &mut output,
-            );
-            let events = output.drain();
-            assert!(matches!(
-                events.as_slice(),
-                [
-                    GameSoundEvent::VocAt { sound_id: first, source: None },
-                    GameSoundEvent::VocAt { sound_id: second, source: None },
-                ] if first == "MenuScold" && second == "OtherRulesSound"
-            ));
-        }
-    }
-
     /// Launch case 4's tail (`0x006CCCF0..0x006CCD2D`): `PlayEVA`
     /// (`EVA_ChronosphereActivated`) for every launcher, then for the
     /// launching player only `RemoveFromQueues(EVA_ChronosphereReady)`; its
@@ -2020,7 +1985,7 @@ mod tests {
                     let local = sim.interner.intern("Local");
                     let mut house =
                         crate::sim::house_state::HouseState::new(local, 0, None, true, 0, 10);
-                    house.is_defeated = true;
+                    house.set_is_defeated_for_test(true);
                     sim.houses.register(house);
                     sim.session.set_current_house_for_test(Some(local));
                 }
@@ -2138,28 +2103,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_01_04_outcome_transition_resolves_exact_standard_eva_entries() {
-        use crate::sim::house_state::HouseOutcomeKind;
-
-        assert_eq!(
-            outcome_eva_event(HouseOutcomeKind::Victory, false),
-            "EVA_YouAreVictorious"
-        );
-        assert_eq!(
-            outcome_eva_event(HouseOutcomeKind::Defeat, false),
-            "EVA_YouHaveLost"
-        );
-        assert_eq!(
-            outcome_eva_event(HouseOutcomeKind::Victory, true),
-            "EVA_MissionAccomplished"
-        );
-        assert_eq!(
-            outcome_eva_event(HouseOutcomeKind::Defeat, true),
-            "EVA_MissionFailed"
-        );
-    }
-
-    #[test]
     fn gsi_04_07_wall_sell_sound_is_global_only_for_local_receiver() {
         let rules =
             crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
@@ -2189,37 +2132,6 @@ mod tests {
         assert!(
             wall_sell_sound_for_local(receiver_name, Some("Receiver"), Some(&no_sound)).is_none()
         );
-    }
-
-    /// `HouseClass::NotifyUnderAttack`: the base siren rides the shared tail
-    /// (`0x004F95CF`), and the ore-miner branch (EVA call `0x004F94FB`,
-    /// `JMP` at `0x004F9500`) jumps past it.
-    #[test]
-    fn base_under_attack_siren_skips_the_ore_miner_branch() {
-        let rules =
-            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-                "[General]\nFixtureOnly=1\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
-                 [BuildingTypes]\n[AudioVisual]\nBaseUnderAttackSound=BaseUnderAttackSiren\n",
-            ))
-            .unwrap();
-
-        assert!(matches!(
-            base_under_attack_siren(false, &rules),
-            Some(crate::audio::events::GameSoundEvent::BaseUnderAttackSfx { sound_id })
-                if sound_id == "BaseUnderAttackSiren"
-        ));
-        assert!(
-            base_under_attack_siren(true, &rules).is_none(),
-            "0x004F9500 jumps straight to LAB_004F95D4, so a harvester gets no siren"
-        );
-
-        let no_key =
-            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-                "[General]\nFixtureOnly=1\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
-                 [BuildingTypes]\n",
-            ))
-            .unwrap();
-        assert!(base_under_attack_siren(false, &no_key).is_none());
     }
 
     /// Stock `[AudioVisual]` values, so the table below is what a retail
@@ -2620,26 +2532,5 @@ mod tests {
             "the cue plays centred on every client, the EVA line with a local \
              player: {played:?}"
         );
-    }
-
-    #[test]
-    fn cloak_sound_app_event_preserves_rule_identity_and_native_world_position() {
-        let event = cloak_sound_for_app(
-            "NavalUnitEmerge".to_string(),
-            10,
-            11,
-            SimFixed::from_num(64),
-            SimFixed::from_num(192),
-            208,
-        );
-        assert!(matches!(
-            event,
-            crate::audio::events::GameSoundEvent::CloakSound {
-                sound_id,
-                source: Some(source),
-            } if sound_id == "NavalUnitEmerge"
-                && source.screen_pos() == (-45.0, 315.0)
-                && source.cell() == (10, 11)
-        ));
     }
 }

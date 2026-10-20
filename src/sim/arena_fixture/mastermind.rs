@@ -90,7 +90,7 @@ impl MindScene {
         let owner = sim.entities().get(mind).unwrap().owner();
         let enemy = sim.entities().get(targets[0]).unwrap().owner();
         assert_ne!(owner, enemy);
-        assert!(sim.houses.get(&owner).unwrap().is_human);
+        assert!(sim.houses.get(&owner).unwrap().is_human());
         sim.session.set_current_house_for_test(Some(owner));
         // Supplied map knowledge admits the real commands/scanner for both
         // houses; counterfire is not avoided by hiding the controller.
@@ -174,7 +174,7 @@ impl MindScene {
                 self.sim
                     .houses
                     .iter()
-                    .map(|(id, house)| (self.sim.interner.resolve(*id), house.is_defeated))
+                    .map(|(id, house)| (self.sim.interner.resolve(*id), house.is_defeated()))
                     .collect::<Vec<_>>(),
                 output
                     .fire_events

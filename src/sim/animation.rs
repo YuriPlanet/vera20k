@@ -173,21 +173,6 @@ impl Animation {
     }
 }
 
-/// Whether a sequence represents the infantry being in a prone stance.
-///
-/// This is a temporary stance proxy until the sim carries an explicit prone bit.
-#[cfg(any(test, feature = "test-support"))]
-pub fn sequence_is_prone(sequence: SequenceKind) -> bool {
-    matches!(
-        sequence,
-        SequenceKind::Prone
-            | SequenceKind::Crawl
-            | SequenceKind::FireProne
-            | SequenceKind::SecondaryProne
-            | SequenceKind::Down
-    )
-}
-
 fn sequence_set_for_type<'a>(
     sequences: &'a BTreeMap<String, SequenceSet>,
     rules: Option<&crate::rules::ruleset::RuleSet>,

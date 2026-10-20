@@ -13,7 +13,7 @@ use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition, L
 
 fn paid_building_head(sim: &Simulation, owner: crate::sim::intern::InternedId) -> Option<Factory> {
     sim.production
-        .factories
+        .factories()
         .iter_insertion_ordered()
         .into_iter()
         .find(|factory| {
@@ -129,7 +129,7 @@ fn stock_spy_blackout_preserves_paid_building_timers_through_recovery() {
                     .expect("AI constructed the actual paid head");
                 assert!(sim.entities().get(id).unwrap().in_limbo());
                 assert!(!factory.on_hold && !factory.suspended);
-                assert!(sim.houses[&computer].economy.spent_credits() > 0);
+                assert!(sim.houses[&computer].economy().spent_credits() > 0);
                 assert!(factory.balance > 0 && factory.balance < plant_cost);
                 first_product = Some(id);
                 if infiltrate {

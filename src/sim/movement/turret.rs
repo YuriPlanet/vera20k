@@ -18,23 +18,6 @@ use crate::sim::game_entity::GameEntity;
 use crate::util::direction_tables::facing16_from_delta;
 use crate::util::fixed_math::SimFixed;
 
-/// Compute the signed shortest-path rotation from `current` to `target` in
-/// 8-bit facing space. No production caller; the live shortest-arc logic is the
-/// signed 16-bit subtraction inside `FacingClass::current`.
-/// Returns a value in -128..=127 (positive = clockwise, negative = counter-clockwise).
-#[cfg(any(test, feature = "test-support"))]
-pub fn shortest_rotation(current: u8, target: u8) -> i16 {
-    let diff: i16 = target as i16 - current as i16;
-    // Wrap into -128..127 range for shortest path.
-    if diff > 128 {
-        diff - 256
-    } else if diff < -128 {
-        diff + 256
-    } else {
-        diff
-    }
-}
-
 /// Compute 16-bit turret facing from source to target using lepton-precise
 /// positions, providing sub-cell accuracy for targeting.
 pub fn facing_toward_lepton(
@@ -373,26 +356,6 @@ mod tests {
     }
 
     #[test]
-    fn test_shortest_rotation_clockwise() {
-        assert_eq!(shortest_rotation(0, 10), 10);
-        assert_eq!(shortest_rotation(200, 210), 10);
-    }
-
-    #[test]
-    fn test_shortest_rotation_counter_clockwise() {
-        assert_eq!(shortest_rotation(10, 0), -10);
-        assert_eq!(shortest_rotation(10, 250), -16); // 250 - 10 = 240 > 128, so 240-256=-16
-    }
-
-    #[test]
-    fn test_shortest_rotation_wrap_around() {
-        // From 250 to 10: clockwise is +16, counter-clockwise is -240. Should pick +16.
-        assert_eq!(shortest_rotation(250, 10), 16);
-        // From 10 to 250: clockwise is +240, counter-clockwise is -16. Should pick -16.
-        assert_eq!(shortest_rotation(10, 250), -16);
-    }
-
-    #[test]
     fn test_facing_toward_lepton_cardinal() {
         use crate::util::fixed_math::SimFixed;
         let center = SimFixed::from_num(128);
@@ -420,13 +383,5 @@ mod tests {
             SimFixed::from_num(128),
         );
         assert!((f as i32 - 16384).abs() < 2, "sub-cell east facing={f}");
-    }
-
-    #[test]
-    fn test_body_facing_to_turret() {
-        assert_eq!(body_facing_to_turret(0), 0);
-        assert_eq!(body_facing_to_turret(64), 16384);
-        assert_eq!(body_facing_to_turret(128), 32768);
-        assert_eq!(body_facing_to_turret(255), 65280);
     }
 }

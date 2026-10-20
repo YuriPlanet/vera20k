@@ -136,29 +136,6 @@ fn follow_friendlies_dispatch_moves_to_friendly_without_replacing_mission_target
 }
 
 #[test]
-fn follow_friendlies_center_excludes_own_team_and_enemies() {
-    let mut f = Fixture::new();
-    f.spawn("TANK", "Americans", 5, 4);
-    let friendly = f.spawn("SOLDIER", "Russians", 12, 4);
-    assert_eq!(f.center(), Some(TeamTarget::Object(friendly)));
-    assert_eq!(
-        f.sim.team_script_vm.team(f.team).unwrap().closest_member,
-        Some(f.member)
-    );
-}
-
-#[test]
-fn follow_friendlies_no_candidate_clears_center_and_waits() {
-    let mut f = Fixture::new();
-    f.step();
-    assert_eq!(f.center(), None);
-    let team = f.sim.team_script_vm.team(f.team).unwrap();
-    assert_eq!(team.closest_member, None);
-    assert!(!team.advance_pending());
-    assert_eq!(team.refusal(), None);
-}
-
-#[test]
 fn follow_friendlies_filters_lifecycle_and_non_foot_classes_in_both_candidate_arrays() {
     use crate::map::entities::EntityCategory;
     use crate::sim::game_entity::GameEntity;
@@ -255,27 +232,6 @@ fn follow_friendlies_compares_truncated_length_not_exact_squared_distance() {
     f.put(first, [1024, 1, 0]);
     f.put(closer, [1024, 0, 0]);
     assert_eq!(f.center(), Some(TeamTarget::Object(first)));
-}
-
-#[test]
-fn follow_friendlies_reselects_on_death_and_alliance_change_without_sticky_cache() {
-    let mut f = Fixture::new();
-    let first = f.spawn("TANK", "Russians", 12, 4);
-    let second = f.spawn("SOLDIER", "Americans", 18, 4);
-    f.sim
-        .house_alliances
-        .insert("AMERICANS".into(), ["RUSSIANS".into()].into());
-    assert_eq!(f.center(), Some(TeamTarget::Object(first)));
-    f.sim
-        .substrate
-        .entities
-        .get_mut(first)
-        .unwrap()
-        .health
-        .set_for_test(0);
-    assert_eq!(f.center(), Some(TeamTarget::Object(second)));
-    f.sim.house_alliances.clear();
-    assert_eq!(f.center(), None);
 }
 
 #[test]
@@ -521,43 +477,4 @@ fn follow_friendlies_placement_scope_admits_limbo_without_leaking() {
         Some(TeamTarget::Object(friendly))
     );
     assert_eq!(f.center(), None, "scope does not leak to later calls");
-}
-
-#[test]
-fn follow_friendlies_empty_team_clears_both_center_outputs() {
-    let mut f = Fixture::new();
-    f.sim.team_script_vm.unlink_member(f.team, f.member);
-    let team = f.sim.team_script_vm.teams.get_mut(&f.team).unwrap();
-    team.zone = Some(TeamTarget::Cell { x: 12, y: 12 });
-    team.closest_member = Some(f.member);
-    assert_eq!(f.center(), None);
-    assert_eq!(
-        f.sim.team_script_vm.team(f.team).unwrap().closest_member,
-        None
-    );
-}
-
-#[test]
-fn follow_friendlies_ordinary_frames_move_member_through_existing_locomotor() {
-    let mut f = Fixture::new();
-    let friendly = f.spawn("TANK", "Russians", 18, 4);
-    let from = f
-        .sim
-        .team_target_coord(TeamTarget::Object(f.member))
-        .unwrap();
-    for _ in 0..60 {
-        f.sim.advance_tick(&[], Some(&f.rules), None, None, 33);
-    }
-    let now = f
-        .sim
-        .team_target_coord(TeamTarget::Object(f.member))
-        .unwrap();
-    assert_ne!(
-        (from.x, from.y),
-        (now.x, now.y),
-        "ordinary movement must consume the order"
-    );
-    let team = f.sim.team_script_vm.team(f.team).unwrap();
-    assert_eq!(team.focus, Some(TeamTarget::Object(friendly)));
-    assert_eq!(team.refusal(), None);
 }

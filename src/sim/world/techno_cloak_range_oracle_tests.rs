@@ -197,7 +197,7 @@ fn original_can_auto_cloak_matches_retail_inputs_and_retained_target_controls() 
         sim.install_resolved_terrain_for_new_map(terrain);
         assert!(sim.rebuild_dynamic_navigation(rules));
         for house in sim.houses.values_mut() {
-            house.is_human = true;
+            house.set_is_human_for_test(true);
         }
         let spawn = |sim: &mut super::Simulation, name, owner, xyz: &Value| {
             let id = sim

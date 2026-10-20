@@ -119,6 +119,11 @@ impl HouseAiUnitChoices {
         }
     }
 
+    /// `AI_Manage_Build_Queue`'s restart clears the three unit choices.
+    pub(crate) fn clear_all(&mut self) {
+        *self = Self::default();
+    }
+
     /// An exit or abandon of `kind`'s object.
     pub(crate) fn clear(&mut self, kind: UnitChoiceKind) {
         *self.slot_mut(kind) = -1;
@@ -152,7 +157,7 @@ pub(crate) fn choose(
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if house.ai_unit_choices.get(kind) != -1 {
+    if house.ai_unit_choices().get(kind) != -1 {
         return;
     }
     let fill_earliest_percent =
@@ -172,7 +177,7 @@ pub(crate) fn choose(
     if let Some(index) = choice
         && let Some(house) = sim.houses.get_mut(&owner)
     {
-        *house.ai_unit_choices.slot_mut(kind) = index;
+        *house.ai_unit_choices_mut().slot_mut(kind) = index;
     }
 }
 
@@ -187,7 +192,7 @@ fn harvester_choice(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Opt
         rules,
         &rules.build_refinery_types,
         country_name,
-        house.side_index,
+        house.side_index(),
         sim.session.game_options().super_weapons,
     );
     let harvester = crate::sim::ai_buildable::first_owner_compatible_harvester(rules, country_bit);
@@ -196,15 +201,15 @@ fn harvester_choice(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Opt
             Some((unit_index(&harvester.id)?, sim.object_tech_level(harvester)))
         }),
         refinery: refinery.map(|refinery| refinery.undeploys_into.as_deref().and_then(unit_index)),
-        gatherers: house.tracking.resource_gatherers(),
-        destinations: house.tracking.resource_destinations(),
+        gatherers: house.tracking().resource_gatherers(),
+        destinations: house.tracking().resource_destinations(),
         harvesters_per_refinery: house.difficulty_value(&rules.general.harvesters_per_refinery),
         slave_miners: house.difficulty_value(&rules.ai_slave_miner_number),
-        current_iq: house.current_iq,
+        current_iq: house.current_iq(),
         iq_harvester: rules.general.iq_harvester,
-        no_ore: house.harvester_no_ore,
+        no_ore: house.harvester_no_ore(),
         human: house.is_controlled_by_human(sim.session.game_mode_nonzero()),
-        tech_level: house.tech_level,
+        tech_level: house.tech_level(),
     })
 }
 

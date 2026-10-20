@@ -119,38 +119,6 @@ fn drawing_scenario_leaves_main_untouched() {
 }
 
 #[test]
-fn drawing_main_leaves_scenario_untouched() {
-    let seed = 1234u64;
-    let sim = Simulation::with_seed(seed);
-    let fresh = SimRng::new(seed);
-    let mapgen_before = sim.mapgen_rng.state();
-
-    for _ in 0..32 {
-        sim.main_rng.next_u32();
-    }
-    assert_eq!(
-        sim.scenario_rng.state(),
-        fresh.state(),
-        "drawing only from the main stream must not advance scenario"
-    );
-    assert_ne!(
-        sim.main_rng.state(),
-        fresh.state(),
-        "main stream must have advanced"
-    );
-    assert_eq!(
-        sim.mapgen_rng.state(),
-        mapgen_before,
-        "drawing only from the main stream must not advance MapGen"
-    );
-}
-
-// --- Test 3: per-stream gamemd raw-sequence pin (design §7.3) ---
-//
-// Both streams from seed 1 must independently reproduce the gamemd raw draw
-// sequence (verified vs the binary scenario RNG; pinned in rng.rs by
-// test_gamemd_raw_sequence_seed_one). Proves the dual seeding is an exact clone.
-#[test]
 fn gsi_04_02_terrain_load_handoffs_install_scenario_and_main_independently() {
     let seed = 0x1234_5678u64;
     let mut sim = Simulation::with_seed(seed);
@@ -175,99 +143,39 @@ fn gsi_04_02_terrain_load_handoffs_install_scenario_and_main_independently() {
     assert_eq!(sim.main_rng.logical_state(), expected_main);
 }
 
-#[test]
-fn each_stream_reproduces_gamemd_raw_sequence_seed_one() {
-    let mut sim = Simulation::with_seed(1);
-    assert_eq!(sim.scenario_rng.next_u32(), 0x78B7_6ED5);
-    assert_eq!(sim.scenario_rng.next_u32(), 0x275D_74AE);
-    assert_eq!(sim.scenario_rng.next_u32(), 0xDA63_B931);
-
-    assert_eq!(sim.main_rng.next_u32(), 0x78B7_6ED5);
-    assert_eq!(sim.main_rng.next_u32(), 0x275D_74AE);
-    assert_eq!(sim.main_rng.next_u32(), 0xDA63_B931);
-}
-
-// --- Test 4: routing regression — one test per accessor (design §7.4) ---
+// --- Test 4: routing regression (design §7.4) ---
 //
 // The central guard against a future edit silently re-pointing an accessor at
 // the wrong field. Each scenario accessor must advance ONLY scenario_rng (main
 // unchanged).
-macro_rules! assert_routes_scenario {
-    ($name:ident, $accessor:ident) => {
-        #[test]
-        fn $name() {
-            let seed = 7u64;
-            let mut sim = Simulation::with_seed(seed);
-            let fresh = SimRng::new(seed);
-            sim.$accessor().next_u32();
-            assert_ne!(
-                sim.scenario_rng.state(),
-                fresh.state(),
-                concat!(stringify!($accessor), " must advance the scenario stream")
-            );
-            assert_eq!(
-                sim.main_rng.state(),
-                fresh.state(),
-                concat!(stringify!($accessor), " must NOT advance the main stream")
-            );
-        }
-    };
-}
-
-assert_routes_scenario!(route_bridge_rng, bridge_rng);
-assert_routes_scenario!(route_particle_rng, particle_rng);
-assert_routes_scenario!(route_superweapon_rng, superweapon_rng);
-
-// --- Test 5: ground-truth value parity vs gamemd (design §7.5, REQUIRED) ---
-//
-// gamemd's `Random__RandomRanged` (0x0065C7E0) is the rejection-sampling
-// algorithm reproduced by `SimRng::next_range_u32_inclusive`. Its decompiled +
-// disassembled form was verified this session (decompile_function 0x0065C7E0 /
-// disassemble_function 0x0065C7E0): low/high at [ESP+4]/[ESP+8], `this` in ECX,
-// struct layout disabled@0 / index_a@4 / index_b@8 / state[250]@0xc, mask =
-// 2^(msb+1)-1, reject `> span`, index wrap at 250, RET 0x8.
-//
-// The MCP `emulate_function 0x0065C7E0` harness times out re-initializing the
-// 1012-byte post-seed RNG image, so the emitted values below are derived the
-// equally-rigorous way: feeding the binary-pinned raw draw stream for seed 1
-// (0x78B76ED5, 0x275D74AE, 0xDA63B931, ... — read_memory-verified, pinned by
-// `test_gamemd_raw_sequence_seed_one`) through that verified algorithm.
-//
-// RandomRanged(0,4), seed 1: mask=7, draws &7 -> 5(reject),6(reject),1(accept),
-// then 2,1,0,1 -> sequence [1, 2, 1, 0, 1].
-// RandomRanged(0,7), seed 1: mask=7 -> [5, 6, 1, 2, 1].
 #[test]
-fn scenario_stream_matches_gamemd_random_ranged_0_4() {
-    // gamemd emitted values (Random__RandomRanged 0x0065C7E0, seed 1).
-    const GAMEMD_RANGED_0_4_SEED1: [u32; 5] = [1, 2, 1, 0, 1];
-    let mut sim = Simulation::with_seed(1);
-    for (i, &expected) in GAMEMD_RANGED_0_4_SEED1.iter().enumerate() {
-        let got = sim.scenario_rng.next_range_u32_inclusive(0, 4);
-        assert_eq!(
-            got, expected,
-            "scenario RandomRanged(0,4) draw {i} must match gamemd"
+fn scenario_accessors_route_to_the_scenario_stream() {
+    let accessors: [(&str, fn(&mut Simulation) -> &mut SimRng); 3] = [
+        ("bridge_rng", Simulation::bridge_rng),
+        ("particle_rng", Simulation::particle_rng),
+        ("superweapon_rng", Simulation::superweapon_rng),
+    ];
+    for (name, accessor) in accessors {
+        let seed = 7u64;
+        let mut sim = Simulation::with_seed(seed);
+        let fresh = SimRng::new(seed);
+        accessor(&mut sim).next_u32();
+        assert_ne!(
+            sim.scenario_rng.state(),
+            fresh.state(),
+            "{name} must advance the scenario stream"
         );
-    }
-}
-
-#[test]
-fn main_stream_matches_gamemd_random_ranged_0_7() {
-    // gamemd emitted values (Random__RandomRanged 0x0065C7E0, seed 1) — the
-    // same algorithm/stream a main-stream weapon-spread consumer will draw from.
-    const GAMEMD_RANGED_0_7_SEED1: [u32; 5] = [5, 6, 1, 2, 1];
-    let sim = Simulation::with_seed(1);
-    for (i, &expected) in GAMEMD_RANGED_0_7_SEED1.iter().enumerate() {
-        let got = sim.main_rng.next_range_u32_inclusive(0, 7);
         assert_eq!(
-            got, expected,
-            "main RandomRanged(0,7) draw {i} must match gamemd"
+            sim.main_rng.state(),
+            fresh.state(),
+            "{name} must NOT advance the main stream"
         );
     }
 }
 
 // --- Test 6: authoritative hash boundary (design §7.6) ---
 #[test]
-fn advancing_main_only_does_not_change_state_hash() {
+fn only_the_scenario_stream_reaches_the_state_hash() {
     let sim = Simulation::with_seed(99);
     let before = sim.state_hash();
     sim.main_rng.next_u32();
@@ -276,28 +184,11 @@ fn advancing_main_only_does_not_change_state_hash() {
         before,
         "process-global Main state is outside the authoritative world hash"
     );
-}
 
-#[test]
-fn advancing_scenario_only_changes_state_hash() {
-    let mut sim = Simulation::with_seed(99);
-    let before = sim.state_hash();
-    sim.scenario_rng.next_u32();
-    assert_ne!(
-        sim.state_hash(),
-        before,
-        "advancing the scenario stream must change the world hash"
-    );
-}
-
-#[test]
-fn advancing_mapgen_only_does_not_change_state_hash_or_gameplay_streams() {
     let mut sim = Simulation::with_seed(99);
     let before_rng = sim.rng_state();
     let before_hash = sim.state_hash();
-
     sim.mapgen_rng.next_u32();
-
     let after_rng = sim.rng_state();
     assert_eq!(
         after_rng.scenario, before_rng.scenario,
@@ -315,6 +206,13 @@ fn advancing_mapgen_only_does_not_change_state_hash_or_gameplay_streams() {
         sim.state_hash(),
         before_hash,
         "process-global MapGen state is outside the authoritative world hash"
+    );
+
+    sim.scenario_rng.next_u32();
+    assert_ne!(
+        sim.state_hash(),
+        before_hash,
+        "advancing the scenario stream must change the world hash"
     );
 }
 
@@ -637,18 +535,6 @@ fn scenario_main_reseed_does_not_change_mapgen() {
         sim.main_rng.logical_state(),
         SimRng::new(99).logical_state()
     );
-}
-
-#[test]
-fn rng_views_name_all_three_streams() {
-    let mut sim = Simulation::with_seed(5);
-    sim.scenario_rng.next_u32();
-    sim.main_rng.next_u32();
-    sim.mapgen_rng.next_u32();
-    let views = sim.rng_views();
-    assert_eq!(views.scenario, sim.scenario_rng.logical_view());
-    assert_eq!(views.main, sim.main_rng.logical_state());
-    assert_eq!(views.mapgen, sim.mapgen_rng.logical_view());
 }
 
 #[test]

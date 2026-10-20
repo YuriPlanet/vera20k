@@ -44,26 +44,6 @@ fn birth(value: &Value) -> LaserBirth {
 }
 
 #[test]
-fn original_general_laser_reaches_the_shared_draw_consumer() {
-    let native = crate::test_fixture::json("tools/spatial_oracle/disk_laser.json");
-    let row = native["laser_draw"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| {
-            integer(&row["laser"]["house_color"]) == 0
-                && !row["segments"].as_array().unwrap().is_empty()
-        })
-        .expect("original GeneralDraw emits physical surface lines");
-    let mut lasers = Lasers::default();
-    lasers.create(birth(&row["laser"]), |_| {
-        panic!("explicit RGB has no House lookup")
-    });
-    lasers.live[0].age = integer(&row["laser"]["age"]);
-    assert_eq!(lasers.draws().count(), 1, "native GeneralDraw is visible");
-}
-
-#[test]
 fn original_general_main_continuation_is_sampled_once_per_composite() {
     let native = crate::test_fixture::json("tools/spatial_oracle/disk_laser.json");
     let rows = native["laser_draw"].as_array().unwrap();

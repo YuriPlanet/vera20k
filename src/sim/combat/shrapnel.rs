@@ -31,11 +31,7 @@ fn ground_head(
             rx,
             ry,
             crate::sim::movement::locomotor::MovementLayer::Ground,
-            world
-                .production
-                .terrain_object_cells
-                .get(&(rx, ry))
-                .copied(),
+            world.terrain_objects.cell_index().get(&(rx, ry)).copied(),
         )
         .next()
 }
@@ -154,7 +150,7 @@ pub(super) fn emit_projectile_shrapnel(
                 // Terrain+48 is ObjectGetCoords5F65A0: retained Location,
                 // including construction Z, never a fresh ground sample.
                 ProjectileTarget::Terrain(id) => {
-                    let Some(terrain) = world.production.terrain_objects.get(&id) else {
+                    let Some(terrain) = world.terrain_objects.objects().get(&id) else {
                         return;
                     };
                     terrain.world_coord()

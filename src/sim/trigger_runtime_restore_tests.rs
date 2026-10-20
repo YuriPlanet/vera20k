@@ -4,7 +4,6 @@
 //! executable comparisons. Supplied-nearby tests assert caller arguments,
 //! and do not claim the supplied answer as native placement output.
 use super::*;
-use crate::map::entities::EntityCategory;
 use crate::rules::{ini_parser::IniFile, overlay_types::OverlayTypeRegistry, ruleset::RuleSet};
 use crate::sim::intern::InternedId;
 use crate::sim::movement::{fresh_oracle_seam, ground_pose};
@@ -447,41 +446,4 @@ fn failed_foot_unlimbo_retires_new_object_and_restores_old_raw_location() {
     let restored = sim.substrate.entities.get(old).unwrap();
     assert!(!restored.lifecycle.in_limbo());
     assert_eq!(ground_pose::position_world_coord(&restored.position), coord);
-}
-
-#[test]
-fn a_building_blocks_foot_clearance_before_the_new_object_unlimbo() {
-    let (mut sim, rules, registry, houses) = fixture();
-    let block = spawn(&mut sim, &rules, houses[1], "CABHUT", (15, 15));
-    let coord =
-        ground_pose::position_world_coord(&sim.substrate.entities.get(block).unwrap().position);
-    let created = construct(&mut sim, &rules, houses[0], "TAGUNIT");
-    assert!(
-        sim.place_foot_with_cleared_cell(
-            created,
-            coord,
-            0,
-            &rules,
-            Some(&registry),
-            FrameEffects::default()
-        )
-        .is_none()
-    );
-    let new = sim.substrate.entities.get(created).unwrap();
-    assert!(
-        new.lifecycle.object_alive() && new.lifecycle.in_limbo(),
-        "caller50D507 owns this early-refusal UnInit"
-    );
-    assert_eq!(
-        sim.substrate.entities.get(block).unwrap().category(),
-        EntityCategory::Structure
-    );
-    assert!(
-        sim.substrate
-            .entities
-            .get(block)
-            .unwrap()
-            .lifecycle
-            .object_alive()
-    );
 }

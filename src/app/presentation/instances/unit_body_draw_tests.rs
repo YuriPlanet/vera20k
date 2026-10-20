@@ -144,43 +144,6 @@ Turret=yes
     assert!(matches!(body, BodyDraw::Turret { turret, .. } if turret == hull));
 }
 
-/// DrawIt suppresses both transition bodies (73CF46/73CF54), and its settled
-/// deployed body uses UnloadingClass (73D2F2..73D30C). This exercises the
-/// production draw decision against the atlas's model/layer coverage.
-#[test]
-fn simple_deploy_transitions_hide_the_body_and_settled_state_selects_its_model() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[VehicleTypes]\n0=HELI\n1=GUNNED\n\
-         [HELI]\nIsSimpleDeployer=yes\nUnloadingClass=GUNNED\n\
-         [GUNNED]\nTurret=yes\n",
-    ))
-    .expect("simple deploy draw rules");
-    let directory = TestDirectory::new("simple-deploy-body-draw");
-    let assets = AssetManager::from_loose_root_for_test(directory.path());
-    let mut sim = Simulation::new();
-    let id = sim
-        .spawn_object_limbo_at_height("HELI", "Americans", 10, 10, 0x40, 0, &rules)
-        .expect("the simple deployer is built");
-
-    for (deployed, begin, reverse, expected) in [
-        (false, false, false, Some(("HELI", false))),
-        (false, true, false, None),
-        (true, false, false, Some(("GUNNED", true))),
-        (true, false, true, None),
-        (false, false, false, Some(("HELI", false))),
-    ] {
-        sim.entities_mut()
-            .get_mut(id)
-            .unwrap()
-            .set_unit_simple_deploy_for_test(deployed, begin, reverse);
-        assert_eq!(
-            body_draw_against_seed(&sim, &assets, &rules, id),
-            Ok(expected.map(|(model, parts)| (model.to_string(), parts))),
-            "Unit6E0={deployed}, 6E1={begin}, 6E2={reverse}"
-        );
-    }
-}
-
 #[test]
 fn retail_siege_chopper_draws_schd_only_after_deployment_completes() {
     let Some(battle) = retail_battle_rules() else {

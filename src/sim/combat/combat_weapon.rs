@@ -1137,7 +1137,7 @@ pub(crate) fn select_weapon_index_against_in_query(
                 }
                 Some(facts)
             } else {
-                world.production.terrain_objects.get(&target_id)?;
+                world.terrain_objects.objects().get(&target_id)?;
                 Some(TargetFacts::Terrain)
             }
         }
