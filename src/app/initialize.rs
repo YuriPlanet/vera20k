@@ -141,6 +141,7 @@ impl App {
         // and the match zoom follows it. A sealed capture keeps its exact,
         // fixed, hidden physical surface.
         let capture = capture_dimensions.is_some();
+        let branded_apple = cfg!(any(target_os = "macos", target_os = "ios")) && !capture;
         let inner_size: winit::dpi::Size = if capture {
             PhysicalSize::new(window_width, window_height).into()
         } else {
@@ -151,7 +152,11 @@ impl App {
         // is itself full screen). The resize that ends the animation re-fits
         // the surface.
         let mut window_attrs: WindowAttributes = WindowAttributes::default()
-            .with_title("RA2 Engine")
+            .with_title(if branded_apple {
+                "王二火大"
+            } else {
+                "RA2 Engine"
+            })
             .with_inner_size(inner_size)
             .with_resizable(!capture)
             .with_fullscreen(
@@ -182,12 +187,20 @@ impl App {
                 .with_prefers_status_bar_hidden(true)
                 .with_prefers_home_indicator_hidden(true);
         }
-        // Capture windows stay hidden, so only a visible session shows the icon.
-        let retail_icon = game_config
-            .as_ref()
-            .filter(|_| window_visible)
-            .and_then(|config| super::window_icon::RetailIcon::load(&config.paths.ra2_dir));
-        if let Some(icon) = &retail_icon {
+        // Capture windows stay hidden. Ordinary Mac sessions use the approved
+        // embedded PNG; other sessions retain the original retail icon source.
+        let window_icon = window_visible
+            .then(|| {
+                #[cfg(target_os = "macos")]
+                if branded_apple {
+                    return super::window_icon::RetailIcon::branded();
+                }
+                game_config
+                    .as_ref()
+                    .and_then(|config| super::window_icon::RetailIcon::load(&config.paths.ra2_dir))
+            })
+            .flatten();
+        if let Some(icon) = &window_icon {
             window_attrs = icon.apply(window_attrs);
         }
         let window: Arc<Window> = Arc::new(event_loop.create_window(window_attrs)?);
@@ -196,7 +209,7 @@ impl App {
         // `show_os_cursor_only_without_game_cursor` owns the cursor.
         window.set_cursor_visible(false);
         #[cfg(target_os = "macos")]
-        if let Some(icon) = &retail_icon {
+        if let Some(icon) = &window_icon {
             icon.set_dock_icon();
         }
         let gpu: GpuContext = GpuContext::new(window.clone())?;

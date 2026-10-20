@@ -22,8 +22,10 @@ import zipfile
 
 OWNER = "vera20k.tools.ios.package.v1"
 MARKER = "package-manifest.json"
-APP_NAME = "VERA20k.app"
+DISPLAY_NAME = "王二火大"
+APP_NAME = DISPLAY_NAME + ".app"
 EXECUTABLE_NAME = "vera20k"
+APP_ICON = Path(__file__).resolve().parents[2] / "art" / "branding" / "wannafire-app-icon.png"
 
 
 class PackageError(Exception):
@@ -191,14 +193,63 @@ def copy_assets(source, destination):
     return records
 
 
+def compile_app_icon(source, app, staging, minimum_ios, simulator):
+    """Build the approved square artwork through Apple's asset catalog compiler."""
+    properties = run(["sips", "-g", "pixelWidth", "-g", "pixelHeight", "-g", "hasAlpha",
+                      str(source)]).decode()
+    width = re.search(r"pixelWidth:\s+(\d+)", properties)
+    height = re.search(r"pixelHeight:\s+(\d+)", properties)
+    if not width or not height or width.group(1) != height.group(1) or int(width.group(1)) < 1024:
+        raise PackageError("app icon must be a square image at least 1024 pixels across")
+    if not re.search(r"hasAlpha:\s+no\b", properties):
+        raise PackageError("app icon must be opaque, without an alpha channel")
+    with tempfile.TemporaryDirectory(prefix="app-icon-", dir=staging) as temporary:
+        catalog = Path(temporary) / "Branding.xcassets"
+        icon_set = catalog / "AppIcon.appiconset"
+        icon_set.mkdir(parents=True)
+        (catalog / "Contents.json").write_text(json.dumps({"info": {"author": "xcode", "version": 1}}))
+        images = []
+        # Universal iPhone/iPad slots, including Settings, Spotlight, notification,
+        # home-screen and marketing sizes. Duplicate pixel sizes share one PNG.
+        slots = [("iphone", size, scale) for size in (20, 29, 40, 60) for scale in (2, 3)]
+        slots += [("ipad", size, scale) for size in (20, 29, 40, 76) for scale in (1, 2)]
+        slots += [("ipad", 83.5, 2), ("ios-marketing", 1024, 1)]
+        for idiom, size, scale in slots:
+            pixels = int(size * scale)
+            filename = "AppIcon-{}.png".format(pixels)
+            image = icon_set / filename
+            if not image.exists():
+                run(["sips", "-z", str(pixels), str(pixels), str(source), "--out", str(image)])
+            images.append({"idiom": idiom, "size": "{0}x{0}".format(size),
+                           "scale": "{}x".format(scale), "filename": filename})
+        (icon_set / "Contents.json").write_text(json.dumps({"images": images,
+                                                           "info": {"author": "xcode", "version": 1}}))
+        partial_plist = Path(temporary) / "app-icon.plist"
+        before = set(app.iterdir())
+        # actool(1): merge the emitted partial plist so the icons in Assets.car and
+        # loose fallback PNGs have Apple's matching CFBundleIcons declarations.
+        run(["xcrun", "actool", "--compile", str(app), "--platform",
+             "iphonesimulator" if simulator else "iphoneos", "--minimum-deployment-target", minimum_ios,
+             "--target-device", "iphone", "--target-device", "ipad", "--app-icon", "AppIcon",
+             "--standalone-icon-behavior", "all", "--output-partial-info-plist", str(partial_plist),
+             "--output-format", "xml1", "--warnings", "--errors", str(catalog)])
+        icon_plist = plistlib.loads(partial_plist.read_bytes())
+        if not all(key in icon_plist for key in ("CFBundleIcons", "CFBundleIcons~ipad")):
+            raise PackageError("actool did not produce both iPhone and iPad icon declarations")
+        compiled = [{"path": path.name, "bytes": path.stat().st_size, "sha256": sha256(path)}
+                    for path in sorted(set(app.iterdir()) - before) if path.is_file()]
+    return icon_plist, {"source": str(source), "sha256": sha256(source),
+                        "asset_name": "AppIcon", "compiled": compiled}
+
+
 def info_plist(args):
     return {
-        "CFBundleDevelopmentRegion": "en",
-        "CFBundleDisplayName": "VERA20k Mini",
+        "CFBundleDevelopmentRegion": "zh-Hans",
+        "CFBundleDisplayName": DISPLAY_NAME,
         "CFBundleExecutable": EXECUTABLE_NAME,
         "CFBundleIdentifier": args.bundle_id,
         "CFBundleInfoDictionaryVersion": "6.0",
-        "CFBundleName": "VERA20k",
+        "CFBundleName": DISPLAY_NAME,
         "CFBundlePackageType": "APPL",
         "CFBundleShortVersionString": args.version,
         "CFBundleSupportedPlatforms": ["iPhoneSimulator" if args.simulator else "iPhoneOS"],
@@ -232,11 +283,13 @@ def package(args):
     check_output(args.output, args.replace, platform)
     executable = args.executable.resolve(strict=True)
     asset_root = args.asset_root.resolve(strict=True)
+    app_icon = args.app_icon.resolve(strict=True)
     output = args.output.resolve()
-    if not executable.is_file() or not asset_root.is_dir():
-        raise PackageError("executable must be a file and asset-root must be a directory")
-    if contains(output, executable) or contains(output, asset_root) or contains(asset_root, output):
-        raise PackageError("output must be separate from the executable and asset source tree")
+    if not executable.is_file() or not asset_root.is_dir() or not app_icon.is_file():
+        raise PackageError("executable and app-icon must be files and asset-root must be a directory")
+    if (contains(output, executable) or contains(output, asset_root) or contains(asset_root, output)
+            or contains(output, app_icon)):
+        raise PackageError("output must be separate from the executable, icon and asset source tree")
     required = {"ra2.mix", "ra2md.mix", "language.mix", "langmd.mix", "gamemd.exe"}
     present = {path.name.casefold() for path in asset_root.iterdir() if path.is_file()}
     missing = sorted(required - present)
@@ -252,8 +305,9 @@ def package(args):
         app.mkdir(parents=True)
         shutil.copyfile(executable, app / EXECUTABLE_NAME)
         (app / EXECUTABLE_NAME).chmod(0o755)
+        icon_plist, icon_record = compile_app_icon(app_icon, app, staging, args.minimum_ios, args.simulator)
         with (app / "Info.plist").open("wb") as target:
-            plistlib.dump(info_plist(args), target, fmt=plistlib.FMT_BINARY)
+            plistlib.dump({**info_plist(args), **icon_plist}, target, fmt=plistlib.FMT_BINARY)
         (app / "PkgInfo").write_bytes(b"APPL????")
         print("Copying local retail assets into the iOS app...", flush=True)
         # iOS uses a shallow bundle. A top-level directory literally named
@@ -272,7 +326,7 @@ def package(args):
         elif args.simulator:
             run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(app)])
             run(["codesign", "--verify", "--strict", "--verbose=2", str(app)])
-        ipa = staging / ("VERA20k-ios-mini-simulator.ipa" if args.simulator else "VERA20k-ios-mini.ipa")
+        ipa = staging / (DISPLAY_NAME + ("-ios-simulator.ipa" if args.simulator else "-ios.ipa"))
         signing_mode = "simulator-ad-hoc" if args.simulator else "provisioned" if signing else "unsigned"
         print("Writing {} IPA...".format(signing_mode), flush=True)
         with zipfile.ZipFile(ipa, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=1) as archive:
@@ -283,6 +337,11 @@ def package(args):
             "owner": OWNER,
             "created_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "bundle_id": args.bundle_id,
+            "display_name": DISPLAY_NAME,
+            "app_name": APP_NAME,
+            "version": args.version,
+            "build_number": args.build_number,
+            "app_icon": icon_record,
             "minimum_ios": args.minimum_ios,
             "signed": bool(signing) or args.simulator,
             "signing_mode": signing_mode,
@@ -322,9 +381,11 @@ def main():
                         help="absolute path to local retail game files; symlinks are dereferenced")
     parser.add_argument("--output", required=True, type=absolute_path,
                         help="new or empty output directory")
+    parser.add_argument("--app-icon", type=absolute_path, default=APP_ICON,
+                        help="approved opaque square PNG (defaults to art/branding/wannafire-app-icon.png)")
     parser.add_argument("--bundle-id", default="org.yuriplanet.vera20k.ios.mini")
     parser.add_argument("--minimum-ios", type=version, default="16.0")
-    parser.add_argument("--version", type=version, default="0.1.0")
+    parser.add_argument("--version", type=version, default="1.0")
     parser.add_argument("--build-number", default="1")
     parser.add_argument("--simulator", action="store_true",
                         help="require an arm64 iOS Simulator binary and sign ad hoc; use a separate output")

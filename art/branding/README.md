@@ -4,6 +4,19 @@ These custom assets were reviewed as images and a complete video preview before
 the user approved game integration on 2026-10-20. They replace the earlier direct
 reuse of the web project's startup image and menu video.
 
+- `wannafire-app-icon.png`: approved 1254×1254 opaque app-icon master. It derives
+  from the current WannaFire website emblem: a W formed by two clashing abstract
+  arms, with a flame in the middle. The approved imagegen interpretation uses
+  rough silver/gunmetal bas-relief and an ember-red copper flame. SHA-256:
+  `9732240fba3d38ec2831d93360c1c3fecb5b2872c645cd2af8442072d1cf6cbc`.
+  Packaging resizes the complete master without cropping: `iconutil` builds the
+  macOS ICNS; `actool` builds the iPhone/iPad icons and matching metadata. The
+  ordinary Mac Dock uses this same master through the existing image setter.
+  Chinese Apple builds display 王二火大 as their app name and window title.
+  Bundle IDs, executable names, settings and save directories retain their
+  existing internal identity. `tools/macos/package.py` packages the local Mac
+  build, and `tools/ios/package.py` packages the device or simulator build.
+
 - `werhd-loading.png`: 1448×1086, 4:3. The original Yuri splash's composition and
   silver winged crest were adapted with image_gen: seven yellow milk-frogs,
   cream bellies, rough skin, the original low-angle poses and red eye-covering

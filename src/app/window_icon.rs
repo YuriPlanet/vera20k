@@ -1,11 +1,8 @@
-//! The window, taskbar and Dock icon: Red Alert 2's red star, from the retail install.
+//! The window, taskbar and Dock icon, owned by one image setter.
 //!
-//! Not gamemd-derived. gamemd registers its own Yuri's Revenge icon for its window;
-//! the user chose the original Red Alert 2 game icon instead: the red star with the
-//! hammer and sickle built into RA2's `game.exe` (and `Ra2.exe`). No `.ico` file ships
-//! with that design, so the icon group is read out of the executable in the configured
-//! install at startup and no retail art is committed. Without it the platform default
-//! icon stays.
+//! Ordinary macOS sessions use the approved bundled 王二火大 PNG. Other
+//! platforms and retail captures retain Red Alert 2's red star from `game.exe`
+//! (or `Ra2.exe`); that original icon is extracted at runtime, never committed.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -15,17 +12,34 @@ use winit::window::{Icon, WindowAttributes};
 /// Retail executables carrying the red star, in order of preference.
 const ICON_SOURCES: [&str; 2] = ["GAME.EXE", "RA2.EXE"];
 
-/// Red Alert 2's red star, loaded from the retail install.
+/// App icon image: bundled branding or the original retail executable icon.
 pub(super) struct RetailIcon {
-    /// The icon group as an `.ico` file. macOS takes every entry and picks its own
-    /// resolution.
+    /// Encoded ICO or PNG data, both accepted by macOS NSImage.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    ico: Vec<u8>,
+    image_data: Vec<u8>,
     /// The largest entry, for winit's window icon (Windows and X11).
     rgba: image::RgbaImage,
 }
 
 impl RetailIcon {
+    /// The approved app artwork, independent of the availability of retail data.
+    /// Keep this in the existing owner so Dock and package branding cannot be
+    /// overwritten later by the retail red-star setter.
+    #[cfg(target_os = "macos")]
+    pub(super) fn branded() -> Option<Self> {
+        let png = include_bytes!("../../art/branding/wannafire-app-icon.png");
+        match image::load_from_memory_with_format(png, image::ImageFormat::Png) {
+            Ok(image) => Some(Self {
+                image_data: png.to_vec(),
+                rgba: image.into_rgba8(),
+            }),
+            Err(error) => {
+                log::warn!("Bundled app icon unreadable: {error}");
+                None
+            }
+        }
+    }
+
     pub(super) fn load(ra2_dir: &Path) -> Option<Self> {
         for name in ICON_SOURCES {
             let Some(path) = crate::util::case_insensitive_path::find(ra2_dir, name) else {
@@ -49,7 +63,10 @@ impl RetailIcon {
     fn decode(ico: Vec<u8>) -> image::ImageResult<Self> {
         // The ICO decoder selects the file's largest entry.
         let rgba = image::load_from_memory_with_format(&ico, image::ImageFormat::Ico)?.into_rgba8();
-        Ok(Self { ico, rgba })
+        Ok(Self {
+            image_data: ico,
+            rgba,
+        })
     }
 
     /// The window icon, and on Windows the taskbar icon. winit ignores both on
@@ -86,7 +103,7 @@ impl RetailIcon {
             log::warn!("Dock icon not set: not on the main thread");
             return;
         };
-        let data = NSData::with_bytes(&self.ico);
+        let data = NSData::with_bytes(&self.image_data);
         let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) else {
             log::warn!("Dock icon not set: AppKit could not read the icon");
             return;

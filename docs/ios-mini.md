@@ -20,16 +20,25 @@ python3 tools/ios/package.py \
   --output /absolute/path/to/ios-mini
 ```
 
-The app is staged at `ios-mini/Payload/VERA20k.app` and the archive at
-`ios-mini/VERA20k-ios-mini.ipa`. The app defaults to bundle identifier
+The Chinese app is named 王二火大, staged at `ios-mini/Payload/王二火大.app`,
+with the archive at `ios-mini/王二火大-ios.ipa`. It defaults to version 1.0,
+Simplified Chinese (`zh-Hans`) and bundle identifier
 `org.yuriplanet.vera20k.ios.mini`, iOS 16 or newer, landscape, and iPhone/iPad.
 `Info.plist` and the arm64 iOS device platform are checked during packaging.
 Source asset symlinks are copied as regular files into
-`VERA20k.app/retail-assets`; the source files are never changed. A shallow iOS
+`王二火大.app/retail-assets`; the source files are never changed. A shallow iOS
 bundle must not introduce the reserved top-level `Resources` directory. Retail
 game data is local input and must not be committed or uploaded with this tool.
 
-The generated `package-manifest.json` records the binary, asset and archive hashes.
+The approved metal W/flame icon lives at `art/branding/wannafire-app-icon.png`.
+Packaging resizes the complete square artwork with `sips`, then uses Xcode's
+`actool` to compile iPhone/iPad icons and merge its icon declarations into
+`Info.plist`. `--app-icon` can select another absolute path to an opaque square
+source at least 1024 pixels across. The executable remains `vera20k` and the
+bundle identifier and writable data paths retain their existing identity.
+
+The generated `package-manifest.json` records the Chinese display name and
+version, icon source and compiled icon hashes, and binary, asset and archive hashes.
 The tool refuses a nonempty unrelated output directory. `--replace` only replaces
 a previous output carrying this tool's ownership manifest.
 
@@ -49,9 +58,9 @@ python3 tools/ios/package.py \
 This requires an arm64 `IOSSIMULATOR` binary, sets the bundle platform to
 `iPhoneSimulator`, and signs the app ad hoc without a development profile. Device
 signing arguments are rejected in this mode. Install the generated `.app` using
-`xcrun simctl install SIMULATOR_UDID /absolute/path/to/ios-mini-simulator/Payload/VERA20k.app`,
+`xcrun simctl install SIMULATOR_UDID /absolute/path/to/ios-mini-simulator/Payload/王二火大.app`,
 then launch with `xcrun simctl launch SIMULATOR_UDID org.yuriplanet.vera20k.ios.mini`.
-The archive is named `VERA20k-ios-mini-simulator.ipa` and is only for the simulator.
+The archive is named `王二火大-ios-simulator.ipa` and is only for the simulator.
 Keep an existing signed device package in its original output directory.
 
 Simulator acceptance establishes that the menu and map work in the Mac's iPhone
@@ -118,7 +127,7 @@ debug allowance. See Apple's [provisioning profile explanation](https://develope
 and [current signature format](https://developer.apple.com/documentation/xcode/using-the-latest-code-signature-format).
 
 Install the signed `.app` using Xcode's Devices and Simulators window, or
-`xcrun devicectl device install app --device DEVICE_IDENTIFIER /absolute/path/to/ios-mini/Payload/VERA20k.app`.
+`xcrun devicectl device install app --device DEVICE_IDENTIFIER /absolute/path/to/ios-mini/Payload/王二火大.app`.
 Launch bundle identifier `org.yuriplanet.vera20k.ios.mini` (or the explicit
 `--bundle-id`). Trust the developer and enable Developer Mode when required by iOS.
 
