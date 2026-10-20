@@ -68,7 +68,11 @@ impl<'a> From<&'a wgpu::AdapterInfo> for GpuAdapterObservation<'a> {
 /// Other render modules borrow `device` and `queue` from this struct.
 pub struct GpuContext {
     /// The GPU surface we render to (tied to the window).
-    pub surface: wgpu::Surface<'static>,
+    surface: Option<wgpu::Surface<'static>>,
+    #[cfg(target_os = "android")]
+    instance: wgpu::Instance,
+    #[cfg(target_os = "android")]
+    adapter: wgpu::Adapter,
     /// The logical GPU device — used to create buffers, textures, pipelines.
     pub device: wgpu::Device,
     /// The command queue — used to submit render commands to the GPU.
@@ -220,7 +224,11 @@ impl GpuContext {
         );
 
         Ok(Self {
-            surface,
+            surface: Some(surface),
+            #[cfg(target_os = "android")]
+            instance,
+            #[cfg(target_os = "android")]
+            adapter,
             device,
             queue,
             config,
@@ -244,8 +252,49 @@ impl GpuContext {
         }
         self.config.width = width;
         self.config.height = height;
-        self.surface.configure(&self.device, &self.config);
+        if let Some(surface) = self.surface.as_ref() {
+            surface.configure(&self.device, &self.config);
+        }
         log::debug!("Surface resized to {}x{}", width, height);
+    }
+
+    pub(crate) fn acquire_frame(&self) -> Result<wgpu::SurfaceTexture> {
+        self.surface
+            .as_ref()
+            .context("render surface is suspended")?
+            .get_current_texture()
+            .context("acquire render surface texture")
+    }
+
+    /// Android destroys SurfaceView at Suspended; the native surface must be
+    /// released before that callback returns. GPU/game resources stay alive.
+    #[cfg(target_os = "android")]
+    pub(crate) fn suspend_surface(&mut self) {
+        self.surface = None;
+    }
+
+    #[cfg(target_os = "android")]
+    pub(crate) fn resume_surface(&mut self, window: Arc<Window>) -> Result<()> {
+        if self.surface.is_some() {
+            return Ok(());
+        }
+        let surface = self
+            .instance
+            .create_surface(window.clone())
+            .context("recreate Android render surface")?;
+        let caps = surface.get_capabilities(&self.adapter);
+        anyhow::ensure!(
+            caps.formats.contains(&self.surface_format),
+            "resumed Android surface changed its texture format"
+        );
+        anyhow::ensure!(
+            caps.usages.contains(self.config.usage),
+            "resumed Android surface no longer supports required usages"
+        );
+        self.surface = Some(surface);
+        let size = window.inner_size();
+        self.resize(size.width, size.height);
+        Ok(())
     }
 
     /// Create a depth texture matching the current surface dimensions.

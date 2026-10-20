@@ -102,6 +102,12 @@ rodio = { version = "0.22", default-features = false, features = ["playback"] }
 # existing core dependency already pins the same libc version in Cargo.lock.
 libc = "0.2"
 
+[target.'cfg(target_os = "android")'.dependencies]
+# Already locked transitively by winit/android-activity. The font renderer
+# uses public Android Paint APIs through the initialized NativeActivity VM.
+jni = "=0.21.1"
+ndk-context = "=0.1.1"
+
 # --- macOS application icon ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which
 # `app::window_icon` sets at startup. objc2 0.6 and Foundation 0.3 are the

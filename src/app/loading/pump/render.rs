@@ -90,8 +90,7 @@ pub(super) fn present_blank(
     fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
 ) -> anyhow::Result<()> {
     let output = gpu
-        .surface
-        .get_current_texture()
+        .acquire_frame()
         .map_err(|e| anyhow::anyhow!("blank frame surface texture: {e}"))?;
     let mut encoder = gpu
         .device
@@ -853,8 +852,7 @@ pub(super) fn present_native_loading(
     scale: ShellScale,
 ) -> anyhow::Result<()> {
     let output = gpu
-        .surface
-        .get_current_texture()
+        .acquire_frame()
         .map_err(|e| anyhow::anyhow!("loading repaint surface texture: {e}"))?;
     let mut encoder = gpu
         .device

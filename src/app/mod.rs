@@ -34,9 +34,9 @@ use crate::util::config::GameConfig;
 pub(crate) mod audio_runtime;
 pub(crate) mod campaign_defeat;
 pub(crate) mod campaign_victory;
+pub(crate) mod chinese_ui;
 pub(crate) mod chrono_screen;
 mod cncnet;
-pub(crate) mod chinese_ui;
 #[cfg(feature = "debug-tools")]
 pub(crate) mod debug_tools;
 pub(crate) mod diagnostics;
@@ -46,24 +46,24 @@ mod handler;
 mod in_game;
 mod initialize;
 pub(crate) mod input;
-#[cfg(any(target_os = "ios", test))]
-#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+#[cfg(any(target_os = "ios", target_os = "android", test))]
+#[cfg_attr(not(any(target_os = "ios", target_os = "android")), allow(dead_code))]
 mod ios_battle_touch;
-#[cfg(any(target_os = "ios", test))]
-#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+#[cfg(any(target_os = "ios", target_os = "android", test))]
+#[cfg_attr(not(any(target_os = "ios", target_os = "android")), allow(dead_code))]
 mod ios_controls;
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 mod ios_hud_render;
 #[cfg(any(target_os = "ios", test))]
 pub mod ios_runtime;
-#[cfg(any(target_os = "ios", test))]
-#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+#[cfg(any(target_os = "ios", target_os = "android", test))]
+#[cfg_attr(not(any(target_os = "ios", target_os = "android")), allow(dead_code))]
 mod ios_shortcuts;
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 mod ios_sidebar_art;
-#[cfg(any(target_os = "ios", test))]
+#[cfg(any(target_os = "ios", target_os = "android", test))]
 mod ios_touch;
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 mod ios_unit_tags;
 pub(crate) mod loading;
 pub(crate) mod match_audio;
@@ -121,9 +121,9 @@ pub struct App {
     startup_options: crate::app::frontend::startup_options::RetailStartupOptions,
     spawn_request: Option<crate::app::frontend::cncnet_spawn::SpawnRequest>,
     startup_failure: Option<String>,
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     ios_touch: ios_touch::IosTouchPointer,
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     ios_suspended: bool,
 }
 
@@ -171,9 +171,9 @@ impl App {
             startup_options,
             spawn_request: None,
             startup_failure: None,
-            #[cfg(target_os = "ios")]
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_touch: Default::default(),
-            #[cfg(target_os = "ios")]
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_suspended: false,
         }
     }
@@ -190,9 +190,9 @@ impl App {
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
             startup_failure: None,
-            #[cfg(target_os = "ios")]
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_touch: Default::default(),
-            #[cfg(target_os = "ios")]
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_suspended: false,
         }
     }
@@ -211,9 +211,9 @@ impl App {
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
             startup_failure: None,
-            #[cfg(target_os = "ios")]
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_touch: Default::default(),
-            #[cfg(target_os = "ios")]
+            #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_suspended: false,
         }
     }

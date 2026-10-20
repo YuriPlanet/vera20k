@@ -319,7 +319,7 @@ pub(crate) fn ensure_movie_for_current_layout(
     }
     clear_ra2ts_movie_session(state);
 
-    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
     if shell_layout::uses_branded_main_menu(state) {
         let movie = crate::render::werhd_menu_movie::MenuMovieSurface::branded(
             &state.renderer.gpu,

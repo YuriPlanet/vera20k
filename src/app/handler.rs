@@ -66,7 +66,7 @@ impl App {
             .renderer
             .shell_surface_presenter
             .resize(&state.renderer.gpu);
-        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        #[cfg(any(target_os = "ios", target_os = "android", target_os = "macos"))]
         if let Some(splash) = state.frontend.startup_splash.as_mut()
             && let Err(err) = splash.resize(&state.renderer.gpu, &state.renderer.batch_renderer)
         {
@@ -226,11 +226,25 @@ impl ApplicationHandler for App {
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         {
             let was_suspended = self.ios_suspended;
             self.ios_suspended = false;
             if let Some(state) = self.state.as_mut() {
+                #[cfg(target_os = "android")]
+                {
+                    if let Err(err) = state
+                        .renderer
+                        .gpu
+                        .resume_surface(state.platform.window.clone())
+                    {
+                        log::error!("Android surface resume failed: {err:#}");
+                        event_loop.exit();
+                        return;
+                    }
+                    let size = state.platform.window.inner_size();
+                    Self::resize_surface_for_window_size(state, size);
+                }
                 if was_suspended && state.platform.capture_client_size.is_none() {
                     // Retain the displayed menu frame, but exclude the parked
                     // UIKit interval from its next elapsed-time sample.
@@ -306,7 +320,7 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         {
             if self.ios_suspended && matches!(&event, WindowEvent::RedrawRequested) {
                 return;
@@ -595,7 +609,7 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::Resized(size) => {
-                #[cfg(target_os = "ios")]
+                #[cfg(any(target_os = "ios", target_os = "android"))]
                 crate::app::ios_controls::reset(state);
                 // A zero dimension is how Windows reports a minimise — that
                 // backend never sends `Occluded` — so the hidden flag is
@@ -615,7 +629,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Focused(active) => {
-                #[cfg(target_os = "ios")]
+                #[cfg(any(target_os = "ios", target_os = "android"))]
                 if active
                     && !state.platform.window_active
                     && state.platform.capture_client_size.is_none()
@@ -1335,7 +1349,7 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         if self.ios_suspended {
             event_loop.set_control_flow(ControlFlow::Wait);
             return;
@@ -1446,7 +1460,7 @@ impl ApplicationHandler for App {
         }
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     fn suspended(&mut self, event_loop: &ActiveEventLoop) {
         self.ios_suspended = true;
         if let Some(id) = self.state.as_ref().map(|state| state.platform.window.id()) {
@@ -1457,8 +1471,10 @@ impl ApplicationHandler for App {
         self.ios_touch.reset();
         if let Some(state) = self.state.as_mut() {
             Self::set_window_hidden(state, true);
+            #[cfg(target_os = "android")]
+            state.renderer.gpu.suspend_surface();
         }
-        log::info!("iOS application suspended; rendering parked");
+        log::info!("Mobile application suspended; rendering parked");
         log::logger().flush();
         event_loop.set_control_flow(ControlFlow::Wait);
     }

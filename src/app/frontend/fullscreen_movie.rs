@@ -67,7 +67,7 @@ impl SkipGesture {
         true
     }
 
-    #[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "ios", target_os = "android")), allow(dead_code))]
     fn touch(&mut self, touch: &Touch, rect: RectPx, now: Instant) {
         self.touch_mode = true;
         self.pointer_down = false;
@@ -225,7 +225,7 @@ impl FullscreenMovie {
             subtitles: None,
             skip_enabled: false,
             skip: SkipGesture {
-                touch_mode: cfg!(target_os = "ios"),
+                touch_mode: cfg!(any(target_os = "ios", target_os = "android")),
                 ..Default::default()
             },
         }
@@ -237,7 +237,12 @@ impl FullscreenMovie {
         self
     }
     pub(crate) fn with_skip_control(mut self, ordinary_client: bool) -> Self {
-        self.skip_enabled = ordinary_client && cfg!(any(target_os = "ios", target_os = "macos"));
+        self.skip_enabled = ordinary_client
+            && cfg!(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "android"
+            ));
         self
     }
     pub(crate) fn pointer_skip_visible(&self) -> bool {
@@ -246,7 +251,7 @@ impl FullscreenMovie {
     pub(crate) fn cancel_skip_pointer(&mut self) {
         self.skip.cancel();
     }
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     pub(crate) fn skip_touch(&mut self, touch: &Touch, screen: [u32; 2], density: f32) {
         if self.skip_enabled {
             self.skip

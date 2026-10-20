@@ -84,7 +84,7 @@ impl AppState {
         width: u32,
         height: u32,
     ) -> crate::ui::sidebar::SidebarFrame {
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         if self.platform.capture_client_size.is_none() {
             let window_zoom = self.tactical_zoom().map_or(1.0, |zoom| zoom.scale());
             return crate::ui::sidebar::SidebarFrame::for_ios(
@@ -163,7 +163,8 @@ impl AppState {
 
     /// Ordinary iOS uses direct touch targets, never a visible mouse pointer.
     pub(crate) fn touch_input_mode(&self) -> bool {
-        cfg!(target_os = "ios") && self.platform.capture_client_size.is_none()
+        cfg!(any(target_os = "ios", target_os = "android"))
+            && self.platform.capture_client_size.is_none()
     }
 
     /// Whether the software cursor (mouse.shp) should be active this frame.

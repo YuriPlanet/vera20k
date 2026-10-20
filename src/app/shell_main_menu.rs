@@ -8,6 +8,10 @@ mod ios_main_menu_url;
 #[path = "macos_main_menu_url.rs"]
 mod macos_main_menu_url;
 
+#[cfg(target_os = "android")]
+#[path = "android_main_menu_url.rs"]
+mod android_main_menu_url;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InlineMainMenuAction {
     Ignore,
@@ -1548,6 +1552,8 @@ impl App {
                     }
                     #[cfg(target_os = "macos")]
                     macos_main_menu_url::open_website();
+                    #[cfg(target_os = "android")]
+                    android_main_menu_url::open_website();
                 }
             }
             return;

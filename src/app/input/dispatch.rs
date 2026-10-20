@@ -2039,12 +2039,12 @@ pub(crate) fn is_ctrl_held(state: &AppState) -> bool {
 }
 
 fn touch_order_modifiers(state: &AppState) -> (bool, bool) {
-    #[cfg(any(target_os = "ios", test))]
+    #[cfg(any(target_os = "ios", target_os = "android", test))]
     {
         let controls = &state.match_state.input.ios_controls;
         controls.order_modifiers()
     }
-    #[cfg(not(any(target_os = "ios", test)))]
+    #[cfg(not(any(target_os = "ios", target_os = "android", test)))]
     {
         let _ = state;
         (false, false)

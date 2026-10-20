@@ -90,12 +90,12 @@ const TRADEMARK_BOTTOM_FALLBACK: &str =
     "trademarks of Electronic Arts Inc. in the U.S. and/or other countries.";
 
 // ra2web-werhd/public/res/locale/zh-CN.json, displayed by SplashScreen.ts.
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 const WERHD_COPYRIGHT: [&str; 2] = [
     "© 2026 王二火大制作组保留游戏引擎和联机服务的权利",
     "版权所有，翻版必究",
 ];
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 const WERHD_DISCLAIMER: [&str; 3] = [
     "免责声明：",
     "\"王二火大\" 是一个非盈利的粉丝项目，与 Electronic Arts Inc.(EA) 没有任何关联。",
@@ -132,7 +132,7 @@ impl VisibleHold {
 pub(crate) struct StartupSplashPresentation {
     texture: BatchTexture,
     instance_buffer: wgpu::Buffer,
-    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
     projection: BrandedSplashProjection,
     hold: VisibleHold,
 }
@@ -140,14 +140,14 @@ pub(crate) struct StartupSplashPresentation {
 /// The texture is composed once, but UIKit/macOS may finish resizing the
 /// client after that first present. Only project its artwork, not its cached
 /// black canvas margins, into the current viewport.
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 #[derive(Clone, Copy)]
 struct BrandedSplashProjection {
     canvas: [u32; 2],
     viewport: [u32; 2],
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 impl BrandedSplashProjection {
     fn instance(self) -> SpriteInstance {
         let source = branded_art_rect(self.canvas[0], self.canvas[1]);
@@ -199,11 +199,11 @@ impl StartupSplashPresentation {
             "startup splash requires a non-zero client size"
         );
 
-        #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+        #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "android")))]
         let ([width, height], placement) = splash_placement(client_width, client_height);
-        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
         let ([width, height], _) = branded_splash_placement(client_width, client_height);
-        #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+        #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "android")))]
         let rgba = compose_startup_splash(
             assets,
             csf,
@@ -212,7 +212,7 @@ impl StartupSplashPresentation {
             height as usize,
             yr_original_style,
         )?;
-        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
         let rgba = {
             // The caller only constructs this splash for non-capture startup.
             // Country-specific scenario loading remains in app::loading.
@@ -220,7 +220,7 @@ impl StartupSplashPresentation {
             compose_branded_startup_splash(csf, font, width, height)?
         };
         let texture = batch.create_texture(gpu, &rgba, width, height);
-        #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+        #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "android")))]
         let instance = SpriteInstance {
             position: [placement.x as f32, placement.y as f32],
             size: [placement.w as f32, placement.h as f32],
@@ -231,12 +231,12 @@ impl StartupSplashPresentation {
             alpha: 1.0,
             ..Default::default()
         };
-        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
         let projection = BrandedSplashProjection {
             canvas: [width, height],
             viewport: [client_width, client_height],
         };
-        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
         let instance = projection.instance();
         let (instance_buffer, count) = batch
             .create_instance_buffer(gpu, &[instance])
@@ -246,13 +246,13 @@ impl StartupSplashPresentation {
         Ok(Self {
             texture,
             instance_buffer,
-            #[cfg(any(target_os = "ios", target_os = "macos"))]
+            #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
             projection,
             hold: VisibleHold::default(),
         })
     }
 
-    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
     pub(crate) fn resize(&mut self, gpu: &GpuContext, batch: &BatchRenderer) -> Result<()> {
         if !self.is_active(Instant::now()) {
             return Ok(());
@@ -297,8 +297,7 @@ pub(crate) fn render_and_present(
     );
 
     let output = gpu
-        .surface
-        .get_current_texture()
+        .acquire_frame()
         .context("acquire startup splash surface")?;
     let source_view = presenter.source_render_view();
     let mut encoder = gpu
@@ -365,7 +364,7 @@ fn splash_placement(client_width: u32, client_height: u32) -> ([u32; 2], RectPx)
 
 /// Keep the approved 4:3 art at full height, with text over the picture. The
 /// canvas follows the viewport aspect ratio, so no extra footer pushes art up.
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 fn branded_splash_placement(width: u32, height: u32) -> ([u32; 2], RectPx) {
     let rows = if (width, height) == (640, 480) {
         480
@@ -380,7 +379,7 @@ fn branded_splash_placement(width: u32, height: u32) -> ([u32; 2], RectPx) {
     )
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 fn branded_art_rect(width: u32, height: u32) -> RectPx {
     let art_width = (height * 4 / 3).min(width);
     let art_height = art_width * 3 / 4;
@@ -542,7 +541,7 @@ fn paint_startup_text(
     );
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 fn compose_branded_startup_splash(
     csf: Option<&CsfFile>,
     font: &FntFile,
@@ -551,12 +550,12 @@ fn compose_branded_startup_splash(
 ) -> Result<Vec<u8>> {
     const ROWS: u32 = 13;
     const LINE_HEIGHT: u32 = 15;
-    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
     let mut rasterizer = crate::render::bit_font::UiGlyphRasterizer::new(font.bitmap_rows)
         .context("create WERHD startup text rasterizer")?;
-    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
     let mut rasterize = |codepoint, width| rasterizer.glyph(codepoint, width);
-    #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+    #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "android")))]
     let mut rasterize = |_, _| None;
     let art = branded_art_rect(width, height);
     let (art_x, art_y, art_width, art_height) =
@@ -676,19 +675,19 @@ fn compose_branded_startup_splash(
     Ok(canvas)
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 fn branded_loading_text(csf: Option<&CsfFile>) -> &str {
     csf.and_then(|table| table.get(LOADING_KEY))
         .filter(|text| !text.trim().is_empty())
         .unwrap_or("加载中…")
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 fn scaled_footer_width(font: &FntFile, text: &str, rows: u32) -> u32 {
     (font.text_width(text) * rows).div_ceil(u32::from(font.bitmap_rows).max(1))
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 fn wrap_footer_lines(font: &FntFile, paragraphs: &[&str], width: u32, rows: u32) -> Vec<String> {
     let mut lines = Vec::new();
     for paragraph in paragraphs {

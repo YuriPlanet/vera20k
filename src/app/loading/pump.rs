@@ -2127,8 +2127,7 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) {
         let output = state
             .renderer
             .gpu
-            .surface
-            .get_current_texture()
+            .acquire_frame()
             .map_err(|error| anyhow::anyhow!("saved-game loading surface: {error}"))?;
         let mut encoder =
             state

@@ -52,7 +52,7 @@ fn draw_sidebar_surface(
     encoder: &mut wgpu::CommandEncoder,
     data: &DrawPassData<'_>,
 ) {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     crate::app::ios_sidebar_art::prepare(state);
     let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
     let presentation = &state.match_state.match_presentation;
@@ -76,7 +76,7 @@ fn draw_sidebar_surface(
     let mut draw = |tex: Option<&BatchTexture>, key: &'static str| {
         draw_pooled_with_camera(&mut pass, batch, camera, pool, tex, key);
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     draw(
         renderer
             .ios_sidebar_art
@@ -85,7 +85,7 @@ fn draw_sidebar_surface(
         "ios_sidebar_background",
     );
     draw(chrome.map(|atlas| &atlas.texture), "sidebar_chrome");
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     draw(
         renderer.ios_sidebar_art.as_ref().map(|art| art.glyphs()),
         "ios_sidebar_controls",
@@ -197,7 +197,7 @@ fn draw_sidebar_surface(
     };
     draw(cameo_overlay_tex, "sidebar_cameo_overlay");
     draw(Some(renderer.bit_font.atlas()), "sidebar_text");
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     draw(
         presentation.radar_anim.as_ref().map(|ra| ra.texture()),
         "radar_anim",

@@ -1,4 +1,4 @@
-//! Optional, locally supplied YR subtitles for the ordinary Apple client.
+//! Optional, locally supplied YR subtitles for the ordinary branded client.
 //!
 //! The sidecar does not replace any movie bytes. Its clock is derived from
 //! the displayed Bink frame, so pause, decoder catch-up and seek stay aligned.
@@ -178,12 +178,29 @@ fn sidecar_paths(executable: &Path) -> Vec<PathBuf> {
     paths
 }
 
+#[cfg(any(target_os = "android", test))]
+fn android_sidecar_path(retail_root: &Path) -> PathBuf {
+    // The NativeActivity bootstrap unpacks optional sidecars beside the
+    // selected retail resources and owns RA2_DIR before the engine starts.
+    retail_root.join("subtitlemd.txt")
+}
+
 impl MovieSubtitles {
     pub(crate) fn load(name: &str, ordinary_client: bool) -> Option<Self> {
-        if !ordinary_client || !cfg!(any(target_os = "ios", target_os = "macos")) {
+        if !ordinary_client
+            || !cfg!(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "android"
+            ))
+        {
             return None;
         }
+        #[cfg(target_os = "android")]
+        let path = android_sidecar_path(Path::new(&std::env::var_os("RA2_DIR")?));
+        #[cfg(not(target_os = "android"))]
         let executable = std::env::current_exe().ok()?;
+        #[cfg(not(target_os = "android"))]
         let path = sidecar_paths(&executable)
             .into_iter()
             .find(|path| path.is_file())?;
@@ -383,6 +400,14 @@ mod tests {
         assert_eq!(
             sidecar_paths(Path::new("/var/containers/王二火大.app/vera20k"))[0],
             PathBuf::from("/var/containers/王二火大.app/subtitlemd.txt")
+        );
+        assert_eq!(
+            android_sidecar_path(Path::new(
+                "/data/user/0/com.wannafire.vera20k/files/runtime/retail-assets"
+            )),
+            PathBuf::from(
+                "/data/user/0/com.wannafire.vera20k/files/runtime/retail-assets/subtitlemd.txt"
+            ),
         );
     }
 

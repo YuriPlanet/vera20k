@@ -49,8 +49,11 @@ pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
 
 /// Main menu dialog `0xE2`.
 pub(crate) fn uses_branded_main_menu(state: &AppState) -> bool {
-    cfg!(any(target_os = "ios", target_os = "macos"))
-        && state.platform.capture_client_size.is_none()
+    cfg!(any(
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "android"
+    )) && state.platform.capture_client_size.is_none()
 }
 
 pub(crate) fn main_menu_layout(state: &AppState) -> MainMenuShellLayout {

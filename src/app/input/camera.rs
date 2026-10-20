@@ -1242,7 +1242,7 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
 pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
     // A touch cursor stays at its last position after lifting. It must never
     // keep mouse edge/coast scrolling alive behind the joystick/pan owner.
-    if cfg!(target_os = "ios") {
+    if cfg!(any(target_os = "ios", target_os = "android")) {
         return (0.0, 0.0);
     }
     if state
@@ -1309,8 +1309,8 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
     right_drag
 }
 
-#[cfg(any(target_os = "ios", test))]
-#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+#[cfg(any(target_os = "ios", target_os = "android", test))]
+#[cfg_attr(not(any(target_os = "ios", target_os = "android")), allow(dead_code))]
 pub(crate) fn request_touch_scroll(state: &mut AppState, world_delta: (f32, f32)) {
     if state
         .match_state

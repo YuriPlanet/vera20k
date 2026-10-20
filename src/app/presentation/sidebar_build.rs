@@ -31,7 +31,7 @@ pub(crate) fn build_sidebar_chrome_instances(
     let Some(atlas) = current_sidebar_chrome(state) else {
         return Vec::new();
     };
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     {
         // The touch sidebar paints its own faction background and controls.
         // Keep the original animated power meter with the production state
@@ -51,7 +51,7 @@ pub(crate) fn build_sidebar_chrome_instances(
         );
         instances
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     build_sidebar_chrome_instances_for_layout(
         atlas,
         state.match_state.match_presentation.sidebar_layout_spec,

@@ -148,7 +148,11 @@ impl App {
         // and the match zoom follows it. A sealed capture keeps its exact,
         // fixed, hidden physical surface.
         let capture = capture_dimensions.is_some();
-        let branded_apple = cfg!(any(target_os = "macos", target_os = "ios")) && !capture;
+        let branded_apple = cfg!(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "android"
+        )) && !capture;
         let inner_size: winit::dpi::Size = if capture {
             PhysicalSize::new(window_width, window_height).into()
         } else {
@@ -758,9 +762,9 @@ impl App {
             renderer: crate::app::renderer_state::RendererState {
                 gpu,
                 batch_renderer,
-                #[cfg(target_os = "ios")]
+                #[cfg(any(target_os = "ios", target_os = "android"))]
                 ios_hud: None,
-                #[cfg(target_os = "ios")]
+                #[cfg(any(target_os = "ios", target_os = "android"))]
                 ios_sidebar_art: None,
                 fps_overlay,
                 combat_light_renderer,
@@ -801,7 +805,7 @@ impl App {
         // even without a music device. The profile keeps native negative values
         // for round-trip; physical output owners provide the safe gain clamp.
         apply_startup_audio_profile(&state.persistence.options_profile, &mut state.audio);
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         crate::app::ios_controls::initialize(&mut state);
         Self::sync_zoom_pass(&mut state);
         #[cfg(feature = "telemetry-dashboard")]

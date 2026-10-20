@@ -108,7 +108,7 @@ impl App {
         // match running behind other windows instead. The gate sits at the
         // call site, not inside the runtime, so a focus edge never re-anchors
         // the frame pacer on its own.
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         crate::app::ios_controls::service(state);
         if simulation_allowed
             && matches!(state.frontend.screen, GameScreen::InGame)
@@ -320,8 +320,7 @@ impl App {
         let output: wgpu::SurfaceTexture = state
             .renderer
             .gpu
-            .surface
-            .get_current_texture()
+            .acquire_frame()
             .map_err(|e| anyhow::anyhow!("Surface texture: {}", e))?;
         let view: wgpu::TextureView = output.texture.create_view(&Default::default());
         let mut encoder: wgpu::CommandEncoder =
@@ -694,7 +693,7 @@ impl App {
                 }
             }
         }
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         crate::app::ios_hud_render::render(state, &mut encoder, &view);
         state.renderer.fps_overlay.encode(
             &state.renderer.gpu,

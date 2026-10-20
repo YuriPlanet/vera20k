@@ -1,4 +1,4 @@
-//! Simplified Chinese presentation for the branded Apple client.
+//! Simplified Chinese presentation for the branded native clients.
 //!
 //! Retail archives, CSF identifiers, simulation data and sealed captures stay
 //! untouched. Startup and each incoming map project their display string table
@@ -11,13 +11,21 @@ use std::borrow::Cow;
 use crate::assets::csf_file::CsfFile;
 
 pub(crate) const fn enabled(capture: bool) -> bool {
-    cfg!(any(target_os = "macos", target_os = "ios")) && !capture
+    cfg!(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android"
+    )) && !capture
 }
 
 pub(crate) fn project(csf: CsfFile, ordinary_ui: bool) -> CsfFile {
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
     if enabled(!ordinary_ui) {
-        let Some(transform) = apple::Simplifier::new() else {
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        let transform = apple::Simplifier::new();
+        #[cfg(target_os = "android")]
+        let transform = portable::Simplifier::new();
+        let Some(transform) = transform else {
             log::warn!("Simplified Chinese transform unavailable; retaining retail display text");
             return csf;
         };
@@ -48,12 +56,12 @@ pub(crate) fn project(csf: CsfFile, ordinary_ui: bool) -> CsfFile {
         );
         return csf;
     }
-    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
     let _ = ordinary_ui;
     csf
 }
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
 fn csf_override(key: &str) -> Option<&'static str> {
     Some(match key {
         "GUI:NULLMODEM" => "串口直连",
@@ -214,12 +222,52 @@ mod apple {
             // The installed table has two uncommon spellings whose ICU result
             // exceeds GAME.FNT's cells (including one supplementary character).
             // Use normal Simplified spellings and an available space glyph.
-            Some(
-                result
-                    .replace("猪㑩", "猪猡")
-                    .replace("𫫇心", "恶心")
-                    .replace('\u{3000}', " "),
-            )
+            Some(super::normalize_simplified(result))
+        }
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android", test))]
+fn normalize_simplified(text: String) -> String {
+    text.replace("猪㑩", "猪猡")
+        .replace("𫫇心", "恶心")
+        .replace('\u{3000}', " ")
+}
+
+/// Generated offline from public CoreFoundation's transform. The small
+/// character table also handles new display strings; contextual exceptions
+/// reproduce the existing retail corpus exactly, without Android ICU/JNI.
+#[cfg(any(target_os = "android", test))]
+mod portable {
+    use std::collections::HashMap;
+
+    #[derive(serde::Deserialize)]
+    pub(super) struct Simplifier {
+        characters: HashMap<char, String>,
+        contexts: HashMap<String, String>,
+    }
+
+    impl Simplifier {
+        pub(super) fn new() -> Option<Self> {
+            serde_json::from_str(include_str!(
+                "../../art/localization/zh-hans-transform.json"
+            ))
+            .ok()
+        }
+
+        pub(super) fn convert(&self, text: &str) -> Option<String> {
+            if let Some(result) = self.contexts.get(text) {
+                return Some(result.clone());
+            }
+            let mut result = String::with_capacity(text.len());
+            for ch in text.chars() {
+                if let Some(replacement) = self.characters.get(&ch) {
+                    result.push_str(replacement);
+                } else {
+                    result.push(ch);
+                }
+            }
+            Some(super::normalize_simplified(result))
         }
     }
 }
@@ -227,6 +275,27 @@ mod apple {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn portable_android_translation_preserves_formats_and_common_chinese() {
+        let transform = portable::Simplifier::new().unwrap();
+        assert_eq!(
+            transform.convert("單人遊戲 遭遇戰 載入儲存遊戲"),
+            Some("单人游戏 遭遇战 载入储存游戏".into())
+        );
+        assert_eq!(
+            transform.convert("玩家 %s 擁有 %02d 部戰車。"),
+            Some("玩家 %s 拥有 %02d 部战车。".into())
+        );
+        assert_eq!(
+            transform.convert("/reply PlayerAlice"),
+            Some("/reply PlayerAlice".into())
+        );
+        assert_eq!(
+            transform.convert("豬儸令人噁心。\u{3000}"),
+            Some("猪猡令人恶心。 ".into())
+        );
+    }
 
     #[test]
     fn custom_controls_translate_before_layout_and_keep_captures_verbatim() {
@@ -282,6 +351,15 @@ mod tests {
             ("RARE", "資本主義的豬儸真令人噁心。\u{3000}"),
         ]);
         let localized = project(retail.clone(), true);
+        let portable = portable::Simplifier::new().unwrap();
+        let apple = apple::Simplifier::new().unwrap();
+        for (key, text) in retail.entries() {
+            assert_eq!(
+                portable.convert(text),
+                apple.convert(text),
+                "Android locale differs at {key}"
+            );
+        }
         assert_eq!(retail.get("GUI:SinglePlayer"), Some("單人遊戲"));
         assert_eq!(
             project(retail.clone(), false).get("GUI:SinglePlayer"),
@@ -324,6 +402,15 @@ mod tests {
                 .unwrap();
         let retail = crate::app::loading::init::load_csf(&assets).unwrap();
         let localized = project(retail.clone(), true);
+        let portable = portable::Simplifier::new().unwrap();
+        let apple = apple::Simplifier::new().unwrap();
+        for (key, text) in retail.entries() {
+            assert_eq!(
+                portable.convert(text),
+                apple.convert(text),
+                "Android locale differs at {key}"
+            );
+        }
         let font =
             crate::assets::fnt_file::FntFile::from_bytes(assets.get_ref("GAME.FNT").unwrap())
                 .unwrap();

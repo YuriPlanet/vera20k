@@ -7,18 +7,18 @@ use crate::ui::shell::list::ShellListGeometry;
 use std::time::Instant;
 use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 /// UIKit does not expose winit's desktop modifier-supplement extension. Its
 /// logical key is the available fallback for an attached hardware keyboard;
 /// touchscreen input goes through the ordinary pointer owners instead.
 pub(crate) fn key_without_modifiers(event: &KeyEvent) -> Key {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     {
         event.logical_key.clone()
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         event.key_without_modifiers()
     }

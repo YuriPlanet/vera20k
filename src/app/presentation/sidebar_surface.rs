@@ -263,7 +263,7 @@ impl SidebarSurface {
         self.column.surface.draw(pass, None, [x, y, width, height]);
         // The iOS landscape HUD replaces the native command bar. Keep the
         // sidebar column's composition and its input owners unchanged.
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         {
             let (x, y, width, height) = self.frame.strip();
             self.bar.surface.draw(pass, None, [x, y, width, height]);

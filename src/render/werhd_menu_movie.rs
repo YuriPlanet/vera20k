@@ -10,7 +10,7 @@ use crate::render::gpu::GpuContext;
 
 pub(crate) enum MenuMovieSurface {
     Retail(BinkMovieSurface),
-    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
     Branded(BrandedMenuSurface),
 }
 
@@ -21,7 +21,7 @@ impl From<BinkMovieSurface> for MenuMovieSurface {
 }
 
 impl MenuMovieSurface {
-    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
     pub(crate) fn branded(
         gpu: &GpuContext,
         batch: &crate::render::batch::BatchRenderer,
@@ -32,7 +32,7 @@ impl MenuMovieSurface {
     pub(crate) fn batch_texture(&self) -> &BatchTexture {
         match self {
             Self::Retail(movie) => movie.batch_texture(),
-            #[cfg(any(target_os = "ios", target_os = "macos"))]
+            #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
             Self::Branded(movie) => &movie.batch_texture,
         }
     }
@@ -40,7 +40,7 @@ impl MenuMovieSurface {
     pub(crate) fn source_archive(&self) -> &str {
         match self {
             Self::Retail(movie) => movie.source_archive(),
-            #[cfg(any(target_os = "ios", target_os = "macos"))]
+            #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
             Self::Branded(_) => "built-in WERHD menu movie",
         }
     }
@@ -52,20 +52,20 @@ impl MenuMovieSurface {
     ) -> Result<BinkMovieStep, AssetError> {
         match self {
             Self::Retail(movie) => movie.step(gpu, elapsed_secs),
-            #[cfg(any(target_os = "ios", target_os = "macos"))]
+            #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
             Self::Branded(movie) => movie.step(gpu, elapsed_secs),
         }
     }
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
 pub(crate) struct BrandedMenuSurface {
     frames: FrameStream<'static>,
     texture: wgpu::Texture,
     batch_texture: BatchTexture,
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
 impl BrandedMenuSurface {
     fn new(
         gpu: &GpuContext,
@@ -114,7 +114,7 @@ impl BrandedMenuSurface {
     }
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 struct FrameArchive<'a> {
     payload: &'a [u8],
     offsets: Vec<usize>,
@@ -124,7 +124,7 @@ struct FrameArchive<'a> {
     key_interval: usize,
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 impl<'a> FrameArchive<'a> {
     fn parse(bytes: &'a [u8]) -> Result<Self, AssetError> {
         const HEADER_SIZE: usize = 8 + 6 * 4;
@@ -215,7 +215,7 @@ impl<'a> FrameArchive<'a> {
     }
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 struct FrameStream<'a> {
     archive: FrameArchive<'a>,
     /// One restored frame; decoding temporarily holds one additional PNG RGBA
@@ -225,7 +225,7 @@ struct FrameStream<'a> {
     accumulator_secs: f64,
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 impl<'a> FrameStream<'a> {
     fn new(bytes: &'a [u8]) -> Result<Self, AssetError> {
         let archive = FrameArchive::parse(bytes)?;
@@ -266,7 +266,7 @@ impl<'a> FrameStream<'a> {
     }
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "android", test))]
 fn invalid(detail: impl Into<String>) -> AssetError {
     AssetError::ParseError {
         format: "WERHD menu frames".to_string(),

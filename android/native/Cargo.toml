@@ -1,0 +1,25 @@
+[package]
+name = "vera20k-android"
+version = "1.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[lib]
+name = "main"
+crate-type = ["cdylib"]
+
+[dependencies]
+vera20k = { path = "../..", default-features = false }
+winit = { version = "0.30", features = ["android-native-activity"] }
+anyhow = "1"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

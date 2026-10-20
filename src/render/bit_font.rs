@@ -21,6 +21,12 @@ use crate::render::shell_text_reveal::{PathAReveal, encoded_unit_rgb};
 #[path = "bit_font_ios.rs"]
 mod ios;
 
+#[cfg(target_os = "android")]
+#[path = "bit_font_android.rs"]
+mod android;
+
+#[cfg(target_os = "android")]
+pub(crate) use android::Rasterizer as UiGlyphRasterizer;
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 pub(crate) use ios::Rasterizer as UiGlyphRasterizer;
 
@@ -633,16 +639,16 @@ impl BitFont {
         fnt: &FntFile,
         modern: bool,
     ) -> Self {
-        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        #[cfg(any(target_os = "ios", target_os = "macos", target_os = "android"))]
         if modern {
-            if let Some(mut rasterizer) = ios::Rasterizer::new(fnt.bitmap_rows) {
+            if let Some(mut rasterizer) = UiGlyphRasterizer::new(fnt.bitmap_rows) {
                 log::info!("WERHD UI font faces: {:?}", rasterizer.face_names());
                 let mut draw = |cp, width| rasterizer.glyph(cp, width);
                 return Self::from_fnt_with_rasterizer(device, queue, batch, fnt, Some(&mut draw));
             }
             log::warn!("WERHD UI font unavailable; retaining GAME.FNT glyphs");
         }
-        #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+        #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "android")))]
         let _ = modern;
         Self::from_fnt(device, queue, batch, fnt)
     }

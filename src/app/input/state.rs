@@ -211,7 +211,7 @@ pub(crate) struct MatchInputState {
     pub(crate) keys_held: HashSet<KeyCode>,
     pub(crate) hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings,
     pub(crate) hotkey_modifiers: ModifiersState,
-    #[cfg(any(target_os = "ios", test))]
+    #[cfg(any(target_os = "ios", target_os = "android", test))]
     pub(crate) ios_controls: crate::app::ios_controls::IosControls,
     /// Local AllToCheer730F30 admission scalar84555C. The simulation owns
     /// queued events; this frame only throttles their local input producer.
@@ -295,7 +295,7 @@ impl MatchInputState {
             keys_held: HashSet::new(),
             hotkey_bindings,
             hotkey_modifiers: ModifiersState::empty(),
-            #[cfg(any(target_os = "ios", test))]
+            #[cfg(any(target_os = "ios", target_os = "android", test))]
             ios_controls: Default::default(),
             last_cheer_frame: -100,
             type_select: crate::app::types::TypeSelectInputState::default(),

@@ -62,9 +62,9 @@ pub(crate) fn in_game_shell_cursor(state: &AppState) -> (i32, i32) {
 /// Desktop already admits Sidebar sizes only when 640x480 still fits.
 fn in_game_shell_frame(state: &AppState) -> crate::ui::sidebar::SidebarFrame {
     let frame = state.sidebar_frame();
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     return frame.fit_native_shell();
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     frame
 }
 
