@@ -142,6 +142,8 @@ pub(crate) struct MultiplayerShellRuntime {
     /// The taunt command's process-static rate clock `[0x00825C88]`.
     taunt_clock: crate::app::input::taunt::TauntClock,
     scenario_start_header: crate::map::preview::ScenarioStartHeader,
+    /// Scenario `+0x112C..+0x11DF`, the start staging a LAN `'W'` carries.
+    scenario_start_staging: crate::map::preview::ScenarioStartStaging,
     scenario_rng: SimRng,
     /// Process-persistent native MapSeed options. The setup dialog edits a
     /// working copy, but closing it does not reconstruct this global record.
@@ -748,6 +750,7 @@ impl MultiplayerShellRuntime {
             cooperative_country_roster,
             cooperative_difficulty: 0,
             scenario_start_header: crate::map::preview::ScenarioStartHeader::default(),
+            scenario_start_staging: Default::default(),
             gameplay_scenario_return_pending: false,
         }
     }
@@ -998,6 +1001,29 @@ impl MultiplayerShellRuntime {
             .map(|index| LaunchCountry::from_country_index(index as u32))
             .collect(),
         )
+    }
+
+    pub(crate) fn start_staging(&self) -> crate::map::preview::ScenarioStartStaging {
+        self.scenario_start_staging
+    }
+
+    /// The accepted random map's staging (`0x0058B830`).
+    pub(crate) fn stage_generated_starts(
+        &mut self,
+        staging: crate::map::preview::ScenarioStartStaging,
+    ) {
+        self.scenario_start_staging = staging;
+    }
+
+    /// A received `'W'`: true when it committed (all 37 tokens).
+    pub(crate) fn accept_start_staging_text(&mut self, text: &str) -> bool {
+        match crate::map::preview::ScenarioStartStaging::parse_w_text(text) {
+            Some(staging) => {
+                self.scenario_start_staging = staging;
+                true
+            }
+            None => false,
+        }
     }
 
     pub(crate) fn observe_map_preview(&mut self, map: &MapMenuEntry) {
@@ -1685,6 +1711,7 @@ mod tests {
             cooperative_country_roster: controlled_ten_country_roster(),
             cooperative_difficulty: 0,
             scenario_start_header: crate::map::preview::ScenarioStartHeader::default(),
+            scenario_start_staging: Default::default(),
             gameplay_scenario_return_pending: false,
         }
     }
@@ -1712,6 +1739,7 @@ mod tests {
             cooperative_country_roster: controlled_ten_country_roster(),
             cooperative_difficulty: 0,
             scenario_start_header: crate::map::preview::ScenarioStartHeader::default(),
+            scenario_start_staging: Default::default(),
             gameplay_scenario_return_pending: false,
         }
     }

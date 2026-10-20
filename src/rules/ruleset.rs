@@ -4324,8 +4324,8 @@ impl RuleSet {
         rules.combat_damage.splash_list = splash.to_vec();
         rules.combat_damage.death_weapon =
             processed.combat_damage_death_weapon().map(str::to_owned);
-        for (name, conventional, em_effect, anim_list, debris_types) in
-            processed.warhead_anim_states()
+        for (name, conventional, em_effect, anim_list, debris_types, verses) in
+            processed.warhead_read_states()
         {
             if let Some(warhead) = rules
                 .warheads
@@ -4336,6 +4336,7 @@ impl RuleSet {
                 warhead.em_effect = em_effect;
                 warhead.anim_list = anim_list.to_vec();
                 warhead.debris_types = debris_types.to_vec();
+                warhead.verses_f64 = verses.map(|value| f64::from_bits(value.bits()));
             }
         }
         (
@@ -4367,7 +4368,7 @@ impl RuleSet {
                 .or_default() += 1;
         }
         let mut warhead_name_counts = HashMap::<String, usize>::new();
-        for (name, ..) in processed.warhead_anim_states() {
+        for (name, ..) in processed.warhead_read_states() {
             *warhead_name_counts
                 .entry(name.to_ascii_uppercase())
                 .or_default() += 1;
@@ -5732,9 +5733,9 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // v27: add retained Spotlight rules/flags alongside the repair
-        // service inputs introduced in v26.
-        b"rules-simulation-config-v27".hash(&mut hasher);
+        // v28: include the Warhead Verses table retained across reached reads,
+        // which can differ for identical current source text.
+        b"rules-simulation-config-v28".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         // UnitType747734 retains CarriesCrate across later absent/invalid
         // keys; equal current source text can still mean different cargo.
@@ -6124,7 +6125,12 @@ impl RuleSet {
             .map(|(name, wh)| {
                 (
                     name.to_ascii_uppercase(),
-                    (wh.conventional, wh.em_effect, &wh.anim_list),
+                    (
+                        wh.conventional,
+                        wh.em_effect,
+                        &wh.anim_list,
+                        wh.verses_f64.map(f64::to_bits),
+                    ),
                 )
             })
             .collect::<BTreeMap<_, _>>()

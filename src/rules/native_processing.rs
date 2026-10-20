@@ -1050,9 +1050,12 @@ impl ProcessedRulesLayers {
         self.rules_type_references().list("NeutralTechBuildings")
     }
 
-    pub(crate) fn warhead_anim_states(
+    /// Retained Warhead ReadINI fields, including+0xA0 after its last reached
+    /// ReadINI75DDCC..75DE5A. The compatibility INI cannot represent the
+    /// table's literal per-pass default.
+    pub(crate) fn warhead_read_states(
         &self,
-    ) -> impl Iterator<Item = (&str, bool, bool, &[String], &[String])> {
+    ) -> impl Iterator<Item = (&str, bool, bool, &[String], &[String], &[NativeF64Bits; 11])> {
         self.native_type_construction_trace
             .registry_state()
             .families
@@ -1066,6 +1069,7 @@ impl ProcessedRulesLayers {
                     member.warhead_anim.em_effect,
                     member.warhead_anim.anim_list.as_slice(),
                     member.warhead_anim.debris_types.as_slice(),
+                    &member.warhead_verses,
                 )
             })
     }
@@ -2081,6 +2085,12 @@ struct ProcessedType {
     techno_references: TechnoTypeReferences,
     weapon: WeaponReadState,
     warhead_anim: WarheadAnimReadState,
+    /// Warhead ctor75CEC0 starts every +A0 slot at1.0. Each reached
+    /// ReadINI75DDCC..75DE5A uses its literal all-100% missing-key default;
+    /// no section leaves this live table alone. The retained registry owns
+    /// these bits; RuleSet only projects them. Native execution:
+    /// tools/rules_oracle/bridge_landing_inputs.{py,json,meta.json}.
+    warhead_verses: [NativeF64Bits; 11],
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
     /// (`0x006440B3`), rebound by every reached ReadINI (`0x0064430F..0x00644323`).
     holds_what: Option<usize>,
@@ -2450,6 +2460,7 @@ impl ProcessedType {
             weapon_slots: WeaponSlots::default(),
             weapon: WeaponReadState::default(),
             warhead_anim: WarheadAnimReadState::default(),
+            warhead_verses: [NativeF64Bits::ONE; 11],
             holds_what: None,
             super_weapon_weapon: None,
             super_weapon_aux_building: None,
@@ -4141,6 +4152,12 @@ impl RulesPassProcessor {
                         .warhead_anim
                         .debris_types = types;
                 }
+                let current = &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_verses;
+                *current = crate::rules::warhead_type::read_verses(
+                    &raw,
+                    current.map(|value| f64::from_bits(value.bits())),
+                )
+                .map(|value| NativeF64Bits::from_bits(value.to_bits()));
             }
             index += 1;
         }

@@ -126,6 +126,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
             None,
             crate::app::input::context_order::OrderModifier::Normal,
             false,
+            false,
         ),
         CursorFeedbackKind::Enter
     );

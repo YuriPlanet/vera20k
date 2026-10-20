@@ -263,6 +263,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
             None,
             None,
             Some(&cells),
+            None,
         ))
     }
 

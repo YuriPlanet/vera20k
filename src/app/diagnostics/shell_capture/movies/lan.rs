@@ -17,6 +17,21 @@ use winit::keyboard::KeyCode;
 
 const TRANSFER_FILE: &str = "CONTROLLED.MAP";
 const TRANSFER_ROOT_MARKER: &str = ".vera20k-lan-capture-root";
+/// The controlled host's own install directory inside the isolated root, from
+/// which it generates its random map.
+const CONTROLLED_HOST_DIR: &str = ".vera20k-lan-capture-host";
+/// The guest's second GO receive (`0x005DDA5D`, `0x00829ABC`).
+const RANDMAP_IMG: &str = "RandMap.img";
+
+/// The controlled host's random map: its `.Sed`, the `'W'` its generator's
+/// staging gives, and a flat stand-in for its `RandMap.img` payload.
+struct ControlledRandomMap {
+    sed: Vec<u8>,
+    digest: String,
+    capacity: i32,
+    staging: crate::map::preview::ScenarioStartStaging,
+    image: Vec<u8>,
+}
 
 /// Diagnostic file lease, never a map/catalog authority. Existing files are
 /// refused; cleanup removes only the unchanged file this capture created.
@@ -126,6 +141,10 @@ pub enum LanTarget {
     /// publishes `RandMap.Sed` with the generator's option digest, and the
     /// two-player match loads the generated map.
     HostRandomMap,
+    /// The guest joins the controlled host's random map: one 0x1B on the
+    /// map change, the host's `'W'` staging, `RandMap.Sed` then
+    /// `RandMap.img` at GO, and the match starts on the `'W'` cells.
+    GuestRandomMap,
     /// B6 Observe in a two-human LAN match, through the executed DESTRUCT and
     /// the local defeat to the re-armed menu and its Observe-less B6.
     HostObserve,
@@ -204,6 +223,7 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("lan-ingame-ally", LanTarget::IngameAlly),
     ("lan-ingame-taunt", LanTarget::IngameTaunt),
     ("lan-host-random-map", LanTarget::HostRandomMap),
+    ("lan-guest-random-map", LanTarget::GuestRandomMap),
     ("lan-host-observe", LanTarget::HostObserve),
     ("lan-host-observe-offered", LanTarget::HostObserveOffered),
     (
@@ -257,6 +277,7 @@ impl LanTarget {
                 | Self::TransferGo
                 | Self::GuestAbortReturn
                 | Self::RemoteLoadingProgress
+                | Self::GuestRandomMap
                 | Self::JoinDenied
                 | Self::JoinDeniedReturn
                 | Self::JoinTimeoutReturn
@@ -357,6 +378,7 @@ pub(super) struct LanCapture {
     offline_selection: Option<(i32, usize)>,
     /// The random-map route has committed `RandMap.Sed` to BC.
     random_map_committed: bool,
+    random_map_host: Option<ControlledRandomMap>,
 }
 impl LanCapture {
     pub(super) fn new(target: LanTarget) -> Self {
@@ -374,6 +396,7 @@ impl LanCapture {
             loading_wait_reported_at: None,
             offline_selection: None,
             random_map_committed: false,
+            random_map_host: None,
             inputs: super::native_corpus("tools/storage_oracle/lan_shell_controls.json")
                 .expect("native LAN corpus"),
         }
@@ -464,6 +487,8 @@ impl LanCapture {
         let file = if self.target.missing_map() {
             self.assert_map_absent(state)?;
             TRANSFER_FILE
+        } else if self.target == LanTarget::GuestRandomMap {
+            crate::map::skirmish_scenarios::RANDMAP_SED
         } else {
             let file = values["map"].as_str().context("native map")?;
             ensure!(
@@ -578,6 +603,17 @@ impl LanCapture {
     }
 
     fn map_metadata(&self) -> Result<NetworkMapMetadata> {
+        if let Some(random_map) = &self.random_map_host {
+            // 0x005E8590's record: the generator's option digest, the
+            // .Sed's length and the sentinel's official byte.
+            return Ok(NetworkMapMetadata {
+                display_name: "Random Map".into(),
+                player_capacity: random_map.capacity,
+                official: true,
+                byte_length: random_map.sed.len() as i32,
+                digest: random_map.digest.clone(),
+            });
+        }
         let values = &self.inputs["host_options"];
         Ok(NetworkMapMetadata {
             display_name: values["display_name"]
@@ -625,8 +661,48 @@ impl LanCapture {
         );
         Ok(root)
     }
-    fn deliver_map_file(&mut self, state: &AppState) -> Result<()> {
-        let root = self.assert_map_absent(state)?;
+    /// The peer's 0x1B: the host clears its acceptance and sends the `'W'`
+    /// with the staging Generate wrote; the peer then accepts again.
+    fn host_answers_preview_request(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        self.drain_requests(state);
+        setup::service_event(state, NetworkSetupEvent::PreviewRequested)?;
+        ensure!(
+            !state.match_state.session.network_player_ready(1),
+            "0x1B kept the peer's acceptance"
+        );
+        let staging = state.frontend.multiplayer_shell_runtime.start_staging();
+        let published: Vec<String> = self
+            .drain_requests(state)
+            .into_iter()
+            .filter_map(|request| match request {
+                NetworkSetupRequest::PublishStartStaging(text) => Some(text),
+                _ => None,
+            })
+            .collect();
+        ensure!(
+            published.len() == 1
+                && crate::map::preview::ScenarioStartStaging::parse_w_text(&published[0])
+                    == Some(staging)
+                && staging.count >= 2,
+            "0x1B did not send the generated staging once: {published:?}"
+        );
+        self.route
+            .push(json!({"frame":frame,"action":"controlled 0x1B answered",
+            "w":published[0]}));
+        setup::service_event(
+            state,
+            NetworkSetupEvent::PlayerReady {
+                index: 1,
+                accepted: true,
+            },
+        )
+    }
+    fn isolated_root(state: &AppState) -> Result<PathBuf> {
+        let assets = state
+            .process_assets
+            .manager()
+            .context("retained assets for an isolated root")?;
+        let root = fs::canonicalize(assets.ra2_dir())?;
         let marker = fs::symlink_metadata(root.join(TRANSFER_ROOT_MARKER))
             .context("map delivery requires an explicitly marked isolated RA2_DIR")?;
         ensure!(
@@ -635,6 +711,129 @@ impl LanCapture {
                 && fs::read(root.join(TRANSFER_ROOT_MARKER))?
                     == b"VERA20k isolated shell capture fixture\n",
             "isolated capture marker has wrong identity"
+        );
+        Ok(root)
+    }
+    /// The controlled host generates its random map from its own `.Sed`
+    /// through the production loader, and computes the `'W'` staging the
+    /// way its Generate does (`0x0058B830`).
+    fn prepare_controlled_random_map(&mut self, state: &mut AppState) -> Result<()> {
+        struct Silent;
+        impl crate::app::loading::pump::LoadingProgressSink for Silent {
+            fn milestone(&mut self, _percent: u32) {}
+        }
+        let host_dir = Self::isolated_root(state)?.join(CONTROLLED_HOST_DIR);
+        fs::create_dir_all(&host_dir)?;
+        let options = crate::map::rmg::RmgOptions {
+            seed: 20_261_020,
+            num_players: 2,
+            ..Default::default()
+        };
+        let sed = options.to_sed_bytes();
+        fs::write(
+            host_dir.join(crate::map::skirmish_scenarios::RANDMAP_SED),
+            &sed,
+        )?;
+        let (manager, rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
+        let initial = crate::app::loading::init::load_map_initial_with_assets(
+            host_dir,
+            manager.context("controlled host assets")?,
+            rules,
+            Some(crate::map::skirmish_scenarios::RANDMAP_SED),
+            &mut Silent,
+        )?;
+        let map = initial.map_data();
+        let starts: Vec<(u8, u16, u16)> = map
+            .waypoints
+            .values()
+            .filter(|waypoint| waypoint.index < 8)
+            .map(|waypoint| (waypoint.index as u8, waypoint.rx, waypoint.ry))
+            .collect();
+        let mut staging = crate::app::loading::composition::scenario_start_staging(map, &starts);
+        // The guest's starts must come from the 'W', not from its own
+        // regeneration: the controlled host swaps slots 0 and 1.
+        ensure!(
+            staging.cells[0] != staging.cells[1],
+            "the controlled swap must change the starts"
+        );
+        staging.pairs.swap(0, 1);
+        staging.cells.swap(0, 1);
+        ensure!(
+            staging.count >= options.num_players,
+            "controlled random map staged {} starts",
+            staging.count
+        );
+        let image = crate::assets::pcx_file::encode_direct_rgb(64, 32, &[96; 64 * 32 * 3])?;
+        self.route.push(json!({"controlled_random_map":{"seed":options.seed,
+            "sed_bytes":sed.len(),"w":staging.to_w_text(),
+            "boundary":"controlled host generation through the production loader, slots 0 and 1 swapped in the W; flat RandMap.img stand-in"}}));
+        self.random_map_host = Some(ControlledRandomMap {
+            digest: options.native_digest(),
+            capacity: options.num_players,
+            sed,
+            staging,
+            image,
+        });
+        Ok(())
+    }
+    /// A random map's two GO receives land in the install directory,
+    /// overwriting the guest's own files (`0x005DDA31..0x005DDA6F`).
+    fn deliver_random_map_file(&self, state: &AppState, file: &str) -> Result<()> {
+        let random_map = self
+            .random_map_host
+            .as_ref()
+            .context("no controlled random map")?;
+        let bytes = if file == RANDMAP_IMG {
+            &random_map.image
+        } else {
+            &random_map.sed
+        };
+        fs::write(Self::isolated_root(state)?.join(file), bytes)?;
+        Ok(())
+    }
+    /// RandMap.Sed never verifies, so the map change sends one 0x1B; a
+    /// republish of the same map sends none. The host's `'W'` then fills the
+    /// guest's staging.
+    fn guest_takes_start_staging(
+        &mut self,
+        state: &mut AppState,
+        frame: u32,
+        requests: &[NetworkSetupRequest],
+    ) -> Result<()> {
+        ensure!(
+            requests
+                .iter()
+                .filter(|request| **request == NetworkSetupRequest::RequestPreview)
+                .count()
+                == 1,
+            "the random-map change did not send exactly one 0x1B"
+        );
+        let launch = self.host_options(state)?;
+        self.publish_setup(state, launch)?;
+        ensure!(
+            !self
+                .drain_requests(state)
+                .contains(&NetworkSetupRequest::RequestPreview),
+            "an unchanged republish sent 0x1B again"
+        );
+        let staging = self
+            .random_map_host
+            .as_ref()
+            .context("no controlled random map")?
+            .staging;
+        setup::service_event(state, NetworkSetupEvent::StartStaging(staging.to_w_text()))?;
+        ensure!(
+            state.frontend.multiplayer_shell_runtime.start_staging() == staging,
+            "the guest did not take the host's 'W'"
+        );
+        self.event(frame, "controlled host 'W' after the guest's 0x1B");
+        Ok(())
+    }
+    fn deliver_map_file(&mut self, state: &AppState) -> Result<()> {
+        let root = self.assert_map_absent(state)?;
+        ensure!(
+            Self::isolated_root(state)? == root,
+            "delivery root is not the isolated root"
         );
         let assets = state
             .process_assets
@@ -1388,6 +1587,9 @@ impl LanCapture {
                         accepted: true,
                     },
                 )?;
+                if self.target == LanTarget::HostRandomMap {
+                    self.host_answers_preview_request(state, frame)?;
+                }
                 if self.target == LanTarget::HostObserverGo || self.observe() {
                     setup::service_event(
                         state,
@@ -1745,6 +1947,9 @@ impl LanCapture {
                         NetworkSetupEvent::ParticipantJoined(self.human(true)?),
                     )?;
                     self.assert_guest_order(state, true)?;
+                    if self.target == LanTarget::GuestRandomMap {
+                        self.prepare_controlled_random_map(state)?;
+                    }
                     let launch = self.host_options(state)?;
                     self.publish_setup(state, launch)?;
                     let status = if self.target == LanTarget::NoMap {
@@ -1765,11 +1970,14 @@ impl LanCapture {
                         state.match_state.session.network_map_status(0) == Some(status),
                         "production map availability did not produce expected K{status}"
                     );
+                    let requests = self.drain_requests(state);
                     ensure!(
-                        self.drain_requests(state)
-                            .contains(&NetworkSetupRequest::MapStatus(status)),
+                        requests.contains(&NetworkSetupRequest::MapStatus(status)),
                         "production map availability did not publish K{status}"
                     );
+                    if self.target == LanTarget::GuestRandomMap {
+                        self.guest_takes_start_staging(state, frame, &requests)?;
+                    }
                     ensure!(
                         setup::view(state)
                             .context("configured guest view")?
@@ -1959,6 +2167,32 @@ impl LanCapture {
                 }
             }
             LanPhase::Transfer => match self.target {
+                LanTarget::GuestRandomMap => {
+                    let sed = crate::map::skirmish_scenarios::RANDMAP_SED;
+                    self.deliver_random_map_file(state, sed)?;
+                    setup::service_event(
+                        state,
+                        NetworkSetupEvent::MapTransferFinished {
+                            transferred_file: Some(sed.into()),
+                        },
+                    )?;
+                    ensure!(
+                        self.drain_requests(state)
+                            .contains(&NetworkSetupRequest::RequestRandomMapImage)
+                            && state.frontend.screen != GameScreen::Loading,
+                        "RandMap.Sed alone finished GO"
+                    );
+                    setup::service_event(state, NetworkSetupEvent::MapTransferStarted)?;
+                    self.deliver_random_map_file(state, RANDMAP_IMG)?;
+                    setup::service_event(
+                        state,
+                        NetworkSetupEvent::MapTransferFinished {
+                            transferred_file: Some(RANDMAP_IMG.into()),
+                        },
+                    )?;
+                    self.event(frame, "RandMap.Sed then RandMap.img received");
+                    self.phase = LanPhase::Loading;
+                }
                 LanTarget::TransferProgress => {
                     setup::service_event(
                         state,
@@ -2280,7 +2514,10 @@ impl LanCapture {
                     };
                     return Ok(());
                 }
-                if self.target == LanTarget::HostRandomMap {
+                if matches!(
+                    self.target,
+                    LanTarget::HostRandomMap | LanTarget::GuestRandomMap
+                ) {
                     let runtime = state
                         .match_state
                         .sim_runtime
@@ -2291,6 +2528,24 @@ impl LanCapture {
                         map.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED),
                         "the LAN match did not load the random map: {map}"
                     );
+                    if let Some(random_map) = &self.random_map_host {
+                        let starts: Vec<(u32, (u16, u16))> = runtime
+                            .simulation
+                            .session()
+                            .mp_start_waypoints()
+                            .iter()
+                            .map(|(index, cell)| (*index, *cell))
+                            .collect();
+                        let staged: Vec<(u32, (u16, u16))> = random_map
+                            .staging
+                            .defined_cells()
+                            .map(|(slot, (rx, ry))| (slot as u32, (rx as u16, ry as u16)))
+                            .collect();
+                        ensure!(
+                            starts == staged,
+                            "guest starts {starts:?} are not the host's swapped 'W' cells {staged:?}"
+                        );
+                    }
                     self.route
                         .push(json!({"frame":frame,"action":"random map loaded",
                         "map":map,"tick":runtime.simulation.session().tick()}));
@@ -3479,6 +3734,7 @@ impl LanCapture {
                 | LanTarget::IngameTaunt
                 | LanTarget::IngameAlly
                 | LanTarget::HostRandomMap
+                | LanTarget::GuestRandomMap
                 | LanTarget::HostObserve
                 | LanTarget::HostObserveOffered
                 | LanTarget::GuestAbortReturn

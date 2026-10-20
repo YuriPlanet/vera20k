@@ -1347,7 +1347,7 @@ impl Simulation {
                 }
                 self.foot_mark_remove(member, Some(rules), registry, frame_effects);
                 let placeable = crate::sim::build_site::can_place_building_at(
-                    self, rules, registry, building, cell, None, None,
+                    self, rules, registry, building, cell, None, None, None,
                 );
                 if !placeable {
                     let _ = crate::sim::build_site::flush_for_placement(

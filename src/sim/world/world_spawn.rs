@@ -2291,7 +2291,7 @@ impl Simulation {
         let yard = rules.object(&yard_type);
         let placeable = yard.is_some_and(|yard| {
             crate::sim::build_site::can_place_building_at(
-                self, rules, registry, yard, origin, None, None,
+                self, rules, registry, yard, origin, None, None, None,
             )
         });
         // `0x0073950F..0x00739536`: refused for an owner no human controls,
@@ -2956,7 +2956,11 @@ impl crate::sim::world::ObjectSubstrate {
 /// mirror; the two must stay inverses. Deploy adds the `(-1, -1)` step in
 /// wrapping 16-bit words (`0x00739460..0x007394BA`), so a unit on row or
 /// column 0 tests an origin off the map.
-fn deploy_origin_from_unit_cell(unit_rx: u16, unit_ry: u16, foundation: &str) -> (i16, i16) {
+pub(super) fn deploy_origin_from_unit_cell(
+    unit_rx: u16,
+    unit_ry: u16,
+    foundation: &str,
+) -> (i16, i16) {
     let (width, height) = foundation_dimensions(foundation);
     let (x, y) = (unit_rx as i16, unit_ry as i16);
     if width > 2 || height > 2 {

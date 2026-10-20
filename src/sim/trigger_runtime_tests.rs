@@ -1954,6 +1954,7 @@ fn create_building_type10_reaches_placement_and_house_publication() {
         (10, 10),
         Some(owner),
         None,
+        None,
     ));
     assert!(sim.trigger_waypoint_coord(139).is_some());
     let ini = IniFile::from_str("[Actions]\nRESTORE=1,125,10,GTGCAN,0,0,0,0,EJ\n");

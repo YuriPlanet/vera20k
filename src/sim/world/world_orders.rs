@@ -121,6 +121,10 @@ mod multi_engineer_tests;
 #[path = "passenger_entry_tests.rs"]
 mod passenger_entry_tests;
 
+#[cfg(test)]
+#[path = "self_deploy_site_tests.rs"]
+mod self_deploy_site_tests;
+
 /// The infiltration arms' type test (`0x0051EE4E..0x0051EEE7`,
 /// `0x0051B2BD..0x0051B330`): an `Infiltrate=` infantryman (`+0xEBE`) may
 /// enter a `Spyable=` building (`+0x1576`) if it is an `Agent=` one
@@ -463,6 +467,98 @@ impl Simulation {
             crate::sim::radio::RadioResponse::Negatory => Some(EntryClickAction::NoEnter),
             _ => None,
         }
+    }
+
+    /// The site tests of `UnitClass::What_Action_OnObject`'s self arm
+    /// (`0x0073FE95..0x00740115`) that answer NoDeploy (0x1E) for a Unit's
+    /// own Self (4) ahead of CanDeploySlashUnload (`0x0073FFEA`):
+    /// - A `DeploysInto=` unit: that type's CanPlaceAt (vt+0xA8, no house) at
+    ///   the unit's cell, one cell north-west for a foundation wider or deeper
+    ///   than 2 (`0x0073FEAD..0x0073FF52`), with the unit lifted for the test
+    ///   (Mark(UP) and Mark_All_Occupation_Bits(0), `0x0073FF5C..0x0073FF81`;
+    ///   [`crate::sim::build_site::LiftedUnit`]).
+    /// - A loaded transport (`Passengers=` above 0) off a bridge (`+0x8C`) and
+    ///   in no tank bunker (`+0x2E4`): its first passenger's SpeedType on its
+    ///   cell's land below 1% (the float table `0x0089EA40` against 0.01 at
+    ///   `0x007E3808`), except on Water (`0x00740078..0x007400BE`), or, for
+    ///   a transport whose own SpeedType is not Hover, any height above the
+    ///   ground (GetHeight vt+0x1C8, `0x007400C6..0x007400EB`).
+    ///
+    /// An empty transport answers NoDeploy before these tests (`0x0074003F`);
+    /// a simple deployer goes straight to CanDeploySlashUnload (`0x00740013`),
+    /// as does a bunkered unit (`0x00740023`, `0x00740107`). The arm's
+    /// planning test (`0x0073FEA0`) belongs to the caller, which holds
+    /// Planning Mode.
+    pub fn unit_self_deploy_site_refused(
+        &self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) -> bool {
+        use crate::rules::locomotor_type::SpeedType;
+        let Some(entity) = self
+            .substrate
+            .entities
+            .get(id)
+            .filter(|entity| entity.category() == EntityCategory::Unit)
+        else {
+            return false;
+        };
+        if let Some(yard) = crate::sim::mcv_deploy::deploys_into(self, entity, rules) {
+            let origin = super::world_spawn::deploy_origin_from_unit_cell(
+                entity.position.rx(),
+                entity.position.ry(),
+                &yard.foundation,
+            );
+            return !crate::sim::build_site::can_place_building_at(
+                self,
+                rules,
+                registry,
+                yard,
+                origin,
+                None,
+                None,
+                Some(&crate::sim::build_site::LiftedUnit::read(self, id)),
+            );
+        }
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        if object.is_simple_deployer
+            || object.passengers <= 0
+            || entity.bunker.link().installed_in().is_some()
+            || entity.on_bridge()
+        {
+            return false;
+        }
+        let Some(first) = entity
+            .passenger_role
+            .cargo()
+            .and_then(|cargo| cargo.passengers().first())
+            .and_then(|&first| self.substrate.entities.get(first))
+        else {
+            return false;
+        };
+        let terrain = self.resolved_terrain.as_ref();
+        let stranded = terrain
+            .zip(self.object_type(first.type_ref(), rules))
+            .is_some_and(|(terrain, passenger)| {
+                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                let coord =
+                    crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+                let land = cells.land_type(cells.lookup_world(coord.x, coord.y));
+                land != i32::from(crate::rules::terrain_rules::LandType::Water.as_index())
+                    && !u8::try_from(land)
+                        .ok()
+                        .and_then(|land| rules.terrain_rules.semantics_for_land_type(land))
+                        .is_some_and(|row| {
+                            row.cost_for_speed_type(passenger.speed_type)
+                                .is_none_or(|cost| cost != 0)
+                        })
+            });
+        stranded
+            || (object.speed_type != SpeedType::Hover
+                && crate::sim::movement::air_movement::current_fly_height(entity, terrain) != 0)
     }
 
     pub fn house_is_human_player(&self, owner: InternedId) -> bool {

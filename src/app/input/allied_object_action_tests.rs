@@ -165,6 +165,7 @@ fn allied_object_ivan_cursor_consumes_the_canonical_grant() {
             None,
             crate::app::input::context_order::OrderModifier::Normal,
             false,
+            false,
         ),
         native_ivan_bomb_feedback("attack_friendlies_only_ivan"),
     );
@@ -371,6 +372,7 @@ fn allied_object_cursor_does_not_offer_selection_for_another_allied_house() {
         Some(&battle.rules),
         Some(&overlays),
         crate::app::input::context_order::OrderModifier::Normal,
+        false,
         false,
     );
     let corpus = crate::test_fixture::json("tools/spatial_oracle/allied_object_action.json");

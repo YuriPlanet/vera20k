@@ -349,16 +349,6 @@ pub(super) fn generic_shell_background_entry(
     }
 }
 
-pub(super) fn offline_setup_background_entry(
-    atlas: &SkirmishShellChromeAtlas,
-    layout: &SkirmishShellLayout,
-) -> Option<SkirmishShellChromeEntry> {
-    match generic_background_role(layout) {
-        GenericBackgroundRole::Mnscrns640 => atlas.offline_setup_backgrounds[0],
-        GenericBackgroundRole::MnscrnlLarge => atlas.offline_setup_backgrounds[1],
-    }
-}
-
 pub(super) fn push_generic_shell_background_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,

@@ -1715,6 +1715,7 @@ fn terrain_impassable(
             None,
             None,
             None,
+            None,
         ) {
             return Ok(true);
         }
@@ -1742,6 +1743,7 @@ fn building_impassable(
             Some(obj),
             Some(e.owner()),
             cells,
+            None,
         )
     } else {
         let origin = cells.map_or_else(|| live.coord(cell), |cells| cells.coord(cell));
@@ -1753,6 +1755,7 @@ fn building_impassable(
             origin,
             Some(e.owner()),
             cells,
+            None,
         )
     };
     Ok(!admitted)

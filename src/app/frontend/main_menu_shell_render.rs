@@ -73,7 +73,7 @@ pub(crate) enum Ra2tsDialogOwner {
 /// Identity of the one RA2TS session installed for a movie-bearing dialog.
 ///
 /// Owner and asset base change atomically because neither alone is sufficient
-/// to make the decoder/texture reusable. VERA's Original Yuri's Revenge Style
+/// to make the decoder/texture reusable. VERA's YR Loading & Menu Movie
 /// option picks which game's copy of the movie the session plays, so it is part
 /// of the identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -359,7 +359,7 @@ pub(crate) fn ensure_movie_for_current_layout(
 /// (MainMenuDialog0xE2__Run), selects Ra2ts_s at width 640 and Ra2ts_l
 /// otherwise, then gives that name to the movie control. Resolve through the
 /// shared first-match asset lookup, preserving loose-file and archive priority.
-/// VERA's Original Yuri's Revenge Style option uses the ordinary first-match
+/// VERA's YR Loading & Menu Movie option uses the ordinary first-match
 /// lookup. The unchecked default requires the named member from
 /// [`RA2_MOVIE_ARCHIVE`]; a missing RA2 copy is reported instead of silently
 /// resolving the YR member with the same name.

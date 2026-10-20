@@ -1199,17 +1199,14 @@ impl MatchSession {
         Ok(())
     }
 
-    /// WOL `005E9850` clears node+77 of every node not named `0xA8D610`, on
-    /// host option edits (C2 `0078F9C1`/`0078FA97`) and whenever a user joins
-    /// the game channel (`007A6625`). The host's Create copies its own name
-    /// there (`0x78A0A9`); a guest's join sink empties it (`0x7A620D`), so a
-    /// guest clears every node, its own included. LAN never does this: its
-    /// peers retract acceptance through packet A0.
-    pub(crate) fn clear_wol_guest_readiness(&mut self) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            self.network_mode() == Some(SessionMode::Wol),
-            "only WOL clears guest acceptance"
-        );
+    /// `005E9850` clears node+77 of every node not named `0xA8D610`. WOL
+    /// calls it on host option edits (C2 `0078F9C1`/`0078FA97`) and whenever a
+    /// user joins the game channel (`007A6625`). The host's Create copies its
+    /// own name there (`0x78A0A9`); a WOL guest's join sink empties it
+    /// (`0x7A620D`), so a guest clears every node, its own included. A LAN
+    /// host calls it on a guest's preview request `0x1B` (`0x005E014B`);
+    /// otherwise LAN peers retract acceptance through packet A0.
+    pub(crate) fn clear_guest_readiness(&mut self) -> anyhow::Result<()> {
         let Some(NetworkSession {
             phase: NetworkPhase::Setup {
                 launch, admission, ..
@@ -1798,7 +1795,7 @@ mod tests {
         // the host, empty on a guest, which therefore clears its own too.
         session.set_network_player_ready(0, true).unwrap();
         session.set_network_player_ready(1, true).unwrap();
-        session.clear_wol_guest_readiness().unwrap();
+        session.clear_guest_readiness().unwrap();
         assert!(session.network_player_ready(0));
         assert!(!session.network_player_ready(1));
         let mut guest = MatchSession::default();
@@ -1808,7 +1805,7 @@ mod tests {
         guest.accept_network_setup(launch, false, Some(7)).unwrap();
         guest.set_network_player_ready(0, true).unwrap();
         guest.set_network_player_ready(1, true).unwrap();
-        guest.clear_wol_guest_readiness().unwrap();
+        guest.clear_guest_readiness().unwrap();
         assert!(!guest.network_player_ready(0) && !guest.network_player_ready(1));
         // Start Game Now: MaxAhead follows the agreed speed only.
         session.prepare_wol_timing([0; 8], true).unwrap();
@@ -1832,7 +1829,11 @@ mod tests {
         lan.select_network_map(launch.mode.clone(), file, 8)
             .unwrap();
         assert_eq!(lan.network_setup_capacity(), Some(8));
-        assert!(lan.clear_wol_guest_readiness().is_err());
+        // A LAN host's 0x1B arm keeps only its own acceptance.
+        lan.set_network_player_ready(0, true).unwrap();
+        lan.set_network_player_ready(1, true).unwrap();
+        lan.clear_guest_readiness().unwrap();
+        assert!(lan.network_player_ready(0) && !lan.network_player_ready(1));
         assert!(lan.prepare_wol_timing([0; 8], true).is_err());
     }
 

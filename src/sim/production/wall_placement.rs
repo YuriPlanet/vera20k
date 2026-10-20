@@ -86,6 +86,7 @@ fn scan_autofill_direction(
             Some(object_type),
             Some(owner),
             Some(query),
+            None,
         ) {
             return Vec::new();
         }

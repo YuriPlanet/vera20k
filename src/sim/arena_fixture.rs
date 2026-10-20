@@ -409,6 +409,7 @@ pub fn retail_harrier_dock_scene(
                     site,
                     Some(owners[owner]),
                     None,
+                    None,
                 )
             {
                 continue;

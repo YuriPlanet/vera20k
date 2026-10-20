@@ -71,6 +71,7 @@ fn retail_weapon_cursor_overrides_survive_distance() {
                 None,
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
+                false,
             );
             assert_eq!(
                 cursor_id_for_feedback(feedback),
@@ -200,6 +201,7 @@ fn native_modifier_controls_match_production_cursor_queries() {
                 None,
                 modifier,
                 alt,
+                false,
             );
             promote_attack_move_feedback(feedback, modifier == OrderModifier::AttackMove)
         } else {
@@ -290,6 +292,7 @@ fn infantry_deploy_and_loaded_transport_self_cursors_share_click_admission() {
                 None,
                 modifier,
                 true,
+                false,
             );
             assert_eq!(
                 cursor_id_for_feedback(feedback),
@@ -412,6 +415,7 @@ fn deployed_infantry_self_hover_refuses_a_second_deploy_click() {
             Some(&retail.rules),
             None,
             OrderModifier::Normal,
+            false,
             false
         )),
         Some(CursorId::NoDeploy)
@@ -420,9 +424,11 @@ fn deployed_infantry_self_hover_refuses_a_second_deploy_click() {
         super::super::context_order::self_click_command(
             &sim,
             &retail.rules,
+            None,
             sim.session().current_house().unwrap(),
             &[actor],
-            Some(&hover)
+            Some(&hover),
+            false
         ),
         None
     );

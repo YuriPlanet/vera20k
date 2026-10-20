@@ -35,6 +35,14 @@ pub(crate) enum NetworkSetupRequest {
     PrepareMapForHandoff {
         received_budget: i32,
     },
+    /// The guest's preview request, type `0x1B` (`0x005E7586..0x005E759D`):
+    /// sent once per material map change it cannot verify.
+    RequestPreview,
+    /// The host's `'W'` start staging, type `0x17` to every guest
+    /// (`0x005E3720`).
+    PublishStartStaging(String),
+    /// The guest's second `0x10` at GO, for a random map's `RandMap.img`.
+    RequestRandomMapImage,
     PlayerChoices {
         row: u8,
         slot: crate::skirmish_launch::SkirmishLocalSlot,
@@ -88,6 +96,9 @@ pub(crate) struct NetworkSetupProtocol {
     accept_eligible: bool,
     go_deadline: Option<Instant>,
     map_transfer_pending: bool,
+    /// A random map's `RandMap.Sed` has arrived; its `RandMap.img` is the
+    /// second receive (`0x005DDA5D..0x005DDA68`).
+    awaiting_random_map_image: bool,
     transfer_progress: Option<(u32, u32)>,
     return_after_notice: bool,
     requests: Vec<NetworkSetupRequest>,
@@ -106,6 +117,7 @@ impl NetworkSetupProtocol {
             accept_eligible: false,
             go_deadline: None,
             map_transfer_pending: false,
+            awaiting_random_map_image: false,
             transfer_progress: None,
             return_after_notice: false,
             requests: if wol_host {

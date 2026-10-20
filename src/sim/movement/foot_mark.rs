@@ -395,6 +395,28 @@ impl Simulation {
         Some((cell, layer))
     }
 
+    /// The raw (Cell, plane) whose vehicle bit Mark(UP) clears for the Unit
+    /// `id` ([`Self::foot_mark_remove`]), read without clearing it: once
+    /// Mark(UP) admits it and [`Self::foot_pick_up`] finds its Cell,
+    /// [`Self::foot_mark_raw`] clears the plane its Location picks.
+    pub(crate) fn unit_mark_up_raw_cleared(&self, id: u64) -> Option<((u16, u16), MovementLayer)> {
+        let entity = self.substrate.entities.get(id)?;
+        if entity.category() != EntityCategory::Unit
+            || entity.lifecycle.in_limbo()
+            || !entity.lifecycle.cell_marked()
+            || !entity.foot_occupation_enabled()
+        {
+            return None;
+        }
+        self.foot_mark_cell(id)?;
+        Some(raw_occupation_plane(
+            ground_pose::position_world_coord(&entity.position),
+            false,
+            self.resolved_terrain.as_ref(),
+            self.path_grid.as_deref(),
+        ))
+    }
+
     /// Remove/AddContent's receiver tail: Infantry returns first
     /// (`0x0047EAFE` / `0x0047E9EA`), then the Foot enable gates the object's
     /// vt+0xF4/+0xF0 on its stored Location. Whether a receiver ran.

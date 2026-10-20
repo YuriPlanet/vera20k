@@ -313,7 +313,8 @@ impl Simulation {
                 let impact = effect_target_coordinate(self, rules, target.projectile_target(self))
                     .expect("Disk effect target");
                 construct(
-                    self,
+                    &self.session,
+                    &mut self.lifecycle_outputs,
                     first,
                     impact,
                     0,
@@ -368,7 +369,8 @@ impl Simulation {
                 }
                 let duration = 8 - shot.step;
                 construct(
-                    self,
+                    &self.session,
+                    &mut self.lifecycle_outputs,
                     first,
                     point(a + 1),
                     0,
@@ -377,7 +379,8 @@ impl Simulation {
                     NativeF32Bits::from_bits(0x3F000000),
                 );
                 construct(
-                    self,
+                    &self.session,
+                    &mut self.lifecycle_outputs,
                     point(b),
                     point(b - 1),
                     0,

@@ -268,6 +268,35 @@ impl crate::sim::world::Simulation {
             None => {}
         }
     }
+
+    /// The raw (Cell, plane) pairs whose vehicle bit
+    /// [`Self::locomotor_mark_all_occupation_bits`]`(id, false)` clears, read
+    /// without clearing them. Drive and Ship answer their track's own cells;
+    /// other locomotors answer none.
+    ///
+    /// RESIDUAL: Hover, Walk, Teleport and Jumpjet clear the owner's bit at
+    /// their head, which this does not read. Its one caller lifts a
+    /// `DeploysInto=` unit, and every retail one (AMCV, SMCV, PCV, SMIN) is
+    /// `Locomotor=` Drive.
+    pub(crate) fn locomotor_occupation_cleared(
+        &self,
+        id: u64,
+    ) -> Vec<((u16, u16), super::locomotor::MovementLayer)> {
+        let kind = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| entity.locomotor.as_ref().map(|loco| loco.active_kind()));
+        match kind {
+            Some(crate::rules::locomotor_type::LocomotorKind::Drive) => {
+                self.track_occupation_cleared(id, super::track_process::TrackFamily::Drive)
+            }
+            Some(crate::rules::locomotor_type::LocomotorKind::Ship) => {
+                self.track_occupation_cleared(id, super::track_process::TrackFamily::Ship)
+            }
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// Techno70C5B0/70C5C0 expose the represented warp bytes to Walk/Fly: the

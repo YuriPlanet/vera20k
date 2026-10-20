@@ -613,7 +613,7 @@ fn place_building(
     registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> bool {
-    if !can_place_building_at(sim, rules, registry, ty, site, Some(owner), None) {
+    if !can_place_building_at(sim, rules, registry, ty, site, Some(owner), None, None) {
         return false;
     }
     let (Ok(rx), Ok(ry)) = (u16::try_from(site.0), u16::try_from(site.1)) else {

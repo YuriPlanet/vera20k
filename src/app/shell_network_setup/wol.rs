@@ -99,7 +99,7 @@ pub(super) fn start_pending(state: &AppState) -> bool {
 
 /// `005E9850`: clear every acceptance but the host's and enable Accept on C9.
 pub(super) fn clear_guest_acceptance(state: &mut AppState) -> anyhow::Result<()> {
-    state.match_state.session.clear_wol_guest_readiness()?;
+    state.match_state.session.clear_guest_readiness()?;
     let host = state.match_state.session.host();
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut()
         && !host

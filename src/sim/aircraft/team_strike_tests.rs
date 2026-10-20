@@ -86,6 +86,7 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
                     site,
                     Some(owners[owner]),
                     None,
+                    None,
                 )
             {
                 continue;

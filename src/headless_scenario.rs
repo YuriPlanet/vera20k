@@ -2119,6 +2119,7 @@ mod retail_construction_tests {
                             (x, y),
                             None,
                             None,
+                            None,
                         )
                     })
                 })

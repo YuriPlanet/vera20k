@@ -1162,6 +1162,21 @@ mod tests {
                     .sliders
                     .map(|rect| (true, rect)),
             );
+            use crate::ui::multiplayer_setup::{
+                DIFFICULTY, MultiplayerSetupLayout, SetupDialog, SetupFlavor,
+            };
+            for dialog in [SetupFlavor::Lan, SetupFlavor::Wol]
+                .into_iter()
+                .flat_map(|flavor| [false, true].map(|host| SetupDialog { host, flavor }))
+            {
+                let layout =
+                    MultiplayerSetupLayout::new(dialog, width as i32, height as i32, false);
+                windows.extend(
+                    layout
+                        .trackbars
+                        .map(|(id, rect)| (id != DIFFICULTY, layout.page.scale.base_rect(rect))),
+                );
+            }
             for (plaque, rect) in windows {
                 assert!(
                     trackbar_frame_slot(plaque, rect.w, rect.h).is_some(),

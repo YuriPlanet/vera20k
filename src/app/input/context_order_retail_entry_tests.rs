@@ -101,6 +101,7 @@ fn chord_cursor(
         Some(registry),
         modifier,
         force_move_key,
+        false,
     ))
 }
 
@@ -597,6 +598,7 @@ fn carrier_cursor(
         Some(registry),
         modifier,
         modifier == OrderModifier::ForceMove,
+        false,
     ))
 }
 

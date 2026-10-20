@@ -151,16 +151,27 @@ fn iso_height_shift_cells(height_leptons: i32) -> i32 {
     height_lift_px(height_leptons) / CELL_HEIGHT_PX
 }
 
+/// The Cell a conceal circle centres on for `coord`: AdjustForZ6D20E0 of Z
+/// divided by -30 with signed truncation, applied in leptons to X and Y
+/// before signed /256 and WORD storage, so a ground object on terrain level
+/// L lands L/2 Cells north. Original567F70's conceal and the gap
+/// generator's CreateGap/DestroyGap (`0x006FB1CB..0x006FB254`,
+/// `0x006FB4B1..0x006FB542`) share it.
+pub(crate) fn conceal_area_centre(coord: [i32; 3]) -> (i16, i16) {
+    let shift = crate::util::native_x87::adjust_for_z_standard(coord[2]) / -30;
+    (
+        (coord[0].wrapping_add(shift.wrapping_shl(8)) / 256) as i16,
+        (coord[1].wrapping_add(shift.wrapping_shl(8)) / 256) as i16,
+    )
+}
+
 /// Original567F70 conceal geometry, distinct from RevealArea's spiral and
-/// sight-height geometry. AdjustForZ6D20E0 is divided by-30 with signed
-/// truncation, then applied in leptons before signed /256 and WORD storage.
+/// sight-height geometry, around [`conceal_area_centre`].
 /// DX is the outer loop and the strict signed squared-radius test wraps32.
 /// Executed geometry/counter controls: trigger_conceal_area.json (Steam
 /// 3e81a617); no RNG, timer or detach in this traversal.
 pub(crate) fn conceal_area_cells(coord: [i32; 3], radius: i32) -> Vec<(u16, u16)> {
-    let shift = crate::util::native_x87::adjust_for_z_standard(coord[2]) / -30;
-    let x = (coord[0].wrapping_add(shift.wrapping_shl(8)) / 256) as i16;
-    let y = (coord[1].wrapping_add(shift.wrapping_shl(8)) / 256) as i16;
+    let (x, y) = conceal_area_centre(coord);
     let lower = (-2i32).wrapping_sub(radius);
     let upper = radius.wrapping_add(2);
     let squared_radius = radius.wrapping_add(1).wrapping_mul(radius.wrapping_add(1));
@@ -606,6 +617,7 @@ pub struct FoggedObjectFootprintRecord {
 pub(crate) struct GapGeneratorSource {
     pub stable_id: u64,
     pub owner: InternedId,
+    /// The circle's centre Cell ([`conceal_area_centre`]), as its WORDs.
     pub rx: u16,
     pub ry: u16,
     pub radius: i32,
@@ -2942,8 +2954,8 @@ pub(crate) fn apply_gap_generator_sources_with_spy_sat(
 
 fn gap_footprint(generator: GapGeneratorSource, width: usize, height: usize) -> Vec<usize> {
     let (cx, cy, radius) = (
-        i32::from(generator.rx),
-        i32::from(generator.ry),
+        i32::from(generator.rx as i16),
+        i32::from(generator.ry as i16),
         generator.radius,
     );
     if radius <= 0 {

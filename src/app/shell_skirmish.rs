@@ -271,18 +271,9 @@ impl App {
     }
 
     pub(crate) fn ensure_skirmish_shell_chrome(state: &mut AppState) -> bool {
-        let yr_original_style = state.persistence.options_profile.yr_original_style;
-        if state
-            .frontend
-            .skirmish_shell_chrome
-            .as_ref()
-            .is_some_and(|atlas| atlas.yr_original_style == yr_original_style)
-        {
+        if state.frontend.skirmish_shell_chrome.is_some() {
             return true;
         }
-        // Drop a stale derived atlas before trying to build the requested
-        // style. A failed rebuild must not keep painting the old profile.
-        state.frontend.skirmish_shell_chrome = None;
 
         let Some(assets) = state.process_assets.manager() else {
             log::warn!(
@@ -296,7 +287,6 @@ impl App {
                 &state.renderer.gpu,
                 &state.renderer.batch_renderer,
                 assets,
-                yr_original_style,
             );
         let ready = state.frontend.skirmish_shell_chrome.is_some();
         if !ready {

@@ -19,7 +19,7 @@ use crate::ui::main_menu_dialogs::options::{
 /// `0x0055FDB0..0x0056047A`. Trackbar set-position rejects an out-of-range
 /// request and leaves the fresh position at zero; it does not clamp. VERA's
 /// Full Screen box starts unticked; the opener sets it from the window. Its
-/// Original 4:3 Shape and Original Yuri's Revenge Style boxes and Sidebar list
+/// Original 4:3 Shape and YR Loading & Menu Movie boxes and Sidebar list
 /// show the retained choices.
 pub(crate) fn launcher_values_from_profile(
     profile: &RetailOptionsProfile,

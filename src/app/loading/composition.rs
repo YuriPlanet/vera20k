@@ -533,6 +533,54 @@ pub(crate) fn projected_playfield_bounds(map: &MapFile) -> Option<ProjectedPlayf
     })
 }
 
+/// `ComputeScenarioHeaderFromMap 0x0058B830` over a generated map: the
+/// leading defined start waypoints 0..7 (the loop stops at the first
+/// undefined one, `0x0058B858`) give the staged pairs through the same
+/// `0x006D62E0` projection divided by 60 and 30, and the playfield cells give
+/// the minimum and span (`0x0058B91F..0x0058BA14`). The cells are the start
+/// waypoints by slot, as the `'W'` sender reads them (`0x005E7F38..`).
+/// RESIDUAL: native gates the bounds with `IsCellInPlayfield` mode 1
+/// (`0x0058B953`, level and slope aware); this reuses the compositor's mode-0
+/// bounds, which can differ by a unit at the playfield's edge.
+pub(crate) fn scenario_start_staging(
+    map: &MapFile,
+    start_waypoints: &[(u8, u16, u16)],
+) -> crate::map::preview::ScenarioStartStaging {
+    use crate::map::preview::{START_STAGING_SLOTS, ScenarioStartStaging};
+    let mut staging = ScenarioStartStaging::default();
+    let cell = |slot: usize| {
+        start_waypoints
+            .iter()
+            .find(|(index, _, _)| usize::from(*index) == slot)
+            .map(|&(_, rx, ry)| (rx, ry))
+    };
+    for slot in 0..START_STAGING_SLOTS {
+        if let Some((rx, ry)) = cell(slot) {
+            staging.cells[slot] = (rx as i16, ry as i16);
+        }
+    }
+    for slot in 0..START_STAGING_SLOTS {
+        let Some((rx, ry)) = cell(slot) else {
+            break;
+        };
+        let point = project_cell(rx, ry);
+        staging.pairs[slot] = (point.x, point.y);
+        staging.count += 1;
+    }
+    // The minimum starts at 10000 and the maximum at 0 (0x0058B929).
+    let bounds = projected_playfield_bounds(map).unwrap_or(ProjectedPlayfieldBounds {
+        min_x: 10_000,
+        min_y: 10_000,
+        extent_x: -10_000,
+        extent_y: -10_000,
+    });
+    staging.start_x = bounds.min_x;
+    staging.start_y = bounds.min_y;
+    staging.width = bounds.extent_x;
+    staging.height = bounds.extent_y;
+    staging
+}
+
 /// Reproduce the valid-count-then-numeric-prefix behavior over waypoint indices 0..7.
 pub(crate) fn native_loading_waypoint_prefix(waypoints: &HashMap<u32, Waypoint>) -> Vec<Waypoint> {
     let valid_count = (0..NATIVE_START_LIMIT)
@@ -1019,6 +1067,47 @@ mod tests {
         // Without optional preview map data, the loader never invents starts.
         assert!(preview.image.rgba.iter().all(|byte| *byte == 255));
         assert!(composition.markers.is_empty());
+    }
+
+    #[test]
+    fn start_staging_counts_the_leading_starts_and_keeps_every_cell() {
+        use crate::map::map_file::MapCell;
+
+        let mut map = crate::map::rmg::emit::empty_map_file(
+            &crate::map::rmg::RmgOptions::default(),
+            100,
+            100,
+        );
+        let empty = scenario_start_staging(&map, &[(0, 70, 70)]);
+        assert_eq!(
+            (empty.start_x, empty.start_y, empty.width, empty.height),
+            (10_000, 10_000, -10_000, -10_000)
+        );
+        let cell = |rx, ry| MapCell {
+            rx,
+            ry,
+            tile_index: 0,
+            sub_tile: 0,
+            z: 0,
+        };
+        map.cells = vec![cell(60, 60), cell(60, 140), cell(140, 60)];
+        // Slot 2 is undefined: the count and pairs stop there, the cells do not.
+        let staging = scenario_start_staging(&map, &[(3, 100, 100), (0, 70, 70), (1, 90, 80)]);
+        assert_eq!(staging.count, 2);
+        assert_eq!(staging.pairs[0], (256, 70));
+        assert_eq!(staging.pairs[2], (0, 0));
+        assert_eq!(staging.pairs[3], (0, 0));
+        assert_eq!(staging.cells[..4], [(70, 70), (90, 80), (0, 0), (100, 100)]);
+        let bounds = projected_playfield_bounds(&map).expect("inside cells");
+        assert_eq!(
+            (
+                staging.start_x,
+                staging.start_y,
+                staging.width,
+                staging.height
+            ),
+            (bounds.min_x, bounds.min_y, bounds.extent_x, bounds.extent_y)
+        );
     }
 
     #[test]

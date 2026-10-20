@@ -50,9 +50,13 @@ impl HouseFactoryAbandonment {
         })
     }
 
-    fn begin(&self, sim: &mut Simulation) {
-        if sim.session.current_house() == Some(self.owner) {
-            sim.lifecycle_outputs.emit(
+    fn begin(
+        &self,
+        session: &ScenarioSession,
+        lifecycle_outputs: &mut FrameChannel<LifecycleOutput>,
+    ) {
+        if session.current_house() == Some(self.owner) {
+            lifecycle_outputs.emit(
                 crate::sim::world::LifecycleOutput::ProductionFactoryAbandoning {
                     owner: self.owner,
                     category: self.category,
@@ -62,9 +66,13 @@ impl HouseFactoryAbandonment {
         }
     }
 
-    fn finish(self, sim: &mut Simulation) {
-        if sim.session.current_house() == Some(self.owner) {
-            sim.lifecycle_outputs.emit(
+    fn finish(
+        self,
+        session: &ScenarioSession,
+        lifecycle_outputs: &mut FrameChannel<LifecycleOutput>,
+    ) {
+        if session.current_house() == Some(self.owner) {
+            lifecycle_outputs.emit(
                 crate::sim::world::LifecycleOutput::ProductionFactoryUnlinked {
                     owner: self.owner,
                     category: self.category,
@@ -464,7 +472,7 @@ pub fn cancel_production_for_owner(
         CancelOutcome::QueuedRemoved => true,
         CancelOutcome::AdmittedEmpty | CancelOutcome::AbandonedActive(_) => {
             let abandonment = abandonment.expect("admitted House abandon has a Factory");
-            abandonment.begin(sim);
+            abandonment.begin(&sim.session, &mut sim.lifecycle_outputs);
             if let CancelOutcome::AbandonedActive(object) = outcome {
                 settle_abandoned(
                     sim,
@@ -475,7 +483,7 @@ pub fn cancel_production_for_owner(
                     effects,
                 );
             }
-            abandonment.finish(sim);
+            abandonment.finish(&sim.session, &mut sim.lifecycle_outputs);
             finish_house_abandon(sim, rules, owner_id, category, effects);
             true
         }

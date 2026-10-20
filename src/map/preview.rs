@@ -59,6 +59,87 @@ impl ScenarioStartHeader {
     }
 }
 
+/// Start slots the retained staging holds (`Scenario+0x1140`, 8 pairs).
+pub const START_STAGING_SLOTS: usize = 8;
+
+/// The retained Scenario start staging `+0x112C..+0x11DF` that the host's
+/// `'W'` options string carries to its guests.
+///
+/// The host's random-map dialog writes it at Generate
+/// (`ComputeScenarioHeaderFromMap 0x0058B830`); a guest's options parser
+/// overwrites it from every `'W'` it receives (`0x005E3E96..0x005E40C6`).
+/// Full_Init copies `cells` into waypoints 0..7 for a random map
+/// (`0x006873E6..0x0068740E`) before House start assignment.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ScenarioStartStaging {
+    /// `+0x112C` / `+0x1130`: the playfield's minimum screen X/60, Y/30.
+    pub start_x: i32,
+    pub start_y: i32,
+    /// `+0x1134` / `+0x1138`: the spans of the same.
+    pub width: i32,
+    pub height: i32,
+    /// `+0x113C`: staged start count.
+    pub count: i32,
+    /// `+0x1140`: start positions in the bounds' units.
+    pub pairs: [(i32, i32); START_STAGING_SLOTS],
+    /// `+0x11C0`: start waypoint cells; `(0, 0)` is the null cell (undefined).
+    pub cells: [(i16, i16); START_STAGING_SLOTS],
+}
+
+impl ScenarioStartStaging {
+    /// The `'W'` string `0x005E7EB0` formats: `"%c%d,%d,%d,%d,%d"` (`0x00831C18`)
+    /// with width, height, start X, start Y and count, then
+    /// `",%d,%d,%d,%d"` (`0x00831C08`) per slot with the pair and the cell.
+    pub fn to_w_text(&self) -> String {
+        let mut text = format!(
+            "W{},{},{},{},{}",
+            self.width, self.height, self.start_x, self.start_y, self.count
+        );
+        for (pair, cell) in self.pairs.iter().zip(&self.cells) {
+            text.push_str(&format!(",{},{},{},{}", pair.0, pair.1, cell.0, cell.1));
+        }
+        text
+    }
+
+    /// The parser's `'W'` arm: `strtok(text + 1, ",")` and `atol` over 37
+    /// tokens. It commits only when the 37th token exists
+    /// (`0x005E3FE9`); nothing is clamped, and a cell keeps the low 16 bits
+    /// of each value (`0x005E4041..0x005E4098`).
+    pub fn parse_w_text(text: &str) -> Option<Self> {
+        let body = text.strip_prefix('W')?;
+        let values: Vec<i32> = crate::rules::ini_value::strtok(body, &[','])
+            .take(5 + 4 * START_STAGING_SLOTS)
+            .map(crate::rules::ini_value::crt_atoi)
+            .collect();
+        if values.len() < 5 + 4 * START_STAGING_SLOTS {
+            return None;
+        }
+        let mut staging = Self {
+            width: values[0],
+            height: values[1],
+            start_x: values[2],
+            start_y: values[3],
+            count: values[4],
+            ..Self::default()
+        };
+        for (slot, fields) in values[5..].chunks_exact(4).enumerate() {
+            staging.pairs[slot] = (fields[0], fields[1]);
+            staging.cells[slot] = (fields[2] as i16, fields[3] as i16);
+        }
+        Some(staging)
+    }
+
+    /// The defined start cells by slot, as Full_Init's copy leaves them:
+    /// a slot holding the null cell stays undefined (`0x0068BD80`).
+    pub fn defined_cells(&self) -> impl Iterator<Item = (usize, (i16, i16))> + '_ {
+        self.cells
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(_, cell)| *cell != (0, 0))
+    }
+}
+
 /// CPU RGBA thumbnail decoded from `[PreviewPack]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedPreview {
@@ -308,5 +389,37 @@ mod scenario_start_header_tests {
         let mut fresh = ScenarioStartHeader::default();
         fresh.read_ini(&IniFile::from_str("[Header]\nStartX=1"));
         assert_eq!(fresh.coop_human_start_spots(), 4);
+    }
+}
+
+#[cfg(test)]
+mod start_staging_tests {
+    use super::*;
+
+    #[test]
+    fn the_w_text_round_trips_and_needs_all_37_tokens() {
+        let mut staging = ScenarioStartStaging {
+            start_x: 3,
+            start_y: -4,
+            width: 120,
+            height: 64,
+            count: 2,
+            ..ScenarioStartStaging::default()
+        };
+        staging.pairs[0] = (10, 20);
+        staging.pairs[1] = (30, 40);
+        staging.cells[0] = (55, 70);
+        staging.cells[1] = (-1, 300);
+        let text = staging.to_w_text();
+        assert!(text.starts_with("W120,64,3,-4,2,10,20,55,70,30,40,-1,300,0,0,0,0"));
+        assert_eq!(text.matches(',').count(), 36);
+        assert_eq!(ScenarioStartStaging::parse_w_text(&text), Some(staging));
+        let short = &text[..text.rfind(',').unwrap()];
+        assert_eq!(ScenarioStartStaging::parse_w_text(short), None);
+        assert_eq!(ScenarioStartStaging::parse_w_text(&text[1..]), None);
+        assert_eq!(
+            staging.defined_cells().collect::<Vec<_>>(),
+            [(0, (55, 70)), (1, (-1, 300))]
+        );
     }
 }

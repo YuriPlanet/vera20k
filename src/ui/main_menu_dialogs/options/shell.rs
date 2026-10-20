@@ -1028,7 +1028,7 @@ mod tests {
         let layout = LauncherOptionsLayout::new(800, 600);
         let (id, rect) = layout.checkboxes[6];
         assert_eq!(id, LauncherCheckboxId::ShiftQueue);
-        // Beside the Original YR Style option, under the Scroll Rate slider,
+        // Beside the YR Loading & Menu Movie box, under the Scroll Rate slider,
         // clear of both and of the Audio Options heading.
         let yr_original_style = layout.checkboxes[5].1;
         let scroll = layout

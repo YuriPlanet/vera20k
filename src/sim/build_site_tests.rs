@@ -74,6 +74,7 @@ impl Arena {
             Some(ty),
             house,
             None,
+            None,
         )
     }
 
@@ -85,6 +86,7 @@ impl Arena {
             self.ty(ty),
             origin,
             house,
+            None,
             None,
         )
     }

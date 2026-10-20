@@ -7,7 +7,8 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::weapon_type::WeaponType;
 use crate::sim::intern::InternedId;
 use crate::sim::projectile::{ProjectileCoord, ProjectileTarget};
-use crate::sim::world::{LifecycleOutput, Simulation};
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::{FrameChannel, LifecycleOutput, Simulation};
 use crate::util::native_x87::NativeF32Bits;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,7 +158,8 @@ pub(crate) fn create<'w>(
         };
     let to = super::fire_coord::effect_target_coordinate(world, rules, target)?;
     Some(construct(
-        world,
+        &world.session,
+        &mut world.lifecycle_outputs,
         from,
         to,
         z_adjust,
@@ -169,28 +171,27 @@ pub(crate) fn create<'w>(
 
 /// LaserDraw54FE60 initializes every caller's width1/unsupported object;
 /// caller-specific postprocessing mutates that one returned birth.
-pub(crate) fn construct(
-    world: &mut Simulation,
+pub(crate) fn construct<'a>(
+    session: &ScenarioSession,
+    lifecycle_outputs: &'a mut FrameChannel<LifecycleOutput>,
     from: ProjectileCoord,
     to: ProjectileCoord,
     z_adjust: i32,
     duration: i32,
     color: LaserColor,
     fade_end: NativeF32Bits,
-) -> &mut LaserBirth {
-    let birth = world
-        .lifecycle_outputs
-        .emit_and_finish(LifecycleOutput::LaserCreated(LaserBirth {
-            frame: world.session.binary_frame() as i32,
-            from,
-            to,
-            z_adjust,
-            duration,
-            width: 1,
-            supported: false,
-            color,
-            fade_end,
-        }));
+) -> &'a mut LaserBirth {
+    let birth = lifecycle_outputs.emit_and_finish(LifecycleOutput::LaserCreated(LaserBirth {
+        frame: session.binary_frame() as i32,
+        from,
+        to,
+        z_adjust,
+        duration,
+        width: 1,
+        supported: false,
+        color,
+        fade_end,
+    }));
     let LifecycleOutput::LaserCreated(laser) = birth else {
         unreachable!("newly appended laser birth")
     };
@@ -223,7 +224,8 @@ pub(crate) fn support(
     .coord;
     let color = LaserColor::House(source.owner());
     construct(
-        world,
+        &world.session,
+        &mut world.lifecycle_outputs,
         from,
         to,
         0,

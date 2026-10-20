@@ -1216,7 +1216,10 @@ use crate::util::save_codec;
 // 455 -> 456: retain paid two-stage selection sequences and one-use tickets
 // on Super instances, plus ticketed completion/cancellation command variants.
 // Positional bincode cannot default the new per-instance fields in v455 saves.
-const SNAPSHOT_VERSION: u32 = 456;
+// 456 -> 457: the retained type registry stores Warhead+0xA0 after each
+// reached ReadINI, including its per-layer literal default; its positional
+// payload and the effective rules configuration hash change.
+const SNAPSHOT_VERSION: u32 = 457;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10081,6 +10084,7 @@ mod tests {
         // 453 -> 454: the House left-game flag.
         // 454 -> 455: BunkerState::WallsUp.
         // 455 -> 456: saved paid two-stage selections and ticketed commands.
-        assert_eq!(super::SNAPSHOT_VERSION, 456);
+        // 456 -> 457: retained per-pass Warhead Verses table.
+        assert_eq!(super::SNAPSHOT_VERSION, 457);
     }
 }

@@ -49,6 +49,7 @@ fn building_orders(
         None,
         crate::app::input::context_order::OrderModifier::Normal,
         false,
+        false,
     );
     assert_eq!(feedback, CursorFeedbackKind::RepairAction(repairable));
     assert_eq!(

@@ -87,6 +87,7 @@ pub fn placement_preview_for_owner_with_overlays(
                         Some(obj),
                         owner_id,
                         Some(query),
+                        None,
                     );
                 cells.push(BuildingPlacementCell {
                     coord: (cx, cy),
@@ -598,6 +599,7 @@ fn evaluate_building_placement(
             (rx as i16, ry as i16),
             owner_id,
             native_cells,
+            None,
         ) {
             // The error variant only labels the refusal for presentation.
             let overlaps_structure =

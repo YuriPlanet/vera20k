@@ -1612,6 +1612,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
                         (ax as i16, ay as i16),
                         Some(owner),
                         None,
+                        None,
                     )
                 })?;
             sim.spawn_object("GAAIRC", "Americans", site.0, site.1, 0, &resources.rules)?;

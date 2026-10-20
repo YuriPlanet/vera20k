@@ -103,6 +103,7 @@ fn retail_unarmed_ctrl_click_matches_original_selection_and_navigation() {
             Some(&overlays),
             modifier,
             false,
+            false,
         );
         let expected_cursor = match row["cursor"]["output"]["cursor_row"].as_u64().unwrap() {
             17 => CursorId::Select,

@@ -83,20 +83,9 @@ changed. The Ctrl+Alt+I chord is local presentation input, not a game command.
   identity/owner changes and missed history snap rather than invent old points.
 - Both modes run on the same thread. A long simulation stall can still block a
   window presentation; interpolation does not fix CPU spikes or make 20k-unit
-  performance claims. The [direct initial-versus-final comparison](render-interpolation-cumulative-20261020.md)
-  is the primary performance summary; it measures cache/sampling hook overhead,
-  not whole-game FPS. The [initial ON/OFF report](render-interpolation-performance-20261020.md)
-  remains historical baseline evidence, not the final version's current overhead.
-  The [first cache optimization](render-interpolation-optimization-20261020.md)
-  retains full-world history and compares separate before/after optimized test binaries.
-  The [second pose-read optimization](render-interpolation-pose-optimization-20261020.md)
-  shares exact-height projection work without changing the sampling contract.
-  The [third SHP draw optimization](render-interpolation-shp-reuse-20261020.md)
-  reuses one fresh pose within an individual read-only draw, not across draws.
-  The [fourth aircraft optimization](render-interpolation-aircraft-reuse-20261020.md)
-  shares a pose and unrounded coordinate calculation between the shadow and body.
-  The [fifth tank/spike optimization](render-interpolation-tank-spikes-20261020.md)
-  removes redundant zero-height projection work and reports capture tail latency.
+  performance claims. The measured hook overhead and its optimization history
+  are in PR #2263's description; they cover cache/sampling hook cost, not
+  whole-game FPS.
 - I have entered a map and observed the interpolation in play; the smoothness
   improvement is more noticeable at slower game speeds. That live observation
   is separate from CPU probes and does not establish save/load regression or

@@ -35,7 +35,8 @@ pub struct WarheadType {
     /// the damage kernel — the single float exception). Index order: 0=none,
     /// 1=flak, 2=plate, 3=light, 4=medium, 5=heavy, 6=wood, 7=steel,
     /// 8=concrete, 9=special_1, 10=special_2. Defaults to `[1.0; 11]` (100%)
-    /// when `Verses=` is absent.
+    /// on each admitted rules layer without `Verses=`. The process registry
+    /// retains the result when that layer has no section for this warhead.
     pub verses_f64: [f64; 11],
     /// Splash radius in cells (0 = direct hit only). Native `CellSpread=` is a
     /// **float** at `WarheadTypeClass+0x124` (ReadDouble `0x005283d0` called at
@@ -291,11 +292,7 @@ pub struct WarheadType {
 impl WarheadType {
     /// Parse a WarheadType from a rules.ini section.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
-        // The absent-key default is the reader's own all-`100%` string
-        // (`0x0075DDE6`), which scans to `[1.0; 11]`.
-        let verses_f64: [f64; 11] = section
-            .read_list("Verses", 0x80)
-            .map_or([1.0; 11], |tokens| verses_from_tokens(&tokens));
+        let verses_f64 = read_verses(section, [1.0; 11]);
 
         // Float fields (`FSTP dword` at `0x0075D3E6`, `0x0075D424`, `0x0075D477`).
         let cell_spread_f64 = f64::from(section.read_float("CellSpread", 0.0));
@@ -384,6 +381,21 @@ impl WarheadType {
             max_debris,
         }
     }
+}
+
+/// Original WarheadType ReadINI75DDCC..75DE5A, called once for each admitted
+/// rules-layer section. The missing-key default is a literal all-100% string,
+/// not the current table. A present empty cached string instead makes
+/// ReadString528A10 return zero and skips the parse, retaining `current`.
+/// Physical INI loading omits empty values, so those use the missing-key default.
+/// Native controls: tools/rules_oracle/bridge_landing_inputs.{py,json,meta.json}.
+pub(crate) fn read_verses(section: &IniSection, current: [f64; 11]) -> [f64; 11] {
+    if !section.is_present("Verses") {
+        return [1.0; 11];
+    }
+    section
+        .read_list("Verses", 0x80)
+        .map_or(current, |tokens| verses_from_tokens(&tokens))
 }
 
 /// Original WarheadType ReadINI75DDCC..75DE5A, over the `strtok(",")`

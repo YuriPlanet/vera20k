@@ -1893,6 +1893,7 @@ mod tests {
                         (px as i16, py as i16),
                         Some(owner),
                         None,
+                        None,
                     )
                     .then(|| sim.spawn_object("GAPOWR", "Americans", px, py, 0, &resources.rules))
                     .flatten()

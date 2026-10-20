@@ -372,6 +372,18 @@ impl LoadingRequest {
         self
     }
 
+    /// A guest's random-map start staging from the host's `'W'`; the guest
+    /// has no setup preview of its own.
+    pub(crate) fn with_start_staging(
+        mut self,
+        staging: Option<crate::app::shell_random_map::AcceptedRmgStartStaging>,
+    ) -> Self {
+        if staging.is_some() {
+            self.accepted_rmg_start_staging = staging;
+        }
+        self
+    }
+
     #[cfg(test)]
     fn random_map_preview(&self) -> Option<&crate::map::rmg::GeneratedMap> {
         self.random_map_preview.as_ref()

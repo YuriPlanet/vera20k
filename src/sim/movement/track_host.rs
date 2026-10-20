@@ -870,11 +870,54 @@ impl Simulation {
         supplied: DriveCoord,
         put: bool,
     ) {
+        for coord in self.track_occupation_coords(id, family, supplied) {
+            Self::track_raw_mark_at(
+                &mut self.substrate,
+                &self.path_grid,
+                &self.resolved_terrain,
+                coord,
+                put,
+            );
+        }
+    }
+
+    /// The raw (Cell, plane) pairs whose vehicle bit
+    /// [`Self::track_apply_occupation`]`(id, family, false)` clears, read
+    /// without clearing them.
+    pub(super) fn track_occupation_cleared(
+        &self,
+        id: u64,
+        family: TrackFamily,
+    ) -> Vec<((u16, u16), MovementLayer)> {
+        let supplied = head_or_null(self.substrate.entities.get(id), family);
+        self.track_occupation_coords(id, family, supplied)
+            .into_iter()
+            .map(|coord| {
+                super::foot_mark::raw_occupation_plane(
+                    coord,
+                    false,
+                    self.resolved_terrain.as_ref(),
+                    self.path_grid.as_deref(),
+                )
+            })
+            .collect()
+    }
+
+    /// The coordinates Apply_Track_Occupation_Mode marks or clears for
+    /// `supplied`, in its order: the RawTrack handoff point while the turn
+    /// has not passed it, then `supplied`. Empty without a track or for a
+    /// null `supplied`.
+    fn track_occupation_coords(
+        &self,
+        id: u64,
+        family: TrackFamily,
+        supplied: DriveCoord,
+    ) -> Vec<DriveCoord> {
         let Some((state, retained_head, current)) = self.track_state(id, family) else {
-            return;
+            return Vec::new();
         };
         if supplied == (DriveCoord { x: 0, y: 0, z: 0 }) {
-            return;
+            return Vec::new();
         }
         let handoff = (!state.reversed() && state.turn_index() != -1)
             .then(|| {
@@ -909,22 +952,7 @@ impl Simulation {
                 })
             })
             .flatten();
-        if let Some(coord) = handoff {
-            Self::track_raw_mark_at(
-                &mut self.substrate,
-                &self.path_grid,
-                &self.resolved_terrain,
-                coord,
-                put,
-            );
-        }
-        Self::track_raw_mark_at(
-            &mut self.substrate,
-            &self.path_grid,
-            &self.resolved_terrain,
-            supplied,
-            put,
-        );
+        handoff.into_iter().chain([supplied]).collect()
     }
 
     fn track_try_chain(

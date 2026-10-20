@@ -2555,6 +2555,7 @@ fn owned_wall_replacement_rechecks_building_admission_after_removal() {
             None,
             None,
             Some(&cells),
+            None,
         ),
         "Overlay Track admission alone would still accept the exposed ground"
     );
@@ -2677,6 +2678,7 @@ fn placement_preview_keeps_shared_dummy_unchanged_across_unallocated_foundation_
         (63, 10),
         sim.interner.get("Americans"),
         None,
+        None,
     ));
     assert_eq!(dummy.snapshot().coord, (64, 11));
 }
@@ -2721,6 +2723,7 @@ fn place_ready_building_rejects_native_gap_restamp_cells() {
         rules.object("GAPOWR").unwrap(),
         (12, 10),
         Some(americans),
+        None,
         None,
     ));
     let records = [crate::sim::bridge_state::BridgeEndpointRecord {
