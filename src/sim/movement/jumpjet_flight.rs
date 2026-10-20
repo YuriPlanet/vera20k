@@ -315,6 +315,7 @@ impl Default for JumpjetFlight {
 pub(crate) enum FlightOwnerKind {
     Unit,
     Infantry,
+    Aircraft,
     Other,
 }
 
@@ -324,6 +325,7 @@ impl FlightOwnerKind {
         match category {
             EntityCategory::Unit => Self::Unit,
             EntityCategory::Infantry => Self::Infantry,
+            EntityCategory::Aircraft => Self::Aircraft,
             _ => Self::Other,
         }
     }
@@ -1312,8 +1314,8 @@ pub(crate) fn state4_descend(
 /// Dead and not ported: the landing's crash for a Foot speed fraction
 /// (`+0x578`) of 5.0 or 7.0 (`0x0054CF3C..0x0054CF75`); its only writer,
 /// `SetSpeedFraction @ 0x004D3710`, clamps it to [0, 1]. The weighing's
-/// Aircraft arm (`0x0054CE43..0x0054CE65`) is unreachable: Jumpjet owners
-/// here are Units and Infantry.
+/// Aircraft arm (`0x0054CE43..0x0054CE65`) additionally requires Wheel
+/// passability even when the aircraft type is not `Jumpjet=`.
 pub(crate) fn state5_crash(runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFlightHost) -> i32 {
     let frame = host.binary_frame();
     let [x, y, old_z] = host.location();
@@ -1359,7 +1361,13 @@ pub(crate) fn state5_crash(runtime: &mut JumpjetRuntime, host: &mut impl Jumpjet
             let land = host.cell_land_type(xy);
             let water = land == LAND_WATER && !crossed_deck;
             let beach = land == LAND_BEACH && !crossed_deck;
-            let answer = host.can_enter_cell(cell);
+            let mut answer = host.can_enter_cell(cell);
+            // Aircraft's own entry query can admit impassable terrain.
+            // State5 asks the Cell's Wheel check separately and replaces
+            // its answer with Move_No (7) on refusal (54CE43..54CE65).
+            if host.owner_kind() == FlightOwnerKind::Aircraft && !host.wheel_clear(cell) {
+                answer = 7;
+            }
             let landable = (!host.jumpjet_type() || host.wheel_clear(cell)) && answer == 0;
             if landable {
                 if host.holds_air_slot_at(cell) {
