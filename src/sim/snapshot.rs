@@ -1229,7 +1229,10 @@ use crate::util::save_codec;
 // references in typed TechnoType prerequisites.
 // 460 -> 461: a Tiberium queue's heap is the shared native heap: its slots
 // lose the unused slot 0 and its size word replaces the queue's capacity.
-const SNAPSHOT_VERSION: u32 = 461;
+// 461 -> 462: bunker entry uses radio contacts, removing the separate
+// Approaching link, ArriveWait enum variant and installing_unit payload.
+// Enum ordinals and the positional building runtime payload both change.
+const SNAPSHOT_VERSION: u32 = 462;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -2635,26 +2638,12 @@ fn restore_object_references(
                 target_id,
             )?;
         }
-        if let BunkerLink::Approaching(target_id) | BunkerLink::Installed(target_id) =
-            entity.bunker.link()
-        {
+        if let BunkerLink::Installed(target_id) = entity.bunker.link() {
             require_resolved_reference(
                 entity_ids.contains(&target_id),
                 "EntityStore",
                 entity_id,
                 "bunker_link",
-                "EntityStore",
-                target_id,
-            )?;
-        }
-        if let Some(runtime) = entity.bunker_runtime.as_ref()
-            && let Some(target_id) = runtime.installing_unit()
-        {
-            require_resolved_reference(
-                entity_ids.contains(&target_id),
-                "EntityStore",
-                entity_id,
-                "bunker_runtime.installing_unit",
                 "EntityStore",
                 target_id,
             )?;
@@ -10244,6 +10233,7 @@ mod tests {
         // 458 -> 459: the retained Rules/build extension capability.
         // 459 -> 460: retained generic prerequisite definitions.
         // 460 -> 461: Tiberium queues hold the shared native heap.
-        assert_eq!(super::SNAPSHOT_VERSION, 461);
+        // 461 -> 462: remove duplicate bunker approach state.
+        assert_eq!(super::SNAPSHOT_VERSION, 462);
     }
 }

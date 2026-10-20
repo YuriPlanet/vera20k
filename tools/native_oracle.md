@@ -192,6 +192,15 @@ cover the Unit bunker bonus, direct/arcing boundaries and declared ordering and
 overflow controls. Their native input readers establish LTNK/ATGUN/Cannon fields;
 installation, acquisition, firing and rendering remain separate validation.
 
+### Tank-bunker entry
+
+`python -m tools.spatial_oracle.bunker_entry --check` executes eight joined
+original histories through the Unit destination, Building radio and Foot Enter
+owners, including busy, cancellation, replacement and AI seek controls. A supplied
+arrival exercises PerCell DOCK_NOW; a prepared state3 control pins the native
+wait for a retained Drive destination. Rust consumes these outputs separately
+from stock world-frame installation tests. See [scope and reproduction](spatial_oracle/bunker_entry.md).
+
 ### Stationary attack actions and building control
 
 `python -m tools.spatial_oracle.bunker_attack_action --check` executes original

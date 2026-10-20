@@ -8081,6 +8081,9 @@ mod cmin_dock_cycle_tests;
 mod passenger_escape_oracle_tests;
 
 #[cfg(test)]
+mod bunker_entry_oracle_tests;
+
+#[cfg(test)]
 #[path = "world_orders_bridge_repair_tests.rs"]
 mod world_orders_bridge_repair_tests;
 
