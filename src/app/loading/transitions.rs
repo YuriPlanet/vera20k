@@ -64,8 +64,6 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             terrain_objects: Vec::new(),
             overlay_registry: OverlayTypeRegistry::empty(),
             house_roster: HouseRoster::default(),
-            height_map: BTreeMap::new(),
-            bridge_height_map: BTreeMap::new(),
             rules: None,
             map_lighting_config: crate::map::lighting::LightingConfig::default(),
             theater_name: "TEMPERATE".to_string(),
@@ -112,8 +110,6 @@ pub(crate) struct MapPresentationInputs {
     pub(crate) lighting_config: crate::map::lighting::LightingConfig,
     pub(crate) theater_name: String,
     pub(crate) theater_ext: String,
-    pub(crate) height_map: BTreeMap<(u16, u16), u8>,
-    pub(crate) bridge_height_map: BTreeMap<(u16, u16), u8>,
 }
 
 /// Install the complete map presentation after its runtime and process assets
@@ -131,8 +127,6 @@ pub(crate) fn install_world_presentation(
     state.match_state.loaded_map_source = Some(map.source);
     state.match_state.loaded_map_hash = map.map_hash;
     state.match_state.match_presentation.terrain_grid = map.terrain_grid;
-    state.match_state.match_presentation.height_map = map.height_map;
-    state.match_state.match_presentation.bridge_height_map = map.bridge_height_map;
     state.frontend.shell_preview_overlay_registry = state
         .match_state
         .sim_runtime
@@ -410,8 +404,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             lighting_config: result.scenario.map_lighting_config,
             theater_name: result.scenario.theater_name,
             theater_ext: result.scenario.theater_ext,
-            height_map: result.scenario.height_map,
-            bridge_height_map: result.scenario.bridge_height_map,
         },
         result.presentation,
     );

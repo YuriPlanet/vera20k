@@ -1591,10 +1591,6 @@ pub struct ScenarioLoadInputs {
     /// Overlay type registry — kept so wall placement can look up overlay_id by name.
     pub overlay_registry: OverlayTypeRegistry,
     pub house_roster: HouseRoster,
-    /// Cell (rx, ry) → terrain elevation z for overlay/entity height lookup.
-    pub height_map: BTreeMap<(u16, u16), u8>,
-    /// Cell (rx, ry) → bridge deck elevation z. Only bridge cells present.
-    pub bridge_height_map: BTreeMap<(u16, u16), u8>,
     /// Parsed rules.ini data — kept for combat system weapon/warhead lookups.
     pub rules: Option<RuleSet>,
     /// Parsed [Lighting] config used for transient lighting rebuilds.
@@ -3221,8 +3217,6 @@ pub(crate) fn load_map_from_initial(
     // Every exported terrain/presentation surface is derived only after the
     // authored final sweep. Generated materialization reaches this same seam
     // with its existing eager grid unchanged.
-    let height_map: BTreeMap<(u16, u16), u8> = resolved_terrain.build_height_map();
-    let bridge_height_map: BTreeMap<(u16, u16), u8> = resolved_terrain.build_bridge_height_map();
     let bridge_middle_tiles = theater_result
         .as_ref()
         .and_then(crate::map::theater::BridgeMiddleTiles::from_theater);
@@ -3543,13 +3537,12 @@ pub(crate) fn load_map_from_initial(
         });
     let (camera_anchor_x, camera_anchor_y): (f32, f32) =
         if let Some((rx, ry)) = opening_view_cell.or(local_start_cell) {
-            let z = height_map.get(&(rx, ry)).copied().unwrap_or(0);
+            let z = resolved_terrain.cell(rx, ry).map_or(0, |cell| cell.level);
             crate::app::input::camera::cell_centre_world_point(rx, ry, z)
         } else if let Some(start_wp) = waypoints::first_multiplayer_start(&map_data.waypoints) {
-            let wp_z = height_map
-                .get(&(start_wp.rx, start_wp.ry))
-                .copied()
-                .unwrap_or(0);
+            let wp_z = resolved_terrain
+                .cell(start_wp.rx, start_wp.ry)
+                .map_or(0, |cell| cell.level);
             crate::app::input::camera::cell_centre_world_point(start_wp.rx, start_wp.ry, wp_z)
         } else {
             // VERA-only fallback: the centre of the native scroll rectangle.
@@ -3599,8 +3592,6 @@ pub(crate) fn load_map_from_initial(
             terrain_objects: map_data.terrain_objects,
             overlay_registry,
             house_roster,
-            height_map,
-            bridge_height_map,
             rules: Some(rules),
             map_lighting_config: lighting_config,
             theater_name,

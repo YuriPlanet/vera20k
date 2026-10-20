@@ -54,8 +54,6 @@ fn health_bar_hover_target(
         local_owner,
         state.match_state.sandbox_full_visibility,
         state.rules(),
-        state.height_map(),
-        crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
     )?;
     match hover.kind {
         HoverTargetKind::FriendlyStructure
@@ -1832,7 +1830,7 @@ mod tests {
         }
         let target = sim.entities().get(id).unwrap();
         let (sx, sy) = crate::render::locomotor_visual::ground_screen_position(&target.position);
-        let heights = sim.resolved_terrain().unwrap().build_height_map();
+
         let hover = crate::app::input::entity_pick::hover_target_at_point(
             sim,
             sx,
@@ -1840,8 +1838,6 @@ mod tests {
             &viewer_name,
             false,
             Some(rules),
-            &heights,
-            None,
         )
         .expect("revealed time-machine hover");
         assert_eq!(hover.stable_id, id);

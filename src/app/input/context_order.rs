@@ -1553,8 +1553,6 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             &owner,
             state.match_state.sandbox_full_visibility,
             Some(&resources.rules),
-            &state.match_state.match_presentation.height_map,
-            crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
         );
         // Techno700082 -> Action8 precedes Infantry/Unit class actions.
         // Let the selection consumer handle Shift over a visible object;

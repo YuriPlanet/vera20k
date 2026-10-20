@@ -1356,7 +1356,12 @@ impl ResolvedTerrainGrid {
     }
 }
 
-impl crate::map::terrain::TacticalBridgeLookup for ResolvedTerrainGrid {
+impl crate::map::terrain::TacticalCellLookup for ResolvedTerrainGrid {
+    fn cell_level(&self, rx: u16, ry: u16) -> Option<u8> {
+        // Original6D6753 reads the current candidate, not a load-time level.
+        self.cell(rx, ry).map(|cell| cell.level)
+    }
+
     fn bridge_cell(&self, rx: u16, ry: u16) -> Option<crate::map::terrain::TacticalBridgeCell> {
         let facts = &self.cell(rx, ry)?.bridge_facts;
         // Original6D6760/6D6793 reads raw100/800, independent of inferred

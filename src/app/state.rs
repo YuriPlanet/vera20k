@@ -5,7 +5,7 @@
 //! owners; match-scoped input and presentation live inside MatchState.
 //! The architecture guards keep unrelated flat fields from returning.
 
-use super::{BTreeMap, OverlayTypeRegistry, ResolvedTerrainGrid};
+use super::{OverlayTypeRegistry, ResolvedTerrainGrid};
 
 mod platform;
 
@@ -205,15 +205,16 @@ impl AppState {
         self.match_state.sim_runtime.as_ref().map(|rt| rt.view())
     }
 
-    /// Load-time cell levels the input and presentation click resolution
-    /// reads (see `MatchPresentationState::height_map`).
-    pub(crate) fn height_map(&self) -> &BTreeMap<(u16, u16), u8> {
-        &self.match_state.match_presentation.height_map
-    }
-
-    /// Load-time high-bridge deck levels for the same click resolution.
-    pub(crate) fn bridge_height_map(&self) -> &BTreeMap<(u16, u16), u8> {
-        &self.match_state.match_presentation.bridge_height_map
+    /// Current terrain authority, replaced together with the running world on
+    /// map load and restore. No presentation height projection is retained.
+    pub(crate) fn resolved_terrain(
+        &self,
+    ) -> Option<&crate::map::resolved_terrain::ResolvedTerrainGrid> {
+        self.match_state
+            .sim_runtime
+            .as_ref()?
+            .simulation
+            .resolved_terrain()
     }
 }
 

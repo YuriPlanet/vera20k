@@ -22,13 +22,19 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
             let enemy = sim.intern("Enemy");
             let typ = sim.intern("GAPILL");
             let level = input["level"].as_u64().unwrap() as u8;
+            let flags = input["flags"].as_u64().unwrap() as u32;
+            let on_bridge = flags & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0;
             let mut terrain_cells = Vec::new();
             for y in 0..32 {
                 for x in 0..32 {
                     let mut cell = ResolvedTerrainCell::clear_for_test(x, y);
                     cell.level = level;
-                    if (x, y) == (20, 20) {
-                        cell.bridge_facts.raw_flags = input["flags"].as_u64().unwrap() as u32;
+                    // The native suffix supplies an already-resolved Cell.
+                    // Its bridge controls therefore need a coherent upstream
+                    // span and a deck-height object, rather than disabling
+                    // bridge picking to force that Cell at a ground pixel.
+                    if (x, y) == (20, 20) || on_bridge && y == 20 && (18..=21).contains(&x) {
+                        cell.bridge_facts.raw_flags = flags;
                     }
                     terrain_cells.push(cell);
                 }
@@ -57,7 +63,7 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
                 1,
                 20,
                 20,
-                level,
+                if on_bridge { level + 4 } else { level },
                 0,
                 enemy,
                 Health::new(100),
@@ -67,6 +73,7 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
                 5,
                 false,
             );
+            entity.set_on_bridge(on_bridge);
             entity.lifecycle.set_object_alive_for_test(true);
             entity.lifecycle.set_in_limbo_for_test(false);
             assert!(!entity.discovery.discovered_by_current_house());
@@ -81,10 +88,30 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
                 crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
             assert_eq!(encounter_order, [1]);
             let terrain = sim.resolved_terrain().unwrap();
-            let heights = terrain.build_height_map();
-            assert_eq!(
-                crate::app::match_runtime::sim_tick::world_point_to_cell(sx, sy, &heights, None),
+
+            let expected_cell = if on_bridge {
+                let native =
+                    crate::test_fixture::json("tools/bridge_click_state_oracle/vectors.json");
+                let upstream = native["shroud_upstream_rows"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|case| {
+                        case["base_height"] == level
+                            && case["world_input"][0].as_f64() == Some(f64::from(sx))
+                            && case["world_input"][1].as_f64() == Some(f64::from(sy))
+                    })
+                    .unwrap();
+                (
+                    upstream["expected_cell"][0].as_u64().unwrap() as u16,
+                    upstream["expected_cell"][1].as_u64().unwrap() as u16,
+                )
+            } else {
                 (20, 20)
+            };
+            assert_eq!(
+                crate::app::match_runtime::sim_tick::world_point_to_cell(sx, sy, Some(terrain)),
+                expected_cell
             );
             let expected = row["picked_target"].as_bool().unwrap().then_some(1);
             let visible = crate::app::presentation::instances::cell_visibility_for_local_owner(
@@ -102,7 +129,7 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
                 row["name"]
             );
             assert_eq!(
-                hover_target_at_point(&sim, sx, sy, "Player", false, None, &heights, None)
+                hover_target_at_point(&sim, sx, sy, "Player", false, None,)
                     .filter(|hover| {
                         matches!(
                             hover.kind,
@@ -125,10 +152,8 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
                     30.0,
                     None,
                     None,
-                    &heights,
-                    None,
                     Some(sim.interner()),
-                    Some(terrain)
+                    Some(terrain),
                 ),
                 expected,
                 "{}: direct selection target {category:?}",
@@ -146,8 +171,6 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
                     30.0,
                     additive,
                     None,
-                    None,
-                    &heights,
                     None,
                     Some(sim.interner()),
                     false,
@@ -207,7 +230,7 @@ fn sov01_trigger_revealed_hill_bunkers_can_be_targeted_without_tank_sight() {
         ));
     }
     let terrain = sim.resolved_terrain().unwrap();
-    let heights = terrain.build_height_map();
+
     let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
     let mut mismatches = Vec::new();
     let mut checked = 0;
@@ -216,16 +239,7 @@ fn sov01_trigger_revealed_hill_bunkers_can_be_targeted_without_tank_sight() {
         let point = crate::sim::movement::ground_pose::position_world_coord(&target.position);
         let shrouded = crate::sim::vision::point_is_shrouded(sim.fog(), &cells, viewer, point);
         let (sx, sy) = crate::render::locomotor_visual::ground_screen_position(&target.position);
-        let hover = hover_target_at_point(
-            sim,
-            sx,
-            sy,
-            &viewer_name,
-            false,
-            Some(rules),
-            &heights,
-            None,
-        );
+        let hover = hover_target_at_point(sim, sx, sy, &viewer_name, false, Some(rules));
         println!(
             "target={} cell=({}, {}) z={} raw_mapped={} native_shrouded={shrouded} hover={hover:?}",
             target.stable_id(),

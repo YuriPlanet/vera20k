@@ -103,8 +103,10 @@ fn bridge_candidate_decisions_match_original_executable() {
                 cy,
                 scenario.base_height,
                 TacticalInverseContext {
-                    height_map: &heights,
-                    bridge_cells: Some(&bridges),
+                    cells: Some(&crate::map::terrain::TacticalCellFixture {
+                        levels: &heights,
+                        bridges: Some(&bridges),
+                    }),
                     viewport_offset_x: 0.0,
                     viewport_offset_y: 0.0,
                 },
@@ -170,8 +172,10 @@ fn complete_bridge_inverse_matches_original_executable() {
                     case.world_input[0] + viewport[0],
                     case.world_input[1] + viewport[1],
                     TacticalInverseContext {
-                        height_map: &heights,
-                        bridge_cells: Some(&bridges),
+                        cells: Some(&crate::map::terrain::TacticalCellFixture {
+                            levels: &heights,
+                            bridges: Some(&bridges),
+                        }),
                         viewport_offset_x: viewport[0],
                         viewport_offset_y: viewport[1],
                     },
@@ -218,8 +222,10 @@ fn nonbridge_inverse_quantizes_one_pixel_before_every_decision() {
                 point[0] + fraction,
                 point[1] + fraction,
                 TacticalInverseContext {
-                    height_map: &heights,
-                    bridge_cells: None,
+                    cells: Some(&crate::map::terrain::TacticalCellFixture {
+                        levels: &heights,
+                        bridges: None,
+                    }),
                     viewport_offset_x: 0.0,
                     viewport_offset_y: 0.0,
                 },

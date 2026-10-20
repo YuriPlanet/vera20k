@@ -44,12 +44,6 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sidebar_chrome: Option<SidebarChromeSet>,
     pub(crate) software_cursor: Option<crate::app::presentation::render::SoftwareCursor>,
     pub(crate) terrain_grid: Option<TerrainGrid>,
-    /// Load-time cell levels for click and hover resolution. A presentation
-    /// copy: the simulation reads its live terrain, and this is not refreshed
-    /// when a bridge body or cliff rewrites a level.
-    pub(crate) height_map: BTreeMap<(u16, u16), u8>,
-    /// Load-time high-bridge deck levels for the same click resolution.
-    pub(crate) bridge_height_map: BTreeMap<(u16, u16), u8>,
     /// Overlay entries from map for per-frame instance generation.
     pub(crate) overlays: crate::app::presentation::overlay_index::OverlayRenderIndex,
     /// Terrain objects from map for per-frame instance generation.

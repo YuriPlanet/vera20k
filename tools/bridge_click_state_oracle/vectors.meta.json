@@ -1,18 +1,21 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
     1,
     33621247
   ],
-  "scope": "36 original6D6590 queries across supplied intact/collapsed/repaired live flags in both orientations",
+  "scope": "104 original6D6590 queries:36 live-flag,60 live-level,4 coherent click upstream and4 native middle-publication snapshot controls",
   "assumptions": [
     "Same binary, matrix/direction initialization and unchanged native leaves as tools/bridge_click_oracle.py.",
     "Synthetic32x32 flat ground level2; four supplied structural cells match anchor/F1/F2/opposite visitation for direction0 or6.",
     "Only relevant structural100, destroyed400 and direction800 inputs are supplied; flag publication is not executed here.",
     "Flag inputs are overwritten on the same CellClass identities between phases; no map or matrix reconstruction.",
+    "The60 level controls write candidate/east/south Cell+11B values2/6 on the same identities; publication and retail occurrence are not executed here. All supplied CellClass bytes remain unchanged by each query group.",
+    "Four coherent EW bridge queries with deck-height centre and infantry right-subcell anchors precede the separately supplied click_shroud suffix controls; no native drawing or whole pointer chain executes.",
+    "Four middle queries consume original bridge_middle_tiles.json admitted576BA0 body snapshots and supplied C3 stock inputs, whose map SHA is recorded there; their producer, damage admission/RNG and loader do not execute in this reader comparison.",
     "All map lookups must resolve real mapped cells. No dummy/off-map behavior, UI delivery, movement or GPU proof."
   ],
   "substitutions": [],
@@ -22,5 +25,6 @@
     "neighbor": "0x00481810",
     "projector": "0x006D1F10"
   },
-  "payload_sha256": "4551fb753698ff2e2390f1051b22dde3aa7ef41268d1eddb6926ab602db48080"
+  "replay_command": "python -m tools.bridge_click_state_oracle",
+  "payload_sha256": "a84d2903bad347595e3eacbd4b2edfbeb1642cfa213cc2629943ff858edc6988"
 }

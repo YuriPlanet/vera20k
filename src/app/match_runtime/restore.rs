@@ -90,10 +90,6 @@ pub(crate) fn commit_prepared_load(
         .sim_runtime
         .as_ref()
         .expect("prepared saved game installs a runtime");
-    let terrain = runtime
-        .view()
-        .resolved_terrain()
-        .expect("prepared saved game installs resolved terrain");
     let theater_name = runtime.simulation.session().theater().to_owned();
     let theater_ext = crate::app::loading::init_helpers::theater_ext_for(&theater_name).to_owned();
     let binary_frame = runtime.simulation.session().binary_frame();
@@ -109,8 +105,6 @@ pub(crate) fn commit_prepared_load(
         lighting_config: committed.map.lighting().clone(),
         theater_name,
         theater_ext,
-        height_map: terrain.build_height_map(),
-        bridge_height_map: terrain.build_bridge_height_map(),
     };
     crate::app::loading::transitions::install_world_presentation(
         state,

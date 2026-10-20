@@ -582,8 +582,6 @@ impl App {
                     target_lines: startup_target_lines,
                     cached_overlay_instances: Vec::new(),
                     terrain_grid: None,
-                    height_map: BTreeMap::new(),
-                    bridge_height_map: BTreeMap::new(),
                     overlays: Default::default(),
                     terrain_objects: Vec::new(),
                     overlay_names: BTreeMap::new(),

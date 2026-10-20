@@ -127,8 +127,6 @@ fn visible_object_under_point(state: &AppState, world_x: f32, world_y: f32) -> O
         &owner,
         state.match_state.sandbox_full_visibility,
         state.rules(),
-        state.height_map(),
-        crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
     )
     .map(|hover| hover.stable_id)
 }
@@ -1079,12 +1077,12 @@ mod tests {
     };
 
     use crate::map::entities::EntityCategory;
-    use crate::sim::intern::InternedId;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::combat::{Health, TargetKind};
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
+    use crate::sim::intern::InternedId;
     use crate::sim::world::Simulation;
 
     #[test]
