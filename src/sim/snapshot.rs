@@ -1215,7 +1215,10 @@ use crate::util::save_codec;
 // 454 -> 455: pending CommandEnvelope payloads can now carry the live native
 // game-speed change notice (opcode 0x0D). Appending the enum variant changes
 // the bincode schema.
-const SNAPSHOT_VERSION: u32 = 455;
+// 455 -> 456: pending CommandEnvelope payloads can now carry the native
+// Building On/Off Line toggle (opcodes 0x01/0x02). Appending the enum variant
+// changes the bincode schema.
+const SNAPSHOT_VERSION: u32 = 456;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10077,6 +10080,7 @@ mod tests {
         // 452 -> 453: a building's NoSurvivor byte.
         // 453 -> 454: the House left-game flag.
         // 454 -> 455: the live native game-speed change notice (opcode 0x0D).
-        assert_eq!(super::SNAPSHOT_VERSION, 455);
+        // 455 -> 456: the native Building On/Off Line toggle (0x01/0x02).
+        assert_eq!(super::SNAPSHOT_VERSION, 456);
     }
 }

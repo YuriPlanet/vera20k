@@ -82,6 +82,65 @@ impl GameSpeedNoticeRecord {
     }
 }
 
+/// Native `EventClass` opcodes 0x01 / 0x02 (Building On Line / Off Line).
+/// Both dispatch branches (`0x004C6CF0` / `0x004C6D4D`) read the target as the
+/// Abstract token at payload `[0..4]` with kind `0x34` at `[4]` and hand the
+/// resolved object to GoOnline `0x00452260` / GoOffline `0x00452360`; the
+/// direction is the opcode, never a payload byte. EVA strings
+/// `EVA_BuildingOnLine` / `EVA_BuildingOffLine` name the pair.
+pub const BUILDING_ON_LINE_OPCODE: u8 = 0x01;
+pub const BUILDING_OFF_LINE_OPCODE: u8 = 0x02;
+
+/// Typed view of native opcodes 0x01 / 0x02 (Building On Line / Off Line).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuildingOnLineRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+    /// The opcode's direction: `0x01` On Line, `0x02` Off Line.
+    pub on: bool,
+}
+
+impl BuildingOnLineRecord {
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        let opcode = if self.on {
+            BUILDING_ON_LINE_OPCODE
+        } else {
+            BUILDING_OFF_LINE_OPCODE
+        };
+        let mut payload = [0u8; 5];
+        let (value, kind) = MegaMissionTarget::Object { id: self.entity_id }
+            .token()
+            .expect("an Object token encodes a 0x34 Abstract");
+        payload[..4].copy_from_slice(&value.to_le_bytes());
+        payload[4] = kind;
+        CommandRecord::encode(opcode, i32::from(self.house_id), self.frame, &payload)
+    }
+
+    /// Decode either direction. A non-`0x34` kind byte decodes to nothing:
+    /// the native resolver `0x006E7A80` compares `[token+4]` against `0x34`
+    /// first and answers null for anything else, which the dispatch drops.
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        let on = match record.opcode() {
+            BUILDING_ON_LINE_OPCODE => true,
+            BUILDING_OFF_LINE_OPCODE => false,
+            _ => return None,
+        };
+        let value = i32::from_le_bytes(record.payload()[..4].try_into().ok()?);
+        let MegaMissionTarget::Object { id } =
+            MegaMissionTarget::from_token(value, record.payload()[4])?
+        else {
+            return None;
+        };
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: id,
+            on,
+        })
+    }
+}
+
 const MEGAMISSION_SOURCE_VALUE_OFFSET: usize = 0;
 const MEGAMISSION_SOURCE_KIND_OFFSET: usize = 4;
 const MEGAMISSION_ACTION_OFFSET: usize = 5;
@@ -867,6 +926,12 @@ pub enum Command {
     /// `SetGameSpeed`; this is its live-network twin. Appended to preserve
     /// existing serialized/replayed command variant indices.
     GameSpeedChangeNotice { speed: u8 },
+    /// Toggle one Building's On/Off Line latch (native opcodes 0x01/0x02,
+    /// `EventClass::Execute` branches `0x004C6CF0`/`0x004C6D4D` -> GoOnline
+    /// `0x00452260` / GoOffline `0x00452360`). The direction rides `on`; the
+    /// EVA pair names it. Appended to preserve existing serialized variant
+    /// indices.
+    SetBuildingOnLine { entity_id: u64, on: bool },
 }
 
 impl Command {

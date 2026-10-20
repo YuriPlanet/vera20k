@@ -233,6 +233,57 @@ fn game_speed_change_notice_decodes_and_applies_at_ingress() {
     assert_ne!(result.state_hash, control_result.state_hash);
 }
 
+#[test]
+fn building_on_off_line_opcodes_decode_direction_and_target() {
+    // Native opcodes 0x01/0x02 (EventClass::Execute branches 0x004C6CF0 /
+    // 0x004C6D4D) drive the Building+660 latch via GoOnline 0x00452260 /
+    // GoOffline 0x00452360; the direction is the opcode, the target the
+    // Abstract token at payload[0..4] (kind 0x34).
+    let (mut sim, owner) = game_speed_command_sim();
+    let mut building = GameEntity::test_default(7, "GAPOWR", "Local", 30, 40);
+    building.set_owner_for_test(owner);
+    sim.substrate.entities.insert(building);
+
+    let on = crate::sim::command::BuildingOnLineRecord {
+        house_id: 0,
+        frame: 1,
+        entity_id: 7,
+        on: true,
+    }
+    .encode()
+    .expect("encode 0x01 On Line");
+    let off = crate::sim::command::BuildingOnLineRecord {
+        house_id: 0,
+        frame: 1,
+        entity_id: 7,
+        on: false,
+    }
+    .encode()
+    .expect("encode 0x02 Off Line");
+
+    let decoded_on = sim
+        .decode_native_command_record(&on, 1)
+        .expect("0x01 decodes");
+    let decoded_off = sim
+        .decode_native_command_record(&off, 1)
+        .expect("0x02 decodes");
+    assert_eq!(decoded_on.owner, owner);
+    assert_eq!(
+        decoded_on.payload,
+        Command::SetBuildingOnLine {
+            entity_id: 7,
+            on: true
+        }
+    );
+    assert_eq!(
+        decoded_off.payload,
+        Command::SetBuildingOnLine {
+            entity_id: 7,
+            on: false
+        }
+    );
+}
+
 /// A launch hashes every frame and a test world none until the caller asks.
 /// Then only a frame whose tick is a multiple of the interval hashes, and its
 /// hash is the state's.

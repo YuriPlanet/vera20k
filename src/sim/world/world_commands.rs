@@ -18,8 +18,9 @@ use crate::sim::combat;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::combat::combat_aoe::CellTargetDetach;
 use crate::sim::command::{
-    COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, ExitRecord, GameSpeedNoticeRecord,
-    MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, ScatterRecord, SellWallAtCellRecord,
+    BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, COMMAND_RECORD_LEN, BuildingOnLineRecord,
+    Command, CommandEnvelope, CommandRecord, ExitRecord, GameSpeedNoticeRecord, MegaMissionOrder,
+    MegaMissionRecord, MegaMissionTarget, ScatterRecord, SellWallAtCellRecord,
 };
 use crate::sim::mission::MissionType;
 use crate::sim::overlay_grid::{
@@ -690,11 +691,39 @@ impl Simulation {
             let house_index = usize::try_from(typed.house_id).ok()?;
             let owner = *self.houses.order().get(house_index)?;
             let speed = u8::try_from(typed.speed).ok()?;
+           return self.houses.contains_key(&owner).then(|| {
+               CommandEnvelope::new(
+                   owner,
+                   execute_tick,
+                   Command::GameSpeedChangeNotice { speed },
+               )
+           });
+       }
+
+        // Native opcodes 0x01/0x02 (EventClass::Execute branches 0x004C6CF0 /
+        // 0x004C6D4D) drive the Building+660 latch via GoOnline 0x00452260 /
+        // GoOffline 0x00452360; the direction is the opcode, the target the
+        // Abstract token at payload[0..4] (kind 0x34). No owner check here --
+        // input gating is the client's job, as in native.
+        if matches!(
+            record.opcode(),
+            BUILDING_ON_LINE_OPCODE | BUILDING_OFF_LINE_OPCODE
+        ) {
+            let Some(typed) = BuildingOnLineRecord::decode(record) else {
+                return None;
+            };
+            let house_index = usize::try_from(typed.house_id).ok()?;
+            let owner = *self.houses.order().get(house_index)?;
+            let entity_id = u64::try_from(typed.entity_id).ok()?;
+            self.substrate.entities.get(entity_id)?;
             return self.houses.contains_key(&owner).then(|| {
                 CommandEnvelope::new(
                     owner,
                     execute_tick,
-                    Command::GameSpeedChangeNotice { speed },
+                    Command::SetBuildingOnLine {
+                        entity_id,
+                        on: typed.on,
+                    },
                 )
             });
         }
@@ -1487,6 +1516,25 @@ impl Simulation {
                 };
                 // Event 0x4C6FC4 passes 0; ordinary SELL remains audible.
                 self.sell_wall_at_cell(command_owner, *x, *y, false, rules, overlays, frame_effects)
+            }
+            // Event1/Event2 (0x004C6CB0 branches 0x004C6CF0/0x004C6D4D) drive the
+            // BuildingClass+0x660 power latch through GoOnline 0x00452260 /
+            // GoOffline 0x00452360. go_building_online/offline carry the native
+            // semantics (idempotent latch, house power + tech-tree invalidation,
+            // Stuff flag, factory queue refresh, EVA line for a human house). The
+            // dispatch has no owner check, and none is added here.
+            Command::SetBuildingOnLine { entity_id, on } => {
+                let (Some(rules), Some(owner)) = (rules, self.interner.get(command_owner)) else {
+                    return false;
+                };
+                if !self.houses.contains_key(&owner) {
+                    return false;
+                }
+                if *on {
+                    self.go_building_online(*entity_id, rules, frame_effects)
+                } else {
+                    self.go_building_offline(*entity_id, rules, frame_effects)
+                }
             }
             // Offline game-speed transitions are consumed at master-frame
             // ingress so early authoritative animation work sees the new rate.
