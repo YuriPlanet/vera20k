@@ -206,7 +206,7 @@ fn native_jumpjet_unit_shadow_low_flight_mask_offsets() {
             &format!("Unit native caller {}", case["caller"]),
         );
     }
-    assert_eq!(data["cases"].as_array().unwrap().len(), 6);
+    assert_eq!(data["cases"].as_array().unwrap().len(), 7);
 }
 
 #[test]

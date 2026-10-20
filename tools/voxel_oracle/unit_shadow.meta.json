@@ -33,5 +33,5 @@
     "crop": "0x00754510"
   },
   "replay_command": "python -m tools.voxel_oracle.aircraft_shadow --unit",
-  "payload_sha256": "11c5be3369e6f073d8f91ce70f71fd2f82cb8e8ac108afeb0c9d382a972314ce"
+  "payload_sha256": "68d83dea2fbf16d6931fb8b67493c10e4e099f901b5dc73ddd501997b9f33462"
 }

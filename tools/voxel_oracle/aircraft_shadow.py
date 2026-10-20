@@ -6,9 +6,10 @@ tools.voxel_oracle.aircraft_shadow --write / --check
 VERA20K_UNIT_SHADOW_INPUTS=<extracted directory> python -m \
 tools.voxel_oracle.aircraft_shadow --unit --write / --check
 
-The map/object fixture and VM belong to aircraft_fire_location. Only Mark's
-external display notification and the final Techno drawing boundary are supplied.
-Original floor, height, projection, locomotor dispatch and restoration execute.
+The map/object fixture and VM belong to aircraft_fire_location. Aircraft executes
+floor, height, projection, dispatch and restoration, supplying Mark's external
+display notification and the final Techno drawing boundary. Unit executes its
+draw projection and post-body suffix with declared body-frame/mask inputs.
 Retail files are identified by hash; only generated art is embedded.
 """
 import hashlib
@@ -162,6 +163,7 @@ def execute_unit(case, inspect_renderer=False):
     assert case['family'] == 'Unit' and case['locomotor'] == 'Jumpjet'
     f, _loco, marks = prepare(case)
     u = f.u
+    u.mem_write(OWNER + 0x74, bytes([case.get('marked', True)]))
     rect = SCRATCH + 0x54000
     u.mem_write(rect, dwords(0, 0, 640, 480))
     u.mem_write(OWNER + 0x80, b'\1\0')
@@ -229,12 +231,13 @@ def generate_unit():
                  dict(base, primary=0x4000, body_frame=3),
                  dict(base, on_bridge=True),
                  dict(base, flags=0x100, neighbor_flags=0x100),
-                 dict(base, sinking=True), dict(base, no_shadow=True), dict(base, cloak=1)]
+                 dict(base, sinking=True), dict(base, no_shadow=True), dict(base, cloak=1),
+                 dict(base, marked=False)]
     callers = [execute_unit(case, True) for case in controls]
     generated = single_section()
     body = bytes(27 if (x * 3 + y) % 7 < 3 else 0 for y in range(256) for x in range(256))
     cases = []
-    for i in (0, 1, 2, 3, 4, 8):
+    for i in (0, 1, 2, 3, 4, 8, 15):
         caller = callers[i]
         renderer = caller['renderer']
         result = render_shadow_native(*generated, struct.pack('<12I', *caller['matrix_bits']),

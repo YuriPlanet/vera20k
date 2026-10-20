@@ -83,7 +83,7 @@ mod tests {
                 UnitShadowContext {
                     xyz,
                     on_bridge: input["on_bridge"].as_bool().unwrap_or(false),
-                    marked: true,
+                    marked: input["marked"].as_bool().unwrap_or(true),
                     primary_facing: input["primary"].as_u64().unwrap() as u16,
                 },
                 |coord| DepthCell {
