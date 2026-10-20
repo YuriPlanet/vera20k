@@ -75,12 +75,47 @@
       "0x797": null,
       "0x7A3": "STT:WOLTournament"
     },
+    "0x115": {
+      "0x540": null,
+      "0x686": null,
+      "0x695": null,
+      "0x702": null
+    },
+    "0x116": {
+      "0x5C2": "STT:WOLBuddyPage",
+      "0x62B": "STT:WOLBuddyCreateGame",
+      "0x62D": "STT:WOLBuddyJoin",
+      "0x686": "STT:WOLBuddyBack",
+      "0x689": "STT:WOLBuddyBuddyList",
+      "0x694": null,
+      "0x695": null,
+      "0x6EF": null,
+      "0x6F0": "STT:WOLBuddyWins",
+      "0x6F1": "STT:WOLBuddyLosses",
+      "0x6F4": "STT:WOLBuddyRank",
+      "0x6F5": "STT:WOLBuddyPoints",
+      "0x701": "STT:WOLBuddyDisconnects",
+      "0x702": "STT:WOLBuddyAdd",
+      "0x703": "STT:WOLBuddyRemove",
+      "0x704": "STT:WOLBuddyRefresh",
+      "0x71C": null,
+      "0x75F": null,
+      "0x760": "STT:ObserverToggle"
+    },
     "0x11E": {
       "0x53F": null,
       "0x540": null,
       "0x5C2": null,
       "0x686": null,
       "0x718": null
+    },
+    "0x122": {
+      "0x1": "STT:WOLAddBuddyQueryYes",
+      "0x2": "STT:WOLAddBuddyQueryNo",
+      "0x695": null,
+      "0x6F9": "STT:WOLAddBuddyQueryDoNotAsk",
+      "0x71B": null,
+      "0x71C": null
     },
     "0x2BC": {
       "0x1": "STT:WOLOptionsOk",
@@ -5813,6 +5848,2150 @@
         }
       }
     },
+    "0x115": {
+      "background_mode": 2,
+      "kind": "popup",
+      "sizes": {
+        "1024x768": {
+          "controls": {
+            "0x540": {
+              "caption": "",
+              "class": "Edit",
+              "rect": [
+                116,
+                138,
+                229,
+                24
+              ],
+              "screen_rect": [
+                403,
+                359,
+                229,
+                24
+              ],
+              "style": 1342242816,
+              "template": [
+                77,
+                85,
+                152,
+                14
+              ]
+            },
+            "0x686": {
+              "caption": "GUI:Back",
+              "class": "Button",
+              "rect": [
+                239,
+                192,
+                126,
+                25
+              ],
+              "screen_rect": [
+                526,
+                413,
+                126,
+                25
+              ],
+              "style": 1342177291,
+              "template": [
+                159,
+                118,
+                83,
+                15
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "rect": [
+                0,
+                302,
+                411,
+                21
+              ],
+              "screen_rect": [
+                287,
+                523,
+                411,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                0,
+                186,
+                273,
+                12
+              ]
+            },
+            "0x702": {
+              "caption": "GUI:AddBuddy",
+              "class": "Button",
+              "rect": [
+                98,
+                192,
+                126,
+                25
+              ],
+              "screen_rect": [
+                385,
+                413,
+                126,
+                25
+              ],
+              "style": 1476395019,
+              "template": [
+                65,
+                118,
+                83,
+                15
+              ]
+            },
+            "0xFFFF": {
+              "caption": "GUI:BuddyNickname",
+              "class": "Static",
+              "rect": [
+                86,
+                99,
+                291,
+                25
+              ],
+              "screen_rect": [
+                373,
+                320,
+                291,
+                25
+              ],
+              "style": 1342308353,
+              "template": [
+                57,
+                61,
+                193,
+                15
+              ]
+            }
+          },
+          "dialog": [
+            287,
+            221,
+            451,
+            326
+          ]
+        },
+        "640x480": {
+          "controls": {
+            "0x540": {
+              "caption": "",
+              "class": "Edit",
+              "rect": [
+                116,
+                138,
+                229,
+                24
+              ],
+              "screen_rect": [
+                211,
+                215,
+                229,
+                24
+              ],
+              "style": 1342242816,
+              "template": [
+                77,
+                85,
+                152,
+                14
+              ]
+            },
+            "0x686": {
+              "caption": "GUI:Back",
+              "class": "Button",
+              "rect": [
+                239,
+                192,
+                126,
+                25
+              ],
+              "screen_rect": [
+                334,
+                269,
+                126,
+                25
+              ],
+              "style": 1342177291,
+              "template": [
+                159,
+                118,
+                83,
+                15
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "rect": [
+                0,
+                302,
+                411,
+                21
+              ],
+              "screen_rect": [
+                95,
+                379,
+                411,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                0,
+                186,
+                273,
+                12
+              ]
+            },
+            "0x702": {
+              "caption": "GUI:AddBuddy",
+              "class": "Button",
+              "rect": [
+                98,
+                192,
+                126,
+                25
+              ],
+              "screen_rect": [
+                193,
+                269,
+                126,
+                25
+              ],
+              "style": 1476395019,
+              "template": [
+                65,
+                118,
+                83,
+                15
+              ]
+            },
+            "0xFFFF": {
+              "caption": "GUI:BuddyNickname",
+              "class": "Static",
+              "rect": [
+                86,
+                99,
+                291,
+                25
+              ],
+              "screen_rect": [
+                181,
+                176,
+                291,
+                25
+              ],
+              "style": 1342308353,
+              "template": [
+                57,
+                61,
+                193,
+                15
+              ]
+            }
+          },
+          "dialog": [
+            95,
+            77,
+            451,
+            326
+          ]
+        },
+        "800x600": {
+          "controls": {
+            "0x540": {
+              "caption": "",
+              "class": "Edit",
+              "rect": [
+                116,
+                138,
+                229,
+                24
+              ],
+              "screen_rect": [
+                291,
+                275,
+                229,
+                24
+              ],
+              "style": 1342242816,
+              "template": [
+                77,
+                85,
+                152,
+                14
+              ]
+            },
+            "0x686": {
+              "caption": "GUI:Back",
+              "class": "Button",
+              "rect": [
+                239,
+                192,
+                126,
+                25
+              ],
+              "screen_rect": [
+                414,
+                329,
+                126,
+                25
+              ],
+              "style": 1342177291,
+              "template": [
+                159,
+                118,
+                83,
+                15
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "rect": [
+                0,
+                302,
+                411,
+                21
+              ],
+              "screen_rect": [
+                175,
+                439,
+                411,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                0,
+                186,
+                273,
+                12
+              ]
+            },
+            "0x702": {
+              "caption": "GUI:AddBuddy",
+              "class": "Button",
+              "rect": [
+                98,
+                192,
+                126,
+                25
+              ],
+              "screen_rect": [
+                273,
+                329,
+                126,
+                25
+              ],
+              "style": 1476395019,
+              "template": [
+                65,
+                118,
+                83,
+                15
+              ]
+            },
+            "0xFFFF": {
+              "caption": "GUI:BuddyNickname",
+              "class": "Static",
+              "rect": [
+                86,
+                99,
+                291,
+                25
+              ],
+              "screen_rect": [
+                261,
+                236,
+                291,
+                25
+              ],
+              "style": 1342308353,
+              "template": [
+                57,
+                61,
+                193,
+                15
+              ]
+            }
+          },
+          "dialog": [
+            175,
+            137,
+            451,
+            326
+          ]
+        }
+      }
+    },
+    "0x116": {
+      "kind": "page",
+      "sizes": {
+        "1024x768": {
+          "controls": {
+            "0x5C2": {
+              "caption": "GUI:Page",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                367,
+                156,
+                42
+              ],
+              "style": 1476395019,
+              "template": [
+                428,
+                172,
+                108,
+                23
+              ]
+            },
+            "0x62B": {
+              "caption": "GUI:CreateGame",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                283,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                428,
+                116,
+                108,
+                23
+              ]
+            },
+            "0x62D": {
+              "caption": "GUI:Join",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                325,
+                156,
+                42
+              ],
+              "style": 1476395019,
+              "template": [
+                428,
+                144,
+                108,
+                23
+              ]
+            },
+            "0x686": {
+              "caption": "GUI:Back",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                619,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                428,
+                256,
+                108,
+                23
+              ]
+            },
+            "0x689": {
+              "caption": "",
+              "class": "ListBox",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                9,
+                36,
+                613,
+                297
+              ],
+              "style": 1342243153,
+              "template": [
+                6,
+                22,
+                408,
+                182
+              ]
+            },
+            "0x694": {
+              "caption": "GUI:BuddyTitle",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                747,
+                93,
+                163,
+                19
+              ],
+              "style": 1342308353,
+              "template": [
+                426,
+                4,
+                108,
+                11
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                122,
+                662,
+                475,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                2,
+                355,
+                316,
+                12
+              ]
+            },
+            "0x6EF": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                120,
+                346,
+                384,
+                25
+              ],
+              "style": 1342308353,
+              "template": [
+                80,
+                213,
+                255,
+                15
+              ]
+            },
+            "0x6F0": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                385,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                237,
+                110,
+                13
+              ]
+            },
+            "0x6F1": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                414,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                255,
+                110,
+                13
+              ]
+            },
+            "0x6F4": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                471,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                290,
+                110,
+                13
+              ]
+            },
+            "0x6F5": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                502,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                309,
+                110,
+                13
+              ]
+            },
+            "0x701": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                444,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                273,
+                110,
+                13
+              ]
+            },
+            "0x702": {
+              "caption": "GUI:AddBuddy",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                409,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                428,
+                200,
+                108,
+                23
+              ]
+            },
+            "0x703": {
+              "caption": "GUI:RemoveBuddy",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                451,
+                156,
+                42
+              ],
+              "style": 1476395019,
+              "template": [
+                428,
+                228,
+                108,
+                23
+              ]
+            },
+            "0x704": {
+              "caption": "",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                8,
+                10,
+                27,
+                24
+              ],
+              "style": 1342177291,
+              "template": [
+                5,
+                6,
+                17,
+                14
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                782,
+                131,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                449,
+                29,
+                61,
+                33
+              ]
+            },
+            "0x75F": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                593,
+                13,
+                28,
+                21
+              ],
+              "style": 1342177285,
+              "template": [
+                395,
+                8,
+                18,
+                12
+              ]
+            },
+            "0x760": {
+              "caption": "",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                575,
+                15,
+                16,
+                17
+              ],
+              "style": 1342210051,
+              "template": [
+                383,
+                9,
+                10,
+                10
+              ]
+            },
+            "0xFFFF": {
+              "caption": "GUI:BuddyName",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                41,
+                15,
+                204,
+                19
+              ],
+              "style": 1342308352,
+              "template": [
+                27,
+                9,
+                135,
+                11
+              ]
+            },
+            "0xFFFF#1": {
+              "caption": "GUI:Status",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                266,
+                15,
+                151,
+                19
+              ],
+              "style": 1342308352,
+              "template": [
+                177,
+                9,
+                100,
+                11
+              ]
+            },
+            "0xFFFF#2": {
+              "caption": "",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                120,
+                369,
+                384,
+                159
+              ],
+              "style": 1342177287,
+              "template": [
+                80,
+                227,
+                255,
+                97
+              ]
+            },
+            "0xFFFF#3": {
+              "caption": "GUI:LadderWins",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                385,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                237,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#4": {
+              "caption": "GUI:LadderLosses",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                414,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                255,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#5": {
+              "caption": "GUI:Disconnects",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                444,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                273,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#6": {
+              "caption": "GUI:LadderRank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                471,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                290,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#7": {
+              "caption": "GUI:LadderPoints",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                502,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                309,
+                115,
+                13
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            1024,
+            768
+          ]
+        },
+        "640x480": {
+          "controls": {
+            "0x5C2": {
+              "caption": "GUI:Page",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                283,
+                156,
+                42
+              ],
+              "style": 1476395019,
+              "template": [
+                428,
+                172,
+                108,
+                23
+              ]
+            },
+            "0x62B": {
+              "caption": "GUI:CreateGame",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                199,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                428,
+                116,
+                108,
+                23
+              ]
+            },
+            "0x62D": {
+              "caption": "GUI:Join",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                241,
+                156,
+                42
+              ],
+              "style": 1476395019,
+              "template": [
+                428,
+                144,
+                108,
+                23
+              ]
+            },
+            "0x686": {
+              "caption": "GUI:Back",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                409,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                428,
+                256,
+                108,
+                23
+              ]
+            },
+            "0x689": {
+              "caption": "",
+              "class": "ListBox",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                9,
+                36,
+                613,
+                297
+              ],
+              "style": 1342243153,
+              "template": [
+                6,
+                22,
+                408,
+                182
+              ]
+            },
+            "0x694": {
+              "caption": "GUI:BuddyTitle",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                475,
+                9,
+                163,
+                19
+              ],
+              "style": 1342308353,
+              "template": [
+                426,
+                4,
+                108,
+                11
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                10,
+                458,
+                475,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                2,
+                355,
+                316,
+                12
+              ]
+            },
+            "0x6EF": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                120,
+                346,
+                384,
+                25
+              ],
+              "style": 1342308353,
+              "template": [
+                80,
+                213,
+                255,
+                15
+              ]
+            },
+            "0x6F0": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                385,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                237,
+                110,
+                13
+              ]
+            },
+            "0x6F1": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                414,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                255,
+                110,
+                13
+              ]
+            },
+            "0x6F4": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                471,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                290,
+                110,
+                13
+              ]
+            },
+            "0x6F5": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                502,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                309,
+                110,
+                13
+              ]
+            },
+            "0x701": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                444,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                273,
+                110,
+                13
+              ]
+            },
+            "0x702": {
+              "caption": "GUI:AddBuddy",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                325,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                428,
+                200,
+                108,
+                23
+              ]
+            },
+            "0x703": {
+              "caption": "GUI:RemoveBuddy",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                367,
+                156,
+                42
+              ],
+              "style": 1476395019,
+              "template": [
+                428,
+                228,
+                108,
+                23
+              ]
+            },
+            "0x704": {
+              "caption": "",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                8,
+                10,
+                27,
+                24
+              ],
+              "style": 1342177291,
+              "template": [
+                5,
+                6,
+                17,
+                14
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                510,
+                47,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                449,
+                29,
+                61,
+                33
+              ]
+            },
+            "0x75F": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                593,
+                13,
+                28,
+                21
+              ],
+              "style": 1342177285,
+              "template": [
+                395,
+                8,
+                18,
+                12
+              ]
+            },
+            "0x760": {
+              "caption": "",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                575,
+                15,
+                16,
+                17
+              ],
+              "style": 1342210051,
+              "template": [
+                383,
+                9,
+                10,
+                10
+              ]
+            },
+            "0xFFFF": {
+              "caption": "GUI:BuddyName",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                41,
+                15,
+                204,
+                19
+              ],
+              "style": 1342308352,
+              "template": [
+                27,
+                9,
+                135,
+                11
+              ]
+            },
+            "0xFFFF#1": {
+              "caption": "GUI:Status",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                266,
+                15,
+                151,
+                19
+              ],
+              "style": 1342308352,
+              "template": [
+                177,
+                9,
+                100,
+                11
+              ]
+            },
+            "0xFFFF#2": {
+              "caption": "",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                120,
+                369,
+                384,
+                159
+              ],
+              "style": 1342177287,
+              "template": [
+                80,
+                227,
+                255,
+                97
+              ]
+            },
+            "0xFFFF#3": {
+              "caption": "GUI:LadderWins",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                385,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                237,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#4": {
+              "caption": "GUI:LadderLosses",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                414,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                255,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#5": {
+              "caption": "GUI:Disconnects",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                444,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                273,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#6": {
+              "caption": "GUI:LadderRank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                471,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                290,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#7": {
+              "caption": "GUI:LadderPoints",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                502,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                309,
+                115,
+                13
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            640,
+            480
+          ]
+        },
+        "800x600": {
+          "controls": {
+            "0x5C2": {
+              "caption": "GUI:Page",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                283,
+                156,
+                42
+              ],
+              "style": 1476395019,
+              "template": [
+                428,
+                172,
+                108,
+                23
+              ]
+            },
+            "0x62B": {
+              "caption": "GUI:CreateGame",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                199,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                428,
+                116,
+                108,
+                23
+              ]
+            },
+            "0x62D": {
+              "caption": "GUI:Join",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                241,
+                156,
+                42
+              ],
+              "style": 1476395019,
+              "template": [
+                428,
+                144,
+                108,
+                23
+              ]
+            },
+            "0x686": {
+              "caption": "GUI:Back",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                535,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                428,
+                256,
+                108,
+                23
+              ]
+            },
+            "0x689": {
+              "caption": "",
+              "class": "ListBox",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                9,
+                36,
+                613,
+                297
+              ],
+              "style": 1342243153,
+              "template": [
+                6,
+                22,
+                408,
+                182
+              ]
+            },
+            "0x694": {
+              "caption": "GUI:BuddyTitle",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                635,
+                9,
+                163,
+                19
+              ],
+              "style": 1342308353,
+              "template": [
+                426,
+                4,
+                108,
+                11
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                10,
+                578,
+                475,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                2,
+                355,
+                316,
+                12
+              ]
+            },
+            "0x6EF": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                120,
+                346,
+                384,
+                25
+              ],
+              "style": 1342308353,
+              "template": [
+                80,
+                213,
+                255,
+                15
+              ]
+            },
+            "0x6F0": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                385,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                237,
+                110,
+                13
+              ]
+            },
+            "0x6F1": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                414,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                255,
+                110,
+                13
+              ]
+            },
+            "0x6F4": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                471,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                290,
+                110,
+                13
+              ]
+            },
+            "0x6F5": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                502,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                309,
+                110,
+                13
+              ]
+            },
+            "0x701": {
+              "caption": "GUI:UnknownStats",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                324,
+                444,
+                166,
+                22
+              ],
+              "style": 1342308352,
+              "template": [
+                216,
+                273,
+                110,
+                13
+              ]
+            },
+            "0x702": {
+              "caption": "GUI:AddBuddy",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                325,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                428,
+                200,
+                108,
+                23
+              ]
+            },
+            "0x703": {
+              "caption": "GUI:RemoveBuddy",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                367,
+                156,
+                42
+              ],
+              "style": 1476395019,
+              "template": [
+                428,
+                228,
+                108,
+                23
+              ]
+            },
+            "0x704": {
+              "caption": "",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                8,
+                10,
+                27,
+                24
+              ],
+              "style": 1342177291,
+              "template": [
+                5,
+                6,
+                17,
+                14
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                670,
+                47,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                449,
+                29,
+                61,
+                33
+              ]
+            },
+            "0x75F": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                593,
+                13,
+                28,
+                21
+              ],
+              "style": 1342177285,
+              "template": [
+                395,
+                8,
+                18,
+                12
+              ]
+            },
+            "0x760": {
+              "caption": "",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                575,
+                15,
+                16,
+                17
+              ],
+              "style": 1342210051,
+              "template": [
+                383,
+                9,
+                10,
+                10
+              ]
+            },
+            "0xFFFF": {
+              "caption": "GUI:BuddyName",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                41,
+                15,
+                204,
+                19
+              ],
+              "style": 1342308352,
+              "template": [
+                27,
+                9,
+                135,
+                11
+              ]
+            },
+            "0xFFFF#1": {
+              "caption": "GUI:Status",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                266,
+                15,
+                151,
+                19
+              ],
+              "style": 1342308352,
+              "template": [
+                177,
+                9,
+                100,
+                11
+              ]
+            },
+            "0xFFFF#2": {
+              "caption": "",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                120,
+                369,
+                384,
+                159
+              ],
+              "style": 1342177287,
+              "template": [
+                80,
+                227,
+                255,
+                97
+              ]
+            },
+            "0xFFFF#3": {
+              "caption": "GUI:LadderWins",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                385,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                237,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#4": {
+              "caption": "GUI:LadderLosses",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                414,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                255,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#5": {
+              "caption": "GUI:Disconnects",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                444,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                273,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#6": {
+              "caption": "GUI:LadderRank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                471,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                290,
+                115,
+                13
+              ]
+            },
+            "0xFFFF#7": {
+              "caption": "GUI:LadderPoints",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                134,
+                502,
+                174,
+                22
+              ],
+              "style": 1342308354,
+              "template": [
+                89,
+                309,
+                115,
+                13
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      }
+    },
     "0x11E": {
       "background_mode": 2,
       "kind": "popup",
@@ -6328,6 +8507,431 @@
             137,
             451,
             326
+          ]
+        }
+      }
+    },
+    "0x122": {
+      "kind": "page",
+      "sizes": {
+        "1024x768": {
+          "controls": {
+            "0x1": {
+              "caption": "GUI:Yes",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                283,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                425,
+                116,
+                108,
+                23
+              ]
+            },
+            "0x2": {
+              "caption": "GUI:No",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                756,
+                619,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                425,
+                257,
+                108,
+                23
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                122,
+                662,
+                475,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                2,
+                354,
+                316,
+                12
+              ]
+            },
+            "0x6F9": {
+              "caption": "GUI:DoNotAsk",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                164,
+                361,
+                331,
+                24
+              ],
+              "style": 1342242819,
+              "template": [
+                109,
+                222,
+                220,
+                14
+              ]
+            },
+            "0x71B": {
+              "caption": "GUI:AddBuddyQuery",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                32,
+                119,
+                571,
+                178
+              ],
+              "style": 1342308865,
+              "template": [
+                21,
+                73,
+                380,
+                109
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                782,
+                131,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                446,
+                29,
+                61,
+                33
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            1024,
+            768
+          ]
+        },
+        "640x480": {
+          "controls": {
+            "0x1": {
+              "caption": "GUI:Yes",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                199,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                425,
+                116,
+                108,
+                23
+              ]
+            },
+            "0x2": {
+              "caption": "GUI:No",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                484,
+                409,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                425,
+                257,
+                108,
+                23
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                10,
+                458,
+                475,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                2,
+                354,
+                316,
+                12
+              ]
+            },
+            "0x6F9": {
+              "caption": "GUI:DoNotAsk",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                164,
+                361,
+                331,
+                24
+              ],
+              "style": 1342242819,
+              "template": [
+                109,
+                222,
+                220,
+                14
+              ]
+            },
+            "0x71B": {
+              "caption": "GUI:AddBuddyQuery",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                32,
+                119,
+                571,
+                178
+              ],
+              "style": 1342308865,
+              "template": [
+                21,
+                73,
+                380,
+                109
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                510,
+                47,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                446,
+                29,
+                61,
+                33
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            640,
+            480
+          ]
+        },
+        "800x600": {
+          "controls": {
+            "0x1": {
+              "caption": "GUI:Yes",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B000",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                199,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                425,
+                116,
+                108,
+                23
+              ]
+            },
+            "0x2": {
+              "caption": "GUI:No",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B350",
+                "0x0060B950"
+              ],
+              "rect": [
+                644,
+                535,
+                156,
+                42
+              ],
+              "style": 1342177291,
+              "template": [
+                425,
+                257,
+                108,
+                23
+              ]
+            },
+            "0x695": {
+              "caption": "GUI:Blank",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B550",
+                "0x0060B950"
+              ],
+              "rect": [
+                10,
+                578,
+                475,
+                21
+              ],
+              "style": 1342308352,
+              "template": [
+                2,
+                354,
+                316,
+                12
+              ]
+            },
+            "0x6F9": {
+              "caption": "GUI:DoNotAsk",
+              "class": "Button",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                164,
+                361,
+                331,
+                24
+              ],
+              "style": 1342242819,
+              "template": [
+                109,
+                222,
+                220,
+                14
+              ]
+            },
+            "0x71B": {
+              "caption": "GUI:AddBuddyQuery",
+              "class": "Static",
+              "inset_override": 0,
+              "placement": [
+                "0x0060B950"
+              ],
+              "rect": [
+                32,
+                119,
+                571,
+                178
+              ],
+              "style": 1342308865,
+              "template": [
+                21,
+                73,
+                380,
+                109
+              ]
+            },
+            "0x71C": {
+              "caption": "",
+              "class": "Static",
+              "inset_override": 37,
+              "placement": [
+                "0x0060B1D0",
+                "0x0060B950"
+              ],
+              "rect": [
+                670,
+                47,
+                93,
+                55
+              ],
+              "style": 1342177287,
+              "template": [
+                446,
+                29,
+                61,
+                33
+              ]
+            }
+          },
+          "dialog": [
+            0,
+            0,
+            800,
+            600
           ]
         }
       }
@@ -22857,6 +25461,32 @@
         "0x6EC",
         "0x6EB",
         "0x7A3"
+      ]
+    },
+    "0x116": {
+      "bottom": [
+        "0x686"
+      ],
+      "d5": 0,
+      "d6": 0,
+      "d7": 0,
+      "top": [
+        "0x62B",
+        "0x62D",
+        "0x702",
+        "0x5C2",
+        "0x703"
+      ]
+    },
+    "0x122": {
+      "bottom": [
+        "0x2"
+      ],
+      "d5": 0,
+      "d6": 0,
+      "d7": 0,
+      "top": [
+        "0x1"
       ]
     },
     "0x2BC": {

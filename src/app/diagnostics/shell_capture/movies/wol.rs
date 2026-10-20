@@ -179,6 +179,33 @@ pub enum WolTarget {
     MyInfoForget,
     /// Back: `0x10E` with the selected nickname's profile.
     MyInfoBack,
+    /// Test service: welcome Play Buddy, the login, then `0x116` with its
+    /// four located buddies and Tanya's ladder record selected.
+    BuddySteady,
+    /// `0x116` Add Buddy: `0x115` with a typed name, Add enabled.
+    BuddyAddPopup,
+    /// The same, then Enter: the new row and its locate (a chat lobby).
+    BuddyAdded,
+    /// Ghost selected and removed.
+    BuddyRemove,
+    /// Tanya selected and paged: the modal `0x11E` replying to her.
+    BuddyPage,
+    /// Join on Boris in his game: C9 settled.
+    BuddyJoinGame,
+    /// The same, then C9 Back: `0x116` again.
+    BuddyJoinGameBack,
+    /// Join on Tanya in a chat lobby: `0x113` settled in her lobby.
+    BuddyJoinLobby,
+    /// Create Game: `0xC3` OK, then C2 settled.
+    BuddyCreate,
+    /// The same, then C2 Back: `0x116` again.
+    BuddyCreateBack,
+    /// Back: `0x10E` with mode 0.
+    BuddyBack,
+    /// `0x113`'s Buddy List, then Back: `0x113` again.
+    BuddyFromLobby,
+    /// `0x114` Play Buddy, the login, then Back: `0x114` again.
+    BuddyFromMyInfo,
 }
 
 impl WolTarget {
@@ -248,6 +275,9 @@ impl WolTarget {
             Self::LocaleQuery | Self::LocaleChosen => ANSWERED.into(),
             Self::PersonaPicks => format!("{ANSWERED}[tester]\n{LOCALE}Country=3\nColor=2\n"),
             Self::MyInfoDefault => ANSWERED.into(),
+            Self::BuddyFromMyInfo => {
+                format!("[DefaultPersona]\nLastValid={NICKNAME}\n{ANSWERED}[tester]\n{LOCALE}")
+            }
             target if target.my_info() => format!(
                 "[DefaultPersona]\nLastValid={NICKNAME}\n{ANSWERED}[tester]\nServer=Westwood\n\
                  {LOCALE}Country=3\nColor=2\nRank=17\nPoints=1234\nWins=21\nLosses=9\n\
@@ -257,21 +287,42 @@ impl WolTarget {
         }
     }
 
-    /// The production test service answers instead of the capture.
-    fn test_service(self) -> bool {
+    /// The Buddy List `0x116` runs from the test service.
+    fn buddy(self) -> bool {
         matches!(
             self,
-            Self::TestServiceLobby
-                | Self::TestServiceCreate
-                | Self::TestServiceJoin
-                | Self::PageDialog
-                | Self::PageFindStatus
-                | Self::PageUserGone
-                | Self::SetupPage
-                | Self::PageReceived
-                | Self::PageReceivedReply
-                | Self::PageReceivedBack
+            Self::BuddySteady
+                | Self::BuddyAddPopup
+                | Self::BuddyAdded
+                | Self::BuddyRemove
+                | Self::BuddyPage
+                | Self::BuddyJoinGame
+                | Self::BuddyJoinGameBack
+                | Self::BuddyJoinLobby
+                | Self::BuddyCreate
+                | Self::BuddyCreateBack
+                | Self::BuddyBack
+                | Self::BuddyFromLobby
+                | Self::BuddyFromMyInfo
         )
+    }
+
+    /// The production test service answers instead of the capture.
+    fn test_service(self) -> bool {
+        self.buddy()
+            || matches!(
+                self,
+                Self::TestServiceLobby
+                    | Self::TestServiceCreate
+                    | Self::TestServiceJoin
+                    | Self::PageDialog
+                    | Self::PageFindStatus
+                    | Self::PageUserGone
+                    | Self::SetupPage
+                    | Self::PageReceived
+                    | Self::PageReceivedReply
+                    | Self::PageReceivedBack
+            )
     }
 
     /// `0x11E` over `0x10E` after lobby Back.
@@ -411,6 +462,19 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x114-autologin", WolTarget::MyInfoAutoLogin),
     ("wol-0x114-forget", WolTarget::MyInfoForget),
     ("wol-0x114-back", WolTarget::MyInfoBack),
+    ("wol-0x116-steady", WolTarget::BuddySteady),
+    ("wol-0x115-add", WolTarget::BuddyAddPopup),
+    ("wol-0x116-added", WolTarget::BuddyAdded),
+    ("wol-0x116-remove", WolTarget::BuddyRemove),
+    ("wol-0x116-page", WolTarget::BuddyPage),
+    ("wol-0x116-join-buddy-game", WolTarget::BuddyJoinGame),
+    ("wol-0x116-join-game-back", WolTarget::BuddyJoinGameBack),
+    ("wol-0x116-join-buddy-lobby", WolTarget::BuddyJoinLobby),
+    ("wol-0x116-create", WolTarget::BuddyCreate),
+    ("wol-0x116-create-back", WolTarget::BuddyCreateBack),
+    ("wol-0x116-back-to-welcome", WolTarget::BuddyBack),
+    ("wol-0x116-back-to-lobby", WolTarget::BuddyFromLobby),
+    ("wol-0x116-back-to-my-info", WolTarget::BuddyFromMyInfo),
 ];
 
 /// The controlled guest of the C2 targets, the host of the C9 targets.
@@ -490,6 +554,19 @@ enum WolPhase {
     MyInfoShown,
     /// `0x114` Back pressed: waiting for `0x10E`.
     MyInfoBack,
+    /// Test service: `0x114` opening for Play Buddy.
+    BuddyMyInfo,
+    /// `0x116` opening: its rows fill from the test service.
+    BuddyShown,
+    /// Add or Remove sent: waiting for the service's list to change and,
+    /// after Add, the new row's locate.
+    BuddyStored,
+    /// `0x116` Create: waiting for `0xC3` over the backdrop.
+    BuddyCreatePopup,
+    /// `0x116` Join or `0xC3` OK: waiting for C2/C9.
+    BuddySetup,
+    /// `0x116` Back or Join on a chat lobby: waiting for the next page.
+    BuddyReturn,
     Settle(u32),
 }
 
@@ -582,6 +659,13 @@ impl WolCapture {
                 // The Options box, read when Internet opens the visit; the
                 // capture never writes the profile out.
                 state.persistence.options_profile.wol_test_service = self.target.test_service();
+                if self.target == WolTarget::BuddyFromMyInfo {
+                    state.frontend.wol_test_credentials = vec![WolCredential {
+                        slot: 1,
+                        nickname: NICKNAME.into(),
+                        password: PASSWORD.into(),
+                    }];
+                }
                 write_wolinfo(state, self.target)?;
                 App::leave_shell_dialog(
                     state,
@@ -638,6 +722,21 @@ impl WolCapture {
                     );
                     self.event(frame, "0x10E My Information (controlled service)");
                     self.phase = WolPhase::MyInfoOpening;
+                    return Ok(());
+                }
+                if self.target.buddy() && self.target != WolTarget::BuddyFromLobby {
+                    let (id, next) = if self.target == WolTarget::BuddyFromMyInfo {
+                        (crate::ui::wol_shell::MY_INFORMATION, WolPhase::BuddyMyInfo)
+                    } else {
+                        (crate::ui::wol_shell::PLAY_BUDDY, WolPhase::ServiceLogin)
+                    };
+                    let rect = App::wol_welcome_layout(state)
+                        .page
+                        .button_rect(id)
+                        .context("welcome button")?;
+                    welcome_click(state, rect);
+                    self.event(frame, json!({"0x10E button (test service)": id}));
+                    self.phase = next;
                     return Ok(());
                 }
                 if self.target.test_service() {
@@ -1345,13 +1444,26 @@ impl WolCapture {
                     && Self::page_settled(state, ShellSlideKind::WolLogin) =>
             {
                 let layout = crate::app::shell_wol::login_layout(state);
-                login_click(state, layout.nickname_face);
-                App::handle_wol_key(state, None, true, Some(NICKNAME));
-                login_click(state, layout.password);
-                App::handle_wol_key(state, None, true, Some(PASSWORD));
+                // A stored account selected by LastValid is ready as it is.
+                let ready = state
+                    .frontend
+                    .wol
+                    .as_ref()
+                    .and_then(|visit| visit.login())
+                    .is_some_and(|login| login.login_enabled);
+                if !ready {
+                    login_click(state, layout.nickname_face);
+                    App::handle_wol_key(state, None, true, Some(NICKNAME));
+                    login_click(state, layout.password);
+                    App::handle_wol_key(state, None, true, Some(PASSWORD));
+                }
                 login_click(state, button(&layout, LOGIN)?);
                 self.event(frame, "0x10F Login (test service)");
-                self.phase = WolPhase::ServiceLobby;
+                self.phase = if self.target.buddy() && self.target != WolTarget::BuddyFromLobby {
+                    WolPhase::BuddyShown
+                } else {
+                    WolPhase::ServiceLobby
+                };
             }
             WolPhase::ServiceLobby
                 if rendered == PresentedShell::WolLobby
@@ -1366,6 +1478,13 @@ impl WolCapture {
                     "the test service did not fill 0x113"
                 );
                 self.event(frame, "0x113 settled from the test service");
+                if self.target == WolTarget::BuddyFromLobby && !self.rejoined {
+                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    lobby_button(state, &layout, lobby_ui::BUDDY)?;
+                    self.event(frame, "0x113 Buddy List");
+                    self.phase = WolPhase::BuddyShown;
+                    return Ok(());
+                }
                 if matches!(
                     self.target,
                     WolTarget::TestServiceCreate | WolTarget::SetupPage
@@ -1473,6 +1592,59 @@ impl WolCapture {
                 );
                 self.event(frame, "0x2BC settled after 0xD6 Back");
                 self.hover_settle(state);
+            }
+            WolPhase::BuddyMyInfo
+                if rendered == PresentedShell::WolMyInformation
+                    && Self::page_settled(state, ShellSlideKind::WolMyInformation) =>
+            {
+                self.buddy_my_info(state, frame)?;
+            }
+            WolPhase::BuddyShown
+                if rendered == PresentedShell::WolBuddyList
+                    && Self::page_settled(state, ShellSlideKind::WolBuddyList) =>
+            {
+                self.buddy_shown(state, frame)?;
+            }
+            WolPhase::BuddyStored => {
+                let listed = |name: &str| {
+                    state
+                        .frontend
+                        .wol_test_buddies
+                        .iter()
+                        .any(|known| known == name)
+                };
+                let done = if self.target == WolTarget::BuddyAdded {
+                    listed("Natasha") && state.frontend.wol_buddies.status("Natasha") == Some(4)
+                } else {
+                    !listed("Ghost")
+                };
+                if done {
+                    let rows = Self::buddy_rows(state)?;
+                    self.event(frame, json!({"service buddy list": state.frontend.wol_test_buddies, "rows": rows}));
+                    self.hover_settle(state);
+                }
+            }
+            WolPhase::BuddyCreatePopup
+                if state.frontend.shell_exit.is_none()
+                    && Self::lobby(state).is_ok_and(|lobby| lobby.ui.popup.is_some()) =>
+            {
+                let (width, height) = (
+                    state.renderer.gpu.config.width as i32,
+                    state.renderer.gpu.config.height as i32,
+                );
+                let ok = crate::ui::shell::modal::wol_create_game_layout(width, height).ok;
+                welcome_click(state, ok);
+                self.event(frame, "0xC3 OK over the backdrop");
+                self.phase = WolPhase::BuddySetup;
+            }
+            WolPhase::BuddySetup
+                if rendered == PresentedShell::NetworkSetup
+                    && wol_setup_settled(state, self.buddy_hosts()) =>
+            {
+                self.buddy_setup(state, frame)?;
+            }
+            WolPhase::BuddyReturn if self.buddy_returned(state, rendered) => {
+                self.buddy_return(state, frame)?;
             }
             WolPhase::MyInfoOpening if state.frontend.shell_exit.is_none() => {
                 self.my_info_open(state, frame)?;
@@ -1856,13 +2028,21 @@ impl WolCapture {
             );
             requests.drain(..sent.len());
         }
-        let [apply @ .., list] = requests.as_slice() else {
-            bail!("the runner sent nothing");
+        // 0x00787BC8 restarts the buddy mirror before TXT_REQ_CHANLIST: the
+        // buddy list, then the game list with automatic pings.
+        let [apply @ .., buddies, game_list, list] = requests.as_slice() else {
+            bail!("the runner sent too little: {requests:?}");
         };
         let passes = if self.rejoined { 2 } else { 1 };
         ensure!(
             apply.len() == 2 * passes
                 && apply.chunks(2).all(|pair| pair == Self::applied(state))
+                && *buddies == WolServiceRequest::ListBuddies
+                && *game_list
+                    == WolServiceRequest::ListChannels {
+                        kind: GAME_CHANNEL,
+                        flags: 1,
+                    }
                 && *list == WolServiceRequest::ListChannels { kind: 0, flags: 0 },
             "the runner did not apply and request the chat lobbies: {requests:?}"
         );
@@ -2222,10 +2402,11 @@ impl WolCapture {
             WolTarget::LobbyUserTooltip => {
                 service_event(
                     state,
-                    WolServiceEvent::LadderRank {
+                    WolServiceEvent::Ladder(vec![crate::app::shell_wol::WolLadderRecord {
                         name: "ECHO".into(),
                         rank: 42,
-                    },
+                        ..Default::default()
+                    }]),
                 );
                 service_event(
                     state,
@@ -3673,4 +3854,274 @@ fn layout_button(state: &AppState, id: u16) -> Result<RectPx> {
         .page
         .button_rect(id)
         .context("0x114 button")
+}
+
+/// The Buddy List `0x116` on the test service: the located rows, then one
+/// action per target through the production input routing.
+impl WolCapture {
+    /// The stand-ins' buddies and the statuses their locates give: Tanya in
+    /// chat lobby 0, Boris in his game, Ghost offline, Ivan's find off.
+    const BUDDIES: [(&str, i32); 4] = [("Tanya", 4), ("Boris", 5), ("Ghost", 2), ("Ivan", 1)];
+
+    fn buddy_hosts(&self) -> bool {
+        matches!(
+            self.target,
+            WolTarget::BuddyCreate | WolTarget::BuddyCreateBack
+        )
+    }
+
+    fn buddy_my_info(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::ui::wol_my_info::PLAY_BUDDY;
+        let page = crate::app::shell_wol::my_info::page(state).context("0x114")?;
+        if self.rejoined {
+            ensure!(
+                state.frontend.wol.as_ref().and_then(|visit| visit.mode())
+                    == Some(crate::ui::wol_shell::WolMode::MyInformation),
+                "0x116 Back did not return to mode 6"
+            );
+            self.event(frame, "0x114 settled again after 0x116 Back");
+            self.hover_settle(state);
+            return Ok(());
+        }
+        ensure!(page.play_buddy_enabled, "0x114 Play Buddy stayed disabled");
+        welcome_click(state, layout_button(state, PLAY_BUDDY)?);
+        ensure!(
+            state.frontend.shell_exit.is_some(),
+            "Play Buddy did not tear 0x114 down"
+        );
+        self.event(frame, "0x114 Play Buddy");
+        self.phase = WolPhase::ServiceLogin;
+        Ok(())
+    }
+
+    /// `0x116` and its mirror: the rows once every locate has answered.
+    fn buddy_rows(state: &AppState) -> Result<Vec<(String, Option<i32>, String)>> {
+        let dialog = crate::app::shell_wol::buddy::page(state).context("0x116")?;
+        Ok(dialog
+            .ui
+            .rows
+            .iter()
+            .map(|row| {
+                (
+                    row.name.clone(),
+                    state.frontend.wol_buddies.status(&row.name),
+                    row.status.clone(),
+                )
+            })
+            .collect())
+    }
+
+    fn buddy_row_click(state: &mut AppState, name: &str) -> Result<()> {
+        let layout = crate::app::shell_wol::buddy::layout(state);
+        let dialog = crate::app::shell_wol::buddy::page(state).context("0x116")?;
+        let ui = &dialog.ui;
+        let row = ui
+            .rows
+            .iter()
+            .position(|row| row.name == name)
+            .context("no buddy row")?;
+        let rect = ui
+            .list
+            .geometry(layout.list, ui.rows.len(), layout.page.scale)
+            .row(row - ui.list.top_index);
+        welcome_click(state, rect);
+        ensure!(
+            state.frontend.wol_buddies.selected == name,
+            "the row click did not select {name}"
+        );
+        Ok(())
+    }
+
+    fn buddy_button(state: &mut AppState, id: u16) -> Result<()> {
+        let rect = crate::app::shell_wol::buddy::layout(state)
+            .page
+            .button_rect(id)
+            .context("0x116 button")?;
+        welcome_click(state, rect);
+        Ok(())
+    }
+
+    fn buddy_shown(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::ui::wol_buddy::{ADD, BACK, CREATE, JOIN, PAGE_BUTTON, REMOVE, WINS};
+        let rows = Self::buddy_rows(state)?;
+        let expected: Vec<(&str, Option<i32>)> = Self::BUDDIES
+            .iter()
+            .map(|(name, status)| (*name, Some(*status)))
+            .collect();
+        let got: Vec<(&str, Option<i32>)> = rows
+            .iter()
+            .map(|(name, status, _)| (name.as_str(), *status))
+            .collect();
+        if got != expected {
+            // The list and the locates answer over the next frames.
+            return Ok(());
+        }
+        self.event(frame, json!({"0x116 rows": rows}));
+        if self.rejoined {
+            self.event(frame, "0x116 settled again");
+            self.hover_settle(state);
+            return Ok(());
+        }
+        match self.target {
+            WolTarget::BuddySteady => {
+                Self::buddy_row_click(state, "Tanya")?;
+                let dialog = crate::app::shell_wol::buddy::page(state).context("0x116")?;
+                let texts = dialog.ui.texts.clone().unwrap_or_default();
+                ensure!(
+                    texts.iter().any(|(id, text)| *id == WINS && text == "12")
+                        && dialog.ui.enabled(JOIN)
+                        && dialog.ui.enabled(PAGE_BUTTON)
+                        && dialog.ui.enabled(REMOVE),
+                    "Tanya's selection did not show her ladder record: {texts:?}"
+                );
+                self.event(frame, json!({"Tanya selected": texts}));
+            }
+            WolTarget::BuddyAddPopup | WolTarget::BuddyAdded => {
+                Self::buddy_button(state, ADD)?;
+                App::handle_wol_key(state, None, true, Some("Natasha"));
+                let dialog = crate::app::shell_wol::buddy::page(state).context("0x116")?;
+                let add = dialog.ui.add.as_ref().context("Add did not open 0x115")?;
+                ensure!(
+                    add.text() == "Natasha" && add.add_enabled,
+                    "0x115 did not take the name: {:?}",
+                    add.text()
+                );
+                self.event(frame, "0x115 opened, Natasha typed");
+                if self.target == WolTarget::BuddyAdded {
+                    App::handle_wol_key(state, Some(winit::keyboard::KeyCode::Enter), true, None);
+                    let rows = Self::buddy_rows(state)?;
+                    ensure!(
+                        crate::app::shell_wol::buddy::page(state)
+                            .is_some_and(|dialog| dialog.ui.add.is_none())
+                            && rows.iter().any(|(name, _, _)| name == "Natasha"),
+                        "Enter did not add Natasha: {rows:?}"
+                    );
+                    self.event(frame, json!({"0x115 Enter": rows}));
+                    self.phase = WolPhase::BuddyStored;
+                    return Ok(());
+                }
+            }
+            WolTarget::BuddyRemove => {
+                Self::buddy_row_click(state, "Ghost")?;
+                Self::buddy_button(state, REMOVE)?;
+                let rows = Self::buddy_rows(state)?;
+                ensure!(
+                    rows.len() == 3
+                        && !rows.iter().any(|(name, _, _)| name == "Ghost")
+                        && state.frontend.wol_buddies.selected.is_empty(),
+                    "Remove did not delete Ghost: {rows:?}"
+                );
+                self.event(frame, json!({"Ghost removed": rows}));
+                self.phase = WolPhase::BuddyStored;
+                return Ok(());
+            }
+            WolTarget::BuddyPage => {
+                Self::buddy_row_click(state, "Tanya")?;
+                Self::buddy_button(state, PAGE_BUTTON)?;
+                let received = crate::app::shell_wol::page::page_received(state)
+                    .context("Page did not open 0x11E")?;
+                ensure!(
+                    received.reply_to == "Tanya" && received.lines.is_empty(),
+                    "0x11E did not reply to Tanya: {:?}",
+                    received.reply_to
+                );
+                self.event(frame, "Page: modal 0x11E to Tanya");
+            }
+            WolTarget::BuddyJoinGame | WolTarget::BuddyJoinGameBack => {
+                Self::buddy_row_click(state, "Boris")?;
+                Self::buddy_button(state, JOIN)?;
+                self.event(frame, "Join on Boris (in Boris's_game)");
+                self.phase = WolPhase::BuddySetup;
+                return Ok(());
+            }
+            WolTarget::BuddyJoinLobby => {
+                Self::buddy_row_click(state, "Tanya")?;
+                Self::buddy_button(state, JOIN)?;
+                self.event(frame, "Join on Tanya (in a chat lobby)");
+                self.phase = WolPhase::BuddyReturn;
+                return Ok(());
+            }
+            WolTarget::BuddyCreate | WolTarget::BuddyCreateBack => {
+                Self::buddy_button(state, CREATE)?;
+                self.event(frame, "0x116 Create Game");
+                self.phase = WolPhase::BuddyCreatePopup;
+                return Ok(());
+            }
+            WolTarget::BuddyBack | WolTarget::BuddyFromLobby | WolTarget::BuddyFromMyInfo => {
+                Self::buddy_button(state, BACK)?;
+                ensure!(
+                    state.frontend.shell_exit.is_some(),
+                    "Back did not tear 0x116 down"
+                );
+                self.event(frame, "0x116 Back");
+                self.rejoined = true;
+                self.phase = if self.target == WolTarget::BuddyFromMyInfo {
+                    WolPhase::BuddyMyInfo
+                } else {
+                    WolPhase::BuddyReturn
+                };
+                return Ok(());
+            }
+            _ => {}
+        }
+        self.hover_settle(state);
+        Ok(())
+    }
+
+    fn buddy_setup(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        ensure!(
+            state
+                .match_state
+                .session
+                .network_setup()
+                .is_some_and(|launch| launch.local_player().name == NICKNAME),
+            "C2/C9 did not open for the local user"
+        );
+        self.event(frame, "C2/C9 settled from 0x116");
+        if matches!(
+            self.target,
+            WolTarget::BuddyJoinGameBack | WolTarget::BuddyCreateBack
+        ) {
+            setup_button(state, crate::ui::multiplayer_setup::BACK)?;
+            self.event(frame, "C2/C9 Back");
+            self.rejoined = true;
+            self.phase = WolPhase::BuddyShown;
+            return Ok(());
+        }
+        MoviesCapture::restore_neutral_pointer(state);
+        crate::app::input::multiplayer_setup::cursor_moved(state);
+        self.settle();
+        Ok(())
+    }
+
+    fn buddy_returned(&self, state: &AppState, rendered: PresentedShell) -> bool {
+        let (shell, kind) = match self.target {
+            WolTarget::BuddyBack => (PresentedShell::WolWelcome, ShellSlideKind::WolWelcome),
+            _ => (PresentedShell::WolLobby, ShellSlideKind::WolLobby),
+        };
+        rendered == shell && Self::page_settled(state, kind)
+    }
+
+    fn buddy_return(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let visit = state.frontend.wol.as_ref().context("WOL visit")?;
+        if self.target == WolTarget::BuddyBack {
+            ensure!(
+                visit.mode().is_none() && visit.return_mode().is_none(),
+                "0x116 Back did not return to mode 0"
+            );
+            self.event(frame, "0x10E settled after 0x116 Back");
+        } else {
+            let lobby = Self::lobby(state)?;
+            ensure!(
+                lobby.shown && lobby.runner == crate::app::shell_wol::lobby::Runner::Lobby,
+                "0x113 did not run the lobby runner"
+            );
+            self.event(
+                frame,
+                json!({"0x113 settled after 0x116": state.frontend.wol_lobby_globals.lobby_number}),
+            );
+        }
+        self.hover_settle(state);
+        Ok(())
+    }
 }

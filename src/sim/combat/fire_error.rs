@@ -222,9 +222,9 @@ pub(crate) struct WarheadFacts {
     pub is_locomotor: bool, // +0x15B
     pub psychedelic: bool,  // +0x16D
     pub bomb_disarm: bool,  // +0x16E
-    /// `Verses[target Armor]` compares equal to 0.0 (T54: `TEST AH,0x40`
-    /// after `FCOMP`, so -0.0 and NaN count too).
-    pub verses_zero: bool,
+    /// Rule-owned armor interaction refuses this target. Vanilla T54 uses
+    /// `FCOMP` zero/unordered; Ares100542A0 uses its independent fire flag.
+    pub armor_rejects_fire: bool,
 }
 
 /// A BulletTypeClass.
@@ -1085,7 +1085,7 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     if kind.is_techno() {
         if (warhead.parasite && target.iron_curtained)
             || (warhead.mind_control && !query.can_capture())
-            || warhead.verses_zero
+            || warhead.armor_rejects_fire
             || (warhead.bomb_disarm && !target.bomb)
             || (warhead.ivan_bomb && target.bomb)
             || target.sinking

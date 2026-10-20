@@ -428,8 +428,10 @@ pub struct ObjectType {
     /// No clamp or post-read conversion; retain the native double bits.
     pub threat_avoidance_coefficient: crate::util::native_x87::NativeF64Bits,
     /// Armor type name (e.g., "heavy", "light", "wood"). Determines damage
-    /// multipliers from warhead Verses= values.
+    /// authorship for diagnostics. Gameplay uses the bound `armor_id()`;
+    /// reparsing this text later could retroactively bind an unknown Ares name.
     pub armor: String,
+    armor_id: crate::rules::armor::ArmorId,
     /// Canonical Speed percent,0..100 (0 is immobile). TechnoType
     /// ReadINI71464A retains the prior value for -1 across rules passes.
     /// Whole-lepton Type+678 conversion belongs to util::fixed_math.
@@ -2069,6 +2071,14 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    pub fn armor_id(&self) -> crate::rules::armor::ArmorId {
+        self.armor_id
+    }
+
+    pub(crate) fn bind_armor(&mut self, armor: crate::rules::armor::ArmorId) {
+        self.armor_id = armor;
+    }
+
     /// Native fixed-ART ShadowIndex, retained by the ordered Type reader.
     pub const fn voxel_shadow_index(&self) -> i32 {
         self.voxel_shadow_index
@@ -2524,6 +2534,7 @@ impl ObjectType {
     /// owner (`native_processing`) reads keep their constructor values here;
     /// `RuleSet::from_processed_rules` publishes that owner's retained result.
     pub fn from_ini_section(id: &str, section: &IniSection, category: ObjectCategory) -> Self {
+        let armor = section.read_string("Armor", "none", 0x80);
         // BuildingType45FE50: Hospital, Armory460B03, then the three
         // barracks readers460B1D/37/51. Each starts at constructor0 and folds
         // reached layer values with the live byte as the next pass's default.
@@ -2662,7 +2673,8 @@ impl ObjectType {
                 "ThreatAvoidanceCoefficient",
                 crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO,
             ),
-            armor: section.read_string("Armor", "none", 0x80),
+            armor_id: crate::rules::armor::armor_index(&armor),
+            armor,
             speed: section.read_techno_speed("Speed", 0),
             // TechnoTypeClass ctor/read contract: raw signed ints, with no
             // clamp or conversion. A zero WalkRate is invalid content natively

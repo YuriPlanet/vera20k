@@ -140,6 +140,23 @@ impl WolChannel {
         }
     }
 
+    /// The limit column's image of a game row (`0x00781480`) and a buddy
+    /// row (`0x0079AF10`): a resolution-limited game shows `wolrslkob` with
+    /// a free observer slot and `wolreslk` without, any other `wolob` with
+    /// a free observer slot.
+    pub(crate) fn limit_icon(&self) -> Option<&'static str> {
+        let free = self.ex_info().observer_free();
+        if self.game_flags & (GAME_LIMIT_640 | GAME_LIMIT_800) != 0 {
+            Some(if free {
+                "wolrslkob.pcx"
+            } else {
+                "wolreslk.pcx"
+            })
+        } else {
+            free.then_some("wolob.pcx")
+        }
+    }
+
     /// `0x00789960`: the widest screen this game admits.
     pub(crate) fn screen_limit(&self) -> i32 {
         if self.game_flags & GAME_LIMIT_800 != 0 {
@@ -340,7 +357,6 @@ pub(crate) fn game_rows(
                     continue;
                 }
                 let (shown, capacity) = channel.shown_capacity();
-                let free = info.observer_free();
                 rows.push(WolGameRow {
                     record,
                     name: channel.name.clone(),
@@ -354,15 +370,7 @@ pub(crate) fn game_rows(
                         GameTypeIcon::Plain
                     },
                     keyed: channel.keyed(),
-                    limit_icon: if channel.game_flags & (GAME_LIMIT_640 | GAME_LIMIT_800) != 0 {
-                        Some(if free {
-                            "wolrslkob.pcx"
-                        } else {
-                            "wolreslk.pcx"
-                        })
-                    } else {
-                        free.then_some("wolob.pcx")
-                    },
+                    limit_icon: channel.limit_icon(),
                     ping: channel.ping,
                 });
             }

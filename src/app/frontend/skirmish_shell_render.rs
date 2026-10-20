@@ -2002,6 +2002,7 @@ pub(crate) use chrome::type3_button_frames;
 mod keyboard;
 mod lan_lobby;
 mod network_options;
+mod wol_buddy;
 mod wol_lobby;
 mod wol_login;
 mod wol_my_info;
@@ -2009,11 +2010,14 @@ mod wol_options;
 mod wol_page;
 mod wol_persona;
 pub(crate) use lan_lobby::render_lan_lobby;
+pub(crate) use wol_buddy::paint_wol_buddy_children;
 pub(crate) use wol_lobby::{WolLobbyPaint, paint_wol_lobby_children, paint_wol_lobby_popup};
 pub(crate) use wol_login::{paint_wol_login_children, wol_button_label_rgb};
 pub(crate) use wol_my_info::paint_wol_my_info_children;
 pub(crate) use wol_options::{paint_shell_sound_children, paint_wol_options_children};
-pub(crate) use wol_page::{in_match_page_draw, paint_wol_page_dialog, paint_wol_page_received};
+pub(crate) use wol_page::{
+    in_match_page_draw, paint_wol_add_buddy, paint_wol_page_dialog, paint_wol_page_received,
+};
 pub(crate) use wol_persona::{paint_wol_auto_login_children, paint_wol_locale_children};
 mod multiplayer_setup;
 pub(crate) use keyboard::render_keyboard_shell;

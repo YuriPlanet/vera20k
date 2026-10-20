@@ -138,6 +138,13 @@ pub(crate) struct FrontendState {
     pub(crate) wol_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// `0x0072BCA0`: AutoLoginQuery.shp through its PAL while `0x112` runs.
     pub(crate) wol_auto_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// The Buddy List `0x116`'s art (`0x0072C060`).
+    pub(crate) wol_buddy_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// The buddy mirror and its queues (process globals `0xB73AA8`..).
+    pub(crate) wol_buddies: crate::app::shell_wol::buddies::WolBuddies,
+    /// The offline WOL test service's buddy list, standing in for the
+    /// server-side one for the process.
+    pub(crate) wol_test_buddies: Vec<String>,
     /// My Information `0x114`'s art (`0x0072C9C0`).
     pub(crate) wol_my_info_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     pub(crate) wol_sound_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,

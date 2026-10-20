@@ -15,19 +15,20 @@
 
 use super::attacker::{FireDamageStages, fire_damage};
 use super::kernel::apply_warhead_damage;
-use super::{ArmorClass, DefenceDivisors, receive::defence_divides};
+use super::{DefenceDivisors, receive::defence_divides};
+use crate::util::native_x87::NativeF64Bits;
 
 /// The warhead the estimate detonates, as the kernel reads it.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct EstimateWarhead<'a> {
+pub(crate) struct EstimateWarhead {
     pub cell_spread: f64,
     pub percent_at_max: f64,
-    pub verses: &'a [f64; 11],
+    pub armor_multiplier: NativeF64Bits,
 }
 
 /// Everything `0x006FDB80` reads besides its callees' tables.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct EstimateInputs<'a> {
+pub(crate) struct EstimateInputs {
     /// `Damage=` (WeaponType `+0xA4`).
     pub damage: i32,
     /// `IsSonic=` (`+0x130`) or `UseFireParticles=` (`+0x129`): no estimate.
@@ -40,9 +41,7 @@ pub(crate) struct EstimateInputs<'a> {
     /// rank holds STRONGER (`0x006FDC87..0x006FDCFE`).
     pub divisors: DefenceDivisors,
     /// `Warhead=` (`+0xAC`); `None` returns 0, as the kernel's null arm does.
-    pub warhead: Option<EstimateWarhead<'a>>,
-    /// The target type's `Armor=` (`+0x9C`).
-    pub armor: ArmorClass,
+    pub warhead: Option<EstimateWarhead>,
     /// `ScenarioClass` flag `0x20` (no damage).
     pub scenario_no_damage: bool,
     /// `[CombatDamage] MaxDamage=`.
@@ -53,7 +52,7 @@ pub(crate) struct EstimateInputs<'a> {
 /// it is not positive, otherwise the damage build, the divides (at least 1) and
 /// `Apply_warhead_damage @ 0x00489180` at distance 0. A null target (0) is the
 /// caller's.
-pub(crate) fn estimated_damage(inputs: &EstimateInputs<'_>) -> i32 {
+pub(crate) fn estimated_damage(inputs: &EstimateInputs) -> i32 {
     if inputs.zeroed {
         return 0;
     }
@@ -69,8 +68,7 @@ pub(crate) fn estimated_damage(inputs: &EstimateInputs<'_>) -> i32 {
         divided,
         warhead.cell_spread,
         warhead.percent_at_max,
-        warhead.verses,
-        inputs.armor,
+        warhead.armor_multiplier,
         0,
         inputs.scenario_no_damage,
         inputs.max_damage,
@@ -177,9 +175,10 @@ mod tests {
                 warhead: (input["warhead_present"] == true).then_some(EstimateWarhead {
                     cell_spread: widened_f32(&input["warhead_cell_spread"]),
                     percent_at_max: widened_f32(&input["warhead_percent_at_max"]),
-                    verses: &verses,
+                    armor_multiplier: NativeF64Bits::from_bits(
+                        verses[input["target_armor_index"].as_u64().unwrap() as usize].to_bits(),
+                    ),
                 }),
-                armor: ArmorClass(input["target_armor_index"].as_u64().unwrap() as u8),
                 scenario_no_damage: input["scenario_flags"].as_u64().unwrap() & 0x20 != 0,
                 max_damage: input["rules_max_damage"].as_i64().unwrap() as i32,
             };

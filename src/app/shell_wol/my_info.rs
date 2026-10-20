@@ -284,13 +284,8 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
                 page.refresh(&view(&default), texts);
             }
         }
-        MyInfoAction::Close(BACK) => {
-            App::leave_shell_dialog(state, ShellExitThen::WolMyInformationClose(BACK))
-        }
-        MyInfoAction::Close(_) => {
-            // Play Buddy: mode 5 with return mode 6 runs the login and the
-            // buddy runner 0x0079F140, which is a later chain.
-            log::warn!("WOL Play Buddy from My Information is not implemented; 0x114 stays");
+        MyInfoAction::Close(control) => {
+            App::leave_shell_dialog(state, ShellExitThen::WolMyInformationClose(control))
         }
         // 0x00773E90 needs the registry URL and an HTMLPath; a retail
         // install has neither and it returns.
@@ -298,11 +293,25 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
     }
 }
 
-/// `0x114`'s teardown has run: Back sets mode 0 and the welcome runs again
-/// (`0x0072CA10` frees the art).
-pub(crate) fn commit_close(state: &mut AppState, _control: u16) {
+/// `0x114`'s teardown has run (`0x0072CA10` frees the art). Back sets mode
+/// 0 and the welcome runs again. Play Buddy (`0x0079916B`) wrote mode 5
+/// with return mode 6: mode 5's login category is 1, so `WOL_Main` runs the
+/// login flow first (`0x0077B3AA`), then the Buddy List runner.
+pub(crate) fn commit_close(state: &mut AppState, control: u16) {
     state.frontend.wol_my_info_art = None;
-    App::reopen_wol_welcome(state);
+    if control != PLAY_BUDDY {
+        App::reopen_wol_welcome(state);
+        return;
+    }
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    visit.mode = Some(crate::ui::wol_shell::WolMode::PlayBuddy);
+    visit.return_mode = Some(crate::ui::wol_shell::WolMode::MyInformation);
+    visit.status_help = None;
+    visit.page = WolPage::Backdrop { wait: None };
+    super::apply_wol_preferences(state);
+    service::begin_flow(state);
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {

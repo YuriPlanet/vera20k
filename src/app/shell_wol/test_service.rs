@@ -10,9 +10,12 @@
 //! are fixed stand-ins. Two of them say one line each when a chat lobby is
 //! joined, and a locate finds them; nobody else ever joins or starts, so a
 //! created game cannot be started and a joined game never receives its
-//! host's options.
+//! host's options. The buddy list starts with four stand-ins whose locates
+//! answer a chat lobby, a game, offline and find-disabled; Add and Remove
+//! change it for the process.
 
 use super::lobby::WolJoined;
+use super::service::WolLadderRecord;
 use super::{WolApiStatus, WolLoginAccepted, WolServer, WolServerList, WolServiceEvent};
 use super::{WolProvider, WolServiceRequest, service_event};
 use crate::app::AppState;
@@ -167,6 +170,29 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             line: WolChatLine::Locate { name },
             ..
         } => WolServiceEvent::Located(locate(&String::from_utf16_lossy(&name))),
+        WolServiceRequest::Locate(name) => WolServiceEvent::Located(locate(&name)),
+        WolServiceRequest::ListBuddies => {
+            WolServiceEvent::Buddies(Ok(state.frontend.wol_test_buddies.clone()))
+        }
+        // The add/delete result sinks (+0x98/+0x9C) ignore the answer.
+        WolServiceRequest::AddBuddy(name) => {
+            let buddies = &mut state.frontend.wol_test_buddies;
+            if !buddies.iter().any(|known| known.eq_ignore_ascii_case(&name)) {
+                buddies.push(name);
+            }
+            return;
+        }
+        WolServiceRequest::RemoveBuddy(name) => {
+            state.frontend.wol_test_buddies.retain(|known| *known != name);
+            return;
+        }
+        WolServiceRequest::LadderRecords(names) => WolServiceEvent::Ladder(
+            names
+                .iter()
+                .filter(|name| name.eq_ignore_ascii_case("Tanya"))
+                .map(|_| tanya_ladder())
+                .collect(),
+        ),
         WolServiceRequest::Chat {
             line: WolChatLine::Page { name, .. },
             ..
@@ -237,10 +263,7 @@ fn lobby_greeting(state: &mut AppState) {
         action: false,
     };
     for event in [
-        WolServiceEvent::LadderRank {
-            name: "Tanya".into(),
-            rank: 1,
-        },
+        WolServiceEvent::Ladder(vec![tanya_ladder()]),
         WolServiceEvent::UserLocales(Ok(vec![("Tanya".into(), 2)])),
         line(
             member("Tanya", MEMBER_OPERATOR),
@@ -250,6 +273,27 @@ fn lobby_greeting(state: &mut AppState) {
     ] {
         service_event(state, event);
     }
+}
+
+/// Tanya's ladder record, the only one the service holds.
+fn tanya_ladder() -> WolLadderRecord {
+    WolLadderRecord {
+        name: "Tanya".into(),
+        wins: 12,
+        losses: 3,
+        points: 1520,
+        rank: 1,
+        disconnects: 0,
+    }
+}
+
+/// The buddy list a fresh process starts with: Tanya (in a chat lobby),
+/// Boris (in his game), Ghost (offline) and Ivan (find disabled).
+pub(crate) fn default_buddies() -> Vec<String> {
+    ["Tanya", "Boris", "Ghost", "Ivan"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Tanya's locale (United States); the other stand-ins have none.
@@ -278,9 +322,16 @@ fn page(state: &mut AppState, name: &str) {
     );
 }
 
-/// A locate finds a stand-in in the first chat lobby; anyone else is not
-/// logged in (`0x40130`).
+/// A locate finds Boris in his game, Ivan with find disabled (`0x40132`)
+/// and the other lobby stand-ins in the first chat lobby; anyone else is
+/// not logged in (`0x40130`).
 fn locate(name: &str) -> Result<WolChannel, u32> {
+    if name.eq_ignore_ascii_case("Boris") {
+        return Ok(games().remove(1));
+    }
+    if name.eq_ignore_ascii_case("Ivan") {
+        return Err(0x0004_0132);
+    }
     if lobby_members()
         .iter()
         .any(|member| member.name.eq_ignore_ascii_case(name))

@@ -35,10 +35,7 @@ fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
         input["air_range_bonus"]
     );
     assert_eq!(json!(obj.strength), input["strength"]);
-    assert_eq!(
-        json!(crate::sim::combat::armor_index(&obj.armor)),
-        input["armor"]
-    );
+    assert_eq!(json!(obj.armor_id().index()), input["armor"]);
     assert_eq!(
         json!(rules.general.normal_targeting_delay),
         input["normal_delay"]

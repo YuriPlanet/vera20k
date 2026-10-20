@@ -239,11 +239,12 @@ pub(super) fn current_window_line(state: &mut AppState, line: LanChatLine) -> bo
 /// dialog, its windows hit-testable and repainting on hover; here `0x11E`
 /// takes every input until Back and the page repaints after it.
 pub(super) fn page_received_line(state: &mut AppState, line: LanChatLine) {
+    let fallback = state.frontend.wol_buddies.selected.clone();
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
     if visit.page_received.is_none() {
-        visit.page_received = Some(Box::new(WolPageReceived::new()));
+        visit.page_received = Some(Box::new(WolPageReceived::new(&fallback, false)));
     }
     append_received_line(state, line);
     if let Some(received) = state
@@ -254,6 +255,20 @@ pub(super) fn page_received_line(state: &mut AppState, line: LanChatLine) {
     {
         received.reply_to = received.pager_from_list();
     }
+    state.platform.window.request_redraw();
+}
+
+/// `0x116`'s Page (`0x0079EA23..0x0079EA75`): `0x11E` created over the
+/// Buddy List and run modally (`0x007759E0` with the pump `0x0077F900`).
+/// Its list is empty, so its reply-to is the selected buddy.
+pub(crate) fn open_received_modal(state: &mut AppState) {
+    let fallback = state.frontend.wol_buddies.selected.clone();
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    let mut received = WolPageReceived::new(&fallback, true);
+    received.reply_to = received.pager_from_list();
+    visit.page_received = Some(Box::new(received));
     state.platform.window.request_redraw();
 }
 

@@ -325,17 +325,27 @@ pub(crate) struct WolPageReceived {
     pub(crate) send_enabled: bool,
     pub(crate) buttons: ShellButtonInteraction<u16>,
     pub(crate) focus_at: Option<std::time::Instant>,
+    /// `[0xB76E24]`, the selected buddy, as it was at open: only `0x116`
+    /// writes it, and nothing under `0x11E` takes input while it exists.
+    pub(crate) fallback: String,
+    /// Opened by `0x116`'s Page (`0x0079EA23`): modal over the Buddy List
+    /// instead of modeless over the empty backdrop.
+    pub(crate) modal: bool,
 }
 
 impl WolPageReceived {
     /// `0x497`: the reply limited to 120 and empty, Send disabled.
-    pub(crate) fn new() -> Self {
-        Self::default()
+    pub(crate) fn new(fallback: &str, modal: bool) -> Self {
+        Self {
+            fallback: fallback.to_owned(),
+            modal,
+            ..Self::default()
+        }
     }
 
     /// `0x0079DA90`: from the selected row (row 0 without one) to the end,
     /// the first row starting `(` with a `)`: the text before that `)`
-    /// without its `(`s; else `[0xB76E24]` (empty).
+    /// without its `(`s; else `[0xB76E24]`.
     pub(crate) fn pager_from_list(&self) -> String {
         let start = self.list.selected.unwrap_or(0);
         self.lines
@@ -347,7 +357,7 @@ impl WolPageReceived {
                 text.starts_with('(')
                     .then(|| text[..close].replace('(', ""))
             })
-            .unwrap_or_default()
+            .unwrap_or_else(|| self.fallback.clone())
     }
 
     /// `LBN_SELCHANGE`: the reply-to follows the selection.
@@ -565,7 +575,8 @@ mod tests {
             text: text.encode_utf16().collect(),
             color: 0xFF_FFFF,
         };
-        let mut received = WolPageReceived::new();
+        let mut received = WolPageReceived::new("Natasha", false);
+        assert_eq!(received.pager_from_list(), "Natasha");
         received.lines = vec![
             line("(Tanya) first"),
             line("[Me] reply"),

@@ -60,6 +60,7 @@ pub(crate) fn presented_wol_page(state: &AppState) -> PresentedShell {
         Some(WolPage::AutoLoginQuery(_)) => PresentedShell::WolAutoLoginQuery,
         Some(WolPage::Locale(_)) => PresentedShell::WolLocale,
         Some(WolPage::MyInformation(_)) => PresentedShell::WolMyInformation,
+        Some(WolPage::Buddy(_)) => PresentedShell::WolBuddyList,
         _ => PresentedShell::WolWelcome,
     }
 }
@@ -98,6 +99,8 @@ enum Painted {
     Persona(crate::ui::wol_persona::WolPersonaLayout),
     /// `0x114`.
     MyInfo(crate::ui::wol_my_info::WolMyInfoLayout),
+    /// `0x116`.
+    Buddy(crate::ui::wol_buddy::WolBuddyLayout),
     /// A dialog has closed: the empty backdrop, under a box or the wait box.
     Backdrop,
 }
@@ -115,6 +118,7 @@ impl Painted {
             }
             Self::Persona(_) => Some(ShellSlideKind::WolAutoLoginQuery),
             Self::MyInfo(_) => Some(ShellSlideKind::WolMyInformation),
+            Self::Buddy(_) => Some(ShellSlideKind::WolBuddyList),
             Self::Backdrop => None,
         }
     }
@@ -130,6 +134,7 @@ impl Painted {
                 Some(crate::ui::wol_persona::WolPersonaLayout::spec(layout.dialog).title_key)
             }
             Self::MyInfo(_) => Some(crate::ui::wol_my_info::PAGE.title_key),
+            Self::Buddy(_) => Some(crate::ui::wol_buddy::PAGE.title_key),
             Self::Backdrop => None,
         }
     }
@@ -146,8 +151,13 @@ pub(crate) fn render_wol_page(
     }
     let welcome = crate::app::App::wol_welcome_layout(state);
     let painted = match &state.frontend.wol.as_ref().expect("checked").page {
-        // 0x11E opens over the empty backdrop (0x0052FEC0).
-        _ if crate::app::shell_wol::page::page_received(state).is_some() => Painted::Backdrop,
+        // 0x11E opens over the empty backdrop (0x0052FEC0), except from
+        // 0x116's Page, which runs it over the Buddy List.
+        _ if crate::app::shell_wol::page::page_received(state)
+            .is_some_and(|received| !received.modal) =>
+        {
+            Painted::Backdrop
+        }
         WolPage::Welcome => {
             crate::app::App::ensure_wol_welcome_art(state);
             Painted::Welcome(welcome.clone())
@@ -198,6 +208,10 @@ pub(crate) fn render_wol_page(
             crate::app::shell_wol::my_info::open_art(state);
             Painted::MyInfo(crate::app::shell_wol::my_info::layout(state))
         }
+        WolPage::Buddy(_) => {
+            crate::app::shell_wol::buddy::open_art(state);
+            Painted::Buddy(crate::app::shell_wol::buddy::layout(state))
+        }
         WolPage::Backdrop { .. } | WolPage::Message { .. } => Painted::Backdrop,
     };
     // The right panel's geometry is the family's on every WOL page.
@@ -208,6 +222,7 @@ pub(crate) fn render_wol_page(
         Painted::SoundOptions(layout) => &layout.page,
         Painted::Persona(layout) => &layout.page,
         Painted::MyInfo(layout) => &layout.page,
+        Painted::Buddy(layout) => &layout.page,
         _ => &welcome.page,
     };
     let page = page.clone();
@@ -252,6 +267,10 @@ pub(crate) fn render_wol_page(
             Painted::SoundOptions(layout) => (None, layout.status_help),
             Painted::MyInfo(layout) => (
                 crate::app::shell_wol::my_info::status_key(state),
+                layout.status_help,
+            ),
+            Painted::Buddy(layout) => (
+                crate::app::shell_wol::buddy::status_key(state),
                 layout.status_help,
             ),
             Painted::Persona(layout) => (
@@ -301,6 +320,7 @@ pub(crate) fn render_wol_page(
             state.frontend.wol_auto_login_art.as_ref()
         }
         Painted::MyInfo(_) => state.frontend.wol_my_info_art.as_ref(),
+        Painted::Buddy(_) => state.frontend.wol_buddy_art.as_ref(),
         // 0xFE loads no art of its own.
         Painted::Persona(_) | Painted::Backdrop => None,
     };
@@ -375,6 +395,37 @@ pub(crate) fn render_wol_page(
     if let (true, Painted::MyInfo(layout)) = (children, &painted) {
         push_group_box(&mut sprites, chrome, layout.group_box, scale);
     }
+    if let (true, Painted::Buddy(layout)) = (children, &painted) {
+        push_group_box(&mut sprites, chrome, layout.group_box, scale);
+    }
+    let buddy_page = crate::app::shell_wol::buddy::page(state);
+    let buddy_children = match (&painted, children, buddy_page) {
+        (Painted::Buddy(layout), true, Some(dialog)) => Some(
+            crate::app::frontend::skirmish_shell_render::paint_wol_buddy_children(
+                state, &dialog.ui, layout, art,
+            ),
+        ),
+        _ => None,
+    };
+    let add_buddy = buddy_page
+        .and_then(|dialog| dialog.ui.add.as_ref())
+        .map(|add| {
+            crate::app::frontend::skirmish_shell_render::paint_wol_add_buddy(
+                state,
+                add,
+                &crate::ui::shell::modal::wol_add_buddy_layout(screen_w, screen_h),
+            )
+        });
+    // 0x115 and the modal 0x11E sit over 0x116 without covering it.
+    let buddy_popup = match &painted {
+        Painted::Buddy(_) if add_buddy.is_some() => {
+            Some(crate::ui::shell::modal::wol_add_buddy_layout(screen_w, screen_h).dialog)
+        }
+        Painted::Buddy(_) if crate::app::shell_wol::page::page_received(state).is_some() => {
+            Some(crate::app::shell_wol::page::received_layout(state).dialog)
+        }
+        _ => None,
+    };
     let my_info_children = match (&painted, children) {
         (Painted::MyInfo(layout), true) => {
             crate::app::shell_wol::my_info::page(state).map(|page| {
@@ -581,6 +632,24 @@ pub(crate) fn render_wol_page(
                             *button,
                             page.buttons.is_pressed(button.id),
                             page.enabled(button.id),
+                        )
+                    })
+                    .collect();
+            }
+            None
+        }
+        (Painted::Buddy(layout), None) => {
+            spec = Some(&crate::ui::wol_buddy::PAGE);
+            if let Some(dialog) = buddy_page {
+                painted_buttons = layout
+                    .page
+                    .buttons
+                    .iter()
+                    .map(|button| {
+                        (
+                            *button,
+                            dialog.ui.buttons.is_pressed(button.id),
+                            dialog.ui.enabled(button.id),
                         )
                     })
                     .collect();
@@ -829,21 +898,33 @@ pub(crate) fn render_wol_page(
                 instances: lobby.icons,
             });
         }
-        // Text draws after every sprite: a box over the shown lobby hides
-        // the glyphs under it here.
         if let Some(dialog) = box_dialog {
-            for draw in &mut lobby.texts {
-                draw.instances.retain(|glyph| {
-                    let [x, y] = glyph.position;
-                    let [w, h] = glyph.size;
-                    x + w <= dialog.x as f32
-                        || y + h <= dialog.y as f32
-                        || x >= (dialog.x + dialog.w) as f32
-                        || y >= (dialog.y + dialog.h) as f32
-                });
-            }
+            hide_glyphs_under(&mut lobby.texts, dialog);
         }
         text.extend(lobby.texts);
+    }
+    if let (Some(atlas), Some(buddy)) = (controls_atlas, buddy_children) {
+        draws.push(TexturedDraw {
+            texture: &atlas.texture,
+            instances: buddy.controls,
+        });
+        if let Some(art) = art {
+            draws.push(TexturedDraw {
+                texture: &art.texture,
+                instances: buddy.icons,
+            });
+        }
+        text.extend(buddy.texts);
+    }
+    if let Some(dialog) = buddy_popup {
+        hide_glyphs_under(&mut text, dialog);
+    }
+    if let (Some(atlas), Some(add)) = (controls_atlas, add_buddy) {
+        draws.push(TexturedDraw {
+            texture: &atlas.texture,
+            instances: add.controls,
+        });
+        text.extend(add.texts);
     }
     if let (Some(atlas), Some(popup)) = (controls_atlas, lobby_popup) {
         draws.push(TexturedDraw {
@@ -879,4 +960,22 @@ pub(crate) fn render_wol_page(
     );
     state.platform.window.request_redraw();
     Ok(true)
+}
+
+/// Text draws after every sprite: a dialog painted over a page hides the
+/// page's glyphs under it here.
+fn hide_glyphs_under(
+    text: &mut [crate::render::shell_text::ShellTextDraw],
+    dialog: crate::ui::shell::geom::RectPx,
+) {
+    for draw in text {
+        draw.instances.retain(|glyph| {
+            let [x, y] = glyph.position;
+            let [w, h] = glyph.size;
+            x + w <= dialog.x as f32
+                || y + h <= dialog.y as f32
+                || x >= (dialog.x + dialog.w) as f32
+                || y >= (dialog.y + dialog.h) as f32
+        });
+    }
 }

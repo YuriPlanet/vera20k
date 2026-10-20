@@ -4039,6 +4039,8 @@ pub struct RuleSet {
     prerequisite_lists: [Vec<Prerequisite>; 6],
     /// Immutable gameplay projection of the retained Rules registry catalog.
     ares_prerequisites: Option<GenericPrerequisites>,
+    /// Immutable projection of NativeRulesRegistryState's ordered armor catalog.
+    ares_armors: Option<crate::rules::ares_armor::ArmorCatalog>,
     /// Derived type-membership index for the lifecycle hooks; rebuilt together
     /// with the RuleSet after every load/reset/pass. The catalog above is its
     /// only source of truth. This cache is not serialized or hashed separately.
@@ -4293,7 +4295,7 @@ impl RuleSet {
         rules.combat_damage.splash_list = splash.to_vec();
         rules.combat_damage.death_weapon =
             processed.combat_damage_death_weapon().map(str::to_owned);
-        for (name, conventional, em_effect, anim_list, debris_types, verses) in
+        for (name, conventional, em_effect, anim_list, debris_types, verses, ares_verses) in
             processed.warhead_read_states()
         {
             if let Some(warhead) = rules
@@ -4306,6 +4308,23 @@ impl RuleSet {
                 warhead.anim_list = anim_list.to_vec();
                 warhead.debris_types = debris_types.to_vec();
                 warhead.verses_f64 = verses.map(|value| f64::from_bits(value.bits()));
+                warhead.install_ares_verses(ares_verses);
+            }
+        }
+        for (category, name, armor) in processed.object_armor_states() {
+            if let Some(category) = category {
+                if let Some(handle) = rules
+                    .object_category_index
+                    .get(&(category, name.to_ascii_uppercase()))
+                    .copied()
+                {
+                    rules.object_list[handle.0 as usize].bind_armor(armor);
+                }
+            } else if let Some(terrain) = rules
+                .terrain_object_types
+                .get_mut(&name.to_ascii_uppercase())
+            {
+                terrain.bind_armor(armor);
             }
         }
         (
@@ -5308,6 +5327,7 @@ impl RuleSet {
             factory_map,
             prerequisite_lists: Default::default(),
             ares_prerequisites: None,
+            ares_armors: processed.ares_armors().cloned(),
             ares_prerequisite_alternates: HashSet::new(),
             terrain_rules,
             tiberium_types,
@@ -5717,8 +5737,8 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // v29: BuildingType upgrade inputs retain prior Rules-pass values.
-        b"rules-simulation-config-v29".hash(&mut hasher);
+        // v30: retained ObjectType armor identities and independent Ares WH records.
+        b"rules-simulation-config-v30".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         self.object_list
             .iter()
@@ -5733,6 +5753,29 @@ impl RuleSet {
         crate::rules::ARES_ENABLED.hash(&mut hasher);
         // Equal flattened INIs may have different retained group lists.
         self.ares_prerequisites.hash(&mut hasher);
+        b"retained-armor-bindings-and-ares-versus-v1".hash(&mut hasher);
+        self.ares_armors.hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    object.armor_id(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        self.terrain_object_types
+            .iter()
+            .map(|(name, terrain)| (name.to_ascii_uppercase(), terrain.armor_id()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        self.warheads
+            .iter()
+            .map(|(name, warhead)| (name.to_ascii_uppercase(), warhead.ares_verses_hash_state()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+
         // UnitType747734 retains CarriesCrate across later absent/invalid
         // keys; equal current source text can still mean different cargo.
         self.object_list
@@ -9100,11 +9143,33 @@ MutateWarhead=MyMutate\n\
 
         // Warheads referenced by weapons should be loaded.
         let sa: &WarheadType = rules.warhead("SA").expect("SA exists");
-        assert!((sa.verses_f64[0] - 1.0).abs() < 1e-9); // none: 100%
-        assert!((sa.verses_f64[5] - 0.25).abs() < 1e-9); // heavy: 25%
+        assert_eq!(
+            f64::from_bits(
+                sa.interaction(crate::rules::armor::armor_index("none"))
+                    .multiplier()
+                    .bits()
+            ),
+            1.0
+        );
+        assert_eq!(
+            f64::from_bits(
+                sa.interaction(crate::rules::armor::armor_index("heavy"))
+                    .multiplier()
+                    .bits()
+            ),
+            0.25
+        );
 
         let ap: &WarheadType = rules.warhead("AP").expect("AP exists");
-        assert!((ap.verses_f64[6] - 0.6).abs() < 1e-9); // wood: 60%
+        assert!(
+            (f64::from_bits(
+                ap.interaction(crate::rules::armor::armor_index("wood"))
+                    .multiplier()
+                    .bits()
+            ) - 0.6)
+                .abs()
+                < 1e-9
+        );
     }
 
     #[test]
@@ -9140,7 +9205,16 @@ MutateWarhead=MyMutate\n\
         assert_eq!(lower.id, "RegistryOnlyWH");
         assert_eq!(lower.percent_at_max_f64, 0.5);
         let expected = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0];
-        for (actual, expected) in lower.verses_f64.iter().zip(expected) {
+        for (name, expected) in crate::rules::armor::RETAIL_ARMOR_NAMES
+            .into_iter()
+            .zip(expected)
+        {
+            let actual = f64::from_bits(
+                lower
+                    .interaction(crate::rules::armor::armor_index(name))
+                    .multiplier()
+                    .bits(),
+            );
             assert!((actual - expected).abs() < 1e-9);
         }
     }

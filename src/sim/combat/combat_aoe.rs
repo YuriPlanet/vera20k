@@ -3257,8 +3257,22 @@ mod tests {
         let rules = RuleSet::from_ini(&ini).expect("stock-like Chaos gas fixture");
         let warhead = rules.warhead("PsychGasCreate").unwrap().clone();
         assert_eq!(rules.weapon("ChaosAttack").unwrap().damage, 600);
-        assert_eq!(warhead.verses_f64[5], 0.5);
-        assert_eq!(rules.warhead("PsychGas").unwrap().verses_f64[5], 0.5);
+        let armor = rules.object("TARGET").unwrap().armor_id();
+        assert_eq!(
+            f64::from_bits(warhead.interaction(armor).multiplier().bits()),
+            0.5
+        );
+        assert_eq!(
+            f64::from_bits(
+                rules
+                    .warhead("PsychGas")
+                    .unwrap()
+                    .interaction(armor)
+                    .multiplier()
+                    .bits()
+            ),
+            0.5
+        );
 
         let mut interner = test_interner();
         let yuri = interner.intern("YuriHouse");
@@ -4326,8 +4340,9 @@ mod tests {
                 adjacent.damage,
                 warhead.cell_spread_f64,
                 warhead.percent_at_max_f64,
-                &warhead.verses_f64,
-                super::super::damage::ArmorClass(super::super::armor_index("wood") as u8),
+                warhead
+                    .interaction(crate::rules::armor::ArmorId::WOOD)
+                    .multiplier(),
                 adjacent.distance_leptons,
                 false,
                 rules.combat_damage.max_damage,

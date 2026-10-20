@@ -25,6 +25,7 @@ pub mod tooltips;
 pub mod wol_login;
 pub mod wol_shell;
 pub(crate) mod wol_chat;
+pub(crate) mod wol_buddy;
 pub(crate) mod wol_lobby;
 pub(crate) mod wol_options;
 pub(crate) mod wol_page;

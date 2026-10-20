@@ -508,6 +508,34 @@ pub fn wol_page_received_layout(screen_w: i32, screen_h: i32) -> WolPageReceived
     }
 }
 
+/// Add Buddy `0x115` (proc `0x0079DFE0`), the same 451x326 centred box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolAddBuddyLayout {
+    pub dialog: RectPx,
+    /// Static `GUI:BuddyNickname`, centred.
+    pub label: RectPx,
+    /// Edit `0x540` after its NewEdit inset.
+    pub name: RectPx,
+    /// `0x702` (`GUI:AddBuddy`, created disabled) and `0x686` (`GUI:Back`).
+    pub add: RectPx,
+    pub back: RectPx,
+    /// The status line `0x695` along the box's foot.
+    pub status: RectPx,
+}
+
+pub fn wol_add_buddy_layout(screen_w: i32, screen_h: i32) -> WolAddBuddyLayout {
+    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    WolAddBuddyLayout {
+        dialog,
+        label: child(57, 61, 193, 15),
+        name: new_edit_window(child(77, 85, 152, 14)),
+        add: child(65, 118, 83, 15),
+        back: child(159, 118, 83, 15),
+        status: child(0, 186, 273, 12),
+    }
+}
+
 /// Center a modal panel of `(w, h)` on the live screen. Byte-identical to the
 /// skirmish validation-modal centering (`((screen - size) + 1) / 2`, clamped >= 0).
 fn centered_modal_dialog(screen_w: i32, screen_h: i32, w: i32, h: i32) -> RectPx {
@@ -871,5 +899,40 @@ mod tests {
             }
         }
         assert_eq!(checked, 48);
+    }
+
+    #[test]
+    fn wol_add_buddy_follows_the_executed_0x115_table() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/wol_shell.json",
+        ))
+        .unwrap();
+        let rect = |value: &serde_json::Value| {
+            let a: Vec<i32> = serde_json::from_value(value.clone()).unwrap();
+            RectPx::new(a[0], a[1], a[2], a[3])
+        };
+        let mut checked = 0;
+        for (size, case) in corpus["layouts"]["0x115"]["sizes"].as_object().unwrap() {
+            let (w, h) = size.split_once('x').unwrap();
+            let layout = wol_add_buddy_layout(w.parse().unwrap(), h.parse().unwrap());
+            assert_eq!(layout.dialog, rect(&case["dialog"]), "{size}");
+            for (id, child) in case["controls"].as_object().unwrap() {
+                let mut native = rect(&child["screen_rect"]);
+                let actual = match id.as_str() {
+                    "0x540" => layout.name,
+                    "0x686" => layout.back,
+                    "0x695" => layout.status,
+                    "0x702" => layout.add,
+                    "0xFFFF" => layout.label,
+                    other => panic!("{other}"),
+                };
+                if child["class"] == "Edit" {
+                    native = new_edit_window(native);
+                }
+                assert_eq!(actual, native, "{size} {id}");
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 15);
     }
 }

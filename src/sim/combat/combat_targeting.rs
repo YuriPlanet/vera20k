@@ -457,7 +457,9 @@ pub(crate) fn should_retaliate(
         .weapon_at(subject.weapon_index)
         .and_then(|weapon| super::combat_weapon::warhead_of(rules, weapon))
         .is_none_or(|warhead| {
-            warhead.verses_f64[super::armor_index(&source_type.armor)] > f64::from(0.01_f32)
+            // Ares 3.0 hook100543E0 replaces only this original threshold
+            // with the independently retained Retaliate flag.
+            warhead.interaction(source_type.armor_id()).can_retaliate()
         })
 }
 

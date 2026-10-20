@@ -315,6 +315,16 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         top_panel: false,
         campaign_score: false,
     },
+    // 0x116: Create, Join, Add, Page and Remove, then Back: the executed
+    // slide record.
+    SlideDialogSpec {
+        dialog_id: 0x0116,
+        top_buttons: 5,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+        campaign_score: false,
+    },
     // 0x114: Play Buddy, Clan, Tournament, Forget (template-disabled,
     // counted) and Manage, then Back: the executed slide record.
     SlideDialogSpec {
