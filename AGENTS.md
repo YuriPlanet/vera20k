@@ -5,6 +5,8 @@
 It is the contract for the maintainer's own agents: its build runner, retail-data checks,
 critic reviews, checkpoints, evidence levels and native comparisons don't apply to you. Where
 the two differ, the README wins.
+Optional local setup and check commands are collected in
+[the contributor guide](.github/CONTRIBUTING.md).
 
 VERA20k is a cross-platform Rust reimplementation of the Command & Conquer:
 Yuri's Revenge engine (`gamemd.exe`), using original retail rules and assets.
