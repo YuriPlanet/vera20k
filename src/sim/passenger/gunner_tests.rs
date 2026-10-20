@@ -12,6 +12,7 @@ use super::{
 };
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::combat_weapon::current_weapon;
+use crate::sim::combat::threat_range::ScanMission;
 use crate::sim::command::Command;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
@@ -685,6 +686,52 @@ fn retail_gi_ifv_fires_its_selected_weapon_without_changing_the_turret() {
     assert!(fired, "the boarded GI IFV never fired its retail weapon");
     assert_boarded(&sim, ifv, passenger);
     assert_current_weapon(&sim, rules, ifv, "CRM60");
+}
+
+#[test]
+fn retail_sniper_ifv_guard_scan_uses_its_boarded_weapon_range() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    assert_eq!(rules.object("SNIPE").unwrap().ifv_mode, 5);
+    assert_eq!(rules.weapon("AWPE").unwrap().range_leptons, 14 * 256);
+    assert_eq!(rules.weapon("HoverMissile").unwrap().range_leptons, 6 * 256);
+
+    for (distance, expected_pick) in [(12, true), (15, false)] {
+        let (mut sim, _) = arena(rules);
+        let (ifv, passenger) = spawn_and_board(&mut sim, rules, "SNIPE");
+        assert_selection(&sim, ifv, (5, 1));
+        assert_current_weapon(&sim, rules, ifv, "AWPE");
+        let (x, y) = (
+            entity(&sim, ifv).position.rx(),
+            entity(&sim, ifv).position.ry(),
+        );
+        // The target appears after boarding. Shared sight from another unit
+        // can reveal it beyond the IFV's own Sight=8.
+        let target = sim
+            .spawn_object("E2", "Russians", x + distance, y, 192, rules)
+            .expect("spawn visible infantry target");
+        let owner = entity(&sim, ifv).owner();
+        sim.fog.reveal_all_for_owner(owner);
+        let pick = sim.greatest_threat_represented(rules, None, ifv, ScanMission::Guard, None);
+        assert_eq!(
+            pick,
+            expected_pick.then_some(target),
+            "sniper IFV Guard scan at {distance} cells"
+        );
+        assert_boarded(&sim, ifv, passenger);
+        assert_selection(&sim, ifv, (5, 1));
+
+        // RemoveGunner restores HoverMissile. The same Guard scan must stop
+        // accepting the distant infantry once its longer-range gunner leaves.
+        unload_at_clear_exit(&mut sim, rules, ifv, passenger);
+        assert_eq!(
+            sim.greatest_threat_represented(rules, None, ifv, ScanMission::Guard, None),
+            None,
+            "empty IFV Guard scan at {distance} cells"
+        );
+    }
 }
 
 /// Unit746502..74658F transfers a running rearm to the departing gunner

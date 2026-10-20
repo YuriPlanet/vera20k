@@ -1,0 +1,2616 @@
+{
+  "defaults": {
+    "air_range_bonus": 0,
+    "current_weapon": 0,
+    "guard_range": 0,
+    "is_gattling": false,
+    "open_topped": 0,
+    "organic": false,
+    "passengers": [],
+    "self_healing": false,
+    "threat_range": 0,
+    "turret_count": 0,
+    "underwater": false,
+    "veterancy": 0.0,
+    "weapons": {
+      "elite_slot0": null,
+      "elite_slot1": null,
+      "elite_slot2": null,
+      "slot0": 768,
+      "slot1": 1536,
+      "slot2": null
+    }
+  },
+  "passenger_defaults": {
+    "class": "infantry",
+    "current_weapon": 0,
+    "elite_slot0": null,
+    "elite_slot1": null,
+    "elite_slot2": null,
+    "slot0": null,
+    "slot1": null,
+    "slot2": null,
+    "turret_count": 0,
+    "veterancy": 0.0
+  },
+  "rows": [
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "fallback.secondary_longer",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 7,
+      "weapon_range_slots": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "fallback.primary_longer",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 1792,
+          "slot1": 512,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 8,
+      "weapon_range_slots": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "fallback.equal_ranges",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 1280,
+          "slot1": 1280,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 6,
+      "weapon_range_slots": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "fallback.no_weapons",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": null,
+          "slot1": null,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 1,
+      "weapon_range_slots": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "fallback.secondary_absent",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": null,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 4,
+      "weapon_range_slots": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "fallback.selected_slot_is_ignored",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 3072
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 7,
+      "weapon_range_slots": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "turret.selected_primary_shorter",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 4,
+      "weapon_range_slots": [
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 1,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "turret.selected_secondary_longer",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 7,
+      "weapon_range_slots": [
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 1,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "turret.selected_secondary_shorter",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 1792,
+          "slot1": 512,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 3,
+      "weapon_range_slots": [
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "turret.selected_slot2_longer",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 2304
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 10,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "turret.selected_slot2_shorter",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 3,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 512
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 3,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "turret.selected_slot2_absent",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 1,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "turret.zero_count_uses_both",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 7,
+      "weapon_range_slots": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "turret.negative_count_uses_both",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": -1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 7,
+      "weapon_range_slots": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": true,
+        "name": "turret.gattling_uses_both",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 7,
+      "weapon_range_slots": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 2304,
+        "is_gattling": false,
+        "name": "organic.guard_range",
+        "open_topped": 0,
+        "organic": true,
+        "passengers": [],
+        "self_healing": true,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": true,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90D6",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 10,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "organic.guard_zero",
+        "open_topped": 0,
+        "organic": true,
+        "passengers": [],
+        "self_healing": true,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": true,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90D6",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 1,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": -257,
+        "is_gattling": false,
+        "name": "organic.guard_negative_fraction",
+        "open_topped": 0,
+        "organic": true,
+        "passengers": [],
+        "self_healing": true,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": true,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90D6",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 0,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 2304,
+        "is_gattling": false,
+        "name": "organic.without_underwater",
+        "open_topped": 0,
+        "organic": true,
+        "passengers": [],
+        "self_healing": true,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 7,
+      "weapon_range_slots": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 2304,
+        "is_gattling": false,
+        "name": "organic.without_organic",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": true,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": true,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 7,
+      "weapon_range_slots": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 2304,
+        "is_gattling": false,
+        "name": "organic.without_self_healing",
+        "open_topped": 0,
+        "organic": true,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": true,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 7,
+      "weapon_range_slots": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 2304,
+        "is_gattling": false,
+        "name": "organic.turret_selection_precedes_guard",
+        "open_topped": 0,
+        "organic": true,
+        "passengers": [],
+        "self_healing": true,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": true,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 512
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 3,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 2304,
+        "is_gattling": true,
+        "name": "organic.gattling_uses_guard",
+        "open_topped": 0,
+        "organic": true,
+        "passengers": [],
+        "self_healing": true,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": true,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90D6",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 10,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "elite.selected_slot2",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 2.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": 2048,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 512
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 9,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "elite.selected_slot2_fallback",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 2.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 1024
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 5,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "elite.selected_slot2_absent",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 2.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 1,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "elite.fallback_uses_elite_pair",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": false,
+        "veterancy": 2.0,
+        "weapons": {
+          "elite_slot0": 2048,
+          "elite_slot1": 512,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 9,
+      "weapon_range_slots": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "elite.veteran_keeps_normal_slot",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 1.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": 2048,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 512
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 3,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "selected.range_-257",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": -257
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 0,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "selected.range_-256",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": -256
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 0,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "selected.range_-255",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": -255
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 1,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "selected.range_-1",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": -1
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 1,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "selected.range_0",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 0
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 1,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "selected.range_1",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 1
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 1,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "selected.range_255",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 255
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 1,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "selected.range_256",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 256
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 2,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "selected.range_257",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 257
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 2,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "selected.range_1408",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 1408
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 6,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": -257,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "bonus.range_-257",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 3,
+      "weapon_range_slots": [
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": -256,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "bonus.range_-256",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 3,
+      "weapon_range_slots": [
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": -255,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "bonus.range_-255",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 4,
+      "weapon_range_slots": [
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": -1,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "bonus.range_-1",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 4,
+      "weapon_range_slots": [
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "bonus.range_0",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 4,
+      "weapon_range_slots": [
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 1,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "bonus.range_1",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 4,
+      "weapon_range_slots": [
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 255,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "bonus.range_255",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 4,
+      "weapon_range_slots": [
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 256,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "bonus.range_256",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 5,
+      "weapon_range_slots": [
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 257,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "bonus.range_257",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 5,
+      "weapon_range_slots": [
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 384,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "bonus.range_384",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 5,
+      "weapon_range_slots": [
+        0
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 1792,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "hard.range_-513_bypasses_weapon_and_bonus",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": -513,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 3072
+        }
+      },
+      "reached_addresses": [
+        "0x006F9042",
+        "0x006F9052"
+      ],
+      "ring_bound_cells": -2,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 1792,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "hard.range_-257_bypasses_weapon_and_bonus",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": -257,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 3072
+        }
+      },
+      "reached_addresses": [
+        "0x006F9042",
+        "0x006F9052"
+      ],
+      "ring_bound_cells": -1,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 1792,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "hard.range_-256_bypasses_weapon_and_bonus",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": -256,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 3072
+        }
+      },
+      "reached_addresses": [
+        "0x006F9042",
+        "0x006F9052"
+      ],
+      "ring_bound_cells": -1,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 1792,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "hard.range_-255_bypasses_weapon_and_bonus",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": -255,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 3072
+        }
+      },
+      "reached_addresses": [
+        "0x006F9042",
+        "0x006F9052"
+      ],
+      "ring_bound_cells": 0,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 1792,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "hard.range_-1_bypasses_weapon_and_bonus",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": -1,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 3072
+        }
+      },
+      "reached_addresses": [
+        "0x006F9042",
+        "0x006F9052"
+      ],
+      "ring_bound_cells": 0,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 1792,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "hard.range_1_bypasses_weapon_and_bonus",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 1,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 3072
+        }
+      },
+      "reached_addresses": [
+        "0x006F9042",
+        "0x006F9052"
+      ],
+      "ring_bound_cells": 0,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 1792,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "hard.range_255_bypasses_weapon_and_bonus",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 255,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 3072
+        }
+      },
+      "reached_addresses": [
+        "0x006F9042",
+        "0x006F9052"
+      ],
+      "ring_bound_cells": 0,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 1792,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "hard.range_256_bypasses_weapon_and_bonus",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 256,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 3072
+        }
+      },
+      "reached_addresses": [
+        "0x006F9042",
+        "0x006F9052"
+      ],
+      "ring_bound_cells": 1,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 1792,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "hard.range_257_bypasses_weapon_and_bonus",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 257,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 3072
+        }
+      },
+      "reached_addresses": [
+        "0x006F9042",
+        "0x006F9052"
+      ],
+      "ring_bound_cells": 1,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 1792,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "hard.range_513_bypasses_weapon_and_bonus",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [],
+        "self_healing": false,
+        "threat_range": 513,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 3072
+        }
+      },
+      "reached_addresses": [
+        "0x006F9042",
+        "0x006F9052"
+      ],
+      "ring_bound_cells": 2,
+      "weapon_range_slots": []
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "cargo.selected_slot2_capped",
+        "open_topped": 1,
+        "organic": false,
+        "passengers": [
+          {
+            "class": "infantry",
+            "current_weapon": 0,
+            "elite_slot0": null,
+            "elite_slot1": null,
+            "elite_slot2": null,
+            "slot0": 896,
+            "slot1": null,
+            "slot2": null,
+            "turret_count": 0,
+            "veterancy": 0.0
+          }
+        ],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 2304
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 4,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "cargo.selected_slot2_shorter_than_passenger",
+        "open_topped": 1,
+        "organic": false,
+        "passengers": [
+          {
+            "class": "infantry",
+            "current_weapon": 0,
+            "elite_slot0": null,
+            "elite_slot1": null,
+            "elite_slot2": null,
+            "slot0": 1536,
+            "slot1": null,
+            "slot2": null,
+            "turret_count": 0,
+            "veterancy": 0.0
+          }
+        ],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 512
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 3,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "cargo.closed_ignores_passenger",
+        "open_topped": 0,
+        "organic": false,
+        "passengers": [
+          {
+            "class": "infantry",
+            "current_weapon": 0,
+            "elite_slot0": null,
+            "elite_slot1": null,
+            "elite_slot2": null,
+            "slot0": 896,
+            "slot1": null,
+            "slot2": null,
+            "turret_count": 0,
+            "veterancy": 0.0
+          }
+        ],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 2304
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 10,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 0,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "cargo.fallback_pair_capped",
+        "open_topped": 1,
+        "organic": false,
+        "passengers": [
+          {
+            "class": "infantry",
+            "current_weapon": 0,
+            "elite_slot0": null,
+            "elite_slot1": null,
+            "elite_slot2": null,
+            "slot0": 896,
+            "slot1": null,
+            "slot2": null,
+            "turret_count": 0,
+            "veterancy": 0.0
+          }
+        ],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 0,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": null
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F90DE",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 4,
+      "weapon_range_slots": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "cargo.selected_slot2_negative_passenger",
+        "open_topped": 1,
+        "organic": false,
+        "passengers": [
+          {
+            "class": "infantry",
+            "current_weapon": 0,
+            "elite_slot0": null,
+            "elite_slot1": null,
+            "elite_slot2": null,
+            "slot0": -257,
+            "slot1": null,
+            "slot2": null,
+            "turret_count": 0,
+            "veterancy": 0.0
+          }
+        ],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 2304
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 0,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "cargo.unarmed_passenger_skipped",
+        "open_topped": 1,
+        "organic": false,
+        "passengers": [
+          {
+            "class": "infantry",
+            "current_weapon": 0,
+            "elite_slot0": null,
+            "elite_slot1": null,
+            "elite_slot2": null,
+            "slot0": null,
+            "slot1": null,
+            "slot2": null,
+            "turret_count": 0,
+            "veterancy": 0.0
+          },
+          {
+            "class": "infantry",
+            "current_weapon": 0,
+            "elite_slot0": null,
+            "elite_slot1": null,
+            "elite_slot2": null,
+            "slot0": 1152,
+            "slot1": null,
+            "slot2": null,
+            "turret_count": 0,
+            "veterancy": 0.0
+          }
+        ],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 2304
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 5,
+      "weapon_range_slots": [
+        2
+      ]
+    },
+    {
+      "input": {
+        "air_range_bonus": 0,
+        "current_weapon": 2,
+        "guard_range": 0,
+        "is_gattling": false,
+        "name": "cargo.turreted_passenger_current_slot2",
+        "open_topped": 1,
+        "organic": false,
+        "passengers": [
+          {
+            "class": "unit",
+            "current_weapon": 2,
+            "elite_slot0": null,
+            "elite_slot1": null,
+            "elite_slot2": null,
+            "slot0": 1536,
+            "slot1": null,
+            "slot2": 640,
+            "turret_count": 1,
+            "veterancy": 0.0
+          }
+        ],
+        "self_healing": false,
+        "threat_range": 0,
+        "turret_count": 1,
+        "underwater": false,
+        "veterancy": 0.0,
+        "weapons": {
+          "elite_slot0": null,
+          "elite_slot1": null,
+          "elite_slot2": null,
+          "slot0": 768,
+          "slot1": 1536,
+          "slot2": 2304
+        }
+      },
+      "reached_addresses": [
+        "0x006F3270",
+        "0x006F9042",
+        "0x006F9052",
+        "0x006F9085",
+        "0x006F9116",
+        "0x006F912E",
+        "0x006F9144",
+        "0x00717880"
+      ],
+      "ring_bound_cells": 3,
+      "weapon_range_slots": [
+        2
+      ]
+    }
+  ]
+}

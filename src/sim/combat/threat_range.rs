@@ -86,15 +86,13 @@
 //! 7-cell *floor* underneath it. The shared scalar owner reproduces mode2;
 //! the Patrol caller and its scan topology still require their own audit.
 //!
-//! Retail walks outward cell by cell and bounds that walk at
-//! `wider weapon range + 1 + AirRangeBonus` cells. That number is a **search**
-//! bound, not an acceptance radius: the walk is a Chebyshev square strictly
-//! wider than the reach acceptance would allow, and it exists only on the
-//! radius-zero branch, so it never clips a candidate acceptance would have
-//! taken. Reading that bound as the acquisition radius is a recurring wrong
-//! turn — it is the reason this file exists rather than a widened per-candidate
-//! range. [`super::greatest_threat`] owns the walk and applies that bound;
-//! this file owns the acceptance radius the walk carries into each candidate.
+//! Retail's radius-zero ring walk uses the current weapon's range for
+//! a non-Gattling turreted type, GuardRange for an underwater, organic,
+//! self-healing type, or the wider range of slots 0/1 otherwise. It adds one
+//! cell and AirRangeBonus. That number is a **search** bound, not an acceptance
+//! radius: the candidate still has to pass its selected weapon's InRange.
+//! [`super::greatest_threat`] owns the walk and applies that bound; this file
+//! owns the acceptance radius the walk carries into each candidate.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on rules/ (RuleSet, ObjectType) and sim/ only.
@@ -103,7 +101,6 @@
 use crate::rules::object_type::ObjectType;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::MissionType;
-use crate::util::fixed_math::SimFixed;
 
 /// Retail doubles the Area Guard radius before clamping it.
 const AREA_GUARD_RANGE_MULTIPLIER: i32 = 2;
@@ -338,14 +335,6 @@ pub(crate) fn threat_range_leptons(obj: &ObjectType, mode: i32, weapon_ranges: [
         if mode == 2 { 0x700 } else { 0 },
         AREA_GUARD_MAX_SCAN_CELLS * 256,
     )
-}
-
-/// Greatest_Threat6F90DE..6F9110's wider live weapon range in cells.
-/// Both raw signed inputs come from the sole GetWeaponRange owner.
-pub(crate) fn max_weapon_range(weapon_ranges: [i32; 2]) -> SimFixed {
-    let leptons = weapon_ranges[0].max(weapon_ranges[1]);
-    // One lepton is 1/256 cell: exact in I16F16 for map-space ranges.
-    SimFixed::from_bits(leptons.saturating_mul(256))
 }
 
 #[cfg(test)]
