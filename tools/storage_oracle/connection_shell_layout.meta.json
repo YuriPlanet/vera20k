@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original RT_DIALOG 0xEA controls, their 0x006040B0 help labels and every ordinary child's complete 0x0060B7A0 placement",
+  "assumptions": [
+    "Template bytes read from the mapped original resource directory; supplied 6x13 dialog base units, not emulated font metrics",
+    "0x0060C0C0 sends 0xEA's ordinary children to 0x0060B7A0 (0x0060C3EE) and Quit Game 2 and the status line to dedicated placements, established by original instruction inspection",
+    "Parent origin 0 and extents 640x480, 800x600, 1024x768",
+    "Help: only the table fallback"
+  ],
+  "substitutions": [
+    "Shared native_child_case supplies GetParent/GetWindowRect/MoveWindow and true 0x0069BBE0 hooks",
+    "Shared help_label supplies the record-table hash and GetDlgCtrlID"
+  ],
+  "entry_points": {
+    "wait_for_players": "0x00648710",
+    "dialog_proc": "0x0064AE50",
+    "dispatcher": "0x0060C0C0",
+    "ordinary_child": "0x0060B7A0",
+    "help_lookup": "0x006040B0"
+  },
+  "replay_command": "python -m tools.storage_oracle.connection_shell_layout",
+  "payload_sha256": "5f59edfb0495876b15a873be05788444e336d1f7790e40fa1682ea87322ca9bb"
+}

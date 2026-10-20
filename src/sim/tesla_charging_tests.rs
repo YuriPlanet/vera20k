@@ -29,7 +29,9 @@ impl Fixture {
                 .unwrap()
         });
         let owner = sim.interner.intern("Americans");
-        sim.power_states.insert(owner, PowerState::default());
+        sim.power_states
+            .map_mut_for_test()
+            .insert(owner, PowerState::default());
         Some(Self {
             sim,
             rules,
@@ -176,7 +178,7 @@ fn retail_electric_assault_enables_the_coils_overpowered_weapon() {
         &f.sim,
         &f.sim.interner,
         f.sim.resolved_terrain.as_ref(),
-        Some(&f.sim.house_alliances),
+        Some(f.sim.house_alliances.as_map()),
     )
     .unwrap();
     assert_eq!(
@@ -220,7 +222,7 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
     // The complete detonation still runs its existing animation tail. Only
     // ElectricAssault's list refresh itself must leave RNG untouched.
     let rng = f.sim.scenario_rng.logical_state();
-    f.sim.electric_assault_detonation(a, Some(f.coil));
+    f.sim.substrate.electric_assault_detonation(a, Some(f.coil));
     assert_eq!(f.sim.scenario_rng.logical_state(), rng);
     assert_eq!(f.sim.substrate.entities.get(a).unwrap().rearm_timer, rearm);
 
@@ -494,7 +496,7 @@ fn adjacency_uses_native_direction_order_and_same_owner_not_alliance() {
         .spawn_object("SHK", "Americans", 20, 20, 0, &f.rules)
         .unwrap();
     f.sim
-        .house_alliances
+        .house_alliances_mut_for_test()
         .entry("Americans".into())
         .or_default()
         .insert("Russians".into());

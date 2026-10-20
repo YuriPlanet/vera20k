@@ -312,8 +312,9 @@ fn build_skirmish_shell_instances(
 
     push_lower_strip_instance(&mut instances, atlas, layout);
 
-    // The RA2 skirmish skin shares the common shell's art and SHELL.PAL.
-    if let Some(background) = generic_shell_background_entry(atlas, layout) {
+    // Dialog 0x102 selects its background by the persisted shell style. YR's
+    // small shape is shared with RA2 but its context palette is not.
+    if let Some(background) = offline_setup_background_entry(atlas, layout) {
         let (x, y) = layout
             .scale
             .dialog_origin_or((layout.screen.x, layout.screen.y));
@@ -1903,6 +1904,8 @@ mod abort;
 pub(crate) use abort::render_abort_shell;
 mod diplomacy;
 pub(crate) use diplomacy::render_diplomacy_shell;
+mod connection;
+pub(crate) use connection::{connection_shell_drawable, render_connection_shell};
 
 mod list;
 
@@ -1916,6 +1919,8 @@ mod lan_lobby;
 mod network_options;
 mod wol_lobby;
 mod wol_login;
+mod wol_options;
+pub(crate) use wol_options::{paint_shell_sound_children, paint_wol_options_children};
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_lobby::{paint_wol_lobby_children, paint_wol_lobby_popup};
 pub(crate) use wol_login::{paint_wol_login_children, wol_button_label_rgb};

@@ -73,17 +73,30 @@ pub enum UnitRepairAction {
     Move,
 }
 
-/// What `UnitClass::What_Action_OnObject`'s building arm
-/// (`0x00740122..0x007401BC`) makes of a Select over a Building whose
-/// CAN_LOAD admits the Unit.
+/// What a class's `What_Action_OnObject` entry rows make of an object the
+/// actor might enter: a building or a passenger carrier
+/// ([`Simulation::entry_click_action`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BuildingClickAction {
+pub enum EntryClickAction {
     /// Action 3.
     Enter,
     /// Action 0xB, at a `Grinding=` building (`+0x16AD`).
     Grind,
-    /// Action 0x1F, for a `MovementZone=Fly` Unit (`Type+0x5B4` 9).
+    /// Action 0x1F.
     NoEnter,
+}
+
+/// The base action (`TechnoClass::What_Action_OnObject`) the entry rows
+/// test. The input layer decides it; Attack (5), GuardArea (0x1A),
+/// ToggleSelect (8) and a Unit's GRepair (0x1D) skip every entry row, and
+/// their callers do not ask.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryBaseAction {
+    /// Select (7): the building rows and the passenger rows.
+    Select,
+    /// Any other base action, such as Alt's Move (1): the passenger rows
+    /// only.
+    Other,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -103,6 +116,10 @@ mod building_control_tests;
 #[cfg(test)]
 #[path = "multi_engineer_tests.rs"]
 mod multi_engineer_tests;
+
+#[cfg(test)]
+#[path = "passenger_entry_tests.rs"]
+mod passenger_entry_tests;
 
 /// The infiltration arms' type test (`0x0051EE4E..0x0051EEE7`,
 /// `0x0051B2BD..0x0051B330`): an `Infiltrate=` infantryman (`+0xEBE`) may
@@ -204,7 +221,7 @@ impl Simulation {
         let target = self.substrate.entities.get(target_id)?;
         let target_type = self.object_type(target.type_ref(), rules)?;
         if !crate::map::houses::is_allied_with(
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             self.interner.resolve(actor.owner()),
             self.interner.resolve(target.owner()),
         ) {
@@ -279,13 +296,13 @@ impl Simulation {
         actor_id: u64,
         target_id: u64,
         rules: &RuleSet,
-    ) -> Option<BuildingClickAction> {
+    ) -> Option<EntryClickAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let target = self.substrate.entities.get(target_id)?;
         if actor.category() != EntityCategory::Unit
             || !self.house_is_human_player(actor.owner())
             || !combat::combat_weapon::is_ally_by_object(
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &self.interner,
                 target.owner(),
                 actor.owner(),
@@ -300,54 +317,150 @@ impl Simulation {
         if self.object_type(actor.type_ref(), rules)?.movement_zone
             == crate::rules::locomotor_type::MovementZone::Fly
         {
-            return Some(BuildingClickAction::NoEnter);
+            return Some(EntryClickAction::NoEnter);
         }
         Some(if self.object_type(target.type_ref(), rules)?.grinding {
-            BuildingClickAction::Grind
+            EntryClickAction::Grind
         } else {
-            BuildingClickAction::Enter
+            EntryClickAction::Enter
         })
     }
 
-    /// What a human player's object makes of a Select over a `Grinding=`
-    /// building (`+0x16AD`): Grind (0xB) or NoEnter (0x1F), shown as the
-    /// Enter and NoEnter rows (`SetCursorFromAction 0x004AB555`,
-    /// `0x004AB382`). Both class rows run only for base action Select (7),
-    /// which the caller establishes (the input layer's base-action owner).
-    /// - A Unit asks CAN_LOAD ([`Self::unit_building_click_action`]).
-    /// - An Infantryman takes `InfantryClass::What_Action_OnObject`'s grinder
-    ///   row (`0x0051F0AF..0x0051F111`) without asking: a building that is
-    ///   not 1x1-with-undeploy (IsStrange vt+0x80, `0x00457620`) answers
-    ///   Grind when the player owns it (GetOwningHouse `+0x21C` against
-    ///   PlayerPtr `0x00A83D4C`), else NoEnter. An Engineer's own arm
-    ///   answers before it ([`Self::engineer_building_action`]).
+    /// What a human player's object's class row makes of `target_id`, an
+    /// object it might enter: Enter (3), Grind (0xB) or NoEnter (0x1F),
+    /// shown as the Enter and NoEnter cursors (`SetCursorFromAction
+    /// 0x004AB555`, `0x004AB382`). `None` leaves the base action.
+    /// - A Unit's building arm (`0x00740122..0x007401BC`,
+    ///   [`Self::unit_building_click_action`]) runs for base action Select
+    ///   and asks CAN_LOAD of any building: a refinery, Service Depot, Tank
+    ///   Bunker or Grinder that admits it. Its NoEnter skips the passenger
+    ///   rung (`0x00740296`); otherwise the rung's answer replaces it.
+    /// - An Infantryman's passenger row comes first; only when it leaves the
+    ///   base action Select does the grinder row (`0x0051F0AF..0x0051F111`)
+    ///   answer, without asking: a `Grinding=` building (`+0x16AD`) that is
+    ///   not 1x1-with-undeploy (IsStrange vt+0x80, `0x00457620`) answers Grind
+    ///   when the player owns it (GetOwningHouse `+0x21C` against PlayerPtr
+    ///   `0x00A83D4C`), else NoEnter. An Engineer's own arm answers before
+    ///   both ([`Self::engineer_building_action`]); its other building rows
+    ///   have their own owners.
+    /// - The passenger rows: [`Self::passenger_click_action`].
     ///
-    /// Foot ClickedAction (`0x004D774F`) turns Grind into mission Eaten with
-    /// the building as Destination; NoEnter orders nothing.
-    pub fn grinder_click_action(
+    /// Foot ClickedAction (`0x004D74E0`) turns Enter into mission Enter and
+    /// Grind into mission Eaten, each with the object as Destination, for a
+    /// receiver the player may order (vt+0xA0); NoEnter orders nothing.
+    ///
+    /// RESIDUAL: the Unit's UnitRepair and Bunker rows between the building
+    /// arm and the rung (`0x007401C1..0x0074027A`) are not represented. With
+    /// the base action still Select they answer Move for such a building
+    /// whose CAN_LOAD admits the Unit when it is not in radio contact. They
+    /// matter only where the building arm's own gates refused (an unallied or
+    /// warped-out building, a computer's Unit), whose CAN_LOAD refuses too.
+    pub fn entry_click_action(
+        &self,
+        actor_id: u64,
+        target_id: u64,
+        base: EntryBaseAction,
+        rules: &RuleSet,
+    ) -> Option<EntryClickAction> {
+        let actor = self.substrate.entities.get(actor_id)?;
+        let target = self.substrate.entities.get(target_id)?;
+        let select = base == EntryBaseAction::Select;
+        match actor.category() {
+            EntityCategory::Unit => {
+                let building = if select {
+                    self.unit_building_click_action(actor_id, target_id, rules)
+                } else {
+                    None
+                };
+                if building == Some(EntryClickAction::NoEnter) {
+                    return building;
+                }
+                self.passenger_click_action(actor_id, target_id, rules)
+                    .or(building)
+            }
+            EntityCategory::Infantry => {
+                if let Some(action) = self.passenger_click_action(actor_id, target_id, rules) {
+                    return Some(action);
+                }
+                let target_obj = self.object_type(target.type_ref(), rules)?;
+                (select
+                    && target.category() == EntityCategory::Structure
+                    && target_obj.grinding
+                    && self.house_is_human_player(actor.owner())
+                    && !target_obj.is_1x1_with_undeploy())
+                .then(|| {
+                    if self.session.current_house() == Some(target.owner()) {
+                        EntryClickAction::Grind
+                    } else {
+                        EntryClickAction::NoEnter
+                    }
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// The passenger rows of `What_Action_OnObject`, an Infantryman's
+    /// (`0x0051ED10..0x0051EE36`) and a Unit's (`0x0074029F..0x00740378`),
+    /// for any base action they are asked under ([`EntryBaseAction`]). The
+    /// target is a Techno whose type has `Passengers=` (`+0x5E0`) above 0, of
+    /// a house the actor's house is allied with (`0x004F9A90`), neither
+    /// warped out (vt+0x1D4) nor warping in (vt+0x1D8); the actor is a human
+    /// player's (`0x0050B6F0`), and for a Unit not the target itself. Then:
+    /// - an Infantryman must be one the player may order (vt+0xA0). A
+    ///   `BalloonHover=` type (`+0xD6A`) answers NoEnter, as does a Foot
+    ///   target in a team whose TeamType is not `Loadable=` (`+0x5D4`,
+    ///   `+0x24`, `+0xA4`);
+    /// - a Foot target whose locomotor is moving (Is_Moving, vt+0x10)
+    ///   answers NoEnter;
+    /// - otherwise the target's CAN_LOAD decides (`vt+0x278(0x0F)`,
+    ///   [`can_load_query`]): ROGER is Enter, NEGATORY NoEnter, any other
+    ///   answer leaves the base action (`None`).
+    ///
+    /// [`can_load_query`]: crate::sim::radio::receive::can_load_query
+    fn passenger_click_action(
         &self,
         actor_id: u64,
         target_id: u64,
         rules: &RuleSet,
-    ) -> Option<BuildingClickAction> {
+    ) -> Option<EntryClickAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let target = self.substrate.entities.get(target_id)?;
-        let target_obj = self.object_type(target.type_ref(), rules)?;
-        if target.category() != EntityCategory::Structure || !target_obj.grinding {
+        let infantry = match actor.category() {
+            EntityCategory::Infantry => true,
+            EntityCategory::Unit => false,
+            _ => return None,
+        };
+        if !combat::combat_weapon::is_ally_by_object(
+            Some(self.house_alliances.as_map()),
+            &self.interner,
+            actor.owner(),
+            target.owner(),
+        ) || !self.house_is_human_player(actor.owner())
+            || target.is_warped_out()
+            || target.is_warping_in()
+            || (!infantry && actor_id == target_id)
+            || self.object_type(target.type_ref(), rules)?.passengers <= 0
+        {
             return None;
         }
-        match actor.category() {
-            EntityCategory::Unit => self.unit_building_click_action(actor_id, target_id, rules),
-            EntityCategory::Infantry
-                if self.house_is_human_player(actor.owner())
-                    && !target_obj.is_1x1_with_undeploy() =>
-            {
-                Some(if self.session.current_house() == Some(target.owner()) {
-                    BuildingClickAction::Grind
-                } else {
-                    BuildingClickAction::NoEnter
-                })
+        if infantry {
+            if !self.techno_player_controllable(actor_id, rules) {
+                return None;
             }
+            if self.object_type(actor.type_ref(), rules)?.balloon_hover {
+                return Some(EntryClickAction::NoEnter);
+            }
+        }
+        if target.category() != EntityCategory::Structure
+            && ((infantry && self.team_script_vm.member_team_loadable(target_id) == Some(false))
+                || crate::sim::movement::motion_query::is_moving(target) == Some(true))
+        {
+            return Some(EntryClickAction::NoEnter);
+        }
+        match crate::sim::radio::receive::can_load_query(self, target_id, actor_id, rules) {
+            crate::sim::radio::RadioResponse::Roger => Some(EntryClickAction::Enter),
+            crate::sim::radio::RadioResponse::Negatory => Some(EntryClickAction::NoEnter),
             _ => None,
         }
     }
@@ -487,7 +600,7 @@ impl Simulation {
         }
         if !object.bridge_repair_hut {
             let allied = crate::map::houses::is_allied_with(
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 self.interner.resolve(actor.owner()),
                 self.interner.resolve(target.owner()),
             );
@@ -590,7 +703,7 @@ impl Simulation {
         };
         infiltrator_admits(infantry, building)
             && !crate::map::houses::is_allied_with(
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 self.interner.resolve(actor.owner()),
                 self.interner.resolve(target.owner()),
             )
@@ -640,7 +753,7 @@ impl Simulation {
                 cell.1,
             )
         });
-        self.sound_events.push(SimSoundEvent::BridgeRepaired {
+        self.sound_events.emit(SimSoundEvent::BridgeRepaired {
             rx: building_cell.0,
             ry: building_cell.1,
             radar,
@@ -704,7 +817,7 @@ impl Simulation {
                 ry,
             )
         });
-        self.sound_events.push(SimSoundEvent::BuildingCaptured {
+        self.sound_events.emit(SimSoundEvent::BuildingCaptured {
             old_owner,
             new_owner,
             tech_building,
@@ -820,7 +933,7 @@ impl Simulation {
         };
         if !object.bridge_repair_hut {
             let allied = crate::map::houses::is_allied_with(
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 self.interner.resolve(owner),
                 self.interner.resolve(building.owner()),
             );
@@ -914,7 +1027,8 @@ impl Simulation {
                 {
                     old_house.notify_building_capture();
                 }
-                self.transfer_engineer_tag_to_building(engineer_id, building_id);
+                self.trigger_runtime
+                    .transfer_engineer_tag_to_building(engineer_id, building_id);
                 self.announce_engineer_capture(building_id, owner, rules);
                 self.change_owner_with_rules(building_id, owner, rules, registry, frame_effects);
                 if let Some(building) = self.substrate.entities.get_mut(building_id) {

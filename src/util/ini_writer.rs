@@ -1,12 +1,12 @@
-//! In-place INI value writer.
+//! In-place INI byte writer and remover.
 //!
-//! Updates (or inserts) a single `key=value` under a named `[section]` in the
-//! raw bytes of an INI file, preserving every other byte exactly: comments,
-//! key order, casing, blank lines, and the existing line-ending style all
-//! round-trip untouched. This mirrors the original game writing individual
-//! settings keys in place rather than rewriting the whole file — a naive full
-//! rewrite would discard sections the engine does not yet model (e.g.
-//! `[Skirmish]`, `[MultiPlayer]`).
+//! Updates/inserts selected `key=value` lines or removes selected keys under a
+//! named `[section]` in the raw bytes of an INI file. Every untouched byte —
+//! comments, key order, casing, blank lines, other sections, and existing line
+//! endings — round-trips untouched. This mirrors the original game writing
+//! individual settings keys in place rather than rewriting the whole file — a
+//! naive full rewrite would discard sections the engine does not yet model
+//! (e.g. `[Skirmish]`, `[MultiPlayer]`).
 //!
 //! Operates on raw bytes so content that is not valid UTF-8 elsewhere in the
 //! file (e.g. a player name with high-byte characters in another section)
@@ -79,13 +79,7 @@ pub fn set_ini_byte_values(content: &[u8], section: &str, values: &[(&str, &[u8]
             continue;
         }
         // Parse only the ASCII key prefix: native values need not be UTF-8.
-        let prefix_end = text
-            .iter()
-            .position(|byte| *byte == b'=')
-            .map(|index| index + 1);
-        let existing_key = prefix_end
-            .and_then(|end| std::str::from_utf8(&text[..end]).ok())
-            .and_then(key_name);
+        let existing_key = key_name_bytes(text);
         if let Some(existing_key) = existing_key {
             if let Some(update_index) = updates
                 .iter()
@@ -162,6 +156,42 @@ pub fn set_ini_byte_values(content: &[u8], section: &str, values: &[(&str, &[u8]
     out
 }
 
+/// Remove matching key lines from every occurrence of a named section.
+///
+/// Section and key matching is case-insensitive, like [`set_ini_values`]. The
+/// complete matching line is removed, including any inline comment; separate
+/// comment lines and every other byte retain their original order and line
+/// ending. Invalid UTF-8 lines are left untouched.
+pub fn remove_ini_keys(content: &[u8], section: &str, keys: &[&str]) -> Vec<u8> {
+    if keys.is_empty() {
+        return content.to_vec();
+    }
+
+    let target_section = section.trim();
+    let mut in_target_section = false;
+    let mut out = Vec::with_capacity(content.len());
+
+    for (text, terminator) in split_lines(content) {
+        let section_header = std::str::from_utf8(text).ok().and_then(section_header_name);
+        if let Some(name) = section_header {
+            in_target_section = name.eq_ignore_ascii_case(target_section);
+            out.extend_from_slice(text);
+            out.extend_from_slice(terminator);
+            continue;
+        }
+
+        let remove = in_target_section
+            && key_name_bytes(text)
+                .is_some_and(|name| keys.iter().any(|key| name.eq_ignore_ascii_case(key.trim())));
+        if !remove {
+            out.extend_from_slice(text);
+            out.extend_from_slice(terminator);
+        }
+    }
+
+    out
+}
+
 /// Terminator for lines this writer *adds* (an inserted key or a created
 /// section): always CRLF, the convention the original game's settings writer
 /// (Win32 `WritePrivateProfileString`) emits regardless of the file's existing
@@ -209,6 +239,13 @@ fn key_name(line: &str) -> Option<&str> {
     let eq = t.find('=')?;
     let k = t[..eq].trim();
     if k.is_empty() { None } else { Some(k) }
+}
+
+/// Identify an ASCII key from the prefix ending at `=` without decoding its
+/// value or trailing comment, which may contain arbitrary bytes.
+fn key_name_bytes(line: &[u8]) -> Option<&str> {
+    let equals = line.iter().position(|byte| *byte == b'=')? + 1;
+    std::str::from_utf8(&line[..equals]).ok().and_then(key_name)
 }
 
 #[cfg(test)]
@@ -354,5 +391,27 @@ ShortGame=yes\r\n"
         let input = b"[Skirmish]\r\n\xff\xfe\r\nGameMode=1\r\n";
         let out = set_ini_values(input, "Skirmish", &[("GameMode", "4")]);
         assert_eq!(out, b"[Skirmish]\r\n\xff\xfe\r\nGameMode=4\r\n");
+    }
+
+    #[test]
+    fn remove_keys_preserves_other_bytes_across_duplicate_sections() {
+        let input = b"[VERA]\r\n; keep this comment\r\nRA2Look = yes ; remove inline comment too\r\nFullScreen=yes\r\n\xff\xfe\r\n[Other]\nRA2Look=keep in this section\n[vera]\nra2look=no\n# keep this comment\nShiftQueue=yes";
+        let out = remove_ini_keys(input, "vera", &["RA2Look"]);
+
+        assert_eq!(
+            out,
+            b"[VERA]\r\n; keep this comment\r\nFullScreen=yes\r\n\xff\xfe\r\n[Other]\nRA2Look=keep in this section\n[vera]\n# keep this comment\nShiftQueue=yes"
+        );
+    }
+
+    #[test]
+    fn remove_key_uses_ascii_identity_with_non_utf8_tails() {
+        let input = b"[VERA]\r\nRA2Look=yes ; \xff inline comment\r\nra2look=no\xff\r\nYROriginalStyle=no\r\n[Other]\r\nRA2Look=keep\r\n[VERA]suffix\r\nRA2Look=keep under malformed header\r\nYROriginalStyle=no";
+        let out = remove_ini_keys(input, "VERA", &["RA2Look"]);
+
+        assert_eq!(
+            out,
+            b"[VERA]\r\nYROriginalStyle=no\r\n[Other]\r\nRA2Look=keep\r\n[VERA]suffix\r\nRA2Look=keep under malformed header\r\nYROriginalStyle=no"
+        );
     }
 }

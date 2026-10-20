@@ -29,12 +29,117 @@ pub const EXIT_OPCODE: u8 = 0x13;
 /// (`0x004C7BDF`) calls `HouseClass::Flag_To_Die 0x004FC980` on the header
 /// House, ungated.
 pub const DESTRUCT_OPCODE: u8 = 0x08;
+/// EVENT_REMOVEPLAYER: `EventClass(house, 0x23, index)` (`0x004C6720`)
+/// carries the removed House's index as its dword payload. DestroyConnection
+/// queues it for a lost connection mid-match (`0x005DA898`).
+pub const REMOVE_PLAYER_OPCODE: u8 = 0x23;
+/// EVENT_ALLY: `EventClass(house, 3, index)` (`0x004C6720`) carries the
+/// other House's index as its dword payload. The Diplomacy Allies box
+/// (`Ally 0x00731840`) and the ToggleAlliance hotkey (`0x007318F0`) queue it.
+pub const ALLY_OPCODE: u8 = 0x03;
 /// House-wide Cheer, issued by AllToCheer730F30.
 pub const CHEER_OPCODE: u8 = 0x2d;
 /// Native `EventClass` opcode for a MegaMission order envelope.
 pub const MEGAMISSION_OPCODE: u8 = 0x04;
 /// Native selected-object Scatter event.
 pub const SCATTER_OPCODE: u8 = 0x07;
+/// Native `EventClass` opcode 0x0D, the GAMESPEED event. `EventClass::Execute`
+/// type 13 (`0x004C794B`) writes the payload dword at Event+7 into the
+/// GameSpeed setting `0x00A8EB60`, then posts `TXT_PLAYER_CHANGED_SPEED` when
+/// the sender is not the local player. Offline Options uses `SetGameSpeed`.
+pub const GAME_SPEED_OPCODE: u8 = 0x0d;
+
+/// Payload of the native GAMESPEED event (opcode `0x0D`, type 13 at
+/// `0x004C794B`): the setting dword at Event+7; the sender rides the header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GameSpeedRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub speed: i32,
+}
+
+impl GameSpeedRecord {
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        let mut payload = [0u8; 4];
+        payload.copy_from_slice(&self.speed.to_le_bytes());
+        CommandRecord::encode(
+            GAME_SPEED_OPCODE,
+            i32::from(self.house_id),
+            self.frame,
+            &payload,
+        )
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != GAME_SPEED_OPCODE {
+            return None;
+        }
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            speed: i32::from_le_bytes(record.payload()[..4].try_into().ok()?),
+        })
+    }
+}
+
+/// Native `EventClass` opcodes 0x01 / 0x02 (Building On Line / Off Line).
+/// Both dispatch branches (`0x004C6CF0` / `0x004C6D4D`) read the target as the
+/// Abstract token at payload `[0..4]` with kind `0x34` at `[4]` and hand the
+/// resolved object to GoOnline `0x00452260` / GoOffline `0x00452360`; the
+/// direction is the opcode, never a payload byte. EVA strings
+/// `EVA_BuildingOnLine` / `EVA_BuildingOffLine` name the pair.
+pub const BUILDING_ON_LINE_OPCODE: u8 = 0x01;
+pub const BUILDING_OFF_LINE_OPCODE: u8 = 0x02;
+
+/// Typed view of native opcodes 0x01 / 0x02 (Building On Line / Off Line).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuildingOnLineRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+    /// The opcode's direction: `0x01` On Line, `0x02` Off Line.
+    pub on: bool,
+}
+
+impl BuildingOnLineRecord {
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        let opcode = if self.on {
+            BUILDING_ON_LINE_OPCODE
+        } else {
+            BUILDING_OFF_LINE_OPCODE
+        };
+        let mut payload = [0u8; 5];
+        let (value, kind) = MegaMissionTarget::Object { id: self.entity_id }
+            .token()
+            .expect("an Object token encodes a 0x34 Abstract");
+        payload[..4].copy_from_slice(&value.to_le_bytes());
+        payload[4] = kind;
+        CommandRecord::encode(opcode, i32::from(self.house_id), self.frame, &payload)
+    }
+
+    /// Decode either direction. A non-`0x34` kind byte decodes to nothing:
+    /// the native resolver `0x006E7A80` compares `[token+4]` against `0x34`
+    /// first and answers null for anything else, which the dispatch drops.
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        let on = match record.opcode() {
+            BUILDING_ON_LINE_OPCODE => true,
+            BUILDING_OFF_LINE_OPCODE => false,
+            _ => return None,
+        };
+        let value = i32::from_le_bytes(record.payload()[..4].try_into().ok()?);
+        let MegaMissionTarget::Object { id } =
+            MegaMissionTarget::from_token(value, record.payload()[4])?
+        else {
+            return None;
+        };
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: id,
+            on,
+        })
+    }
+}
 
 const MEGAMISSION_SOURCE_VALUE_OFFSET: usize = 0;
 const MEGAMISSION_SOURCE_KIND_OFFSET: usize = 4;
@@ -811,6 +916,52 @@ pub enum Command {
     /// Observe results 3/4 (`0x0048CA34`, `0x0048CAB2`) queue it for the
     /// local House. Appended to preserve existing serialized variant indices.
     Destruct,
+    /// EVENT_REMOVEPLAYER for the House at registration index `house_index`
+    /// (`EventClass::Execute 0x004C7B73`): Flag_To_Die when it is human.
+    /// Appended to preserve existing serialized variant indices.
+    RemovePlayer { house_index: i32 },
+    /// The MoveFlash a Move click on a Cell spawns there
+    /// (`FootClass::ClickedAction_Cell`, `0x004D7EB5..0x004D8065`). Native
+    /// constructs it at the click, outside the event queue; VERA carries it
+    /// as a command so the anim stays a product of the input stream.
+    /// Appended to preserve existing serialized variant indices.
+    MoveFlash { rx: u16, ry: u16 },
+    /// EVENT_ALLY toward the House at registration index `house_index`
+    /// (`EventClass::Execute 0x004C6DEE`): the command House breaks an
+    /// alliance it holds, else offers one, announced. Appended to preserve
+    /// existing serialized variant indices.
+    Ally { house_index: i32 },
+    /// VERA extension: the saved one-use source selection, not native
+    /// SPECIAL_PLACE. Appended to preserve existing command discriminants.
+    CompletePaidSuperWeapon {
+        selection: crate::sim::superweapon::PaidSuperWeaponSelection,
+        target_rx: u16,
+        target_ry: u16,
+    },
+    CancelPaidSuperWeapon {
+        selection: crate::sim::superweapon::PaidSuperWeaponSelection,
+    },
+    BeginPaidSuperWeapon {
+        selection: crate::sim::superweapon::PaidSuperWeaponSelection,
+        target_rx: u16,
+        target_ry: u16,
+    },
+    /// The live GAMESPEED event (native opcode 0x0D, `EventClass::Execute`
+    /// type 13 at `0x004C794B`): store the new GameSpeed setting
+    /// (`0x00A8EB60`). Unlike offline `SetGameSpeed` it applies at the
+    /// EventClass tail. Residuals: native stores the dword unclamped, while
+    /// `apply_in_game_speed` refuses values above the Options range (only a
+    /// crafted record carries one), and native's `TXT_PLAYER_CHANGED_SPEED`
+    /// message for a remote sender is not posted. Appended to preserve
+    /// existing serialized variant indices.
+    LiveGameSpeed { speed: u8 },
+    /// Toggle one Building's On/Off Line latch (native opcodes 0x01/0x02,
+    /// `EventClass::Execute` branches `0x004C6CF0`/`0x004C6D4D` -> GoOnline
+    /// `0x00452260` / GoOffline `0x00452360`). The direction rides `on`.
+    /// Native admits only a live (`+0x90`), non-limbo (`+0x81`) object whose
+    /// owner's `+0x16C0` byte is clear; that House byte is not ported.
+    /// Appended to preserve existing serialized variant indices.
+    SetBuildingOnLine { entity_id: u64, on: bool },
 }
 
 impl Command {

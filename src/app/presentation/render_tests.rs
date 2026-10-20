@@ -9,7 +9,6 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::test_intern;
 use crate::sim::world::Simulation;
-use std::collections::BTreeMap;
 
 /// Spawn a mobile unit **at a cell**. Where it lands on screen is derived, so
 /// tests take their click and box coordinates from [`screen_of`] rather than
@@ -60,7 +59,6 @@ fn test_click_additive_toggles_membership() {
     let (first_x, first_y) = screen_of(&store, 1);
     let (second_x, second_y) = screen_of(&store, 2);
 
-    let empty_heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
     let added = compute_click_selection_snapshot(
         &store,
         &encounter_order(&store),
@@ -72,8 +70,6 @@ fn test_click_additive_toggles_membership() {
         CLICK_SELECT_RADIUS,
         true,
         None,
-        None,
-        &empty_heights,
         None,
         None,
     )
@@ -91,8 +87,6 @@ fn test_click_additive_toggles_membership() {
         CLICK_SELECT_RADIUS,
         true,
         None,
-        None,
-        &empty_heights,
         None,
         None,
     )
@@ -380,41 +374,23 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
     let (enemy_sx, enemy_sy) =
         crate::render::locomotor_visual::screen_position(sim.entities().get(11).expect("enemy"));
     // Provide empty height maps — structure picking now uses foundation-based hit testing.
-    let empty_heights: BTreeMap<(u16, u16), u8> = BTreeMap::new();
+
     // This test classifies the two objects on open terrain. Reveal the actual
     // clicked cells, including the building anchor's projection, before the
     // shared ProcessClickCoords gate. Shroud rejection is tested separately.
     for (x, y) in [(friendly_sx, friendly_sy), (enemy_sx, enemy_sy)] {
-        let (rx, ry) =
-            crate::app::match_runtime::sim_tick::world_point_to_cell(x, y, &empty_heights, None);
+        let (rx, ry) = crate::app::match_runtime::sim_tick::world_point_to_cell(x, y, None);
         sim.fog_mut_for_test()
             .mark_visible_for_owner(americans_id, rx, ry);
     }
-    let friendly_hover = hover_target_at_point(
-        &sim,
-        friendly_sx,
-        friendly_sy,
-        "Americans",
-        false,
-        None,
-        &empty_heights,
-        None,
-    )
-    .expect("friendly hover");
+    let friendly_hover =
+        hover_target_at_point(&sim, friendly_sx, friendly_sy, "Americans", false, None)
+            .expect("friendly hover");
     assert_eq!(friendly_hover.kind, HoverTargetKind::FriendlyStructure);
     assert_eq!(friendly_hover.stable_id, 10);
 
-    let enemy_hover = hover_target_at_point(
-        &sim,
-        enemy_sx,
-        enemy_sy,
-        "Americans",
-        false,
-        None,
-        &empty_heights,
-        None,
-    )
-    .expect("enemy hover");
+    let enemy_hover = hover_target_at_point(&sim, enemy_sx, enemy_sy, "Americans", false, None)
+        .expect("enemy hover");
     assert_eq!(enemy_hover.kind, HoverTargetKind::EnemyUnit);
     assert_eq!(enemy_hover.stable_id, 11);
 }

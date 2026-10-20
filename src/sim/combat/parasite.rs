@@ -716,7 +716,7 @@ impl Simulation {
                 .unwrap()
                 .health
                 .set(0);
-            self.detach_parasite_victim(owner, victim, frame);
+            self.substrate.detach_parasite_victim(owner, victim, frame);
             self.uninit_with_context(
                 owner,
                 UninitContext::with_rules(rules).with_effects(effects),
@@ -777,29 +777,7 @@ impl Simulation {
                 UninitContext::with_rules(rules).with_effects(effects),
             );
         }
-        self.detach_parasite_victim(owner, victim, frame);
-    }
-
-    /// Victim-side reset shared by every release: ParalysisTimer {Frame, 0},
-    /// Foot+694 = 0, Parasite.Victim = 0 (`0x0062A862..0x0062A88F`).
-    fn detach_parasite_victim(&mut self, owner: u64, victim: u64, frame: u32) {
-        if let Some(entity) = self.substrate.entities.get_mut(victim) {
-            if let Some(rocking) = entity.rocking.as_mut() {
-                rocking.set_angle_sideways(crate::util::fixed_math::SimFixed::ZERO);
-            }
-            entity.parasite.end_paralysis(frame);
-            if entity.parasite.eater == Some(owner) {
-                entity.parasite.eater = None;
-            }
-        }
-        if let Some(state) = self
-            .substrate
-            .entities
-            .get_mut(owner)
-            .and_then(|o| o.parasite.class_mut())
-        {
-            state.victim = None;
-        }
+        self.substrate.detach_parasite_victim(owner, victim, frame);
     }
 
     /// ParasiteClass::PointerExpired `0x0062A260`, forwarded by the victim's
@@ -828,7 +806,7 @@ impl Simulation {
         let suppressed = state.suppression.remaining(frame as i32) != 0;
         let Some(rules) = rules else {
             // A rules-less fixture cannot run Unlimbo; drop the link only.
-            self.detach_parasite_victim(owner, victim, frame);
+            self.substrate.detach_parasite_victim(owner, victim, frame);
             return;
         };
         // Owner vtable +0x160 (0x0041BF40): Iron Curtain protects it here.
@@ -842,7 +820,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(victim) {
                 entity.parasite.eater = None;
             }
-            self.clear_parasite_victim(owner);
+            self.substrate.clear_parasite_victim(owner);
             self.uninit_with_context(
                 owner,
                 UninitContext::with_rules(rules).with_effects(effects),
@@ -883,18 +861,7 @@ impl Simulation {
                 UninitContext::with_rules(rules).with_effects(effects),
             );
         }
-        self.clear_parasite_victim(owner);
-    }
-
-    fn clear_parasite_victim(&mut self, owner: u64) {
-        if let Some(state) = self
-            .substrate
-            .entities
-            .get_mut(owner)
-            .and_then(|o| o.parasite.class_mut())
-        {
-            state.victim = None;
-        }
+        self.substrate.clear_parasite_victim(owner);
     }
 
     /// GetReleaseCoords `0x0062AC30`.
@@ -1265,7 +1232,13 @@ impl Simulation {
                 == Some(crate::sim::world::display_layers::DisplayLayer::SURFACE);
             if self.unregister_non_entity_object(bullet) {
                 self.projectiles.set_owner(bullet, firer);
-                self.construct_bullet_scheme(bullet, rules);
+                Self::construct_bullet_scheme(
+                    &self.interner,
+                    &self.substrate,
+                    &mut self.projectiles,
+                    bullet,
+                    rules,
+                );
                 let registered = self.register_projectile(bullet, flat);
                 debug_assert!(registered);
             }
@@ -1396,6 +1369,38 @@ impl Simulation {
             state.suppress(frame, suppression);
         }
         self.parasite_exit_unit(eater, rules, effects);
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// Victim-side reset shared by every release: ParalysisTimer {Frame, 0},
+    /// Foot+694 = 0, Parasite.Victim = 0 (`0x0062A862..0x0062A88F`).
+    fn detach_parasite_victim(&mut self, owner: u64, victim: u64, frame: u32) {
+        if let Some(entity) = self.entities.get_mut(victim) {
+            if let Some(rocking) = entity.rocking.as_mut() {
+                rocking.set_angle_sideways(crate::util::fixed_math::SimFixed::ZERO);
+            }
+            entity.parasite.end_paralysis(frame);
+            if entity.parasite.eater == Some(owner) {
+                entity.parasite.eater = None;
+            }
+        }
+        if let Some(state) = self
+            .entities
+            .get_mut(owner)
+            .and_then(|o| o.parasite.class_mut())
+        {
+            state.victim = None;
+        }
+    }
+    fn clear_parasite_victim(&mut self, owner: u64) {
+        if let Some(state) = self
+            .entities
+            .get_mut(owner)
+            .and_then(|o| o.parasite.class_mut())
+        {
+            state.victim = None;
+        }
     }
 }
 

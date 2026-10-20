@@ -6,7 +6,9 @@
 //!   `BuildingClass::DestructionEffects` (`0x00441F1B`) while the building is
 //!   still on the map: absorbed passengers leave first (Phase A), then each
 //!   foundation cell gets one survivor roll followed by that cell's
-//!   scorch/crater mark (Phase B);
+//!   scorch/crater mark (Phase B). A building that outlives its killing blow
+//!   at Health 0 (an `Explodes=` type, or one dying while Selling) takes a
+//!   second round from its Update, after its Limbo (`0x004400D4`);
 //! - `BuildingClass::Mission_Selling`'s stage 1 (`0x0044A2EE`, driven by
 //!   `production::production_sell`): absorbed passengers, then the survivor
 //!   count's crew, each on a random foundation cell;
@@ -39,17 +41,6 @@
 //! CRT48E480 initialization of the five89E9F0 subcell offsets.
 //!
 //! RESIDUALS:
-//! - A second SpawnSurvivors after Limbo: DestructionEffects arms the death
-//!   timer (`+0x528`) at 0 for an `Explodes=` type (TechnoType `+0xD15`) or a
-//!   building killed while Selling (`0x00441C43..0x00441C8C`), so the building
-//!   stays alive at 0 HP and `BuildingClass::Update` runs SpawnSurvivors again
-//!   after its Limbo (`0x004400D4`), then UnInit. VERA UnInits at once and
-//!   runs one round. Trigger: every NANRCT death (the only stock `Crewed=yes`
-//!   `Explodes=yes` building) and any crewed building killed while sold.
-//!   Effect: one survivor round and its per-cell marks instead of two.
-//!   Frequency: every Soviet Nuclear Reactor death. Risk: survivor count,
-//!   marks and the Scenario stream after them. Needs a breakpoint at
-//!   `0x004400D4` (kill a NANRCT) to confirm Update reaches that arm.
 //! - Sale44A6ED's CellPlace481180 overwrites the literal request Z0 with
 //!   ground height at the original within-cell(128,164), before44A72D
 //!   Unlimbo. VERA's caller uses the coarse cell floor. Flat foundations,
@@ -124,6 +115,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::occupancy::RawCellKey;
+use crate::sim::rng::SimRng;
 use crate::sim::world::{
     FrameEffects, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation,
     UninitContext,
@@ -155,6 +147,38 @@ impl HasBeenCaptured {
     }
 
     /// `BuildingClass::ChangeOwner`'s write (`0x00448723`).
+    pub(crate) fn mark(&mut self) {
+        self.set = true;
+    }
+
+    /// Install a fixture's byte.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_for_test(&mut self, set: bool) {
+        self.set = set;
+    }
+}
+
+/// A building's NoSurvivor byte, `BuildingClass+0x6E0`. The constructor
+/// clears it (`0x0043B95A`) and DestructionEffects sets it from the killing
+/// ReceiveDamage's IgnoreDefenses (`0x00441EFC..0x00441F0B`, [`Self::mark`]).
+/// How_Many_Survivors (`0x00451334`), SpawnSurvivors' absorbed passengers
+/// (`0x00442F2A`) and Mission_Selling (`0x0044A4CA`) read it, and the frame CRC
+/// hashes it (`0x00454407`). A building that outlives its killing blow at
+/// Health 0 keeps it for its Update's second SpawnSurvivors (`0x004400D4`).
+/// Hashed and persisted (v453).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct NoSurvivor {
+    set: bool,
+}
+
+impl NoSurvivor {
+    /// No survivor leaves the building.
+    pub(crate) const fn is_set(self) -> bool {
+        self.set
+    }
+
+    /// DestructionEffects' write (`0x00441F0B`).
     pub(crate) fn mark(&mut self) {
         self.set = true;
     }
@@ -249,28 +273,6 @@ pub(crate) struct DyingTransport {
 }
 
 impl Simulation {
-    /// `TechnoClass::GetCrew @ 0x00707D20` for a Crewed type owned by a house
-    /// of `side` (House `+0x1E8`): the side's crew, Technician for any other
-    /// side, and a 15% Technician roll for an armed object. A country with no
-    /// `Side=` (HouseType `+0xBC == -1`) returns Technician before the roll
-    /// at707D81..707D8B. Executed controls: building_sale.py --crew-type.
-    fn techno_crew_type(&mut self, rules: &RuleSet, side: i32, armed: bool) -> Option<String> {
-        let general = &rules.general;
-        if side == -1 {
-            return general.technician.clone();
-        }
-        let crew = match side {
-            0 => general.allied_crew.clone(),
-            1 => general.soviet_crew.clone(),
-            2 => general.third_crew.clone(),
-            _ => general.technician.clone(),
-        };
-        if armed && self.scenario_rng.next_range_u32_inclusive(0, 99) < 15 {
-            return general.technician.clone();
-        }
-        crew
-    }
-
     /// Building vt+0x30C `0x0044EB10`: an uncaptured building always draws
     /// the Engineer roll, which only a `Factory=BuildingType` yard can win,
     /// then falls to GetCrew. A garrison's IsArmed arm (`0x00458DD0`) is
@@ -288,26 +290,21 @@ impl Simulation {
         if !captured && self.scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
             return rules.general.engineer_infantry.clone();
         }
-        self.techno_crew_type(rules, side, armed)
+        techno_crew_type(&mut self.scenario_rng, rules, side, armed)
     }
 
     /// `BuildingClass::How_Many_Survivors @ 0x00451330`: zero when
-    /// NoSurvivor (`+0x6E0`), uncrewed or owned by a house outside the three
-    /// sides; otherwise the refund over the side's divisor (doubled once
+    /// [`NoSurvivor`] (`+0x6E0`), uncrewed or owned by a house outside the
+    /// three sides; otherwise the refund over the side's divisor (doubled once
     /// captured), clamped to 1..5.
-    pub(crate) fn building_survivor_count(
-        &self,
-        rules: &RuleSet,
-        building_id: u64,
-        no_survivor: bool,
-    ) -> i32 {
+    pub(crate) fn building_survivor_count(&self, rules: &RuleSet, building_id: u64) -> i32 {
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return 0;
         };
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return 0;
         };
-        if no_survivor || !object.crewed {
+        if entity.no_survivor.is_set() || !object.crewed {
             return 0;
         }
         let Some(house) = self.houses.get(&entity.owner()) else {
@@ -341,18 +338,18 @@ impl Simulation {
         refund.checked_div(divisor).unwrap_or(0).clamp(1, 5)
     }
 
-    /// `BuildingClass::SpawnSurvivors @ 0x00442D90` for a dying building
-    /// still on the map. `no_survivor` is the killing ReceiveDamage's
-    /// IgnoreDefenses, which DestructionEffects stores in `+0x6E0`
-    /// (`0x00441EFC..0x00441F0B`); a C4 expiry passes it set (`0x00440345`).
-    /// `commit_cell_smudge` places one foundation cell's scorch/crater mark
-    /// through the smudge owner, after that cell's survivor roll.
+    /// `BuildingClass::SpawnSurvivors @ 0x00442D90`: from DestructionEffects
+    /// for a dying building still on the map, and again from Update after
+    /// the Limbo of one that outlived its killing blow (`0x004400D4`). Its
+    /// [`NoSurvivor`] byte holds the killing call's IgnoreDefenses; a C4
+    /// expiry passes it set (`0x00440345`). `commit_cell_smudge` places one
+    /// foundation cell's scorch/crater mark through the smudge owner, after
+    /// that cell's survivor roll.
     pub(crate) fn spawn_building_survivors(
         &mut self,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         building_id: u64,
-        no_survivor: bool,
         mut commit_cell_smudge: impl FnMut(&mut Simulation, (u16, u16)),
         effects: FrameEffects<'_>,
     ) {
@@ -373,18 +370,11 @@ impl Simulation {
             .pending()
             .and_then(|pending| pending.source_entity_id());
         let chance_max = if c4_source.is_some() { 1 } else { 2 } + if captured { 6 } else { 0 };
-        let mut count = self.building_survivor_count(rules, building_id, no_survivor);
+        let mut count = self.building_survivor_count(rules, building_id);
 
         // Phase A (0x00442DF2..0x00443011): every absorbed passenger advances
         // the foundation cursor that Phase B then continues from.
-        let cursor = self.eject_absorbed_passengers(
-            rules,
-            registry,
-            building_id,
-            &cells,
-            no_survivor,
-            effects,
-        );
+        let cursor = self.eject_absorbed_passengers(rules, registry, building_id, &cells, effects);
 
         // Phase B (0x00443017..0x004433F4): nothing at all, smudges
         // included, when no survivor is owed.
@@ -440,7 +430,7 @@ impl Simulation {
             }
             let strength = rules.object(crew).map_or(0, |object| object.strength);
             let health = sim.scenario_rng.next_range_i32_inclusive(5, strength);
-            sim.set_crew_health(id, health);
+            sim.substrate.set_crew_health(id, health);
             sim.scatter_crew(rules, registry, id, effects);
 
             // `HouseClass::IsAlliedWith(object) @ 0x004F9AF0` on the building owner.
@@ -448,7 +438,7 @@ impl Simulation {
             let enemy_planter = c4_source.filter(|&planter| {
                 sim.substrate.entities.get(planter).is_some_and(|planter| {
                     !crate::map::houses::is_allied_with(
-                        &sim.house_alliances,
+                        sim.house_alliances.as_map(),
                         owner_name,
                         sim.interner.resolve(planter.owner()),
                     )
@@ -461,7 +451,7 @@ impl Simulation {
             } else {
                 MissionType::Hunt
             };
-            sim.queue_crew_mission(id, mission);
+            sim.substrate.queue_crew_mission(id, mission);
             if let Some(planter) = enemy_planter {
                 // Infantry vt+0x3C8 (`0x0051B1F0`) over TechnoClass::Assign_Target.
                 let target = Some(crate::sim::combat::TargetKind::Entity(planter));
@@ -497,14 +487,15 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         building_id: u64,
         cells: &[(u16, u16)],
-        no_survivor: bool,
         effects: FrameEffects<'_>,
     ) -> usize {
+        let Some(building) = self.substrate.entities.get(building_id) else {
+            return 0;
+        };
+        // `0x00442F2A`, `0x0044A4CA`.
+        let no_survivor = building.no_survivor.is_set();
         let absorbs = self
-            .substrate
-            .entities
-            .get(building_id)
-            .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            .object_type(building.type_ref(), rules)
             .is_some_and(|object| object.absorbs_passengers());
         let mut cursor = 0;
         if !absorbs {
@@ -561,7 +552,10 @@ impl Simulation {
         self.with_object_placement_scope(|sim| {
             if infantry {
                 let cell = cell.map_or(RawCellKey::Dummy, |(x, y)| RawCellKey::Real(x, y));
-                let _overwritten = sim.place_infantry_in_ground_key(
+                let _overwritten = Self::place_infantry_in_ground_key(
+                    &sim.interner,
+                    &mut sim.scenario_rng,
+                    &sim.substrate,
                     rules,
                     cell,
                     crate::sim::components::DriveCoord {
@@ -630,12 +624,17 @@ impl Simulation {
             // succeeds. This is the same HouseTracking owner used by a normal
             // Bio Reactor unload; no Unload-only sound/latch/mission effects
             // belong to these ejection paths.
-            sim.restore_absorbed_infantry_tracking(passenger);
+            Self::restore_absorbed_infantry_tracking(
+                &mut sim.substrate,
+                &mut sim.houses,
+                passenger,
+            );
             if infantry {
                 sim.scatter_crew(rules, registry, passenger, effects);
             }
             if !sim.owner_is_human(owner) {
-                sim.queue_crew_mission(passenger, MissionType::Hunt);
+                sim.substrate
+                    .queue_crew_mission(passenger, MissionType::Hunt);
             }
         });
     }
@@ -716,7 +715,7 @@ impl Simulation {
         if !crew_escapes(roll, rules.general.crew_escape) {
             return;
         }
-        let Some(crew) = self.techno_crew_type(rules, side, armed) else {
+        let Some(crew) = techno_crew_type(&mut self.scenario_rng, rules, side, armed) else {
             return;
         };
         let Some(id) = self.construct_crew(rules, &crew, owner, unlimbo, registry, effects) else {
@@ -725,14 +724,14 @@ impl Simulation {
         // Signed Strength/2 (CDQ; SUB; SAR).
         let strength = rules.object(&crew).map_or(0, |object| object.strength);
         let health = self.scenario_rng.next_range_i32_inclusive(5, strength / 2);
-        self.set_crew_health(id, health);
+        self.substrate.set_crew_health(id, health);
         self.scatter_crew(rules, registry, id, effects);
         let mission = if self.owner_is_human(owner) {
             MissionType::Guard
         } else {
             MissionType::Hunt
         };
-        self.queue_crew_mission(id, mission);
+        self.substrate.queue_crew_mission(id, mission);
         if selected_by_player {
             // `0x0073835E`: Select (vt+0x14C) with the voice latch set, as
             // every Logic pass leaves it.
@@ -955,7 +954,9 @@ impl Simulation {
                     Some((team_id, _)) => {
                         sim.team_add_member(team_id, passenger, false, rules, registry, effects);
                     }
-                    None => sim.queue_crew_mission(passenger, MissionType::Hunt),
+                    None => sim
+                        .substrate
+                        .queue_crew_mission(passenger, MissionType::Hunt),
                 }
             }
             // `0x00738174..0x00738180`: Select (vtable `+0x14C`), voice latch
@@ -1210,21 +1211,12 @@ impl Simulation {
             if escaped {
                 self.scatter_crew(rules, registry, id, effects);
                 self.with_object_placement_scope(|sim| {
-                    sim.queue_crew_mission(id, MissionType::Move)
+                    sim.substrate.queue_crew_mission(id, MissionType::Move)
                 });
                 spawned = true;
             }
         }
         spawned
-    }
-
-    /// The survivor's Health: `BuildingClass::SpawnSurvivors` stores it at
-    /// `0x00443214`, a dying unit's crew (`UnitClass::ReceiveDamage`) at
-    /// `0x0073830F`.
-    fn set_crew_health(&mut self, id: u64, health: i32) {
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.health.set(health);
-        }
     }
 
     /// `InfantryClass::Scatter(&EmptyCoord, 1, 0)`. A receiver error leaves
@@ -1249,9 +1241,41 @@ impl Simulation {
             log::debug!("crew {id} did not scatter: {cause}");
         }
     }
+}
 
+/// `TechnoClass::GetCrew @ 0x00707D20` for a Crewed type owned by a house
+/// of `side` (House `+0x1E8`): the side's crew, Technician for any other
+/// side, and a 15% Technician roll for an armed object. A country with no
+/// `Side=` (HouseType `+0xBC == -1`) returns Technician before the roll
+/// at707D81..707D8B. Executed controls: building_sale.py --crew-type.
+fn techno_crew_type(rng: &mut SimRng, rules: &RuleSet, side: i32, armed: bool) -> Option<String> {
+    let general = &rules.general;
+    if side == -1 {
+        return general.technician.clone();
+    }
+    let crew = match side {
+        0 => general.allied_crew.clone(),
+        1 => general.soviet_crew.clone(),
+        2 => general.third_crew.clone(),
+        _ => general.technician.clone(),
+    };
+    if armed && rng.next_range_u32_inclusive(0, 99) < 15 {
+        return general.technician.clone();
+    }
+    crew
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// The survivor's Health: `BuildingClass::SpawnSurvivors` stores it at
+    /// `0x00443214`, a dying unit's crew (`UnitClass::ReceiveDamage`) at
+    /// `0x0073830F`.
+    fn set_crew_health(&mut self, id: u64, health: i32) {
+        if let Some(entity) = self.entities.get_mut(id) {
+            entity.health.set(health);
+        }
+    }
     fn queue_crew_mission(&mut self, id: u64, mission: MissionType) {
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
+        if let Some(entity) = self.entities.get_mut(id) {
             crate::sim::mission::authority::queue_entity_mission_deferred(
                 entity,
                 MissionId::from_known(mission),

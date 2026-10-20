@@ -895,7 +895,7 @@ mod tests {
             .expect("write bad-byte transaction fixture");
 
         let mut invalid_identity = load_fixture_simulation(true);
-        *invalid_identity.next_stable_object_id_mut_for_test() = 0;
+        invalid_identity.set_next_stable_object_id_for_test(0);
         let invalid_identity_path = repository
             .write_named(
                 "invalid-identity.bin",

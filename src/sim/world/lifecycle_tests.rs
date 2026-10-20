@@ -1636,7 +1636,14 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             Some(LocomotorState::for_test_kind(LocomotorKind::Hover));
         let _ = sim.try_reveal_entity(1, common_raw_request(2, 3, 0, 128, 128));
         let current = DriveCoord::cell(2, 3, 0);
-        sim.object_raw_receiver_at(1, current, false);
+        Simulation::object_raw_receiver_at(
+            &mut sim.substrate,
+            &sim.path_grid,
+            &sim.resolved_terrain,
+            1,
+            current,
+            false,
+        );
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         entity.set_foot_occupation_enabled(false);
         entity
@@ -1646,7 +1653,14 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             .hover_runtime_mut()
             .unwrap()
             .set_head(head);
-        sim.object_raw_receiver_at(1, head.unwrap_or(current), true);
+        Simulation::object_raw_receiver_at(
+            &mut sim.substrate,
+            &sim.path_grid,
+            &sim.resolved_terrain,
+            1,
+            head.unwrap_or(current),
+            true,
+        );
         let bits = |sim: &Simulation| {
             if deck {
                 sim.substrate.raw_cell_occupation.deck_bits(cell.0, cell.1)
@@ -1675,7 +1689,14 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             "Mark_All(0) preserves the retained head"
         );
         insert_entity(&mut sim, 2, EntityCategory::Unit);
-        sim.object_raw_receiver_at(2, head.unwrap_or(current), true);
+        Simulation::object_raw_receiver_at(
+            &mut sim.substrate,
+            &sim.path_grid,
+            &sim.resolved_terrain,
+            2,
+            head.unwrap_or(current),
+            true,
+        );
         let _ = sim.techno_limbo(1);
         assert_eq!(
             bits(&sim) & 0x20,
@@ -2214,7 +2235,7 @@ fn gsi_05_05_mapless_fly_uses_dummy_ground_then_bridge_height() {
     let _ = sim.try_reveal_entity(1, common_raw_request(3, 4, 2, 128, 128));
     // A mapless reveal keeps no exact Z; SetHeight writes one over the Dummy
     // cell's ground zero and the OnBridge deck.
-    sim.set_object_height_unmarked(1, 100);
+    Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 1, 100);
     assert_eq!(
         sim.substrate
             .entities
@@ -2269,7 +2290,7 @@ fn gsi_04_07_damage_air_spatial_entry_crossing_and_exit_keep_vector_order() {
             None,
             crate::sim::world::FrameEffects::default(),
         );
-        sim.aircraft_tracker_add(id);
+        Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, id);
     }
     let first = sim.substrate.entities.get(20).unwrap();
     let second = sim.substrate.entities.get(10).unwrap();
@@ -2751,7 +2772,7 @@ fn lifecycle_authority_second_reveal_is_idempotent() {
         }
     );
     let first_position = sim.substrate.entities.get(1).unwrap().position;
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     sim.lifecycle_test_events.clear();
 
     assert_eq!(
@@ -2787,11 +2808,11 @@ fn lifecycle_authority_conceal_without_dirty_eligibility_still_clears_drawn_stat
     let mut sim = Simulation::new();
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     let _ = sim.reveal(1);
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
 
     let _ = sim.object_conceal(1);
     assert_eq!(
-        sim.lifecycle_outputs,
+        sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
             LifecycleOutput::DisplayRemove { stable_id: 1 },
@@ -2813,11 +2834,11 @@ fn lifecycle_authority_conceal_dirty_eligibility_emits_dirty_before_drawn_clear(
         .removal_facts
         .set_dirty_rect_eligible_for_test(true);
     let _ = sim.reveal(1);
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
 
     let _ = sim.object_conceal(1);
     assert_eq!(
-        sim.lifecycle_outputs,
+        sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
             LifecycleOutput::DisplayRemove { stable_id: 1 },
@@ -3622,12 +3643,13 @@ fn occupier_capture_retains_live_non_selling_nav_target() {
     insert_entity(&mut sim, 1, EntityCategory::Infantry);
     insert_entity(&mut sim, 2, EntityCategory::Structure);
     let _ = sim.try_reveal_entity(2, request(9, 11, PlacementEvidence::MarkSucceeded));
-    sim.mission_assign_exact(
-        1,
-        MissionId::from_known(MissionType::Capture),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            1,
+            MissionId::from_known(MissionType::Capture),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
 
     let listener = sim.substrate.entities.get_mut(1).unwrap();
     listener.removal_facts.set_occupier_for_test(true);
@@ -3665,18 +3687,20 @@ fn selling_target_disables_occupier_capture_nav_retention() {
     insert_entity(&mut sim, 1, EntityCategory::Infantry);
     insert_entity(&mut sim, 2, EntityCategory::Structure);
     let _ = sim.try_reveal_entity(2, request(9, 11, PlacementEvidence::MarkSucceeded));
-    sim.mission_assign_exact(
-        1,
-        MissionId::from_known(MissionType::Capture),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
-    sim.mission_assign_exact(
-        2,
-        MissionId::from_known(MissionType::Selling),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            1,
+            MissionId::from_known(MissionType::Capture),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            2,
+            MissionId::from_known(MissionType::Selling),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
 
     let listener = sim.substrate.entities.get_mut(1).unwrap();
     listener.removal_facts.set_occupier_for_test(true);
@@ -4502,7 +4526,12 @@ fn gsi_05_03_duplicate_uninit_repeats_direct_expiry_and_queue_but_finalizes_once
         .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     // As its construction would: Add_Tracking.
-    sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
+    Simulation::update_house_tracking(
+        &mut sim.substrate,
+        &mut sim.houses,
+        1,
+        crate::sim::house_tracking::HouseTracking::add_tracking,
+    );
     let _ = sim.reveal(1);
 
     sim.lifecycle_test_events.clear();
@@ -4642,7 +4671,12 @@ fn lifecycle_authority_uninit_records_once_and_the_drain_removes_the_tracking() 
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
-    sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
+    Simulation::update_house_tracking(
+        &mut sim.substrate,
+        &mut sim.houses,
+        1,
+        crate::sim::house_tracking::HouseTracking::add_tracking,
+    );
 
     sim.uninit(1);
     sim.uninit(1);
@@ -5209,7 +5243,12 @@ fn lifecycle_authority_animated_death_stays_represented_until_uninit() {
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
-    sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
+    Simulation::update_house_tracking(
+        &mut sim.substrate,
+        &mut sim.houses,
+        1,
+        crate::sim::house_tracking::HouseTracking::add_tracking,
+    );
     let _ = sim.reveal(1);
 
     let entity = sim.substrate.entities.get_mut(1).unwrap();
@@ -8267,6 +8306,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     );
     let canonical_path = crate::sim::pathfinding::PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().unwrap(),
+        sim.overlay_grid.as_ref(),
     );
     for rx in 9..=12 {
         assert_eq!(
@@ -8837,7 +8877,7 @@ fn naval_build_const_reveal_conceal_and_reentry_preserve_acquisition_order() {
         .get_mut(&owner)
         .unwrap()
         .set_build_const_order_for_test(vec![20, 10, 20]);
-    sim.remove_build_const_from_owner(20);
+    Simulation::remove_build_const_from_owner(&sim.substrate, &mut sim.houses, 20);
     assert_eq!(sim.houses[&owner].build_const_order(), vec![10, 20]);
     sim.houses
         .get_mut(&owner)
@@ -9258,7 +9298,12 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
             .set_rx_for_test(7 - id as u16);
     }
     let before_sort = sim.state_hash();
-    sim.sort_display_ground(None);
+    Simulation::sort_display_ground(
+        &sim.interner,
+        &sim.terrain_objects,
+        &mut sim.substrate,
+        None,
+    );
     assert_ne!(sim.state_hash(), before_sort);
     assert_eq!(
         sim.substrate.display.members(DisplayLayer::GROUND),
@@ -9271,7 +9316,12 @@ fn display_lifecycle_is_independent_of_logic_and_survives_production_save() {
         restored.substrate.display.members(DisplayLayer::GROUND),
         [2, 3, 4, 1]
     );
-    restored.sort_display_ground(None);
+    Simulation::sort_display_ground(
+        &restored.interner,
+        &restored.terrain_objects,
+        &mut restored.substrate,
+        None,
+    );
     assert_eq!(
         restored.substrate.display.members(DisplayLayer::GROUND),
         [3, 4, 2, 1]
@@ -9438,7 +9488,12 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
                 "remove" => {
                     sim.substrate.display.remove(id);
                 }
-                "sort" => sim.sort_display_ground(Some(&rules)),
+                "sort" => Simulation::sort_display_ground(
+                    &sim.interner,
+                    &sim.terrain_objects,
+                    &mut sim.substrate,
+                    Some(&rules),
+                ),
                 "coordinates" => {
                     let xyz: [i32; 3] =
                         std::array::from_fn(|i| step["xyz"][i].as_i64().unwrap() as i32);
@@ -9481,8 +9536,18 @@ fn mixed_display_lifecycle_matches_original_sequences_and_save_restore() {
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(restored.state_hash(), sim.state_hash(), "{name}");
-        sim.sort_display_ground(Some(&rules));
-        restored.sort_display_ground(Some(&rules));
+        Simulation::sort_display_ground(
+            &sim.interner,
+            &sim.terrain_objects,
+            &mut sim.substrate,
+            Some(&rules),
+        );
+        Simulation::sort_display_ground(
+            &restored.interner,
+            &restored.terrain_objects,
+            &mut restored.substrate,
+            Some(&rules),
+        );
         assert_eq!(restored.state_hash(), sim.state_hash(), "{name}: next sort");
         for id in 1..=actors.len() as u64 {
             if restored.substrate.entities.contains(id) {
@@ -9562,7 +9627,12 @@ fn display_registration_expires_with_a_resubmitted_uninit_owner() {
     sim.process_pending_delete();
     assert!(!sim.substrate.entities.contains(id));
     assert_eq!(sim.substrate.display.layer_of(id), None);
-    sim.sort_display_ground(None);
+    Simulation::sort_display_ground(
+        &sim.interner,
+        &sim.terrain_objects,
+        &mut sim.substrate,
+        None,
+    );
 }
 
 /// `TechnoClass::Unlimbo` snaps the barrel elevation level (`0x006F6DC3`) and
@@ -9664,7 +9734,10 @@ fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
         .unwrap()
         .position
         .set_exact_z_leptons_for_test(Some(512));
-    sim.rocket_move_to(
+    Simulation::rocket_move_to(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
         1,
         crate::sim::components::DriveCoord::cell(25, 12, 0),
         &rules,
@@ -9680,7 +9753,7 @@ fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
         .unwrap()
         .set_mission_state_for_test(4);
     // The tilt's end added the climbing missile to the AircraftTracker.
-    sim.aircraft_tracker_add(1);
+    Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
     let bucket = |sim: &Simulation, cell: (u16, u16)| {
         crate::sim::occupancy::air_spatial_bucket_index(
             cell.0,

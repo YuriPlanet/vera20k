@@ -1323,7 +1323,7 @@ fn set_height_on_a_marked_object_re_marks_it_at_the_head_of_its_cell() {
 fn set_height_on_an_unmarked_object_writes_z_without_marking_it() {
     use crate::sim::occupancy::CellObjectMember::Entity;
     let mut sim = two_marked_units();
-    sim.set_object_height_unmarked(1, 30);
+    Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 1, 30);
     assert_eq!(next_in_cell(&sim, 2), Some(Entity(1)));
     assert_eq!(
         sim.substrate

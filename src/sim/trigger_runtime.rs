@@ -15,7 +15,10 @@ use crate::map::events::EventCondition;
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ini_parser::is_native_none_type_name;
 use crate::rules::ini_value::{crt_atoi, truncate_native_bytes};
+use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 const ACTION_PLAY_SOUND: i32 = 19;
@@ -677,6 +680,21 @@ impl PartialEq for TriggerRuntime {
 impl Eq for TriggerRuntime {}
 
 impl TriggerRuntime {
+    /// Trigger deleting destructor726950 selected by the common725C70 owner.
+    /// Pointer expiry splices this identity out of every live Tag chain.
+    pub(crate) fn delete_live_trigger(&mut self, index: usize) {
+        if self.trigger(index).is_none() {
+            return;
+        }
+        for tag in self.tags.iter_mut().flatten() {
+            tag.triggers.retain(|&t| t != index);
+        }
+        self.trigger_order.retain(|&t| t != index);
+        self.triggers[index] = None;
+        #[cfg(any(test, feature = "test-support"))]
+        self.freed_trace.push("trigger");
+    }
+
     pub(crate) fn has_live_tag(&self, id: usize) -> bool {
         self.tag(id).is_some()
     }
@@ -1082,7 +1100,12 @@ impl Simulation {
             }));
             self.trigger_runtime.trigger_order.push(index);
             // Reset726400 runs BEFORE enabled/difficulty admission.
-            self.reset_trigger_timers(index);
+            Self::reset_trigger_timers(
+                &self.session,
+                &mut self.scenario_rng,
+                &mut self.trigger_runtime,
+                index,
+            );
             let typ = &self.trigger_runtime.definitions.trigger_types[type_index];
             let enabled = typ.enabled && typ.admits_difficulty(difficulty);
             next = typ.linked;
@@ -1099,31 +1122,34 @@ impl Simulation {
         tag_index
     }
 
-    fn reset_trigger_timers(&mut self, index: usize) {
-        let Some(trigger) = self.trigger_runtime.trigger(index) else {
+    fn reset_trigger_timers(
+        session: &ScenarioSession,
+        scenario_rng: &mut SimRng,
+        trigger_runtime: &mut TriggerRuntime,
+        index: usize,
+    ) {
+        let Some(trigger) = trigger_runtime.trigger(index) else {
             return;
         };
         let type_index = trigger.type_index;
-        let event_count = self.trigger_runtime.definitions.trigger_types[type_index]
+        let event_count = trigger_runtime.definitions.trigger_types[type_index]
             .events
             .len();
         for ordinal in 0..event_count {
-            let event = &self.trigger_runtime.definitions.trigger_types[type_index].events[ordinal];
+            let event = &trigger_runtime.definitions.trigger_types[type_index].events[ordinal];
             let duration = match event.kind {
                 13 => event.value.wrapping_mul(LOGICAL_FRAMES_PER_SECOND),
                 51 => {
                     let value = event.value;
-                    let drawn = self.scenario_rng.next_range_i32_inclusive(0, value);
+                    let drawn = scenario_rng.next_range_i32_inclusive(0, value);
                     (value / 2)
                         .wrapping_add(drawn)
                         .wrapping_mul(LOGICAL_FRAMES_PER_SECOND)
                 }
                 _ => continue,
             };
-            let trigger = self.trigger_runtime.triggers[index].as_mut().unwrap();
-            trigger
-                .timer
-                .start(self.session.binary_frame() as i32, duration);
+            let trigger = trigger_runtime.triggers[index].as_mut().unwrap();
+            trigger.timer.start(session.binary_frame() as i32, duration);
             trigger.completed &= !(1u32.wrapping_shl(ordinal as u32));
         }
     }
@@ -1163,7 +1189,8 @@ impl Simulation {
             //4AD2C9 repeats5657A0 after live construction; a miss stamps the
             // same retained Dummy a second time before CellReplace485250.
             let identity = self.trigger_cell_identity(cell);
-            self.replace_cell_trigger_tag(identity, Some(tag));
+            self.trigger_runtime
+                .replace_cell_trigger_tag(identity, Some(tag));
         }
     }
 
@@ -1231,19 +1258,6 @@ impl Simulation {
         NativeCellQuery::canonical(terrain).lookup(cell)
     }
 
-    fn replace_cell_trigger_tag(&mut self, cell: NativeCellIdentity, tag: Option<usize>) {
-        if let Some(previous) = self.trigger_runtime.cell_tags.remove(&cell)
-            && let Some(old) = self.trigger_runtime.tags[previous].as_mut()
-        {
-            old.refs = old.refs.wrapping_sub(1);
-        }
-        if let Some(tag) = tag {
-            self.trigger_runtime.cell_tags.insert(cell, tag);
-            let live = self.trigger_runtime.tags[tag].as_mut().unwrap();
-            live.refs = live.refs.wrapping_add(1);
-        }
-    }
-
     /// Map568CDB..568DCA's fresh InitCellAttributes line-marker subset.
     /// The caller supplies its existing anti-diagonal final cell iterator.
     /// Horizontal25 wins over vertical26 for a Tag carrying both. Flags
@@ -1292,38 +1306,6 @@ impl Simulation {
         }
     }
 
-    fn replace_trigger_tag_attachment(
-        &mut self,
-        attachment: TagAttachment,
-        tag: Option<usize>,
-    ) -> bool {
-        if let Some(previous) = self.trigger_runtime.attachments.remove(&attachment)
-            && let Some(old) = self.trigger_runtime.tags[previous].as_mut()
-            && matches!(attachment, TagAttachment::Object(_))
-        {
-            old.refs = old.refs.wrapping_sub(1);
-        }
-        if let Some(tag) = tag {
-            self.trigger_runtime.attachments.insert(attachment, tag);
-            let live = self.trigger_runtime.tags[tag].as_mut().unwrap();
-            if matches!(attachment, TagAttachment::Object(_)) {
-                live.refs = live.refs.wrapping_add(1);
-            }
-        }
-        tag.is_some()
-    }
-
-    /// Physical Object storage disappears without a SetTag5F5B50 call.
-    /// Steam3e81a617 Object5F3B80, including actual scalar/drain controls in
-    /// tag_lifecycle --damage-events, leaves Tag+2C and the Tag itself intact.
-    /// Remove only the Rust index whose source object no longer exists; no
-    /// counter write, pending ticket, RNG draw or timer change belongs here.
-    pub(crate) fn finalize_object_trigger_tag_attachment(&mut self, object: u64) {
-        self.trigger_runtime
-            .attachments
-            .remove(&TagAttachment::Object(object));
-    }
-
     /// Object+34 nonnull gate; dispatch itself owns Tag liveness.
     pub(crate) fn object_has_trigger_tag(&self, object: u64) -> bool {
         self.trigger_runtime
@@ -1344,7 +1326,8 @@ impl Simulation {
                 })
         });
         let tag = type_index.map(|typ| self.shared_trigger_tag(typ));
-        self.replace_trigger_tag_attachment(TagAttachment::Object(object), tag);
+        self.trigger_runtime
+            .replace_trigger_tag_attachment(TagAttachment::Object(object), tag);
     }
     /// Team constructor6E8D76..6E8D99 allocates an independent Tag rather
     /// than sharing the map TagType instance. Team+70 itself is uncounted;
@@ -1362,123 +1345,48 @@ impl Simulation {
             .position(|id| id.eq_ignore_ascii_case(name))
             .and_then(|index| definitions.team_tags[index]);
         let tag = type_index.map(|typ| self.construct_trigger_tag(typ));
-        self.replace_trigger_tag_attachment(TagAttachment::Team(team), tag);
-    }
-
-    pub(crate) fn attach_team_member_trigger_tag(&mut self, team: u64, object: u64) {
-        // AddMember6EA582..6EA587 skips attachment when Team+70 is NULL,
-        // retaining an authored Object Tag. The B3/Passengers admission gate
-        // belongs to the shared Team caller; Object5F5B50 owns references.
-        // Executed controls: tools/spatial_oracle/team_creation.member_tag.
-        let Some(tag) = self
-            .trigger_runtime
-            .attachments
-            .get(&TagAttachment::Team(team))
-            .copied()
-        else {
-            return;
-        };
-        self.replace_trigger_tag_attachment(TagAttachment::Object(object), Some(tag));
-    }
-
-    /// Team RemoveMember6EA892..6EA8B5 may clear only the Team's own Tag.
-    /// Its caller retains the native House admission gate; authored object
-    /// attachments belonging to another Tag remain intact.
-    pub(crate) fn clear_team_member_trigger_tag(&mut self, team: u64, object: u64) {
-        if let Some(&tag) = self
-            .trigger_runtime
-            .attachments
-            .get(&TagAttachment::Team(team))
-            && self
-                .trigger_runtime
-                .attachments
-                .get(&TagAttachment::Object(object))
-                == Some(&tag)
-        {
-            self.replace_trigger_tag_attachment(TagAttachment::Object(object), None);
-        }
+        self.trigger_runtime
+            .replace_trigger_tag_attachment(TagAttachment::Team(team), tag);
     }
 
     /// Destructor6E8E75..6E8EAB follows member removal. Only a zero-reference
     /// Tag is queued, then the direct Team pointer is cleared without a draw.
-    pub(crate) fn clear_team_trigger_tag(&mut self, team: u64) {
-        if let Some(&tag) = self
-            .trigger_runtime
-            .attachments
-            .get(&TagAttachment::Team(team))
-            && self
-                .trigger_runtime
-                .tag(tag)
-                .is_some_and(|tag| tag.refs == 0)
+    pub(crate) fn clear_team_trigger_tag(
+        substrate: &mut ObjectSubstrate,
+        trigger_runtime: &mut TriggerRuntime,
+        team: u64,
+    ) {
+        if let Some(&tag) = trigger_runtime.attachments.get(&TagAttachment::Team(team))
+            && trigger_runtime.tag(tag).is_some_and(|tag| tag.refs == 0)
         {
-            self.mark_live_tag_for_delete(tag);
+            Self::mark_live_tag_for_delete(substrate, trigger_runtime, tag);
         }
-        self.replace_trigger_tag_attachment(TagAttachment::Team(team), None);
+        trigger_runtime.replace_trigger_tag_attachment(TagAttachment::Team(team), None);
     }
 
-    fn mark_live_trigger_for_delete(&mut self, index: usize) {
-        if let Some(trigger) = self
-            .trigger_runtime
+    fn mark_live_trigger_for_delete(
+        substrate: &mut ObjectSubstrate,
+        trigger_runtime: &mut TriggerRuntime,
+        index: usize,
+    ) {
+        if let Some(trigger) = trigger_runtime
             .triggers
             .get_mut(index)
             .and_then(Option::as_mut)
         {
             trigger.pending = true;
-            self.substrate.pending_delete.queue_trigger(index);
+            substrate.pending_delete.queue_trigger(index);
         }
     }
-    fn mark_live_tag_for_delete(&mut self, index: usize) {
-        if let Some(tag) = self
-            .trigger_runtime
-            .tags
-            .get_mut(index)
-            .and_then(Option::as_mut)
-        {
+    fn mark_live_tag_for_delete(
+        substrate: &mut ObjectSubstrate,
+        trigger_runtime: &mut TriggerRuntime,
+        index: usize,
+    ) {
+        if let Some(tag) = trigger_runtime.tags.get_mut(index).and_then(Option::as_mut) {
             tag.pending = true;
-            self.substrate.pending_delete.queue_tag(index);
+            substrate.pending_delete.queue_tag(index);
         }
-    }
-    fn detach_live_tag(&mut self, index: usize) {
-        //7258D0 -> every Object/Cell, Map577920 and Logic55B880. This does
-        // not set Tag.pending; ProcessTriggerEvent queues its removal separately.
-        self.trigger_runtime.logic_tags.retain(|&tag| tag != index);
-        self.trigger_runtime.map_tags.retain(|&tag| tag != index);
-        for tags in self.trigger_runtime.house_tags.values_mut() {
-            tags.retain(|&tag| tag != index);
-        }
-        let attachments: Vec<_> = self
-            .trigger_runtime
-            .attachments
-            .iter()
-            .filter_map(|(&id, &tag)| (tag == index).then_some(id))
-            .collect();
-        for attachment in attachments {
-            self.replace_trigger_tag_attachment(attachment, None);
-        }
-        let cells: Vec<_> = self
-            .trigger_runtime
-            .cell_tags
-            .iter()
-            .filter_map(|(&cell, &tag)| (tag == index).then_some(cell))
-            .collect();
-        for cell in cells {
-            self.replace_cell_trigger_tag(cell, None);
-        }
-    }
-
-    /// Trigger deleting destructor726950 selected by the common725C70 owner.
-    /// Pointer expiry splices this identity out of every live Tag chain.
-    pub(crate) fn delete_live_trigger(&mut self, index: usize) {
-        if self.trigger_runtime.trigger(index).is_none() {
-            return;
-        }
-        for tag in self.trigger_runtime.tags.iter_mut().flatten() {
-            tag.triggers.retain(|&t| t != index);
-        }
-        self.trigger_runtime.trigger_order.retain(|&t| t != index);
-        self.trigger_runtime.triggers[index] = None;
-        #[cfg(any(test, feature = "test-support"))]
-        self.trigger_runtime.freed_trace.push("trigger");
     }
 
     /// Tag destructor6E4F60 selected by the common725C70 owner. It can
@@ -1495,11 +1403,12 @@ impl Simulation {
         };
         let typ = tag.type_index;
         let triggers = tag.triggers.clone();
-        self.detach_live_tag(index);
+        self.trigger_runtime.detach_live_tag(index);
         // Active-start destructor6E4F60 searches AFTER detach:
         // Find=-1 therefore still decrements the signed cursor.
         let flags = self.trigger_runtime.definitions.classification(typ);
-        self.adjust_tag_destructor_cursors(flags, game_state, started);
+        self.trigger_runtime
+            .adjust_tag_destructor_cursors(flags, game_state, started);
         if (game_state as u8) != 0
             && started
             && self.trigger_runtime.definitions.has_action(typ, 15)
@@ -1526,30 +1435,6 @@ impl Simulation {
         self.trigger_runtime.tags[index] = None;
         #[cfg(any(test, feature = "test-support"))]
         self.trigger_runtime.freed_trace.push("tag");
-    }
-    fn adjust_tag_destructor_cursors(&mut self, flags: u8, game_state: i32, started: bool) {
-        if (game_state as u8) == 0 || !started {
-            return;
-        }
-        for (bit, cursor, count) in [
-            (
-                16,
-                &mut self.trigger_runtime.logic_cursor,
-                self.trigger_runtime.logic_tags.len(),
-            ),
-            (
-                4,
-                &mut self.trigger_runtime.map_cursor,
-                self.trigger_runtime.map_tags.len(),
-            ),
-        ] {
-            if flags & bit != 0 && *cursor >= -1 {
-                *cursor = cursor.wrapping_sub(1);
-                if *cursor < 0 && count == 0 {
-                    *cursor = 0;
-                }
-            }
-        }
     }
 
     /// Selected HasOccurred71E940 predicates. Numeric/timer controls execute
@@ -2030,7 +1915,12 @@ impl Simulation {
             }
         }
         if result && persistence {
-            self.reset_trigger_timers(index);
+            Self::reset_trigger_timers(
+                &self.session,
+                &mut self.scenario_rng,
+                &mut self.trigger_runtime,
+                index,
+            );
         }
         result
     }
@@ -2215,13 +2105,6 @@ impl Simulation {
         self.trigger_runtime.cell_tags.get(&cell).copied()
     }
 
-    /// Pickup481AC1 writes Scenario+34BE only after its optional Tag callback
-    /// survives. Logic55AFB0 consumes and clears this existing serialized flag.
-    /// Steam3e81a617; tools/spatial_oracle/trigger_crate.json.
-    pub(crate) fn mark_crate_pickup_event(&mut self) {
-        self.trigger_runtime.dirty[3] = true;
-    }
-
     /// Foot4D8978..4D8A14, reached from the unique Arrival per-cell owner.
     /// Cell5657A0 and its Tag pointer are retained before the first callback;
     /// each raise re-reads the actor's packed Location cell. Bridge100/400
@@ -2375,29 +2258,6 @@ impl Simulation {
         //and ordinary Fly ingress retain their existing residuals.
     }
 
-    ///6E57C0 reads each linked LIVE Trigger's Type+A0, without enabled,
-    /// pending or difficulty tests.5F5B50 replaces refs, never moves the
-    /// Engineer's attachment and never deletes the old zero-ref Tag here.
-    pub(crate) fn transfer_engineer_tag_to_building(&mut self, engineer: u64, building: u64) {
-        let attachment = TagAttachment::Object(engineer);
-        let Some(&tag) = self.trigger_runtime.attachments.get(&attachment) else {
-            return;
-        };
-        let transfer = self.trigger_runtime.tag(tag).is_some_and(|tag| {
-            tag.triggers.iter().any(|&live| {
-                self.trigger_runtime.trigger(live).is_some_and(|trigger| {
-                    self.trigger_runtime.definitions.trigger_types[trigger.type_index]
-                        .transfer_on_capture
-                })
-            })
-        });
-        if transfer {
-            //519F66 re-reads after the gate; keep the native attachment owner.
-            let tag = self.trigger_runtime.attachments.get(&attachment).copied();
-            self.replace_trigger_tag_attachment(TagAttachment::Object(building), tag);
-        }
-    }
-
     fn trigger_action_context(
         &self,
         type_index: usize,
@@ -2500,7 +2360,11 @@ impl Simulation {
                         overlay_registry,
                         frame_effects,
                     );
-                    self.mark_live_trigger_for_delete(trigger);
+                    Self::mark_live_trigger_for_delete(
+                        &mut self.substrate,
+                        &mut self.trigger_runtime,
+                        trigger,
+                    );
                     result = true;
                     detach_attachment = true;
                     detach_all = true;
@@ -2515,7 +2379,11 @@ impl Simulation {
                             overlay_registry,
                             frame_effects,
                         );
-                        self.mark_live_trigger_for_delete(trigger);
+                        Self::mark_live_trigger_for_delete(
+                            &mut self.substrate,
+                            &mut self.trigger_runtime,
+                            trigger,
+                        );
                         result = true;
                         detach_all = true;
                     }
@@ -2556,15 +2424,17 @@ impl Simulation {
                     .get(&TagAttachment::Object(object))
                     == Some(&index)
             {
-                self.replace_trigger_tag_attachment(TagAttachment::Object(object), None);
+                self.trigger_runtime
+                    .replace_trigger_tag_attachment(TagAttachment::Object(object), None);
             }
             if cell != (0, 0) {
                 let identity = self.trigger_cell_identity(cell);
-                self.replace_cell_trigger_tag(identity, None);
+                self.trigger_runtime
+                    .replace_cell_trigger_tag(identity, None);
             }
         }
         if detach_all {
-            self.detach_live_tag(index);
+            self.trigger_runtime.detach_live_tag(index);
             self.substrate.pending_delete.queue_tag(index);
         }
         result
@@ -2611,7 +2481,12 @@ impl Simulation {
                         .iter()
                         .any(|e| events.contains(&e.kind) && e.value == index)
                     {
-                        self.reset_trigger_timers(live);
+                        Self::reset_trigger_timers(
+                            &self.session,
+                            &mut self.scenario_rng,
+                            &mut self.trigger_runtime,
+                            live,
+                        );
                     }
                 }
                 tag_ordinal += 1;
@@ -2971,7 +2846,11 @@ impl Simulation {
                             .trigger(live)
                             .is_some_and(|trigger| trigger.type_index == target)
                         {
-                            self.mark_live_trigger_for_delete(live);
+                            Self::mark_live_trigger_for_delete(
+                                &mut self.substrate,
+                                &mut self.trigger_runtime,
+                                live,
+                            );
                         }
                     }
                 }
@@ -3010,8 +2889,8 @@ impl Simulation {
                 let Some(target) = self.live_action_house(live, value, rules) else {
                     return false;
                 };
-                self.make_enemy(source, target, rules);
-                self.make_enemy(target, source, rules);
+                self.make_enemy(source, target, rules, false);
+                self.make_enemy(target, source, rules, false);
             }
             23..=27 => {
                 use crate::sim::scenario_session::ScenarioTimerAction;
@@ -3496,8 +3375,23 @@ impl Simulation {
                 let Some(selected) = self.live_action_house(live, value, rules) else {
                     return false;
                 };
-                self.make_ally(owner, selected, rules, overlay_registry, frame_effects);
-                self.make_ally(selected, owner, rules, overlay_registry, frame_effects);
+                // 0x006DE168/0x006DE171 push EBP, null here: no announcement.
+                self.make_ally(
+                    owner,
+                    selected,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                    false,
+                );
+                self.make_ally(
+                    selected,
+                    owner,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                    false,
+                );
             }
             123 | 124 => {
                 // Actual active table entries6DFA0B/6DFA38 dispatch
@@ -3603,7 +3497,12 @@ impl Simulation {
                     let team_id = self
                         .interner
                         .intern(&self.trigger_runtime.definitions.team_types[team]);
-                    self.flash_teams_of_type(team_id, value.unwrap_or(0));
+                    Self::flash_teams_of_type(
+                        &mut self.substrate,
+                        &self.team_script_vm,
+                        team_id,
+                        value.unwrap_or(0),
+                    );
                 }
             }
             4 | 7 | 80 | 107 => {
@@ -3727,7 +3626,7 @@ impl Simulation {
                 // of +90, centre pan2000, volume1.0, no handle. -1 returns at
                 //75093B.
                 if let Some(sound_id) = sound {
-                    self.sound_events.push(SimSoundEvent::VocCentered {
+                    self.sound_events.emit(SimSoundEvent::VocCentered {
                         sound_id: sound_id.to_owned(),
                     });
                     frame_effects.flush_sound(self, rules);
@@ -3743,7 +3642,7 @@ impl Simulation {
                     return false;
                 };
                 if let Ok(kind) = crate::sim::radar::RadarEventType::try_from(value.unwrap_or(0)) {
-                    self.sound_events.push(SimSoundEvent::RadarEvent {
+                    self.sound_events.emit(SimSoundEvent::RadarEvent {
                         radar: crate::sim::radar::RadarEventRequest::new(
                             kind,
                             cell.0 as u16,
@@ -3804,8 +3703,7 @@ impl Simulation {
                     return false;
                 };
                 self.power_states
-                    .entry(owner)
-                    .or_default()
+                    .house_mut(owner)
                     .start_radar_outage(self.session.binary_frame(), value.unwrap_or(0));
             }
             128 => {
@@ -3832,7 +3730,8 @@ impl Simulation {
             127 => {
                 // Execute6DFABF -> ChronoScreen53B460. A nonpositive duration
                 // is a no-op there; the action still returns success.
-                self.start_chrono_screen_effect(value.unwrap_or(0), effects);
+                self.session
+                    .start_chrono_screen_effect(value.unwrap_or(0), effects);
             }
             131 => {
                 // FlashBuildings6E4560..6E45DE: incoming House's live
@@ -3867,7 +3766,7 @@ impl Simulation {
                 let Some(index) = value else {
                     return false;
                 };
-                self.sound_events.push(SimSoundEvent::TriggerEva { index });
+                self.sound_events.emit(SimSoundEvent::TriggerEva { index });
                 frame_effects.flush_sound(self, rules);
             }
             59 => {
@@ -3883,7 +3782,7 @@ impl Simulation {
                 self.session.set_vein_growth(value.unwrap_or(0));
             }
             110 => {
-                effects.extend(self.pause_scenario(value.unwrap_or(0)));
+                effects.extend(self.session.pause_scenario(value.unwrap_or(0)));
             }
             87 => {
                 // Steam3e81a617..08600, Execute6DDBD5..6DDBF3.
@@ -3920,7 +3819,11 @@ impl Simulation {
                 let Some(waypoint) = action.waypoint_index else {
                     return false;
                 };
-                return self.trigger_mark_particle_systems_done_at_waypoint(waypoint as i32);
+                return Self::trigger_mark_particle_systems_done_at_waypoint(
+                    &self.session,
+                    &mut self.substrate,
+                    waypoint as i32,
+                );
             }
             30 => {
                 let (Some(owner), Some(value), Some(rules)) =
@@ -4082,7 +3985,12 @@ impl Simulation {
                                             .as_mut()
                                             .unwrap()
                                             .enabled = true;
-                                        self.reset_trigger_timers(live);
+                                        Self::reset_trigger_timers(
+                                            &self.session,
+                                            &mut self.scenario_rng,
+                                            &mut self.trigger_runtime,
+                                            live,
+                                        );
                                     }
                                 }
                                 ACTION_DISABLE_TRIGGER => {
@@ -4145,7 +4053,7 @@ impl Simulation {
                 };
                 let warhead_ref = self.interner.intern(&rules.bridge_warheads.c4_name);
                 self.combat_light_requests
-                    .push(crate::sim::combat::CombatLightRequest::Impact {
+                    .emit(crate::sim::combat::CombatLightRequest::Impact {
                         target_id: None,
                         damage: match action.kind {
                             64 => 50,
@@ -4310,11 +4218,7 @@ impl Simulation {
                 let Some(type_id) = self.interner.get(name) else {
                     return false;
                 };
-                let Some(instance) = self
-                    .super_weapons
-                    .get_mut(&owner)
-                    .and_then(|weapons| weapons.get_mut(&type_id))
-                else {
+                let Some(instance) = self.super_weapons.instance_mut(&owner, &type_id) else {
                     return false;
                 };
                 match action.kind {
@@ -4420,7 +4324,7 @@ impl Simulation {
                 if !crate::sim::superweapon::lightning_storm::raging(self) {
                     return false;
                 }
-                crate::sim::superweapon::lightning_storm::request_end(self);
+                crate::sim::superweapon::lightning_storm::request_end(&mut self.lightning_storm);
             }
             102 => {
                 // 6DD9EC..6DDAB8: the waypoint's signed centre/Ground/bridge
@@ -4493,6 +4397,137 @@ impl Simulation {
             _ => return false,
         }
         true
+    }
+}
+
+impl TriggerRuntime {
+    fn replace_cell_trigger_tag(&mut self, cell: NativeCellIdentity, tag: Option<usize>) {
+        if let Some(previous) = self.cell_tags.remove(&cell)
+            && let Some(old) = self.tags[previous].as_mut()
+        {
+            old.refs = old.refs.wrapping_sub(1);
+        }
+        if let Some(tag) = tag {
+            self.cell_tags.insert(cell, tag);
+            let live = self.tags[tag].as_mut().unwrap();
+            live.refs = live.refs.wrapping_add(1);
+        }
+    }
+    fn replace_trigger_tag_attachment(
+        &mut self,
+        attachment: TagAttachment,
+        tag: Option<usize>,
+    ) -> bool {
+        if let Some(previous) = self.attachments.remove(&attachment)
+            && let Some(old) = self.tags[previous].as_mut()
+            && matches!(attachment, TagAttachment::Object(_))
+        {
+            old.refs = old.refs.wrapping_sub(1);
+        }
+        if let Some(tag) = tag {
+            self.attachments.insert(attachment, tag);
+            let live = self.tags[tag].as_mut().unwrap();
+            if matches!(attachment, TagAttachment::Object(_)) {
+                live.refs = live.refs.wrapping_add(1);
+            }
+        }
+        tag.is_some()
+    }
+    /// Physical Object storage disappears without a SetTag5F5B50 call.
+    /// Steam3e81a617 Object5F3B80, including actual scalar/drain controls in
+    /// tag_lifecycle --damage-events, leaves Tag+2C and the Tag itself intact.
+    /// Remove only the Rust index whose source object no longer exists; no
+    /// counter write, pending ticket, RNG draw or timer change belongs here.
+    pub(crate) fn finalize_object_trigger_tag_attachment(&mut self, object: u64) {
+        self.attachments.remove(&TagAttachment::Object(object));
+    }
+    pub(crate) fn attach_team_member_trigger_tag(&mut self, team: u64, object: u64) {
+        // AddMember6EA582..6EA587 skips attachment when Team+70 is NULL,
+        // retaining an authored Object Tag. The B3/Passengers admission gate
+        // belongs to the shared Team caller; Object5F5B50 owns references.
+        // Executed controls: tools/spatial_oracle/team_creation.member_tag.
+        let Some(tag) = self.attachments.get(&TagAttachment::Team(team)).copied() else {
+            return;
+        };
+        self.replace_trigger_tag_attachment(TagAttachment::Object(object), Some(tag));
+    }
+    /// Team RemoveMember6EA892..6EA8B5 may clear only the Team's own Tag.
+    /// Its caller retains the native House admission gate; authored object
+    /// attachments belonging to another Tag remain intact.
+    pub(crate) fn clear_team_member_trigger_tag(&mut self, team: u64, object: u64) {
+        if let Some(&tag) = self.attachments.get(&TagAttachment::Team(team))
+            && self.attachments.get(&TagAttachment::Object(object)) == Some(&tag)
+        {
+            self.replace_trigger_tag_attachment(TagAttachment::Object(object), None);
+        }
+    }
+    fn detach_live_tag(&mut self, index: usize) {
+        //7258D0 -> every Object/Cell, Map577920 and Logic55B880. This does
+        // not set Tag.pending; ProcessTriggerEvent queues its removal separately.
+        self.logic_tags.retain(|&tag| tag != index);
+        self.map_tags.retain(|&tag| tag != index);
+        for tags in self.house_tags.values_mut() {
+            tags.retain(|&tag| tag != index);
+        }
+        let attachments: Vec<_> = self
+            .attachments
+            .iter()
+            .filter_map(|(&id, &tag)| (tag == index).then_some(id))
+            .collect();
+        for attachment in attachments {
+            self.replace_trigger_tag_attachment(attachment, None);
+        }
+        let cells: Vec<_> = self
+            .cell_tags
+            .iter()
+            .filter_map(|(&cell, &tag)| (tag == index).then_some(cell))
+            .collect();
+        for cell in cells {
+            self.replace_cell_trigger_tag(cell, None);
+        }
+    }
+    fn adjust_tag_destructor_cursors(&mut self, flags: u8, game_state: i32, started: bool) {
+        if (game_state as u8) == 0 || !started {
+            return;
+        }
+        for (bit, cursor, count) in [
+            (16, &mut self.logic_cursor, self.logic_tags.len()),
+            (4, &mut self.map_cursor, self.map_tags.len()),
+        ] {
+            if flags & bit != 0 && *cursor >= -1 {
+                *cursor = cursor.wrapping_sub(1);
+                if *cursor < 0 && count == 0 {
+                    *cursor = 0;
+                }
+            }
+        }
+    }
+    /// Pickup481AC1 writes Scenario+34BE only after its optional Tag callback
+    /// survives. Logic55AFB0 consumes and clears this existing serialized flag.
+    /// Steam3e81a617; tools/spatial_oracle/trigger_crate.json.
+    pub(crate) fn mark_crate_pickup_event(&mut self) {
+        self.dirty[3] = true;
+    }
+    ///6E57C0 reads each linked LIVE Trigger's Type+A0, without enabled,
+    /// pending or difficulty tests.5F5B50 replaces refs, never moves the
+    /// Engineer's attachment and never deletes the old zero-ref Tag here.
+    pub(crate) fn transfer_engineer_tag_to_building(&mut self, engineer: u64, building: u64) {
+        let attachment = TagAttachment::Object(engineer);
+        let Some(&tag) = self.attachments.get(&attachment) else {
+            return;
+        };
+        let transfer = self.tag(tag).is_some_and(|tag| {
+            tag.triggers.iter().any(|&live| {
+                self.trigger(live).is_some_and(|trigger| {
+                    self.definitions.trigger_types[trigger.type_index].transfer_on_capture
+                })
+            })
+        });
+        if transfer {
+            //519F66 re-reads after the gate; keep the native attachment owner.
+            let tag = self.attachments.get(&attachment).copied();
+            self.replace_trigger_tag_attachment(TagAttachment::Object(building), tag);
+        }
     }
 }
 

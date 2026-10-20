@@ -113,7 +113,8 @@ fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
         entity.passive_scan.set_last_target_scan_frame_for_test(0);
         entity.position.set_exact_z_leptons_for_test(Some(624));
         sim.substrate.entities.insert(entity);
-        sim.mission_assign_exact(id, MissionId::from_known(MissionType::Guard), 0)
+        sim.substrate
+            .mission_assign_exact(id, MissionId::from_known(MissionType::Guard), 0)
             .unwrap();
     }
     sim.resolve_type_handles(rules);
@@ -580,6 +581,7 @@ pub(super) fn retail_hills_collapsed_scene(
         let runtime = &mut scenario.runtime;
         runtime
             .simulation
+            .substrate
             .mission_assign_exact(
                 source,
                 MissionId::from_known(MissionType::Guard),

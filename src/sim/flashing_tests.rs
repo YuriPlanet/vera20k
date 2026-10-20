@@ -222,12 +222,12 @@ fn the_order_flash_asks_the_current_players_one_way_alliance() {
         target_id: tank,
     };
 
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .insert("BRITISH".into(), ["AMERICANS".to_string()].into());
     order(&mut sim, &rules, &grid, attack.clone(), "British");
     assert_eq!(flash(&sim, tank), 0);
 
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .insert("AMERICANS".into(), ["BRITISH".to_string()].into());
     order(&mut sim, &rules, &grid, attack, "British");
     assert_eq!(flash(&sim, tank), 7);

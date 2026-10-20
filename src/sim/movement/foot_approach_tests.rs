@@ -361,7 +361,7 @@ fn the_destroyable_cliff_redirect_takes_the_nearest_imaged_cell() {
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
         32,
     ));
-    sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+    sim.set_playfield_bounds_for_test(Some(crate::sim::arena_fixture::OPEN_PLAYFIELD));
     stamp_destroyable_cliff(&mut sim);
 
     for (target, own, nearest) in [

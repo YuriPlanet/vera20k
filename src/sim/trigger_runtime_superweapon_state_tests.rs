@@ -300,6 +300,7 @@ fn dispatch_matches_original_signed_override_waypoint_and_incoming_house_gates()
         }
         let id = sim.interner.get("NukeSpecial").unwrap();
         sim.super_weapons
+            .map_mut_for_test()
             .get_mut(&other)
             .unwrap()
             .get_mut(&id)
@@ -311,6 +312,7 @@ fn dispatch_matches_original_signed_override_waypoint_and_incoming_house_gates()
             .set_preferred_super_weapon_target(cell(&input["other_preferred"]));
         let instance = sim
             .super_weapons
+            .map_mut_for_test()
             .get_mut(&owner)
             .unwrap()
             .get_mut(&id)
@@ -399,6 +401,7 @@ fn retained_recharge_and_target_survive_snapshot_and_affect_future_state_hash() 
     let id = sim.interner.get("NukeSpecial").unwrap();
     let original = sim.state_hash();
     sim.super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&id)
@@ -426,6 +429,7 @@ fn retained_recharge_and_target_survive_snapshot_and_affect_future_state_hash() 
     assert_eq!(restored.state_hash(), overridden);
     restored
         .super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&id)

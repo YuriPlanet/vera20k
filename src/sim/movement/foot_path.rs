@@ -30,7 +30,10 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
 use crate::sim::pathfinding::CODE2_CHAIN_MAX_HOPS;
 use crate::sim::pathfinding::zone_map::{ZoneGrid, ZoneQueryCell};
+use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::SimSoundEvent;
 use crate::sim::world::Simulation;
 use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::direction_tables::dir_from_facing16;
@@ -370,15 +373,19 @@ impl Simulation {
     /// 750920 receives Rules ScoldSound, centered pan0x2000, volume1 and0.
     /// Clearing is caller-owned: Drive4B3AC9/Ship6A3118 can recurse before
     /// their later clear. Evidence: tools/spatial_oracle/foot_scold_latch.
-    pub(crate) fn play_foot_path_scold(&mut self, id: u64, rules: &RuleSet) {
-        let Some(actor) = self.substrate.entities.get(id) else {
+    pub(crate) fn play_foot_path_scold(
+        substrate: &ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        id: u64,
+        rules: &RuleSet,
+    ) {
+        let Some(actor) = substrate.entities.get(id) else {
             return;
         };
         if actor.navigation.path_runtime().scold_latch_raw() != 0
             && let Some(sound_id) = rules.general.scold_sound.clone()
         {
-            self.sound_events
-                .push(crate::sim::world::SimSoundEvent::VocCentered { sound_id });
+            sound_events.emit(crate::sim::world::SimSoundEvent::VocCentered { sound_id });
         }
     }
 
@@ -397,11 +404,14 @@ impl Simulation {
         // calls the owner's vt+0x548 and returns. So does the admission
         // retry's recursion, whose +640 the retry just expired, unless it is
         // the Foot's first request in a frame the batch answered.
-        if self.defer_path_search(
+        if Self::defer_path_search(
+            &mut self.path_batch,
+            &self.resolved_terrain,
+            &self.overlay_grid,
             request.entity_id,
             super::path_batch::WaitingRequest::NoQueue,
         ) {
-            self.walk_owner_clear_doing(request.entity_id)?;
+            self.substrate.walk_owner_clear_doing(request.entity_id)?;
             return Ok(FootPathOutcome::Returned);
         }
         self.run_walk_path_request(request, rules, registry, frame_effects)
@@ -674,7 +684,7 @@ impl Simulation {
             interner: &self.interner,
             grid,
             terrain: self.resolved_terrain.as_ref(),
-            playfield_bounds: self.playfield_bounds,
+            playfield_bounds: self.playfield_bounds(),
         }
         .reading(
             &self.substrate.entities,
@@ -719,7 +729,7 @@ impl Simulation {
                 path_grid: Some(grid),
                 zone_grid: self.zone_grid.as_ref(),
                 resolved_terrain: self.resolved_terrain.as_ref(),
-                playfield_bounds: self.playfield_bounds,
+                playfield_bounds: self.playfield_bounds(),
                 blocker_neighbor_counts: Some(counts),
             },
             &entry,
@@ -1124,14 +1134,14 @@ impl Simulation {
             zones.bridge_records(),
             &start_cell,
             start_bridge,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )?;
         let goal_projection = live_hierarchy_projection(
             terrain,
             zones.bridge_records(),
             &goal_cell,
             goal_bridge,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )?;
         let hierarchy = zones
             .hierarchy_for(object.movement_zone)
@@ -1189,7 +1199,7 @@ impl Simulation {
                     packed(goal),
                     0,
                     fine_path[count - 2],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1198,7 +1208,7 @@ impl Simulation {
                     packed(goal),
                     0,
                     fine_path[count - 1],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1216,7 +1226,7 @@ impl Simulation {
                     packed(start),
                     0,
                     fine_path[1],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1225,7 +1235,7 @@ impl Simulation {
                     packed(start),
                     0,
                     fine_path[0],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1362,7 +1372,7 @@ impl Simulation {
             .as_ref()
             .ok_or("Foot precheck requires zone topology")?;
         let bounds = self
-            .playfield_bounds
+            .playfield_bounds()
             .ok_or("Foot precheck requires playfield bounds")?;
         let size = self
             .map_size_diamond()
@@ -1454,9 +1464,14 @@ mod tests {
             ));
             sim.zone_grid = Some(zones);
             let goal = DriveCoord::cell(goal_cell.0, goal_cell.1, 0);
-            let request =
-                FootPathRequest::track(&sim.substrate.entities, id, goal, 0, sim.playfield_bounds)
-                    .unwrap();
+            let request = FootPathRequest::track(
+                &sim.substrate.entities,
+                id,
+                goal,
+                0,
+                sim.playfield_bounds(),
+            )
+            .unwrap();
             let found = sim
                 .search_foot_path(
                     &request,

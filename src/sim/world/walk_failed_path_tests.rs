@@ -22,12 +22,13 @@ fn engineer_at(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) -> u64 {
     let id = sim
         .spawn_object("ENGINEER", "Americans", cell.0, cell.1, 0, rules)
         .unwrap();
-    sim.mission_assign_exact(
-        id,
-        MissionId::from_known(MissionType::Move),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            id,
+            MissionId::from_known(MissionType::Move),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
     id
 }
 
@@ -263,12 +264,13 @@ fn jumpjet_infantry_damage_scatter_takes_the_infantry_setter() {
         .spawn_object("JUMPJET", "Americans", 10, 10, 0, &rules)
         .unwrap();
     let attacker = engineer_at(&mut sim, &rules, (8, 10));
-    sim.mission_assign_exact(
-        victim,
-        MissionId::from_known(MissionType::Guard),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            victim,
+            MissionId::from_known(MissionType::Guard),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
     sim.substrate
         .entities
         .get_mut(victim)
@@ -323,12 +325,13 @@ fn infantry_damage_scatter_reaches_the_ordinary_walk_process() {
         ));
     let victim = engineer_at(&mut sim, &rules, (10, 10));
     let attacker = engineer_at(&mut sim, &rules, (8, 10));
-    sim.mission_assign_exact(
-        victim,
-        MissionId::from_known(MissionType::Guard),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            victim,
+            MissionId::from_known(MissionType::Guard),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
     let e = sim.substrate.entities.get_mut(victim).unwrap();
     e.mission_leaf.set_infantry_doing_verified(-1).unwrap();
     // A Target for the hit, so TechnoClass::ReceiveDamage's own scatter tail

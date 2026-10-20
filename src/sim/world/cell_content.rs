@@ -16,9 +16,7 @@ impl Simulation {
     /// Cell+0x44 overlay index, +0x11E data and +0x50 wall owner of a cell
     /// already looked up, as Mark (0x005FC570), DestroyOverlay (0x00480CB0),
     /// ore growth and the bridge writers leave them during play. OverlayGrid
-    /// owns a real cell's; the shared dummy keeps its own index and data. The
-    /// terrain's bridge facts mirror only the map's overlays and the bridges,
-    /// so walls built or destroyed in play never reach them.
+    /// owns a real cell's; the shared dummy keeps its own index and data.
     pub(crate) fn cell_overlay(&self, cell: NativeCellIdentity) -> OverlayCell {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return OverlayCell::default();

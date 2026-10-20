@@ -13,8 +13,10 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{EntityDamageEvent, ReceiverCallFlags};
 use crate::sim::components::DriveCoord;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::{ground_pose, locomotor::MovementLayer};
+use crate::sim::world::ObjectSubstrate;
 
 impl Simulation {
     /// Execute1186E2C20 -> Map588AC0. Clear footprint identities in the
@@ -35,25 +37,25 @@ impl Simulation {
                     .is_none()
             {
                 log::debug!("Map588AC0 source has an unavailable SmudgeType");
-                self.flush_smudge_dirty();
+                Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
                 return false;
             }
         }
-        self.flush_smudge_dirty();
+        Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
         true
     }
 
     /// Successful ReadScenario684C05..684C1B: reverse House array, then
     /// House50D610's reverse full Techno registry. No alive/limbo/class gate.
     /// Repeated calls append duplicates; saved-world restoration never calls it.
-    pub(crate) fn retain_initial_house_technos(&mut self) {
-        for house_index in (0..self.houses.order().len()).rev() {
-            let owner = self.houses.order()[house_index];
-            for index in (0..self.substrate.entities.techno_registry_len()).rev() {
-                let Some(id) = self.substrate.entities.techno_registry_at(index) else {
+    pub(crate) fn retain_initial_house_technos(substrate: &ObjectSubstrate, houses: &mut Houses) {
+        for house_index in (0..houses.order().len()).rev() {
+            let owner = houses.order()[house_index];
+            for index in (0..substrate.entities.techno_registry_len()).rev() {
+                let Some(id) = substrate.entities.techno_registry_at(index) else {
                     continue;
                 };
-                let Some(entity) = self.substrate.entities.get(id) else {
+                let Some(entity) = substrate.entities.get(id) else {
                     continue;
                 };
                 if entity.owner() != owner {
@@ -69,7 +71,7 @@ impl Simulation {
                         crate::util::lepton::lepton_to_cell_packed(y),
                     ),
                 );
-                if let Some(house) = self.houses.get_mut(&owner) {
+                if let Some(house) = houses.get_mut(&owner) {
                     house.retain_initial_techno(record.0, record.1);
                 }
             }
@@ -285,7 +287,7 @@ mod tests {
         }
         let type_id = sim.interner.get("NANRCT").unwrap();
         let rng = sim.scenario_rng.native_state_hex();
-        sim.retain_initial_house_technos();
+        Simulation::retain_initial_house_technos(&sim.substrate, &mut sim.houses);
         // Native50D610 executed controls observe12,12 then10,10 for these
         // original constructor/owner/location inputs. GetCoords' Building
         // center would differ; limbo and foreign identity remain independent.
@@ -296,7 +298,7 @@ mod tests {
             assert_eq!(house.initial_techno_record(index), Some(record));
         }
         let before_append = sim.state_hash();
-        sim.retain_initial_house_technos();
+        Simulation::retain_initial_house_technos(&sim.substrate, &mut sim.houses);
         assert_ne!(sim.state_hash(), before_append);
         assert_eq!(sim.scenario_rng.native_state_hex(), rng);
         let bytes = GameSnapshot::save(&sim, 0, 0, "initial-Techno-history", 0);

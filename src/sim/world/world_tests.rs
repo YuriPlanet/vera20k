@@ -177,6 +177,141 @@ fn game_speed_transition_applies_at_ingress_before_triggers_and_hash() {
     ]));
 }
 
+#[test]
+fn live_game_speed_event_decodes_and_applies_within_its_frame() {
+    // Native opcode 0x0D (EventClass::Execute type 13 @ 0x004C794B): the payload
+    // dword at Event+7 is the new GameSpeed setting (0x00A8EB60). Unlike the
+    // offline SetGameSpeed it applies at the EventClass tail of its frame.
+    let (mut sim, owner) = game_speed_command_sim();
+    let (mut control, _) = game_speed_command_sim();
+
+    // A native 0x0D record for header house 0 (== owner) carrying speed 5.
+    let record = crate::sim::command::GameSpeedRecord {
+        house_id: 0,
+        frame: 1,
+        speed: 5,
+    }
+    .encode()
+    .expect("encode 0x0D notice");
+    let decoded = sim
+        .decode_native_command_record(&record, 1)
+        .expect("a 0x0D record decodes");
+    assert_eq!(decoded.owner, owner);
+    assert_eq!(decoded.payload, Command::LiveGameSpeed { speed: 5 });
+
+    let command = CommandEnvelope::new(owner, 1, Command::LiveGameSpeed { speed: 5 });
+    let result = sim
+        .advance_master_frame(
+            &[command],
+            None,
+            None,
+            67,
+            TickLane::Ordinary,
+            false,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .expect("fixture frame must complete")
+        .into_tick();
+    let control_result = control
+        .advance_master_frame(
+            &[],
+            None,
+            None,
+            67,
+            TickLane::Ordinary,
+            false,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .expect("fixture frame must complete")
+        .into_tick();
+
+    assert!(result.frame_committed);
+    assert_eq!(result.executed_commands, 1);
+    assert_eq!(sim.session.game_options().game_speed, 5);
+    assert_eq!(control.session.game_options().game_speed, 1);
+    assert_ne!(result.state_hash, control_result.state_hash);
+}
+
+#[test]
+fn building_on_off_line_opcodes_decode_direction_and_target() {
+    // Native opcodes 0x01/0x02 (EventClass::Execute branches 0x004C6CF0 /
+    // 0x004C6D4D) drive the Building+660 latch via GoOnline 0x00452260 /
+    // GoOffline 0x00452360; the direction is the opcode, the target the
+    // Abstract token at payload[0..4] (kind 0x34).
+    let (mut sim, owner) = game_speed_command_sim();
+    let mut building = GameEntity::test_default(7, "GAPOWR", "Local", 30, 40);
+    building.set_owner_for_test(owner);
+    sim.substrate.entities.insert(building);
+
+    let on = crate::sim::command::BuildingOnLineRecord {
+        house_id: 0,
+        frame: 1,
+        entity_id: 7,
+        on: true,
+    }
+    .encode()
+    .expect("encode 0x01 On Line");
+    let off = crate::sim::command::BuildingOnLineRecord {
+        house_id: 0,
+        frame: 1,
+        entity_id: 7,
+        on: false,
+    }
+    .encode()
+    .expect("encode 0x02 Off Line");
+
+    let decoded_on = sim
+        .decode_native_command_record(&on, 1)
+        .expect("0x01 decodes");
+    let decoded_off = sim
+        .decode_native_command_record(&off, 1)
+        .expect("0x02 decodes");
+    assert_eq!(decoded_on.owner, owner);
+    assert_eq!(
+        decoded_on.payload,
+        Command::SetBuildingOnLine {
+            entity_id: 7,
+            on: true
+        }
+    );
+    assert_eq!(
+        decoded_off.payload,
+        Command::SetBuildingOnLine {
+            entity_id: 7,
+            on: false
+        }
+    );
+
+    // 0x004C6CF0/0x004C6D4D drop a dead or limboed target before GoOffline.
+    let rules = crate::rules::ruleset::RuleSet::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[BuildingTypes]\n1=GAPOWR\n[GAPOWR]\nPower=-20\n",
+        ),
+    )
+    .unwrap();
+    {
+        let building = sim.substrate.entities.get_mut(7).unwrap();
+        building.set_type_ref_for_test(sim.interner.intern("GAPOWR"));
+        building.set_category_for_test(EntityCategory::Structure);
+        building.lifecycle.set_object_alive_for_test(true);
+        building.lifecycle.set_in_limbo_for_test(true);
+    }
+    let off = Command::SetBuildingOnLine {
+        entity_id: 7,
+        on: false,
+    };
+    assert!(!sim.apply_command("Local", &off, Some(&rules)));
+    assert!(sim.substrate.entities.get(7).unwrap().building_online());
+    sim.substrate
+        .entities
+        .get_mut(7)
+        .unwrap()
+        .lifecycle
+        .set_in_limbo_for_test(false);
+    assert!(sim.apply_command("Local", &off, Some(&rules)));
+    assert!(!sim.substrate.entities.get(7).unwrap().building_online());
+}
+
 /// A launch hashes every frame and a test world none until the caller asks.
 /// Then only a frame whose tick is a multiple of the interval hashes, and its
 /// hash is the state's.
@@ -385,7 +520,7 @@ fn particle_frame_boundary_fixture(frame_count: u16) -> (Simulation, RuleSet) {
         rules.particle_type(ParticleTypeId(0)),
         &mut sim,
     );
-    sim.particle_systems_mut().insert({
+    sim.substrate.particle_systems.insert({
         let mut system =
             ParticleSystem::test_fixture(stable_id, ParticleSystemTypeId(0), IVec3::ZERO);
         system.set_particles_for_test(vec![particle]);
@@ -824,7 +959,7 @@ fn terminal_master_frame_visits_class_sequence_before_exit_without_frame_commit(
 fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() {
     let mut sim = Simulation::new();
     sim.hash_state_every(std::num::NonZeroU64::MIN);
-    sim.sound_events.push(SimSoundEvent::AnimationStarted {
+    sim.sound_events.emit(SimSoundEvent::AnimationStarted {
         anim_id: 9,
         sound_id: "WaterfallLoop".to_owned(),
         world: crate::sim::anim_class::AnimWorldCoord {
@@ -1539,6 +1674,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     assert!(sim.path_grid.as_deref().unwrap().is_walkable(5, 4));
     let projected = PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().expect("terrain"),
+        sim.overlay_grid.as_ref(),
     );
     assert_eq!(
         sim.path_grid.as_deref().unwrap().diff_cells(&projected),
@@ -1741,15 +1877,17 @@ fn dynamic_navigation_publication_composes_structures_bibs_and_bridges() {
         cell.bridge_walkable = true;
         cell.has_bridge_deck = true;
         cell.bridge_deck_level = 4;
-        // A legacy deck (no bit0x100) is intact while its +44 decodes.
-        cell.bridge_facts.overlay_id = Some(0xCD);
     }
+    // A legacy deck (no bit0x100) is intact while its +44 decodes.
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(16, 16);
+    overlays.cell_mut_for_test(2, 1).overlay_id = Some(0xCD);
 
     let mut sim = Simulation::new();
     sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain(
         &terrain, true, 10,
     ));
     sim.resolved_terrain = Some(terrain);
+    sim.overlay_grid = Some(overlays);
     let mut building = make_test_entity("GAREFN", EntityCategory::Structure);
     building.cell_x = 8;
     building.cell_y = 8;
@@ -1781,13 +1919,7 @@ fn dynamic_navigation_publication_composes_structures_bibs_and_bridges() {
         "canonical publication must assign a reachable ground cell"
     );
 
-    sim.resolved_terrain
-        .as_mut()
-        .expect("bridge terrain")
-        .cell_mut_for_test(2, 1)
-        .expect("bridge body cell")
-        .bridge_facts
-        .overlay_id = Some(0xE8);
+    sim.overlay_cell_mut_for_test(2, 1).overlay_id = Some(0xE8);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let collapsed_grid = sim.path_grid().expect("collapsed navigation publication");
     assert!(
@@ -2412,7 +2544,9 @@ fn insert_test_entity_for_owner(
     entity.set_category_for_test(category);
     sim.substrate.entities.insert(entity);
     // As its construction would: Add_Tracking.
-    sim.update_house_tracking(
+    Simulation::update_house_tracking(
+        &mut sim.substrate,
+        &mut sim.houses,
         stable_id,
         crate::sim::house_tracking::HouseTracking::add_tracking,
     );
@@ -2741,6 +2875,7 @@ fn gsi_04_10_in_tick_refresh_updates_the_tail_path_before_consumers() {
     mark_terrain_occupation(&tree, sim.resolved_terrain.as_mut());
     let mut input_path_grid = PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().expect("resolved terrain"),
+        sim.overlay_grid.as_ref(),
     );
     input_path_grid.set_blocked(1, 0, true);
     assert!(!input_path_grid.is_walkable(0, 0));
@@ -2782,6 +2917,7 @@ fn gsi_04_10_zero_occupation_removal_forces_ground_zone_with_same_walkability() 
     );
     let input_path_grid = PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().expect("resolved terrain"),
+        sim.overlay_grid.as_ref(),
     );
     assert!(input_path_grid.is_walkable(0, 0));
     sim.rebuild_zone_grid_full(&input_path_grid);
@@ -2860,8 +2996,13 @@ fn install_rectangular_test_map(sim: &mut Simulation, width: u16, height: u16) {
 
 /// Structural deck fixture for the576BA0 ->47E040 damage path, matching
 /// bridge_body_publication's native anchor25/state15 collapse input.
-/// All four deck slots come from the actual direction6 flag stamp.
-fn structural_bridge_for_damage_dispatch() -> (ResolvedTerrainGrid, BridgeRuntimeState) {
+/// All four deck slots come from the actual direction6 flag stamp; their
+/// overlay fields come back in the returned grid.
+fn structural_bridge_for_damage_dispatch() -> (
+    ResolvedTerrainGrid,
+    BridgeRuntimeState,
+    crate::sim::overlay_grid::OverlayGrid,
+) {
     use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
     let mut terrain = ResolvedTerrainGrid::from_cells(
         10,
@@ -2874,13 +3015,15 @@ fn structural_bridge_for_damage_dispatch() -> (ResolvedTerrainGrid, BridgeRuntim
         BridgeFlagStamp::new((5, 5), 6, true),
         BridgeStampFamily::Nesw,
     );
-    let anchor = terrain.native_cell_identity((5, 5));
-    terrain.write_native_cell_state(anchor, 15);
-    terrain
-        .cell_mut_for_test(5, 5)
-        .unwrap()
-        .bridge_facts
-        .overlay_id = Some(25);
+    // The constructing setter's four slot visits store state 9 (direction
+    // 6); the anchor then carries overlay 25 at state 15.
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(10, 10);
+    for x in [3, 4, 6] {
+        overlays.cell_mut_for_test(x, 5).overlay_data = 9;
+    }
+    let anchor = overlays.cell_mut_for_test(5, 5);
+    anchor.overlay_id = Some(25);
+    anchor.overlay_data = 15;
     let state = BridgeRuntimeState::from_resolved_terrain(&terrain, true, 15);
     for x in 3..=6 {
         assert!(
@@ -2891,13 +3034,13 @@ fn structural_bridge_for_damage_dispatch() -> (ResolvedTerrainGrid, BridgeRuntim
                 .has_structural_bridge()
         );
     }
-    (terrain, state)
+    (terrain, state, overlays)
 }
 
 /// The direction6 structural deck over water: every cell takes
 /// `water_terrain`'s ground, the deck spans (3..=6, 5).
 fn water_under_structural_bridge() -> (ResolvedTerrainGrid, BridgeRuntimeState) {
-    let (mut terrain, _) = structural_bridge_for_damage_dispatch();
+    let (mut terrain, _, _) = structural_bridge_for_damage_dispatch();
     let water = water_terrain(1, 1).cells()[0].clone();
     for cell in terrain.cells_mut_for_test() {
         cell.land_type = water.land_type;
@@ -2920,7 +3063,7 @@ fn structural_bridge_for_fallout(
     water_below: bool,
 ) -> (ResolvedTerrainGrid, BridgeRuntimeState) {
     use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
-    let (mut terrain, _) = structural_bridge_for_damage_dispatch();
+    let (mut terrain, _, _) = structural_bridge_for_damage_dispatch();
     for x in 3..=6 {
         let cell = terrain.cell_mut_for_test(x, 5).unwrap();
         cell.level = ground_level;
@@ -2948,7 +3091,10 @@ fn assert_structural_bridge_collapsed(sim: &Simulation) {
     for x in 3..=6 {
         let cell = sim.resolved_terrain.as_ref().unwrap().cell(x, 5).unwrap();
         assert_eq!(cell.bridge_facts.raw_flags, 0x400, "collapsed cell({x},5)");
-        assert_eq!(cell.bridge_facts.state_byte, 0);
+        assert_eq!(
+            sim.overlay_grid.as_ref().unwrap().cell(x, 5).overlay_data,
+            0
+        );
         assert!(!cell.has_bridge_deck);
         assert!(!cell.bridge_walkable);
         assert!(!cell.bridge_transition);
@@ -2958,13 +3104,7 @@ fn assert_structural_bridge_collapsed(sim: &Simulation) {
         assert!(!published.transition);
     }
     assert_eq!(
-        sim.resolved_terrain
-            .as_ref()
-            .unwrap()
-            .cell(5, 5)
-            .unwrap()
-            .bridge_facts
-            .overlay_id,
+        sim.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_id,
         None,
         "the structural body clears its anchor overlay"
     );
@@ -3843,7 +3983,8 @@ fn native_frame_committed_late_gate_captures_pre_increment_frame() {
     let gate_id = sim
         .spawn_object("GAGATE_A", "Americans", 10, 10, 0, &rules)
         .expect("spawn gate");
-    sim.mission_assign_exact(gate_id, crate::sim::mission::MissionId::NONE, 0)
+    sim.substrate
+        .mission_assign_exact(gate_id, crate::sim::mission::MissionId::NONE, 0)
         .unwrap();
     sim.mission_queue_exact(
         gate_id,
@@ -3853,7 +3994,7 @@ fn native_frame_committed_late_gate_captures_pre_increment_frame() {
         &crate::sim::mission::authority::EntityReadyInputProvider,
     )
     .unwrap();
-    sim.mission_commence_exact(gate_id, 0).unwrap();
+    sim.substrate.mission_commence_exact(gate_id, 0).unwrap();
     assert_eq!(sim.session.binary_frame(), 0, "fresh sim starts at frame 0");
 
     let _ = sim.advance_tick(&[], Some(&rules), None, None, 1);
@@ -4039,7 +4180,7 @@ fn gsi_01_04_house_rung_owns_savour_deadline_and_emits_one_transition_edge() {
         "only the current player's accepted victory emits its EVA edge"
     );
 
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.session.set_tick_for_test(35);
     sim.session.set_binary_frame_for_test(35);
     check_defeat_now(&mut sim, Some(&rules));
@@ -4085,7 +4226,12 @@ fn gsi_05_16_a_captured_insignificant_garrison_does_not_keep_its_house_alive() {
     garrison.set_type_ref_for_test(sim.interner.intern("CAGAS01"));
     garrison.tracking_facts = crate::sim::house_tracking::TrackingFacts::insignificant_for_test();
     sim.substrate.entities.insert(garrison);
-    sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
+    Simulation::update_house_tracking(
+        &mut sim.substrate,
+        &mut sim.houses,
+        1,
+        crate::sim::house_tracking::HouseTracking::add_tracking,
+    );
 
     // The passenger reconciler uses this chokepoint when the first occupant
     // captures a civilian CanBeOccupied building.
@@ -4193,7 +4339,7 @@ fn one_way_alliance_does_not_end_the_game() {
         let b = insert_house_with_counts(&mut sim, "Russians", 1, 1);
         let opponent = insert_house_with_counts(&mut sim, "YuriCountry", 1, 0);
         sim.session.set_current_house_for_test(Some(a));
-        sim.house_alliances = if mutual {
+        *sim.house_alliances_mut_for_test() = if mutual {
             directed_alliances(&[("Americans", "Russians"), ("Russians", "Americans")])
         } else {
             directed_alliances(&[("Americans", "Russians")])
@@ -4603,11 +4749,6 @@ fn assert_concrete_damage_result(sim: &Simulation, native: &serde_json::Value) {
         let expected = row[2].as_u64().unwrap() as u8;
         let cell = sim.resolved_terrain.as_ref().unwrap().cell(x, y).unwrap();
         assert_eq!(
-            cell.bridge_facts.overlay_id,
-            Some(expected),
-            "cell ({x}, {y})"
-        );
-        assert_eq!(
             sim.overlay_grid.as_ref().unwrap().cell(x, y).overlay_id,
             Some(expected)
         );
@@ -4620,7 +4761,6 @@ fn assert_concrete_damage_result(sim: &Simulation, native: &serde_json::Value) {
         assert!(cell.has_bridge_deck);
         let layer = cell.bridge_layer.as_ref().unwrap();
         assert_eq!(layer.direction, BridgeDirection::Low);
-        assert_eq!(layer.overlay_id, expected);
         assert_eq!(layer.deck_level, cell.level);
         assert_eq!(cell.bridge_deck_level, cell.level);
         assert!(!cell.bridge_walkable);
@@ -4671,9 +4811,10 @@ fn test_bridge_walker_collapses_full_3_cell_strip_on_single_hit() {
 #[test]
 fn test_structural_bridge_collapse_preserves_dynamic_navigation_and_snapshot() {
     let mut sim = Simulation::new();
-    let (resolved, bridge_state) = structural_bridge_for_damage_dispatch();
+    let (resolved, bridge_state, overlays) = structural_bridge_for_damage_dispatch();
     sim.resolved_terrain = Some(resolved);
     sim.bridge_state = Some(bridge_state);
+    sim.overlay_grid = Some(overlays);
     crate::sim::arena_fixture::supply_native_map(&mut sim);
 
     // This navigation fixture supplies a foundation at the native (0,0)
@@ -7154,7 +7295,8 @@ fn unit_route_beside_building(
         e.radio_contacts.insert(building_id);
     }
     let grid = PathGrid::clone(&sim.path_grid_snapshot().expect("navigation built"));
-    sim.mission_assign_exact(tank, MissionId::from_known(MissionType::Move), 0)
+    sim.substrate
+        .mission_assign_exact(tank, MissionId::from_known(MissionType::Move), 0)
         .unwrap();
     sim.assign_destination_represented(
         tank,
@@ -8804,7 +8946,7 @@ fn engineer_capture_of_an_ordinary_building_requests_the_radar_event() {
     );
 
     // A second capture one cell away publishes its own request as well.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.announce_engineer_capture(2, player, &rules);
     assert_eq!(
         captured_events(&sim),
@@ -8899,7 +9041,7 @@ fn defeat_of_a_non_passive_house_emits_player_defeated() {
     );
 
     // A house already flagged defeated is not announced again.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     check_defeat_now(&mut sim, Some(&rules));
     assert!(
         sim.sound_events
@@ -9129,7 +9271,7 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     assert_ne!(adjacent, native_id);
     let cursor = sim.native_identity_cursor();
     let rng = sim.scenario_rng.logical_state();
-    let stable_cursor = sim.substrate.next_stable_object_id;
+    let stable_cursor = sim.next_stable_object_id();
     sim.admit_death_debris(packets);
     assert_eq!(
         sim.voxel_anims().get(id).unwrap().native_unique_id(),
@@ -9137,7 +9279,7 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     );
     assert_eq!(sim.native_identity_cursor(), cursor);
     assert_eq!(sim.scenario_rng.logical_state(), rng);
-    assert_eq!(sim.substrate.next_stable_object_id, stable_cursor);
+    assert_eq!(sim.next_stable_object_id(), stable_cursor);
     assert_eq!(sim.live_object_order_snapshot(), [id]);
     sim.debug_assert_logic_membership_consistent();
 }

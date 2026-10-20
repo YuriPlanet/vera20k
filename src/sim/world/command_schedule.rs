@@ -57,6 +57,56 @@ impl Simulation {
             .any(|command| matches!(command.payload, Command::Select { .. }))
     }
 
+    /// Read-only input projection; accepted commands remain the sole authority.
+    pub fn pending_paid_super_weapon_sequence(
+        &self,
+        owner: InternedId,
+        source: InternedId,
+    ) -> Option<u64> {
+        self.pending_commands
+            .iter()
+            .filter_map(|command| match &command.payload {
+                Command::BeginPaidSuperWeapon { selection, .. }
+                    if command.owner == owner && selection.source == source =>
+                {
+                    Some(selection.sequence)
+                }
+                _ => None,
+            })
+            .max()
+    }
+
+    /// Provisional input projection of the existing queue, not a second
+    /// lifecycle. In particular, cancel-before-source-exec and save-before-exec
+    /// need no unsaved client nonce/latch. Admission is still execution-owned.
+    pub fn projected_paid_super_weapon_selection(
+        &self,
+        owner: InternedId,
+    ) -> Option<(crate::sim::superweapon::PaidSuperWeaponSelection, bool)> {
+        let mut selected = self
+            .paid_super_weapon_selection(owner)
+            .map(|ticket| (ticket, false));
+        for command in self
+            .pending_commands
+            .iter()
+            .filter(|command| command.owner == owner)
+        {
+            match command.payload {
+                Command::BeginPaidSuperWeapon { selection, .. } => {
+                    selected = Some((selection, true))
+                }
+                Command::CancelPaidSuperWeapon { selection }
+                | Command::CompletePaidSuperWeapon { selection, .. }
+                    if selected.is_some_and(|(ticket, _)| ticket == selection) =>
+                {
+                    selected = None
+                }
+                _ => {}
+            }
+        }
+        selected
+    }
+
     /// Speed the next ordinary frame will observe after all due offline
     /// Options transitions execute in canonical house/insertion order.
     ///
@@ -76,7 +126,9 @@ impl Simulation {
                 if !self.houses.contains_key(&owner) {
                     continue;
                 }
-                let Command::SetGameSpeed { speed } = &command.payload else {
+                let (Command::SetGameSpeed { speed } | Command::LiveGameSpeed { speed }) =
+                    &command.payload
+                else {
                     continue;
                 };
                 if *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED {
@@ -90,6 +142,11 @@ impl Simulation {
     /// Consume the terminal edge raised by one executed EXIT command.
     pub fn take_executed_exit_owner(&mut self) -> Option<InternedId> {
         self.executed_exit_owner.take()
+    }
+
+    /// Drain the remote EXIT senders the executor recorded.
+    pub fn take_departed_owners(&mut self) -> Vec<InternedId> {
+        std::mem::take(&mut self.departed_owners)
     }
 
     /// Drain commands that are due for the next tick from `pending_commands`.
@@ -234,7 +291,13 @@ impl Simulation {
         let spawned_entity = synchronous_deploy
             || placed_building_owner.is_some()
             || applied && matches!(cmd.payload, Command::PlaceProducedMobile { .. })
-            || applied && matches!(cmd.payload, Command::LaunchSuperWeapon { .. })
+            || applied
+                && matches!(
+                    cmd.payload,
+                    Command::LaunchSuperWeapon { .. }
+                        | Command::CompletePaidSuperWeapon { .. }
+                        | Command::BeginPaidSuperWeapon { .. }
+                )
             || scatter_bridge_before.is_some_and(|(id, before)| {
                 self.substrate
                     .entities

@@ -91,7 +91,12 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
         }
     }
     construct_terrain_objects(&mut s.sim, &trees, &s.rules, false);
-    seed_terrain_spawner_animation(&mut s.sim, &s.rules);
+    seed_terrain_spawner_animation(
+        &s.sim.interner,
+        &mut s.sim.terrain_objects,
+        &s.sim.session,
+        &s.rules,
+    );
     let type_ref = s.sim.interner.get("TIBTRE01").unwrap();
     for &at in &coords {
         let mut animation = TerrainAnimationState::new(
@@ -427,13 +432,11 @@ fn same_frame_ore_terrain_ai_publishes_the_path_view_before_return() {
         .expect("force1 Terrain turn creates actual ore");
     let cell = s.sim.resolved_terrain.as_ref().unwrap().cell(x, y).unwrap();
     assert_eq!(cell.land_type, 5, "native Mark published ore attributes");
-    assert!(
-        s.sim
-            .path_grid
-            .as_ref()
-            .unwrap()
-            .resolved_cell_is_current(cell, false)
-    );
+    assert!(s.sim.path_grid.as_ref().unwrap().resolved_cell_is_current(
+        cell,
+        s.sim.overlay_grid.as_ref(),
+        false
+    ));
     assert!(
         !s.sim
             .overlay_grid

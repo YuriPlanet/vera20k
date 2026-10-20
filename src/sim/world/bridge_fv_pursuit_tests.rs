@@ -144,6 +144,7 @@ fn paid_snapshot(
         "target_speed_fixed_bits":drive.target_speed_fraction().to_bits(),
     });
     let cell = sim.resolved_terrain.as_ref().unwrap().cell(87, 54).unwrap();
+    let live = sim.overlay_grid.as_ref().unwrap().cell(87, 54);
     let bullets: Vec<_> = sim
         .projectiles
         .iter()
@@ -194,8 +195,8 @@ fn paid_snapshot(
         "anim_count":sim.substrate.anims.iter().filter(|(id, _)| !ambient_anims.contains(id)).count(),
         "target_cell":{"land":cell.land_type,"zone_type":cell.zone_type,
             "level":cell.level,"tile":cell.final_tile_index,"subtile":cell.final_sub_tile,
-            "overlay":cell.bridge_facts.overlay_id.map_or(-1,i32::from),
-            "state":cell.bridge_facts.state_byte},
+            "overlay":live.overlay_id.map_or(-1,i32::from),
+            "state":live.overlay_data},
         "rng_sha256":{"main":rng_sha(sim.main_rng.native_state_hex()),"scenario":rng_sha(sim.scenario_rng.native_state_hex()),"mapgen":rng_sha(sim.mapgen_rng.native_state_hex())},
     })
 }

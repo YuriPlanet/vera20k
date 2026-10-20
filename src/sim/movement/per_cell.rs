@@ -68,7 +68,7 @@ impl Simulation {
             |coord| {
                 !crate::sim::cell_rect::cell_is_in_playfield_leptons(
                     (coord.x, coord.y, coord.z),
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                     self.resolved_terrain.as_ref(),
                 )
             },
@@ -155,7 +155,12 @@ impl Simulation {
                 effects,
             );
             // `0x0073A52B`: ILoco+0x5C, Hover's override included.
-            self.locomotor_power_off(id);
+            Self::locomotor_power_off(
+                &mut self.scenario_rng,
+                &mut self.substrate,
+                &self.resolved_terrain,
+                id,
+            );
             return true;
         }
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -325,7 +330,7 @@ impl Simulation {
                 &[victim],
                 &self.substrate.entities,
                 id,
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 &self.interner,
                 (coord.x, coord.y),
                 capability,
@@ -450,7 +455,7 @@ impl Simulation {
         };
         if let Some(sound) = flags.crush_sound.as_ref() {
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::wall_crushed(
+                .emit(crate::sim::world::SimSoundEvent::wall_crushed(
                     sound.clone(),
                     &actor.position,
                 ));
@@ -722,7 +727,7 @@ impl Simulation {
         );
         let _ =
             self.set_unit_destination(id, NavTargetRef::cell(post.0, post.1), rules, true, effects);
-        let _ = self.mission_commence_exact(id, now);
+        let _ = self.substrate.mission_commence_exact(id, now);
         if let Some(unit) = self.substrate.entities.get_mut(id) {
             unit.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(post.0, post.1)));
         }
@@ -1318,7 +1323,7 @@ impl Simulation {
             .get(id)
             .map(|entity| super::foot_path::coord_cell(position_world_coord(&entity.position)));
         // Partial worlds without a configured Map cannot admit an exit.
-        if let (Some((x, y)), Some(bounds)) = (cell, self.playfield_bounds)
+        if let (Some((x, y)), Some(bounds)) = (cell, self.playfield_bounds())
             && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(x), i32::from(y)),
                 Some(bounds),

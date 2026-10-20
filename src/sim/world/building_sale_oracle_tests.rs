@@ -198,7 +198,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
     assert!(building.building_down(), "the sale commenced");
     building.mission.set_handler_state(1);
     sim.scenario_rng = SimRng::new(seed);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     (s, passengers)
 }
 
@@ -263,7 +263,7 @@ fn replay_crew_row(row: &Value) {
     let rules = &s.scene.rules;
     let sim = &mut s.scene.sim;
     assert_eq!(
-        i64::from(sim.building_survivor_count(rules, refinery, false)),
+        i64::from(sim.building_survivor_count(rules, refinery)),
         row["survivors"].as_i64().unwrap(),
         "{context}: How_Many_Survivors"
     );

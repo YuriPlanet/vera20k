@@ -169,7 +169,7 @@ pub(crate) fn drive_local_player_outcome_voice_wait(state: &mut AppState, wall_m
     let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome).to_string();
     let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome).to_string();
     let destination = crate::app::match_runtime::scenario_exit::scenario_exit_destination(
-        state.match_state.session.mode(),
+        state.match_state.session_mode(),
         outcome,
         state.match_state.map_basic.skip_score.unwrap_or(false),
         title,
@@ -363,12 +363,22 @@ fn resolve_score_rows(
     rows
 }
 
+/// The 0x108 title: the proc writes `GUI:SkirmishScore` for GameMode 5 and
+/// `GUI:MultiplayerScore` otherwise (`0x005C9BDF..0x005C9C34`).
+fn score_title_key(mode: SessionMode) -> &'static str {
+    if mode == SessionMode::Skirmish {
+        "GUI:SkirmishScore"
+    } else {
+        "GUI:MultiplayerScore"
+    }
+}
+
 /// Resolve the end-of-match score presentation from a sim-owned raw snapshot.
 ///
 /// Simulation owns contender admission, raw statistics, displayed-score bonus
 /// calculation, and its Scenario RNG draws. This app helper resolves names,
-/// colours, the local side, elapsed wall time, and display order. Exact native
-/// score-dialog traversal remains UNCHECKED.
+/// colours, the local side, the title, elapsed wall time, and display order;
+/// the traversal itself is `sim::score`'s.
 fn build_score_screen_model(
     state: &AppState,
     elapsed_seconds: i32,
@@ -403,9 +413,7 @@ fn build_score_screen_model(
         .map_or(0, |house| house.side_index());
 
     ScoreScreenModel {
-        // A stock offline skirmish takes the skirmish heading; the networked
-        // heading belongs to the multiplayer session type.
-        title_key: "GUI:SkirmishScore",
+        title_key: score_title_key(state.match_state.session_mode()),
         game_number: state.frontend.finished_game_count,
         // The clock performs native's signed division first. The existing UI
         // model is unsigned and applies the native 99:59:59 ceiling, so keep
@@ -586,6 +594,11 @@ pub(crate) struct RuntimePassInputs {
     /// block). Pause/menu service blocking is applied by the decision, not by
     /// the pacer consult.
     pub(crate) pacer_timing_admits: bool,
+    /// `Wait_For_Players` is waiting for a peer's frames: no frame commits.
+    pub(crate) network_wait: bool,
+    /// Its dialog 0xEA is open: the wait loop stops servicing tactical input
+    /// and drawing (`0x006497EC` needs `!bVar2`).
+    pub(crate) network_dialog_open: bool,
 }
 
 /// The admission outcome of one runtime pass.
@@ -605,7 +618,7 @@ pub(crate) struct RuntimePassDecision {
 /// network-modal frame keeps its non-`Ordinary` lane. `sidebar_credit_gate_matrix`
 /// pins the matrix through this function.
 pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecision {
-    if inputs.exact_step {
+    if inputs.exact_step && !inputs.network_wait {
         // Exact diagnostic stepping is an explicit request, not a wall-clock
         // modal pump: it advances exactly one Ordinary frame even while the
         // app is paused, and never records pacer admission.
@@ -635,6 +648,7 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
                 SessionMode::Campaign | SessionMode::Skirmish
             ))
         && inputs.startup_admitted
+        && !inputs.network_wait
         && (inputs.frame_stepping || pacer_admitted);
     let tick_lane = if inputs.paused && inputs.session_mode.is_network() {
         TickLane::NetworkModal
@@ -645,7 +659,7 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
         run_sim,
         tick_lane,
         admitted_by_pacer: run_sim && !inputs.frame_stepping && pacer_admitted,
-        tactical_mutation: service.tactical_mutation,
+        tactical_mutation: service.tactical_mutation && !inputs.network_dialog_open,
         // Main_Tick polls GScreen input at 0x55D8AB. ThrottleFrame's offline
         // modes 0/5 skip its extra poll at 0x55E253, so a redraw during that
         // wait must neither scroll nor latch a right drag. Native executions:
@@ -655,6 +669,7 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
         scroll_input: inputs.window_active
             && inputs.startup_admitted
             && service.tactical_mutation
+            && !inputs.network_dialog_open
             && (run_sim
                 || (inputs.paused && !inputs.menu_open)
                 || inputs.session_mode.is_network()),
@@ -745,6 +760,7 @@ fn advance_in_game_runtime_mode(
     mode: RuntimeAdvanceMode,
     startup_admitted: bool,
 ) {
+    crate::app::input::commands::reconcile_paid_super_weapon_cursor(state);
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
     let pacer_timing_admits = match mode {
@@ -792,7 +808,7 @@ fn advance_in_game_runtime_mode(
     if service_live
         && scenario_paused
         && matches!(
-            state.match_state.session.mode(),
+            state.match_state.session_mode(),
             SessionMode::Campaign | SessionMode::Skirmish
         )
         && pacer_timing_admits
@@ -811,8 +827,10 @@ fn advance_in_game_runtime_mode(
         paused: state.match_state.paused(),
         scenario_paused,
         menu_open: state.match_state.match_presentation.in_game_menu.is_open(),
-        session_mode: state.match_state.session.mode(),
+        session_mode: state.match_state.session_mode(),
         pacer_timing_admits,
+        network_wait: state.match_state.network_wait.waiting(),
+        network_dialog_open: state.match_state.network_wait.dialog_open(),
     });
     if frame_stepping {
         state.diag.debug_frame_step_requested = false;
@@ -1429,6 +1447,22 @@ fn advance_one_simulation_frame(
         }
 
         for message in hud_messages {
+            // MPlayer_Defeated's local branch sets the chat mask
+            // (0x004FC23E) before it posts its line (0x004FC271).
+            if let crate::app::input::messages::HudMessage::PlayerDefeated(house) = message
+                && state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .and_then(|runtime| runtime.simulation.session().current_house())
+                    == Some(house)
+            {
+                state
+                    .match_state
+                    .match_presentation
+                    .chat
+                    .local_player_defeated();
+            }
             crate::app::input::messages::post_hud_message(state, message);
         }
 
@@ -1850,15 +1884,15 @@ pub(crate) fn screen_point_to_world_with_camera(
     (screen.0 / zoom + camera.0, screen.1 / zoom + camera.1)
 }
 
-/// Borrow current real-cell flags for the inverse. There is no retained app
-/// bridge projection to invalidate after collapse, repair or world replacement.
-/// Native 6D674C resolves the current cell before reading 0x100/0x800; see
+/// Borrow current real-cell levels and flags for the inverse. There is no app
+/// projection to invalidate after collapse, tile changes or world replacement.
+/// Native 6D674C resolves the current cell before reading level/0x100/0x800; see
 /// tools/bridge_click_state_oracle/README.md.
-pub(crate) fn tactical_bridge_cells(
+pub(crate) fn tactical_cells(
     sim: &crate::sim::world::Simulation,
-) -> Option<&dyn terrain::TacticalBridgeLookup> {
+) -> Option<&dyn terrain::TacticalCellLookup> {
     sim.resolved_terrain()
-        .map(|terrain| terrain as &dyn terrain::TacticalBridgeLookup)
+        .map(|terrain| terrain as &dyn terrain::TacticalCellLookup)
 }
 
 /// Shared owner for world-space point -> map-cell resolution in the app layer.
@@ -1868,15 +1902,13 @@ pub(crate) fn tactical_bridge_cells(
 pub(crate) fn world_point_to_cell(
     world_x: f32,
     world_y: f32,
-    height_map: &std::collections::BTreeMap<(u16, u16), u8>,
-    bridge_cells: Option<&dyn terrain::TacticalBridgeLookup>,
+    cells: Option<&dyn terrain::TacticalCellLookup>,
 ) -> (u16, u16) {
     let inverse = terrain::screen_to_cell_tactical_inverse(
         world_x,
         world_y,
         terrain::TacticalInverseContext {
-            height_map,
-            bridge_cells,
+            cells,
             viewport_offset_x: 0.0,
             viewport_offset_y: 0.0,
         },
@@ -1906,10 +1938,9 @@ pub(crate) fn screen_point_to_world_cell(
     world_point_to_cell(
         world_x,
         world_y,
-        state.height_map(),
-        state.sim_view().and_then(|view| {
-            crate::app::match_runtime::sim_tick::tactical_bridge_cells(view.simulation())
-        }),
+        state
+            .sim_view()
+            .and_then(|view| tactical_cells(view.simulation())),
     )
 }
 
@@ -2105,7 +2136,14 @@ mod tests {
         }
 
         assert_eq!(
-            world_point_to_cell(world_x, world_y, &height_map, None),
+            world_point_to_cell(
+                world_x,
+                world_y,
+                Some(&crate::map::terrain::TacticalCellFixture {
+                    levels: &height_map,
+                    bridges: None
+                })
+            ),
             (rx, ry)
         );
     }
@@ -2125,8 +2163,10 @@ mod tests {
             world_x,
             world_y,
             crate::map::terrain::TacticalInverseContext {
-                height_map: &height_map,
-                bridge_cells: Some(&bridge_cells),
+                cells: Some(&crate::map::terrain::TacticalCellFixture {
+                    levels: &height_map,
+                    bridges: Some(&bridge_cells),
+                }),
                 viewport_offset_x: 0.0,
                 viewport_offset_y: 0.0,
             },
@@ -2137,7 +2177,14 @@ mod tests {
         };
 
         assert_eq!(
-            world_point_to_cell(world_x, world_y, &height_map, Some(&bridge_cells)),
+            world_point_to_cell(
+                world_x,
+                world_y,
+                Some(&crate::map::terrain::TacticalCellFixture {
+                    levels: &height_map,
+                    bridges: Some(&bridge_cells)
+                })
+            ),
             (
                 expected_rx.round().max(0.0) as u16,
                 expected_ry.round().max(0.0) as u16,
@@ -2149,7 +2196,14 @@ mod tests {
     fn world_point_to_cell_clamps_negative_results_to_zero() {
         let height_map = BTreeMap::new();
         assert_eq!(
-            world_point_to_cell(-500.0, -500.0, &height_map, None),
+            world_point_to_cell(
+                -500.0,
+                -500.0,
+                Some(&crate::map::terrain::TacticalCellFixture {
+                    levels: &height_map,
+                    bridges: None
+                })
+            ),
             (0, 0)
         );
     }
@@ -2162,9 +2216,18 @@ mod camera_cadence_tests;
 #[cfg(test)]
 mod modal_pump_tests {
     use super::{
-        SessionMode, modal_pump_should_advance_sim, resolve_score_rows, should_record_replay_tick,
-        wall_clock_service_admission,
+        SessionMode, modal_pump_should_advance_sim, resolve_score_rows, score_title_key,
+        should_record_replay_tick, wall_clock_service_admission,
     };
+
+    /// 0x005C9BE7: only GameMode 5 retitles 0x108.
+    #[test]
+    fn only_skirmish_retitles_the_score_dialog() {
+        assert_eq!(score_title_key(SessionMode::Skirmish), "GUI:SkirmishScore");
+        for mode in [SessionMode::Lan, SessionMode::Wol, SessionMode::Other] {
+            assert_eq!(score_title_key(mode), "GUI:MultiplayerScore");
+        }
+    }
 
     #[test]
     fn empty_natural_terminal_score_frame_is_recorded() {
@@ -2407,10 +2470,13 @@ mod modal_pump_tests {
         let mut sim = crate::sim::world::Simulation::with_seed(1);
         let player = sim.intern("Player");
         let computer = sim.intern("Computer1");
-        sim.houses_mut_for_test()
-            .register(HouseState::new(player, 0, None, true, 0, 10));
-        sim.houses_mut_for_test()
-            .register(HouseState::new(computer, 1, None, false, 0, 10));
+        let mut player_house = HouseState::new(player, 0, None, true, 0, 10);
+        player_house
+            .set_ui_name_for_test(crate::sim::house_state::HouseUiName::handle("[New Player]"));
+        let mut computer_house = HouseState::new(computer, 1, None, false, 0, 10);
+        computer_house.set_ui_name_for_test(crate::sim::house_state::HouseUiName::Computer);
+        sim.houses_mut_for_test().register(player_house);
+        sim.houses_mut_for_test().register(computer_house);
         let row = |owner, losses| crate::sim::score::TerminalScoreRowSnapshot {
             owner,
             country: None,
@@ -2438,7 +2504,7 @@ mod modal_pump_tests {
             &sim,
             &snapshot,
             &crate::app::presentation::house_ui::HouseUiSources {
-                handle: Some("[New Player]"),
+                csf: None,
                 computer: "Computer",
                 schemes: &schemes,
                 colors: &colors,
@@ -2456,12 +2522,17 @@ mod modal_pump_tests {
                 ("[New Player]", [34, 105, 212], 15)
             ]
         );
-        // Without a skirmish session a human row falls back.
+        // A House still holding its type's UIName shows its country, else
+        // its House name.
+        sim.houses_mut_for_test()
+            .get_mut(&player)
+            .unwrap()
+            .set_ui_name_for_test(crate::sim::house_state::HouseUiName::TypeName);
         let rows = resolve_score_rows(
             &sim,
             &snapshot,
             &crate::app::presentation::house_ui::HouseUiSources {
-                handle: None,
+                csf: None,
                 computer: "Computer",
                 schemes: &schemes,
                 colors: &colors,
@@ -2469,5 +2540,25 @@ mod modal_pump_tests {
             |_| None,
         );
         assert_eq!(rows[1].name, "Player");
+        // A map `UIName=` key resolves through the string table, then the
+        // field keeps 20 characters (500CD7..500CEC).
+        sim.houses_mut_for_test()
+            .get_mut(&player)
+            .unwrap()
+            .set_ui_name_for_test(crate::sim::house_state::HouseUiName::Csf(
+                "Name:AVeryLongHouseUiNameKey".into(),
+            ));
+        let rows = resolve_score_rows(
+            &sim,
+            &snapshot,
+            &crate::app::presentation::house_ui::HouseUiSources {
+                csf: None,
+                computer: "Computer",
+                schemes: &schemes,
+                colors: &colors,
+            },
+            |_| None,
+        );
+        assert_eq!(rows[1].name, "Name:AVeryLongHouseU");
     }
 }

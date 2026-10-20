@@ -31,7 +31,7 @@ fn fixture(rules: &RuleSet, producer: &str, backup: bool) -> (SimRuntime, Intern
     sim.resolve_type_handles(rules);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
-    sim.input_delay_ticks = 0;
+    sim.set_input_delay_ticks(0);
     let owner = sim.interner.intern("Americans");
     let enemy = sim.interner.intern("Russians");
     for (id, human, cash) in [(owner, true, 10_000), (enemy, true, 0)] {

@@ -72,6 +72,10 @@
 //! - Part of sim/ — depends on sibling movement state only.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::sim::rng::SimRng;
+use crate::sim::world::ObjectSubstrate;
+
 impl crate::sim::world::Simulation {
     /// ILocomotion+0x5C, `Power_Off`, on `id`'s active locomotor: Hover's
     /// override (`0x00516BF0`, [`Self::hover_power_off`]) or the base
@@ -81,12 +85,16 @@ impl crate::sim::world::Simulation {
     /// steps and a stop while moving) is not ported. None of the callers
     /// reaches it: they are a Unit's dock and depot service and Deactivate,
     /// which the stock `PoweredUnit=` type (a Hover) alone reaches.
-    pub(crate) fn locomotor_power_off(&mut self, id: u64) {
-        if self.hover_power_off(id) {
+    pub(crate) fn locomotor_power_off(
+        scenario_rng: &mut SimRng,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+    ) {
+        if Self::hover_power_off(scenario_rng, substrate, resolved_terrain, id) {
             return;
         }
-        if let Some(locomotor) = self
-            .substrate
+        if let Some(locomotor) = substrate
             .entities
             .get_mut(id)
             .and_then(|entity| entity.locomotor.as_mut())

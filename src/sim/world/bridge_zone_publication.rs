@@ -196,7 +196,7 @@ mod tests {
         assert_eq!(bridges.endpoint_records().len(), 1);
         assert!(!bridges.endpoint_records()[0].active);
         bridges.test_set_endpoint_records(Vec::new());
-        let mut path = PathGrid::from_resolved_terrain_with_bridges(&terrain);
+        let mut path = PathGrid::from_resolved_terrain_with_bridges(&terrain, None);
         path.set_blocked(7, 7, true); // Retained structure blocking.
         let mut sim = Simulation::with_seed(31);
         sim.install_resolved_terrain_for_new_map(terrain);

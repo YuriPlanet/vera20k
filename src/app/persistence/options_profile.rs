@@ -101,11 +101,10 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) network_send_delay: bool,
     pub(crate) network_port: i32,
 
-    // [WOnline] LobMusic: read by `WOL_Main`'s settings reader `0x0077DED0`
-    // (`ReadInt`, default 1) from the same RA2MD.INI object into
-    // `[0x00B7690C]`, outside OptionsClass. Read-only here; this route never
-    // writes it back.
-    pub(crate) wol_lobby_music: i32,
+    // [WOnline]'s nine WOL preferences, outside OptionsClass: the same
+    // RA2MD.INI object `WOL_Main`'s reader `0x0077DED0` reads at every WOL
+    // entry and WOL Options' writer `0x0077DFD0` writes.
+    pub(crate) wol_preferences: crate::ui::wol_options::WolPreferences,
 
     // [VERA]: VERA's display preferences, not part of OptionsClass.
     /// Whether the window opens full screen. While the game runs the window
@@ -119,9 +118,9 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) original_shape: bool,
     /// The Options page's battle sidebar size.
     pub(crate) sidebar: crate::ui::main_menu_dialogs::options::SidebarSize,
-    /// Whether the startup splash and the menu movie use Red Alert 2's art
-    /// instead of Yuri's Revenge's: the Options page's RA2 Loading & Menu Movie.
-    pub(crate) ra2_look: bool,
+    /// Whether shell art uses Yuri's Revenge's original assets. Off by default,
+    /// so new profiles use Red Alert 2's style where the games have variants.
+    pub(crate) yr_original_style: bool,
     /// `[VERA] RenderInterpolation=`: client-only motion smoothing. This
     /// prototype defaults on; it never changes the simulation rate or saves.
     pub(crate) render_interpolation: bool,
@@ -190,12 +189,12 @@ impl Default for RetailOptionsProfile {
             network_destination: String::new(),
             network_send_delay: false,
             network_port: 0,
-            wol_lobby_music: 1,
+            wol_preferences: Default::default(),
             full_screen: false,
             zoom: crate::ui::main_menu_dialogs::options::Zoom::Auto,
             original_shape: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
-            ra2_look: false,
+            yr_original_style: false,
             render_interpolation: true,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
@@ -401,9 +400,7 @@ impl RetailOptionsProfile {
         let multiplayer = ini.section_or_empty("MultiPlayer");
         self.network_send_delay = multiplayer.read_bool("SendDelay", false);
         self.network_port = multiplayer.read_int("PortNumberOverride", 0);
-        if let Some(wonline) = ini.section(WONLINE_SECTION) {
-            self.wol_lobby_music = wonline.read_int("LobMusic", self.wol_lobby_music);
-        }
+        self.wol_preferences = read_wol_preferences(ini.section_or_empty(WONLINE_SECTION));
 
         if let Some(vera) = ini.section(VERA_SECTION) {
             self.full_screen = vera.read_bool("FullScreen", self.full_screen);
@@ -414,7 +411,7 @@ impl RetailOptionsProfile {
             self.sidebar = crate::ui::main_menu_dialogs::options::SidebarSize::from_ini_value(
                 vera.read_int("Sidebar", self.sidebar.ini_value()),
             );
-            self.ra2_look = vera.read_bool("RA2Look", self.ra2_look);
+            self.yr_original_style = vera.read_bool("YROriginalStyle", self.yr_original_style);
             self.render_interpolation =
                 vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.shift_queue = vera.read_bool("ShiftQueue", self.shift_queue);
@@ -505,7 +502,10 @@ impl RetailOptionsProfile {
                     format_bool(self.original_shape).to_string(),
                 ),
                 ("Sidebar", self.sidebar.ini_value().to_string()),
-                ("RA2Look", format_bool(self.ra2_look).to_string()),
+                (
+                    "YROriginalStyle",
+                    format_bool(self.yr_original_style).to_string(),
+                ),
                 ("ShiftQueue", format_bool(self.shift_queue).to_string()),
                 ("ShiftQueueCount", self.shift_queue_count.to_string()),
                 (
@@ -547,7 +547,8 @@ impl RetailOptionsProfile {
             .collect();
         let output =
             crate::util::ini_writer::set_ini_byte_values(&output, NETWORK_SECTION, &network);
-        apply_formatted_section(&output, VERA_SECTION, &formatted.vera)
+        let output = apply_formatted_section(&output, VERA_SECTION, &formatted.vera);
+        crate::util::ini_writer::remove_ini_keys(&output, VERA_SECTION, &["RA2Look"])
     }
 
     /// Commit the complete modeled profile with one read and one write.
@@ -572,6 +573,37 @@ impl RetailOptionsProfile {
             |path| std::fs::read(path),
             |path, bytes| std::fs::write(path, bytes),
             |input| self.transform_network_options(input),
+        )
+    }
+
+    /// WOL Options' writer `0x0077DFD0`: the nine `[WOnline]` keys in the
+    /// reader's order, `WriteInt` decimal then `WriteBool` yes/no, and then
+    /// `INIClass::Save`. Every other section and key is left as it is.
+    pub(crate) fn commit_wol_preferences(&self, ra2_dir: &Path) -> io::Result<()> {
+        commit_transformed_profile(
+            ra2_dir,
+            |path| std::fs::read(path),
+            |path, bytes| std::fs::write(path, bytes),
+            |input| self.transform_wol_preferences(input),
+        )
+    }
+
+    fn transform_wol_preferences(&self, input: &[u8]) -> Vec<u8> {
+        let p = &self.wol_preferences;
+        apply_formatted_section(
+            input,
+            WONLINE_SECTION,
+            &[
+                ("AllowPage", p.allow_page.to_string()),
+                ("AllowFind", p.allow_find.to_string()),
+                ("LangFilter", p.lang_filter.to_string()),
+                ("LobMusic", p.lobby_music.to_string()),
+                ("ShowAll", p.show_all.to_string()),
+                ("DisplayAsian", p.display_asian.to_string()),
+                ("DisplayLatin", p.display_latin.to_string()),
+                ("DisplayBuddies", format_bool(p.display_buddies).to_owned()),
+                ("DisplayClan", format_bool(p.display_clan).to_owned()),
+            ],
         )
     }
 
@@ -615,6 +647,24 @@ fn commit_transformed_profile(
         Err(error) => return Err(error),
     };
     write(&path, &transform(&input))
+}
+
+/// `0x0077DED0`: ReadInt `0x5276D0` for seven keys and ReadBool `0x5295F0`
+/// for two, each with a constant default (not the retained value), no clamps.
+fn read_wol_preferences(
+    wonline: &crate::rules::ini_parser::IniSection,
+) -> crate::ui::wol_options::WolPreferences {
+    crate::ui::wol_options::WolPreferences {
+        allow_page: wonline.read_int("AllowPage", 1),
+        allow_find: wonline.read_int("AllowFind", 1),
+        lang_filter: wonline.read_int("LangFilter", 1),
+        lobby_music: wonline.read_int("LobMusic", 1),
+        show_all: wonline.read_int("ShowAll", 1),
+        display_asian: wonline.read_int("DisplayAsian", 1),
+        display_latin: wonline.read_int("DisplayLatin", 1),
+        display_buddies: wonline.read_bool("DisplayBuddies", false),
+        display_clan: wonline.read_bool("DisplayClan", false),
+    }
 }
 
 fn upper_only_volume(value: f64) -> f32 {
@@ -891,14 +941,68 @@ mod tests {
     }
 
     #[test]
-    fn wol_lobby_music_reads_wonline_lobmusic_as_readint_default_one() {
+    fn wol_preferences_read_with_constant_defaults_and_write_in_native_order() {
+        use crate::ui::wol_options::WolPreferences;
         let mut profile = RetailOptionsProfile::default();
         profile.apply_ini(&IniFile::from_str("[WOnline]\nNick=x\n"));
-        assert_eq!(profile.wol_lobby_music, 1, "absent key keeps the default");
-        profile.apply_ini(&IniFile::from_str("[WOnline]\nLobMusic=0\n"));
-        assert_eq!(profile.wol_lobby_music, 0);
-        profile.apply_ini(&IniFile::from_str("[WOnline]\nLobMusic=$2\n"));
-        assert_eq!(profile.wol_lobby_music, 2, "ReadInt takes $ hex");
+        assert_eq!(profile.wol_preferences, WolPreferences::default());
+        profile.apply_ini(&IniFile::from_str(
+            "[WOnline]\nLobMusic=$2\nAllowPage=0\nDisplayClan=yes\n",
+        ));
+        assert_eq!(
+            profile.wol_preferences,
+            WolPreferences {
+                allow_page: 0,
+                lobby_music: 2,
+                display_clan: true,
+                ..WolPreferences::default()
+            },
+            "ReadInt takes $ hex; ReadBool takes yes"
+        );
+        // An absent key reads its constant default again, not the retained value.
+        profile.apply_ini(&IniFile::from_str("[WOnline]\n"));
+        assert_eq!(profile.wol_preferences, WolPreferences::default());
+
+        profile.wol_preferences = WolPreferences {
+            allow_page: 0,
+            display_buddies: true,
+            ..WolPreferences::default()
+        };
+        let written = profile.transform_wol_preferences(
+            b"[WOnline]\r\nNick=x\r\nLobMusic=$2\r\n[MultiPlayer]\r\nObserverMode=1\r\n",
+        );
+        let ini = IniFile::from_bytes(&written).unwrap();
+        let wonline = ini.section("WOnline").unwrap();
+        assert_eq!(wonline.get_for_test("Nick"), Some("x"));
+        assert_eq!(wonline.get_for_test("AllowPage"), Some("0"));
+        assert_eq!(wonline.get_for_test("LobMusic"), Some("1"));
+        assert_eq!(wonline.get_for_test("DisplayBuddies"), Some("yes"));
+        assert_eq!(wonline.get_for_test("DisplayClan"), Some("no"));
+        assert_eq!(
+            ini.section("MultiPlayer")
+                .unwrap()
+                .get_for_test("ObserverMode"),
+            Some("1")
+        );
+        // New keys append in the writer's order.
+        let fresh = profile.transform_wol_preferences(b"[WOnline]\r\nNick=x\r\n");
+        let text = String::from_utf8_lossy(&fresh);
+        let order: Vec<_> = [
+            "Nick",
+            "AllowPage",
+            "AllowFind",
+            "LangFilter",
+            "LobMusic",
+            "ShowAll",
+            "DisplayAsian",
+            "DisplayLatin",
+            "DisplayBuddies",
+            "DisplayClan",
+        ]
+        .iter()
+        .map(|key| text.find(&format!("{key}=")).unwrap())
+        .collect();
+        assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{text}");
     }
 
     #[test]
@@ -1177,7 +1281,7 @@ mod tests {
         assert_eq!(defaults.retained_profile.zoom, Zoom::Auto);
         assert!(!defaults.retained_profile.original_shape);
         assert_eq!(defaults.retained_profile.sidebar, SidebarSize::Normal);
-        assert!(!defaults.retained_profile.ra2_look);
+        assert!(!defaults.retained_profile.yr_original_style);
         // Shift + left click queues one copy, as in gamemd, until it is ticked.
         assert!(!defaults.retained_profile.shift_queue);
         // Internet shows TXT_APIMISSING, as on retail, until it is ticked.
@@ -1189,14 +1293,14 @@ mod tests {
 
         let load = load_snapshot(
             &RetailStartupOptions::default(),
-            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nRA2Look=yes\nShiftQueue=yes\nShiftQueueCount=8\nWolTestService=yes\n",
+            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nShiftQueue=yes\nShiftQueueCount=8\nWolTestService=yes\n",
         );
         assert!(load.retained_profile.full_screen);
         // The first release saved the whole factor.
         assert_eq!(load.retained_profile.zoom, Zoom::Percent(200));
         assert!(load.retained_profile.original_shape);
         assert_eq!(load.retained_profile.sidebar, SidebarSize::Large);
-        assert!(load.retained_profile.ra2_look);
+        assert!(!load.retained_profile.yr_original_style);
         assert!(load.retained_profile.shift_queue);
         assert!(load.retained_profile.wol_test_service);
         assert_eq!(load.retained_profile.shift_queue_count, 8);
@@ -1209,7 +1313,7 @@ mod tests {
             zoom: Zoom::Percent(150),
             original_shape: true,
             sidebar: SidebarSize::ExtraLarge,
-            ra2_look: true,
+            yr_original_style: true,
             shift_queue: true,
             shift_queue_count: 7,
             wol_test_service: true,
@@ -1219,7 +1323,7 @@ mod tests {
             String::from_utf8(profile.transform_ra2md(b"[Video]\r\nScreenWidth=800\r\n")).unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nRA2Look=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\n"
             ),
             "{output}"
         );
@@ -1228,7 +1332,7 @@ mod tests {
         assert_eq!(reread.retained_profile.zoom, Zoom::Percent(150));
         assert!(reread.retained_profile.original_shape);
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
-        assert!(reread.retained_profile.ra2_look);
+        assert!(reread.retained_profile.yr_original_style);
         assert!(reread.retained_profile.shift_queue);
         assert!(reread.retained_profile.wol_test_service);
         assert_eq!(reread.retained_profile.shift_queue_count, 7);
@@ -1255,6 +1359,84 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn original_yr_style_and_render_interpolation_round_trip_independently() {
+        let startup = RetailStartupOptions::default();
+        for style in [false, true] {
+            for interpolation in [false, true] {
+                let input = format!(
+                    "[VERA]\nYROriginalStyle={}\nRenderInterpolation={}\nRA2Look=yes\nUnowned=keep\n",
+                    format_bool(style),
+                    format_bool(interpolation),
+                );
+                let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+                assert_eq!(profile.yr_original_style, style);
+                assert_eq!(profile.render_interpolation, interpolation);
+                let written = profile.transform_ra2md(input.as_bytes());
+                let text = String::from_utf8_lossy(&written);
+                assert!(!text.contains("RA2Look="));
+                assert!(text.contains("Unowned=keep"));
+                let reloaded = load_snapshot(&startup, &written).retained_profile;
+                assert_eq!(reloaded.yr_original_style, style);
+                assert_eq!(reloaded.render_interpolation, interpolation);
+            }
+        }
+    }
+
+    #[test]
+    fn yr_original_style_defaults_to_ra2_and_reads_only_its_own_key() {
+        let defaults = load_snapshot(&RetailStartupOptions::default(), b"[VERA]\n");
+        assert!(
+            !defaults.retained_profile.yr_original_style,
+            "unchecked Original Yuri's Revenge Style selects the default RA2 look"
+        );
+
+        for value in ["yes", "no"] {
+            let ignored = load_snapshot(
+                &RetailStartupOptions::default(),
+                format!("[VERA]\nRA2Look={value}\n").as_bytes(),
+            );
+            assert!(
+                !ignored.retained_profile.yr_original_style,
+                "RA2Look={value} must not affect the default"
+            );
+        }
+
+        let explicit_new_key = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[VERA]\nYROriginalStyle=yes\n",
+        );
+        assert!(
+            explicit_new_key.retained_profile.yr_original_style,
+            "the YR-original preference must be read from its own key"
+        );
+    }
+
+    #[test]
+    fn saving_removes_ra2_look_and_preserves_other_profile_bytes() {
+        let profile = RetailOptionsProfile {
+            yr_original_style: true,
+            ..RetailOptionsProfile::default()
+        };
+        let input = b"[VERA]\r\n; retain this comment\r\nFullScreen=yes\r\nRA2Look=no ; remove this whole line\r\nUnknownSetting=keep\r\n[other]\nRA2Look=keep in another section\n[vera]\nra2look=yes\nShiftQueue=yes";
+        let output = String::from_utf8(profile.transform_ra2md(input)).unwrap();
+
+        assert_eq!(output.matches("RA2Look=").count(), 1, "{output}");
+        assert!(!output.contains("ra2look="), "{output}");
+        assert!(
+            output.contains("YROriginalStyle=yes\r\n"),
+            "new preference should be saved: {output}"
+        );
+        assert!(
+            output.contains("; retain this comment\r\nFullScreen=no\r\nUnknownSetting=keep\r\n"),
+            "keep the comment and unknown key while the modeled setting uses the profile: {output}"
+        );
+        assert!(
+            output.contains("[other]\nRA2Look=keep in another section\n"),
+            "only the VERA key should be removed: {output}"
+        );
     }
 
     /// `read_int` answers 0 for a present-but-nonnumeric value and a hand-edited

@@ -31,7 +31,7 @@ fn request_move(
         mover,
         destination,
         0,
-        sim.playfield_bounds,
+        sim.playfield_bounds(),
     )
     .unwrap();
     let rng = sim.rng_state();

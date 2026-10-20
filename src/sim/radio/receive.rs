@@ -90,13 +90,6 @@ fn building_receive(
     rules: Option<&RuleSet>,
     effects: FrameEffects<'_>,
 ) -> RadioResponse {
-    // VERA's bunker install adapter owns a Bunker= building's CAN_LOAD and
-    // DOCK_NOW (native 0x0043C4F8 / 0x0043C75A arms).
-    if is_bunker_building(sim, building)
-        && matches!(msg, RadioMessage::CanEnter | RadioMessage::DockNow)
-    {
-        return bunker_receive(sim, building, sender, msg);
-    }
     match msg {
         // Original43CD01: Begin_Mode(IDLE) precedes the common teardown.
         // Human PLACE reaches this while the child's body is Construction0.
@@ -252,7 +245,7 @@ pub(crate) fn can_load(
         return CanLoad::Answer(RadioResponse::None);
     };
     if !crate::sim::combat::combat_weapon::is_ally_by_object(
-        Some(&sim.house_alliances),
+        Some(sim.house_alliances.as_map()),
         &sim.interner,
         building.owner(),
         unit.owner(),
@@ -310,9 +303,18 @@ pub(crate) fn can_load(
     if building_type.grinding {
         return CanLoad::Answer(RadioResponse::Roger);
     }
-    // Other building mechanisms retain their existing owner/residual.
+    // 0x0043C506..0x0043C541, a `Bunker=` building (+0x16AB): CanEnterBunker
+    // (0x0070FB50) on the sender, then IS_OCCUPIED (0x23) to it, whose ROGER
+    // refuses. VERA's entry adapter keeps no radio contact, so the contacts
+    // gate above passes; [`bunker_admits`] stands in for the slot the
+    // installing or installed tank holds natively.
     if building_type.bunker {
-        return CanLoad::Answer(RadioResponse::None);
+        if !crate::sim::docking::bunker_link::can_auto_deploy_here(sim, from, rules)
+            || !bunker_admits(sim, building_id, from)
+        {
+            return CanLoad::Answer(RadioResponse::Negatory);
+        }
+        return CanLoad::AskOccupied;
     }
     if building_type.unit_repair {
         if !matches!(
@@ -388,7 +390,7 @@ fn building_can_load(
 /// CAN_LOAD as a click asks it (`InfantryClass::What_Action_OnObject` at
 /// `0x0051EE1A`, `UnitClass`'s `vt+0x278(0x0F)` at `0x0074017E`), sending
 /// nothing: the carrier's class receiver's answer. A building answers through
-/// [`can_load`] (a `Bunker=` building through VERA's bunker adapter), with
+/// [`can_load`], with
 /// the IsOccupied question answered by its receiver ([`foot_is_occupied`]);
 /// a Unit through [`unit_can_enter_radio`]. VERA's aircraft receiver answers
 /// it 0 ([`aircraft_receive`]), and no Infantry receiver handles it, so
@@ -412,13 +414,6 @@ pub(crate) fn can_load_query(
         Some(EntityCategory::Aircraft | EntityCategory::Infantry) | None => {
             return RadioResponse::None;
         }
-    }
-    if is_bunker_building(sim, carrier_id) {
-        return if bunker_admits(sim, carrier_id, from) {
-            RadioResponse::Roger
-        } else {
-            RadioResponse::Negatory
-        };
     }
     match can_load(sim, carrier_id, from, RadioPayload::default(), rules) {
         CanLoad::Answer(reply) => reply,
@@ -714,8 +709,9 @@ fn building_docking(
 }
 
 /// DOCK_NOW, `BuildingClass::Receive_Radio` case 0x15 (`0x0043C6F2`): a
-/// building being sold refuses; a `DockUnload=` dock queues Unload on the
-/// sender (no contact, tether or position test).
+/// building being sold refuses; a repair dock or a `Bunker=` building queues
+/// its Repair mission; a `DockUnload=` dock queues Unload on the sender (no
+/// contact, tether or position test).
 fn building_dock_now(
     sim: &mut Simulation,
     building_id: u64,
@@ -771,8 +767,24 @@ fn building_dock_now(
         );
         return RadioResponse::Roger;
     }
+    // 0x0043C75A..0x0043C785, a `Bunker=` building: ready to commence, then
+    // Queue_Mission(Repair, 0), whose visits run UpdateBunker. VERA's entry
+    // adapter records the sender in place of radio contact 0.
     if object.bunker {
-        return RadioResponse::None;
+        if let Some(building) = sim.substrate.entities.get_mut(building_id) {
+            building.mission_leaf.set_building_ready_latch(1);
+            if let Some(runtime) = building.bunker_runtime.as_mut() {
+                runtime.dock_now(from);
+            }
+        }
+        let _ = sim.mission_queue_exact(
+            building_id,
+            MissionId::from_known(MissionType::Repair),
+            0,
+            sim.session.binary_frame(),
+            &EntityReadyInputProvider,
+        );
+        return RadioResponse::Roger;
     }
     // 0x0043C788..0x0043C7B2: Queue_Mission(Unload, 0) on the sender.
     if object.dock_unload {
@@ -1055,7 +1067,7 @@ pub(crate) fn unit_can_enter_radio(
     };
     if transport_type.passengers == 0
         || !crate::sim::combat::combat_weapon::is_ally_by_object(
-            Some(&sim.house_alliances),
+            Some(sim.house_alliances.as_map()),
             &sim.interner,
             transport.owner(),
             passenger.owner(),
@@ -1201,7 +1213,7 @@ fn unit_run_away(
     if !latched_harvester {
         return;
     }
-    crate::sim::miner::clear_unload_latch(sim, unit);
+    crate::sim::miner::clear_unload_latch(&mut sim.substrate, unit);
     if let Err(cause) = sim.scatter(
         unit,
         None,
@@ -1412,7 +1424,7 @@ fn aircraft_move_here(
         &EntityReadyInputProvider,
     );
     sim.assign_aircraft_destination(aircraft, payload.target, rules, effects);
-    let _ = sim.mission_commence_exact(aircraft, now);
+    let _ = sim.substrate.mission_commence_exact(aircraft, now);
     RadioResponse::Roger
 }
 
@@ -1819,7 +1831,7 @@ fn techno_repair_tick(
         return RadioResponse::InsufficientFunds;
     }
     if cost != 0 {
-        crate::sim::credit_income::spend_money(sim, owner, cost);
+        crate::sim::credit_income::spend_money(&mut sim.houses, owner, cost);
     }
     let Some(entity) = sim.substrate.entities.get_mut(techno) else {
         return RadioResponse::None;
@@ -2046,7 +2058,7 @@ fn radio_hello(sim: &mut Simulation, receiver: u64, sender: Option<u64>) -> Radi
     }
     let ally = |asker, other| {
         crate::sim::combat::combat_weapon::is_ally_by_object(
-            Some(&sim.house_alliances),
+            Some(sim.house_alliances.as_map()),
             &sim.interner,
             asker,
             other,
@@ -2064,73 +2076,13 @@ fn radio_hello(sim: &mut Simulation, receiver: u64, sender: Option<u64>) -> Radi
     }
 }
 
-/// A tank bunker is any structure seeded with a `bunker_runtime` (Bunker=yes at
-/// spawn). Routing on this lets the bus stay rules-free (it has no `RuleSet`).
-/// It stands in for the Type's `Bunker=` byte (`+0x16AB`) that
-/// `BuildingClass::Receive_Radio` tests at `0x0043C506` and `0x0043C75A`.
-fn is_bunker_building(sim: &Simulation, sid: u64) -> bool {
-    sim.substrate
-        .entities
-        .get(sid)
-        .is_some_and(|b| b.bunker_runtime.is_some())
-}
-
-/// Tank-bunker inbound admission + commit. Mirrors the refinery handshake shape:
-/// CAN_ENTER is the eligibility query; DOCK_NOW commits the install machine.
-/// Native: `BuildingClass::Receive_Radio` (`0x0043C2D0`)'s Bunker arms, CanEnterBunker
-/// (`0x0043C512`) and the DOCK_NOW queue (`0x0043C75A..0x0043C773`).
-fn bunker_receive(
-    sim: &mut Simulation,
-    bld: u64,
-    sender: Option<u64>,
-    msg: RadioMessage,
-) -> RadioResponse {
-    let Some(unit) = sender else {
-        return RadioResponse::None;
-    };
-    match msg {
-        RadioMessage::CanEnter => {
-            if bunker_admits(sim, bld, unit) {
-                RadioResponse::Roger
-            } else {
-                RadioResponse::Negatory
-            }
-        }
-        RadioMessage::DockNow => {
-            // Commit: start the install machine if the bunker is idle.
-            if let Some(rt) = sim
-                .substrate
-                .entities
-                .get_mut(bld)
-                .and_then(|b| b.bunker_runtime.as_mut())
-            {
-                rt.dock_now(unit);
-            }
-            RadioResponse::Roger
-        }
-        RadioMessage::Break => {
-            // Bunker reciprocal-link teardown is owned by bunker_link's three
-            // verified trigger-specific helpers. Radio BREAK adds no guessed
-            // bunker mutation here; the shared receiver tail clears Contacts.
-            RadioResponse::None
-        }
-        _ => RadioResponse::None,
-    }
-}
-
-/// Sim-state admission gate (no rules): own-owner, alive, not occupied, idle.
-/// The rules-gated half (`bunker_link::can_auto_deploy_here`, `0x0070FB50`)
-/// runs before the adapter asks (the EnterBunker order and the tank bunker
-/// seek).
+/// VERA's entry adapter's own bunker admission, in [`can_load`]'s Bunker arm:
+/// the bunker's own Unit, a live bunker, no occupant and no install in
+/// progress (natively the radio contact slot the tank holds).
 fn bunker_admits(sim: &Simulation, bld: u64, unit: u64) -> bool {
     let Some(unit) = sim.substrate.entities.get(unit) else {
         return false;
     };
-    // CanEnterBunker 0x0070FBAF..0x0070FBC3, called from this receiver at
-    // 0x0043C512: a unit infected on its way in is refused at the door.
-    if unit.parasite.eater().is_some() {
-        return false;
-    }
     let unit_owner = unit.owner();
     let Some(b) = sim.substrate.entities.get(bld) else {
         return false;
@@ -2236,16 +2188,43 @@ mod tests {
         )
     }
 
-    fn can_enter(sim: &mut Simulation, sender: u64, target: u64) -> RadioResponse {
+    fn can_enter(
+        sim: &mut Simulation,
+        sender: u64,
+        target: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> RadioResponse {
         transmit(
             sim,
             sender,
             target,
             RadioMessage::CanEnter,
             RadioPayload::default(),
-            None,
+            Some(rules),
             crate::sim::world::FrameEffects::default(),
         )
+    }
+
+    /// A NATBNK, a bunkerable TANK and an unarmed NOGUN.
+    fn bunker_rules() -> crate::rules::ruleset::RuleSet {
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n1=NOGUN\n\n[InfantryTypes]\n\n[AircraftTypes]\n\n\
+             [BuildingTypes]\n0=NATBNK\n\n\
+             [TANK]\nStrength=400\nArmor=heavy\nSpeed=6\nTurret=yes\nPrimary=120mm\n\n\
+             [NOGUN]\nStrength=400\nArmor=heavy\nSpeed=6\nTurret=yes\n\n\
+             [NATBNK]\nStrength=1000\nArmor=heavy\nBunker=yes\n",
+        ))
+        .expect("rules parse")
+    }
+
+    fn spawn_tank(sim: &mut Simulation, sid: u64, owner: &str, type_name: &str) {
+        spawn_miner(sim, sid, owner);
+        let tank = sim.interner.intern(type_name);
+        sim.substrate
+            .entities
+            .get_mut(sid)
+            .unwrap()
+            .set_type_ref_for_test(tank);
     }
 
     fn infantry_output_link(weapons_factory: bool) -> (Simulation, crate::rules::ruleset::RuleSet) {
@@ -2526,18 +2505,48 @@ mod tests {
         assert!(take_test_trace().is_empty());
     }
 
+    /// CAN_LOAD on a bunker (`0x0043C2F8..0x0043C541`): the common gates
+    /// (ally, Construction or Selling mission, BState), then the Bunker arm
+    /// (CanEnterBunker, IS_OCCUPIED), with VERA's adapter refusing a bunker
+    /// already occupied or installing.
     #[test]
-    fn bunker_bus_routes_and_admits_by_sim_state() {
+    fn bunker_can_load_runs_the_common_gates_then_its_bunker_arm() {
         use crate::sim::docking::bunker_install::BunkerState;
+        use crate::sim::mission::{MissionId, MissionType};
+        let rules = bunker_rules();
         let mut sim = Simulation::new();
         spawn_bunker(&mut sim, 2, "Americans");
-        spawn_miner(&mut sim, 1, "Americans"); // own-owner vehicle
-        spawn_miner(&mut sim, 3, "Soviets"); // enemy
+        spawn_tank(&mut sim, 1, "Americans", "TANK");
+        spawn_tank(&mut sim, 3, "Soviets", "TANK");
+        spawn_tank(&mut sim, 4, "Americans", "NOGUN");
 
-        // Own-owner, idle, empty → admitted.
-        assert_eq!(can_enter(&mut sim, 1, 2), RadioResponse::Roger);
-        // Enemy owner → rejected.
-        assert_eq!(can_enter(&mut sim, 3, 2), RadioResponse::Negatory);
+        assert_eq!(can_enter(&mut sim, 1, 2, &rules), RadioResponse::Roger);
+        // 0x0043C311..0x0043C323: a sender of a house it is not allied with.
+        assert_eq!(can_enter(&mut sim, 3, 2, &rules), RadioResponse::None);
+        // 0x0043C326..0x0043C346: Construction and Selling refuse.
+        for mission in [MissionType::Construction, MissionType::Selling] {
+            sim.substrate
+                .entities
+                .get_mut(2)
+                .unwrap()
+                .mission
+                .set_current_for_test(MissionId::from_known(mission), 0);
+            assert_eq!(
+                can_enter(&mut sim, 1, 2, &rules),
+                RadioResponse::Negatory,
+                "{mission:?}"
+            );
+        }
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .mission
+            .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
+        assert_eq!(can_enter(&mut sim, 1, 2, &rules), RadioResponse::Roger);
+
+        // 0x0043C512: CanEnterBunker refuses an unarmed unit.
+        assert_eq!(can_enter(&mut sim, 4, 2, &rules), RadioResponse::Negatory);
 
         // Occupied → rejected.
         sim.substrate
@@ -2546,7 +2555,7 @@ mod tests {
             .unwrap()
             .bunker
             .set_bunker_occupant_for_test(Some(99));
-        assert_eq!(can_enter(&mut sim, 1, 2), RadioResponse::Negatory);
+        assert_eq!(can_enter(&mut sim, 1, 2, &rules), RadioResponse::Negatory);
         sim.substrate
             .entities
             .get_mut(2)
@@ -2563,7 +2572,67 @@ mod tests {
             .as_mut()
             .unwrap()
             .set_state_for_test(BunkerState::ArriveWait);
-        assert_eq!(can_enter(&mut sim, 1, 2), RadioResponse::Negatory);
+        assert_eq!(can_enter(&mut sim, 1, 2, &rules), RadioResponse::Negatory);
+    }
+
+    /// DOCK_NOW on a bunker (`0x0043C6F2..0x0043C785`): refused while it is
+    /// sold; otherwise ready to commence, Repair queued, the sender recorded.
+    #[test]
+    fn bunker_dock_now_queues_repair_unless_selling() {
+        use crate::sim::docking::bunker_install::BunkerState;
+        use crate::sim::mission::{MissionId, MissionType};
+        let rules = bunker_rules();
+        let dock_now = |sim: &mut Simulation| {
+            transmit(
+                sim,
+                1,
+                2,
+                RadioMessage::DockNow,
+                RadioPayload::default(),
+                Some(&rules),
+                crate::sim::world::FrameEffects::default(),
+            )
+        };
+        let runtime = |sim: &Simulation| {
+            sim.substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .bunker_runtime
+                .unwrap()
+        };
+        let mut sim = Simulation::new();
+        spawn_bunker(&mut sim, 2, "Americans");
+        spawn_tank(&mut sim, 1, "Americans", "TANK");
+
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .mission
+            .set_current_for_test(MissionId::from_known(MissionType::Selling), 0);
+        assert_eq!(dock_now(&mut sim), RadioResponse::Negatory);
+        assert_eq!(runtime(&sim).state(), BunkerState::Idle);
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().mission.queued(),
+            MissionId::NONE
+        );
+
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .mission
+            .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
+        assert_eq!(dock_now(&mut sim), RadioResponse::Roger);
+        let bunker = sim.substrate.entities.get(2).unwrap();
+        assert_eq!(
+            bunker.mission.queued(),
+            MissionId::from_known(MissionType::Repair)
+        );
+        assert_eq!(bunker.building_ready_latch(), 1);
+        assert_eq!(runtime(&sim).state(), BunkerState::ArriveWait);
+        assert_eq!(runtime(&sim).installing_unit(), Some(1));
     }
 
     #[test]
@@ -2909,11 +2978,11 @@ mod tests {
             let own = sim.intern("Americans");
             let other = sim.intern("Russians");
             if input["allied"].as_bool().unwrap_or(false) {
-                sim.house_alliances
+                sim.house_alliances_mut_for_test()
                     .insert("AMERICANS".into(), ["RUSSIANS".into()].into());
             }
             if input["reverse_allied"].as_bool().unwrap_or(false) {
-                sim.house_alliances
+                sim.house_alliances_mut_for_test()
                     .insert("RUSSIANS".into(), ["AMERICANS".into()].into());
             }
             let carrier_type = sim.intern("TRAN");

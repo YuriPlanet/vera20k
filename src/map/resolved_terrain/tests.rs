@@ -1359,13 +1359,13 @@ fn bridge_publication_retains_allocation_identity_across_other_lookups() {
     terrain.write_native_cell_flags(dummy, 0xb502_0380);
     terrain.write_native_cell_anchor(real, Some(dummy));
     terrain.write_native_cell_anchor(dummy, Some(real));
-    terrain.write_native_cell_state(dummy, 17);
+    terrain.shared_cell_dummy().write_overlay_state(17);
     assert_eq!(terrain.native_cell_identity((8, 9)), dummy);
     assert_eq!(terrain.native_cell_coord(real), (1, 1));
     assert_eq!(terrain.native_cell_coord(dummy), (8, 9));
     assert_eq!(terrain.native_cell_flags(real), 0xa401_1380);
     assert_eq!(terrain.native_cell_flags(dummy), 0xb502_0380);
-    assert_eq!(terrain.native_cell_state(dummy), 17);
+    assert_eq!(terrain.shared_cell_dummy().overlay_identity_state().1, 17);
     assert_eq!(terrain.native_cell_anchor(real), Some(dummy));
     assert_eq!(terrain.native_cell_anchor(dummy), Some(real));
     assert_eq!(
@@ -1536,7 +1536,6 @@ fn authored_fill_defers_all_executable_projection() {
     };
     let eager_cell = eager.cell(2, 3).expect("eager fixture cell");
     assert!(eager_cell.bridge_facts.has_structural_bridge());
-    assert_eq!(eager_cell.bridge_facts.state_byte, 99);
     assert_eq!(eager_cell.terrain_object_occupation, Some(7));
     assert!(!eager.tile_animations().is_empty());
 
@@ -1740,8 +1739,6 @@ fn gsi_04_01_production_overlaypack_stamps_two_anchors_in_row_major_order() {
         },
         "the later row-major anchor owns the final dummy coord and bits"
     );
-    assert_eq!(grid.cell(2, 1).unwrap().bridge_facts.overlay_id, Some(0x18));
-    assert_eq!(grid.cell(1, 2).unwrap().bridge_facts.overlay_id, Some(0x18));
 }
 
 #[test]
@@ -1816,16 +1813,6 @@ fn gsi_04_12_generated_materialized_overlays_never_replay_fixed_map_mark() {
         generated.cell(2, 2).unwrap().bridge_facts.raw_flags & MODELED_CELLCLASS_BRIDGE_FLAG_MASK,
         0,
         "generated direct cell writes must not be expanded a second time"
-    );
-    assert_eq!(
-        generated.cell(2, 2).unwrap().bridge_facts.overlay_id,
-        Some(0x18),
-        "source marking suppresses only Mark, not the materialized overlay"
-    );
-    assert_eq!(
-        generated.cell(1, 1).unwrap().bridge_facts.overlay_id,
-        Some(0x5C),
-        "the generated low-deck rectangle remains present"
     );
 }
 
@@ -3188,13 +3175,6 @@ fn test_bridge_overlay_creates_upper_layer_without_ground_block() {
     );
     assert!(effects.has_bridge_deck);
     assert!(!effects.overlay_blocks);
-    assert_eq!(
-        effects
-            .bridge_layer
-            .as_ref()
-            .map(|b| b.overlay_name.as_str()),
-        Some("BRIDGE1")
-    );
     // BRIDGE1 = EastWest high bridge: deck_level = ground(3) + HighBridgeHeight(4) = 7.
     assert_eq!(effects.bridge_layer.as_ref().map(|b| b.deck_level), Some(7));
     assert_eq!(
@@ -4048,8 +4028,6 @@ fn authored_load_early_overlay_refreshes_tmp_slope_before_resource_clear() {
 
     assert_eq!(grid.cells[0].slope_type, 1);
     assert_eq!(outcome.finalized, FinalizedOverlayCell::default());
-    assert_eq!(grid.cells[0].bridge_facts.overlay_id, None);
-    assert_eq!(grid.cells[0].bridge_facts.state_byte, 0);
     assert_eq!(
         grid.cells[0].land_type,
         LandType::Tiberium.as_index(),

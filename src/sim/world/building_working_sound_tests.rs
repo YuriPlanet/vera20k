@@ -81,7 +81,7 @@ fn working_events(sim: &Simulation, id: u64) -> Vec<String> {
 }
 
 fn tick(sim: &mut Simulation, rules: &RuleSet) {
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.advance_tick(&[], Some(rules), None, None, TICK_MS);
 }
 
@@ -117,7 +117,7 @@ fn limbo_keeps_the_handle_and_the_destructor_releases_it() {
         next_edge(&mut sim, &rules, id, 60),
         ["detach", "start PowerOn"]
     );
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.uninit_with_rules(id, &rules);
     assert!(
         working_events(&sim, id).is_empty(),

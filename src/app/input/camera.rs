@@ -750,9 +750,8 @@ pub(crate) fn tactical_centre_cell(state: &AppState) -> (u16, u16) {
     crate::app::match_runtime::sim_tick::world_point_to_cell(
         world_x,
         world_y,
-        state.height_map(),
         state.sim_view().and_then(|view| {
-            crate::app::match_runtime::sim_tick::tactical_bridge_cells(view.simulation())
+            crate::app::match_runtime::sim_tick::tactical_cells(view.simulation())
         }),
     )
 }
@@ -1765,7 +1764,10 @@ fn entity_lepton_coord(
 }
 
 pub(crate) fn center_camera_on_cell(state: &mut AppState, rx: u16, ry: u16) {
-    let z = state.height_map().get(&(rx, ry)).copied().unwrap_or(0);
+    let z = state
+        .resolved_terrain()
+        .and_then(|terrain| terrain.cell(rx, ry))
+        .map_or(0, |cell| cell.level);
     let world = cell_centre_world_point(rx, ry, z);
     let sw = state.render_width() as f32;
     let sh = state.render_height() as f32;

@@ -3,8 +3,10 @@
 //! House/view-cache reconciliation never advances these clocks or emits events.
 use super::{Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::resolved_terrain::{AllocatedCellOrder, ROW_NEIGHBORS};
 use crate::rules::ruleset::RuleSet;
+use crate::sim::vision::FogState;
 use crate::sim::{pathfinding::PathGrid, vision};
 
 #[cfg(test)]
@@ -262,7 +264,14 @@ impl Simulation {
                 None => {
                     self.fog.untrack_edge_cells(viewer);
                     self.for_each_allocated_map_cell(context, |sim, cell| {
-                        if let Some(change) = sim.visit_edge_cell(viewer, cell, refresh, context) {
+                        if let Some(change) = Self::visit_edge_cell(
+                            &mut sim.fog,
+                            &sim.resolved_terrain,
+                            viewer,
+                            cell,
+                            refresh,
+                            context,
+                        ) {
                             notify(sim, change);
                         }
                     });
@@ -288,7 +297,8 @@ impl Simulation {
     /// One Map578100 receiver: the sweep's, or with `refresh` the ground-frame
     /// refresh's.
     fn visit_edge_cell(
-        &mut self,
+        fog: &mut FogState,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
         viewer: crate::sim::intern::InternedId,
         cell: (u16, u16),
         refresh: bool,
@@ -302,14 +312,12 @@ impl Simulation {
         });
         let cells = context
             .terrain()
-            .or(self.resolved_terrain.as_ref())
+            .or(resolved_terrain.as_ref())
             .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
         let change = if refresh {
-            self.fog
-                .refresh_map_cell_ground_frame(viewer, cell, cells.as_ref())
+            fog.refresh_map_cell_ground_frame(viewer, cell, cells.as_ref())
         } else {
-            self.fog
-                .sweep_pending_map_cell(viewer, cell, cells.as_ref())
+            fog.sweep_pending_map_cell(viewer, cell, cells.as_ref())
         };
         #[cfg(any(test, feature = "test-support"))]
         if let Some(change) = &change {
@@ -345,8 +353,14 @@ impl Simulation {
         }
         let mut notified = None;
         while let Some(rank) = ranks.pop() {
-            let Some(change) = self.visit_edge_cell(viewer, order.cell(rank), refresh, context)
-            else {
+            let Some(change) = Self::visit_edge_cell(
+                &mut self.fog,
+                &self.resolved_terrain,
+                viewer,
+                order.cell(rank),
+                refresh,
+                context,
+            ) else {
                 continue;
             };
             if refresh {
@@ -364,7 +378,14 @@ impl Simulation {
                 let rest: Vec<_> = ranks.drain().map(|rank| order.cell(rank)).collect();
                 self.fog.relist_edge_cells(viewer, refresh, rest);
                 while let Some(cell) = self.next_allocated_map_cell(context) {
-                    if let Some(change) = self.visit_edge_cell(viewer, cell, refresh, context) {
+                    if let Some(change) = Self::visit_edge_cell(
+                        &mut self.fog,
+                        &self.resolved_terrain,
+                        viewer,
+                        cell,
+                        refresh,
+                        context,
+                    ) {
                         notify(self, change);
                     }
                 }
@@ -384,7 +405,7 @@ impl Simulation {
     /// neighbour of the last cell after `after` whose frame reads its
     /// neighbours. Without such a cell the walk stamped nothing since `after`.
     fn restamp_edge_dummy(
-        &mut self,
+        &self,
         viewer: crate::sim::intern::InternedId,
         order: &AllocatedCellOrder,
         after: Option<u32>,
@@ -642,7 +663,14 @@ impl Simulation {
             viewer,
         ) {
             if let Some(viewer) = viewer {
-                self.refresh_sight_border(viewer, origin, 5, context);
+                Self::refresh_sight_border(
+                    &mut self.fog,
+                    &self.resolved_terrain,
+                    viewer,
+                    origin,
+                    5,
+                    context,
+                );
             }
         }
     }
@@ -1018,7 +1046,7 @@ impl Simulation {
                             .is_some_and(|rules| rules.general.ally_reveal)
                         && self.session.current_house().is_some_and(|viewer| {
                             crate::map::houses::is_allied_with(
-                                &self.house_alliances,
+                                self.house_alliances.as_map(),
                                 self.interner.resolve(entity.owner()),
                                 self.interner.resolve(viewer),
                             )
@@ -1318,7 +1346,7 @@ impl Simulation {
         };
         let viewers: std::sync::Arc<[_]> = match only_viewer {
             Some(viewer) => vision::reveal_admits(
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 entity.owner(),
                 viewer,
                 config,
@@ -1329,7 +1357,7 @@ impl Simulation {
             .collect(),
             None => self.reveal_viewers.direct(
                 &self.fog,
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 entity.owner(),
                 config,
                 &self.interner,
@@ -1498,7 +1526,7 @@ impl Simulation {
             Some(viewer) => std::sync::Arc::from([viewer]),
             None => self.reveal_viewers.direct(
                 &self.fog,
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 entity.owner(),
                 &config,
                 &self.interner,
@@ -1512,7 +1540,14 @@ impl Simulation {
                 .fog
                 .sight_admission(id, viewer)
                 .map_or(0, |source| source.radius);
-            self.refresh_sight_border(viewer, origin, radius.wrapping_add(3), context);
+            Self::refresh_sight_border(
+                &mut self.fog,
+                &self.resolved_terrain,
+                viewer,
+                origin,
+                radius.wrapping_add(3),
+                context,
+            );
         }
     }
 
@@ -1520,7 +1555,8 @@ impl Simulation {
     /// Shared by arrival, uncached reveal and both FireAt routes. Renderer
     /// view generations replace6DA7D0's dirty queue, not retained Cell120.
     pub(crate) fn refresh_sight_border(
-        &mut self,
+        fog: &mut FogState,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
         viewer: crate::sim::intern::InternedId,
         origin: (u16, u16, i32),
         radius: i32,
@@ -1529,10 +1565,9 @@ impl Simulation {
         let border = vision::sight_border_cells(origin, radius, 0);
         let cells = context
             .terrain()
-            .or(self.resolved_terrain.as_ref())
+            .or(resolved_terrain.as_ref())
             .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-        self.fog
-            .refresh_sight_border_cells(viewer, &border, cells.as_ref());
+        fog.refresh_sight_border_cells(viewer, &border, cells.as_ref());
         // Each refresh writes only its own cell's frame, so every frame
         // read after the whole border is the one its refresh stored.
         #[cfg(any(test, feature = "test-support"))]
@@ -1540,10 +1575,9 @@ impl Simulation {
             if let Some(trace) = trace {
                 for &cell in &border {
                     trace.border_receivers.push(cell);
-                    if cell.0 < self.fog.width() && cell.1 < self.fog.height() {
+                    if cell.0 < fog.width() && cell.1 < fog.height() {
                         trace.border_ground_after.push(
-                            self.fog
-                                .by_owner_mut_for_test()
+                            fog.by_owner_mut_for_test()
                                 .get_mut(&viewer)
                                 .expect("the refresh made a plane")
                                 .map_cell_edge_cache_for_test(cell)
@@ -1584,7 +1618,7 @@ impl Simulation {
         }
         let viewers = self.reveal_viewers.direct(
             &self.fog,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             entity.owner(),
             &config,
             &self.interner,
@@ -1609,7 +1643,9 @@ impl Simulation {
             //5673F8/56742A store translated XY in the Map local XYZ;
             //5678C0/C7 passes that local to567DA0, which applies its own
             //height translation. Z is unchanged, not doubled.
-            self.refresh_sight_border(
+            Self::refresh_sight_border(
+                &mut self.fog,
+                &self.resolved_terrain,
                 viewer,
                 border_origin,
                 geometry.radius.wrapping_add(3),
@@ -1775,7 +1811,7 @@ impl Simulation {
             && entity.category() == EntityCategory::Structure
             && entity.owner() != viewer
             && vision::reveal_admits(
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 entity.owner(),
                 viewer,
                 config,
@@ -1962,7 +1998,7 @@ impl Simulation {
         };
         let viewers = self.reveal_viewers.direct(
             &self.fog,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             current,
             &config,
             &self.interner,
@@ -2034,7 +2070,7 @@ impl Simulation {
         };
         let viewers = self.reveal_viewers.direct(
             &self.fog,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             current,
             &config,
             &self.interner,
@@ -2092,7 +2128,7 @@ impl Simulation {
             .reveal_viewers
             .direct(
                 &self.fog,
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 current,
                 &config,
                 &self.interner,
@@ -2113,7 +2149,7 @@ impl Simulation {
                     .reveal_viewers
                     .direct(
                         &self.fog,
-                        &self.house_alliances,
+                        self.house_alliances.as_map(),
                         entity.owner(),
                         &config,
                         &self.interner,
@@ -2172,7 +2208,7 @@ impl Simulation {
         //does not admit this event or mutate this viewer's countdown.
         let viewers = self.reveal_viewers.allied(
             &self.fog,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             entity.owner(),
             &self.interner,
         );

@@ -11,17 +11,17 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::ground_pose::object_location;
 use crate::sim::world::Simulation;
 
-mod scene;
+#[cfg(test)]
+#[path = "interpolation/aircraft_reuse_tests.rs"]
+mod aircraft_reuse_tests;
 mod history;
 #[cfg(test)]
 #[path = "interpolation/perf_tests.rs"]
 mod perf_tests;
+mod scene;
 #[cfg(test)]
 #[path = "interpolation/shp_reuse_tests.rs"]
 mod shp_reuse_tests;
-#[cfg(test)]
-#[path = "interpolation/aircraft_reuse_tests.rs"]
-mod aircraft_reuse_tests;
 #[cfg(test)]
 #[path = "interpolation/zero_projection_tests.rs"]
 mod zero_projection_tests;
@@ -234,7 +234,11 @@ impl Endpoints {
                 !reset && old.frame.wrapping_add(1) == frame && old.current.continuous_with(current)
             })
             .map_or(current, |old| old.current);
-        Self { previous, current, frame }
+        Self {
+            previous,
+            current,
+            frame,
+        }
     }
 }
 
@@ -326,9 +330,10 @@ impl RenderInterpolation {
                 // EntityStore::values is in stable-ID order. History updates
                 // follow that order without a per-entity hash lookup/write.
                 self.poses.capture(
-                    sim.entities().values().filter(|entity| eligible(entity)).map(|entity| {
-                        (entity.stable_id(), RenderPose::read(entity, frame))
-                    }),
+                    sim.entities()
+                        .values()
+                        .filter(|entity| eligible(entity))
+                        .map(|entity| (entity.stable_id(), RenderPose::read(entity, frame))),
                     frame,
                     reset,
                 );
@@ -1033,7 +1038,6 @@ mod tests {
             source.screen_position(sim.entities().get(7).unwrap()),
             (old.screen[0], old.screen[1])
         );
-        let heights = Default::default();
         assert_eq!(
             pick_entity_at_point(
                 source,
@@ -1044,8 +1048,6 @@ mod tests {
                 old.screen[1],
                 0.,
                 None,
-                None,
-                &heights,
                 None,
                 Some(sim.interner()),
                 None
@@ -1062,8 +1064,6 @@ mod tests {
                 old.screen[1],
                 0.,
                 None,
-                None,
-                &heights,
                 None,
                 Some(sim.interner()),
                 None

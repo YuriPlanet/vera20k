@@ -10,6 +10,7 @@ use super::*;
 use crate::rules::ruleset::HouseCostFactors;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
+use crate::sim::houses::Houses;
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::util::native_x87::NativeF32Bits;
@@ -752,6 +753,23 @@ impl Simulation {
             })
     }
 
+    /// House+0x80, the UnitRepair stations (Items `+0x84`, Count `+0x90`), in
+    /// vector order. Unlimbo appends a `UnitRepair=` building (Type
+    /// `+0x16A9`, `0x0044122C..0x0044127A`) ahead of its House+0xB0 and
+    /// House+68 appends; ChangeOwner removes it from the old House
+    /// (`0x00448790..0x004487E0`) and appends it to the new one
+    /// (`0x00448E6E..0x00448EC5`) under the same gate, ahead of the same
+    /// lists; pointer expiry stable-removes it (`0x004FBA59..0x004FBA99`). As
+    /// with [`Self::house_absorbers`], it is House+68 filtered by the gate,
+    /// in order.
+    pub(crate) fn house_unit_repair_stations(
+        &self,
+        owner: InternedId,
+        rules: &RuleSet,
+    ) -> Vec<u64> {
+        self.house_buildings_where(owner, rules, |object| object.unit_repair)
+    }
+
     /// House+0xB0, the absorbers (Items `+0xB4`, Count `+0xC0`), in vector
     /// order. Unlimbo appends a `UnitAbsorb=`/`InfantryAbsorb=` building
     /// (Type `+0x16AE`/`+0x16AF`, `0x004412D4..0x00441335`) ahead of its
@@ -842,9 +860,12 @@ impl Simulation {
     /// `BuildingClass::Unlimbo`'s House+68 append (`0x00441553..0x00441594`),
     /// reached on the same path as its BuildConst append
     /// ([`Simulation::append_live_build_const`]).
-    pub(super) fn append_house_base_building(&mut self, id: u64) {
-        let Some(owner) = self
-            .substrate
+    pub(super) fn append_house_base_building(
+        substrate: &ObjectSubstrate,
+        houses: &mut Houses,
+        id: u64,
+    ) {
+        let Some(owner) = substrate
             .entities
             .get(id)
             .filter(|entity| entity.category() == EntityCategory::Structure)
@@ -852,7 +873,7 @@ impl Simulation {
         else {
             return;
         };
-        if let Some(house) = self.houses.get_mut(&owner) {
+        if let Some(house) = houses.get_mut(&owner) {
             house.base_projection_mut().append_membership(id);
         }
     }
@@ -861,18 +882,7 @@ impl Simulation {
     /// Unlimbo would make ([`Self::append_house_base_building`]).
     #[cfg(any(test, feature = "test-support"))]
     pub fn append_house_base_building_for_test(&mut self, id: u64) {
-        self.append_house_base_building(id);
-    }
-
-    /// `BuildingClass::ChangeOwner`'s moves between the two Houses' lists:
-    /// before the Techno owner swap it stable-removes the building from the
-    /// old House's FactoryPlant list, recomputes and removes it from House+68
-    /// (`0x00448A21..0x00448AB0`); after it, it appends to the new House's
-    /// lists (`0x00449155..0x004491D2`).
-    pub(super) fn leave_house_base_lists(&mut self, id: u64, owner: InternedId) {
-        if let Some(house) = self.houses.get_mut(&owner) {
-            house.base_projection_mut().remove_membership(id);
-        }
+        Self::append_house_base_building(&self.substrate, &mut self.houses, id);
     }
 
     pub(super) fn join_house_base_lists(
@@ -893,6 +903,49 @@ impl Simulation {
         }
     }
 
+    pub(super) fn remove_house_base_membership(
+        substrate: &ObjectSubstrate,
+        houses: &mut Houses,
+        id: u64,
+    ) {
+        if !substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        {
+            return;
+        }
+        // Broadcast visits every House, including historical non-owner lists.
+        for house in houses.values_mut() {
+            house.base_projection_mut().remove_membership(id);
+        }
+    }
+
+    pub(super) fn release_house_base_tracking(
+        substrate: &ObjectSubstrate,
+        houses: &mut Houses,
+        id: u64,
+    ) {
+        if let Some(owner) = substrate.entities.get(id).map(|entity| entity.owner())
+            && let Some(house) = houses.get_mut(&owner)
+        {
+            //43BF34 changes tracking AFTER the earlier expiry/Limbo. No recalc.
+            house.base_projection_mut().unregister(id);
+        }
+    }
+}
+
+impl crate::sim::houses::Houses {
+    /// `BuildingClass::ChangeOwner`'s moves between the two Houses' lists:
+    /// before the Techno owner swap it stable-removes the building from the
+    /// old House's FactoryPlant list, recomputes and removes it from House+68
+    /// (`0x00448A21..0x00448AB0`); after it, it appends to the new House's
+    /// lists (`0x00449155..0x004491D2`).
+    pub(super) fn leave_house_base_lists(&mut self, id: u64, owner: InternedId) {
+        if let Some(house) = self.get_mut(&owner) {
+            house.base_projection_mut().remove_membership(id);
+        }
+    }
     /// `TechnoClass::ChangeOwner`'s Remove_Tracking on the old House and
     /// Add_Tracking on the new (`0x007015DE`, `0x007015E6`) move the
     /// building's registration with it.
@@ -903,38 +956,13 @@ impl Simulation {
         new_owner: InternedId,
     ) {
         let Some(entry) = self
-            .houses
             .get_mut(&old_owner)
             .and_then(|house| house.base_projection_mut().unregister(id))
         else {
             return;
         };
-        if let Some(house) = self.houses.get_mut(&new_owner) {
+        if let Some(house) = self.get_mut(&new_owner) {
             house.base_projection_mut().register(entry);
-        }
-    }
-
-    pub(super) fn remove_house_base_membership(&mut self, id: u64) {
-        if !self
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
-        {
-            return;
-        }
-        // Broadcast visits every House, including historical non-owner lists.
-        for house in self.houses.values_mut() {
-            house.base_projection_mut().remove_membership(id);
-        }
-    }
-
-    pub(super) fn release_house_base_tracking(&mut self, id: u64) {
-        if let Some(owner) = self.substrate.entities.get(id).map(|entity| entity.owner())
-            && let Some(house) = self.houses.get_mut(&owner)
-        {
-            //43BF34 changes tracking AFTER the earlier expiry/Limbo. No recalc.
-            house.base_projection_mut().unregister(id);
         }
     }
 }

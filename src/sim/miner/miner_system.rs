@@ -29,6 +29,7 @@ use crate::util::direction::DIRECTION_DELTAS;
 use crate::sim::intern::InternedId;
 
 use crate::sim::movement::ground_pose::{object_get_coords, object_world_z_leptons};
+use crate::sim::world::ObjectSubstrate;
 use crate::util::native_x87::{X87Chop53, sqrt_approx_f32};
 
 /// Native too-far test: `ftol(Sqrt_Approx(d²)) > threshold_cells * 256` is far;
@@ -107,7 +108,9 @@ pub(super) const DISPATCH_NEXT_FRAME: i32 = 1;
 /// (an archive or scan-hit destination, or one it already held), and any
 /// cursor outside the native handler's switch.
 pub(super) fn arm_rate_epilogue(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapshot) {
-    snap.dispatch_delay = sim.mission_rate_epilogue_for(
+    snap.dispatch_delay = Simulation::mission_rate_epilogue_for(
+        &mut sim.scenario_rng,
+        &sim.substrate,
         rules,
         snap.entity_id,
         crate::sim::mission::MissionType::Harvest,
@@ -168,8 +171,8 @@ pub(super) fn build_miner_snapshot(sim: &Simulation, id: u64) -> Option<MinerSna
 /// FSM cursor of record (`MissionCom::handler_state`, which
 /// `UnitClass::Mission_Harvest @ 0x0073E5E0` stores at
 /// `0x0073E714..0x0073EE68`).
-pub(super) fn commit_miner_snapshot(sim: &mut Simulation, snap: &MinerSnapshot) {
-    let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) else {
+pub(super) fn commit_miner_snapshot(substrate: &mut ObjectSubstrate, snap: &MinerSnapshot) {
+    let Some(entity) = substrate.entities.get_mut(snap.entity_id) else {
         return;
     };
     entity.miner = Some(snap.miner.clone());
@@ -188,8 +191,8 @@ pub(crate) fn native_mission_is_harvest(entity: &crate::sim::game_entity::GameEn
 /// Mission_Move, Mission_Patrol and Mission_Repair also clear it on entry
 /// (`0x00740A99`, `0x00740B1A`, `0x00740F10`); they run inside FootClass::AI
 /// and nothing reads the byte in between, so this clear covers them.
-pub(crate) fn unit_ai_clear_harvesting(sim: &mut Simulation, id: u64) {
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+pub(crate) fn unit_ai_clear_harvesting(substrate: &mut ObjectSubstrate, id: u64) {
+    let Some(entity) = substrate.entities.get_mut(id) else {
         return;
     };
     if entity.death.is_dying()
@@ -202,6 +205,88 @@ pub(crate) fn unit_ai_clear_harvesting(sim: &mut Simulation, id: u64) {
     if let Some(miner) = entity.miner.as_mut() {
         miner.harvesting = false;
     }
+}
+
+/// `UnitClass::AI`'s stuck-harvester nudge (`0x0073681D..0x0073697B`), its
+/// last block, every frame. A `Harvester=` Unit (`+0xE0E`) whose House no
+/// human controls (`0x0050B730`), whose mission began more than 300 frames
+/// ago (`+0xC0`), whose locomotor is not moving (ILocomotion `+0x10`) and
+/// which stands on its refinery's dock Cell, the `Refinery=` building's
+/// (`+0x16BB`) Cell plus (3, 1) of the first Building in its own Cell
+/// (`0x0047C520`), drives off: it says OVER_OUT to its contact when it has
+/// one (`0x0065AE30`, vt+0x274(3)), takes the Cell NearbyLocation finds
+/// near the refinery (`0x00703590`) as its destination (vt+0x480(cell, 1))
+/// and queues Move to commence now (vt+0x1E8(2, 1)).
+///
+/// A normal unload is safe: DOCK_NOW queues Unload (`0x0043C788`), which
+/// restarts the mission clock, and this block follows the frame's second
+/// Commence. Before DOCK_NOW a docking miner is still on Enter, whose clock
+/// started when Harvest handed over (state 3).
+///
+/// RESIDUAL (timing, not ported logic): a computer miner whose Enter began
+/// more than 300 frames before it stands still on the pad, in the turn
+/// before DOCK_NOW, is sent off and docks again. This needs VERA's Enter,
+/// warp and queue timing to match native to match retail. Trigger: a Chrono
+/// Miner warping from far off (`ChronoHarvTooFarDistance=50`), or a War
+/// Miner waiting behind others. Frequency: unmeasured.
+pub(crate) fn unit_ai_nudge_off_refinery_pad(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    let frame = sim.session.binary_frame();
+    if entity.category() != EntityCategory::Unit
+        || !sim
+            .object_type(entity.type_ref(), rules)
+            .is_some_and(|object| object.harvester)
+        || sim
+            .houses
+            .get(&entity.owner())
+            .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()))
+        || (frame as i32).wrapping_sub(entity.mission.mission_start_frame() as i32) <= 300
+        || crate::sim::movement::motion_query::is_moving(entity) != Some(false)
+    {
+        return;
+    }
+    let (rx, ry) = (entity.position.rx(), entity.position.ry());
+    let in_contact = !entity.radio_contacts.is_empty();
+    let Some(refinery) = sim
+        .substrate
+        .occupancy
+        .first_building_on_layer(rx, ry, MovementLayer::Ground)
+        .filter(|&building| {
+            sim.substrate
+                .entities
+                .get(building)
+                .is_some_and(|building| {
+                    sim.object_type(building.type_ref(), rules)
+                        .is_some_and(|object| object.refinery)
+                        && (
+                            building.position.rx().wrapping_add(3),
+                            building.position.ry().wrapping_add(1),
+                        ) == (rx, ry)
+                })
+        })
+    else {
+        return;
+    };
+    if in_contact {
+        radio::transmit_to_contact(sim, id, RadioMessage::Break, Some(rules), frame_effects);
+    }
+    drive_off_refinery(sim, rules, id, refinery, overlay_registry, frame_effects);
+    let now = sim.session.binary_frame();
+    let _ = sim.mission_queue_exact(
+        id,
+        MissionId::from_known(MissionType::Move),
+        1,
+        now,
+        &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+    );
 }
 
 pub(super) fn process_miner(
@@ -342,7 +427,12 @@ fn harvest_looking(
         frame_effects,
     ) {
         snap.miner.harvesting = true;
-        arm_stage(sim, snap.entity_id, sim.session.binary_frame(), 2);
+        arm_stage(
+            &mut sim.substrate,
+            snap.entity_id,
+            sim.session.binary_frame(),
+            2,
+        );
         snap.state = MinerState::Harvest;
         return;
     }
@@ -398,8 +488,8 @@ fn assign_archive_destination(
 }
 
 /// Arm the Unit+0xF8 StageClass: value 0, timer and rate `rate` from `now`.
-fn arm_stage(sim: &mut Simulation, id: u64, now: u32, rate: u32) {
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+fn arm_stage(substrate: &mut ObjectSubstrate, id: u64, now: u32, rate: u32) {
+    if let Some(entity) = substrate.entities.get_mut(id) {
         entity.restart_native_stage(0, now as i32, rate as i32);
     }
 }
@@ -441,7 +531,7 @@ fn harvest_cutting(
         .get(snap.entity_id)
         .is_some_and(|entity| entity.native_stage().rate() == 0)
     {
-        arm_stage(sim, snap.entity_id, now, load_rate(rules));
+        arm_stage(&mut sim.substrate, snap.entity_id, now, load_rate(rules));
     }
     if sim
         .substrate
@@ -549,7 +639,7 @@ fn harvest_ore_tick(
         || snap.miner.is_full()
         || !super::ore_scan::cell_is_tiberium_land(sim, overlay_registry, cell)
     {
-        arm_stage(sim, id, now, 0);
+        arm_stage(&mut sim.substrate, id, now, 0);
         return false;
     }
     let request = snap
@@ -575,7 +665,7 @@ fn harvest_ore_tick(
             resource_type,
             value,
         }));
-    arm_stage(sim, id, now, load_rate(rules));
+    arm_stage(&mut sim.substrate, id, now, load_rate(rules));
     true
 }
 
@@ -753,7 +843,7 @@ fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
 /// idempotent). Once on Guard the Harvest handler is no longer dispatched;
 /// what brings a miner back is `UnitClass::Mission_Guard @ 0x00740810` (the
 /// chrono arms in `techno_ai/mission_handlers.rs`) or a player order
-/// (`Command::HarvestCell` / `MinerReturn`, EventClass MEGAMISSION →
+/// (`Command::HarvestCell` / MEGAMISSION Enter, EventClass MEGAMISSION →
 /// `Queue_Mission(mission, 0)` at `0x004C73B9`). A human war miner therefore
 /// parks on Guard until re-ordered — native behaviour.
 ///
@@ -770,8 +860,8 @@ fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
 /// `House+0x242` is clear — and the scan miss that led here has just set it,
 /// with no clearing writer. What keeps a native AI economy alive after that
 /// is house/team logic (`AI_Choose_Unit` reading `+0x242`, team recruitment),
-/// none of which VERA runs yet (`sim/ai.rs` never issues `HarvestCell`/
-/// `MinerReturn` and skips harvesters). Until that lane lands, an AI-house
+/// none of which VERA runs yet (`sim/ai.rs` never issues `HarvestCell` or a
+/// refinery Enter and skips harvesters). Until that lane lands, an AI-house
 /// miner does not park: state 4 drops straight back into the state-0 scan,
 /// which on a miss re-arms the same fixed 105-frame wait (the pre-Guard-park
 /// perpetual re-scan cadence, `House+0x242` still written native-true on
@@ -805,21 +895,42 @@ fn handle_going_to_idle(
                     .is_some_and(|kind| kind.refinery)
             })
         })
-        && let Some(exit) = sim
-            .techno_nearby_location(snap.entity_id, Some(refinery_sid), rules)
-            .and_then(|(x, y)| Some((u16::try_from(x).ok()?, u16::try_from(y).ok()?)))
     {
-        assign_miner_cell_destination(
+        drive_off_refinery(
             sim,
             rules,
             snap.entity_id,
-            exit,
+            refinery_sid,
             overlay_registry,
             frame_effects,
         );
     }
     queue_guard_from_harvest(sim, snap);
     true
+}
+
+/// vt+0x480(cell, 1) to the Cell NearbyLocation finds near `refinery`
+/// (`0x00703590`), as Mission_Harvest state 4 (`0x0073EF1F..`) and the
+/// stuck-harvester nudge (`0x0073690A..0x0073696D`) send a miner off its pad.
+///
+/// RESIDUAL: native always calls the setter with `Map[cell]`; VERA skips it
+/// when NearbyLocation finds no Cell or one outside the path grid
+/// ([`assign_miner_cell_destination`]). Trigger: no passable Cell in reach
+/// of the refinery. Frequency: none seen.
+fn drive_off_refinery(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    refinery: u64,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) {
+    if let Some(exit) = sim
+        .techno_nearby_location(id, Some(refinery), rules)
+        .and_then(|(x, y)| Some((u16::try_from(x).ok()?, u16::try_from(y).ok()?)))
+    {
+        assign_miner_cell_destination(sim, rules, id, exit, overlay_registry, frame_effects);
+    }
 }
 
 /// `Queue_Mission(Guard, 0)` from inside the Harvest handler (preamble and

@@ -127,8 +127,6 @@ fn visible_object_under_point(state: &AppState, world_x: f32, world_y: f32) -> O
         &owner,
         state.match_state.sandbox_full_visibility,
         state.rules(),
-        state.height_map(),
-        crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
     )
     .map(|hover| hover.stable_id)
 }
@@ -482,15 +480,7 @@ pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str)
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
-    schedule_command(
-        state,
-        &owner,
-        Command::LaunchSuperWeapon {
-            sw_type_id,
-            target_rx: rx,
-            target_ry: ry,
-        },
-    );
+    queue_super_weapon_click(state, &owner, sw_type_id, (rx, ry));
     log::info!(
         "SuperWeapon launch queued: owner={} section={} cell=({}, {}) issue_frame=current",
         owner,
@@ -498,6 +488,105 @@ pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str)
         rx,
         ry
     );
+}
+
+/// Paid source/final clicks use explicit extension commands. Stock commands
+/// and native capture payloads are unchanged.
+pub(crate) fn queue_super_weapon_click(
+    state: &mut AppState,
+    owner: &str,
+    sw_type_id: InternedId,
+    cell: (u16, u16),
+) {
+    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        return;
+    };
+    let sim = &runtime.simulation;
+    let Some(owner_id) = sim.interner().get(owner) else {
+        return;
+    };
+    let Some(command) =
+        super_weapon_click_command(sim, &runtime.resources.rules, owner_id, sw_type_id, cell)
+    else {
+        return;
+    };
+    try_schedule_command(state, owner, command);
+}
+
+fn super_weapon_click_command(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    owner_id: InternedId,
+    sw_type_id: InternedId,
+    cell: (u16, u16),
+) -> Option<Command> {
+    let ticket = sim
+        .paid_super_weapon_selection(owner_id)
+        .filter(|ticket| ticket.destination == sw_type_id);
+    let command = if let Some(selection) = ticket {
+        Command::CompletePaidSuperWeapon {
+            selection,
+            target_rx: cell.0,
+            target_ry: cell.1,
+        }
+    } else if let Some(mut selection) =
+        sim.next_paid_super_weapon_selection(rules, owner_id, sw_type_id)
+    {
+        if let Some(queued) = sim.pending_paid_super_weapon_sequence(owner_id, sw_type_id) {
+            let next = queued.checked_add(1)?;
+            selection.sequence = selection.sequence.max(next);
+        }
+        Command::BeginPaidSuperWeapon {
+            selection,
+            target_rx: cell.0,
+            target_ry: cell.1,
+        }
+    } else {
+        Command::LaunchSuperWeapon {
+            sw_type_id,
+            target_rx: cell.0,
+            target_ry: cell.1,
+        }
+    };
+    Some(command)
+}
+
+/// Every local cursor cancellation/reselection submits a ticketed command,
+/// never a direct Simulation write. Called after input and before the next
+/// ordinary frame so building placement and campaign mode clears participate.
+pub(crate) fn reconcile_paid_super_weapon_cursor(state: &mut AppState) {
+    let owner = resolve_owner(state);
+    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        return;
+    };
+    let sim = &runtime.simulation;
+    let Some(owner_id) = sim.interner().get(&owner) else {
+        return;
+    };
+    let selected = state
+        .match_state
+        .input
+        .targeting_mode
+        .as_ref()
+        .and_then(crate::app::types::TargetingMode::as_super_weapon);
+    if let Some(command) = paid_super_weapon_cursor_cancellation(sim, owner_id, selected) {
+        try_schedule_command(state, &owner, command);
+    }
+}
+
+fn paid_super_weapon_cursor_cancellation(
+    sim: &crate::sim::world::Simulation,
+    owner: InternedId,
+    selected: Option<&str>,
+) -> Option<Command> {
+    let (selection, in_queue) = sim.projected_paid_super_weapon_selection(owner)?;
+    let expected = if in_queue {
+        selection.source
+    } else {
+        selection.destination
+    };
+    (!selected.is_some_and(|name| name.eq_ignore_ascii_case(sim.interner().resolve(expected))))
+        .then_some(Command::CancelPaidSuperWeapon { selection })
 }
 
 pub(crate) fn place_starter_base_for_local_owner(state: &mut AppState) {
@@ -859,7 +948,7 @@ fn pick_building_for_owner(
     None
 }
 
-pub(super) fn schedule_command_in_sim(
+pub(crate) fn schedule_command_in_sim(
     sim: &mut crate::sim::world::Simulation,
     owner: &str,
     payload: Command,
@@ -870,7 +959,11 @@ pub(super) fn schedule_command_in_sim(
     if sim.session().input_locked()
         && !matches!(
             &payload,
-            Command::SetGameSpeed { .. } | Command::ExitMatch | Command::Destruct
+            Command::SetGameSpeed { .. }
+                | Command::ExitMatch
+                | Command::Destruct
+                | Command::RemovePlayer { .. }
+                | Command::Ally { .. }
         )
     {
         return None;
@@ -911,6 +1004,14 @@ pub(super) fn schedule_command_in_sim(
         }
         Command::Destruct => {
             let record = sim.encode_destruct_record(owner_id)?;
+            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+        }
+        Command::RemovePlayer { house_index } => {
+            let record = sim.encode_remove_player_record(owner_id, house_index)?;
+            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+        }
+        Command::Ally { house_index } => {
+            let record = sim.encode_ally_record(owner_id, house_index)?;
             SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
         }
         Command::SellWallAtCell { x, y } => {
@@ -1077,6 +1178,7 @@ mod tests {
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
+    use crate::sim::intern::InternedId;
     use crate::sim::world::Simulation;
 
     #[test]
@@ -1200,6 +1302,104 @@ mod tests {
             None
         );
         assert_eq!(sim.interner().len(), interned_before_unknown);
+    }
+
+    fn two_human_sim() -> (Simulation, InternedId, InternedId) {
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        let peer = sim.intern("Peer");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(local, 0, None, true, 0, 10));
+        sim.houses_mut_for_test()
+            .register(HouseState::new(peer, 0, None, true, 0, 10));
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
+        sim.session_mut_for_test().set_tick_for_test(41);
+        sim.session_mut_for_test().set_binary_frame_for_test(73);
+        (sim, local, peer)
+    }
+
+    fn run_due(sim: &mut Simulation) -> bool {
+        let due = sim.take_due_commands();
+        sim.advance_tick(&due, None, None, None, 33).frame_committed
+    }
+
+    #[test]
+    fn a_remote_exit_marks_the_house_without_quitting_or_killing_it() {
+        // Execute_DoList 0x0064C7E7 marks House+0x248 for every sender; only
+        // the local one reaches Execute's quit byte (0x004C7917).
+        let (mut sim, local, peer) = two_human_sim();
+        schedule_command_in_sim(&mut sim, "Peer", Command::ExitMatch).unwrap();
+        assert!(run_due(&mut sim), "a remote EXIT does not end the frame");
+        assert!(!sim.quit_requested());
+        assert_eq!(sim.take_executed_exit_owner(), None);
+        assert_eq!(sim.take_departed_owners(), [peer]);
+        assert!(sim.houses()[&peer].left_game());
+        // 0x005E2BA0: the local human is undefeated, so no Flag_To_Die.
+        assert!(!sim.houses()[&peer].is_to_die());
+        assert!(!sim.houses()[&local].left_game());
+
+        // The local EXIT still quits.
+        schedule_command_in_sim(&mut sim, "Local", Command::ExitMatch).unwrap();
+        assert!(!run_due(&mut sim));
+        assert!(sim.quit_requested());
+        assert_eq!(sim.take_executed_exit_owner(), Some(local));
+        assert!(sim.take_departed_owners().is_empty());
+    }
+
+    #[test]
+    fn an_exit_with_no_other_undefeated_human_flags_the_sender_to_die() {
+        let (mut sim, local, peer) = two_human_sim();
+        sim.houses_mut_for_test()
+            .get_mut(&local)
+            .unwrap()
+            .set_is_defeated_for_test(true);
+        schedule_command_in_sim(&mut sim, "Peer", Command::ExitMatch).unwrap();
+        run_due(&mut sim);
+        assert!(sim.houses()[&peer].is_to_die());
+    }
+
+    #[test]
+    fn remove_player_flags_only_a_human_house_to_die() {
+        // EventClass::Execute 0x004C7B73: IsHumanControlled, then
+        // Flag_To_Die; the payload is the House's registration index.
+        let (mut sim, _, peer) = two_human_sim();
+        let ai = sim.intern("Ai");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(ai, 0, None, false, 0, 10));
+        for index in [1, 2] {
+            schedule_command_in_sim(
+                &mut sim,
+                "Local",
+                Command::RemovePlayer { house_index: index },
+            )
+            .unwrap();
+        }
+        let record = sim
+            .encode_remove_player_record(sim.interner().get("Local").unwrap(), 1)
+            .unwrap();
+        assert_eq!(record.opcode(), crate::sim::command::REMOVE_PLAYER_OPCODE);
+        assert_eq!(&record.payload()[..4], &1i32.to_le_bytes());
+        run_due(&mut sim);
+        assert!(sim.houses()[&peer].is_to_die());
+        assert!(!sim.houses()[&ai].is_to_die());
+    }
+
+    #[test]
+    fn the_ally_record_carries_the_other_house_index_through_the_queue() {
+        // Ally 0x00731877..0x007318C8: EventClass(PlayerPtr, 3, index).
+        let (mut sim, local, peer) = two_human_sim();
+        let record = sim.encode_ally_record(local, 1).unwrap();
+        assert_eq!(record.opcode(), crate::sim::command::ALLY_OPCODE);
+        assert_eq!(&record.payload()[..4], &1i32.to_le_bytes());
+        schedule_command_in_sim(&mut sim, "Local", Command::Ally { house_index: 1 }).unwrap();
+        let due = sim.take_due_commands();
+        assert!(matches!(
+            due.as_slice(),
+            [envelope] if envelope.owner == local
+                && envelope.payload == Command::Ally { house_index: 1 }
+        ));
+        let _ = peer;
     }
 
     #[test]
@@ -1706,3 +1906,7 @@ mod tests {
 #[cfg(test)]
 #[path = "local_owner_tests.rs"]
 mod local_owner_tests;
+
+#[cfg(test)]
+#[path = "paid_superweapon_tests.rs"]
+mod paid_superweapon_tests;

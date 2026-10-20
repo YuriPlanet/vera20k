@@ -251,7 +251,7 @@ impl Simulation {
             .collect();
         vision::publish_gap_generator_event(
             &mut self.fog,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             viewer,
             source,
             active,
@@ -330,7 +330,7 @@ impl Simulation {
             let radius = deposit.radius;
             if operational
                 && !crate::map::houses::are_houses_friendly(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     self.interner.resolve(entity.owner()),
                     self.interner.resolve(viewer),
                 )

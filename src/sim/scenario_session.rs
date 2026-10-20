@@ -1307,7 +1307,9 @@ impl ScenarioSession {
         s.network_max_ahead_frames.hash(hasher);
         s.start_header.hash(hasher);
         // observer_house, like current_house, selects process-local presentation
-        // and accepted outcome. It is saved and reference-validated, not shared CRC input.
+        // and accepted outcome, and skips the observer's terminal score draw
+        // (every peer holds the same node data, and the RNG state is hashed).
+        // It is saved and reference-validated, not shared CRC input.
         if let Some(campaign) = s.campaign {
             b"scenario-campaign-startup-v1".hash(hasher);
             campaign.hash(hasher);

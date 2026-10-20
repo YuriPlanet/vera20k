@@ -548,14 +548,18 @@ fn super_team_fixture(script: &str) -> (Simulation, RuleSet, u64, [u64; 2], [u64
     for owner in sim.houses.order().to_vec() {
         for name in &rules.super_weapon_order {
             let id = sim.interner.intern(name);
-            sim.super_weapons.entry(owner).or_default().insert(
-                id,
-                crate::sim::superweapon::SuperWeaponInstance::new(
+            sim.super_weapons
+                .map_mut_for_test()
+                .entry(owner)
+                .or_default()
+                .insert(
                     id,
-                    owner,
-                    sim.session.binary_frame() as i32,
-                ),
-            );
+                    crate::sim::superweapon::SuperWeaponInstance::new(
+                        id,
+                        owner,
+                        sim.session.binary_frame() as i32,
+                    ),
+                );
         }
     }
     for (building, rx, ry) in [("IRON", 4, 4), ("CHRONO", 4, 8)] {
@@ -574,6 +578,7 @@ fn super_team_fixture(script: &str) -> (Simulation, RuleSet, u64, [u64; 2], [u64
             .set_charge_duration_for_test(rules.super_weapon(name).unwrap().recharge_time_frames);
         instance.set_is_ready_for_test(true);
         sim.super_weapons
+            .map_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(id, instance);
@@ -616,6 +621,7 @@ fn a_computer_team_waits_on_its_charging_iron_curtain() {
     let frame = sim.session.binary_frame() as i32;
     let instance = sim
         .super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .and_then(|weapons| weapons.get_mut(&curtain))
         .unwrap();

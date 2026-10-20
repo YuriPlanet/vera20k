@@ -185,8 +185,8 @@ fn production_chain_code6_scatters_once_without_adopting_the_candidate() {
     add_blocker(&mut sim, false);
     // The Unit receiver's Find_Nearby_Passable_Cell bounds its search by the
     // map Size.
-    sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
-    sim.playfield_size_height = Some(20);
+    sim.set_playfield_bounds_for_test(Some(crate::sim::arena_fixture::OPEN_PLAYFIELD));
+    sim.set_playfield_size_height_for_test(Some(20));
     let before = sim.substrate.entities.get(2).unwrap().position;
     let rng = sim.scenario_rng.logical_state();
     sim.run_track_points(invocation, 8, Some(&rules), None);

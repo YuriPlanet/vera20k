@@ -105,7 +105,7 @@ impl Simulation {
         });
         if building.mission.current().known() == Some(MissionType::Selling)
             || is_ally_by_object(
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &self.interner,
                 building.owner(),
                 source_entity.owner(),

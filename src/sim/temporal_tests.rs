@@ -251,7 +251,8 @@ fn chain(sim: &mut Simulation, target: u64, attackers: &[u64], warp_remaining: i
         .unwrap()
         .temporal
         .head = attackers.first().copied();
-    sim.set_building_online_for_temporal(target, attackers.is_empty());
+    sim.substrate
+        .set_building_online_for_temporal(target, attackers.is_empty());
 }
 
 /// Where [`place`] puts the oracle's origin, so its negative coordinates fit
@@ -288,7 +289,9 @@ fn veterancy(sim: &Simulation, id: u64) -> f32 {
 
 fn put_on_attack(sim: &mut Simulation, id: u64) {
     let now = sim.session.binary_frame();
-    let _ = sim.mission_assign_exact(id, MissionId::from_known(MissionType::Attack), now);
+    let _ = sim
+        .substrate
+        .mission_assign_exact(id, MissionId::from_known(MissionType::Attack), now);
 }
 
 fn warp_away_anims(sim: &Simulation) -> Vec<AnimWorldCoord> {
@@ -846,7 +849,7 @@ fn the_ifv_borrows_its_gunners_beam() {
     let partner = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 12);
     let ifv = spawn(&mut sim, &rules, "FV", "Russians", 9, 10);
 
-    sim.temporal_receive_gunner(ifv, cleg);
+    sim.substrate.temporal_receive_gunner(ifv, cleg);
     assert!(!entity(&sim, cleg).temporal.has_link());
     assert!(entity(&sim, ifv).temporal.has_link());
 
@@ -887,7 +890,9 @@ fn a_warped_building_goes_offline() {
     let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 12, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
     let now = sim.session.binary_frame();
-    let _ = sim.mission_assign_exact(plant, MissionId::from_known(MissionType::Guard), now);
+    let _ =
+        sim.substrate
+            .mission_assign_exact(plant, MissionId::from_known(MissionType::Guard), now);
     let americans = sim.interner.get("Americans").unwrap();
     let output = |sim: &mut Simulation| {
         crate::sim::power_system::tick_power_states(
@@ -955,8 +960,8 @@ fn trigger_online_is_independent_of_temporal_and_corrupt_chain_clear_does_not_re
     sim.temporal_initiate_warp(cleg, Some(building), &rules, None, effects);
     //71A76B's exceptional head-with-predecessor branch calls71ADE0, which
     //clears278/270 but never calls452210 or writes House dirty flags.
-    sim.temporal_link_mut(other).unwrap().target = Some(building);
-    sim.temporal_link_mut(cleg).unwrap().prev = Some(other);
+    sim.substrate.temporal_link_mut(other).unwrap().target = Some(building);
+    sim.substrate.temporal_link_mut(cleg).unwrap().prev = Some(other);
     sim.temporal_update_head(cleg, &rules, None, effects);
     assert!(!entity(&sim, building).is_warped_out());
     assert!(!entity(&sim, building).building_online());
@@ -1107,7 +1112,7 @@ fn erasing_a_superweapon_building_revokes_its_super() {
     let mut held = false;
     let mut erased_at = None;
     for frame in 0..200 {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let commands = sim.take_due_commands();
         sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
         if erased(&sim, silo) {
@@ -1575,7 +1580,9 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
         .economy_mut()
         .set_credits_for_test(5000);
     let now = sim.session.binary_frame();
-    let _ = sim.mission_assign_exact(gi, MissionId::from_known(MissionType::Guard), now);
+    let _ = sim
+        .substrate
+        .mission_assign_exact(gi, MissionId::from_known(MissionType::Guard), now);
     assert!(
         sim.infantry_do_action(
             gi,
@@ -1943,12 +1950,13 @@ fn a_warped_building_cannot_be_captured() {
             },
             Some(&rules),
         ));
-        sim.mission_assign_exact(
-            engineer,
-            MissionId::from_known(MissionType::Capture),
-            sim.session.binary_frame(),
-        )
-        .unwrap();
+        sim.substrate
+            .mission_assign_exact(
+                engineer,
+                MissionId::from_known(MissionType::Capture),
+                sim.session.binary_frame(),
+            )
+            .unwrap();
         assert_eq!(
             entity(sim, engineer).navigation.nav_com(),
             Some(crate::sim::components::NavTargetRef::object(plant)),
@@ -2448,7 +2456,7 @@ fn native_first_head_building_warning_and_release_corpus() {
             ),
         );
         if input["allied"].as_bool() == Some(true) {
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .entry("ALLIES2".into())
                 .or_default()
                 .insert("AMERICANS".into());
@@ -2474,6 +2482,7 @@ fn native_first_head_building_warning_and_release_corpus() {
         for house in [local, remote] {
             sim.houses.get_mut(&house).unwrap().take_tech_recheck();
             sim.power_states
+                .map_mut_for_test()
                 .insert(house, PowerState::settled_for_test());
         }
         let timer = &input["timer_priors"];
@@ -2496,7 +2505,7 @@ fn native_first_head_building_warning_and_release_corpus() {
         sim.mapgen_rng = SimRng::new(seed);
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
 
         for phase in case["phases"].as_array().unwrap() {
             let phase_name = phase["name"].as_str().unwrap();
@@ -2592,7 +2601,8 @@ fn native_first_head_building_warning_and_release_corpus() {
             );
             let requests: Vec<RadarEventRequest> = sim
                 .sound_events
-                .drain(..)
+                .take_for_test()
+                .into_iter()
                 .filter_map(|event| match event {
                     SimSoundEvent::UnderAttack { owner, radar, .. }
                     | SimSoundEvent::AllyUnderAttack { owner, radar }
@@ -2637,14 +2647,18 @@ fn arena(seed: u64, rules: &RuleSet) -> (Simulation, crate::sim::pathfinding::Pa
     for owner in sim.houses.order().to_vec() {
         for name in &rules.super_weapon_order {
             let id = sim.interner.intern(name);
-            sim.super_weapons.entry(owner).or_default().insert(
-                id,
-                crate::sim::superweapon::SuperWeaponInstance::new(
+            sim.super_weapons
+                .map_mut_for_test()
+                .entry(owner)
+                .or_default()
+                .insert(
                     id,
-                    owner,
-                    sim.session.binary_frame() as i32,
-                ),
-            );
+                    crate::sim::superweapon::SuperWeaponInstance::new(
+                        id,
+                        owner,
+                        sim.session.binary_frame() as i32,
+                    ),
+                );
         }
     }
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, rules);

@@ -16,7 +16,7 @@ use winit::event::MouseButton;
 /// instead of offering a press that would end the game.
 fn select_abort_secondary(state: &AppState) -> AbortSecondary {
     secondary_for(
-        state.match_state.session.mode(),
+        state.match_state.session_mode(),
         state.match_state.startup.installed_campaign().is_some(),
         state
             .match_state

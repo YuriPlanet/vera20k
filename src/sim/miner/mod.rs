@@ -20,6 +20,10 @@ pub(crate) use refinery_dock::UnloadImage;
 #[path = "outbound_drive_tests.rs"]
 mod outbound_drive_tests;
 
+#[cfg(test)]
+#[path = "pad_nudge_tests.rs"]
+mod pad_nudge_tests;
+
 pub(crate) use self::harvest_mission::mission_harvest;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{
@@ -201,7 +205,7 @@ pub struct Miner {
     // record. Read it via `GameEntity::miner_state()`.
     /// Retired: the refinery VERA's old player return order pinned. The
     /// order is now gamemd's MEGAMISSION Enter on the refinery
-    /// (`Command::MinerReturn`), and nothing writes this; a save from before
+    /// (`Command::MegaMission`), and nothing writes this; a save from before
     /// may restore a stale id, which only the state hash reads. The field
     /// keeps its place in saves and the hash until the sim-scale layout
     /// change removes it.

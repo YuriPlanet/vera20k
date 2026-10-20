@@ -418,6 +418,12 @@ pub(crate) struct MapCaptureProfile {
         deserialize_with = "deserialize_present",
         skip_serializing_if = "Option::is_none"
     )]
+    observe_waves: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        skip_serializing_if = "Option::is_none"
+    )]
     observe_anim_types: Option<Vec<String>>,
     #[serde(
         default,
@@ -590,6 +596,7 @@ impl MapCaptureProfile {
                     && self.observe_owners.is_none()
                     && self.observe_types.is_none()
                     && self.observe_projectiles.is_none()
+                    && self.observe_waves.is_none()
                     && self.observe_anim_types.is_none()
                     && self.observe_audio.is_none()
                     && self.allow_load_segments.is_none()
@@ -923,7 +930,9 @@ impl MapCaptureProfile {
     }
 
     fn observes_effects(&self) -> bool {
-        self.observe_projectiles == Some(true) || self.observe_anim_types.is_some()
+        self.observe_projectiles == Some(true)
+            || self.observe_waves == Some(true)
+            || self.observe_anim_types.is_some()
     }
 
     fn observes_local_input(&self) -> bool {
@@ -1931,6 +1940,7 @@ impl MapKeyboardGestureReceipt {
                     location,
                     state: pressed,
                     repeat,
+                    text: None,
                 },
                 false,
             )
@@ -2446,6 +2456,8 @@ struct MapEffectObservation {
     #[serde(skip_serializing_if = "Option::is_none")]
     projectiles: Option<Vec<Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    waves: Option<Vec<Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     animations: Option<Vec<Value>>,
 }
 
@@ -2484,10 +2496,24 @@ impl MapEffectObservation {
                         "runtime": anim.runtime()})
                 }).collect::<Vec<_>>()
         });
+        let waves = (profile.observe_waves == Some(true)).then(|| {
+            sim.waves().iter().take(MAX_OBSERVATION_SAMPLES + 1).map(|(&id, wave)| {
+                let source = wave.source();
+                let target = wave.target();
+                let polygon = wave.sonic_draw_geometry([0, 0]).map(|geometry| geometry.polygon);
+                json!({"stable_id": id, "wave_type": wave.wave_type(), "owner_id": wave.owner_id(),
+                    "in_logic_vector": wave.in_logic_vector(), "lifetime": wave.lifetime(),
+                    "active_geometry": wave.active_geometry(), "decaying": wave.decaying(),
+                    "direction_octant": wave.direction_octant(),
+                    "source_leptons": [source.x, source.y, source.z],
+                    "target_leptons": [target.x, target.y, target.z], "sonic_polygon": polygon})
+            }).collect::<Vec<_>>()
+        });
         let rng = sim.rng_views().scenario;
         let snapshot = Self {
             scenario_rng_cursor: [rng.index_a, rng.index_b],
             projectiles,
+            waves,
             animations,
         };
         ensure!(
@@ -2499,6 +2525,7 @@ impl MapEffectObservation {
 
     fn sample_count(&self) -> usize {
         1 + self.projectiles.as_ref().map_or(0, Vec::len)
+            + self.waves.as_ref().map_or(0, Vec::len)
             + self.animations.as_ref().map_or(0, Vec::len)
     }
 }
@@ -4170,7 +4197,7 @@ impl TacticalCaptureSession {
                 "presentation_tile": cell.and_then(|cell| grid.map(|grid| grid.presentation_tile(cell))),
                 "level": cell.map(|cell| cell.level), "slope": cell.map(|cell| cell.slope_type),
                 "raw_bridge_flags": cell.map(|cell| cell.bridge_facts.raw_flags),
-                "bridge_state": cell.map(|cell| cell.bridge_facts.state_byte),
+                "bridge_state": cell.and(overlay).map(|overlay| overlay.overlay_data),
                 "has_deck": cell.map(|cell| cell.has_bridge_deck), "deck_level": cell.map(|cell| cell.bridge_deck_level),
                 "walkable": cell.map(|cell| cell.bridge_walkable), "transition": cell.map(|cell| cell.bridge_transition),
                 "render": null})
@@ -5193,6 +5220,43 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn wave_snapshot_reads_owner_and_geometry_without_advancing_state() {
+        use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+        use crate::sim::{projectile::ProjectileCoord, wave::Wave, world::Simulation};
+        let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+        let mut sim = Simulation::new();
+        let first = ProjectileCoord {
+            x: 1024,
+            y: 1280,
+            z: 0,
+        };
+        let second = ProjectileCoord {
+            x: 2048,
+            y: 1280,
+            z: 0,
+        };
+        let wave = Wave::new(0, first, second);
+        sim.waves_mut_for_test().spawn(41, wave);
+        let mut profile = example();
+        profile.schema_version = PROFILE_V2.to_owned();
+        profile.observe_waves = Some(true);
+        let hash = sim.state_hash();
+        let rng = sim.rng_state();
+        let snapshot = MapEffectObservation::capture(&sim, &rules, &profile).unwrap();
+        assert_eq!(snapshot.sample_count(), 2);
+        let rows = snapshot.waves.as_ref().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["stable_id"], 41);
+        assert_eq!(rows[0]["source_leptons"], json!([1024, 1280, 0]));
+        assert_eq!(rows[0]["lifetime"], Wave::DEFAULT_LIFETIME);
+        assert_eq!(sim.state_hash(), hash);
+        assert_eq!(sim.rng_state(), rng);
+        profile.observe_waves = None;
+        let absent = MapEffectObservation::capture(&sim, &rules, &profile).unwrap();
+        assert!(serde_json::to_value(absent).unwrap().get("waves").is_none());
     }
 
     #[test]

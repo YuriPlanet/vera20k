@@ -204,7 +204,7 @@ pub(crate) fn sell_back(
         SellOrder::Computer if selling || c4 => return false,
         SellOrder::Computer => begin_selling(sim, rules, id, false),
     }
-    sim.sound_events.push(SimSoundEvent::SellClick { owner });
+    sim.sound_events.emit(SimSoundEvent::SellClick { owner });
     true
 }
 
@@ -223,7 +223,7 @@ pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, unde
     if sim
         .mission_queue_exact(id, selling, 0, now, &readiness)
         .is_err()
-        || sim.mission_commence_exact(id, now).is_err()
+        || sim.substrate.mission_commence_exact(id, now).is_err()
     {
         return;
     }
@@ -349,7 +349,7 @@ pub fn sell_stage_zero(
         .get(id)
         .map(|building| building.owner())
     {
-        sim.invalidate_house_power(owner, true);
+        Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
     }
     if let Some(rules) = rules
         && qualifying_undeploy(sim, rules, id)
@@ -359,7 +359,7 @@ pub fn sell_stage_zero(
         // Select before native44AA3D HandleReturnedSlaves.
         if let Some(sound_id) = sim.deploy_voice_request(rules, id, true) {
             let sound_id = sound_id.to_owned();
-            sim.sound_events.push(SimSoundEvent::UnitVoiceRequested {
+            sim.sound_events.emit(SimSoundEvent::UnitVoiceRequested {
                 owner: id,
                 sound_id,
             });
@@ -373,7 +373,7 @@ pub fn sell_stage_zero(
         });
         if let Some((sound, rx, ry)) = sound {
             let deploy_sound_id = sim.interner.intern(&sound);
-            sim.sound_events.push(SimSoundEvent::EntityDeployed {
+            sim.sound_events.emit(SimSoundEvent::EntityDeployed {
                 deploy_sound_id,
                 rx,
                 ry,
@@ -487,9 +487,10 @@ fn sale_survivors(
     if skip {
         return false;
     }
-    let count = sim.building_survivor_count(rules, id, false);
-    let passengers =
-        sim.eject_absorbed_passengers(rules, registry, id, &cells, false, frame_effects);
+    // Both read NoSurvivor (`0x0044A4CA`, How_Many_Survivors), clear on a
+    // building alive to sell.
+    let count = sim.building_survivor_count(rules, id);
+    let passengers = sim.eject_absorbed_passengers(rules, registry, id, &cells, frame_effects);
     let garrison = crate::sim::passenger::garrison_eject::sell_building_occupants(
         sim,
         rules,
@@ -530,11 +531,11 @@ fn sale_sounds(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         && let Some(sound) = rules.general.sell_sound.clone()
     {
         sim.sound_events
-            .push(SimSoundEvent::voc_at_for(sound, audible_to, &position));
+            .emit(SimSoundEvent::voc_at_for(sound, audible_to, &position));
     }
     if let Some(sound) = packup {
         sim.sound_events
-            .push(SimSoundEvent::voc_at_for(sound, audible_to, &position));
+            .emit(SimSoundEvent::voc_at_for(sound, audible_to, &position));
     }
 }
 
@@ -564,11 +565,11 @@ pub(crate) fn sell_complete(
         return false;
     };
     //449CB1 requests the House strip recheck before target/audio/conversion.
-    sim.request_house_tech_tree_recheck(owner);
+    sim.houses.request_house_tech_tree_recheck(owner);
     let _ = sim.assign_target_represented(id, None, Some(rules), registry, frame_effects);
     if !undeploys {
         sim.sound_events
-            .push(SimSoundEvent::StructureSold { owner });
+            .emit(SimSoundEvent::StructureSold { owner });
     }
     if qualifying_undeploy(sim, rules, id) {
         sim.finish_undeploy(id, rules, registry, frame_effects);
@@ -578,7 +579,7 @@ pub(crate) fn sell_complete(
     sim.set_building_light_active(id, false);
     if let Some(refund) = refund {
         // Add_Credits (`0x0044A222`).
-        crate::sim::credit_income::add_credits(sim, owner, refund);
+        crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
     }
     let context = UninitContext::new(Some(rules), registry).with_effects(frame_effects);
     //44A22C explicitly enters BuildingLimbo before44A28C UnInit. Its

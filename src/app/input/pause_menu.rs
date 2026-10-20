@@ -60,7 +60,7 @@ pub(crate) fn current_template(state: &AppState) -> PauseMenuTemplate {
 
 /// `0x004F10E1..0x004F1130` for the running session.
 fn select_template(state: &AppState) -> PauseMenuTemplate {
-    let mode = state.match_state.session.mode();
+    let mode = state.match_state.session_mode();
     let local_defeated = state
         .match_state
         .sim_runtime
@@ -292,7 +292,7 @@ fn resume_internet_events(state: &mut AppState) {
         .as_ref()
         .is_some_and(|runtime| runtime.simulation.local_player_defeated());
     if current_template(state) != PauseMenuTemplate::Internet
-        || state.match_state.session.mode() != SessionMode::Wol
+        || state.match_state.session_mode() != SessionMode::Wol
         || local_defeated
     {
         return;

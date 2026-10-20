@@ -10,6 +10,1186 @@
     31,
     31
   ],
+  "level_rows": [
+    {
+      "cases": [
+        {
+          "bridge_candidates": 15,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            0,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 23,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            -15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 8,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            0,
+            435
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            17,
+            16
+          ],
+          "native_exit": "direct_x",
+          "scan_attempts": 137,
+          "world_input": [
+            0,
+            480
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            15
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            30,
+            420
+          ]
+        }
+      ],
+      "cells": [
+        [
+          16,
+          16
+        ],
+        [
+          16,
+          15
+        ],
+        [
+          16,
+          14
+        ],
+        [
+          16,
+          17
+        ]
+      ],
+      "direction": 0,
+      "flags": 2304,
+      "level_writes": [],
+      "phase": "initial"
+    },
+    {
+      "cases": [
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 77,
+          "world_input": [
+            0,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 16,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 84,
+          "world_input": [
+            -15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 84,
+          "world_input": [
+            15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            0,
+            435
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 137,
+          "world_input": [
+            0,
+            480
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            15
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            30,
+            420
+          ]
+        }
+      ],
+      "cells": [
+        [
+          16,
+          16
+        ],
+        [
+          16,
+          15
+        ],
+        [
+          16,
+          14
+        ],
+        [
+          16,
+          17
+        ]
+      ],
+      "direction": 0,
+      "flags": 2304,
+      "level_writes": [
+        [
+          16,
+          16,
+          6
+        ]
+      ],
+      "phase": "anchor_raised"
+    },
+    {
+      "cases": [
+        {
+          "bridge_candidates": 15,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            0,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 23,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            -15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 8,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            0,
+            435
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 137,
+          "world_input": [
+            0,
+            480
+          ]
+        },
+        {
+          "bridge_candidates": 0,
+          "expected_cell": [
+            17,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            30,
+            420
+          ]
+        }
+      ],
+      "cells": [
+        [
+          16,
+          16
+        ],
+        [
+          16,
+          15
+        ],
+        [
+          16,
+          14
+        ],
+        [
+          16,
+          17
+        ]
+      ],
+      "direction": 0,
+      "flags": 2304,
+      "level_writes": [
+        [
+          16,
+          16,
+          2
+        ],
+        [
+          17,
+          16,
+          6
+        ]
+      ],
+      "phase": "east_raised"
+    },
+    {
+      "cases": [
+        {
+          "bridge_candidates": 15,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            0,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            18
+          ],
+          "native_exit": "direct_y",
+          "scan_attempts": 69,
+          "world_input": [
+            -15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 8,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            0,
+            435
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            17,
+            16
+          ],
+          "native_exit": "direct_x",
+          "scan_attempts": 137,
+          "world_input": [
+            0,
+            480
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            15
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            30,
+            420
+          ]
+        }
+      ],
+      "cells": [
+        [
+          16,
+          16
+        ],
+        [
+          16,
+          15
+        ],
+        [
+          16,
+          14
+        ],
+        [
+          16,
+          17
+        ]
+      ],
+      "direction": 0,
+      "flags": 2304,
+      "level_writes": [
+        [
+          17,
+          16,
+          2
+        ],
+        [
+          16,
+          17,
+          6
+        ]
+      ],
+      "phase": "south_raised"
+    },
+    {
+      "cases": [
+        {
+          "bridge_candidates": 15,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            0,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 23,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            -15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 8,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            0,
+            435
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            17,
+            16
+          ],
+          "native_exit": "direct_x",
+          "scan_attempts": 137,
+          "world_input": [
+            0,
+            480
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            15
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            30,
+            420
+          ]
+        }
+      ],
+      "cells": [
+        [
+          16,
+          16
+        ],
+        [
+          16,
+          15
+        ],
+        [
+          16,
+          14
+        ],
+        [
+          16,
+          17
+        ]
+      ],
+      "direction": 0,
+      "flags": 2304,
+      "level_writes": [
+        [
+          16,
+          17,
+          2
+        ]
+      ],
+      "phase": "restored"
+    },
+    {
+      "cases": [
+        {
+          "bridge_candidates": 15,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            0,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 8,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            -15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 23,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            0,
+            435
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            17
+          ],
+          "native_exit": "direct_y",
+          "scan_attempts": 137,
+          "world_input": [
+            0,
+            480
+          ]
+        },
+        {
+          "bridge_candidates": 30,
+          "expected_cell": [
+            17,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            30,
+            420
+          ]
+        }
+      ],
+      "cells": [
+        [
+          16,
+          16
+        ],
+        [
+          15,
+          16
+        ],
+        [
+          14,
+          16
+        ],
+        [
+          17,
+          16
+        ]
+      ],
+      "direction": 6,
+      "flags": 256,
+      "level_writes": [],
+      "phase": "initial"
+    },
+    {
+      "cases": [
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 77,
+          "world_input": [
+            0,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 84,
+          "world_input": [
+            -15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 16,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 84,
+          "world_input": [
+            15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            0,
+            435
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 137,
+          "world_input": [
+            0,
+            480
+          ]
+        },
+        {
+          "bridge_candidates": 30,
+          "expected_cell": [
+            17,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            30,
+            420
+          ]
+        }
+      ],
+      "cells": [
+        [
+          16,
+          16
+        ],
+        [
+          15,
+          16
+        ],
+        [
+          14,
+          16
+        ],
+        [
+          17,
+          16
+        ]
+      ],
+      "direction": 6,
+      "flags": 256,
+      "level_writes": [
+        [
+          16,
+          16,
+          6
+        ]
+      ],
+      "phase": "anchor_raised"
+    },
+    {
+      "cases": [
+        {
+          "bridge_candidates": 15,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            0,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 8,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            -15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            18,
+            16
+          ],
+          "native_exit": "direct_x",
+          "scan_attempts": 69,
+          "world_input": [
+            15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            0,
+            435
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            17
+          ],
+          "native_exit": "direct_y",
+          "scan_attempts": 137,
+          "world_input": [
+            0,
+            480
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            18,
+            16
+          ],
+          "native_exit": "direct_x",
+          "scan_attempts": 62,
+          "world_input": [
+            30,
+            420
+          ]
+        }
+      ],
+      "cells": [
+        [
+          16,
+          16
+        ],
+        [
+          15,
+          16
+        ],
+        [
+          14,
+          16
+        ],
+        [
+          17,
+          16
+        ]
+      ],
+      "direction": 6,
+      "flags": 256,
+      "level_writes": [
+        [
+          16,
+          16,
+          2
+        ],
+        [
+          17,
+          16,
+          6
+        ]
+      ],
+      "phase": "east_raised"
+    },
+    {
+      "cases": [
+        {
+          "bridge_candidates": 15,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            0,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 8,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            -15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 23,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            0,
+            435
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 137,
+          "world_input": [
+            0,
+            480
+          ]
+        },
+        {
+          "bridge_candidates": 30,
+          "expected_cell": [
+            17,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            30,
+            420
+          ]
+        }
+      ],
+      "cells": [
+        [
+          16,
+          16
+        ],
+        [
+          15,
+          16
+        ],
+        [
+          14,
+          16
+        ],
+        [
+          17,
+          16
+        ]
+      ],
+      "direction": 6,
+      "flags": 256,
+      "level_writes": [
+        [
+          17,
+          16,
+          2
+        ],
+        [
+          16,
+          17,
+          6
+        ]
+      ],
+      "phase": "south_raised"
+    },
+    {
+      "cases": [
+        {
+          "bridge_candidates": 15,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            0,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 8,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            -15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 23,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            15,
+            420
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 92,
+          "world_input": [
+            0,
+            435
+          ]
+        },
+        {
+          "bridge_candidates": 1,
+          "expected_cell": [
+            16,
+            17
+          ],
+          "native_exit": "direct_y",
+          "scan_attempts": 137,
+          "world_input": [
+            0,
+            480
+          ]
+        },
+        {
+          "bridge_candidates": 30,
+          "expected_cell": [
+            17,
+            16
+          ],
+          "native_exit": "scan",
+          "scan_attempts": 91,
+          "world_input": [
+            30,
+            420
+          ]
+        }
+      ],
+      "cells": [
+        [
+          16,
+          16
+        ],
+        [
+          15,
+          16
+        ],
+        [
+          14,
+          16
+        ],
+        [
+          17,
+          16
+        ]
+      ],
+      "direction": 6,
+      "flags": 256,
+      "level_writes": [
+        [
+          16,
+          17,
+          2
+        ]
+      ],
+      "phase": "restored"
+    }
+  ],
+  "middle_rows": [
+    {
+      "after": {
+        "bridge_candidates": 30,
+        "expected_cell": [
+          90,
+          48
+        ],
+        "native_exit": "fallback",
+        "scan_attempts": 180
+      },
+      "axis": "NS",
+      "before": {
+        "bridge_candidates": 60,
+        "expected_cell": [
+          92,
+          50
+        ],
+        "native_exit": "scan",
+        "scan_attempts": 121
+      },
+      "bounds": [
+        86,
+        45,
+        98,
+        57
+      ],
+      "source_body_sequence": 0,
+      "source_map": "c3y03md.map",
+      "source_map_sha256": "ab2e8f779786b559109169cf5132719c91952fedde69476375a62df6125087e2",
+      "world_input": [
+        1260,
+        2085
+      ]
+    },
+    {
+      "after": {
+        "bridge_candidates": 30,
+        "expected_cell": [
+          109,
+          117
+        ],
+        "native_exit": "fallback",
+        "scan_attempts": 180
+      },
+      "axis": "EW",
+      "before": {
+        "bridge_candidates": 60,
+        "expected_cell": [
+          111,
+          119
+        ],
+        "native_exit": "scan",
+        "scan_attempts": 121
+      },
+      "bounds": [
+        106,
+        113,
+        118,
+        125
+      ],
+      "source_body_sequence": 1,
+      "source_map": "c3y03md.map",
+      "source_map_sha256": "ab2e8f779786b559109169cf5132719c91952fedde69476375a62df6125087e2",
+      "world_input": [
+        -240,
+        3405
+      ]
+    }
+  ],
   "rows": [
     {
       "cases": [
@@ -628,6 +1808,168 @@
       "direction": 6,
       "flags": 256,
       "phase": "repaired"
+    }
+  ],
+  "shroud_upstream_rows": [
+    {
+      "base_height": 0,
+      "bridge_candidates": 15,
+      "bridge_cells": [
+        [
+          20,
+          20,
+          0,
+          0
+        ],
+        [
+          19,
+          20,
+          0,
+          0
+        ],
+        [
+          18,
+          20,
+          0,
+          0
+        ],
+        [
+          21,
+          20,
+          0,
+          0
+        ]
+      ],
+      "expected_cell": [
+        20,
+        20
+      ],
+      "native_exit": "scan",
+      "scan_attempts": 121,
+      "world_input": [
+        0,
+        570
+      ]
+    },
+    {
+      "base_height": 0,
+      "bridge_candidates": 23,
+      "bridge_cells": [
+        [
+          20,
+          20,
+          0,
+          0
+        ],
+        [
+          19,
+          20,
+          0,
+          0
+        ],
+        [
+          18,
+          20,
+          0,
+          0
+        ],
+        [
+          21,
+          20,
+          0,
+          0
+        ]
+      ],
+      "expected_cell": [
+        20,
+        20
+      ],
+      "native_exit": "scan",
+      "scan_attempts": 121,
+      "world_input": [
+        15,
+        570
+      ]
+    },
+    {
+      "base_height": 4,
+      "bridge_candidates": 15,
+      "bridge_cells": [
+        [
+          20,
+          20,
+          0,
+          0
+        ],
+        [
+          19,
+          20,
+          0,
+          0
+        ],
+        [
+          18,
+          20,
+          0,
+          0
+        ],
+        [
+          21,
+          20,
+          0,
+          0
+        ]
+      ],
+      "expected_cell": [
+        20,
+        20
+      ],
+      "native_exit": "scan",
+      "scan_attempts": 61,
+      "world_input": [
+        0,
+        510
+      ]
+    },
+    {
+      "base_height": 4,
+      "bridge_candidates": 23,
+      "bridge_cells": [
+        [
+          20,
+          20,
+          0,
+          0
+        ],
+        [
+          19,
+          20,
+          0,
+          0
+        ],
+        [
+          18,
+          20,
+          0,
+          0
+        ],
+        [
+          21,
+          20,
+          0,
+          0
+        ]
+      ],
+      "expected_cell": [
+        20,
+        20
+      ],
+      "native_exit": "scan",
+      "scan_attempts": 61,
+      "world_input": [
+        15,
+        510
+      ]
     }
   ],
   "source": "unicorn/gamemd.exe"

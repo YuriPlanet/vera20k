@@ -1204,7 +1204,19 @@ use crate::util::save_codec;
 // DisabledDisguiseDetectionPercent=.
 // 449 -> 450: the retained `[Basic]` section carries Scenario+0x1440 `Lose`,
 // the movie campaign defeat plays before its retry prompt.
-const SNAPSHOT_VERSION: u32 = 450;
+// 450 -> 451: HouseState retains House+0x1602A's UI name source (handle,
+// TXT_COMPUTER, map UIName= key or the type's UIName).
+// 451 -> 452: dynamic terrain cell records no longer carry a copy of the
+// cell's overlay identity and state byte, in its bridge facts or its bridge
+// layer; OverlayGrid alone holds them.
+// 452 -> 453: GameEntity retains a building's NoSurvivor byte (+0x6E0) for the
+// second SpawnSurvivors of a building that outlives its killing blow.
+// 453 -> 454: HouseState retains House+0x248, the executed-EXIT flag.
+// 454 -> 455: BunkerState gains WallsUp (UpdateBunker state 5) before Occupied.
+// 455 -> 456: retain paid two-stage selection sequences and one-use tickets
+// on Super instances, plus ticketed completion/cancellation command variants.
+// Positional bincode cannot default the new per-instance fields in v455 saves.
+const SNAPSHOT_VERSION: u32 = 456;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1421,6 +1433,8 @@ pub enum SnapshotError {
 pub enum SnapshotRestoreError {
     #[error("invalid UnitDelivery snapshot state: {0}")]
     InvalidUnitDelivery(&'static str),
+    #[error("invalid paid two-stage selection: {0}")]
+    InvalidPaidSuperWeaponSelection(&'static str),
     #[error("invalid detached Particle {object_id}: {reason}")]
     InvalidDetachedParticleState {
         object_id: u64,
@@ -2685,7 +2699,7 @@ fn restore_object_references(
             )?;
         }
     }
-    for (&owner_id, &wave_id) in &sim.active_wave_links {
+    for (owner_id, wave_id) in sim.active_wave_links() {
         require_resolved_reference(
             entity_ids.contains(&owner_id),
             "ActiveWaveLinks",
@@ -2705,7 +2719,7 @@ fn restore_object_references(
         )?;
     }
 
-    for &object_id in sim.object_custom_sounds.keys() {
+    for object_id in sim.custom_sound_objects() {
         require_object_reference(
             &entity_ids,
             sim.terrain_objects.objects(),
@@ -2770,6 +2784,8 @@ impl Simulation {
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
     pub fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+        self.validate_paid_super_weapon_selections()
+            .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
         self.unit_deliveries
             .validate(self)
             .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
@@ -3048,13 +3064,13 @@ impl Simulation {
         // and bite timers: a bite is due at once and suppression is dropped.
         let frame = self.session.binary_frame();
         for id in self.substrate.entities.keys_sorted() {
-            self.restore_move_sound_state_after_load(id);
+            self.substrate.restore_move_sound_state_after_load(id);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.parasite.restart_timers_after_load(frame);
             }
         }
         self.rebuild_logic_membership();
-        self.rebuild_building_anim_slot_indices();
+        self.substrate.rebuild_building_anim_slot_indices();
         self.rebuild_bomb_carriers();
         // The kamikaze tracker's Load (`0x0054E7B0`) follows its Clear.
         self.kamikaze
@@ -3073,8 +3089,9 @@ impl Simulation {
     /// The full row-major sweep is required because OverlayGrid's dirty queues
     /// are transient: a saved cell may have been cleared since map load, so an
     /// occupied-only replay would leave the original map overlay's passability
-    /// behind. Bridge cell state needs no separate pass: CellClass is its only
-    /// owner and returns through the dynamic terrain cells above.
+    /// behind. Bridge cell state needs no separate pass: its flags return
+    /// through the dynamic terrain cells above, and its overlay identity and
+    /// state byte through OverlayGrid.
     pub fn restore_map_authority_after_snapshot_load(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,
@@ -3183,7 +3200,7 @@ impl Simulation {
         // The app-supplied terrain template is the immutable load-time map.
         // Action 40's mutable LocalSize is serialized on Simulation, so replay
         // its CellClass-derived cache before overlay and zone reconstruction.
-        if let Some(bounds) = self.playfield_bounds {
+        if let Some(bounds) = self.playfield_bounds() {
             let _ = self
                 .resolved_terrain
                 .as_mut()
@@ -3288,7 +3305,7 @@ impl Simulation {
         let mut native_rect = self.ore_growth_state.native_rect();
         if native_rect == (0, 0)
             && let (Some(bounds), Some(height)) =
-                (self.playfield_bounds, self.playfield_size_height)
+                (self.playfield_bounds(), self.playfield_size_height())
         {
             native_rect = (
                 u16::try_from(bounds.base).unwrap_or(0),
@@ -3981,14 +3998,14 @@ mod tests {
         let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
         let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
         let mut sim = Simulation::new();
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 2,
             off_fc: -8,
             off_100: -8,
             off_104: 16,
             off_108: 16,
-        });
-        sim.playfield_size_height = Some(2);
+        }));
+        sim.set_playfield_size_height_for_test(Some(2));
         sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
         sim.overlay_grid.as_mut().unwrap().place_overlay(2, 2, 0, 0);
         sim.install_resolved_terrain_for_new_map(flat_terrain(4, 4));
@@ -4773,7 +4790,6 @@ mod tests {
         );
 
         let mut sound_events = Vec::new();
-        let mut lifecycle_requests = Vec::new();
         crate::sim::movement::tick_movement_with_grids(
             &mut restored.substrate.entities,
             Some(&[1]),
@@ -4791,7 +4807,6 @@ mod tests {
             &mut restored.interner,
             None,
             &mut sound_events,
-            &mut lifecycle_requests,
         );
         assert_eq!(
             restored
@@ -5466,7 +5481,7 @@ mod tests {
         );
         let moved_edges = active.edge_geometry();
         sim.admit_wave(active_id, active);
-        sim.active_wave_links.insert(owner_ids[0], active_id);
+        sim.link_active_wave_for_test(owner_ids[0], active_id);
 
         let inactive_id = sim.allocate_stable_id();
         let mut inactive = Wave::new_owned(
@@ -5483,7 +5498,7 @@ mod tests {
         inactive.set_direction_octant_for_test(6);
         inactive.replace_recorded_cells(vec![WaveRecordedCell::real(7, 2)]);
         sim.admit_wave(inactive_id, inactive);
-        sim.active_wave_links.insert(owner_ids[1], inactive_id);
+        sim.link_active_wave_for_test(owner_ids[1], inactive_id);
 
         let dummy_id = sim.allocate_stable_id();
         let mut dummy = Wave::new_owned(
@@ -5498,7 +5513,7 @@ mod tests {
         dummy.set_direction_octant_for_test(2);
         dummy.replace_recorded_cells(vec![WaveRecordedCell::shared_dummy()]);
         sim.admit_wave(dummy_id, dummy);
-        sim.active_wave_links.insert(owner_ids[2], dummy_id);
+        sim.link_active_wave_for_test(owner_ids[2], dummy_id);
 
         let expected_hash = sim.state_hash();
         let bytes = GameSnapshot::save(&sim, 0, 0, "wave-state.map", 0);
@@ -5508,7 +5523,10 @@ mod tests {
             .expect("Wave identities restore structurally");
 
         assert_eq!(restored.state_hash(), expected_hash);
-        assert_eq!(restored.active_wave_links, sim.active_wave_links);
+        assert_eq!(
+            restored.active_wave_links().collect::<Vec<_>>(),
+            sim.active_wave_links().collect::<Vec<_>>()
+        );
         assert_eq!(restored.waves.get(active_id), sim.waves.get(active_id));
         assert_eq!(
             restored.waves.get(active_id).unwrap().direction_octant(),
@@ -5976,7 +5994,7 @@ mod tests {
             restored.pending_command_snapshot(),
             sim.pending_command_snapshot()
         );
-        assert!(!restored.quit_requested);
+        assert!(!restored.quit_requested());
         assert_eq!(restored.take_executed_exit_owner(), None);
         assert_eq!(restored.state_hash(), expected_hash);
     }
@@ -6098,7 +6116,7 @@ mod tests {
             .get_mut(&owner)
             .expect("house")
             .supply_allow_win_tag_state(0, crate::sim::timer::CdTimer::started(100, 90));
-        original.sound_events.push(SimSoundEvent::MatchOutcome {
+        original.sound_events.emit(SimSoundEvent::MatchOutcome {
             owner,
             kind: HouseOutcomeKind::Victory,
         });
@@ -6314,7 +6332,7 @@ mod tests {
         sim.fog.reveal_all_for_owner(owner);
         crate::sim::vision::apply_gap_generators(
             &mut sim.fog,
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             &[(gapper, 6, 6, 2)],
             &sim.interner,
         );
@@ -6530,7 +6548,7 @@ mod tests {
             system.set_target_coords_for_test(glam::IVec3::ZERO);
             system
         });
-        sim.substrate.next_stable_object_id = 5;
+        sim.set_next_stable_object_id_for_test(5);
         let owner = sim.interner.intern("ComputerIQ");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 51);
         house.set_current_iq_for_test(2);
@@ -6801,11 +6819,11 @@ mod tests {
     fn air_slot_snapshot_roundtrip_preserves_the_cell_holders() {
         let empty_hash = Simulation::new().state_hash();
         let mut sim = Simulation::new();
-        assert!(sim.set_cell_air_slot((17, 23), Some(41)));
-        assert!(sim.set_cell_air_slot((2, 31), Some(99)));
+        assert!(sim.substrate.set_cell_air_slot((17, 23), Some(41)));
+        assert!(sim.substrate.set_cell_air_slot((2, 31), Some(99)));
         // `0x00487D70` refuses a claim while another object holds the slot,
         // which is what keeps one hovering Jumpjet per cell.
-        assert!(!sim.set_cell_air_slot((17, 23), Some(42)));
+        assert!(!sim.substrate.set_cell_air_slot((17, 23), Some(42)));
         assert_eq!(sim.substrate.air_slots.holder(17, 23), Some(41));
         let expected_hash = sim.state_hash();
         assert_ne!(
@@ -6878,9 +6896,9 @@ mod tests {
         );
         sim.substrate.entities.insert(entity);
         sim.add_entity_occupancy(id);
-        sim.aircraft_tracker_add(id);
-        assert!(sim.set_cell_air_slot((10, 10), Some(id)));
-        assert!(sim.set_cell_air_slot((11, 10), Some(id)));
+        Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, id);
+        assert!(sim.substrate.set_cell_air_slot((10, 10), Some(id)));
+        assert!(sim.substrate.set_cell_air_slot((11, 10), Some(id)));
         let retained = sim.substrate.entities.get(id).unwrap().clone();
         let expected_hash = sim.state_hash();
 
@@ -6917,8 +6935,8 @@ mod tests {
         assert_eq!(restored.state_hash(), expected_hash);
 
         for owner in [Some(id), None] {
-            assert!(sim.set_cell_air_slot((11, 10), owner));
-            assert!(restored.set_cell_air_slot((11, 10), owner));
+            assert!(sim.substrate.set_cell_air_slot((11, 10), owner));
+            assert!(restored.substrate.set_cell_air_slot((11, 10), owner));
             assert_eq!(restored.substrate.air_slots.holder(11, 10), None);
             let actor = restored.substrate.entities.get(id).unwrap();
             assert_eq!(actor.air_tracker_cell(), (10, 10));
@@ -6945,8 +6963,8 @@ mod tests {
         );
         assert_eq!(stale.substrate.air_slots.holder(11, 10), None);
         assert_eq!(stale.state_hash(), restored.state_hash());
-        assert!(stale.set_cell_air_slot((12, 10), Some(id)));
-        assert!(stale.set_cell_air_slot((12, 10), None));
+        assert!(stale.substrate.set_cell_air_slot((12, 10), Some(id)));
+        assert!(stale.substrate.set_cell_air_slot((12, 10), None));
         assert_eq!(
             stale.substrate.entities.get(id).unwrap().air_slot_cell(),
             (0, 0)
@@ -6990,9 +7008,9 @@ mod tests {
             sim.substrate.entities.insert(entity);
             sim.add_entity_occupancy(id);
         }
-        sim.aircraft_tracker_add(1);
-        assert!(sim.set_cell_air_slot((10, 10), Some(1)));
-        assert!(sim.set_cell_air_slot((12, 10), Some(2)));
+        Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
+        assert!(sim.substrate.set_cell_air_slot((10, 10), Some(1)));
+        assert!(sim.substrate.set_cell_air_slot((12, 10), Some(2)));
         let foreign_cache = sim.substrate.entities.get(2).unwrap().air_slot_cell();
         sim.uninit(1);
         let retired_hash = sim.state_hash();
@@ -9228,7 +9246,7 @@ mod tests {
                 terrain.occupation_bits(),
             );
         }
-        sim.substrate.next_stable_object_id = spawner_id + 1;
+        sim.set_next_stable_object_id_for_test(spawner_id + 1);
         sim.terrain_objects.animations_mut_for_test().insert(
             spawner_cell,
             TerrainAnimationState::new(
@@ -9322,7 +9340,7 @@ mod tests {
                 .spawning_cells()
                 .contains(&spawner_cell)
         );
-        assert_eq!(restored.substrate.next_stable_object_id, spawner_id + 1);
+        assert_eq!(restored.next_stable_object_id(), spawner_id + 1);
         let reconciled = restored
             .resolved_terrain
             .as_ref()
@@ -9360,7 +9378,10 @@ mod tests {
             0
         );
 
-        let path = PathGrid::from_resolved_terrain_with_bridges(reconciled);
+        let path = PathGrid::from_resolved_terrain_with_bridges(
+            reconciled,
+            restored.overlay_grid.as_ref(),
+        );
         assert!(path.is_walkable(destroyed_cell.0, destroyed_cell.1));
         assert!(!path.is_walkable(damaged_cell.0, damaged_cell.1));
         assert!(!path.is_walkable(spawner_cell.0, spawner_cell.1));
@@ -9440,9 +9461,11 @@ mod tests {
 
         let path_a = PathGrid::from_resolved_terrain_with_bridges(
             a.resolved_terrain.as_ref().expect("terrain restored"),
+            a.overlay_grid.as_ref(),
         );
         let path_b = PathGrid::from_resolved_terrain_with_bridges(
             b.resolved_terrain.as_ref().expect("terrain restored"),
+            b.overlay_grid.as_ref(),
         );
         assert_eq!(path_a, path_b);
 
@@ -9496,7 +9519,7 @@ mod tests {
         // `place_spawned` resolves the owner against `sim.interner`; re-intern so
         // the id is valid there (test_default uses the thread-local test interner).
         ge.set_owner_for_test(sim.interner.intern("Americans"));
-        let id = sim.create_limbo(ge);
+        let id = Simulation::create_limbo(&mut sim.substrate, &mut sim.houses, ge);
 
         let e = sim.substrate.entities.get(id).expect("entity in store");
         assert!(
@@ -10052,6 +10075,12 @@ mod tests {
         // 447 -> 448: retained Unit firing counter through parasite release.
         // 448 -> 449: the disguise firing blink and its rules keys.
         // 449 -> 450: the retained `[Basic]` Lose movie.
-        assert_eq!(super::SNAPSHOT_VERSION, 450);
+        // 450 -> 451: the House UI name source.
+        // 451 -> 452: terrain records drop their overlay identity/state copy.
+        // 452 -> 453: a building's NoSurvivor byte.
+        // 453 -> 454: the House left-game flag.
+        // 454 -> 455: BunkerState::WallsUp.
+        // 455 -> 456: saved paid two-stage selections and ticketed commands.
+        assert_eq!(super::SNAPSHOT_VERSION, 456);
     }
 }

@@ -382,7 +382,7 @@ fn original_unit_fire_update_rows() {
             }
         }
         sim.main_rng = SimRng::new(0x2A61).into();
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let mut probe = SimRng::new(0x2A61);
         sim.unit_fire_update_tail(
             id,
@@ -548,8 +548,8 @@ impl Spin {
 
     /// One frame: the weapons the tank fired and the gattling sound events.
     fn tick(&mut self) -> (Vec<String>, Vec<crate::sim::world::SimSoundEvent>) {
-        self.sim.fire_events.clear();
-        self.sim.sound_events.clear();
+        self.sim.fire_events.clear_for_test();
+        self.sim.sound_events.clear_for_test();
         let commands = self.sim.take_due_commands();
         self.sim
             .advance_tick(&commands, Some(&self.rules), Some(&self.grid), None, 67);
@@ -738,7 +738,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
         ),
         crate::sim::radio::RadioResponse::Roger,
     );
-    spin.sim.sound_events.clear();
+    spin.sim.sound_events.clear_for_test();
     spin.sim
         .per_cell_process(
             spin.tank,

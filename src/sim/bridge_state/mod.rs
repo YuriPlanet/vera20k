@@ -51,9 +51,7 @@ pub(crate) mod repair_query;
 pub(crate) mod rim;
 mod zone_activation;
 
-use crate::map::bridge_facts::{
-    BRIDGE_FLAG_DESTROYED_OR_RAMP, BRIDGE_FLAG_STRUCTURAL, BridgeCellFacts,
-};
+use crate::map::bridge_facts::{BRIDGE_FLAG_DESTROYED_OR_RAMP, BRIDGE_FLAG_STRUCTURAL};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 
 /// High-bridge theater slots used by the map-load bridge-record walk.
@@ -108,7 +106,8 @@ impl DamageState {
 }
 
 /// Visible bridge state of one CellClass cell, decoded from its live +44
-/// overlay identity, +11E state byte and +140 flags. `None` means the cell
+/// overlay identity and +11E state byte (`overlay`) and its +140 flags
+/// (`raw_flags`). `None` means the cell
 /// draws no bridge sprite: no overlay, a terminal ordinary overlay, an
 /// undecodable state byte, or a destroyed structural cell.
 ///
@@ -121,9 +120,12 @@ impl DamageState {
 /// Healthy NS. This is not a structural-presence query: native
 /// constructor5FC380 leaves nonanchor structural cells at overlay -1
 /// (constructor corpus cases8..11), and the anchor supplies their sprite.
-pub fn cell_render_state(facts: BridgeCellFacts) -> Option<(DamageState, Axis)> {
-    let state = facts.state_byte;
-    let overlay = facts.overlay_id?;
+pub fn cell_render_state(
+    overlay: &crate::sim::overlay_grid::OverlayCell,
+    raw_flags: u32,
+) -> Option<(DamageState, Axis)> {
+    let state = overlay.overlay_data;
+    let overlay = overlay.overlay_id?;
     // Ordinary overlays carry their axis in the identity (the ordinary
     // selector's classification); every other overlay reads the byte range.
     let axis = [ramp_repair::Family::Low, ramp_repair::Family::High]
@@ -151,7 +153,7 @@ pub fn cell_render_state(facts: BridgeCellFacts) -> Option<(DamageState, Axis)> 
         0xE7 | 0xE8 | 0xFF => return None,
         _ => {
             if state == 0
-                && facts.raw_flags & (BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_DESTROYED_OR_RAMP)
+                && raw_flags & (BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_DESTROYED_OR_RAMP)
                     == BRIDGE_FLAG_DESTROYED_OR_RAMP
             {
                 return None;

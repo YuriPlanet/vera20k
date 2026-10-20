@@ -20,6 +20,9 @@ use crate::render::shell_paint::{
 use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::shell_transition_pass::ShellRenderTarget;
+use crate::render::shell_ui_style_assets::{
+    ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver,
+};
 use crate::ui::main_menu_shell::{
     MainMenuControlId, MainMenuMovieBase, MainMenuShellLayout, csf_key_for_control,
     tooltip_csf_key_for_control,
@@ -27,7 +30,7 @@ use crate::ui::main_menu_shell::{
 use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW, ShellScale};
 use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind1RevealWindow};
 
-/// Archive holding the Red Alert 2 menu loop for VERA's RA2 Loading & Menu Movie option.
+/// Archive holding the Red Alert 2 menu loop used by the unchecked default.
 ///
 /// `ra2ts_l.bik` exists under the same name in this archive and in `langmd.mix`
 /// (Yuri's Revenge), whose copy normal priority resolves first. `ra2ts_s.bik`,
@@ -70,22 +73,26 @@ pub(crate) enum Ra2tsDialogOwner {
 /// Identity of the one RA2TS session installed for a movie-bearing dialog.
 ///
 /// Owner and asset base change atomically because neither alone is sufficient
-/// to make the decoder/texture reusable. VERA's RA2 Loading & Menu Movie option
-/// picks which game's copy of the movie the session plays, so it is part of the
-/// identity.
+/// to make the decoder/texture reusable. VERA's Original Yuri's Revenge Style
+/// option picks which game's copy of the movie the session plays, so it is part
+/// of the identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Ra2tsMovieSessionIdentity {
     owner: Ra2tsDialogOwner,
     base: MainMenuMovieBase,
-    ra2_look: bool,
+    yr_original_style: bool,
 }
 
 impl Ra2tsMovieSessionIdentity {
-    const fn new(owner: Ra2tsDialogOwner, base: MainMenuMovieBase, ra2_look: bool) -> Self {
+    const fn new(
+        owner: Ra2tsDialogOwner,
+        base: MainMenuMovieBase,
+        yr_original_style: bool,
+    ) -> Self {
         Self {
             owner,
             base,
-            ra2_look,
+            yr_original_style,
         }
     }
 
@@ -292,9 +299,9 @@ pub(crate) fn ensure_movie_for_current_layout(
     requested_owner: Ra2tsDialogOwner,
 ) -> Result<()> {
     let layout = shell_layout::main_menu_layout(state);
-    let ra2_look = state.persistence.options_profile.ra2_look;
+    let yr_original_style = state.persistence.options_profile.yr_original_style;
     let requested_identity =
-        Ra2tsMovieSessionIdentity::new(requested_owner, layout.movie_base, ra2_look);
+        Ra2tsMovieSessionIdentity::new(requested_owner, layout.movie_base, yr_original_style);
     if ra2ts_movie_session_is_reusable(
         state.frontend.main_menu_movie.is_some(),
         state.frontend.main_menu_movie_identity,
@@ -313,7 +320,7 @@ pub(crate) fn ensure_movie_for_current_layout(
     };
     let asset_name = layout.movie_base.asset_name();
 
-    let Some((bytes, source)) = menu_movie_bytes(assets, asset_name, ra2_look) else {
+    let Some((bytes, source)) = menu_movie_bytes(assets, asset_name, yr_original_style) else {
         log::warn!("Missing main-menu movie asset {asset_name}");
         state.frontend.main_menu_shell_error = Some(format!("Missing menu movie: {asset_name}"));
         return Ok(());
@@ -352,24 +359,26 @@ pub(crate) fn ensure_movie_for_current_layout(
 /// (MainMenuDialog0xE2__Run), selects Ra2ts_s at width 640 and Ra2ts_l
 /// otherwise, then gives that name to the movie control. Resolve through the
 /// shared first-match asset lookup, preserving loose-file and archive priority.
-/// VERA's RA2 Loading & Menu Movie option asks [`RA2_MOVIE_ARCHIVE`] for its
-/// copy instead and falls back to that lookup when the archive lacks it.
+/// VERA's Original Yuri's Revenge Style option uses the ordinary first-match
+/// lookup. The unchecked default requires the named member from
+/// [`RA2_MOVIE_ARCHIVE`]; a missing RA2 copy is reported instead of silently
+/// resolving the YR member with the same name.
 fn menu_movie_bytes<'a>(
     assets: &'a crate::assets::asset_manager::AssetManager,
     asset_name: &str,
-    ra2_look: bool,
+    yr_original_style: bool,
 ) -> Option<(&'a [u8], &'a str)> {
-    let red_alert_2_copy = assets
-        .archive(RA2_MOVIE_ARCHIVE)
-        .filter(|_| ra2_look)
-        .and_then(|archive| archive.get_by_name(asset_name))
-        .map(|bytes| (bytes, RA2_MOVIE_ARCHIVE));
-    if ra2_look && red_alert_2_copy.is_none() {
-        log::warn!(
-            "{asset_name} is missing from {RA2_MOVIE_ARCHIVE}; RA2 Loading & Menu Movie plays the Yuri's Revenge loop instead"
-        );
-    }
-    red_alert_2_copy.or_else(|| assets.get_with_source_ref(asset_name))
+    let resolver = ShellUiAssetResolver::new(assets, yr_original_style);
+    resolver
+        .resolve(ShellUiAssetPair::new(
+            ShellUiAssetLocator::archive(asset_name, RA2_MOVIE_ARCHIVE),
+            ShellUiAssetLocator::active(asset_name),
+        ))
+        .map(|asset| (asset.bytes, asset.source))
+        .map_err(|err| {
+            log::warn!("Could not resolve {asset_name} for the selected shell style: {err:#}")
+        })
+        .ok()
 }
 
 /// Paint the normal 0xE2 route through its active-retail presentation boundary.
@@ -956,24 +965,24 @@ mod tests {
 
     #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
-    fn ra2_look_plays_the_red_alert_2_copy_of_the_menu_movie() {
+    fn default_style_plays_ra2_movie_and_option_selects_yuri_revenge_copy() {
         use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
         let retail_dir = std::path::PathBuf::from(
             std::env::var_os("RA2_DIR").expect("set RA2_DIR to the retail RA2/YR install"),
         );
         let assets = AssetManager::new(&retail_dir, MediaArchiveMode::STOCK_DIGITAL)
             .expect("load retail RA2/YR assets");
-        // The large loop ships in both games' archives: normal priority plays
-        // Yuri's Revenge's, the RA2 Loading & Menu Movie option the original's.
+        // The large loop ships in both games' archives: the default uses RA2,
+        // while the option uses the active Yuri's Revenge copy.
         let large = MainMenuMovieBase::Ra2tsL.asset_name();
-        let (yr, yr_source) = menu_movie_bytes(&assets, large, false).expect("YR large loop");
-        let (ra2, ra2_source) = menu_movie_bytes(&assets, large, true).expect("RA2 large loop");
-        assert_eq!((yr_source, ra2_source), ("langmd.mix", RA2_MOVIE_ARCHIVE));
-        assert!(yr != ra2, "both looks play the same large loop");
+        let (ra2, ra2_source) = menu_movie_bytes(&assets, large, false).expect("RA2 large loop");
+        let (yr, yr_source) = menu_movie_bytes(&assets, large, true).expect("YR large loop");
+        assert_eq!((ra2_source, yr_source), (RA2_MOVIE_ARCHIVE, "langmd.mix"));
+        assert!(ra2 != yr, "both looks play the same large loop");
         // The 640-wide loop ships only in language.mix, so both looks play it.
         let small = MainMenuMovieBase::Ra2tsS.asset_name();
-        let (yr, yr_source) = menu_movie_bytes(&assets, small, false).expect("small loop");
-        let (ra2, ra2_source) = menu_movie_bytes(&assets, small, true).expect("small loop");
+        let (ra2, ra2_source) = menu_movie_bytes(&assets, small, false).expect("small loop");
+        let (yr, yr_source) = menu_movie_bytes(&assets, small, true).expect("small loop");
         assert_eq!(
             (yr_source, ra2_source),
             (RA2_MOVIE_ARCHIVE, RA2_MOVIE_ARCHIVE)

@@ -301,6 +301,7 @@ fixture machinery):
 """
 from pathlib import Path
 import hashlib
+import json
 import math
 import struct
 
@@ -4530,6 +4531,153 @@ def aircraft_light():
                 rows=rows)
 
 
+def unit_light_row(*, height=0, on_bridge=True, marked=True, flags=0x10900,
+                   north_flags=0x100, west_flags=0x100, level=32, ion_level=-12,
+                   dominator_level=77, storm=False, psydom=0, nuke=0,
+                   word=1000, extra=200, cell_level=2):
+    """Original Unit draw cell getter and admitted intensity block.
+
+    Unit's real vtable supplies GetCell, GetHeight and IsHighFlying. Map floor,
+    neighbor lookup and lighting-state queries execute unchanged. The interval
+    between the packed-cell getter and intensity block (visual/deploy admission
+    and tactical notification) is outside this component boundary.
+    """
+    from tools.spatial_oracle.trigger_action_values import initialize_discovery_geometry
+    from tools.spatial_oracle.object_flight_height import initialize_object_scalars
+    from tools.spatial_oracle.anytown_damage.unit_unlimbo import GEOMETRY_CALLS
+
+    emu = Emu()
+    u = emu.uc
+    invoke = lambda pc, receiver, args: invoke_under(
+        emu, pc, ecx=receiver, fpcw=STARTUP_FPCW) if not args else emu.invoke(
+            pc, ecx=receiver, args=args)
+    geometry = initialize_discovery_geometry(invoke, emu.read32, u)
+    initialize_object_scalars(u, invoke)
+    for pc in GEOMETRY_CALLS:
+        invoke(pc, 0, ())
+    scenario_lighting_defaults(emu)
+    scalars = [emu.read_i32(pc) for pc in (0x89E7C0, 0xAC13C8, 0xAC13BC, 0xB1D0AC)]
+    assert scalars == [104, 104, 416, 416]
+
+    this, own = AIRCRAFT_LIGHT, AIRCRAFT_LIGHT_CELL
+    emu.write32(this, 0x7F5C70)
+    write8(emu, this + 0x74, marked)
+    write8(emu, this + 0x8C, on_bridge)
+    xyz = (40 * 256 + 128, 50 * 256 + 128,
+           i32(cell_level * scalars[0] + scalars[2] * on_bridge + height))
+    write_coord(emu, this + 0x9C, xyz)
+    emu.write32(MAP + MAP_CELL_ITEMS, AIRCRAFT_LIGHT_CELLS)
+    emu.write32(MAP + MAP_CELL_CAPACITY, AIRCRAFT_LIGHT_CAPACITY)
+    for i, (x, y, raw_flags) in enumerate(
+            ((40, 50, flags), (40, 49, north_flags), (39, 50, west_flags))):
+        cell = own + 0x400 * i
+        emu.write32(AIRCRAFT_LIGHT_CELLS + 4 * (y * 512 + x), cell)
+        u.mem_write(cell + 0x24, struct.pack('<hh', x, y))
+        emu.write32(cell + 0x140, raw_flags)
+        write8(emu, cell + 0x11B, cell_level)
+        u.mem_write(cell + CELL_INTENSITY, struct.pack('<h', word))
+    write8(emu, STORM_ACTIVE, storm)
+    emu.write32(G_PSYDOM_STATUS, psydom)
+    emu.write32(G_NUKE_FLASH, nuke)
+    for offset, value in ((0x3544, level), (0x355C, ion_level),
+                          (0x3590, dominator_level)):
+        emu.write32(SCENARIO + offset, value)
+    emu.write32(RULES + 0x17D4, extra)
+    rngs = (SCENARIO + 0x218, 0x886B88, 0xABE890)
+    prior_rng = [bytes(u.mem_read(pc, 1012)) for pc in rngs]
+    prior_unit = bytes(u.mem_read(this, 0x700))
+    calls, heights = [], []
+    entries = {0x41BEA0: 'get_cell', 0x5F5F40: 'get_height',
+               0x565730: 'coord_cell', 0x5657A0: 'packed_cell',
+               0x481810: 'neighbor', 0x4DE620: 'foot_high',
+               0x5F6B90: 'object_high', 0x53A100: 'storm',
+               0x53B400: 'dominator', 0x53A110: 'nuke'}
+    def observe(_u, pc, _size, _data):
+        if pc in entries:
+            calls.append(entries[pc])
+        if pc == 0x5F5F91:
+            heights.append(i32(u.reg_read(UC_X86_REG_EAX)))
+    u.hook_add(UC_HOOK_CODE, observe)
+    sp = STACK_BASE + STACK_SIZE - 0x1000
+    u.reg_write(UC_X86_REG_ESP, sp)
+    u.reg_write(UC_X86_REG_ESI, this)
+    run_checked(u, 0x73CF1D, 0x73CF34, count=1000)
+    cell = read_cell(emu, sp + 0x10)
+    run_checked(u, 0x73CF70, 0x73D0D7, count=100000)
+    assert u.reg_read(UC_X86_REG_ESP) == sp
+    assert bytes(u.mem_read(this, 0x700)) == prior_unit
+    assert [bytes(u.mem_read(pc, 1012)) for pc in rngs] == prior_rng
+    assert heights[0] == height
+    return dict(input=dict(height=height, on_bridge=on_bridge, marked=marked,
+                    flags=flags, north_flags=north_flags, west_flags=west_flags,
+                    level=level, ion_level=ion_level, dominator_level=dominator_level,
+                    storm=storm, psydom=psydom, nuke=nuke, word=word,
+                    extra=extra, cell_level=cell_level, xyz=list(xyz)),
+                cell=cell, light=i32(u.reg_read(UC_X86_REG_EBP)), calls=calls, heights=heights,
+                unit_unchanged=True, rng_unchanged=True, scalars=scalars,
+                nuke_level=emu.read_i32(SCENARIO + 0x3574),
+                geometry_initializers=geometry['entries'])
+
+
+def unit_light():
+    rows = [unit_light_row()]
+    for bridge in (False, True):
+        rows += [unit_light_row(on_bridge=bridge, height=h)
+                 for h in (-1, 0, 207, 208, 415, 416, 417)]
+    for flags, north, west in ((0, 0x100, 0x100), (0x10000, 0x100, 0x100),
+                               (0x10900, 0, 0x100), (0x10100, 0x100, 0),
+                               (0x10100, 0, 0x100), (0x900, 0, 0)):
+        rows.append(unit_light_row(flags=flags, north_flags=north, west_flags=west))
+    rows += [unit_light_row(on_bridge=False, height=h, flags=0x10000, marked=marked)
+             for marked in (False, True) for h in (207, 208, 750)]
+    rows += [unit_light_row(storm=storm, psydom=status, nuke=nuke)
+             for storm in (False, True) for status in (0, 1, 5) for nuke in (0, 1, 2)]
+    rows += [unit_light_row(word=word) for word in (-32768, -1, 0, 32767)]
+    rows += [unit_light_row(extra=0x7FFFFFFF), unit_light_row(level=0x7FFFFFFF)]
+    # Original physical Hills bridge Mark/setter output supplies these flags.
+    # Hills' authored Level=0.014000 is14 in the production native reader.
+    source = Path(__file__).parent / 'spatial_oracle/astar_hills_bridge_inputs.json'
+    physical = json.loads(source.read_text())
+    cells = {tuple(row['coord']): row for row in physical['after_overlay']}
+    retail = []
+    for coord, on_bridge in (((75, 75), False), ((76, 75), True), ((78, 76), False)):
+        own = cells[coord]
+        north = cells[(coord[0], coord[1] - 1)]
+        west = cells[(coord[0] - 1, coord[1])]
+        retail.append(dict(cell=list(coord), row=len(rows), on_bridge=on_bridge,
+                           source_cell=own))
+        rows.append(unit_light_row(level=14, flags=own['flags'],
+            north_flags=north['flags'], west_flags=west['flags'],
+            cell_level=own['level'], on_bridge=on_bridge))
+    startup = {key: rows[0][key] for key in ('scalars', 'nuke_level', 'geometry_initializers')}
+    for row in rows:
+        for key, value in startup.items():
+            assert row.pop(key) == value
+    return dict(startup=startup, rows=rows, retail=dict(
+        native_input_binary=physical['native_sha256'], physical=physical['physical'],
+        cases=retail))
+
+
+def unit_light_metadata():
+    return provenance(scope='Unit DrawIt packed-cell getter and admitted body intensity, '
+                      'including bridge, side-cell, height and lighting-profile branches',
+        assumptions=['Original Unit vtable, declared Location/OnBridge/Marked and three flat Cell inputs; '
+                     'real GetCell/GetHeight/IsHighFlying, map floor and neighbor queries execute.',
+                     'Existing discovery, Object and Unit geometry startup owners establish104/416 scalars; '
+                     'scenario profile values and weather/superweapon statuses are declared inputs; '
+                     'Scenario Set_Defaults establishes the fixed NukeLevel100.',
+                     'Unit73CF1D..73CF34 supplies the packed cell; admitted73CF70..73D0D7 follows '
+                     'the visual/deploy/tactical-notification boundary, which is outside this component.',
+                     'Cell intensity is a signed word; sums/products retain native32-bit wrap. '
+                     'Unit bytes and all three RNG buffers remain unchanged. No full scene or renderer parity.'],
+        substitutions=['Only existing Emu platform allocation/CRT boundaries; no reached lighting, '
+                       'height, high-flight, neighbor or weather call is replaced.'],
+        entry_points={'unit_draw': 0x73CEC0, 'unit_cell': 0x73CF1D,
+                      'unit_light': 0x73CF70, 'unit_get_cell': 0x41BEA0,
+                      'get_height': 0x5F5F40, 'high_flight': 0x4DE620,
+                      'cell_neighbor': 0x481810})
+
+
 def building_colour_word_row(*, curtain=(4990, 750), shielded=1, force_color=6, laser_color=4,
                              airstrike=None, shrouded=False, pixel_format=2, frame=5000):
     """The colour word a building's draws hand the blit, from both blocks that
@@ -8716,6 +8864,12 @@ def generate():
 
 if __name__ == '__main__':
     import sys
+    if '--unit-light' in sys.argv[1:]:
+        arguments = sys.argv[1:]
+        arguments.remove('--unit-light')
+        finish_vectors(unit_light, Path(__file__).with_name('unit_light.json'),
+                       provenance=unit_light_metadata, argv=arguments)
+        raise SystemExit
     if '--ion-forces' in sys.argv[1:]:
         arguments = sys.argv[1:]
         arguments.remove('--ion-forces')

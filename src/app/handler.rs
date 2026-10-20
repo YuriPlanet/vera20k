@@ -582,6 +582,16 @@ impl ApplicationHandler for App {
                     state.platform.window.request_redraw();
                     return;
                 }
+                // The wait loop pumps 0xEA without IsDialogMessage and polls
+                // no game keys while it is open (0x006497EC).
+                if state.match_state.network_wait.dialog_open() {
+                    if !event.state.is_pressed()
+                        && let PhysicalKey::Code(code) = event.physical_key
+                    {
+                        state.match_state.input.keys_held.remove(&code);
+                    }
+                    return;
+                }
                 if state.frontend.keyboard_dialog.is_some() {
                     crate::app::input::keyboard::key(state, &event);
                     return;
@@ -865,6 +875,7 @@ impl ApplicationHandler for App {
                                 location: event.location,
                                 state: event.state,
                                 repeat: event.repeat,
+                                text: event.text.as_deref(),
                             },
                             paused_at_event,
                         );
@@ -1153,7 +1164,10 @@ impl ApplicationHandler for App {
                     state.platform.window.request_redraw();
                     return;
                 }
-                if state.frontend.screen == GameScreen::InGame && !state.match_state.paused() {
+                if state.frontend.screen == GameScreen::InGame
+                    && !state.match_state.paused()
+                    && !state.match_state.network_wait.dialog_open()
+                {
                     // Every wheel notch scrolls the active build strip by one
                     // row, wherever the cursor is. gamemd routes the wheel
                     // message straight to the SidebarUp / SidebarDown commands

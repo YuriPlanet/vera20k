@@ -19,9 +19,11 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::sim::components::DriveCoord;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::intern::StringInterner;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::rng::SimRng;
+use crate::sim::world::ObjectSubstrate;
 
 /// Functional infantry sub-cell positions. The original engine uses sub-cells
 /// 2 (NE), 3 (SW), 4 (SE) — three corners of the isometric diamond. Sub-cells
@@ -352,7 +354,14 @@ impl crate::sim::world::Simulation {
             ),
             None => RawCellKey::Real((point.x / 256) as u16, (point.y / 256) as u16),
         };
-        self.place_infantry_in_ground_key(rules, key, point)
+        Self::place_infantry_in_ground_key(
+            &self.interner,
+            &mut self.scenario_rng,
+            &self.substrate,
+            rules,
+            key,
+            point,
+        )
     }
 
     /// PlaceInfantryInCell with useCellCoords (`0x00481212`) on `cell`, the
@@ -372,7 +381,14 @@ impl crate::sim::world::Simulation {
             .as_ref()
             .ok_or("PlaceInfantryInCell requires map cells")?;
         let key = crate::sim::occupancy::RawCellKey::from_native(terrain, cell);
-        let Some(slot) = self.place_infantry_in_ground_key(rules, key, request) else {
+        let Some(slot) = Self::place_infantry_in_ground_key(
+            &self.interner,
+            &mut self.scenario_rng,
+            &self.substrate,
+            rules,
+            key,
+            request,
+        ) else {
             return Ok(None);
         };
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
@@ -391,24 +407,26 @@ impl crate::sim::world::Simulation {
     /// [`place_infantry_in_native_cell`] on `key`'s ground plane without
     /// priority, with the live ground Gate.
     pub(crate) fn place_infantry_in_ground_key(
-        &mut self,
+        world_interner: &StringInterner,
+        scenario_rng: &mut SimRng,
+        substrate: &ObjectSubstrate,
         rules: &crate::rules::ruleset::RuleSet,
         key: crate::sim::occupancy::RawCellKey,
         request: DriveCoord,
     ) -> Option<u8> {
         place_infantry_in_native_cell(
-            &self.substrate.raw_cell_occupation,
+            &substrate.raw_cell_occupation,
             key,
             MovementLayer::Ground,
             request,
             false,
             GroundGate::Live {
-                occupancy: &self.substrate.occupancy,
-                entities: &self.substrate.entities,
+                occupancy: &substrate.occupancy,
+                entities: &substrate.entities,
                 rules: Some(rules),
-                interner: &self.interner,
+                interner: world_interner,
             },
-            &mut self.scenario_rng,
+            scenario_rng,
         )
     }
 }
@@ -583,36 +601,16 @@ fn deploy_crush_immune(entity: &GameEntity) -> bool {
     entity.native_crush_immunity() != 0
 }
 
-/// Emit the normal crush-path `EntityCrushed` (CrushSound) event for a single
-/// victim. Native crush teardown does not also enter the ordinary DieSound
-/// path. The event is skipped when CrushSound is absent. Caller must invoke BEFORE
-/// removing the victim from the EntityStore so victim.position and
-/// victim.type_ref are still valid.
-#[cfg(any(test, feature = "test-support"))]
-pub fn emit_crush_kill_sounds(
-    victim: &crate::sim::game_entity::GameEntity,
-    rules: &crate::rules::ruleset::RuleSet,
-    interner: &mut crate::sim::intern::StringInterner,
-    sound_events: &mut Vec<crate::sim::world::SimSoundEvent>,
-) {
-    emit_crush_kill_sounds_at(
-        victim,
-        (
-            i32::from(victim.position.rx()),
-            i32::from(victim.position.ry()),
-        ),
-        rules,
-        interner,
-        sound_events,
-    );
-}
-
-pub fn emit_crush_kill_sounds_at(
+/// Emit the crush-path `EntityCrushed` (CrushSound) event for a victim at the
+/// crush coordinate; native crush teardown does not also enter the ordinary
+/// DieSound path. Skipped when CrushSound is absent. Call before removing the
+/// victim from the EntityStore, while its type is still readable.
+pub(crate) fn emit_crush_kill_sounds_at(
     victim: &crate::sim::game_entity::GameEntity,
     crush_coord: (i32, i32),
     rules: &crate::rules::ruleset::RuleSet,
     interner: &mut crate::sim::intern::StringInterner,
-    sound_events: &mut Vec<crate::sim::world::SimSoundEvent>,
+    sound_events: &mut crate::sim::world::FrameChannel<crate::sim::world::SimSoundEvent>,
 ) {
     let rx = crush_coord.0.clamp(0, i32::from(u16::MAX)) as u16;
     let ry = crush_coord.1.clamp(0, i32::from(u16::MAX)) as u16;
@@ -622,7 +620,7 @@ pub fn emit_crush_kill_sounds_at(
     };
     if let Some(ref crush_sound) = obj.crush_sound {
         let id = interner.intern(crush_sound);
-        sound_events.push(crate::sim::world::SimSoundEvent::EntityCrushed {
+        sound_events.emit(crate::sim::world::SimSoundEvent::EntityCrushed {
             crush_sound_id: id,
             rx,
             ry,

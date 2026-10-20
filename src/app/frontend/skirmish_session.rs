@@ -49,6 +49,35 @@ struct LocalMultiplayerPreferences {
     color_index: i32,
     color_ex: i32,
     game_mode: i32,
+    /// Not fields of the six-field writer `0x006990A0`; `0x00699450` owns them.
+    toggles: SessionToggles,
+}
+
+/// The four per-mode Session switches `0x00699450` writes at game end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SessionToggles {
+    /// Session+0x1ED9 / +0x1ED8, `[MultiPlayer] WOLTaunts` and `LANTaunts`:
+    /// TauntsOn in GameMode 4 / 3 (send `0x0053639A`, receive `0x0048DA0C`,
+    /// Diplomacy box 0x730).
+    wol_taunts: bool,
+    lan_taunts: bool,
+    /// Session+0x1FC1 / +0x1FC0, `[MultiPlayer] WOLScrollText` and
+    /// `LANScrollText`: Add_Message's typing reveal in GameMode 4 / 3.
+    wol_scroll_text: bool,
+    lan_scroll_text: bool,
+}
+
+impl Default for SessionToggles {
+    fn default() -> Self {
+        // The Session constructor sets all four (0x006974A3, 0x006974AA,
+        // 0x006974B1, 0x006974BA).
+        Self {
+            wol_taunts: true,
+            lan_taunts: true,
+            wol_scroll_text: true,
+            lan_scroll_text: true,
+        }
+    }
 }
 
 impl Default for LocalMultiplayerPreferences {
@@ -60,6 +89,7 @@ impl Default for LocalMultiplayerPreferences {
             color_index: 0,
             color_ex: 0,
             game_mode: DEFAULT_MULTIPLAYER_GAME_MODE,
+            toggles: SessionToggles::default(),
         }
     }
 }
@@ -109,6 +139,8 @@ pub(crate) struct MultiplayerShellRuntime {
     settings_ini: Vec<u8>,
     /// Observer preference AC10C8, read as an integer by 5EE190.
     lan_observer_mode: i32,
+    /// The taunt command's process-static rate clock `[0x00825C88]`.
+    taunt_clock: crate::app::input::taunt::TauntClock,
     scenario_start_header: crate::map::preview::ScenarioStartHeader,
     scenario_rng: SimRng,
     /// Process-persistent native MapSeed options. The setup dialog edits a
@@ -181,6 +213,89 @@ impl MultiplayerShellRuntime {
             .and_then(|index| self.cooperative_country_roster.get(index))
             .map_or("<random>", |country| country.id.as_str());
         self.local_preferences.update_ini_bytes(existing, name)
+    }
+
+    /// Add_Message's typing-reveal gate for a session mode
+    /// (`0x005D3D8A..0x005D3DBD`): LANScrollText in LAN, WOLScrollText in
+    /// WOL, on otherwise.
+    pub(crate) fn scroll_text(&self, mode: crate::sim::scenario_session::ScenarioGameMode) -> bool {
+        use crate::sim::scenario_session::ScenarioGameMode;
+        match mode {
+            ScenarioGameMode::Lan => self.local_preferences.toggles.lan_scroll_text,
+            ScenarioGameMode::Wol => self.local_preferences.toggles.wol_scroll_text,
+            _ => true,
+        }
+    }
+
+    /// TauntsOn for a session mode: `LANTaunts` in LAN, `WOLTaunts` in WOL,
+    /// `None` where the Diplomacy box is hidden and taunts are never sent
+    /// (`0x006580E0..0x0065810C`, `0x0053639A..0x005363C0`).
+    pub(crate) fn taunts_on(
+        &self,
+        mode: crate::sim::scenario_session::ScenarioGameMode,
+    ) -> Option<bool> {
+        use crate::sim::scenario_session::ScenarioGameMode;
+        match mode {
+            ScenarioGameMode::Lan => Some(self.local_preferences.toggles.lan_taunts),
+            ScenarioGameMode::Wol => Some(self.local_preferences.toggles.wol_taunts),
+            _ => None,
+        }
+    }
+
+    /// The taunt command's last two gates and its clock write
+    /// (`0x0053637F..0x005363C6`): the 5 s clock, then the mode's TauntsOn;
+    /// only when both pass is the clock set to `now_ms`.
+    pub(crate) fn admit_taunt(
+        &mut self,
+        mode: crate::sim::scenario_session::ScenarioGameMode,
+        now_ms: u64,
+    ) -> bool {
+        let admitted = self.taunt_clock.admits(now_ms) && self.taunts_on(mode) == Some(true);
+        if admitted {
+            self.taunt_clock.sent(now_ms);
+        }
+        admitted
+    }
+
+    /// Diplomacy box 0x730's click writes the current mode's byte
+    /// (`0x006582F9` LAN, `0x00658313` WOL); it persists only at game end.
+    pub(crate) fn set_taunts_on(
+        &mut self,
+        mode: crate::sim::scenario_session::ScenarioGameMode,
+        on: bool,
+    ) {
+        use crate::sim::scenario_session::ScenarioGameMode;
+        match mode {
+            ScenarioGameMode::Lan => self.local_preferences.toggles.lan_taunts = on,
+            ScenarioGameMode::Wol => self.local_preferences.toggles.wol_taunts = on,
+            _ => {}
+        }
+    }
+
+    /// `0x00699450`, called by Main_Game (`0x0048CF79`) after a scenario
+    /// returns in GameMode 1..4 with replay bit 2 of `0x00A8D5F8` clear
+    /// (VERA has no replay playback, so the bit is always clear):
+    /// WriteBool the four toggles, then save RA2MD.INI.
+    pub(crate) fn persist_session_toggles(&mut self) {
+        self.persist_preferences(|runtime, existing| {
+            let toggles = runtime.local_preferences.toggles;
+            crate::util::ini_writer::set_ini_values(
+                existing,
+                "MultiPlayer",
+                &[
+                    ("WOLTaunts", persistence::yes_no(toggles.wol_taunts)),
+                    ("LANTaunts", persistence::yes_no(toggles.lan_taunts)),
+                    (
+                        "WOLScrollText",
+                        persistence::yes_no(toggles.wol_scroll_text),
+                    ),
+                    (
+                        "LANScrollText",
+                        persistence::yes_no(toggles.lan_scroll_text),
+                    ),
+                ],
+            )
+        });
     }
 
     pub(crate) fn local_participant(&self) -> crate::skirmish_launch::SkirmishHumanSlot {
@@ -465,6 +580,31 @@ impl MultiplayerShellRuntime {
         self.lan_observer_mode = i32::from(observer);
     }
 
+    /// `0x5EE190`: `[MultiPlayer] ObserverMode` from the process RA2MD.INI
+    /// object (ReadInt, default 0), as `WOL_Main`'s settings reader ends
+    /// (`0x0077DED0`). An unsaved lobby toggle reverts here.
+    pub(crate) fn reload_observer_mode(&mut self) {
+        let ini = IniFile::from_bytes(&self.settings_ini).unwrap_or_else(|_| IniFile::from_str(""));
+        self.lan_observer_mode = ini
+            .section_or_empty("MultiPlayer")
+            .read_int("ObserverMode", 0);
+    }
+
+    /// `0x5EE1B0` alone: write `[MultiPlayer] ObserverMode` and save, as WOL
+    /// Options' writer ends (`0x0077DFD0`).
+    pub(crate) fn persist_observer_mode(&mut self) {
+        self.persist_preferences(|runtime, existing| {
+            crate::util::ini_writer::set_ini_values(
+                existing,
+                "MultiPlayer",
+                &[(
+                    "ObserverMode",
+                    runtime.lan_observer_mode.to_string().as_str(),
+                )],
+            )
+        });
+    }
+
     /// BB Main Menu saves ObserverMode through 5EE1B0; this is separate from
     /// the six-field SessionClass writer and does not change Skirmish settings.
     pub(crate) fn persist_lan_preferences(&mut self) {
@@ -506,6 +646,7 @@ impl MultiplayerShellRuntime {
         let mut handle_bytes = crate::util::native_string::acp_encode(&player.name);
         handle_bytes.truncate(MULTIPLAYER_HANDLE_LIMIT_BYTES);
         self.local_preferences = LocalMultiplayerPreferences {
+            toggles: self.local_preferences.toggles,
             handle_bytes,
             side: if player.is_observer() {
                 -3
@@ -598,6 +739,7 @@ impl MultiplayerShellRuntime {
             local_preferences,
             settings_ini,
             lan_observer_mode,
+            taunt_clock: Default::default(),
             scenario_rng,
             random_map_options: crate::map::rmg::RmgOptions::default(),
             ini_path,
@@ -762,6 +904,7 @@ impl MultiplayerShellRuntime {
         let mut handle_bytes = crate::util::native_string::acp_encode(&state.player_name_edit.text);
         handle_bytes.truncate(MULTIPLAYER_HANDLE_LIMIT_BYTES);
         self.local_preferences = LocalMultiplayerPreferences {
+            toggles: self.local_preferences.toggles,
             handle_bytes,
             side: menu_country_item_data(resolved.local_slot().country),
             side_ex: if state.player_country_random {
@@ -1338,6 +1481,14 @@ fn read_local_preference_fields(ini: &IniFile, preferences: &mut LocalMultiplaye
     preferences.side_ex = section.read_int("SideEx", preferences.side_ex);
     preferences.color_ex = section.read_int("ColorEx", preferences.color_ex);
     preferences.game_mode = section.read_int("GameMode", DEFAULT_MULTIPLAYER_GAME_MODE);
+    // 0x00698366..0x006983E4: ReadBool 0x005295F0 over the held values,
+    // WOL first, taunts then scroll text. WriteMultiPlayerSettings does not
+    // write them back.
+    let toggles = &mut preferences.toggles;
+    toggles.wol_taunts = section.read_bool("WOLTaunts", toggles.wol_taunts);
+    toggles.lan_taunts = section.read_bool("LANTaunts", toggles.lan_taunts);
+    toggles.wol_scroll_text = section.read_bool("WOLScrollText", toggles.wol_scroll_text);
+    toggles.lan_scroll_text = section.read_bool("LANScrollText", toggles.lan_scroll_text);
 }
 
 fn encode_multiplayer_handle(bytes: &[u8]) -> String {
@@ -1525,6 +1676,7 @@ mod tests {
             local_preferences: LocalMultiplayerPreferences::default(),
             settings_ini: Vec::new(),
             lan_observer_mode: 0,
+            taunt_clock: Default::default(),
             scenario_rng,
             random_map_options: crate::map::rmg::RmgOptions::default(),
             ini_path: None,
@@ -1551,6 +1703,7 @@ mod tests {
             local_preferences: LocalMultiplayerPreferences::default(),
             settings_ini: Vec::new(),
             lan_observer_mode: 0,
+            taunt_clock: Default::default(),
             scenario_rng: SimRng::new(u64::from(seed)),
             random_map_options: crate::map::rmg::RmgOptions::default(),
             ini_path: None,
@@ -1831,6 +1984,74 @@ mod tests {
     }
 
     #[test]
+    fn scroll_text_keys_default_on_and_keep_the_held_value() {
+        use crate::sim::scenario_session::ScenarioGameMode;
+        let mut preferences = LocalMultiplayerPreferences::default();
+        read_local_preference_fields(&IniFile::from_str("[MultiPlayer]\n"), &mut preferences);
+        assert!(preferences.toggles.lan_scroll_text && preferences.toggles.wol_scroll_text);
+        read_local_preference_fields(
+            &IniFile::from_str("[MultiPlayer]\nLANScrollText=no\nWOLScrollText=junk\n"),
+            &mut preferences,
+        );
+        assert!(!preferences.toggles.lan_scroll_text);
+        assert!(
+            preferences.toggles.wol_scroll_text,
+            "an unparsed value keeps the held one"
+        );
+        let runtime = MultiplayerShellRuntime {
+            local_preferences: preferences,
+            ..MultiplayerShellRuntime::initialize(7, None, None, None, defaults())
+        };
+        assert!(!runtime.scroll_text(ScenarioGameMode::Lan));
+        assert!(runtime.scroll_text(ScenarioGameMode::Wol));
+        assert!(runtime.scroll_text(ScenarioGameMode::Skirmish));
+    }
+
+    #[test]
+    fn taunts_keys_read_wol_first_and_the_game_end_write_saves_all_four() {
+        use crate::sim::scenario_session::ScenarioGameMode;
+        let mut preferences = LocalMultiplayerPreferences::default();
+        read_local_preference_fields(
+            &IniFile::from_str(
+                "[MultiPlayer]
+LANTaunts=no
+WOLTaunts=junk
+",
+            ),
+            &mut preferences,
+        );
+        assert!(!preferences.toggles.lan_taunts);
+        assert!(preferences.toggles.wol_taunts, "constructor default held");
+        let mut runtime = MultiplayerShellRuntime {
+            local_preferences: preferences,
+            ..MultiplayerShellRuntime::initialize(7, None, None, None, defaults())
+        };
+        assert_eq!(runtime.taunts_on(ScenarioGameMode::Lan), Some(false));
+        assert_eq!(runtime.taunts_on(ScenarioGameMode::Wol), Some(true));
+        assert_eq!(runtime.taunts_on(ScenarioGameMode::Skirmish), None);
+        // A refused TauntsOn leaves the clock unwritten (0x005363C6 runs
+        // after the switch): the next LAN taunt is admitted at once.
+        assert!(!runtime.admit_taunt(ScenarioGameMode::Lan, 1_000));
+        assert!(!runtime.admit_taunt(ScenarioGameMode::Skirmish, 1_000));
+        assert!(runtime.admit_taunt(ScenarioGameMode::Wol, 1_000));
+        assert!(!runtime.admit_taunt(ScenarioGameMode::Wol, 6_000));
+        runtime.set_taunts_on(ScenarioGameMode::Lan, true);
+        assert!(runtime.admit_taunt(ScenarioGameMode::Lan, 6_001));
+        runtime.set_taunts_on(ScenarioGameMode::Lan, false);
+        runtime.set_taunts_on(ScenarioGameMode::Wol, false);
+        runtime.set_taunts_on(ScenarioGameMode::Skirmish, true);
+        assert_eq!(runtime.taunts_on(ScenarioGameMode::Lan), Some(false));
+        runtime.persist_session_toggles();
+        let written = IniFile::from_bytes(&runtime.settings_ini).expect("written ini");
+        let section = written.section("MultiPlayer").expect("section");
+        assert_eq!(
+            ["WOLTaunts", "LANTaunts", "WOLScrollText", "LANScrollText"]
+                .map(|key| section.get_for_test(key).unwrap_or_default()),
+            ["no", "no", "yes", "yes"]
+        );
+    }
+
+    #[test]
     fn repeated_settings_reads_use_retained_ini_and_canonical_country_allocation() {
         use crate::map::source::test_support::TestDirectory;
         let directory = TestDirectory::new("multiplayer-retained-country");
@@ -1937,6 +2158,7 @@ mod tests {
         assert_eq!(
             preferences,
             LocalMultiplayerPreferences {
+                toggles: SessionToggles::default(),
                 handle_bytes: b"[New Player]".to_vec(),
                 side: menu_country_item_data(LaunchCountry::America),
                 side_ex: CONCRETE_ITEM_DATA,
@@ -2106,6 +2328,7 @@ mod tests {
             7,
         );
         runtime.local_preferences = LocalMultiplayerPreferences {
+            toggles: SessionToggles::default(),
             handle_bytes: vec![0x4a, 0x6f, 0x73, 0xe9],
             side: menu_country_item_data(LaunchCountry::Yuri),
             side_ex: CONCRETE_ITEM_DATA,
@@ -2214,6 +2437,7 @@ mod tests {
     fn gsi_03_10_multiplayer_preferences_failed_close_keeps_cached_fields() {
         let mut runtime = cooperative_runtime(0x2345);
         runtime.local_preferences = LocalMultiplayerPreferences {
+            toggles: SessionToggles::default(),
             handle_bytes: b"Cached".to_vec(),
             side: menu_country_item_data(LaunchCountry::Russia),
             side_ex: CONCRETE_ITEM_DATA,

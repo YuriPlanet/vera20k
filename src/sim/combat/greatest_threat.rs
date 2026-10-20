@@ -89,7 +89,7 @@ use super::combat_weapon::{
     AttackerFacts, SelectedWeapon, attacker_facts, controlled_transport_house, get_weapon,
     is_ally_by_object, is_armed, is_armed_from_facts, is_occupied, occupied_reach_cells,
     passive_scan_class_bits, primary_warhead_spares_medium_and_wood, resolve_selected_weapon,
-    techno_target_facts, weapon_damage_value,
+    resolve_weapon_index, techno_target_facts, weapon_damage_value, what_weapon_should_i_use,
 };
 use super::threat_mask::{self, InfantryScanner};
 use super::threat_range::{ScanRange, max_weapon_range, scan_range};
@@ -1975,28 +1975,42 @@ fn evaluate_candidate(
         ctx.rules,
         ctx.interner,
     );
-    let selected = resolve_selected_weapon(
+    // G1 `0x006F7CBE..0x006F7CD5`: SelectWeapon's index always answers, and
+    // GetWeapon of it may hold no weapon — an unarmed scanner (a map type
+    // without a weapon; retail engineers and spies carry kit weapons). The
+    // ladder below carries such a scanner on instead of refusing its
+    // candidates: `test ebp,ebp ; je 0x6f7d55 @ 0x006F7D19` skips the verses
+    // gate, and G13's zero-range arm asks `Is_Armed` separately
+    // (`0x006F817A..0x006F8198`). A weapon whose warhead section is missing
+    // (`resolve_weapon_index` answers `None`) takes the same null-weapon
+    // path. Native tests a null WeaponType apart from its slot elsewhere (the
+    // candidate's current weapon, `0x006F85D3..0x006F85DD`), so the pair can
+    // diverge only on that data error.
+    let weapon_index = what_weapon_should_i_use(
         ctx.rules,
-        ctx.scanner,
         ctx.attacker_obj,
         scanner_facts,
         Some(&candidate_facts),
+    );
+    let selected = resolve_weapon_index(
+        ctx.rules,
+        ctx.scanner,
+        ctx.attacker_obj,
+        weapon_index,
         ctx.entities,
         ctx.interner,
-    )?;
+    );
     // G2b — GetFireError without range, immediately after SelectWeapon
     // (6F7CDB..6F7CF1). Its native cell getters can move the shared dummy even
     // when a later eligibility gate rejects this candidate. It is not a pure
-    // predicate that can be deferred until after those gates or G27.
-    // A mask with `0x18200` (Capturable, occupants, NeedsEngineer) skips it
-    // (`0x006F7CD7`). Native's null-weapon continuation remains a separate
-    // gap in the early selection ladder: VERA refuses every candidate of an
-    // unarmed scanner at the `?` above, so the zero-range arm's unarmed
-    // comparison with `GuardRange=` (`TechnoType+0x5B8`,
-    // `0x006F817A..0x006F8198`) is never reached.
+    // predicate that can be deferred until after those gates or G27. A mask
+    // with `0x18200` (Capturable, occupants, NeedsEngineer) skips it
+    // (`0x006F7CD7`). The probe asks SelectWeapon's index whatever GetWeapon
+    // holds (`push ebx @ 0x006F7CE4`): GetFireError's own no-weapon term
+    // (`0x006FC31C`) answers CANT, which this reject does not take.
     if ctx.mask & 0x18200 == 0
         && let Some(world) = ctx.fire_world
-        && probe_is_illegal(ctx, world, candidate, selected.index)
+        && probe_is_illegal(ctx, world, candidate, weapon_index)
     {
         return None;
     }
@@ -2005,7 +2019,32 @@ fn evaluate_candidate(
     if rejects_vhp_candidate(ctx.attacker_obj.vhp_scan, candidate.estimated_health.get()) {
         return None;
     }
-    if selected.warhead.verses_f64[armor_index(&candidate_obj.armor)] <= VERSES_FLOOR {
+    // G4 `0x006F7D19..0x006F7D4F`: a scanner with no weapon in the selected
+    // slot skips the floor test (`test ebp,ebp ; je 0x6f7d55 @ 0x006F7D1B`).
+    if let Some(selected) = &selected
+        && selected.warhead.verses_f64[armor_index(&candidate_obj.armor)] <= VERSES_FLOOR
+    {
+        return None;
+    }
+
+    // `0x006F7D55..0x006F7D82`: a `LandTargeting=2` scanner (`+0x604`; on
+    // retail only the Boomer) refuses a candidate low enough to count as on
+    // the floor (vt+0x50, [`is_low_flying`]) whose Cell (vt+0x1BC) is not
+    // Water (`+0xEC`); Beach counts as land. An explicit order, retaliation
+    // (`ShouldRetaliate @ 0x007087C0`, which asks no candidate gate) or another
+    // team member's quarry can still send it at land.
+    //
+    // [`is_low_flying`]: crate::sim::movement::air_movement::is_low_flying
+    if ctx.attacker_obj.land_targeting == 2
+        && let crate::sim::combat::combat_weapon::TargetFacts::Techno { cell_land_type, .. } =
+            &candidate_facts
+        && crate::sim::movement::air_movement::is_low_flying(
+            candidate,
+            ctx.terrain,
+            Some((ctx.rules, ctx.interner)),
+        )
+        && *cell_land_type != crate::rules::terrain_rules::LandType::Water.as_index()
+    {
         return None;
     }
 
@@ -2151,6 +2190,27 @@ fn evaluate_candidate(
     // `-1` the mask-0 walk pushes at `0x006F9D70` — satisfies neither
     // `0 < range` nor `range == 0`, so both gates are skipped and the candidate
     // is admitted at any separation.
+    //
+    // The zero-range arm (`0x006F817A..0x006F8198`) asks `Is_Armed` (vt+0x2AC)
+    // first, not GetWeapon of the selected slot: an armed scanner runs the
+    // InRange query with SelectWeapon's index, an unarmed one compares the
+    // already-computed whole-lepton cutoff distance with the type's
+    // `GuardRange=` (TechnoType+0x5B8) and passes on `<=`. With no
+    // `GuardRange=` only a same-position candidate passes.
+    let unarmed_range_ok = || {
+        cutoff_distance(
+            object_get_coords(ctx.scanner, ctx.terrain),
+            object_get_coords(candidate, ctx.terrain),
+            crate::sim::movement::air_movement::is_high_flying(
+                candidate,
+                ctx.terrain,
+                Some((ctx.rules, ctx.interner)),
+            ),
+        ) <= ctx
+            .attacker_obj
+            .guard_range
+            .map_or(0, |range| range.to_bits() >> 8)
+    };
     let in_range = match ctx.range {
         // Native runs no InRange here (`JNZ 0x006F81BE @ 0x006F8178`), so no
         // line-of-fire walk either: the distance alone decides.
@@ -2165,44 +2225,57 @@ fn evaluate_candidate(
             range,
         ),
         ScanRange::NoCutoff => true,
-        ScanRange::CanFireAt => match ctx.terrain {
-            Some(terrain) => {
-                // EvaluateCandidate6F8178 already holds the actual Techno.
-                // Source and InRange share one native Cell/Dummy domain; pure
-                // scan fixtures need no synthetic World for this receiver.
-                let cells = NativeCellQuery::canonical(terrain);
-                let target = super::in_range::RangeTarget::Techno(candidate);
-                let src = super::in_range::fire_source_for_target(
-                    ctx.scanner,
-                    target,
-                    selected.weapon,
-                    &cells,
-                    (ctx.rules, ctx.interner),
-                )?;
-                super::in_range::compute_range_target(
-                    ctx.scanner,
-                    src,
-                    target,
-                    selected.weapon,
-                    ctx.rules,
-                    ctx.interner,
-                    &cells,
-                    &ctx.los,
-                )
-            }
-            None => is_within_range_leptons(
-                lepton_distance_sq_raw(
-                    ctx.attacker.pos_rx,
-                    ctx.attacker.pos_ry,
-                    ctx.attacker.sub_x,
-                    ctx.attacker.sub_y,
-                    candidate.position.rx(),
-                    candidate.position.ry(),
-                    candidate.position.sub_x(),
-                    candidate.position.sub_y(),
+        ScanRange::CanFireAt => match (
+            &selected,
+            is_armed_from_facts(ctx.attacker_obj, ctx.scanner_facts),
+        ) {
+            // RESIDUAL: an Is_Armed-true scanner with no weapon in the
+            // selected slot (an occupied building whose occupant is unarmed, a
+            // TurretCount gunner edge) falls back to the unarmed compare;
+            // native runs InRange with the index, whose null-weapon behavior
+            // VERA does not port. Trigger: data errors and gunner states
+            // retail rules do not author. Effect: such a scanner keeps the
+            // GuardRange acceptance instead. Frequency: nil on retail data.
+            (Some(selected), true) => match ctx.terrain {
+                Some(terrain) => {
+                    // EvaluateCandidate6F8178 already holds the actual Techno.
+                    // Source and InRange share one native Cell/Dummy domain; pure
+                    // scan fixtures need no synthetic World for this receiver.
+                    let cells = NativeCellQuery::canonical(terrain);
+                    let target = super::in_range::RangeTarget::Techno(candidate);
+                    let src = super::in_range::fire_source_for_target(
+                        ctx.scanner,
+                        target,
+                        selected.weapon,
+                        &cells,
+                        (ctx.rules, ctx.interner),
+                    )?;
+                    super::in_range::compute_range_target(
+                        ctx.scanner,
+                        src,
+                        target,
+                        selected.weapon,
+                        ctx.rules,
+                        ctx.interner,
+                        &cells,
+                        &ctx.los,
+                    )
+                }
+                None => is_within_range_leptons(
+                    lepton_distance_sq_raw(
+                        ctx.attacker.pos_rx,
+                        ctx.attacker.pos_ry,
+                        ctx.attacker.sub_x,
+                        ctx.attacker.sub_y,
+                        candidate.position.rx(),
+                        candidate.position.ry(),
+                        candidate.position.sub_x(),
+                        candidate.position.sub_y(),
+                    ),
+                    selected.weapon.range_leptons,
                 ),
-                selected.weapon.range_leptons,
-            ),
+            },
+            _ => unarmed_range_ok(),
         },
     };
     if !in_range {
@@ -2406,7 +2479,9 @@ fn evaluate_candidate(
 
     // G28/P9 — truncate first, then Normal VHPScan, then the house and
     // quarry terms, then final acceptance. The score's A term is G1's
-    // selection: the same scanner, candidate and ally answer.
+    // selection: the same scanner, candidate and ally answer; with no
+    // weapon selected (`None`) the score skips the term and falls back to
+    // `GuardRange=` for term E (`0x0070CF81`).
     let pair = ThreatPair {
         scorer: ctx.scanner,
         scorer_type: ctx.attacker_obj,
@@ -2416,7 +2491,7 @@ fn evaluate_candidate(
     };
     let score = threat_score(
         &pair,
-        Some(&selected),
+        selected.as_ref(),
         ctx.entities,
         ctx.rules,
         ctx.interner,
@@ -2599,7 +2674,9 @@ fn probe_is_illegal(
         world,
         rules: ctx.rules,
         overlay_registry: ctx.los.overlay_registry,
-        fog: ctx.fog.map(|fog| fog.fire_view(&world.house_alliances)),
+        fog: ctx
+            .fog
+            .map(|fog| fog.fire_view(world.house_alliances.as_map())),
         firer,
         obj: ctx.attacker_obj,
         target: Some(super::TargetKind::Entity(candidate.stable_id())),
@@ -2773,5 +2850,13 @@ mod mask_oracle_tests;
 mod scenario_gate_tests;
 
 #[cfg(test)]
+#[path = "greatest_threat_land_targeting_tests.rs"]
+mod land_targeting_tests;
+
+#[cfg(test)]
 #[path = "greatest_threat_disguise_tests.rs"]
 mod disguise_tests;
+
+#[cfg(test)]
+#[path = "greatest_threat_unarmed_tests.rs"]
+mod unarmed_tests;

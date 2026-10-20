@@ -48,7 +48,7 @@ fn world(rules: &RuleSet) -> Simulation {
     sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
         super::cell_receiver_tests::test_terrain_cell(x, y)
     }));
-    sim.playfield_bounds = Some(super::cell_receiver_tests::test_playfield_bounds());
+    sim.set_playfield_bounds_for_test(Some(super::cell_receiver_tests::test_playfield_bounds()));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim
 }
@@ -85,6 +85,7 @@ fn ready(sim: &mut Simulation, name: &str) -> InternedId {
     let id = sim.interner.get(name).unwrap();
     let instance = sim
         .super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&id)
@@ -115,6 +116,7 @@ fn auxiliary_is_any_of_negative_is_any_veto_and_native_aux_remains_required() {
         spawn(&mut sim, &rules, "NATIVEAUX", OWNER, 12);
         assert!(allowed(&sim, &rules, OWNER, NORMAL));
         sim.power_states
+            .map_mut_for_test()
             .entry(sim.interner.get(OWNER).unwrap())
             .or_default()
             .set_is_low_power_for_test(true);
@@ -156,7 +158,7 @@ fn black_widow_upgrade_switches_grants_at_the_existing_dirty_house_tail() {
         FrameEffects::default(),
         false
     ));
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     recheck(&mut sim, &rules, OWNER);
     assert!(!active(&sim, OWNER, NORMAL));
     assert!(active(&sim, OWNER, ALPHA));
@@ -229,7 +231,7 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
         target_rx: 15,
         target_ry: 15,
     };
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     let before = sim.state_hash();
     sim.apply_command_with_overlays(OWNER, &command, Some(&rules), None, FrameEffects::default());
     assert_eq!(
@@ -242,7 +244,7 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
         "no launch sound or defense alerts"
     );
     spawn(&mut sim, &rules, "GASCEA", OWNER, 8);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.apply_command_with_overlays(OWNER, &command, Some(&rules), None, FrameEffects::default());
     assert!(!sim.super_weapons[&owner][&id].is_ready);
     assert!(
@@ -453,7 +455,7 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
     let id = sim.interner.get(NORMAL).unwrap();
     assert!(trigger_grant_super(&mut sim, &rules, owner, id, true));
     ready(&mut sim, NORMAL);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     let before = sim.state_hash();
     assert!(!sim.fire_super_weapon(
         &rules,
@@ -468,7 +470,7 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
     assert!(sim.sound_events.is_empty());
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 1000);
     let auxiliary = spawn(&mut sim, &rules, "GASCEA", OWNER, 8);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     assert!(sim.fire_super_weapon(
         &rules,
         owner,

@@ -67,7 +67,14 @@ fn step(coord: CellCoord, direction: u8) -> CellCoord {
 }
 
 fn finish_slot<H: BridgePublicationHost>(host: &mut H, cell: H::Cell, direction: u8, set: bool) {
-    host.write_state(cell, if set && direction != 0 { 9 } else { 0 });
+    host.write_state(
+        cell,
+        if set {
+            crate::map::bridge_facts::bridge_setter_state(direction)
+        } else {
+            0
+        },
+    );
     if !set {
         host.fallout(cell);
     }
@@ -92,7 +99,10 @@ pub(crate) fn set_bridge_direction<H: BridgePublicationHost>(
     let direction_zero = u32::from(direction == 0) << 11;
 
     // The first +11E store precedes the anchor flag word, even for destruction.
-    host.write_state(anchor, if direction == 0 { 0 } else { 9 });
+    host.write_state(
+        anchor,
+        crate::map::bridge_facts::bridge_setter_state(direction),
+    );
     host.write_flags(
         anchor,
         (host.flags(anchor) & 0xfffe_e07f)

@@ -51,9 +51,9 @@ pub(crate) enum SurfaceDraw {
         word: u16,
     },
     Line(SurfaceLine),
-    /// Wave3 DrawMagBeam7602E0: displaced background with strict u16 Z,
+    /// Wave0/3 DrawSonic75FA90/DrawMagBeam7602E0: displaced background with strict Z,
     /// without A or WriteZ, at this parent's retained Display slot.
-    MagneticWave(crate::render::wave_geometry::MagneticWaveDraw),
+    Wave(crate::render::wave_geometry::WaveDraw),
     /// ParticleDraw62D02C: packed color after full-u16 A admission, with a
     /// signed candidate tested strictly against the current native Z word.
     Point(crate::render::tactical_compat::PreparedSparkPoint),
@@ -207,7 +207,9 @@ pub(crate) fn clip_line(a: &mut [i32; 2], b: &mut [i32; 2], clip: [i32; 4]) -> b
     }
 }
 
-/// Patterned pixel walk from DSurface4C0750. Endpoints must already be clipped.
+/// Patterned pixel walk from DSurface4C0750, which XSurface7BA8C0 (DSurface
+/// vt+48: planning strokes, the target laser) shares without the A
+/// predicate. Endpoints must already be clipped.
 /// Axis-aligned lines include the final endpoint; diagonals exclude it.
 /// The callback receives lit pixels in native store order. The original leaf's
 /// ABuffer predicate selects pass zero for nonzero samples, pass one for zero.

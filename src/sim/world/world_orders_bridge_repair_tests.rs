@@ -48,7 +48,9 @@ fn build_sim() -> (Simulation, RuleSet) {
     let mut sim = Simulation::new();
     let rules = bridge_repair_test_rules();
     sim.resolve_type_handles(&rules);
-    sim.resolved_terrain = Some(dummy_resolved_terrain());
+    let terrain = dummy_resolved_terrain();
+    sim.overlay_grid = Some(OverlayGrid::new(terrain.width(), terrain.height()));
+    sim.resolved_terrain = Some(terrain);
     (sim, rules)
 }
 
@@ -71,13 +73,6 @@ fn build_ordinary_c4_sim(
     // A raw ordinary three-cell width, with resident TMP/navigation owners.
     // Overlay families do not imply structural/deck geometry.
     for y in [14, 15, 16] {
-        sim.resolved_terrain
-            .as_mut()
-            .unwrap()
-            .cell_mut_for_test(17, y)
-            .unwrap()
-            .bridge_facts
-            .overlay_id = Some(overlay);
         sim.overlay_grid
             .as_mut()
             .unwrap()
@@ -118,8 +113,8 @@ fn spawn_engineer(sim: &mut Simulation, rules: &RuleSet, rx: u16, ry: u16) -> u6
 fn spawn_seal(sim: &mut Simulation, rx: u16, ry: u16) -> u64 {
     let owner = sim.interner.intern("Americans");
     let ty = sim.interner.intern("GHOST");
-    let id = sim.substrate.next_stable_object_id;
-    sim.substrate.next_stable_object_id += 1;
+    let id = sim.next_stable_object_id();
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id() + 1);
     let e = GameEntity::new_at_frame_zero_for_test(
         id,
         rx,
@@ -142,8 +137,8 @@ fn spawn_seal(sim: &mut Simulation, rx: u16, ry: u16) -> u64 {
 fn spawn_cabhut(sim: &mut Simulation, rx: u16, ry: u16) -> u64 {
     let owner = sim.interner.intern("Soviets");
     let ty = sim.interner.intern("CABHUT");
-    let id = sim.substrate.next_stable_object_id;
-    sim.substrate.next_stable_object_id += 1;
+    let id = sim.next_stable_object_id();
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id() + 1);
     let e = GameEntity::new_at_frame_zero_for_test(
         id,
         rx,
@@ -167,16 +162,12 @@ const BRIDGE_CELLS: &[(u16, u16)] = &[(10, 9), (10, 10), (10, 11), (10, 12), (10
 
 /// Collapsed ordinary high identities (CellClass+44) on the span cells.
 fn seed_destroyed_bridge(sim: &mut Simulation) {
-    let terrain = sim
-        .resolved_terrain
+    let overlays = sim
+        .overlay_grid
         .as_mut()
-        .expect("bridge tests require resolved terrain");
+        .expect("bridge tests require an overlay grid");
     for &(rx, ry) in BRIDGE_CELLS {
-        terrain
-            .cell_mut_for_test(rx, ry)
-            .unwrap()
-            .bridge_facts
-            .overlay_id = Some(0xE7);
+        overlays.cell_mut_for_test(rx, ry).overlay_id = Some(0xE7);
     }
     sim.bridge_state = Some(BridgeRuntimeState::default());
 }
@@ -202,13 +193,7 @@ fn stamp_concrete_middle_tile(sim: &mut Simulation, cell: (u16, u16)) {
 const FALLBACK_ANCHOR_STATE: u8 = 15;
 
 fn fallback_anchor_state(sim: &Simulation) -> u8 {
-    sim.resolved_terrain
-        .as_ref()
-        .unwrap()
-        .cell(13, 10)
-        .unwrap()
-        .bridge_facts
-        .state_byte
+    sim.overlay_grid.as_ref().unwrap().cell(13, 10).overlay_data
 }
 
 fn seed_hut_fallback_bridgehead_layout(sim: &mut Simulation) {
@@ -227,21 +212,22 @@ fn seed_hut_fallback_bridgehead_layout(sim: &mut Simulation) {
         family: BridgeStampFamily::Nesw,
         direction: 6,
     });
-    let anchor = terrain.cell_mut_for_test(13, 10).unwrap();
-    anchor.bridge_facts.raw_flags = 0;
-    anchor.bridge_facts.state_byte = FALLBACK_ANCHOR_STATE;
+    terrain
+        .cell_mut_for_test(13, 10)
+        .unwrap()
+        .bridge_facts
+        .raw_flags = 0;
+    sim.overlay_grid
+        .as_mut()
+        .unwrap()
+        .cell_mut_for_test(13, 10)
+        .overlay_data = FALLBACK_ANCHOR_STATE;
     stamp_concrete_middle_tile(sim, (13, 10));
 }
 
 fn seed_terminal_overlay_with_fallback_trap(sim: &mut Simulation, overlay_byte: u8) {
     seed_hut_fallback_bridgehead_layout(sim);
-    sim.resolved_terrain
-        .as_mut()
-        .unwrap()
-        .cell_mut_for_test(10, 10)
-        .unwrap()
-        .bridge_facts
-        .overlay_id = Some(overlay_byte);
+    sim.overlay_cell_mut_for_test(10, 10).overlay_id = Some(overlay_byte);
 }
 
 fn seed_hut_fallback_without_starter(sim: &mut Simulation) {
@@ -339,7 +325,7 @@ fn ordinary_friendly_repair_uses_capture_event_without_hut_exception() {
             .spawn_object_at_height("CABHUT", target_owner, 9, 10, 0, 0, &rules)
             .unwrap();
         let engineer = spawn_engineer(&mut sim, &rules, 8, 10);
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry("AMERICANS".into())
             .or_default()
             .insert("SOVIETS".into());
@@ -435,7 +421,7 @@ fn queued_hut_capture_survives_repair_before_event_execution() {
             .unwrap();
         let engineer = spawn_engineer(&mut sim, &rules, 8, 10);
         if relation == "allied" {
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .entry("AMERICANS".into())
                 .or_default()
                 .insert("SOVIETS".into());
@@ -459,13 +445,7 @@ fn queued_hut_capture_survives_repair_before_event_execution() {
             },
         ));
         for &(rx, ry) in BRIDGE_CELLS {
-            sim.resolved_terrain
-                .as_mut()
-                .unwrap()
-                .cell_mut_for_test(rx, ry)
-                .unwrap()
-                .bridge_facts
-                .overlay_id = Some(0xD4);
+            sim.overlay_cell_mut_for_test(rx, ry).overlay_id = Some(0xD4);
         }
         assert!(!super::bridge_orchestrator::bridge_hut_can_repair(
             &sim,
@@ -558,13 +538,7 @@ fn c4_on_cabhut_collapses_bridge_and_hut_survives() {
         if (sim.session.binary_frame() as u64) < plant_start + delay {
             for y in [14, 15, 16] {
                 assert_eq!(
-                    sim.resolved_terrain
-                        .as_ref()
-                        .unwrap()
-                        .cell(17, y)
-                        .unwrap()
-                        .bridge_facts
-                        .overlay_id,
+                    sim.overlay_grid.as_ref().unwrap().cell(17, y).overlay_id,
                     Some(0xD4),
                     "damaged concrete strip must remain unchanged before C4Delay expires"
                 );
@@ -604,13 +578,7 @@ fn c4_on_cabhut_collapses_bridge_and_hut_survives() {
     // changes the raw overlay authority, without structural runtime cells.
     for y in [14, 15, 16] {
         assert_eq!(
-            sim.resolved_terrain
-                .as_ref()
-                .unwrap()
-                .cell(17, y)
-                .unwrap()
-                .bridge_facts
-                .overlay_id,
+            sim.overlay_grid.as_ref().unwrap().cell(17, y).overlay_id,
             Some(0xE7),
             "CABHUT C4 must collapse concrete cell (17, {y})"
         );
@@ -744,7 +712,7 @@ fn c4_on_cabhut_collapses_concrete_and_wooden_strips_even_when_invulnerable() {
         for y in [14, 15, 16] {
             let cell = sim.resolved_terrain.as_ref().unwrap().cell(17, y).unwrap();
             assert_eq!(
-                cell.bridge_facts.overlay_id,
+                sim.overlay_grid.as_ref().unwrap().cell(17, y).overlay_id,
                 Some(collapsed),
                 "overlay {overlay:#x}"
             );
@@ -790,7 +758,7 @@ fn ordinary_engineer_overlay_repair_does_not_clear_neighbor_pavement() {
     let terrain = sim.resolved_terrain.as_ref().unwrap();
     for &(rx, ry) in LIVE_REPAIR_STRIP {
         assert_eq!(
-            terrain.cell(rx, ry).unwrap().bridge_facts.overlay_id,
+            sim.overlay_grid.as_ref().unwrap().cell(rx, ry).overlay_id,
             Some(0xce)
         );
         assert!(
@@ -823,13 +791,6 @@ fn live_repair_fixture() -> (
         .unwrap();
     let owner = sim.substrate.entities.get(engineer).unwrap().owner();
     for (index, &(x, y)) in LIVE_REPAIR_STRIP.iter().enumerate() {
-        sim.resolved_terrain
-            .as_mut()
-            .unwrap()
-            .cell_mut_for_test(x, y)
-            .unwrap()
-            .bridge_facts
-            .overlay_id = Some(231);
         let overlays = sim.overlay_grid.as_mut().unwrap();
         overlays.place_overlay(x, y, 231, 0xA0 + index as u8);
         overlays.cell_mut_for_test(x, y).wall_owner = Some(owner);
@@ -840,9 +801,7 @@ fn live_repair_fixture() -> (
 fn assert_live_repair_strip(sim: &Simulation, engineer: u64, expected_overlay: u8) {
     let owner = sim.substrate.entities.get(engineer).unwrap().owner();
     for (index, &(x, y)) in LIVE_REPAIR_STRIP.iter().enumerate() {
-        let terrain = sim.resolved_terrain.as_ref().unwrap().cell(x, y).unwrap();
         let overlay = sim.overlay_grid.as_ref().unwrap().cell(x, y);
-        assert_eq!(terrain.bridge_facts.overlay_id, Some(expected_overlay));
         assert_eq!(overlay.overlay_id, Some(expected_overlay));
         assert_eq!(overlay.overlay_data, 0xA0 + index as u8);
         assert_eq!(overlay.wall_owner, Some(owner));

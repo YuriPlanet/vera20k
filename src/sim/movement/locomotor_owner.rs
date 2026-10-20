@@ -27,6 +27,13 @@ use crate::sim::game_entity::GameEntity;
 ///
 /// The Teleporter arm is skipped while a Magnetron holds the object
 /// (`0x007423E1..0x00742405`), so the END here is never a lift's.
+///
+/// `BuildingClass::Mission_Unload` state 2 (`0x0044DFAD..0x0044E163`) runs the
+/// same install for a product whose active locomotor is Teleport, before its
+/// bay track. Its END asks only Is_Piggybacking (IPiggyback vt+0x1C,
+/// `0x0044DFE1`), where the setter also asks Is_Ok_To_End (vt+0x14,
+/// `0x0074264E`); a product fresh from ExitObject carries no piggyback, so
+/// both skip it. An active Teleport is never a lift's Jumpjet.
 pub(crate) fn begin_drive_for_teleporter(entity: &mut GameEntity, binary_frame: u32) -> bool {
     let Some(locomotor) = entity.locomotor.as_ref() else {
         return false;
@@ -233,7 +240,13 @@ impl crate::sim::world::Simulation {
                 self.track_apply_occupation(id, super::track_process::TrackFamily::Ship, put);
             }
             Some(crate::rules::locomotor_type::LocomotorKind::Hover) => {
-                self.hover_mark_all_occupation_bits(id, put);
+                Self::hover_mark_all_occupation_bits(
+                    &mut self.substrate,
+                    &self.path_grid,
+                    &self.resolved_terrain,
+                    id,
+                    put,
+                );
             }
             Some(
                 crate::rules::locomotor_type::LocomotorKind::Fly
@@ -241,7 +254,12 @@ impl crate::sim::world::Simulation {
             ) => {}
             _ if !put => {
                 self.release_walk_occupation_before_foot_limbo(id);
-                self.release_teleport_occupation_before_foot_limbo(id);
+                Self::release_teleport_occupation_before_foot_limbo(
+                    &mut self.substrate,
+                    &self.path_grid,
+                    &self.resolved_terrain,
+                    id,
+                );
                 self.release_jumpjet_occupation_before_foot_limbo(id);
             }
             Some(kind) => {

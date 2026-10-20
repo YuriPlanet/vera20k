@@ -138,12 +138,12 @@ fn funds_event_runs_from_house_rung_after_a_spend() {
          [Actions]\nFUNDS=1,28,0,7,0,0,0,0,A\n\
          [Tags]\nFUNDS_TAG=0,Funds,FUNDS\n",
     );
-    crate::sim::credit_income::add_credits(&mut sim, houses[0], 70000);
+    crate::sim::credit_income::add_credits(&mut sim.houses, houses[0], 70000);
     sim.session.set_binary_frame_for_test(0);
     for frame in 0..=8 {
         assert_eq!(sim.session.binary_frame(), frame);
         if frame == 7 {
-            crate::sim::credit_income::spend_money(&mut sim, houses[0], 60000);
+            crate::sim::credit_income::spend_money(&mut sim.houses, houses[0], 60000);
         }
         ordinary_master_frame(&mut sim, Some(&rules), Some(&overlay), false);
         // Native House4F8F87 -> Tag/RegisterEvent -> HasOccurred52:
@@ -420,7 +420,8 @@ fn delete_tag_returns_safely_through_its_active_dispatcher() {
             let other_type = sim.trigger_runtime.definitions.tag_type("OTHER").unwrap();
             let other = sim.shared_trigger_tag(other_type);
             let cell = sim.trigger_cell_identity((15, 15));
-            sim.replace_cell_trigger_tag(cell, Some(active));
+            sim.trigger_runtime
+                .replace_cell_trigger_tag(cell, Some(active));
             assert_eq!(sim.trigger_runtime.tag(active).unwrap().refs, 1);
             assert!(sim.dispatch_live_tag_event(
                 active,
@@ -478,7 +479,8 @@ fn retail_sov01_boris_tag_delete_is_immediate_and_releases_attachments() {
         .unwrap();
     let unrelated = sim.construct_trigger_tag(unrelated_type);
     let cell = sim.trigger_cell_identity((50, 60));
-    sim.replace_cell_trigger_tag(cell, Some(first));
+    sim.trigger_runtime
+        .replace_cell_trigger_tag(cell, Some(first));
     let linked = sim.trigger_runtime.tag(first).unwrap().triggers.clone();
     assert!(sim.apply_live_trigger_action(
         &action,
@@ -581,8 +583,8 @@ fn retail_sov01_make_enemy_reaches_the_shared_diplomacy_owner() {
         Some(&overlay),
         FrameEffects::default(),
     ));
-    assert!(!sim.house_alliances["RUSSIANS"].contains("ARABS"));
-    assert!(!sim.house_alliances["ARABS"].contains("RUSSIANS"));
+    assert!(!sim.house_alliances.as_map()["RUSSIANS"].contains("ARABS"));
+    assert!(!sim.house_alliances.as_map()["ARABS"].contains("RUSSIANS"));
     assert_eq!(sim.session.current_house(), Some(russians));
 }
 
@@ -1048,10 +1050,10 @@ fn retail_sov01_script_context() -> Option<(
     ));
     sim.session.set_map_width_for_test(198);
     sim.session.set_map_height_for_test(198);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds::from_map_header(
-        &map.header,
+    sim.set_playfield_bounds_for_test(Some(
+        crate::map::playfield::PlayfieldBounds::from_map_header(&map.header),
     ));
-    sim.playfield_size_height = Some(map.header.height as i32);
+    sim.set_playfield_size_height_for_test(Some(map.header.height as i32));
     sim.session.install_waypoints(&map.waypoints);
     let owner = sim.interner.intern("Russians");
     sim.houses
@@ -2441,7 +2443,7 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     let mut sim = Simulation::new();
     sim.hash_state_every(std::num::NonZeroU64::MIN);
     sim.install_playfield_from_map_header(&header);
-    let initial_bounds = sim.playfield_bounds.expect("initial playfield");
+    let initial_bounds = sim.playfield_bounds().expect("initial playfield");
     let mut terrain = flat_trigger_playfield_terrain(100, 100);
     terrain.recalc_playfield_attributes(initial_bounds);
     let path_grid = PathGrid::from_resolved_terrain(&terrain);
@@ -2469,7 +2471,7 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     let tick = ordinary_master_frame(&mut sim, None, None, true);
 
     assert_eq!(
-        sim.playfield_bounds,
+        sim.playfield_bounds(),
         Some(PlayfieldBounds {
             base: 80,
             off_fc: 2,
@@ -2490,24 +2492,27 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     assert_ne!(normal.zone_at(85, 85, MovementLayer::Ground), ZONE_INVALID);
     assert!(sim.dirty_cells.radar().is_empty());
     assert_eq!(sim.dirty_cells.radar_generation(), 0);
-    assert_eq!(sim.playfield_revision, 1);
+    assert_eq!(sim.playfield_revision(), 1);
     assert_eq!(tick.state_hash, Some(sim.state_hash()));
 
     // FUN_006E21E0 rebuilds radar surfaces for every firing. A second writer
     // must not disappear behind the persistent per-cell dirty-list dedup gate.
     assert!(sim.change_visible_map_area([4, 40, 54, 12], None));
-    assert_eq!(sim.playfield_revision, 2);
+    assert_eq!(sim.playfield_revision(), 2);
     assert!(sim.change_visible_map_area([4, 40, 54, 12], None));
-    assert_eq!(sim.playfield_revision, 3);
+    assert_eq!(sim.playfield_revision(), 3);
     assert!(sim.dirty_cells.radar().is_empty());
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "all06umd.map", 0);
     let restored = GameSnapshot::load(&bytes)
         .expect("action-40 snapshot loads")
         .sim;
-    assert_eq!(restored.playfield_bounds, sim.playfield_bounds);
-    assert_eq!(restored.playfield_size_height, sim.playfield_size_height);
-    assert_eq!(restored.playfield_revision, sim.playfield_revision);
+    assert_eq!(restored.playfield_bounds(), sim.playfield_bounds());
+    assert_eq!(
+        restored.playfield_size_height(),
+        sim.playfield_size_height()
+    );
+    assert_eq!(restored.playfield_revision(), sim.playfield_revision());
 }
 
 #[test]
@@ -2532,7 +2537,7 @@ fn techno_playfield_action_40_exact_recompute_and_mobile_reveal_callback() {
     };
     let mut sim = Simulation::new();
     sim.install_playfield_from_map_header(&header);
-    let initial = sim.playfield_bounds.unwrap();
+    let initial = sim.playfield_bounds().unwrap();
     let expanded = PlayfieldBounds::from_raw_local_size(80, 58, [2, 2, 76, 48]);
     let candidates: Vec<(u16, u16)> = (0u16..100)
         .flat_map(|ry| (0u16..100).map(move |rx| (rx, ry)))

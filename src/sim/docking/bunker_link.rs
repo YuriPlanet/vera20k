@@ -13,6 +13,8 @@ use crate::sim::mission::authority::{EntityReadyInputProvider, LiveReadyInputPro
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::ground_pose::object_get_coords;
 use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse, transmit};
+use crate::sim::world::FrameChannel;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SIM_ONE;
 
@@ -100,11 +102,11 @@ impl BunkerLinks {
 /// a parasite (`+0x694`, `0x0070FBAF..0x0070FBC3`). For a Foot the weapon
 /// test is [`crate::sim::combat::combat_weapon::is_armed`]'s.
 ///
-/// Native callers: the bunker's radio receiver (`0x0043C512`, `0x0043C86A`)
+/// Native callers: the bunker's radio receiver (`0x0043C512`, CAN_LOAD's
+/// Bunker arm in [`crate::sim::radio::receive::can_load`]; `0x0043C86A`)
 /// and `FootClass::EnterTankBunker` (`0x004DFF4F`,
-/// [`Simulation::foot_enter_tank_bunker`]). VERA's EnterBunker order asks
-/// it in place of the receiver, and the app's cursor and click order ask it
-/// too. Resolved against `rules`, so the radio bus never calls it.
+/// [`Simulation::foot_enter_tank_bunker`]). VERA's EnterBunker order and the
+/// app's cursor and click order ask it too.
 pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> bool {
     let Some(unit) = sim.substrate.entities.get(unit_id) else {
         return false;
@@ -123,11 +125,21 @@ pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> 
 /// Foot's destination setter sends the bunker DOCKING (`0x0E`; for a unit
 /// `0x00741DCC..0x00741DDA`), whose receiver arm (`0x0043C7E9`, the bunker
 /// branch from `0x0043C84C`) admits and guides it. Here the bunker answers
-/// CAN_LOAD; on ROGER, DOCK_NOW starts its install machine, `retask` gives
+/// CAN_LOAD; on ROGER, DOCK_NOW queues its install mission, `retask` gives
 /// the unit its Enter, and the unit, marked as approaching this bunker (the
 /// install machine's keep-alive), drives to the bunker's cell. False, with
 /// nothing changed, when the bunker refuses. Shared by the EnterBunker order
 /// and [`Simulation::foot_enter_tank_bunker`].
+///
+/// RESIDUAL: native sends DOCK_NOW near arrival (UnitClass::PerCellProcess
+/// `0x0073A5C4`, tethered to the bunker), and the AI seek sends HELLO with no
+/// CAN_LOAD (`0x004DFF40`). Trigger: every tank bunker entry. Effect: the
+/// bunker's Repair mission, and the phase of its 15-frame visits, start at
+/// the order instead of near arrival, so each install step can land up to 14
+/// frames apart from native; an AI tank sent to a bunker still building up
+/// or being sold is refused here (CAN_LOAD's mission and BState gates,
+/// `0x0043C326..0x0043C354`), where native drives there. Frequency: every
+/// entry; the AI refusal only in a bunker's buildup or sale. Risk: low.
 pub(crate) fn begin_entry(
     sim: &mut Simulation,
     unit_id: u64,
@@ -143,7 +155,7 @@ pub(crate) fn begin_entry(
         bunker_id,
         RadioMessage::CanEnter,
         RadioPayload::default(),
-        None,
+        Some(rules),
         effects,
     ) != RadioResponse::Roger
     {
@@ -159,7 +171,7 @@ pub(crate) fn begin_entry(
         bunker_id,
         RadioMessage::DockNow,
         RadioPayload::default(),
-        None,
+        Some(rules),
         effects,
     );
     retask(sim);
@@ -207,7 +219,7 @@ pub(crate) fn cancel_approach(sim: &mut Simulation, unit_id: u64) {
                 .is_some_and(|runtime| runtime.installing_unit() == Some(unit_id))
     });
     if held_by_unit {
-        reset_bunker_idle(sim, building_id);
+        reset_bunker_idle(&mut sim.substrate, building_id);
         queue_guard(sim, building_id);
     }
 }
@@ -250,7 +262,7 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
         now,
         &LiveReadyInputProvider { rules },
     );
-    emit_bunker_wall_sound(sim, building_id, true);
+    emit_bunker_wall_sound(&sim.substrate, &mut sim.sound_events, building_id, true);
 }
 
 /// Clear BOTH sides of the link and send the radio BREAK. Returns the unit id
@@ -286,12 +298,17 @@ pub(crate) fn break_bunker_link(
 /// sound id and skips it when the rules key is empty.
 /// Played by `BuildingClass::UpdateBunker` (`0x00458E50`) state 5 (`0x0045936F`), and on
 /// teardown by `EmptyBunker` (`0x004595C0`) and `ClearBunker` (`0x00459470`).
-pub(crate) fn emit_bunker_wall_sound(sim: &mut Simulation, building_id: u64, up: bool) {
-    let Some(b) = sim.substrate.entities.get(building_id) else {
+pub(crate) fn emit_bunker_wall_sound(
+    substrate: &ObjectSubstrate,
+    sound_events: &mut FrameChannel<SimSoundEvent>,
+    building_id: u64,
+    up: bool,
+) {
+    let Some(b) = substrate.entities.get(building_id) else {
         return;
     };
     let (rx, ry) = (b.position.rx(), b.position.ry());
-    sim.sound_events.push(if up {
+    sound_events.emit(if up {
         SimSoundEvent::BunkerWallsUp { rx, ry }
     } else {
         SimSoundEvent::BunkerWallsDown { rx, ry }
@@ -310,14 +327,14 @@ pub(crate) fn release_normal(
     effects: FrameEffects<'_>,
 ) {
     emit_bunker_wall_anim(sim, building_id, false, rules);
-    emit_bunker_wall_sound(sim, building_id, false);
+    emit_bunker_wall_sound(&sim.substrate, &mut sim.sound_events, building_id, false);
     let Some(unit_id) = sim
         .substrate
         .entities
         .get(building_id)
         .and_then(|building| building.bunker.occupant())
     else {
-        reset_bunker_idle(sim, building_id);
+        reset_bunker_idle(&mut sim.substrate, building_id);
         queue_guard(sim, building_id);
         return;
     };
@@ -353,7 +370,7 @@ pub(crate) fn release_normal(
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
         building.bunker.occupant = None;
     }
-    reset_bunker_idle(sim, building_id);
+    reset_bunker_idle(&mut sim.substrate, building_id);
     queue_guard(sim, building_id);
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "building-link");
@@ -470,7 +487,9 @@ fn break_first_contact(sim: &mut Simulation, building_id: u64, effects: FrameEff
     }
 }
 
-fn queue_guard(sim: &mut Simulation, building_id: u64) {
+/// `Queue_Mission(Guard, 0)` (vt+0x1E8) on the bunker, which leaves its
+/// Repair mission at the next commence.
+pub(super) fn queue_guard(sim: &mut Simulation, building_id: u64) {
     let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         building_id,
@@ -504,7 +523,7 @@ pub(crate) fn clear_bunker(
         return;
     };
     emit_bunker_wall_anim(sim, building_id, false, rules);
-    emit_bunker_wall_sound(sim, building_id, false);
+    emit_bunker_wall_sound(&sim.substrate, &mut sim.sound_events, building_id, false);
     break_first_contact(sim, building_id, effects);
     if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
         u.bunker.link = BunkerLink::None;
@@ -512,7 +531,7 @@ pub(crate) fn clear_bunker(
     if let Some(b) = sim.substrate.entities.get_mut(building_id) {
         b.bunker.occupant = None;
     }
-    reset_bunker_idle(sim, building_id);
+    reset_bunker_idle(&mut sim.substrate, building_id);
     queue_guard(sim, building_id);
 }
 
@@ -525,8 +544,8 @@ pub(crate) fn clear_bunker(
 /// bunker.
 /// `TechnoClass::PointerExpired` (`0x007077C0`) clears a `+0x2E4` link naming the expired
 /// object (`0x00707849..0x00707859`); `RadioClass::PointerExpired` (`0x0065AAC0`) the contact.
-pub fn break_links_on_despawn(sim: &mut Simulation, id: u64) {
-    let Some(e) = sim.substrate.entities.get(id) else {
+pub fn break_links_on_despawn(substrate: &mut ObjectSubstrate, id: u64) {
+    let Some(e) = substrate.entities.get(id) else {
         return;
     };
     let occupant = e.bunker.occupant();
@@ -536,18 +555,18 @@ pub fn break_links_on_despawn(sim: &mut Simulation, id: u64) {
         .and_then(|runtime| runtime.installing_unit());
     let approached = e.bunker.link().approaching();
     if let Some(unit_id) = occupant
-        && let Some(u) = sim.substrate.entities.get_mut(unit_id)
+        && let Some(u) = substrate.entities.get_mut(unit_id)
     {
         u.bunker.link = BunkerLink::None;
     }
     if let Some(unit_id) = approaching
-        && let Some(u) = sim.substrate.entities.get_mut(unit_id)
+        && let Some(u) = substrate.entities.get_mut(unit_id)
         && u.bunker.link() == BunkerLink::Approaching(id)
     {
         u.bunker.link = BunkerLink::None;
     }
     if let Some(building_id) = host
-        && let Some(b) = sim.substrate.entities.get_mut(building_id)
+        && let Some(b) = substrate.entities.get_mut(building_id)
     {
         b.bunker.occupant = None;
         if let Some(rt) = b.bunker_runtime.as_mut() {
@@ -555,8 +574,7 @@ pub fn break_links_on_despawn(sim: &mut Simulation, id: u64) {
         }
     }
     if let Some(building_id) = approached
-        && let Some(rt) = sim
-            .substrate
+        && let Some(rt) = substrate
             .entities
             .get_mut(building_id)
             .and_then(|b| b.bunker_runtime.as_mut())
@@ -566,13 +584,11 @@ pub fn break_links_on_despawn(sim: &mut Simulation, id: u64) {
     }
 }
 
-/// Reset the bunker runtime to empty/idle. The building's `mission` is never
-/// used to track install in this model (`bunker_runtime.state` is the machine),
-/// so only the runtime needs resetting on release. Native zeroes the state
-/// (`+0x718`) in `BuildingClass::EmptyBunker` (`0x004596C2`, `0x0045981A`) and
-/// `ClearBunker` (`0x0045959C`).
-fn reset_bunker_idle(sim: &mut Simulation, building_id: u64) {
-    if let Some(b) = sim.substrate.entities.get_mut(building_id)
+/// Reset the bunker runtime to empty/idle. Native zeroes the state (`+0x718`)
+/// in `BuildingClass::EmptyBunker` (`0x004596C2`, `0x0045981A`), `ClearBunker`
+/// (`0x0045959C`) and UpdateBunker's no-object arm (`0x00458E85`).
+pub(super) fn reset_bunker_idle(substrate: &mut ObjectSubstrate, building_id: u64) {
+    if let Some(b) = substrate.entities.get_mut(building_id)
         && let Some(rt) = b.bunker_runtime.as_mut()
     {
         *rt = BunkerRuntime::idle();
@@ -641,6 +657,7 @@ pub(crate) fn emit_bunker_wall_anim(
         rules.general.condition_yellow,
     );
     crate::sim::world::building_anim::set_bunker_wall_slots(sim, rules, building_id, up, damaged);
+    #[cfg(any(test, feature = "test-support"))]
     sim.bunker_wall_events
         .push(crate::sim::components::BunkerWallAnimEvent {
             building_id,
@@ -895,7 +912,7 @@ mod tests {
         spawn_tank(&mut sim, 1, "Americans", "TANK");
         assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
         install_bunker_link(&mut sim, 2, 1, &rules);
-        sim.sound_events.clear(); // drop the install up-sound; assert on down events
+        sim.sound_events.clear_for_test(); // drop the install up-sound; assert on down events
         sim
     }
 
@@ -1115,7 +1132,7 @@ mod tests {
     fn despawn_safety_net_clears_surviving_side() {
         // Building despawns → the occupant unit's link is cleared.
         let mut sim = installed_sim();
-        break_links_on_despawn(&mut sim, 2);
+        break_links_on_despawn(&mut sim.substrate, 2);
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().bunker.link(),
             BunkerLink::None
@@ -1123,7 +1140,7 @@ mod tests {
 
         // Unit despawns → the surviving building's back-pointer is cleared.
         let mut sim = installed_sim();
-        break_links_on_despawn(&mut sim, 1);
+        break_links_on_despawn(&mut sim.substrate, 1);
         assert_eq!(
             sim.substrate.entities.get(2).unwrap().bunker.occupant(),
             None

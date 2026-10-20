@@ -261,15 +261,21 @@ pub fn bridge_hut_can_repair(sim: &Simulation, hut_center: (u16, u16)) -> bool {
         .map_or(&[][..], |state| state.endpoint_records());
     crate::sim::bridge_state::repair_query::can_repair(
         &crate::map::resolved_terrain::NativeCellQuery::isolated(terrain),
+        sim.overlay_grid.as_ref(),
         records,
         (hut_center.0 as i16, hut_center.1 as i16),
     )
 }
 
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) fn hut_span_can_repair(terrain: &ResolvedTerrainGrid, hut_center: (u16, u16)) -> bool {
+pub(crate) fn hut_span_can_repair(
+    terrain: &ResolvedTerrainGrid,
+    overlays: &crate::sim::overlay_grid::OverlayGrid,
+    hut_center: (u16, u16),
+) -> bool {
     crate::sim::bridge_state::repair_query::can_repair(
         &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+        Some(overlays),
         &[],
         (hut_center.0 as i16, hut_center.1 as i16),
     )
@@ -426,8 +432,8 @@ fn bridge_overlay_at(sim: &Simulation, rx: u16, ry: u16) -> Option<u8> {
     // read that authority.
     sim.resolved_terrain
         .as_ref()
-        .and_then(|terrain| terrain.cell(rx, ry))
-        .and_then(|cell| cell.bridge_facts.overlay_id)
+        .and_then(|terrain| terrain.cell(rx, ry))?;
+    sim.overlay_grid.as_ref()?.cell(rx, ry).overlay_id
 }
 
 /// The CABHUT death fallback: the tail of
@@ -998,18 +1004,16 @@ mod tests {
     use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
     use crate::sim::occupancy::CellListInsertion;
 
-    /// Write CellClass+44 on each listed cell.
-    pub(super) fn seed_bridge_overlay(
-        terrain: &mut ResolvedTerrainGrid,
-        cells: &[(u16, u16)],
-        overlay: u8,
-    ) {
+    /// Write CellClass+44 on each listed cell of `sim`'s overlay grid,
+    /// installed over its terrain when absent.
+    pub(super) fn seed_bridge_overlay(sim: &mut Simulation, cells: &[(u16, u16)], overlay: u8) {
+        let terrain = sim.resolved_terrain.as_ref().expect("seeded terrain");
+        let (width, height) = (terrain.width(), terrain.height());
+        let grid = sim
+            .overlay_grid
+            .get_or_insert_with(|| crate::sim::overlay_grid::OverlayGrid::new(width, height));
         for &(x, y) in cells {
-            terrain
-                .cell_mut_for_test(x, y)
-                .unwrap()
-                .bridge_facts
-                .overlay_id = Some(overlay);
+            grid.cell_mut_for_test(x, y).overlay_id = Some(overlay);
         }
     }
 
@@ -1224,9 +1228,8 @@ mod tests {
         let mut sim = Simulation::new();
         let seed = 0x48A7_51DE_u64;
         sim.initialize_random_number_system(seed as u32);
-        let mut terrain = water_below_bridge_terrain(3);
-        seed_bridge_overlay(&mut terrain, &[(4, 3), (4, 4)], 0xE0);
-        sim.resolved_terrain = Some(terrain);
+        sim.resolved_terrain = Some(water_below_bridge_terrain(3));
+        seed_bridge_overlay(&mut sim, &[(4, 3), (4, 4)], 0xE0);
         sim.bridge_state = Some(crate::sim::bridge_state::BridgeRuntimeState::default());
         let bridge_explosion = sim.interner.intern("BRIDGEEXP1");
         sim.bridge_explosions.push(bridge_explosion);
@@ -1253,10 +1256,7 @@ mod tests {
             "intermediate-only fixture must not add BlowUpBridge fallout draws"
         );
         assert_eq!(
-            sim.resolved_terrain
-                .as_ref()
-                .and_then(|terrain| terrain.cell(4, 4))
-                .and_then(|cell| cell.bridge_facts.overlay_id),
+            sim.overlay_grid.as_ref().unwrap().cell(4, 4).overlay_id,
             Some(0xE0),
             "fixture must run the real hut dispatcher without a terminal transition"
         );
@@ -1324,8 +1324,8 @@ mod tests {
                 b"[General]\nBridgeMiddle1=20\nBridgeMiddle2=40\n",
             ),
         );
-        seed_bridge_overlay(&mut terrain, &[(5, 5)], 0xCD);
         sim.resolved_terrain = Some(terrain);
+        seed_bridge_overlay(&mut sim, &[(5, 5)], 0xCD);
         sim.bridge_state = Some(BridgeRuntimeState::default());
 
         let bridge_strength = 1500i32;

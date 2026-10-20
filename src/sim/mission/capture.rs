@@ -129,7 +129,13 @@ pub(crate) fn mission_capture(
             &LiveReadyInputProvider { rules },
         );
     }
-    sim.mission_rate_epilogue_for(rules, id, MissionType::Capture)
+    Simulation::mission_rate_epilogue_for(
+        &mut sim.scenario_rng,
+        &sim.substrate,
+        rules,
+        id,
+        MissionType::Capture,
+    )
 }
 
 #[cfg(test)]

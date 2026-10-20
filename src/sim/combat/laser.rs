@@ -178,9 +178,9 @@ pub(crate) fn construct(
     color: LaserColor,
     fade_end: NativeF32Bits,
 ) -> &mut LaserBirth {
-    world
+    let birth = world
         .lifecycle_outputs
-        .push(LifecycleOutput::LaserCreated(LaserBirth {
+        .emit_and_finish(LifecycleOutput::LaserCreated(LaserBirth {
             frame: world.session.binary_frame() as i32,
             from,
             to,
@@ -191,7 +191,7 @@ pub(crate) fn construct(
             color,
             fade_end,
         }));
-    let Some(LifecycleOutput::LaserCreated(laser)) = world.lifecycle_outputs.last_mut() else {
+    let LifecycleOutput::LaserCreated(laser) = birth else {
         unreachable!("newly appended laser birth")
     };
     laser

@@ -10,8 +10,8 @@ use crate::sim::world::Simulation;
 
 /// What names and colours a House row.
 pub(crate) struct HouseUiSources<'a> {
-    /// The local player's handle; `None` for a launch without one.
-    pub handle: Option<&'a str>,
+    /// The string table a map `UIName=` key resolves through.
+    pub csf: Option<&'a crate::assets::csf_file::CsfFile>,
     /// `TXT_COMPUTER`, already resolved.
     pub computer: &'a str,
     pub schemes: &'a [ColorSchemeEntry],
@@ -23,7 +23,7 @@ impl<'a> HouseUiSources<'a> {
     /// `TXT_COMPUTER`.
     pub(crate) fn from_state(state: &'a AppState, computer: &'a str) -> Self {
         Self {
-            handle: state.match_state.session.local_player_name(),
+            csf: state.process_assets.csf.as_ref(),
             computer,
             schemes: state
                 .rules()
@@ -32,11 +32,8 @@ impl<'a> HouseUiSources<'a> {
         }
     }
 
-    /// The House's UI name (`house+0x1602A`). Skirmish setup gives a human
-    /// House its player's handle (`0x00688094`) and every computer House
-    /// `TXT_COMPUTER` (`0x00688252..0x00688270`). A human without a recorded
-    /// handle (a launch with no skirmish session) shows its country's name,
-    /// else its House name.
+    /// The House's UI name (`house+0x1602A`), as the House holds it. The
+    /// type's UIName shows its country's display name, else the House name.
     pub(crate) fn ui_name(
         &self,
         sim: &Simulation,
@@ -44,18 +41,22 @@ impl<'a> HouseUiSources<'a> {
         country: Option<InternedId>,
         country_name: impl Fn(InternedId) -> Option<String>,
     ) -> String {
-        let is_human = sim
-            .houses()
-            .get(&owner)
-            .is_some_and(|house| house.is_human());
-        if !is_human {
-            return self.computer.to_string();
-        }
-        match self.handle {
-            Some(handle) => handle.to_string(),
-            None => country
-                .and_then(country_name)
-                .unwrap_or_else(|| sim.interner().resolve(owner).to_string()),
+        use crate::sim::house_state::HouseUiName;
+        let type_name = || {
+            country
+                .and_then(&country_name)
+                .unwrap_or_else(|| sim.interner().resolve(owner).to_string())
+        };
+        match sim.houses().get(&owner).map(|house| house.ui_name()) {
+            Some(HouseUiName::Handle(handle)) => handle.clone(),
+            Some(HouseUiName::Computer) => self.computer.to_string(),
+            // Read_Scenario_INI 500CD7..500CEC: LoadString, then 20 chars.
+            Some(HouseUiName::Csf(key)) => HouseUiName::bounded(
+                &self
+                    .csf
+                    .map_or_else(|| key.clone(), |csf| csf.text(key).into_owned()),
+            ),
+            Some(HouseUiName::TypeName) | None => type_name(),
         }
     }
 
@@ -78,6 +79,19 @@ impl<'a> HouseUiSources<'a> {
             crate::rules::house_colors::HouseColorIndex(u8::try_from(entry).ok()?),
         ))
     }
+}
+
+/// The running match's UI name for `owner` (House+0x1602A), as every
+/// House-named message reads it.
+pub(crate) fn house_ui_name(state: &AppState, owner: InternedId) -> Option<String> {
+    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let country = sim.houses().get(&owner)?.country();
+    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+    Some(
+        HouseUiSources::from_state(state, &computer).ui_name(sim, owner, country, |country| {
+            country_display_name(state, sim, country)
+        }),
+    )
 }
 
 /// A country's display name: its `UIName=` through the string table, else

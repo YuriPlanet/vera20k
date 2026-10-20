@@ -315,6 +315,52 @@ impl EnterOrderCounter {
     }
 }
 
+/// Monotonic per-instance id source (never reused). Each spawned object draws
+/// the next value, so a stale reference degrades to `None` rather than
+/// aliasing a reused slot. The sole mutator is `allocate`. Serialized + hashed
+/// at its `ObjectSubstrate` field like `EnterOrderCounter`: the transparent
+/// newtype is byte- and hash-identical to the bare `u64` it replaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct StableIdCursor(u64);
+
+impl StableIdCursor {
+    /// Fresh cursor. Starts at 1; 0 is the reserved sentinel.
+    pub(crate) const fn new() -> Self {
+        Self(1)
+    }
+
+    /// Next value `allocate` hands out.
+    pub(crate) const fn peek(self) -> u64 {
+        self.0
+    }
+
+    /// Sole stable-ID allocator, also used while a constructor borrows the
+    /// map and other disjoint substrate fields. Native numeric IDs have their
+    /// separate Scenario cursor; every Rust object shares this namespace.
+    pub(crate) fn allocate(&mut self, entities: &EntityStore) -> u64 {
+        let id = self.0;
+        // Fixtures may insert entities directly without advancing the cursor.
+        #[cfg(any(test, feature = "test-support"))]
+        let id = {
+            let mut id = id;
+            while entities.contains(id) {
+                id += 1;
+            }
+            id
+        };
+        #[cfg(not(any(test, feature = "test-support")))]
+        debug_assert!(!entities.contains(id), "stable id {id} is already live");
+        self.0 = id.saturating_add(1);
+        id
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_for_test(&mut self, next: u64) {
+        self.0 = next;
+    }
+}
+
 /// The object kinds the LogicVector registration/removal dispatch
 /// distinguishes (F13). Classification probes the stores in this fixed order:
 /// anims → voxel anims → particle systems → terrain objects → projectiles →
@@ -339,10 +385,8 @@ pub(crate) enum ObjectKind {
 /// paths are `Simulation.substrate.*`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectSubstrate {
-    /// Monotonic per-instance id source (never reused). Each spawned entity
-    /// draws the next value; a stale reference degrades to `None` rather than
-    /// aliasing a reused slot.
-    pub(crate) next_stable_object_id: u64,
+    /// Monotonic per-instance id source shared by every object store.
+    pub(crate) next_stable_object_id: StableIdCursor,
     /// Monotonic source for the independently ordered AirTracker. Cell lists
     /// keep their own insertion order. See `EnterOrderCounter`.
     pub(crate) next_air_tracker_order: EnterOrderCounter,
@@ -405,31 +449,11 @@ pub struct ObjectSubstrate {
 }
 
 impl ObjectSubstrate {
-    /// Sole stable-ID allocator, also used while a constructor borrows the
-    /// map and other disjoint substrate fields. Native numeric IDs have their
-    /// separate Scenario cursor; every Rust object shares this namespace.
-    pub(crate) fn allocate_stable_id(counter: &mut u64, entities: &EntityStore) -> u64 {
-        let id = *counter;
-        // Fixtures may insert entities directly without advancing the cursor.
-        #[cfg(any(test, feature = "test-support"))]
-        let id = {
-            let mut id = id;
-            while entities.contains(id) {
-                id += 1;
-            }
-            id
-        };
-        #[cfg(not(any(test, feature = "test-support")))]
-        debug_assert!(!entities.contains(id), "stable id {id} is already live");
-        *counter = id.saturating_add(1);
-        id
-    }
-
     /// Fresh substrate for a new world. Counters start at 1 (0 is a reserved
     /// sentinel), matching the pre-consolidation `Simulation::new` initializers.
     pub(crate) fn new() -> Self {
         Self {
-            next_stable_object_id: 1,
+            next_stable_object_id: StableIdCursor::new(),
             next_air_tracker_order: EnterOrderCounter::new(),
             logic: LogicVector::new(),
             display: Default::default(),
@@ -460,9 +484,9 @@ impl ObjectSubstrate {
         identities: &std::collections::BTreeMap<u64, &'static str>,
     ) -> Result<std::collections::BTreeSet<u64>, crate::sim::snapshot::SnapshotRestoreError> {
         use crate::sim::snapshot::SnapshotRestoreError;
-        if self.next_stable_object_id <= highest_id {
+        if self.next_stable_object_id.peek() <= highest_id {
             return Err(SnapshotRestoreError::ObjectIdCounterBehind {
-                next_id: self.next_stable_object_id,
+                next_id: self.next_stable_object_id.peek(),
                 highest_id,
             });
         }

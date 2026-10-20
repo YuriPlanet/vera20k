@@ -38,10 +38,13 @@ use crate::sim::movement::air_movement::{self, AirMovementTickStats};
 use crate::sim::movement::fly_height::{ARRIVAL_STOP, ARRIVAL_THREE_QUARTERS};
 // The cell of a coordinate as `0x0041BEA0` (vt+0x1B8) and the Fly's cell
 // tests form it.
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::sim::intern::StringInterner;
 use crate::sim::movement::coord_cell;
 use crate::sim::movement::ground_pose;
 use crate::sim::rng::SimRng;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
 use crate::util::fixed_math::SIM_ZERO;
 
 #[cfg(test)]
@@ -180,7 +183,9 @@ impl Simulation {
             && !in_phase
             && rules.is_some_and(|rules| self.mission_ready_to_commence(id, rules))
         {
-            let _ = self.mission_commence_exact(id, self.session.binary_frame());
+            let _ = self
+                .substrate
+                .mission_commence_exact(id, self.session.binary_frame());
         }
         if self.fly_update_flight_motion(id, rules, registry, frame_effects) {
             stats.impact = true;
@@ -251,7 +256,7 @@ impl Simulation {
             .and_then(|locomotor| locomotor.fly_runtime())
             .is_some_and(crate::sim::movement::fly_height::FlyRuntime::is_moving_now);
         if cell != entity.air_tracker_cell() && moving_now {
-            self.aircraft_tracker_update_cell(id, cell);
+            Self::aircraft_tracker_update_cell(&self.session, &mut self.substrate, id, cell);
         }
         let entity = self.substrate.entities.get_mut(id).unwrap();
         let mission = entity.mission.effective();
@@ -265,7 +270,7 @@ impl Simulation {
         if self.fly_crash_fall(id, rules, registry, frame_effects) {
             return true;
         }
-        self.fly_guard_to_move(id);
+        self.substrate.fly_guard_to_move(id);
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
@@ -274,32 +279,6 @@ impl Simulation {
         }
         self.fly_flight_step(id, rules, registry, frame_effects);
         false
-    }
-
-    /// `0x004CD9C8..0x004CDA02`: `Queue_Mission(Move, 0)` (vt+0x1E8) for a
-    /// living owner with a NavCom (`+0x5A4`) whose mission (vt+0x184) is
-    /// Guard with nothing queued (`+0xB4`), unless the Fly is AirportBound.
-    fn fly_guard_to_move(&mut self, id: u64) {
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
-            return;
-        };
-        let airport_bound = entity
-            .locomotor
-            .as_ref()
-            .and_then(|locomotor| locomotor.fly_runtime())
-            .is_none_or(|state| state.airport_bound());
-        if entity.health.current() <= 0
-            || entity.navigation.nav_com().is_none()
-            || entity.mission.effective() != MissionId::from_known(MissionType::Guard)
-            || entity.mission.queued() != MissionId::NONE
-            || airport_bound
-        {
-            return;
-        }
-        crate::sim::mission::authority::queue_entity_mission_deferred(
-            entity,
-            MissionId::from_known(MissionType::Move),
-        );
     }
 
     /// UpdateFlightMotion past its Is_Moving gate (`0x004CDA16..0x004CE4A2`),
@@ -378,7 +357,13 @@ impl Simulation {
             rules.map(|rules| (rules, &self.interner)),
         );
         if height.descended() {
-            self.fly_landing_drift(id, rules);
+            Self::fly_landing_drift(
+                &self.interner,
+                &mut self.substrate,
+                &self.resolved_terrain,
+                id,
+                rules,
+            );
         }
         let terrain = self.resolved_terrain.as_ref();
         let rules_context = rules.map(|rules| (rules, &self.interner));
@@ -474,8 +459,14 @@ impl Simulation {
     /// Location toward the centre of the destination's cell (facing
     /// `0x004CAE30`, step as the paid step's) through `FootClass::SetLocation`,
     /// unless it enters (vt+0x184 Enter) a Helipad building its NavCom names.
-    fn fly_landing_drift(&mut self, id: u64, rules: Option<&RuleSet>) {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    fn fly_landing_drift(
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        rules: Option<&RuleSet>,
+    ) {
+        let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         let destination = entity
@@ -493,17 +484,17 @@ impl Simulation {
                 .nav_com()
                 .and_then(|nav_com| match nav_com {
                     NavTargetRef::Cell { .. } => None,
-                    NavTargetRef::Object { id } => self.substrate.entities.get(id),
+                    NavTargetRef::Object { id } => substrate.entities.get(id),
                 })
                 .filter(|building| building.category() == EntityCategory::Structure)
                 .and_then(|building| {
-                    rules.and_then(|rules| self.interner.object_type(building.type_ref(), rules))
+                    rules.and_then(|rules| interner.object_type(building.type_ref(), rules))
                 })
                 .is_some_and(|object| object.helipad);
         if entering_helipad {
             return;
         }
-        let location = ground_pose::object_location(entity, self.resolved_terrain.as_ref());
+        let location = ground_pose::object_location(entity, resolved_terrain.as_ref());
         let (cell_x, cell_y) = coord_cell(destination);
         let centre = [
             i32::from(cell_x).wrapping_mul(256).wrapping_add(0x80),
@@ -517,11 +508,11 @@ impl Simulation {
             LANDING_DRIFT_STEP,
         );
         ground_pose::foot_set_location(
-            &mut self.substrate.entities,
+            &mut substrate.entities,
             id,
             DriveCoord { x, y, ..location },
             rules,
-            &self.interner,
+            interner,
         );
     }
 
@@ -833,5 +824,33 @@ impl Simulation {
         self.team_script_vm.mark_member_team_leaving_map(id);
         self.techno_death_stun(id, context);
         self.uninit_with_context(id, context);
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// `0x004CD9C8..0x004CDA02`: `Queue_Mission(Move, 0)` (vt+0x1E8) for a
+    /// living owner with a NavCom (`+0x5A4`) whose mission (vt+0x184) is
+    /// Guard with nothing queued (`+0xB4`), unless the Fly is AirportBound.
+    fn fly_guard_to_move(&mut self, id: u64) {
+        let Some(entity) = self.entities.get_mut(id) else {
+            return;
+        };
+        let airport_bound = entity
+            .locomotor
+            .as_ref()
+            .and_then(|locomotor| locomotor.fly_runtime())
+            .is_none_or(|state| state.airport_bound());
+        if entity.health.current() <= 0
+            || entity.navigation.nav_com().is_none()
+            || entity.mission.effective() != MissionId::from_known(MissionType::Guard)
+            || entity.mission.queued() != MissionId::NONE
+            || airport_bound
+        {
+            return;
+        }
+        crate::sim::mission::authority::queue_entity_mission_deferred(
+            entity,
+            MissionId::from_known(MissionType::Move),
+        );
     }
 }

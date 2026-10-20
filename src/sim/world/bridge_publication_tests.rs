@@ -39,24 +39,14 @@ fn family_world(
         .collect();
     let mut terrain = ResolvedTerrainGrid::from_cells(9, 9, cells);
     terrain.apply_runtime_bridge_mark_stamp(BridgeFlagStamp::new((4, 4), 6, true), stamp);
-    let anchor = terrain.native_cell_identity((4, 4));
-    terrain.write_native_cell_state(anchor, anchor_state);
-    terrain.cells_mut_for_test()[4 * 9 + 4]
-        .bridge_facts
-        .overlay_id = Some(anchor_overlay);
-    terrain.cells_mut_for_test()[4 * 9 + 3]
-        .bridge_facts
-        .overlay_id = Some(42);
+    // The constructing setter's anchor, Forward1, Forward2 and Opposite visits
+    // store state 9 (direction 6); the anchor then carries `anchor_state`.
     let mut grid = OverlayGrid::new(9, 9);
-    for y in 0..9 {
-        for x in 0..9 {
-            let facts = terrain.cell(x, y).unwrap().bridge_facts;
-            if let Some(overlay) = facts.overlay_id {
-                grid.place_overlay(x, y, overlay, facts.state_byte);
-            }
-            grid.write_literal_bridge_state(&mut terrain, x, y, facts.state_byte);
-        }
+    for (x, y) in [(3, 4), (2, 4), (5, 4)] {
+        grid.write_literal_bridge_state(x, y, 9);
     }
+    grid.place_overlay(4, 4, anchor_overlay, anchor_state);
+    grid.place_overlay(3, 4, 42, 9);
     let state = BridgeRuntimeState::from_resolved_terrain(&terrain, true, 1);
     let mut sim = Simulation::with_seed(31);
     sim.intern_rule_type_ids(rules);
@@ -118,13 +108,7 @@ fn bridge_damage_exact_height_runs_body_and_detaches_only_after_collapse() {
     hit.impact_z_leptons = 208;
     assert!(!apply_bridge_damage_events(&mut sim, &rules, &[hit]));
     assert_eq!(
-        sim.resolved_terrain
-            .as_ref()
-            .unwrap()
-            .cell(4, 4)
-            .unwrap()
-            .bridge_facts
-            .state_byte,
+        sim.overlay_grid.as_ref().unwrap().cell(4, 4).overlay_data,
         9
     );
     assert_eq!(sim.scenario_rng.logical_state(), before);
@@ -132,13 +116,7 @@ fn bridge_damage_exact_height_runs_body_and_detaches_only_after_collapse() {
     hit.impact_z_leptons = 209;
     assert!(!apply_bridge_damage_events(&mut sim, &rules, &[hit]));
     assert_eq!(
-        sim.resolved_terrain
-            .as_ref()
-            .unwrap()
-            .cell(4, 4)
-            .unwrap()
-            .bridge_facts
-            .state_byte,
+        sim.overlay_grid.as_ref().unwrap().cell(4, 4).overlay_data,
         15
     );
     assert!(
@@ -217,18 +195,11 @@ fn wooden_body_damage_collapses_through_the_live_publication_host() {
     let hit = event(&mut sim, (3, 4));
 
     assert!(!apply_bridge_damage_events(&mut sim, &rules, &[hit]));
-    assert_eq!(
-        sim.resolved_terrain
-            .as_ref()
-            .unwrap()
-            .native_cell_state(cell),
-        15
-    );
+    assert_eq!(sim.cell_overlay(cell).overlay_data, 15);
     assert_ne!(flags(&sim, cell) & 0x100, 0);
 
     assert!(apply_bridge_damage_events(&mut sim, &rules, &[hit]));
-    let terrain = sim.resolved_terrain.as_ref().unwrap();
-    assert_eq!(terrain.native_cell_state(cell), 0);
+    assert_eq!(sim.cell_overlay(cell).overlay_data, 0);
     assert_eq!(flags(&sim, cell) & 0x100, 0);
     assert_eq!(flags(&sim, body) & 0x100, 0);
 }
@@ -325,6 +296,7 @@ fn bridge_publication_production_nonanchor_collapse_keeps_other_overlay_and_runs
     }
     let before = crate::sim::pathfinding::PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().unwrap(),
+        sim.overlay_grid.as_ref(),
     );
     for coord in [(4, 4), (3, 4), (2, 4), (5, 4)] {
         assert!(before.cell(coord.0, coord.1).unwrap().bridge_walkable);
@@ -382,7 +354,14 @@ fn bridge_publication_production_nonanchor_collapse_keeps_other_overlay_and_runs
             .cell(coord.0, coord.1)
             .unwrap();
         assert_eq!(cell.bridge_facts.raw_flags, 0x400);
-        assert_eq!(cell.bridge_facts.state_byte, 0);
+        assert_eq!(
+            sim.overlay_grid
+                .as_ref()
+                .unwrap()
+                .cell(coord.0, coord.1)
+                .overlay_data,
+            0
+        );
         assert!(!cell.has_bridge_deck);
         assert!(!cell.bridge_walkable);
         let path = sim.path_grid().unwrap().cell(coord.0, coord.1).unwrap();

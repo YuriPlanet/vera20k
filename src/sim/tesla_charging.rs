@@ -92,33 +92,6 @@ impl BuildingCharge {
 }
 
 impl Simulation {
-    /// Bullet::Detonate46937A..4693CE. Only the two concrete object classes
-    /// are checked here; alliance, range and Overpowerable are not impact gates.
-    pub(crate) fn electric_assault_detonation(&mut self, source: u64, target: Option<u64>) {
-        if !self
-            .substrate
-            .entities
-            .get(source)
-            .is_some_and(|entity| entity.category() == EntityCategory::Infantry)
-        {
-            return;
-        }
-        let Some(target) = target.filter(|&id| {
-            self.substrate
-                .entities
-                .get(id)
-                .is_some_and(|entity| entity.category() == EntityCategory::Structure)
-        }) else {
-            return;
-        };
-        self.substrate
-            .entities
-            .get_mut(target)
-            .expect("the admitted building remains present")
-            .tesla_charge
-            .refresh(source);
-    }
-
     /// Building4400F9..440196, after delayed fire and before repair/power.
     /// A changed TarCom can remain in the list until this visit, and +661
     /// remains stale even after pointer expiry until this visit samples it.
@@ -264,5 +237,31 @@ impl Simulation {
             return true;
         }
         false
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// Bullet::Detonate46937A..4693CE. Only the two concrete object classes
+    /// are checked here; alliance, range and Overpowerable are not impact gates.
+    pub(crate) fn electric_assault_detonation(&mut self, source: u64, target: Option<u64>) {
+        if !self
+            .entities
+            .get(source)
+            .is_some_and(|entity| entity.category() == EntityCategory::Infantry)
+        {
+            return;
+        }
+        let Some(target) = target.filter(|&id| {
+            self.entities
+                .get(id)
+                .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        }) else {
+            return;
+        };
+        self.entities
+            .get_mut(target)
+            .expect("the admitted building remains present")
+            .tesla_charge
+            .refresh(source);
     }
 }

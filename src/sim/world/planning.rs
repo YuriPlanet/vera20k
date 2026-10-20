@@ -586,7 +586,7 @@ impl Simulation {
         let allied = |actor: u64| {
             self.substrate.entities.get(actor).is_some_and(|entity| {
                 crate::map::houses::is_allied_with(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     self.interner.resolve(entity.owner()),
                     self.interner.resolve(viewer),
                 )
@@ -1146,7 +1146,7 @@ impl Simulation {
                 self.planning
                     .paths
                     .retain(|_, path| !path.nodes.is_empty() || path.executing);
-                self.lifecycle_outputs.push(
+                self.lifecycle_outputs.emit(
                     super::lifecycle::LifecycleOutput::PlanningNodeDeleted {
                         owner,
                         node_id: node,
@@ -1159,7 +1159,7 @@ impl Simulation {
                 let accepted = self.planning_append(owner, record);
                 if accepted {
                     self.sound_events
-                        .push(super::SimSoundEvent::PlanningNodeAdded { owner });
+                        .emit(super::SimSoundEvent::PlanningNodeAdded { owner });
                 }
                 accepted
             }

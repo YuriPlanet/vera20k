@@ -2544,7 +2544,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
             world: &sim,
             rules,
             overlay_registry: Some(&registry),
-            fog: Some(sim.fog.fire_view(&sim.house_alliances)),
+            fog: Some(sim.fog.fire_view(sim.house_alliances.as_map())),
             firer: actor,
             obj: sniper,
             target: Some(TargetKind::Entity(source)),
@@ -4368,21 +4368,34 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     );
-    let expired = sim
-        .substrate
-        .entities
-        .get(center)
-        .expect("UnInit keeps physical storage until the pending-delete drain");
+    // An `Explodes=` barrel's DestructionEffects arms a zero death fuse
+    // (`0x00441C43`), so the forced C4 hit leaves it alive at Health 0
+    // (`0x0044266B..0x00442690`) until its next Update retires it.
+    let expired = sim.substrate.entities.get(center).unwrap();
     assert_eq!(expired.health.current(), 0);
-    assert!(expired.death.is_dying() && !expired.lifecycle.object_alive());
-    assert!(!expired.in_logic_vector.is_member());
-    assert!(!sim.substrate.occupancy.contains_entity(8, 5, center));
-    assert!(sim.substrate.pending_delete.contains_object(&center));
+    assert!(!expired.death.is_dying() && expired.lifecycle.object_alive());
     assert_eq!(
         sim.overlay_grid.as_ref().unwrap().cell(8, 5).overlay_id,
         None,
         "the barrel DeathWeapon removes the wall in the same expiry transaction"
     );
+    sim.object_ai_visit_one(
+        center,
+        Some(&rules),
+        crate::sim::world::ObjectAiCtx {
+            overlay_registry: Some(&registry),
+            ..Default::default()
+        },
+    );
+    let retired = sim
+        .substrate
+        .entities
+        .get(center)
+        .expect("UnInit keeps physical storage until the pending-delete drain");
+    assert!(retired.death.is_dying() && !retired.lifecycle.object_alive());
+    assert!(!retired.in_logic_vector.is_member());
+    assert!(!sim.substrate.occupancy.contains_entity(8, 5, center));
+    assert!(sim.substrate.pending_delete.contains_object(&center));
     sim.flush_pending_delete();
     assert!(sim.substrate.entities.get(center).is_none());
 }
@@ -6991,7 +7004,7 @@ fn a_buildings_death_weapon_detonates_at_its_foundation_centre() {
     victim.health.set_for_test(1000);
     sim.substrate.entities.insert(victim);
     let _ = sim.reveal(2);
-    sim.substrate.next_stable_object_id = 3;
+    sim.set_next_stable_object_id_for_test(3);
 
     let kill_wh = sim.interner.intern("KillWH");
     sim.commit_noncombat_aoe_hits(
@@ -7964,7 +7977,7 @@ fn radiation_skips_only_objects_in_the_air() {
     }
     sim.substrate.entities.get_mut(hover).unwrap().locomotor =
         Some(LocomotorState::for_test_kind(LocomotorKind::Hover));
-    sim.set_object_height_unmarked(hover, 120);
+    Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, hover, 120);
     irradiate(&mut sim, &rules, (5, 5), 500, 2);
 
     rad_frame(&mut sim, &rules, 16);
@@ -8276,8 +8289,8 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
             ai_counter: mission.ai_counter(),
             dispatch_timer: MissionDispatchTimer::at_frame(frame),
         });
-        sim.fire_events.clear();
-        let first_tail = sim.substrate.next_stable_object_id;
+        sim.fire_events.clear_for_test();
+        let first_tail = sim.next_stable_object_id();
         sim.object_ai_visit_one(
             deso,
             Some(&rules),
@@ -8817,7 +8830,7 @@ fn shrapnel_world(rules: &RuleSet, entities: Vec<GameEntity>) -> Simulation {
     sim.interner = test_interner();
     sim.substrate.occupancy = OccupancyGrid::rebuild(&store);
     sim.substrate.entities = store;
-    sim.substrate.next_stable_object_id = next_id;
+    sim.set_next_stable_object_id_for_test(next_id);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim.native_unique_ids =
@@ -9264,7 +9277,7 @@ fn gsi_04_01_projectile_shrapnel_captures_each_shared_dummy_lookup() {
     let mut sim = Simulation::with_seed(0x46_a310);
     sim.substrate.entities = entities;
     sim.substrate.occupancy = occupancy;
-    sim.substrate.next_stable_object_id = 2;
+    sim.set_next_stable_object_id_for_test(2);
     sim.interner = interner;
     sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());

@@ -120,6 +120,7 @@ use super::foot_path::MoverLift;
 use super::movement_path::MovePathFailure;
 use super::movement_tick::FootPathRequest;
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -128,6 +129,7 @@ use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionId;
+use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::zone_search::PathSearchFailure;
 use crate::sim::pathfinding::{BlockerNeighborCounts, PathGrid, count_search_steps};
 use crate::sim::radio::Contacts;
@@ -466,11 +468,17 @@ impl Simulation {
     /// on, the batch can search this map, and `id` has no unclaimed answer
     /// this frame; otherwise this request claims the answer. A code-2
     /// re-path the last pass left out registers at the urgency it had.
-    pub(super) fn defer_path_search(&mut self, id: u64, request: WaitingRequest) -> bool {
-        if self.overlay_grid.is_none() || self.resolved_terrain.is_none() {
+    pub(super) fn defer_path_search(
+        path_batch: &mut Option<PathBatch>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        overlay_grid: &Option<OverlayGrid>,
+        id: u64,
+        request: WaitingRequest,
+    ) -> bool {
+        if overlay_grid.is_none() || resolved_terrain.is_none() {
             return false;
         }
-        let Some(batch) = self.path_batch.as_mut() else {
+        let Some(batch) = path_batch.as_mut() else {
             return false;
         };
         if let Some(slot) = batch.ready.get_mut(&id)
@@ -828,7 +836,7 @@ impl Simulation {
             id,
             destination,
             0,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )
     }
 
@@ -843,7 +851,7 @@ impl Simulation {
             id,
             destination,
             urgency,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )
     }
 

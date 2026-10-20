@@ -470,7 +470,7 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
             continue;
         };
         if crate::sim::combat::combat_weapon::is_ally_by_object(
-            Some(&sim.house_alliances),
+            Some(sim.house_alliances.as_map()),
             &sim.interner,
             other.owner(),
             owner,
@@ -527,7 +527,7 @@ pub(crate) fn emit_configured_cloak_sound(sim: &mut Simulation, id: u64, rules: 
         return;
     };
     sim.sound_events
-        .push(crate::sim::world::SimSoundEvent::cloak_sound(
+        .emit(crate::sim::world::SimSoundEvent::cloak_sound(
             sound_name.to_owned(),
             &position,
         ));

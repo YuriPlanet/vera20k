@@ -105,7 +105,7 @@ impl Simulation {
             return;
         };
         if let Some(sound_id) = ambient {
-            self.sound_events.push(SimSoundEvent::AnimationStarted {
+            self.sound_events.emit(SimSoundEvent::AnimationStarted {
                 anim_id: ambient_sound_owner(id),
                 sound_id: sound_id.to_owned(),
                 world,
@@ -113,7 +113,7 @@ impl Simulation {
             effects.flush_sound(self, rules);
         }
         if let Some(sound_id) = self.object_custom_sounds.get(&id).cloned() {
-            self.sound_events.push(SimSoundEvent::AnimationStarted {
+            self.sound_events.emit(SimSoundEvent::AnimationStarted {
                 anim_id: custom_sound_owner(id),
                 sound_id,
                 world,
@@ -168,7 +168,7 @@ impl Simulation {
             0,
         );
         if let Some(sound_id) = sound {
-            self.sound_events.push(SimSoundEvent::VocAtCoord {
+            self.sound_events.emit(SimSoundEvent::VocAtCoord {
                 sound_id: sound_id.to_owned(),
                 coordinate: DriveCoord {
                     x: coordinate.x,
@@ -205,7 +205,7 @@ impl Simulation {
             return true;
         }
         if let Some(sound_id) = sound {
-            self.sound_events.push(SimSoundEvent::VocAtCoord {
+            self.sound_events.emit(SimSoundEvent::VocAtCoord {
                 sound_id: sound_id.to_owned(),
                 coordinate: DriveCoord { x, y, z },
                 flags: 1,
@@ -236,7 +236,7 @@ impl Simulation {
         {
             self.set_custom_sound(object, None);
         } else {
-            self.sound_events.push(SimSoundEvent::VocStopAtCoord {
+            self.sound_events.emit(SimSoundEvent::VocStopAtCoord {
                 coordinate: DriveCoord { x, y, z },
                 flags: 1,
             });
@@ -253,7 +253,7 @@ impl Simulation {
         if rules.is_some_and(|rules| self.object_ambient_sound(id, rules).is_some())
             && let Some(world) = self.object_sound_location(id)
         {
-            self.sound_events.push(SimSoundEvent::AnimationStopped {
+            self.sound_events.emit(SimSoundEvent::AnimationStopped {
                 anim_id: ambient_sound_owner(id),
                 stop_sound_id: None,
                 world,
@@ -266,7 +266,7 @@ impl Simulation {
     /// makes it. Only an assigned sound can have given the handle an event.
     pub(crate) fn detach_custom_sound(&mut self, id: u64) {
         if self.object_custom_sounds.contains_key(&id) {
-            self.sound_events.push(SimSoundEvent::ObjectSoundDetached {
+            self.sound_events.emit(SimSoundEvent::ObjectSoundDetached {
                 owner: custom_sound_owner(id),
             });
         }

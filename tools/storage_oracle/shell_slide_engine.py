@@ -78,8 +78,11 @@ DIALOGS = (
     ("0x113", 8, 1, 1, 0),
     ("0xC2", 3, 1, 1, 1),
     ("0xC9", 2, 1, 1, 1),
+    # WOL Options and its Sound Options page (lobby 0x61F, then 0x63A).
+    ("0x2BC", 2, 1, 0, 0),
+    ("0xD6", 0, 1, 0, 0),
 )
-EXECUTED_DIALOGS = ("0x10F", "0x113", "0xC2", "0xC9")
+EXECUTED_DIALOGS = ("0x10F", "0x113", "0xC2", "0xC9", "0x2BC", "0xD6")
 RESOLUTIONS = ((640, 480), (800, 600), (1024, 768))
 # Campaign victory `0x103` uses the same native slide engine. Its template has
 # no top-list buttons, the Continue control is the sole bottom-list button,
@@ -330,7 +333,7 @@ def generate():
 if __name__ == "__main__":
     finish_vectors(generate, Path(__file__).with_suffix(".json"),
                    provenance=lambda: provenance(
-        scope="Complete original slide engine 0x006071E0 (both directions) after the rect initializer 0x0072EC70, for the family dialogs, LAN BB/BC/BD, Westwood Online login 0x10F, lobby 0x113 and setup 0xC2/0xC9, and campaign victory 0x103 at 640x480, 800x600 and 1024x768",
+        scope="Complete original slide engine 0x006071E0 (both directions) after the rect initializer 0x0072EC70, for the family dialogs, LAN BB/BC/BD, Westwood Online login 0x10F, lobby 0x113, setup 0xC2/0xC9, WOL Options 0x2BC and its Sound Options 0xD6, and campaign victory 0x103 at 640x480, 800x600 and 1024x768",
         assumptions=[
             "LAN BB/BC/BD visible ownerdraw counts are 2/2/1 plus one bottom button:60A180 requires style low bits0xB and IsWindowVisible; BB Observe6CE is hidden; record flags6228E4..62298A set D5/D6 for BC/BD, not BB, and D7 remains0",
             "Visible top-button and bottom-button counts per dialog are supplied (0xE2 5+1, 0x100 and 0x101 3+1, 0x129 1+1, 0x102 2+1, 0x94 0+1 with Load 0x40E hidden, 0xB7 1+1 with Load 0x40F counted even when disabled, 0xD5 2+1 Keyboard and Network, 0x10E 6+1 the Westwood Online welcome buttons, 0xA3 0+1 Keyboard Back, 0x6B 2+1 Use Map and Create Random Map then Cancel, 0x108 0+1 Continue, 0x105 4+1 Use Map, Load, Save and Delete Map then Cancel); the classifier callbacks 0x0060A180/0x0060A250 are not executed",

@@ -91,7 +91,7 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
                 if !self.execute_world_callbacks {
                     return;
                 }
-                self.world.begin_receiver_kill_record(id);
+                self.world.substrate.begin_receiver_kill_record(id);
                 //5F5772..579A: the supplied source-House ABI pointer stays
                 //fixed, but comparison against the source Techno's Owner is live.
                 let attacker = self.event.attacker_id;
@@ -119,7 +119,11 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
                     //The existing fallback never books a loss a real Kill
                     //already booked. Both ordinary and delayed death use the
                     //same Destroy here, before Techno's PostMortem branch.
-                    self.world.record_destruction_once(id);
+                    Simulation::record_destruction_once(
+                        &mut self.world.substrate,
+                        &mut self.world.houses,
+                        id,
+                    );
                     if super::world_receiver::callbacks_enabled(self.world) {
                         self.world.object_destroy_callback(id, context);
                     }
@@ -186,7 +190,7 @@ pub(super) fn commit_receiver_health(
                 hostile_source(
                     target,
                     attacker_owner,
-                    &world.house_alliances,
+                    world.house_alliances.as_map(),
                     &world.interner,
                 ),
             )),
@@ -270,7 +274,7 @@ pub(super) fn commit_receiver_health(
         if execute_world_callbacks {
             update_anger_nodes(
                 &mut world.houses,
-                &world.house_alliances,
+                world.house_alliances.as_map(),
                 &world.interner,
                 victim_owner,
                 source_owner,
@@ -323,7 +327,7 @@ pub(super) fn commit_receiver_health(
         let hostile = hostile_source(
             target,
             attacker_owner,
-            &world.house_alliances,
+            world.house_alliances.as_map(),
             &world.interner,
         );
         latch_hostile_hit = survivor && hostile;

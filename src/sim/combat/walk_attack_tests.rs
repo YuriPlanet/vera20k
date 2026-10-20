@@ -65,14 +65,14 @@ fn walk_attack_scene() -> (Simulation, RuleSet, u64, u64) {
     // The scene lies near the grid's origin. A map `Size=` 16 cells wide puts
     // it in the map's diamond (a 64-wide one starts past x + y = 64), where
     // sight reveals (`MapClass::RevealArea @ 0x005678E0`).
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 16,
         off_fc: -64,
         off_100: -64,
         off_104: 128,
         off_108: 128,
-    });
-    sim.playfield_size_height = Some(64);
+    }));
+    sim.set_playfield_size_height_for_test(Some(64));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let actor = sim.spawn_object("E1", "Local", 10, 10, 0, &rules).unwrap();
     // Production visibility is recomputed by the frame host, not by spawn.

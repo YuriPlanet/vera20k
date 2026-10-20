@@ -68,7 +68,9 @@ use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::FrameEffects;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::world::LifecycleTestEvent;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
+use std::sync::Arc;
 
 /// The spot an infantryman holds in its cell (0–4), which Mark puts into the
 /// cell's lists and the occupancy index projects. gamemd keeps no such field:
@@ -194,21 +196,6 @@ pub(super) fn raw_occupation_plane(
 }
 
 impl Simulation {
-    /// Save/clear/restore Object+74 without changing cell lists. Locomotors
-    /// use this around setters (Jumpjet54D0FF/54D6B4 and54C189/54C1A3, and
-    /// the Drive/Ship track's SetLocation and SetHeight(0) in
-    /// `track_host`).
-    /// This is distinct from Mark4D3780, whose pickup/place callbacks run
-    /// only when the native caller actually invokes Mark.
-    pub(crate) fn replace_foot_marked_byte(&mut self, id: u64, marked: bool) -> bool {
-        let entity = self
-            .substrate
-            .entities
-            .get_mut(id)
-            .expect("marked Foot exists");
-        entity.lifecycle.replace_cell_marked(marked)
-    }
-
     /// The object's Mark(2) virtual dispatch reached by Object radio 0xD
     /// (`0x005F5374`). Foot4D3789 returns true before any lifecycle gate or
     /// Techno Mark, so it cannot recursively transmit 0xD.
@@ -221,7 +208,7 @@ impl Simulation {
     /// SHA256 270a1321e3a5509df0eb58500883737f69af2172726da216f7ca107962391127;
     /// pinned active-retail gamemd SHA256
     /// 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
-    pub(crate) fn mark_entity_refresh(&mut self, id: u64) -> bool {
+    pub(crate) fn mark_entity_refresh(&self, id: u64) -> bool {
         self.substrate
             .entities
             .get(id)
@@ -293,7 +280,13 @@ impl Simulation {
             .remove_on_layer(cell.0, cell.1, id, layer);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationListUnlinked);
-        if self.foot_mark_raw(id, false) {
+        if Self::foot_mark_raw(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
+            id,
+            false,
+        ) {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationCleared);
         }
@@ -369,7 +362,13 @@ impl Simulation {
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationListLinked);
         receive(self, id);
-        if self.foot_mark_raw(id, true) {
+        if Self::foot_mark_raw(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
+            id,
+            true,
+        ) {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationMarked);
         }
@@ -399,15 +398,21 @@ impl Simulation {
     /// Remove/AddContent's receiver tail: Infantry returns first
     /// (`0x0047EAFE` / `0x0047E9EA`), then the Foot enable gates the object's
     /// vt+0xF4/+0xF0 on its stored Location. Whether a receiver ran.
-    fn foot_mark_raw(&mut self, id: u64, put: bool) -> bool {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    fn foot_mark_raw(
+        substrate: &mut ObjectSubstrate,
+        path_grid: &Option<Arc<PathGrid>>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        put: bool,
+    ) -> bool {
+        let Some(entity) = substrate.entities.get(id) else {
             return false;
         };
         if !entity.foot_occupation_enabled() || entity.category() == EntityCategory::Infantry {
             return false;
         }
         let coord = ground_pose::position_world_coord(&entity.position);
-        self.object_raw_receiver_at(id, coord, put)
+        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, coord, put)
     }
 
     /// The object's own raw occupation receiver on `coord`, vt+0xF0 (PUT) or
@@ -416,26 +421,35 @@ impl Simulation {
     /// `0x005F60A0`/`0x005F6120` (0x40). Mark reaches it through
     /// [`Self::foot_mark_raw`]; a direct call (the Jumpjet grounded reset,
     /// `0x0054D42F`) has no Foot enable gate. Whether a receiver ran.
-    pub(crate) fn object_raw_receiver_at(&mut self, id: u64, coord: DriveCoord, put: bool) -> bool {
-        let Some(entity) = self.substrate.entities.get(id) else {
+    pub(crate) fn object_raw_receiver_at(
+        substrate: &mut ObjectSubstrate,
+        path_grid: &Option<Arc<PathGrid>>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        coord: DriveCoord,
+        put: bool,
+    ) -> bool {
+        let Some(entity) = substrate.entities.get(id) else {
             return false;
         };
         match entity.category() {
             EntityCategory::Unit => {
-                self.track_raw_mark_at(coord, put);
+                Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, coord, put);
             }
             EntityCategory::Infantry => {
                 let owner = entity.owner();
                 super::walk_head::raw_at(
-                    &mut self.substrate.raw_cell_occupation,
+                    &mut substrate.raw_cell_occupation,
                     owner,
                     coord,
                     put,
-                    self.resolved_terrain.as_ref(),
-                    self.path_grid.as_deref(),
+                    resolved_terrain.as_ref(),
+                    path_grid.as_deref(),
                 );
             }
-            EntityCategory::Aircraft => self.object_raw_mark_at(coord, put),
+            EntityCategory::Aircraft => {
+                Self::object_raw_mark_at(substrate, path_grid, resolved_terrain, coord, put)
+            }
             _ => return false,
         }
         true
@@ -444,20 +458,35 @@ impl Simulation {
     /// Aircraft vt+0xF0/+0xF4, the ObjectClass receivers `0x005F60A0` /
     /// `0x005F6120`: bit 0x40 on the plane [`raw_occupation_plane`] selects,
     /// testing the structural bridge bit on PUT and REMOVE alike.
-    fn object_raw_mark_at(&mut self, coord: DriveCoord, put: bool) {
-        let (at, layer) = raw_occupation_plane(
-            coord,
-            true,
-            self.resolved_terrain.as_ref(),
-            self.path_grid.as_deref(),
-        );
-        let raw = &mut self.substrate.raw_cell_occupation;
+    fn object_raw_mark_at(
+        substrate: &mut ObjectSubstrate,
+        path_grid: &Option<Arc<PathGrid>>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        coord: DriveCoord,
+        put: bool,
+    ) {
+        let (at, layer) =
+            raw_occupation_plane(coord, true, resolved_terrain.as_ref(), path_grid.as_deref());
+        let raw = &mut substrate.raw_cell_occupation;
         match (put, layer) {
             (true, MovementLayer::Bridge) => raw.mark_deck(at.0, at.1, OBJECT_OCCUPATION_BIT),
             (true, _) => raw.mark_ground(at.0, at.1, OBJECT_OCCUPATION_BIT),
             (false, MovementLayer::Bridge) => raw.clear_deck(at.0, at.1, OBJECT_OCCUPATION_BIT),
             (false, _) => raw.clear_ground(at.0, at.1, OBJECT_OCCUPATION_BIT),
         }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// Save/clear/restore Object+74 without changing cell lists. Locomotors
+    /// use this around setters (Jumpjet54D0FF/54D6B4 and54C189/54C1A3, and
+    /// the Drive/Ship track's SetLocation and SetHeight(0) in
+    /// `track_host`).
+    /// This is distinct from Mark4D3780, whose pickup/place callbacks run
+    /// only when the native caller actually invokes Mark.
+    pub(crate) fn replace_foot_marked_byte(&mut self, id: u64, marked: bool) -> bool {
+        let entity = self.entities.get_mut(id).expect("marked Foot exists");
+        entity.lifecycle.replace_cell_marked(marked)
     }
 }
 

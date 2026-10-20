@@ -57,7 +57,7 @@ fn script37_caches_native_next_and_uses_ordered_limbo_uninit_before_drain() {
             .team_script_vm
             .create_team(owner, script, members.clone(), 0);
         sim.clear_lifecycle_test_events_for_test();
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.team_step_script(team, &rules, None, Default::default());
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(state.advance_pending(), row["advance"] == 1);

@@ -640,7 +640,6 @@ struct CellOverlayInputs<'a> {
     interner: Option<&'a crate::sim::intern::StringInterner>,
     tiberium_types: Option<&'a crate::rules::tiberium_type::TiberiumTypeRegistry>,
     terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    heights: &'a std::collections::BTreeMap<(u16, u16), u8>,
     lighting: &'a crate::map::lighting::CellLightGrid,
     camera: [f32; 2],
     viewport: [f32; 2],
@@ -736,10 +735,9 @@ fn build_cell_overlay_instances(
         };
 
         let z: u8 = input
-            .heights
-            .get(&(entry.rx, entry.ry))
-            .copied()
-            .unwrap_or(0);
+            .terrain
+            .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
+            .map_or(0, |cell| cell.level);
         let (screen_x, screen_y) = terrain::iso_to_screen(entry.rx, entry.ry, z);
         let live_flags = input
             .terrain
@@ -892,7 +890,6 @@ pub(crate) fn build_overlay_instances(
                 .sim_runtime
                 .as_ref()
                 .and_then(|runtime| runtime.simulation.resolved_terrain()),
-            heights: state.height_map(),
             lighting: state.match_state.match_presentation.lighting.grid(),
             camera: [cam_x, cam_y],
             viewport: [sw, sh],
@@ -1083,21 +1080,19 @@ fn native_terrain_instances(
     })
 }
 
-/// Attach native magnetic destination edits to retained Display parents.
-/// Sonic's existing outline fallback remains a separate presentation residual.
+/// Attach native Sonic/magnetic destination edits to retained Display parents.
 pub(crate) fn build_weapon_wave_instances(
     state: &AppState,
     objects: &mut Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance>,
     order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
-) -> Vec<SpriteInstance> {
-    let mut instances = Vec::new();
+) {
     let Some(sim) = state
         .match_state
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation)
     else {
-        return instances;
+        return;
     };
     let observer = crate::app::input::commands::preferred_local_owner(state)
         .as_deref()
@@ -1121,9 +1116,14 @@ pub(crate) fn build_weapon_wave_instances(
         [x, y]
     };
     for (id, mut draw) in
-        crate::app::presentation::fire_effects::build_magnetic_wave_draws(sim, observer, [0, 0])
+        crate::app::presentation::fire_effects::build_weapon_wave_draws(sim, observer, [0, 0])
     {
-        for (i, p) in draw.polygon.iter_mut().enumerate() {
+        use crate::render::wave_geometry::WavePolygon;
+        let points: &mut [[i32; 2]] = match &mut draw.polygon {
+            WavePolygon::Magnetic(points) => points,
+            WavePolygon::Sonic(points) => points,
+        };
+        for (i, p) in points.iter_mut().enumerate() {
             let p0 = sample(id, i as u8, *p);
             *p = [p0[0] - camera[0], p0[1] - camera[1]];
         }
@@ -1148,29 +1148,14 @@ pub(crate) fn build_weapon_wave_instances(
         };
         let mut planned = PlannedObjectInstance::object(parent, Vec::new());
         planned.body_draw = Some(ObjectBodyDraw::Surface(
-            crate::render::surface_line::SurfaceDraw::MagneticWave(draw),
+            crate::render::surface_line::SurfaceDraw::Wave(draw),
         ));
         objects.push(planned);
-    }
-    for wave in crate::app::presentation::fire_effects::build_weapon_wave_visuals(sim, observer) {
-        let projected: Vec<[f32; 2]> = wave
-            .polygon
-            .into_iter()
-            .enumerate()
-            .map(|(i, p)| {
-                let [x, y] = sample(wave.id, i as u8, p);
-                [x as f32, y as f32]
-            })
-            .collect();
-        instances.extend(crate::render::wave_geometry::build_wave_instances(
-            &projected, wave.tint, 1.0, 0.00045,
-        ));
     }
     // Live BuildingLightRuntime producers are intentionally not lowered here:
     // native DrawExtras first uses SpotlightClass type 16's zero-blend
     // shape-blitter/light-mask path, which this renderer does not yet expose.
     // A white quad or alpha approximation would invent visible behavior.
-    instances
 }
 
 /// Emit one sprite instance per active parachute anim, anchored at the

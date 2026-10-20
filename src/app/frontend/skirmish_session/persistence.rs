@@ -190,7 +190,7 @@ pub fn read_setup_snapshot(
     Ok(snapshot)
 }
 
-fn yes_no(value: bool) -> &'static str {
+pub(super) fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
 }
 

@@ -287,7 +287,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
             rules,
             &world.interner,
             &world.houses,
-            &world.house_alliances,
+            world.house_alliances.as_map(),
             world.session.no_damage(),
             u64::from(world.session.binary_frame()),
             world.resolved_terrain.as_ref(),
@@ -303,7 +303,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
         let mut local_world = Simulation::new();
         local_world.substrate.entities = world.substrate.entities.clone();
         local_world.interner = world.interner.clone();
-        local_world.house_alliances = world.house_alliances.clone();
+        *local_world.house_alliances_mut_for_test() = world.house_alliances.as_map().clone();
         local_world
             .session
             .set_binary_frame_for_test(world.session.binary_frame());

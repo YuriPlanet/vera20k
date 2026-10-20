@@ -410,7 +410,7 @@ fn a_voxel_turrets_laser_birth_uses_the_original_get_flh_coordinate() {
             .set_foundation_for_test("1x1".to_string());
         let heading = input["heading"].as_u64().unwrap() as u16;
         sim.substrate.entities.get_mut(1).unwrap().body_facing = FacingClass::new(heading, 0);
-        sim.lifecycle_outputs.clear();
+        sim.lifecycle_outputs.clear_for_test();
         crate::sim::combat::laser::fired(
             &mut sim,
             &rules,

@@ -116,7 +116,9 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.owner().lifecycle.cell_marked()
     }
     fn replace_marked_byte(&mut self, marked: bool) -> bool {
-        self.sim.replace_foot_marked_byte(self.stable_id, marked)
+        self.sim
+            .substrate
+            .replace_foot_marked_byte(self.stable_id, marked)
     }
     /// `Object+0x9C`, Location.
     fn location(&self) -> [i32; 3] {
@@ -157,7 +159,10 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     /// OnBridge cleared (`0x0054D438`).
     fn grounded_reset(&mut self) {
         let location = self.location();
-        self.sim.object_raw_receiver_at(
+        Simulation::object_raw_receiver_at(
+            &mut self.sim.substrate,
+            &self.sim.path_grid,
+            &self.sim.resolved_terrain,
             self.stable_id,
             DriveCoord {
                 x: location[0],
@@ -311,16 +316,27 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.owner().air_tracker_cell()
     }
     fn tracker_add(&mut self) {
-        self.sim.aircraft_tracker_add(self.stable_id);
+        Simulation::aircraft_tracker_add(
+            &self.sim.session,
+            &mut self.sim.substrate,
+            self.stable_id,
+        );
     }
     fn tracker_update(&mut self, cell: (i16, i16)) {
-        self.sim.aircraft_tracker_update_cell(self.stable_id, cell);
+        Simulation::aircraft_tracker_update_cell(
+            &self.sim.session,
+            &mut self.sim.substrate,
+            self.stable_id,
+            cell,
+        );
     }
     fn claim_air_slot_at(&mut self, cell: (i16, i16)) {
-        self.sim.set_cell_air_slot(cell, Some(self.stable_id));
+        self.sim
+            .substrate
+            .set_cell_air_slot(cell, Some(self.stable_id));
     }
     fn release_air_slot_at(&mut self, cell: (i16, i16)) {
-        self.sim.set_cell_air_slot(cell, None);
+        self.sim.substrate.set_cell_air_slot(cell, None);
     }
     fn set_destination_cell(&mut self, cell: (i16, i16), runtime: &mut JumpjetRuntime) {
         let id = self.stable_id;
@@ -421,7 +437,10 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         })
     }
     fn begin_landing(&mut self, destination: [i32; 3]) {
-        self.sim.object_raw_receiver_at(
+        Simulation::object_raw_receiver_at(
+            &mut self.sim.substrate,
+            &self.sim.path_grid,
+            &self.sim.resolved_terrain,
             self.stable_id,
             DriveCoord {
                 x: destination[0],
@@ -478,7 +497,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         if self.holds_air_slot_at(here) {
             self.release_air_slot_at(here);
         }
-        self.sim.aircraft_tracker_remove(id);
+        self.sim.substrate.aircraft_tracker_remove(id);
         true
     }
     fn finish_touchdown(&mut self, runtime: &mut JumpjetRuntime) {
@@ -868,7 +887,7 @@ mod tests {
         }
         entity.locomotor = Some(locomotor);
         sim.substrate.entities.insert(entity);
-        sim.set_object_height_unmarked(1, 500);
+        Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 1, 500);
         sim
     }
 
@@ -924,7 +943,7 @@ mod tests {
             .with_moving_for_test(true)
             .with_landing_latched_for_test(true)
             .with_destination_for_test(DriveCoord::cell(10, 10, 0));
-        sim.aircraft_tracker_add(1);
+        Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
         sim.substrate.air_slots.set_holder((10, 10), Some(1));
         (sim, rules, registry)
     }
@@ -1151,7 +1170,7 @@ mod tests {
                 .with_destination_for_test(JumpjetRuntime::NULL);
         }
         if state == jumpjet_flight::STATE_GROUND {
-            sim.set_object_height_unmarked(1, 0);
+            Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 1, 0);
         }
         for frame in 0..frames {
             sim.session.set_binary_frame_for_test(1001 + frame);
@@ -1249,7 +1268,7 @@ mod tests {
     fn re_opening_a_cruise_drops_a_drifted_slot() {
         let mut sim = hovering_jumpjet(0x40);
         // The owner holds (13,10) but sits at (10,10) — the drift case.
-        assert!(sim.set_cell_air_slot((13, 10), Some(1)));
+        assert!(sim.substrate.set_cell_air_slot((13, 10), Some(1)));
         let actor = sim.substrate.entities.get_mut(1).unwrap();
         *actor = actor.clone().with_air_tracker_cell_for_test((13, 10));
         {
@@ -1396,7 +1415,7 @@ mod tests {
                 .with_phase_for_test(jumpjet_flight::STATE_CRASH)
                 .with_flight_for_test(flight);
         }
-        sim.aircraft_tracker_add(1);
+        Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
         sim.session.set_binary_frame_for_test(1001);
         let stats = sim
             .tick_air_movement_with_cell_lists_one(
@@ -1892,7 +1911,8 @@ mod tests {
                 .expect("Kirov spawns");
             sim.resolve_type_handles(&resources.rules);
             let now = sim.session.binary_frame();
-            sim.mission_assign_exact(kirov, MissionId::from_known(MissionType::Hunt), now)
+            sim.substrate
+                .mission_assign_exact(kirov, MissionId::from_known(MissionType::Hunt), now)
                 .unwrap();
             (kirov, plant)
         };

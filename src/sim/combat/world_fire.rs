@@ -8,6 +8,8 @@ use super::world_receiver::{
 #[cfg(test)]
 use super::world_receiver::{commit_projectile_detonations_inline, radiation_enabled};
 use super::*;
+use crate::sim::houses::Houses;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::techno_ai_cloak::emit_configured_cloak_sound;
 use crate::sim::world::{FrameEffects, Simulation};
 
@@ -243,7 +245,7 @@ fn admit_attacker_fire<'r>(
             world,
             &world.interner,
             world.resolved_terrain.as_ref(),
-            fog_enabled.then_some(&world.house_alliances),
+            fog_enabled.then_some(world.house_alliances.as_map()),
         ) else {
             out.remove_attack.push(snap.stable_id);
             return None;
@@ -291,7 +293,7 @@ fn admit_attacker_fire<'r>(
                 world,
                 rules,
                 overlay_registry,
-                fog: fog_enabled.then(|| world.fog.fire_view(&world.house_alliances)),
+                fog: fog_enabled.then(|| world.fog.fire_view(world.house_alliances.as_map())),
                 firer,
                 obj,
                 target: Some(snap.target),
@@ -495,13 +497,13 @@ fn admit_attacker_fire<'r>(
             world,
             &world.interner,
             world.resolved_terrain.as_ref(),
-            fog_enabled.then_some(&world.house_alliances),
+            fog_enabled.then_some(world.house_alliances.as_map()),
         )?;
         let code = fire_error_world::FireSubject {
             world,
             rules,
             overlay_registry,
-            fog: fog_enabled.then(|| world.fog.fire_view(&world.house_alliances)),
+            fog: fog_enabled.then(|| world.fog.fire_view(world.house_alliances.as_map())),
             firer: actor,
             obj,
             target,
@@ -719,7 +721,7 @@ pub(super) fn retaliation_reaches(
         world,
         rules,
         overlay_registry,
-        fog: Some(world.fog.fire_view(&world.house_alliances)),
+        fog: Some(world.fog.fire_view(world.house_alliances.as_map())),
         firer: victim,
         obj: victim_type,
         target: Some(TargetKind::Entity(source_id)),
@@ -1018,11 +1020,25 @@ fn reveal_on_fire(
                 Some(house),
             );
             if let Some(local_origin) = local_origin {
-                world.refresh_sight_border(house, local_origin, 6, context);
+                Simulation::refresh_sight_border(
+                    &mut world.fog,
+                    &world.resolved_terrain,
+                    house,
+                    local_origin,
+                    6,
+                    context,
+                );
             }
         }
         //6FDF4D/6FF738: independent of Map's center/radius admission.
-        world.refresh_sight_border(house, origin, 4, context);
+        Simulation::refresh_sight_border(
+            &mut world.fog,
+            &world.resolved_terrain,
+            house,
+            origin,
+            4,
+            context,
+        );
     }
 }
 
@@ -1034,7 +1050,9 @@ fn reveal_on_fire(
 /// RESIDUAL: Fire/Railgun systems still use the firing weapon's flags as
 /// their preexisting launch approximation; their retained links are unported.
 fn fireat_get_rof(
-    world: &mut Simulation,
+    scenario_rng: &mut SimRng,
+    substrate: &ObjectSubstrate,
+    houses: &Houses,
     rules: &RuleSet,
     snap: &AttackerSnapshot,
     obj: &ObjectType,
@@ -1043,15 +1061,24 @@ fn fireat_get_rof(
     next_index: i32,
 ) -> i32 {
     let live = super::rof::LiveParticles {
-        spark: world
-            .substrate
+        spark: substrate
             .entities
             .get(snap.stable_id)
             .is_some_and(|firer| firer.spark_particle_system.system().is_some()),
         fire: weapon.use_fire_particles,
         railgun: weapon.is_railgun,
     };
-    snapshot_get_rof(world, rules, snap, obj, rof_weapon, live, next_index)
+    snapshot_get_rof(
+        scenario_rng,
+        substrate,
+        houses,
+        rules,
+        snap,
+        obj,
+        rof_weapon,
+        live,
+        next_index,
+    )
 }
 
 /// `TechnoClass::GetROF` (vt+0x318) of the object `snap` describes, for
@@ -1060,7 +1087,9 @@ fn fireat_get_rof(
 /// (`sim::c4_plant`), also the receiving gunner's GetROF7/0
 /// (`sim::passenger`).
 pub(crate) fn snapshot_get_rof(
-    world: &mut Simulation,
+    scenario_rng: &mut SimRng,
+    substrate: &ObjectSubstrate,
+    houses: &Houses,
     rules: &RuleSet,
     snap: &AttackerSnapshot,
     obj: &ObjectType,
@@ -1068,7 +1097,7 @@ pub(crate) fn snapshot_get_rof(
     live: super::rof::LiveParticles,
     burst_index: i32,
 ) -> i32 {
-    let firer = world.substrate.entities.get(snap.stable_id);
+    let firer = substrate.entities.get(snap.stable_id);
     super::rof::get_rof(
         &super::rof::RofQuery {
             // RESIDUAL: a building's own Ammo (`+0x2FC`) is not kept;
@@ -1078,8 +1107,7 @@ pub(crate) fn snapshot_get_rof(
             live,
             burst_index,
             unit_burst_delays: (snap.category == EntityCategory::Unit).then_some(obj.burst_delays),
-            house_rof: world
-                .houses
+            house_rof: houses
                 .get(&snap.owner)
                 .map_or(crate::util::native_x87::NativeF64Bits::ONE, |house| {
                     house.rof_bias()
@@ -1101,7 +1129,7 @@ pub(crate) fn snapshot_get_rof(
             occupy_rof_multiplier: rules.garrison_rules.occupy_rof_multiplier,
             bunker_rof_multiplier: rules.garrison_rules.bunker_rof_multiplier,
         },
-        &mut world.scenario_rng,
+        scenario_rng,
     )
 }
 
@@ -1182,7 +1210,7 @@ pub(super) fn emit_admitted_fire(
             .retain_frame_notifications(&mut out.effects);
         return None;
     }
-    if weapon.is_sonic && world.active_wave_links.contains_key(&snap.stable_id) {
+    if weapon.is_sonic && world.active_wave_id(snap.stable_id).is_some() {
         return None;
     }
     // 6FDE36..6FDE48: direct FireAt callers also refuse a flagged weapon
@@ -1349,7 +1377,9 @@ pub(super) fn emit_admitted_fire(
                 )
             });
         let rof = fireat_get_rof(
-            world,
+            &mut world.scenario_rng,
+            &world.substrate,
+            &world.houses,
             rules,
             snap,
             obj,
@@ -1624,7 +1654,7 @@ pub(super) fn emit_admitted_fire(
             // laser width (`0x006FF52B`), sampled before this consumption.
             let damage_multiplier = match snap.building_shot {
                 Some(super::BuildingShot::Delayed { .. }) => {
-                    world.take_support_bonus(snap.stable_id, rules)
+                    world.substrate.take_support_bonus(snap.stable_id, rules)
                 }
                 _ => ProjectilePayload::UNSCALED,
             };
@@ -1800,7 +1830,17 @@ pub(super) fn emit_admitted_fire(
 
     let next_index = burst.next_index();
     // `CALL [EDX+0x318]` at `0x006FF289`.
-    let rof = fireat_get_rof(world, rules, snap, obj, weapon, rof_weapon, next_index);
+    let rof = fireat_get_rof(
+        &mut world.scenario_rng,
+        &world.substrate,
+        &world.houses,
+        rules,
+        snap,
+        obj,
+        weapon,
+        rof_weapon,
+        next_index,
+    );
 
     // `0x006FF274..0x006FF2CB`, all on the firer: the burst step around GetROF,
     // then the rearm (`+0x2EC`) with GetROF's value, which a berserk firer
@@ -2094,7 +2134,13 @@ fn commit_fire_bookkeeping(
     for &(drainer_id, victim_id) in &drain_links {
         // `0x0070FDBD`: a drained Psychic Tower frees its captives; then the
         // drainer leaves its team without idling (`0x0070FE19..0x0070FE32`).
-        if crate::sim::credit_income::install_drain_link(world, drainer_id, victim_id) {
+        if crate::sim::credit_income::install_drain_link(
+            &mut world.substrate,
+            &world.houses,
+            &mut world.power_states,
+            drainer_id,
+            victim_id,
+        ) {
             world.free_all_captures(victim_id, rules, overlay_registry, effects);
             crate::sim::credit_income::attach_drain_anim(world, drainer_id, rules);
             world.leave_team(drainer_id, true, Some(rules), effects);
@@ -2332,7 +2378,7 @@ pub(crate) fn visit_fire(
                     &snapshot,
                     fog_enabled,
                     world.session.binary_frame(),
-                    world.active_wave_links.contains_key(&id),
+                    world.active_wave_id(id).is_some(),
                     emit,
                     run.effects(),
                 );
@@ -2362,7 +2408,7 @@ pub(crate) fn visit_fire(
                         &snap,
                         fog_enabled,
                         world.session.binary_frame(),
-                        world.active_wave_links.contains_key(&id),
+                        world.active_wave_id(id).is_some(),
                         emit,
                         run.effects(),
                     )
@@ -2383,7 +2429,7 @@ pub(crate) fn visit_fire(
                     &snap,
                     fog_enabled,
                     world.session.binary_frame(),
-                    world.active_wave_links.contains_key(&id),
+                    world.active_wave_id(id).is_some(),
                     emit,
                     run.effects(),
                 );
@@ -2649,7 +2695,7 @@ pub(crate) fn tick_combat(
     if sound_enabled {
         let sink = &mut world.sound_events;
         for (die_id, rx, ry) in effects.death_sounds.drain(..) {
-            sink.push(SimSoundEvent::EntityDied {
+            sink.emit(SimSoundEvent::EntityDied {
                 die_sound_id: die_id,
                 rx,
                 ry,

@@ -4,8 +4,9 @@
 //! collision-free stable handles and of every RNG stream. Constructors
 //! preincrement it; they neither search for nor prevent duplicate values.
 
+use crate::map::tubes::NativeMapTubes;
 use crate::map::tubes::{
-    NativeMapTubeReceipt, NativeMapTubesState, RawTubeSection, TubeConstructionError,
+    NativeMapTubeReceipt, NativeMapTubesTakeError, RawTubeSection, TubeConstructionError,
     construct_raw_tube_section,
 };
 use crate::rules::ini_parser::IniFile;
@@ -203,28 +204,30 @@ impl Simulation {
         &mut self,
         map_ini: &IniFile,
     ) -> Result<(), NativeMapTubeConstructionError> {
-        self.construct_native_map_tubes_with_allocator(map_ini, |_| true)
+        Self::construct_native_map_tubes_with_allocator(
+            &mut self.native_unique_ids,
+            &mut self.native_map_tubes,
+            map_ini,
+            |_| true,
+        )
     }
 
     fn construct_native_map_tubes_with_allocator(
-        &mut self,
+        native_unique_ids: &mut Option<NativeUniqueIdCursor>,
+        native_map_tubes: &mut NativeMapTubes,
         map_ini: &IniFile,
         mut allocate: impl FnMut(usize) -> bool,
     ) -> Result<(), NativeMapTubeConstructionError> {
-        if !matches!(self.native_map_tubes, NativeMapTubesState::Unconstructed) {
+        if !native_map_tubes.is_unconstructed() {
             return Err(NativeMapTubeConstructionError::ReceiptAlreadyInstalled);
         }
-        let cursor = self
-            .native_unique_ids
+        let cursor = native_unique_ids
             .as_mut()
             .ok_or(NativeMapTubeConstructionError::MissingFreshCursor)?;
         cursor.reserve_map_read_from_saved()?;
 
         let raw_section = RawTubeSection::from_ini(map_ini);
-        self.native_map_tubes = NativeMapTubesState::Pending(NativeMapTubeReceipt::default());
-        let NativeMapTubesState::Pending(receipt) = &mut self.native_map_tubes else {
-            unreachable!("fresh Tube receipt was installed immediately above")
-        };
+        let receipt = native_map_tubes.install_receipt();
         let mut assign_native_id = || cursor.next_id();
         construct_raw_tube_section(raw_section, receipt, &mut allocate, &mut assign_native_id)?;
         Ok(())
@@ -233,17 +236,16 @@ impl Simulation {
     pub(crate) fn take_native_map_tubes_receipt(
         &mut self,
     ) -> Result<NativeMapTubeReceipt, NativeMapTubeConstructionError> {
-        match std::mem::replace(&mut self.native_map_tubes, NativeMapTubesState::Bound) {
-            NativeMapTubesState::Pending(receipt) => Ok(receipt),
-            NativeMapTubesState::Unconstructed => {
-                self.native_map_tubes = NativeMapTubesState::Unconstructed;
-                Err(NativeMapTubeConstructionError::ReceiptNotConstructed)
-            }
-            NativeMapTubesState::Bound => {
-                self.native_map_tubes = NativeMapTubesState::Bound;
-                Err(NativeMapTubeConstructionError::ReceiptAlreadyBound)
-            }
-        }
+        self.native_map_tubes
+            .take_receipt()
+            .map_err(|error| match error {
+                NativeMapTubesTakeError::NotConstructed => {
+                    NativeMapTubeConstructionError::ReceiptNotConstructed
+                }
+                NativeMapTubesTakeError::AlreadyBound => {
+                    NativeMapTubeConstructionError::ReceiptAlreadyBound
+                }
+            })
     }
 }
 
@@ -420,7 +422,7 @@ mod tests {
             ));
             let hash = sim.state_hash();
             let rng = sim.scenario_rng.logical_state();
-            let stable_cursor = sim.substrate.next_stable_object_id;
+            let stable_cursor = sim.next_stable_object_id();
             assert_eq!(
                 sim.next_native_runtime_id() as u32,
                 case["next"].as_u64().unwrap() as u32,
@@ -431,7 +433,7 @@ mod tests {
                 "future constructor phase is authority"
             );
             assert_eq!(sim.scenario_rng.logical_state(), rng);
-            assert_eq!(sim.substrate.next_stable_object_id, stable_cursor);
+            assert_eq!(sim.next_stable_object_id(), stable_cursor);
         }
     }
 
@@ -520,12 +522,16 @@ mod tests {
         let mut simulation = simulation_with_saved_prefix(1_000_037);
         let mut allocation_visits = Vec::new();
 
-        let error = simulation
-            .construct_native_map_tubes_with_allocator(&ini, |source| {
+        let error = Simulation::construct_native_map_tubes_with_allocator(
+            &mut simulation.native_unique_ids,
+            &mut simulation.native_map_tubes,
+            &ini,
+            |source| {
                 allocation_visits.push(source);
                 true
-            })
-            .unwrap_err();
+            },
+        )
+        .unwrap_err();
 
         assert_eq!(allocation_visits, vec![0, 1]);
         assert_eq!(
@@ -556,12 +562,16 @@ mod tests {
         let mut simulation = simulation_with_saved_prefix(1_000_037);
         let mut allocation_visits = Vec::new();
 
-        let error = simulation
-            .construct_native_map_tubes_with_allocator(&ini, |source| {
+        let error = Simulation::construct_native_map_tubes_with_allocator(
+            &mut simulation.native_unique_ids,
+            &mut simulation.native_map_tubes,
+            &ini,
+            |source| {
                 allocation_visits.push(source);
                 false
-            })
-            .unwrap_err();
+            },
+        )
+        .unwrap_err();
 
         assert_eq!(allocation_visits, vec![0]);
         assert_eq!(

@@ -293,7 +293,8 @@ fn ground_command_fixture(
                 &registry,
             )
             .expect("observed original target enters the supplied ground");
-        sim.mission_commence_exact(target, sim.session.binary_frame())
+        sim.substrate
+            .mission_commence_exact(target, sim.session.binary_frame())
             .unwrap();
         let target_actor = sim.substrate.entities.get(target).unwrap();
         assert_ne!(target_actor.owner(), owner);
@@ -539,7 +540,8 @@ fn ground_command_fixture(
         // Building placement leaves that mission queued; finish it through
         // the mission owner before this component-boundary comparison. This
         // does not compare the target's whole initialization or AI history.
-        sim.mission_commence_exact(target, sim.session.binary_frame())
+        sim.substrate
+            .mission_commence_exact(target, sim.session.binary_frame())
             .unwrap();
         let target_actor = sim.substrate.entities.get(target).unwrap();
         let ambient = occupant

@@ -14,7 +14,7 @@ pub(crate) fn is_locked(state: &AppState) -> bool {
             runtime.simulation.session().input_locked()
                 || (runtime.simulation.session().scenario_paused()
                     && matches!(
-                        state.match_state.session.mode(),
+                        state.match_state.session_mode(),
                         crate::app::match_runtime::session::SessionMode::Campaign
                             | crate::app::match_runtime::session::SessionMode::Skirmish
                     ))

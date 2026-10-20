@@ -1121,7 +1121,8 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
             producer.position.put_location(producer_coord);
             producer.position.set_z_for_test(4);
         }
-        sim.mission_assign_exact(producer_id, MissionId::from_known(MissionType::Guard), 0)
+        sim.substrate
+            .mission_assign_exact(producer_id, MissionId::from_known(MissionType::Guard), 0)
             .unwrap();
         assert!(
             sim.houses[&owner].base_projection().buildings().is_empty(),
@@ -1525,7 +1526,8 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
         actor.set_in_playfield(input["fixture"]["in_playfield"].as_bool().unwrap());
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         sim.substrate.entities.insert(actor);
-        sim.mission_assign_exact(90, MissionId::from_known(MissionType::Guard), 100)
+        sim.substrate
+            .mission_assign_exact(90, MissionId::from_known(MissionType::Guard), 100)
             .unwrap();
         let bounds = &input["fixture"]["bounds"];
         sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {

@@ -284,7 +284,7 @@ impl crate::sim::world::Simulation {
             &mut self.substrate.entities,
             &mut self.houses,
             &self.interner,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             victim_id,
             source,
             victim_cost,
@@ -389,7 +389,7 @@ impl KillRecord {
 
     /// Drop the credit and the guard: a retained hull's next exact-zero
     /// callback must capture its own credit
-    /// (`Simulation::begin_receiver_kill_record`), and a PostMortem restore
+    /// (`ObjectSubstrate::begin_receiver_kill_record`), and a PostMortem restore
     /// keeps no killer.
     pub(crate) fn clear(&mut self) {
         *self = Self::default();

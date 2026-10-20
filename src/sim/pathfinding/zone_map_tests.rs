@@ -82,8 +82,6 @@ fn automatic_tube_shell_ground_terrain() -> ResolvedTerrainGrid {
             zone_type: zone_class::GROUND,
             has_bridge_deck: is_low_bridge,
             bridge_layer: is_low_bridge.then(|| BridgeLayer {
-                overlay_id: 0x4a,
-                overlay_name: "LOBRDG01".to_string(),
                 deck_level: 0,
                 direction: BridgeDirection::Low,
             }),

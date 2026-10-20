@@ -68,6 +68,9 @@ use super::super_actions::ChronoshiftTarget;
 use super::team_ai::member_is_live_joined;
 use super::{TeamScriptAction, TeamScriptRefusal, TeamScriptState, TeamTarget, script_action_at};
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::team_script_vm::TeamScriptVm;
+use crate::sim::world::ObjectSubstrate;
 
 impl TeamScriptState {
     /// TeamFlash6EF5F0 walks +54/+5D8 head first and writes signed Techno+F0.
@@ -89,10 +92,15 @@ impl Simulation {
     /// in live registration order flash all their linked members, including
     /// teams owned by another House. Member writes have no callback and do
     /// not change the registry, so the existing order can be read directly.
-    pub(crate) fn flash_teams_of_type(&mut self, team_type: InternedId, frames: i32) {
-        for team in self.team_script_vm.teams_in_order() {
+    pub(crate) fn flash_teams_of_type(
+        substrate: &mut ObjectSubstrate,
+        team_script_vm: &TeamScriptVm,
+        team_type: InternedId,
+        frames: i32,
+    ) {
+        for team in team_script_vm.teams_in_order() {
             if team.team_type_id() == Some(team_type) {
-                team.flash_members(&mut self.substrate.entities, frames);
+                team.flash_members(&mut substrate.entities, frames);
             }
         }
     }
@@ -225,7 +233,7 @@ impl Simulation {
                         .and_then(|entity| self.object_type(entity.type_ref(), rules))
                         .is_some_and(|object| object.passengers > 0);
                 if !carries {
-                    self.team_member_clear_archive_target(member);
+                    self.substrate.team_member_clear_archive_target(member);
                 }
             }
             if (cursor as u32) >= count {
@@ -446,7 +454,13 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
-            42 => self.team_action_force_facing(team_id, action.argument),
+            42 => Self::team_action_force_facing(
+                &self.session,
+                &mut self.substrate,
+                &mut self.team_script_vm,
+                team_id,
+                action.argument,
+            ),
             // gamemd.exe Team19@6E984B/41@6E9BDB: each member's
             // Panic+518/UnPanic+51C in list order, then advance+80=1.
             // The callbacks do not unlink; the next action waits for the
@@ -686,7 +700,7 @@ impl Simulation {
             .is_some_and(|(x, y)| {
                 !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(x), i32::from(y)),
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                     self.resolved_terrain.as_ref(),
                 )
             })
@@ -783,16 +797,22 @@ impl Simulation {
     /// Native Steam gamemd3e81a617..08600; tools/team_recruit_oracle.py
     /// --force-facing. Missing locomotors fault natively; Rust retains the
     /// pending action and reports the invalid state instead.
-    fn team_action_force_facing(&mut self, team_id: u64, argument: i32) {
-        let Some(team) = self.team_script_vm.teams.get(&team_id) else {
+    fn team_action_force_facing(
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        team_script_vm: &mut TeamScriptVm,
+        team_id: u64,
+        argument: i32,
+    ) {
+        let Some(team) = team_script_vm.teams.get(&team_id) else {
             return;
         };
         let members: Vec<_> = team.members().collect();
         let desired = argument.wrapping_shl(13) as u16;
-        let frame = self.session.binary_frame();
+        let frame = session.binary_frame();
         let mut finished = true;
         for member in members {
-            let Some(entity) = self.substrate.entities.get_mut(member) else {
+            let Some(entity) = substrate.entities.get_mut(member) else {
                 finished = false;
                 continue;
             };
@@ -809,7 +829,7 @@ impl Simulation {
                 }
             }
         }
-        if finished && let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+        if finished && let Some(team) = team_script_vm.teams.get_mut(&team_id) {
             team.advance_pending = true;
         }
     }
@@ -979,7 +999,7 @@ impl Simulation {
             {
                 continue;
             }
-            self.team_member_clear_archive_target(member);
+            self.substrate.team_member_clear_archive_target(member);
             self.team_member_queue_mission_id(member, MissionId::from_raw(mission), rules);
             self.team_member_clear_target(member, rules);
             self.team_member_set_destination(member, None, rules, registry, frame_effects);
@@ -1248,7 +1268,7 @@ impl Simulation {
                 self.team_member_set_destination(member, archive, rules, registry, frame_effects);
                 self.team_member_queue_mission(member, MissionType::Move, rules);
                 self.team_member_commence(member, rules);
-                self.team_member_clear_archive_target(member);
+                self.substrate.team_member_clear_archive_target(member);
             } else if (transport && matches!(argument, 2 | 3))
                 || (!transport && matches!(argument, 1 | 3))
             {
@@ -1684,6 +1704,7 @@ impl Simulation {
                 }
             }
         }
+        let playfield_bounds = self.playfield_bounds();
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
         };
@@ -1694,7 +1715,7 @@ impl Simulation {
         if let Some(TeamTarget::Cell { x, y }) = target {
             let in_playfield = crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(x), i32::from(y)),
-                self.playfield_bounds,
+                playfield_bounds,
                 self.resolved_terrain.as_ref(),
             );
             team.leaving_map = !in_playfield;
@@ -2307,7 +2328,7 @@ impl Simulation {
                 location: location_xyz(building, terrain),
                 enemy_owned: Some(building.owner()) == enemy,
                 allied: crate::map::houses::is_allied_with(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     asker,
                     self.interner.resolve(building.owner()),
                 ),

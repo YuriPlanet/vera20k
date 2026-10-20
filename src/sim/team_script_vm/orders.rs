@@ -45,7 +45,7 @@ impl Simulation {
     pub(super) fn team_member_commence(&mut self, id: u64, rules: &RuleSet) {
         if self.mission_ready_to_commence(id, rules) {
             let now = self.session.binary_frame();
-            let _ = self.mission_commence_exact(id, now);
+            let _ = self.substrate.mission_commence_exact(id, now);
         }
     }
 
@@ -74,13 +74,6 @@ impl Simulation {
         );
     }
 
-    /// `Set_ArchiveTarget(NULL)` (`0x0070C610`), a plain store.
-    pub(super) fn team_member_clear_archive_target(&mut self, id: u64) {
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.set_archive_target(None);
-        }
-    }
-
     /// `vt+0x480` `Set_Destination(target, 1)` through the class setters
     /// ([`Simulation::assign_destination_represented`]).
     pub(super) fn team_member_set_destination(
@@ -104,5 +97,14 @@ impl Simulation {
             registry,
             frame_effects,
         );
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// `Set_ArchiveTarget(NULL)` (`0x0070C610`), a plain store.
+    pub(super) fn team_member_clear_archive_target(&mut self, id: u64) {
+        if let Some(entity) = self.entities.get_mut(id) {
+            entity.set_archive_target(None);
+        }
     }
 }

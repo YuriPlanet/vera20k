@@ -289,8 +289,6 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         &owner,
         state.match_state.sandbox_full_visibility,
         state.rules(),
-        state.height_map(),
-        crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
     );
     if selected.is_empty() {
         return no_selection_cursor(hover.as_ref());
@@ -573,10 +571,11 @@ fn what_action_on_cell(
 /// 2. Infantry class capabilities, then admitted weapon cursor overrides.
 /// 3. Engineer capturing: selected Engineer hovering capturable enemy building.
 /// 4. Engineer repairing: selected Engineer hovering damaged friendly building.
-/// 5. Infantry boarding: selected infantry hovering friendly transport (Passengers>0).
+/// 5. Entry (Enter/NoEnter): a Unit's Select over a friendly building whose
+///    CAN_LOAD admits it, an Infantryman's over a Grinder, and either's over a
+///    friendly passenger carrier.
 /// 6. Infantry garrisoning: selected Occupier infantry hovering friendly CanBeOccupied building.
 /// 7. Admitted friendly Attack: consume the shared Techno grant and class action.
-/// 8. Harvester docking: selected miner hovering a friendly refinery that admits it (action 3).
 /// 9. Generic friendly/enemy/in-range/out-of-range fallback.
 pub(super) fn capability_cursor_for_hover(
     sim: &crate::sim::world::Simulation,
@@ -653,7 +652,14 @@ pub(super) fn capability_cursor_for_hover(
             return CursorFeedbackKind::NoDeploy;
         }
 
-        return if entity.category() == EntityCategory::Structure {
+        // Aircraft417DCD..417DF4: the Self (4) of an Aircraft carrying no
+        // passengers (+0x114) is 0, the arrow.
+        let empty_aircraft = entity.category() == EntityCategory::Aircraft
+            && entity
+                .passenger_role
+                .cargo()
+                .is_none_or(|cargo| cargo.count() == 0);
+        return if entity.category() == EntityCategory::Structure || empty_aircraft {
             CursorFeedbackKind::Default
         } else {
             CursorFeedbackKind::Invalid
@@ -671,7 +677,7 @@ pub(super) fn capability_cursor_for_hover(
             .and_then(|e| rules.and_then(|r| sim.interner().object_type(e.type_ref(), r)))
             .is_some_and(|obj| obj.ivan);
     if let Some(best_id) = best_id
-        && let (Some(sel_entity), Some(sel_obj)) = (
+        && let (Some(sel_entity), Some(_)) = (
             sim.entities().get(best_id),
             sim.entities()
                 .get(best_id)
@@ -701,44 +707,38 @@ pub(super) fn capability_cursor_for_hover(
             };
         }
 
-        // Grinder: a Unit's or Infantryman's Select over a Grinding= building
-        // (`context_order::grinder_action`).
-        if !matches!(
-            modifier,
-            OrderModifier::ForceFire | OrderModifier::ForceMove | OrderModifier::GuardArea
-        ) && !(modifier == OrderModifier::AttackMove && force_move_key)
-            && matches!(hover.kind, HoverTargetKind::FriendlyStructure)
-            && let Some(action) = rules.and_then(|rules| {
-                super::context_order::grinder_action(
+        // 5. Entry: a Unit's Select over a friendly building it may enter
+        //    (refinery, Service Depot, Tank Bunker, Grinder), an Infantryman's
+        //    over a Grinding= building, and either's over a friendly
+        //    passenger carrier, Alt's Move included
+        //    (`context_order::entry_action`).
+        if let Some(action) = rules
+            .filter(|_| {
+                matches!(
+                    hover.kind,
+                    HoverTargetKind::FriendlyStructure | HoverTargetKind::FriendlyUnit
+                )
+            })
+            .and_then(|rules| {
+                super::context_order::entry_action(
                     sim,
                     rules,
                     best_id,
                     hover.stable_id,
+                    modifier,
+                    force_move_key,
                     overlay_registry,
                 )
             })
         {
             return match action {
-                crate::sim::world::BuildingClickAction::NoEnter => CursorFeedbackKind::NoEnter,
-                crate::sim::world::BuildingClickAction::Grind
-                | crate::sim::world::BuildingClickAction::Enter => CursorFeedbackKind::Enter,
+                crate::sim::world::EntryClickAction::NoEnter => CursorFeedbackKind::NoEnter,
+                crate::sim::world::EntryClickAction::Grind
+                | crate::sim::world::EntryClickAction::Enter => CursorFeedbackKind::Enter,
             };
         }
 
         let is_infantry = sel_entity.category() == EntityCategory::Infantry;
-
-        // 5. Infantry boarding a friendly transport (Passengers > 0).
-        if is_infantry
-            && !matches!(
-                modifier,
-                OrderModifier::ForceFire | OrderModifier::ForceMove | OrderModifier::GuardArea
-            )
-            && !(modifier == OrderModifier::AttackMove && force_move_key)
-            && matches!(hover.kind, HoverTargetKind::FriendlyUnit)
-            && hovered_obj.is_some_and(|o| o.passengers > 0)
-        {
-            return CursorFeedbackKind::Enter;
-        }
 
         // 6. Infantry garrisoning uses the shared CanBeOccupiedBy-equivalent predicate.
         //    garrisonable — only show Enter for those, not actual enemy-player buildings.
@@ -747,6 +747,7 @@ pub(super) fn capability_cursor_for_hover(
                 modifier,
                 OrderModifier::ForceFire | OrderModifier::GuardArea
             )
+            && hovered_obj.is_some_and(|object| object.can_be_occupied)
             && let Some(rules) = rules
             && crate::sim::passenger::can_enter_transport(sim, rules, best_id, hover.stable_id)
         {
@@ -849,47 +850,6 @@ pub(super) fn capability_cursor_for_hover(
                     ivan_attack_feedback(kind, best_is_ivan, hovered_entity, hovered_obj)
                 });
         }
-
-        // 8. Harvester docking — selected miner hovering own/ally refinery
-        //    whose CAN_LOAD admits it: What_Action's Enter (action 3,
-        //    `Simulation::unit_building_click_action`). Refinery detection
-        //    from RuleSet::is_refinery_type, as the click pipeline in
-        //    `input::context_order` routes it.
-        if sel_entity.miner.is_some()
-            && matches!(hover.kind, HoverTargetKind::FriendlyStructure)
-            && hovered_entity.is_some_and(|e| {
-                rules.is_some_and(|r| {
-                    r.is_refinery_type(sim.interner().resolve(e.type_ref()))
-                        && sim.unit_building_click_action(best_id, hover.stable_id, r)
-                            == Some(crate::sim::world::BuildingClickAction::Enter)
-                })
-            })
-        {
-            return CursorFeedbackKind::Enter;
-        }
-
-        // Service depot — a damaged own vehicle over an own UnitRepair
-        // building shows the enter/dock cursor (the click issues
-        // RepairAtDepot; see `input::context_order`).
-        if sel_entity.category() == EntityCategory::Unit
-            && sel_entity.health.current() < sel_obj.strength
-            && matches!(hover.kind, HoverTargetKind::FriendlyStructure)
-            && hovered_obj.is_some_and(|o| o.unit_repair)
-        {
-            return CursorFeedbackKind::Enter;
-        }
-
-        // Tank bunker — an own bunkerable vehicle over an own EMPTY tank
-        // bunker shows the enter cursor (the click issues EnterBunker).
-        if matches!(hover.kind, HoverTargetKind::FriendlyStructure)
-            && hovered_entity
-                .is_some_and(|he| he.bunker_runtime.is_some() && he.bunker.occupant().is_none())
-            && rules.is_some_and(|r| {
-                crate::sim::docking::bunker_link::can_auto_deploy_here(sim, best_id, r)
-            })
-        {
-            return CursorFeedbackKind::Enter;
-        }
     }
 
     // 9. Generic fallback.
@@ -901,8 +861,14 @@ pub(super) fn capability_cursor_for_hover(
     // (`TechnoClass::What_Action_OnObject` `0x0070000B`, `[0xA8ECC8] == 1` at
     // `0x007000C1`, see `self_click_command`) — so the barred cursor wins.
     // Hovering an own unit that is NOT selected still takes Select, and a
-    // no-selection hover keeps DetermineAction's no-selection Select.
-    if hover_is_selected_own_unit(hover, &selected) {
+    // no-selection hover keeps DetermineAction's no-selection Select. An
+    // Aircraft cursor owner's 0 there becomes its Cell action instead
+    // (`0x00417D7C`), which the object action below answers.
+    if hover_is_selected_own_unit(hover, &selected)
+        && !best_id
+            .and_then(|id| sim.entities().get(id))
+            .is_some_and(|actor| actor.category() == EntityCategory::Aircraft)
+    {
         return CursorFeedbackKind::Invalid;
     }
     match hover.kind {
@@ -924,9 +890,12 @@ pub(super) fn capability_cursor_for_hover(
             if friendly
                 && !best_is_ivan
                 && !best_id.is_some_and(|id| {
-                    sim.entities()
-                        .get(id)
-                        .is_some_and(|actor| actor.category() == EntityCategory::Unit)
+                    super::context_order::object_action_answers_friendly(
+                        sim,
+                        selected,
+                        id,
+                        hover.stable_id,
+                    )
                 })
             {
                 return if hover.kind == HoverTargetKind::FriendlyUnit {
@@ -948,7 +917,7 @@ pub(super) fn capability_cursor_for_hover(
                     AttackAction::None => return CursorFeedbackKind::Default,
                     AttackAction::NoMove => return CursorFeedbackKind::Invalid,
                     AttackAction::Select => return CursorFeedbackKind::FriendlyUnit,
-                    AttackAction::Rally => return CursorFeedbackKind::Move,
+                    AttackAction::Rally | AttackAction::Move => return CursorFeedbackKind::Move,
                     AttackAction::Attack => {}
                 }
             } else if friendly {
@@ -1181,7 +1150,7 @@ fn force_fire_feedback(
         match armed_action(sim, rules?, actor_id, target, true, overlay_registry)? {
             AttackAction::None => None,
             AttackAction::NoMove => Some(CursorFeedbackKind::Invalid),
-            AttackAction::Rally => Some(CursorFeedbackKind::Move),
+            AttackAction::Rally | AttackAction::Move => Some(CursorFeedbackKind::Move),
             AttackAction::Select => Some(CursorFeedbackKind::FriendlyUnit),
             AttackAction::Attack => Some(
                 if attack_cursor_is_in_range(
@@ -3117,14 +3086,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 // Clear/Foot speed row before this cursor-only observation.
                 let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(20);
                 terrain.test_set_high_bridge_set_starts(Some(100), Some(200));
-                for y in 9..=11 {
-                    terrain
-                        .cell_mut_for_test(12, y)
-                        .unwrap()
-                        .bridge_facts
-                        .overlay_id = Some(if collapsed { 0xE7 } else { 0xD4 });
-                }
                 sim.install_resolved_terrain_for_new_map(terrain);
+                for y in 9..=11 {
+                    sim.overlay_cell_mut_for_test(12, y).overlay_id =
+                        Some(if collapsed { 0xE7 } else { 0xD4 });
+                }
                 *sim.bridge_state_mut_for_test() =
                     Some(crate::sim::bridge_state::BridgeRuntimeState::default());
                 crate::sim::arena_fixture::supply_native_map(&mut sim);

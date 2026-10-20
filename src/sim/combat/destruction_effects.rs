@@ -20,8 +20,10 @@
 //! fire anims are UnInit), 5 (`0x00441702`, a computer house's
 //! `RevealToAll=` building releases the sight it showed the current house), 7
 //! (`0x0044177E`, the centre scorch/crater mark), 8 (`0x004418EC`, one
-//! `Explosion=` anim per foundation cell) and 13 (`0x00441CAC`, one
-//! `DestroyAnim=` anim at the origin cell's corner).
+//! `Explosion=` anim per foundation cell), 12 (`0x00441C43`, the death fuse
+//! that decides whether the building outlives its killing blow), 13
+//! (`0x00441CAC`, one `DestroyAnim=` anim at the origin cell's corner) and the
+//! NoSurvivor write before SpawnSurvivors (`0x00441F0B`).
 //!
 //! Original constructor/Logic-before-crew execution:
 //! `tools/spatial_oracle/building_death_anims.py` (joined fatal lifecycle),
@@ -57,8 +59,7 @@
 //!   `Explodes=yes`, `0x00441A90..0x00441AC2`; no stock overlay has it), 10
 //!   (stored-ore spill; YR never fills building storage), 11 (ShakeScreen, a
 //!   bare `RET`), 14 (`DestroyParticleSystems=` smoke; no stock user). Step 6
-//!   (BuildingDieSound) plays from the Techno death sounds; step 12 (the zero
-//!   death timer of `Explodes=`/Selling) is a `crew_survival` residual.
+//!   (BuildingDieSound) plays from the Techno death sounds.
 //! - Ordinary ground weapon-fire ammo debits remain separate. The shared Ammo
 //!   owner retains constructor and chrono reinforcement writes, which the
 //!   `Death_Explosion` last-entry override reads. No stock `Explodes=` vehicle
@@ -73,6 +74,7 @@ use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::ground_pose::position_world_coord;
+use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
 
 use super::{ExplosionEffect, SmudgeSpawnRequest};
@@ -228,23 +230,17 @@ impl Simulation {
         match spawn.follow_up {
             None => {}
             Some(DeathAnimFollowUp::Owner(house)) => {
-                self.set_anim_owner_house(anim, house);
+                self.substrate.set_anim_owner_house(anim, house);
             }
             Some(DeathAnimFollowUp::Mutate(house)) => {
                 if let Some(house) = house {
-                    self.set_anim_owner_house(anim, house);
+                    self.substrate.set_anim_owner_house(anim, house);
                     self.set_anim_house_remap(anim, house);
                 }
                 self.anim_mark_cell_occupancy(anim);
             }
         }
         Some(anim)
-    }
-
-    /// One Scenario `Next() % count` pick from a non-empty anim list.
-    pub(crate) fn pick_death_anim<'r>(&mut self, list: &'r [String]) -> &'r str {
-        let index = (self.scenario_rng.next_u32() % list.len() as u32) as usize;
-        &list[index]
     }
 
     /// The shared low dropped-bomb water gate in Techno ReceiveDamage
@@ -376,7 +372,7 @@ impl Simulation {
         let armed =
             object.ammo == -1 || entity.ammo().map_or(object.ammo, |ammo| ammo.current()) > 0;
         if !object.explosion_anims.is_empty() {
-            let picked = self.pick_death_anim(&object.explosion_anims);
+            let picked = pick_death_anim(&mut self.scenario_rng, &object.explosion_anims);
             let anim = if explodes && armed {
                 object.explosion_anims.last().map_or(picked, String::as_str)
             } else {
@@ -388,7 +384,7 @@ impl Simulation {
         // nothing reads and calls the ShakeScreen stub (`0x0048DED0`, a bare
         // `RET`): no effect.
         if !object.destroy_anims.is_empty() {
-            let anim = self.pick_death_anim(&object.destroy_anims);
+            let anim = pick_death_anim(&mut self.scenario_rng, &object.destroy_anims);
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn::at(coord, 0));
         }
     }
@@ -413,7 +409,7 @@ impl Simulation {
             return;
         }
         let location = position_world_coord(&entity.position);
-        let anim = self.pick_death_anim(&object.explosion_anims);
+        let anim = pick_death_anim(&mut self.scenario_rng, &object.explosion_anims);
         self.emit_death_anim(
             rules,
             anims,
@@ -432,12 +428,14 @@ impl Simulation {
     /// `BuildingClass::DestructionEffects @ 0x004415F0` from its entry to its
     /// SpawnSurvivors call: the damage fires go out, the centre mark is
     /// committed through `commit_smudge`, each foundation cell (in the
-    /// `vt+0x108(0)` list order) gets an `Explosion=` anim and the origin
-    /// corner a `DestroyAnim=` anim.
-    pub(crate) fn building_destruction_anims(
+    /// `vt+0x108(0)` list order) gets an `Explosion=` anim, the death fuse is
+    /// armed, the origin corner gets a `DestroyAnim=` anim and the killing
+    /// call's `ignore_defenses` becomes NoSurvivor.
+    pub(crate) fn building_destruction_effects(
         &mut self,
         rules: &RuleSet,
         building_id: u64,
+        ignore_defenses: bool,
         anims: &mut Vec<ExplosionEffect>,
         mut commit_smudge: impl FnMut(&mut Simulation, SmudgeSpawnRequest),
     ) {
@@ -459,6 +457,8 @@ impl Simulation {
         );
         let location = position_world_coord(&entity.position);
         let owner = entity.owner();
+        let selling =
+            entity.mission.effective().known() == Some(crate::sim::mission::MissionType::Selling);
 
         // 5. `0x00441702..0x0044172F`: a computer house's `RevealToAll=`
         // building releases its sight for the current house
@@ -489,7 +489,7 @@ impl Simulation {
                     super::inviso_scatter::RandomDirectionSnap::Preserve,
                 );
                 let delay = self.scenario_rng.next_range_u32_inclusive(0, 3) as u16;
-                let anim = self.pick_death_anim(&object.explosion_anims);
+                let anim = pick_death_anim(&mut self.scenario_rng, &object.explosion_anims);
                 self.emit_death_anim(
                     rules,
                     anims,
@@ -506,11 +506,31 @@ impl Simulation {
             }
         }
 
+        // 12. `0x00441C3D..0x00441CA9`: the fuse (`+0x528`) restarts at the
+        // frame, 0 long for an `Explodes=` type (TechnoType `+0xD15`) or a
+        // building whose Get_Mission (vt+0x184, current else queued) is
+        // Selling (0x13), else 8. ReceiveDamage then UnInits only a building
+        // whose fuse has time left (`0x0044266B..0x00442690`); the others stay
+        // alive at Health 0 until their Update retires them
+        // (`0x00440072..0x004400F1`), their StageClass clock stopped: Rate 0
+        // and a zero timer from the frame, Value kept (`0x00441C8F..0x00441CA9`).
+        let outlives = object.explodes || selling;
+        let frame = self.session.binary_frame() as i32;
+        if let Some(building) = self.substrate.entities.get_mut(building_id) {
+            building
+                .pending_c4_detonation
+                .arm_destruction(frame, if outlives { 0 } else { 8 });
+            if outlives {
+                let value = building.native_stage().value();
+                building.restart_native_stage(value, frame, 0);
+            }
+        }
+
         // 13. `0x00441CAC..0x00441D64`: the pick is drawn even when the entry
         // is empty; the coordinate is vt+0xAC (`0x00459EF0`, Location minus
         // 0x80 on X and Y).
         if !object.destroy_anims.is_empty() {
-            let anim = self.pick_death_anim(&object.destroy_anims);
+            let anim = pick_death_anim(&mut self.scenario_rng, &object.destroy_anims);
             let (base, _) = crate::sim::movement::ground_pose::building_render_order_parts(
                 crate::sim::components::DriveCoord {
                     x: location.x,
@@ -534,7 +554,18 @@ impl Simulation {
                 ),
             );
         }
+        // `0x00441EFC..0x00441F0B`: after the Health 0 write (`0x00441F00`),
+        // the killing call's IgnoreDefenses becomes NoSurvivor.
+        if ignore_defenses && let Some(building) = self.substrate.entities.get_mut(building_id) {
+            building.no_survivor.mark();
+        }
     }
+}
+
+/// One Scenario `Next() % count` pick from a non-empty anim list.
+pub(crate) fn pick_death_anim<'r>(rng: &mut SimRng, list: &'r [String]) -> &'r str {
+    let index = (rng.next_u32() % list.len() as u32) as usize;
+    &list[index]
 }
 
 #[cfg(test)]

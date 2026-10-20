@@ -162,7 +162,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
     assert_rng(sim, &step["before"], context);
     sim.session
         .set_binary_frame_for_test(step["frame"].as_u64().unwrap() as u32);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     let body_before = sim
         .substrate
         .entities

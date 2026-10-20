@@ -30,6 +30,8 @@ use crate::sim::passenger::{
     reveal_unloaded_passenger,
 };
 use crate::sim::pathfinding::passability::LandType;
+use crate::sim::rng::SimRng;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{FrameEffects, PlacementEvidence, SimSoundEvent, Simulation};
 use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::direction_tables::{dir_from_facing16, round_facing16_to_8};
@@ -78,8 +80,13 @@ const WAIT_MOVING_FRAMES: i32 = 10;
 /// `ftol([Unload] Rate × 900) + RandomRanged(0, 2)` on the Scenario stream
 /// (`Random__RandomRanged` at `0x0073E2B0` on `*(0x00A8B230)+0x218`). The
 /// base is computed FIRST and consumes no RNG; the draw follows.
-fn unload_epilogue(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
-    sim.mission_rate_epilogue_for(rules, id, MissionType::Unload)
+fn unload_epilogue(
+    scenario_rng: &mut SimRng,
+    substrate: &ObjectSubstrate,
+    rules: &RuleSet,
+    id: u64,
+) -> i32 {
+    Simulation::mission_rate_epilogue_for(scenario_rng, substrate, rules, id, MissionType::Unload)
 }
 
 /// Whether this entity's type takes the transport branch of the Unit Unload
@@ -168,7 +175,7 @@ fn octant_cell_open(sim: &Simulation, cell: (u16, u16), transport_owner: &str) -
         .and_then(|id| sim.substrate.entities.get(id))
         .is_none_or(|object| {
             crate::map::houses::is_allied_with(
-                &sim.house_alliances,
+                sim.house_alliances.as_map(),
                 transport_owner,
                 sim.interner.resolve(object.owner()),
             )
@@ -535,7 +542,7 @@ fn eject_head_passenger(
 
             if let Some(sound) = leave_sound {
                 let sound_id = sim.interner.intern(&sound);
-                sim.sound_events.push(SimSoundEvent::LeaveTransport {
+                sim.sound_events.emit(SimSoundEvent::LeaveTransport {
                     sound_id,
                     rx: base.0,
                     ry: base.1,
@@ -592,7 +599,7 @@ pub(crate) fn building_mission_unload_absorber(
             ))
         })
     else {
-        return unload_epilogue(sim, rules, id);
+        return unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id);
     };
 
     let _ = depart_cargo_head(
@@ -722,7 +729,7 @@ pub(crate) fn building_mission_unload_absorber(
                     )
                 });
                 if let Some(coordinate) = coordinate {
-                    sim.sound_events.push(SimSoundEvent::voc_at_world_coord(
+                    sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
                         sound.clone(),
                         crate::sim::anim_class::AnimWorldCoord {
                             x: coordinate.x,
@@ -732,8 +739,16 @@ pub(crate) fn building_mission_unload_absorber(
                     ));
                 }
             }
-            sim.clear_human_absorber_seek_on_unload(passenger_id);
-            sim.restore_absorbed_infantry_tracking(passenger_id);
+            Simulation::clear_human_absorber_seek_on_unload(
+                &mut sim.substrate,
+                &sim.houses,
+                passenger_id,
+            );
+            Simulation::restore_absorbed_infantry_tracking(
+                &mut sim.substrate,
+                &mut sim.houses,
+                passenger_id,
+            );
 
             sim.queue_order_mission(passenger_id, MissionType::Move);
             if let Err(cause) = sim.assign_destination_represented(
@@ -749,13 +764,18 @@ pub(crate) fn building_mission_unload_absorber(
                 log::warn!("Building Unload destination {passenger_id}: {cause}");
             }
             if extra_power {
-                sim.invalidate_house_power(building_owner, false);
+                Simulation::invalidate_house_power(
+                    &sim.houses,
+                    &mut sim.power_states,
+                    building_owner,
+                    false,
+                );
             }
             Ok(())
         },
         effects,
     );
-    unload_epilogue(sim, rules, id)
+    unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
 }
 
 /// The `Passengers > 0` branch of `UnitClass::Mission_Unload @ 0x0073D630`.
@@ -770,7 +790,7 @@ pub(crate) fn unit_mission_unload(
 ) -> i32 {
     let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
-        return unload_epilogue(sim, rules, id);
+        return unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id);
     };
     match entity.mission.handler_state() {
         STATE_PICK_EXIT => {
@@ -852,7 +872,7 @@ pub(crate) fn unit_mission_unload(
             // Nothing to unload or nowhere to unload: `Queue_Mission(Guard)`
             // (`0x0073D887`) and the epilogue.
             queue_guard(sim, id);
-            unload_epilogue(sim, rules, id)
+            unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         STATE_TURNING => {
             // Unit Mission_Unload73D892 reads Unit+6AF, produced by
@@ -866,7 +886,7 @@ pub(crate) fn unit_mission_unload(
                 }
                 return 1;
             }
-            unload_epilogue(sim, rules, id)
+            unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         STATE_EJECT => {
             if entity.passenger_role.passenger_count() > entity.transport_unload_keep_count.count()
@@ -875,7 +895,7 @@ pub(crate) fn unit_mission_unload(
             } else if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.mission.set_handler_state(STATE_DONE);
             }
-            unload_epilogue(sim, rules, id)
+            unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         STATE_DONE => {
             // `Queue_Mission(Guard)` then `+0xB8 = 1` (`0x0073DCC1`..`0x0073DCC7`).
@@ -883,9 +903,9 @@ pub(crate) fn unit_mission_unload(
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.mission.set_movement_bypass_latch();
             }
-            unload_epilogue(sim, rules, id)
+            unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
-        _ => unload_epilogue(sim, rules, id),
+        _ => unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id),
     }
 }
 
@@ -986,7 +1006,7 @@ pub(crate) fn mission_unload(
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.mission.set_handler_state(next);
             }
-            unload_epilogue(sim, rules, id)
+            unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         AIR_STATE_WAIT_STOP => {
             // `Is_Moving` false (`0x0041549D`) → state 3.
@@ -1036,7 +1056,7 @@ pub(crate) fn mission_unload(
                     );
                 }
             }
-            unload_epilogue(sim, rules, id)
+            unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         AIR_STATE_RESET => {
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
@@ -1044,7 +1064,7 @@ pub(crate) fn mission_unload(
             }
             1
         }
-        _ => unload_epilogue(sim, rules, id),
+        _ => unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id),
     }
 }
 

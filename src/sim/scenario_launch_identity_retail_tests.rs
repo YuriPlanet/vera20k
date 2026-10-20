@@ -79,7 +79,7 @@ fn padded_ai_handle_does_not_turn_an_enemy_refinery_into_an_allied_target() {
         Some("<human player>")
     );
     assert!(crate::map::houses::are_houses_mutually_allied(
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         "Computer1",
         "Computer2"
     ));

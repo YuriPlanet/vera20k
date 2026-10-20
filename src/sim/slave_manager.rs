@@ -412,14 +412,6 @@ impl Simulation {
         self.substrate.entities.get(master)?.slave_manager.as_ref()
     }
 
-    fn slave_manager_mut(&mut self, master: u64) -> Option<&mut SlaveManager> {
-        self.substrate
-            .entities
-            .get_mut(master)?
-            .slave_manager
-            .as_mut()
-    }
-
     fn now_frame(&self) -> i32 {
         self.session.binary_frame() as i32
     }
@@ -492,7 +484,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) {
         let now = self.now_frame();
-        let Some(manager) = self.slave_manager_mut(master) else {
+        let Some(manager) = self.substrate.slave_manager_mut(master) else {
             return;
         };
         if !manager.ai_timer.expired(now) {
@@ -527,6 +519,7 @@ impl Simulation {
             }
             self.slave_node_step(master, &mut node, rules, registry, frame_effects);
             if let Some(slot) = self
+                .substrate
                 .slave_manager_mut(master)
                 .and_then(|manager| manager.nodes.get_mut(index))
             {
@@ -578,7 +571,7 @@ impl Simulation {
                 let driving = entity.navigation.nav_com().is_some();
                 // 0x006AF7F8: Tiberium land under the slave (0x00487DF0).
                 if crate::sim::miner::ore_scan::cell_is_tiberium_land(self, registry, cell) {
-                    self.slave_start_harvest(slave);
+                    self.substrate.slave_start_harvest(slave);
                     node.state = SlaveState::Harvesting;
                 } else if !driving {
                     node.state = SlaveState::Scanning;
@@ -605,7 +598,8 @@ impl Simulation {
                 } else if !crate::sim::miner::ore_scan::cell_is_tiberium_land(self, registry, cell)
                 {
                     // 0x00522D20: Queue_Mission(Guard, 0).
-                    self.queue_slave_mission(slave, MissionType::Guard);
+                    self.substrate
+                        .queue_slave_mission(slave, MissionType::Guard);
                     node.state = SlaveState::Scanning;
                 } else if !harvesting {
                     // 0x00522FC0: the mission is no longer Harvest.
@@ -721,13 +715,15 @@ impl Simulation {
                 // 0x006AFD7A..0x006AFDA7: a building whose mission is neither
                 // Selling nor Construction.
                 if building && !constructing_or_selling {
-                    self.set_manager_state(master, ManagerState::Working, i32::MAX);
+                    self.substrate
+                        .set_manager_state(master, ManagerState::Working, i32::MAX);
                 }
             }
             ManagerState::Scanning => {
                 // 0x006AFDC1..0x006AFDE5: a Slave Miner already driving.
                 if unit && driving {
-                    self.set_manager_state(master, ManagerState::Travelling, i32::MAX);
+                    self.substrate
+                        .set_manager_state(master, ManagerState::Travelling, i32::MAX);
                     return;
                 }
                 // 0x006AFDF2..0x006AFEBF: the nearest field within
@@ -740,10 +736,16 @@ impl Simulation {
                 )
                 .and_then(|field| self.find_deploy_cell(master, field, rules));
                 match target {
-                    None => self.set_manager_state(master, ManagerState::Ready, now),
+                    None => self
+                        .substrate
+                        .set_manager_state(master, ManagerState::Ready, now),
                     Some(cell) => {
                         self.send_slave_master(master, cell, rules, frame_effects);
-                        self.set_manager_state(master, ManagerState::Travelling, i32::MAX);
+                        self.substrate.set_manager_state(
+                            master,
+                            ManagerState::Travelling,
+                            i32::MAX,
+                        );
                     }
                 }
             }
@@ -752,12 +754,14 @@ impl Simulation {
                 // deploys (`UnitClass::Deploy`); a refused deploy retries in
                 // 30 frames.
                 if !unit {
-                    self.set_manager_state(master, ManagerState::Ready, now);
+                    self.substrate
+                        .set_manager_state(master, ManagerState::Ready, now);
                 } else if !driving
                     && !self.slave_master_deploys(master, rules, registry, frame_effects)
                 {
-                    self.set_manager_state(master, ManagerState::Deploying, i32::MAX);
-                    if let Some(manager) = self.slave_manager_mut(master) {
+                    self.substrate
+                        .set_manager_state(master, ManagerState::Deploying, i32::MAX);
+                    if let Some(manager) = self.substrate.slave_manager_mut(master) {
                         manager.ai_timer.start(now, 30);
                     }
                 }
@@ -766,26 +770,31 @@ impl Simulation {
                 // 0x006AFF43..0x006AFF8D, 0x006B0223: the retry; a second
                 // refusal hunts again.
                 if !unit {
-                    self.set_manager_state(master, ManagerState::Ready, now);
+                    self.substrate
+                        .set_manager_state(master, ManagerState::Ready, now);
                 } else if !self.slave_master_deploys(master, rules, registry, frame_effects) {
-                    self.set_manager_state(master, ManagerState::Scanning, i32::MAX);
+                    self.substrate
+                        .set_manager_state(master, ManagerState::Scanning, i32::MAX);
                 }
             }
             ManagerState::Deployed => {
                 // 0x006AFF8E..0x006AFFC0: a building whose BState is not 0.
                 if building && built {
-                    self.set_manager_state(master, ManagerState::Working, i32::MAX);
+                    self.substrate
+                        .set_manager_state(master, ManagerState::Working, i32::MAX);
                 } else if unit && !deploy_pending && guarding {
                     // 0x006AFFD6..0x006B003B: a Slave Miner whose deploy
                     // fell through (Unit+0x68C clear, back on Guard) drives
                     // on and tries again.
-                    self.set_manager_state(master, ManagerState::Travelling, i32::MAX);
+                    self.substrate
+                        .set_manager_state(master, ManagerState::Travelling, i32::MAX);
                 }
             }
             ManagerState::Working => {
                 if unit {
                     // 0x006B003C: an undeployed Slave Miner stops working.
-                    self.set_manager_state(master, ManagerState::Ready, now);
+                    self.substrate
+                        .set_manager_state(master, ManagerState::Ready, now);
                     return;
                 }
                 // 0x006B0062..0x006B009A: no ore within SlaveMinerShortScan
@@ -808,7 +817,8 @@ impl Simulation {
                 // slaves and hunts.
                 if unit {
                     self.reset_live_slaves(master, rules, frame_effects);
-                    self.set_manager_state(master, ManagerState::Scanning, i32::MAX);
+                    self.substrate
+                        .set_manager_state(master, ManagerState::Scanning, i32::MAX);
                 }
             }
         }
@@ -828,7 +838,8 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        self.set_manager_state(master, ManagerState::Deployed, i32::MAX);
+        self.substrate
+            .set_manager_state(master, ManagerState::Deployed, i32::MAX);
         self.deploy_mcv(master, rules, registry, frame_effects)
     }
 
@@ -903,7 +914,8 @@ impl Simulation {
             self.session.binary_frame(),
             &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
-        self.set_manager_state(master, ManagerState::PackingUp, i32::MAX);
+        self.substrate
+            .set_manager_state(master, ManagerState::PackingUp, i32::MAX);
     }
 
     /// The Slave Miner's class setter (`vt+0x480(cell, 1)`, the Unit setter
@@ -924,7 +936,8 @@ impl Simulation {
         ) {
             log::debug!("slave master {master} has no Unit setter for {cell:?}");
         }
-        self.queue_slave_mission(master, MissionType::Move);
+        self.substrate
+            .queue_slave_mission(master, MissionType::Move);
     }
 
     /// Every live node's slave (not state 6, not empty), last first, reset
@@ -1009,7 +1022,8 @@ impl Simulation {
         {
             return;
         }
-        self.set_manager_state(master, ManagerState::Scanning, i32::MAX);
+        self.substrate
+            .set_manager_state(master, ManagerState::Scanning, i32::MAX);
         self.reset_live_slaves(master, rules, frame_effects);
     }
 
@@ -1028,7 +1042,8 @@ impl Simulation {
             return;
         }
         let now = self.now_frame();
-        self.set_manager_state(master, ManagerState::Ready, now);
+        self.substrate
+            .set_manager_state(master, ManagerState::Ready, now);
         self.reset_live_slaves(master, rules, frame_effects);
     }
 
@@ -1078,25 +1093,31 @@ impl Simulation {
                 (cell(coord.x), cell(coord.y))
             });
         let Some(field) = field else {
-            self.queue_slave_mission(master, MissionType::Guard);
-            self.set_manager_state(master, ManagerState::Ready, now);
+            self.substrate
+                .queue_slave_mission(master, MissionType::Guard);
+            self.substrate
+                .set_manager_state(master, ManagerState::Ready, now);
             return;
         };
         match self.find_deploy_cell(master, field, rules) {
             None if building => {} //6B0F8E..6B0FA0: no fallback writes.
             None => {
-                self.set_manager_state(master, ManagerState::Ready, now);
-                self.queue_slave_mission(master, MissionType::Guard);
+                self.substrate
+                    .set_manager_state(master, ManagerState::Ready, now);
+                self.substrate
+                    .queue_slave_mission(master, MissionType::Guard);
             }
             Some(cell) => {
                 if building {
                     if let Some(owner) = self.substrate.entities.get_mut(master) {
                         owner.set_archive_target(Some(TargetKind::Cell(cell.0, cell.1)));
                     }
-                    self.set_manager_state(master, ManagerState::PackingUp, i32::MAX);
+                    self.substrate
+                        .set_manager_state(master, ManagerState::PackingUp, i32::MAX);
                 } else {
                     self.send_slave_master(master, cell, rules, frame_effects);
-                    self.set_manager_state(master, ManagerState::Travelling, i32::MAX);
+                    self.substrate
+                        .set_manager_state(master, ManagerState::Travelling, i32::MAX);
                 }
                 self.reset_live_slaves(master, rules, frame_effects);
             }
@@ -1193,14 +1214,13 @@ impl Simulation {
             return None;
         }
         self.begin_slave_hunt(id, rules, frame_effects);
-        Some(self.mission_rate_epilogue_for(rules, id, mission))
-    }
-
-    fn set_manager_state(&mut self, master: u64, state: ManagerState, frame: i32) {
-        if let Some(manager) = self.slave_manager_mut(master) {
-            manager.state = state;
-            manager.frame = frame;
-        }
+        Some(Self::mission_rate_epilogue_for(
+            &mut self.scenario_rng,
+            &self.substrate,
+            rules,
+            id,
+            mission,
+        ))
     }
 
     /// The master's drop cell ([`deploy_center`]).
@@ -1232,22 +1252,7 @@ impl Simulation {
         ) {
             log::debug!("slave {slave} could not be sent to {cell:?}: {cause}");
         }
-        self.queue_slave_mission(slave, MissionType::Move);
-    }
-
-    fn queue_slave_mission(&mut self, slave: u64, mission: MissionType) {
-        if let Some(entity) = self.substrate.entities.get_mut(slave) {
-            queue_entity_mission_deferred(entity, MissionId::from_known(mission));
-        }
-    }
-
-    /// `0x00522D00`: queue Harvest unless it is already the mission.
-    fn slave_start_harvest(&mut self, slave: u64) {
-        if let Some(entity) = self.substrate.entities.get_mut(slave)
-            && entity.mission.current().known() != Some(MissionType::Harvest)
-        {
-            queue_entity_mission_deferred(entity, MissionId::from_known(MissionType::Harvest));
-        }
+        self.substrate.queue_slave_mission(slave, MissionType::Move);
     }
 
     /// `0x00522D30`: Tiberium_Load (`0x00708BC0`, the stored amount over
@@ -1335,6 +1340,7 @@ impl Simulation {
                 log::debug!("slave {slave} did not scatter: {cause}");
             }
             if let Some(slot) = self
+                .substrate
                 .slave_manager_mut(master)
                 .and_then(|manager| manager.nodes.get_mut(index))
             {
@@ -1567,7 +1573,7 @@ impl Simulation {
             return;
         };
         let now = self.now_frame();
-        if let Some(manager) = self.slave_manager_mut(master)
+        if let Some(manager) = self.substrate.slave_manager_mut(master)
             && let Some(node) = manager
                 .nodes
                 .iter_mut()
@@ -1678,7 +1684,7 @@ impl Simulation {
             && let Some(entity) = self.substrate.entities.get(slave)
         {
             self.sound_events
-                .push(SimSoundEvent::voc_at(sound, &entity.position));
+                .emit(SimSoundEvent::voc_at(sound, &entity.position));
         }
     }
 
@@ -1753,7 +1759,8 @@ impl Simulation {
             .slave_manager(master)
             .is_some_and(|manager| manager.state == ManagerState::Ready)
         {
-            self.set_manager_state(master, ManagerState::Deployed, i32::MAX);
+            self.substrate
+                .set_manager_state(master, ManagerState::Deployed, i32::MAX);
             self.reset_live_slaves(master, rules, frame_effects);
         }
     }
@@ -1792,6 +1799,31 @@ impl Simulation {
         }
         if let Some(entity) = self.substrate.entities.get_mut(to) {
             entity.slave_manager = Some(manager);
+        }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    fn slave_manager_mut(&mut self, master: u64) -> Option<&mut SlaveManager> {
+        self.entities.get_mut(master)?.slave_manager.as_mut()
+    }
+    fn set_manager_state(&mut self, master: u64, state: ManagerState, frame: i32) {
+        if let Some(manager) = self.slave_manager_mut(master) {
+            manager.state = state;
+            manager.frame = frame;
+        }
+    }
+    fn queue_slave_mission(&mut self, slave: u64, mission: MissionType) {
+        if let Some(entity) = self.entities.get_mut(slave) {
+            queue_entity_mission_deferred(entity, MissionId::from_known(mission));
+        }
+    }
+    /// `0x00522D00`: queue Harvest unless it is already the mission.
+    fn slave_start_harvest(&mut self, slave: u64) {
+        if let Some(entity) = self.entities.get_mut(slave)
+            && entity.mission.current().known() != Some(MissionType::Harvest)
+        {
+            queue_entity_mission_deferred(entity, MissionId::from_known(MissionType::Harvest));
         }
     }
 }

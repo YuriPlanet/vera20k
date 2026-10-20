@@ -371,17 +371,6 @@ impl Simulation {
             }
         }
     }
-    pub(super) fn spotlights_pointer_expired(&mut self, id: u64) {
-        //436A00 always nulls matching parent/target, regardless of control flag.
-        for light in self.substrate.spotlights.values_mut() {
-            if light.parent == Some(id) {
-                light.parent = None;
-            }
-            if light.target == Some(id) {
-                light.target = None;
-            }
-        }
-    }
     fn spotlight_candidates(
         &self,
         coord: [i32; 3],
@@ -420,7 +409,7 @@ impl Simulation {
                             EntityCategory::Unit | EntityCategory::Infantry
                         )
                         && !crate::sim::combat::combat_weapon::is_ally_by_object(
-                            Some(&self.house_alliances),
+                            Some(self.house_alliances.as_map()),
                             &self.interner,
                             owner,
                             e.owner(),
@@ -578,6 +567,20 @@ impl Simulation {
                 });
             if seen {
                 self.dispatch_object_tag_event(parent_id, 35, Some(parent_id), None, context);
+            }
+        }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    pub(super) fn spotlights_pointer_expired(&mut self, id: u64) {
+        //436A00 always nulls matching parent/target, regardless of control flag.
+        for light in self.spotlights.values_mut() {
+            if light.parent == Some(id) {
+                light.parent = None;
+            }
+            if light.target == Some(id) {
+                light.target = None;
             }
         }
     }

@@ -305,7 +305,7 @@ pub(crate) fn place_production_with_overlays(
                         sim.resolved_terrain.as_ref(),
                     );
                     sim.sound_events
-                        .push(crate::sim::world::SimSoundEvent::UnitComplete {
+                        .emit(crate::sim::world::SimSoundEvent::UnitComplete {
                             owner: owner_id,
                             radar: crate::sim::radar::RadarEventRequest::new(
                                 crate::sim::radar::RadarEventType::UnitReady,
@@ -401,8 +401,8 @@ pub(crate) fn place_production_with_overlays(
         // captured before entry. Physical deletion belongs to725C70.
         let object = held.release_consumed_wall(sim, rules, effects);
         sim.sound_events
-            .push(crate::sim::world::SimSoundEvent::BuildingPlaced { owner: owner_id });
-        sim.lifecycle_outputs.push(
+            .emit(crate::sim::world::SimSoundEvent::BuildingPlaced { owner: owner_id });
+        sim.lifecycle_outputs.emit(
             crate::sim::world::LifecycleOutput::BuildingPlacementSucceeded { owner: owner_id },
         );
         crate::sim::radio::transmit_to_contact(
@@ -502,9 +502,9 @@ pub(crate) fn place_production_with_overlays(
     // `0x004FB2CC..0x004FB314`: BuildingSlam follows every successful
     // Unlimbo, before the yard's FirstContact BREAK, whatever the release.
     sim.sound_events
-        .push(crate::sim::world::SimSoundEvent::BuildingPlaced { owner: owner_id });
+        .emit(crate::sim::world::SimSoundEvent::BuildingPlaced { owner: owner_id });
     sim.lifecycle_outputs
-        .push(crate::sim::world::LifecycleOutput::BuildingPlacementSucceeded { owner: owner_id });
+        .emit(crate::sim::world::LifecycleOutput::BuildingPlacementSucceeded { owner: owner_id });
     crate::sim::radio::transmit_to_contact(
         sim,
         yard,
@@ -531,9 +531,9 @@ fn failed_building_unlimbo(
     effects: FrameEffects<'_>,
 ) {
     sim.sound_events
-        .push(crate::sim::world::SimSoundEvent::CannotDeployHere { owner });
+        .emit(crate::sim::world::SimSoundEvent::CannotDeployHere { owner });
     sim.lifecycle_outputs
-        .push(crate::sim::world::LifecycleOutput::BuildingPlacementRetry { owner });
+        .emit(crate::sim::world::LifecycleOutput::BuildingPlacementRetry { owner });
     crate::sim::radio::transmit_to_contact(
         sim,
         yard,
@@ -708,7 +708,7 @@ pub fn is_within_build_area(
             }
         } else if !(sim.session.game_options().build_off_ally
             && existing.eligibile_for_ally_building
-            && are_houses_friendly(&sim.house_alliances, provider_owner, owner))
+            && are_houses_friendly(sim.house_alliances.as_map(), provider_owner, owner))
         {
             continue;
         }

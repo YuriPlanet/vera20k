@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "Complete original slide engine 0x006071E0 (both directions) after the rect initializer 0x0072EC70, for the family dialogs, LAN BB/BC/BD, Westwood Online login 0x10F, lobby 0x113 and setup 0xC2/0xC9, and campaign victory 0x103 at 640x480, 800x600 and 1024x768",
+  "scope": "Complete original slide engine 0x006071E0 (both directions) after the rect initializer 0x0072EC70, for the family dialogs, LAN BB/BC/BD, Westwood Online login 0x10F, lobby 0x113, setup 0xC2/0xC9, WOL Options 0x2BC and its Sound Options 0xD6, and campaign victory 0x103 at 640x480, 800x600 and 1024x768",
   "assumptions": [
     "LAN BB/BC/BD visible ownerdraw counts are 2/2/1 plus one bottom button:60A180 requires style low bits0xB and IsWindowVisible; BB Observe6CE is hidden; record flags6228E4..62298A set D5/D6 for BC/BD, not BB, and D7 remains0",
     "Visible top-button and bottom-button counts per dialog are supplied (0xE2 5+1, 0x100 and 0x101 3+1, 0x129 1+1, 0x102 2+1, 0x94 0+1 with Load 0x40E hidden, 0xB7 1+1 with Load 0x40F counted even when disabled, 0xD5 2+1 Keyboard and Network, 0x10E 6+1 the Westwood Online welcome buttons, 0xA3 0+1 Keyboard Back, 0x6B 2+1 Use Map and Create Random Map then Cancel, 0x108 0+1 Continue, 0x105 4+1 Use Map, Load, Save and Delete Map then Cancel); the classifier callbacks 0x0060A180/0x0060A250 are not executed",
@@ -32,5 +32,5 @@
     "record_flags_end": "0x006229D4"
   },
   "replay_command": "python -m tools.storage_oracle.shell_slide_engine",
-  "payload_sha256": "aeca54937e5155f6080c874d9632e94ea9e0b2713ee384965c11a3050fbd050c"
+  "payload_sha256": "6868cd5391f5591993b26df763c309de331d29d86713f1afef33b3d97349fa60"
 }

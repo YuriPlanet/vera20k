@@ -372,7 +372,7 @@ impl Simulation {
                 self.reveal_sight_to_current_house(id, rules);
             }
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::RadarEvent {
+                .emit(crate::sim::world::SimSoundEvent::RadarEvent {
                     radar: crate::sim::radar::RadarEventRequest::new(
                         crate::sim::radar::RadarEventType::ConstructionComplete,
                         cell.0,
@@ -386,16 +386,23 @@ impl Simulation {
         }
         //446A77 invalidates retained House power and radar on every reached
         //opening (including capture), before publishing placement at446A84.
-        self.invalidate_house_power(owner, true);
+        Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.building_art.actually_placed = true;
         }
         self.add_building_sensor_array_if_powered(id, rules, registry);
-        self.announce_super_weapon_building_complete(id, rules);
+        Self::announce_super_weapon_building_complete(
+            &mut self.interner,
+            &self.substrate,
+            &mut self.sound_events,
+            id,
+            rules,
+        );
         if !captured && !scenario_initialization {
-            self.mission_spawned_entities |= crate::sim::production::spawn_building_free_unit(
-                self, id, rules, registry, effects,
-            );
+            if crate::sim::production::spawn_building_free_unit(self, id, rules, registry, effects)
+            {
+                self.note_mission_spawned_entities();
+            }
         }
     }
     fn building_anim_config(
@@ -638,7 +645,7 @@ impl Simulation {
         let Some(rules) = rules else {
             // Rules-less teardown is the defensive destructor route; ordinary
             // Anim AI and service destruction always carry the live RuleSet.
-            self.clear_building_anim_reference(expired);
+            self.substrate.clear_building_anim_reference(expired);
             return;
         };
         let Some(entity) = self.substrate.entities.get(owner) else {
@@ -701,7 +708,7 @@ impl Simulation {
             .cargo()
             .is_some_and(|cargo| !cargo.passengers().is_empty());
         let delayed_fire = self.building_anim_delayed_fire(owner, rules);
-        self.clear_building_anim_reference(expired);
+        self.substrate.clear_building_anim_reference(expired);
         let next = match slot {
             10 if unit_repair => Some((if servicing { 11 } else { 18 }, false)),
             10 if delayed_fire && completed => Some((3, garrisoned)),
@@ -714,32 +721,31 @@ impl Simulation {
             self.set_building_anim_slot(owner, slot, damaged, garrisoned, 0, rules);
         }
     }
+}
 
+impl crate::sim::world::ObjectSubstrate {
     /// Clear the source slot and its derived reverse index without generating
     /// a successor. Scalar deletion and defensive final removal use this owner.
     pub(crate) fn clear_building_anim_reference(&mut self, id: u64) {
         let slot = self
-            .substrate
             .anims
             .get_mut(id)
             .and_then(|anim| anim.take_building_slot());
         if let Some((owner, slot)) = slot
-            && let Some(entity) = self.substrate.entities.get_mut(owner)
+            && let Some(entity) = self.entities.get_mut(owner)
             && entity.building_art.anim_slots[usize::from(slot)] == Some(id)
         {
             entity.building_art.anim_slots[usize::from(slot)] = None;
         }
     }
-
     /// Rebuild an index, never infer slot selection from HP or animation names.
     /// VERA-only: the Anims' load-time reverse slot indexes, from Building+55C
     /// and the damage-fire slots (+5C8), their source of truth.
     pub(crate) fn rebuild_building_anim_slot_indices(&mut self) {
-        for anim in self.substrate.anims.values_mut() {
+        for anim in self.anims.values_mut() {
             anim.clear_slot_indexes();
         }
         let slots: Vec<_> = self
-            .substrate
             .entities
             .values()
             .flat_map(|entity| {
@@ -752,17 +758,15 @@ impl Simulation {
             })
             .collect();
         for (id, owner, slot) in slots {
-            self.substrate
-                .anims
+            self.anims
                 .get_mut(id)
                 .expect("snapshot admission validated every unique Building slot Anim")
                 .index_building_slot(owner, slot);
         }
-        for entity in self.substrate.entities.values() {
+        for entity in self.entities.values() {
             for (slot, id) in entity.damage_fires.anim_ids().iter().enumerate() {
                 if let Some(id) = id {
-                    self.substrate
-                        .anims
+                    self.anims
                         .get_mut(*id)
                         .expect("snapshot admission validated every unique damage-fire Anim")
                         .index_damage_fire_slot(entity.stable_id(), slot as u8);
@@ -1182,7 +1186,7 @@ mod slot_tests {
         let timer = sim.anim(replaced).unwrap().runtime().frame_timer;
         // This synthetic owner has never been marked; enter through the real
         // coordinate commit and verify its already retained slot moves in place.
-        let entity = sim.entities_mut().get_mut(id).unwrap();
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.lifecycle.set_in_limbo_for_test(true);
         entity.lifecycle.set_cell_marked_for_test(false);
         let outcome = sim.try_reveal_entity_with_context(
@@ -1501,7 +1505,8 @@ mod slot_tests {
             crate::sim::world::FrameEffects::default(),
         );
         let old = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
-        sim.entities_mut()
+        sim.substrate
+            .entities
             .get_mut(id)
             .unwrap()
             .health

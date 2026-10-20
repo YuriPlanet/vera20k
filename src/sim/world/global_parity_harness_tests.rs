@@ -1287,6 +1287,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     );
     assert!(
         rep.power_states
+            .map_mut_for_test()
             .values()
             .all(|s| !s.has_drained_power_source())
     );

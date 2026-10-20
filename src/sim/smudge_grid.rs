@@ -61,7 +61,7 @@ impl SmudgeObject {
 /// dispatch commits exactly one producer request, which can construct at most
 /// one Smudge, then Simulation immediately runs the common UnInit callbacks.
 pub(crate) struct SmudgeConstruction<'a> {
-    stable_ids: &'a mut u64,
+    stable_ids: &'a mut crate::sim::world::StableIdCursor,
     entities: &'a crate::sim::entity_store::EntityStore,
     native_ids: &'a mut Option<crate::sim::native_identity::NativeUniqueIdCursor>,
     scenario_init_priority: bool,
@@ -70,7 +70,7 @@ pub(crate) struct SmudgeConstruction<'a> {
 
 impl<'a> SmudgeConstruction<'a> {
     pub(crate) fn new(
-        stable_ids: &'a mut u64,
+        stable_ids: &'a mut crate::sim::world::StableIdCursor,
         entities: &'a crate::sim::entity_store::EntityStore,
         native_ids: &'a mut Option<crate::sim::native_identity::NativeUniqueIdCursor>,
         scenario_init_priority: bool,
@@ -93,8 +93,7 @@ impl<'a> SmudgeConstruction<'a> {
             self.constructed_id.is_none(),
             "one smudge per producer request"
         );
-        let stable_id =
-            crate::sim::world::ObjectSubstrate::allocate_stable_id(self.stable_ids, self.entities);
+        let stable_id = self.stable_ids.allocate(self.entities);
         let native_unique_id =
             crate::sim::native_identity::NativeUniqueIdCursor::assign_runtime(self.native_ids);
         let previous = grid.objects.insert(

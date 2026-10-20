@@ -80,5 +80,11 @@ pub(crate) fn mission_eaten(
             log::debug!("Eaten foot {id} did not scatter off its building: {cause}");
         }
     }
-    sim.mission_rate_epilogue_for(rules, id, MissionType::Eaten)
+    Simulation::mission_rate_epilogue_for(
+        &mut sim.scenario_rng,
+        &sim.substrate,
+        rules,
+        id,
+        MissionType::Eaten,
+    )
 }

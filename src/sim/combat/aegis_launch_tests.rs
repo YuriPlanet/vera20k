@@ -64,6 +64,7 @@ impl AegisScene {
         // DistributedFire's history/null setter is exercised by the joined
         // world::aegis_distributed_fire_tests production frame fixture.
         world
+            .substrate
             .mission_assign_exact(
                 aegis,
                 crate::sim::mission::MissionId::from_known(

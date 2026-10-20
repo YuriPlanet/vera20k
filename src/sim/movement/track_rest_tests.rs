@@ -381,7 +381,7 @@ fn drive_stop_rest_and_departure_survive_production_snapshot_restore() {
         restored.restore_after_snapshot_load().unwrap();
         restored.rebuild_caches_after_load(
             original.resolved_terrain.as_ref().unwrap().clone(),
-            original.terrain_speed_config.clone(),
+            original.terrain_speed_config().clone(),
             &rules,
         );
         restored

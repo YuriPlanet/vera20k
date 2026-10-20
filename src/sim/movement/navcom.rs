@@ -894,7 +894,7 @@ impl crate::sim::world::Simulation {
     /// `0x0051B1D2` and Aircraft's at once (`0x0041AA8B` -> `0x0041ADAC`).
     /// - NavComAux (`0x004D94C7`) and NavCom (`0x004D9510`) clear.
     /// - A lifted object a Magnetron still holds loses both links and may end
-    ///   its lift (`0x004D9518..0x004D953F`, [`Self::lifted_null_destination`]).
+    ///   its lift (`0x004D9518..0x004D953F`, [`ObjectSubstrate::lifted_null_destination`](crate::sim::world::ObjectSubstrate::lifted_null_destination)).
     /// - An Aircraft (What_Am_I 2) whose current (`+0xAC`) or queued
     ///   (`+0xB4`) mission is Attack and which holds a TarCom (`+0x2B4`) skips
     ///   the locomotor Stop (`0x004D9672..0x004D969C`): its Fly flies on.
@@ -916,7 +916,7 @@ impl crate::sim::world::Simulation {
             return;
         };
         publish_null_nav_com(entity);
-        self.lifted_null_destination(id);
+        self.substrate.lifted_null_destination(id);
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };

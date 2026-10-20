@@ -81,7 +81,7 @@ fn fixture_with_art(extra: &str, art: Option<&IniFile>) -> (Simulation, RuleSet)
     sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(16, 16, |x, y| {
         test_terrain_cell(x, y)
     }));
-    sim.playfield_bounds = Some(test_playfield_bounds());
+    sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim.spawn_object_at_height("GAPILE", "Americans", 10, 10, 0, 0, &rules)
         .unwrap();
@@ -98,6 +98,7 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
     instance.charge_duration = 1;
     instance.is_ready = true;
     sim.super_weapons
+        .map_mut_for_test()
         .entry(owner)
         .or_default()
         .insert(sw_type_id, instance);
@@ -941,16 +942,16 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
         cell.bridge_walkable = cell.has_bridge_deck;
         cell.bridge_deck_level = if cell.has_bridge_deck { 7 } else { 3 };
     }
-    let facts = &mut sim
-        .resolved_terrain
+    sim.resolved_terrain
         .as_mut()
         .unwrap()
         .cell_mut_for_test(5, 5)
         .unwrap()
-        .bridge_facts;
-    facts.overlay_id = Some(24);
-    facts.state_byte = 6;
-    facts.raw_flags |= 0x2000;
+        .bridge_facts
+        .raw_flags |= 0x2000;
+    let anchor = sim.overlay_cell_mut_for_test(5, 5);
+    anchor.overlay_id = Some(24);
+    anchor.overlay_data = 6;
     let state =
         BridgeRuntimeState::from_resolved_terrain(sim.resolved_terrain.as_ref().unwrap(), true, 1);
     sim.bridge_state = Some(state);

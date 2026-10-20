@@ -120,8 +120,12 @@ fn retail_rules() -> Option<RuleSet> {
 /// the diamond ends at 96, and the target (40, 40) is well inside.
 pub(super) fn world(rules: RuleSet) -> (RuleSet, Simulation, InternedId) {
     let (rules, mut sim, americans) = world_with(rules, 64, &[]);
-    sim.playfield_bounds = Some(PlayfieldBounds::from_raw_local_size(32, 32, [2, 4, 28, 22]));
-    sim.playfield_size_height = Some(32);
+    sim.set_playfield_bounds_for_test(Some(PlayfieldBounds::from_raw_local_size(
+        32,
+        32,
+        [2, 4, 28, 22],
+    )));
+    sim.set_playfield_size_height_for_test(Some(32));
     sim.fog.set_width_for_test(64);
     sim.fog.set_height_for_test(64);
     (rules, sim, americans)
@@ -192,7 +196,7 @@ pub(super) fn expected_pick(sim: &Simulation, edge: Edge, draws: usize) -> (u16,
         rng.next_u32();
     }
     find_paradrop_edge_cell(
-        sim.playfield_bounds,
+        sim.playfield_bounds(),
         sim.resolved_terrain.as_ref(),
         edge,
         &mut rng,
@@ -558,7 +562,7 @@ fn spyplane_missions_match_native() {
             assert_eq!(Edge::opposite_edge(own), opposite, "{row}");
             expected_pick(&sim, opposite, 0)
         });
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let now = sim.session.binary_frame();
 
         crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, Default::default());
@@ -653,7 +657,7 @@ fn retail_spy_plane_photographs_the_target_and_leaves() {
     let mut overfly = None;
     let mut saw_body_counter_advance = false;
     while sim.substrate.entities.contains(plane) {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
         frames += 1;
         snapshots += camera_sounds(&sim);
@@ -723,6 +727,7 @@ fn retail_spy_plane_flies_with_super_weapons_off() {
 
     let instance = sim
         .super_weapons
+        .map_mut_for_test()
         .get_mut(&americans)
         .and_then(|supers| supers.get_mut(&spy_plane))
         .unwrap();

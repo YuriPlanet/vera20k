@@ -224,6 +224,9 @@ fn assemble_type(rules: &RuleSet, type_id: &str, layers: Vec<Value>) -> Result<V
             "ui_name": object.ui_name,
             "image": object.image,
             "category": object.category,
+            "no_shadow": object.no_shadow,
+            "considered_aircraft": object.considered_aircraft,
+            "voxel_shadow_index": object.voxel_shadow_index(),
             "locomotor": object.locomotor,
             "locomotor_clsid": object.locomotor.clsid(),
             "speed_type": object.speed_type,
@@ -547,12 +550,14 @@ mod tests {
             "[VehicleTypes]\n0=UNIT\n[UNIT]\nName=Fixture unit\n\
              Locomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\n\
              BalloonHover=yes\nIsSimpleDeployer=yes\nDeployToLand=no\nHoverAttack=yes\n\
+             NoShadow=yes\nConsideredAircraft=yes\nShadowIndex=7\n\
              JumpjetTurnRate=7\nJumpjetSpeed=27\nJumpjetClimb=3.125\nJumpjetCrash=9.5\n\
              JumpjetHeight=600\nJumpjetAccel=1.25\nJumpjetWobbles=0.25\n\
              JumpjetNoWobbles=yes\nJumpjetDeviation=42\n",
         );
-        let mode =
-            IniFile::from_str("[UNIT]\nBalloonHover=no\nDeployToLand=yes\nJumpjetHeight=650\n");
+        let mode = IniFile::from_str(
+            "[UNIT]\nBalloonHover=no\nDeployToLand=yes\nJumpjetHeight=650\nNoShadow=no\n",
+        );
         let map = IniFile::from_str(
             "[UNIT]\nIsSimpleDeployer=no\nJumpjetClimb=6.5\nJumpjetSpeed=29.75\n\
              JumpjetWobbles=-0.0\nJumpJetTurnRate=99\nJumpJetAccel=99\n",
@@ -592,6 +597,11 @@ mod tests {
         assert_eq!(object["id"], "UNIT");
         assert_eq!(object["category"], "Vehicle");
         assert_eq!(object["locomotor"], "Jumpjet");
+        assert_eq!(object["no_shadow"], false);
+        assert_eq!(object["considered_aircraft"], true);
+        // ShadowIndex belongs to fixed ART, so the rules token cannot replace
+        // the native constructor default when ART supplies no value.
+        assert_eq!(object["voxel_shadow_index"], 0);
         assert_eq!(object["balloon_hover"], false);
         assert_eq!(object["is_simple_deployer"], false);
         assert_eq!(object["deploy_to_land"], true);

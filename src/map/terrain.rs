@@ -10,6 +10,7 @@
 //! ## Dependency rules
 //! - Part of map/ — reads the normalized MapClass playfield owner.
 
+#[cfg(any(test, feature = "test-support"))]
 use std::collections::BTreeMap;
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -82,26 +83,36 @@ pub struct TacticalBridgeCell {
     pub direction_zero: bool,
 }
 
-/// The tactical inverse queries current CellClass flags at each candidate and
-/// neighbor, not a map-load bridge list (original6D6760..6D6888). This borrowed
-/// interface keeps the inverse independent of its real-cell storage owner.
-pub trait TacticalBridgeLookup: std::fmt::Debug {
+/// The tactical inverse reads each candidate's live Cell+11B level and
+/// Cell+140 flags, then the cardinal neighbors (original6D674C..6D6888).
+/// Keep both on the same borrowed authority across tile changes and restore.
+pub trait TacticalCellLookup: std::fmt::Debug {
+    fn cell_level(&self, rx: u16, ry: u16) -> Option<u8>;
     fn bridge_cell(&self, rx: u16, ry: u16) -> Option<TacticalBridgeCell>;
 }
 
-/// Native oracle fixtures supply literal cells; production uses the live grid.
+/// Literal inputs to the native comparisons; production borrows its live grid.
 #[cfg(any(test, feature = "test-support"))]
-impl TacticalBridgeLookup for BTreeMap<(u16, u16), TacticalBridgeCell> {
+#[derive(Debug)]
+pub struct TacticalCellFixture<'a> {
+    pub levels: &'a BTreeMap<(u16, u16), u8>,
+    pub bridges: Option<&'a BTreeMap<(u16, u16), TacticalBridgeCell>>,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl TacticalCellLookup for TacticalCellFixture<'_> {
+    fn cell_level(&self, rx: u16, ry: u16) -> Option<u8> {
+        self.levels.get(&(rx, ry)).copied()
+    }
     fn bridge_cell(&self, rx: u16, ry: u16) -> Option<TacticalBridgeCell> {
-        self.get(&(rx, ry)).copied()
+        self.bridges?.get(&(rx, ry)).copied()
     }
 }
 
 /// Inputs for the YR-shaped tactical screen-to-cell inverse.
 #[derive(Debug, Clone, Copy)]
 pub struct TacticalInverseContext<'a> {
-    pub height_map: &'a BTreeMap<(u16, u16), u8>,
-    pub bridge_cells: Option<&'a dyn TacticalBridgeLookup>,
+    pub cells: Option<&'a dyn TacticalCellLookup>,
     pub viewport_offset_x: f32,
     pub viewport_offset_y: f32,
 }
@@ -332,9 +343,8 @@ pub fn screen_to_cell_tactical_inverse(
             continue;
         };
         let terrain_z = context
-            .height_map
-            .get(&(cell_rx, cell_ry))
-            .copied()
+            .cells
+            .and_then(|cells| cells.cell_level(cell_rx, cell_ry))
             .unwrap_or(0);
         let mut adjusted_scan_y = scan_y - f32::from(terrain_z as i8) * HEIGHT_STEP;
 
@@ -383,7 +393,7 @@ fn apply_tactical_bridge_inverse(
     context: TacticalInverseContext<'_>,
     adjusted_scan_y: &mut f32,
 ) -> Option<TacticalInverseResult> {
-    let bridge_cells = context.bridge_cells?;
+    let bridge_cells = context.cells?;
     let bridge = bridge_cells.bridge_cell(cell_rx, cell_ry)?;
     if !bridge.structural {
         return None;
@@ -404,8 +414,8 @@ fn apply_tactical_bridge_inverse(
     let dir0_open_edge = bridge.direction_zero && !dir0.is_some_and(|b| b.structural);
     let dir6_open_edge = !bridge.direction_zero && !dir6.is_some_and(|b| b.structural);
 
-    let dir2_height = tactical_neighbor_height(context.height_map, cell_rx, cell_ry, DIR_EAST);
-    let dir4_height = tactical_neighbor_height(context.height_map, cell_rx, cell_ry, DIR_SOUTH);
+    let dir2_height = tactical_neighbor_height(bridge_cells, cell_rx, cell_ry, DIR_EAST);
+    let dir4_height = tactical_neighbor_height(bridge_cells, cell_rx, cell_ry, DIR_SOUTH);
     let terrain_z_i16 = i16::from(terrain_z as i8);
     let direct_y = if bridge.direction_zero {
         !dir4_is_bridge
@@ -461,7 +471,7 @@ fn apply_tactical_bridge_inverse(
 }
 
 fn tactical_bridge_neighbor(
-    bridge_cells: &dyn TacticalBridgeLookup,
+    bridge_cells: &dyn TacticalCellLookup,
     rx: u16,
     ry: u16,
     direction: u8,
@@ -470,14 +480,9 @@ fn tactical_bridge_neighbor(
     bridge_cells.bridge_cell(nx, ny)
 }
 
-fn tactical_neighbor_height(
-    height_map: &BTreeMap<(u16, u16), u8>,
-    rx: u16,
-    ry: u16,
-    direction: u8,
-) -> u8 {
+fn tactical_neighbor_height(cells: &dyn TacticalCellLookup, rx: u16, ry: u16, direction: u8) -> u8 {
     tactical_cardinal_neighbor(rx, ry, direction)
-        .and_then(|pos| height_map.get(&pos).copied())
+        .and_then(|(rx, ry)| cells.cell_level(rx, ry))
         .unwrap_or(0)
 }
 
@@ -572,8 +577,10 @@ mod tests {
             -500.0,
             -500.0,
             TacticalInverseContext {
-                height_map: &height_map,
-                bridge_cells: None,
+                cells: Some(&crate::map::terrain::TacticalCellFixture {
+                    levels: &height_map,
+                    bridges: None,
+                }),
                 viewport_offset_x: 0.0,
                 viewport_offset_y: 0.0,
             },

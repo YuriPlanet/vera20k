@@ -422,7 +422,7 @@ impl SiteWorld for SimSiteWorld<'_> {
             terrain_object_cells: Some(sim.terrain_objects.cell_index()),
             resolved_terrain: sim.resolved_terrain.as_ref(),
             overlay_grid: sim.overlay_grid.as_ref(),
-            playfield_bounds: sim.playfield_bounds,
+            playfield_bounds: sim.playfield_bounds(),
         })
     }
 

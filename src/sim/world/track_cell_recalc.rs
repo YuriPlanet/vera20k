@@ -71,6 +71,7 @@ impl Simulation {
         if let Err(error) = (NavigationCaches {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
+            overlays: self.overlay_grid.as_ref(),
             playfield_bounds: self.playfield_bounds,
         })
         .publish_recalculated_cell_with_presence(terrain, coord, structure_blocked)

@@ -153,7 +153,7 @@ fn replay(row: &Value, plant: bool) -> Replay {
     let mut power = PowerState::default();
     power.set_total_output_for_test(int(&row["output"]));
     power.set_total_drain_for_test(int(&row["drain"]));
-    sim.power_states.insert(owner, power);
+    sim.power_states.map_mut_for_test().insert(owner, power);
     for (index, sw) in row["supers"].as_array().unwrap().iter().enumerate() {
         let id = sim.interner.intern(&format!("SW{index}"));
         let mut instance = SuperWeaponInstance::new(id, owner, 0);
@@ -162,6 +162,7 @@ fn replay(row: &Value, plant: bool) -> Replay {
         instance.set_charge_start_tick_for_test(int(&sw["start"]));
         instance.set_charge_duration_for_test(int(&sw["left"]));
         sim.super_weapons
+            .map_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(id, instance);

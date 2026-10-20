@@ -212,7 +212,7 @@ fn a_destroyed_building_explodes_per_foundation_cell_then_plays_its_destroy_anim
         let mut replay = sim.scenario_rng.clone();
         let mut marks = Vec::new();
         let mut recorded = Vec::new();
-        sim.building_destruction_anims(&rules, plant, &mut recorded, |_, request| {
+        sim.building_destruction_effects(&rules, plant, false, &mut recorded, |_, request| {
             marks.push(request)
         });
 
@@ -268,14 +268,14 @@ fn a_single_destroy_anim_still_draws_and_no_lists_draw_nothing() {
 
     let mut replay = sim.scenario_rng.clone();
     let mut recorded = Vec::new();
-    sim.building_destruction_anims(&rules, hall, &mut recorded, |_, _| {});
+    sim.building_destruction_effects(&rules, hall, false, &mut recorded, |_, _| {});
     let _pick = replay.next_u32();
     assert_eq!(sim.scenario_rng.state(), replay.state());
     assert_eq!(anims(&sim).len(), 1);
 
     let before = sim.scenario_rng.state();
     let mut recorded = Vec::new();
-    sim.building_destruction_anims(&rules, shed, &mut recorded, |_, _| {});
+    sim.building_destruction_effects(&rules, shed, false, &mut recorded, |_, _| {});
     assert!(recorded.is_empty());
     assert_eq!(sim.scenario_rng.state(), before);
     assert_eq!(anims(&sim).len(), 1);
@@ -462,14 +462,14 @@ fn low_dropped_bombs_use_class_water_splashes_without_debris() {
             })
             .collect();
         sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(20, 20, cells));
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 20,
             off_fc: -128,
             off_100: -128,
             off_104: 256,
             off_108: 256,
-        });
-        sim.playfield_size_height = Some(20);
+        }));
+        sim.set_playfield_size_height_for_test(Some(20));
         assert!(sim.rebuild_dynamic_navigation(&rules));
         let id = spawn(&mut sim, &rules, kind, 12, 12);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -810,14 +810,14 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
             })
             .collect();
         sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(20, 20, cells));
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 20,
             off_fc: -128,
             off_100: -128,
             off_104: 256,
             off_108: 256,
-        });
-        sim.playfield_size_height = Some(20);
+        }));
+        sim.set_playfield_size_height_for_test(Some(20));
         assert!(sim.rebuild_dynamic_navigation(&rules));
         let ship = spawn(&mut sim, &rules, kind, 12, 12);
         if !water {
@@ -1338,4 +1338,195 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                 && (anim.2, anim.3, anim.4) == (0, 0x600, 0)
         }));
     }
+}
+
+/// A retail skirmish arena with `kind` for the Russians at (24, 24).
+fn retail_building(
+    kind: &str,
+    seed: u64,
+) -> Option<(Simulation, RuleSet, crate::sim::pathfinding::PathGrid, u64)> {
+    let mut rules = crate::rules::retail_ini_fixture::retail_battle_rules()?.rules;
+    // The damage fires an Update lights at Health 0 (`0x0043FC39`) and the
+    // death weapon's anims need their art.
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets()?;
+    let mut roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
+    roots.extend(
+        rules
+            .general
+            .damage_fire_types
+            .iter()
+            .map(|anim| anim.name.clone()),
+    );
+    rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+    rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, seed, 48);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    let grid = sim
+        .path_grid_snapshot()
+        .map(|grid| (*grid).clone())
+        .unwrap();
+    let id = sim
+        .spawn_object(kind, "Russians", 24, 24, 0, &rules)
+        .unwrap_or_else(|| panic!("{kind} spawns"));
+    Some((sim, rules, grid, id))
+}
+
+/// A lethal direct hit with the retail `Super` warhead and no attacker.
+fn kill_retail(sim: &mut Simulation, rules: &RuleSet, id: u64, ignore_defenses: bool) {
+    let warhead = sim.interner.intern("Super");
+    assert!(rules.warhead("Super").is_some());
+    let hit = EntityDamageEvent::direct_receiver(
+        id,
+        100_000,
+        0,
+        RAD_NO_ATTACKER,
+        None,
+        warhead,
+        ReceiverCallFlags {
+            ignore_defenses,
+            arg6: false,
+        },
+    );
+    sim.commit_noncombat_aoe_hits(
+        rules,
+        None,
+        &[hit],
+        crate::sim::world::FrameEffects::default(),
+    );
+}
+
+fn infantry_ids(sim: &Simulation) -> Vec<u64> {
+    sim.substrate
+        .entities
+        .keys_sorted()
+        .into_iter()
+        .filter(|&id| {
+            sim.substrate.entities.get(id).is_some_and(|entity| {
+                entity.category() == crate::map::entities::EntityCategory::Infantry
+            })
+        })
+        .collect()
+}
+
+/// Alive at Health 0, not dying and still in the store.
+fn outlives(sim: &Simulation, id: u64) -> bool {
+    sim.substrate.entities.get(id).is_some_and(|building| {
+        building.lifecycle.object_alive()
+            && building.health.current() == 0
+            && !building.death.is_dying()
+    })
+}
+
+fn retired(sim: &Simulation, id: u64) -> bool {
+    sim.substrate
+        .entities
+        .get(id)
+        .is_none_or(|building| building.death.is_dying())
+}
+
+fn tick(sim: &mut Simulation, rules: &RuleSet, grid: &crate::sim::pathfinding::PathGrid) {
+    let commands = sim.take_due_commands();
+    sim.advance_tick(&commands, Some(rules), Some(grid), None, 33);
+}
+
+/// DestructionEffects arms a zero death fuse for an `Explodes=` type
+/// (`0x00441C43..0x00441C8C`), so ReceiveDamage leaves the retail Nuclear
+/// Reactor alive at Health 0 (`0x0044266B..0x00442690`). Its next Update
+/// limbos it and runs SpawnSurvivors a second time before its UnInit
+/// (`0x004400C5..0x004400E5`): more crew leave a frame after the blast.
+#[test]
+fn a_nuclear_reactor_outlives_its_killing_blow_and_sends_a_second_crew_round() {
+    let mut second_round = 0;
+    for seed in 1..=4 {
+        let Some((mut sim, rules, grid, reactor)) = retail_building("NANRCT", seed) else {
+            return;
+        };
+        let stage = sim
+            .substrate
+            .entities
+            .get(reactor)
+            .unwrap()
+            .native_stage()
+            .value();
+        kill_retail(&mut sim, &rules, reactor, false);
+        assert!(outlives(&sim, reactor), "seed {seed}: alive at Health 0");
+        // `0x00441C8F..0x00441CA9`: its StageClass clock stops, Value kept.
+        let clock = sim.substrate.entities.get(reactor).unwrap().native_stage();
+        assert_eq!((clock.value(), clock.rate()), (stage, 0));
+        assert!(
+            !sim.substrate
+                .entities
+                .get(reactor)
+                .unwrap()
+                .no_survivor
+                .is_set()
+        );
+        let before = infantry_ids(&sim);
+        tick(&mut sim, &rules, &grid);
+        assert!(retired(&sim, reactor), "seed {seed}: its Update retires it");
+        second_round += infantry_ids(&sim)
+            .iter()
+            .filter(|id| !before.contains(id))
+            .count();
+    }
+    assert!(second_round > 0, "the seeds exercise a second crew round");
+}
+
+/// The killing call's IgnoreDefenses becomes NoSurvivor (`0x00441F0B`) and
+/// holds for the second round as well (How_Many_Survivors `0x00451334`).
+#[test]
+fn an_ignore_defenses_kill_leaves_a_reactor_no_survivor_in_either_round() {
+    for seed in 1..=4 {
+        let Some((mut sim, rules, grid, reactor)) = retail_building("NANRCT", seed) else {
+            return;
+        };
+        let before = infantry_ids(&sim);
+        kill_retail(&mut sim, &rules, reactor, true);
+        assert!(outlives(&sim, reactor));
+        assert!(
+            sim.substrate
+                .entities
+                .get(reactor)
+                .unwrap()
+                .no_survivor
+                .is_set()
+        );
+        tick(&mut sim, &rules, &grid);
+        assert!(retired(&sim, reactor));
+        assert_eq!(infantry_ids(&sim), before, "seed {seed}: no crew");
+    }
+}
+
+/// Any other building gets an 8-frame fuse and ReceiveDamage UnInits it at
+/// once (`0x0044269A`).
+#[test]
+fn a_power_plant_dies_with_its_killing_blow() {
+    let Some((mut sim, rules, _, plant)) = retail_building("NAPOWR", 1) else {
+        return;
+    };
+    kill_retail(&mut sim, &rules, plant, false);
+    assert!(retired(&sim, plant));
+}
+
+/// A building whose Get_Mission is Selling gets the zero fuse too
+/// (`0x00441C43`), whatever its type.
+#[test]
+fn a_power_plant_killed_while_selling_outlives_the_blow_until_its_update() {
+    let Some((mut sim, rules, grid, plant)) = retail_building("NAPOWR", 1) else {
+        return;
+    };
+    let now = sim.session.binary_frame();
+    sim.substrate.mission_assign_exact(
+        plant,
+        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Selling),
+        now,
+    )
+    .unwrap();
+    kill_retail(&mut sim, &rules, plant, false);
+    assert!(outlives(&sim, plant));
+    tick(&mut sim, &rules, &grid);
+    assert!(retired(&sim, plant));
 }

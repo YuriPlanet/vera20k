@@ -105,7 +105,7 @@ pub fn flood(
 /// Install the arena on `sim`, with commands executing on the next tick, and
 /// return its path grid.
 pub fn flat_arena(sim: &mut Simulation, rules: &RuleSet) -> PathGrid {
-    sim.input_delay_ticks = 0;
+    sim.set_input_delay_ticks(0);
     flat_ground(sim, rules)
 }
 
@@ -119,8 +119,8 @@ fn flat_ground_with_size(sim: &mut Simulation, rules: &RuleSet, size: u16) -> Pa
     sim.session.set_map_width_for_test(size);
     sim.session.set_map_height_for_test(size);
     sim.install_resolved_terrain_for_new_map(clear_ground(size));
-    sim.playfield_bounds = Some(OPEN_PLAYFIELD);
-    sim.playfield_size_height = Some(20);
+    sim.set_playfield_bounds_for_test(Some(OPEN_PLAYFIELD));
+    sim.set_playfield_size_height_for_test(Some(20));
     install_empty_arena_navigation(sim, rules, size);
     assert!(sim.rebuild_dynamic_navigation(rules));
     sim.path_grid_snapshot()
@@ -151,7 +151,7 @@ fn install_empty_arena_navigation(sim: &mut Simulation, rules: &RuleSet, size: u
         crate::test_fixture::once_per_process(("empty arena", size, dummy.state_words()), || {
             let mut probe = Simulation::with_seed(0);
             probe.install_resolved_terrain_for_new_map(clear_ground(size));
-            probe.playfield_bounds = Some(OPEN_PLAYFIELD);
+            probe.set_playfield_bounds_for_test(Some(OPEN_PLAYFIELD));
             let probe_dummy = probe.resolved_terrain.as_ref()?.shared_cell_dummy();
             probe_dummy.adopt_prepared_load_state(&dummy);
             assert!(probe.rebuild_dynamic_navigation(rules));
@@ -223,17 +223,18 @@ pub fn supply_native_map(sim: &mut Simulation) {
             native_zones(&grid, terrain)
         });
     }
-    if sim.playfield_bounds.is_none() {
+    if sim.playfield_bounds().is_none() {
         let span = size.0.max(size.1);
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
             base: size.0,
             off_fc: -span,
             off_100: -span,
             off_104: span * 2,
             off_108: span * 2,
-        });
+        }));
     }
-    sim.playfield_size_height.get_or_insert(size.1);
+    sim.playfield_size_height_mut_for_test()
+        .get_or_insert(size.1);
     sim.install_fixture_path_grid(Some(&grid));
 }
 

@@ -59,6 +59,10 @@ pub struct HouseDefinition {
     pub player_control: Option<bool>,
     /// Scenario-authored `IQ=` read into HouseClass CurrentIQ (ReadInt over 0).
     pub iq: i32,
+    /// `UIName=`, the CSF key Read_Scenario_INI reads into +0x16009
+    /// (`0x00500C5D..0x00500C77`, 0x20 bytes, defaulting to the zeroed field).
+    #[serde(default)]
+    pub ui_name: Option<String>,
     /// ReadHousesList475260 result, resolved against the complete exact-name
     /// roster. Unknown tokens set bit31; the graph projection admits only
     /// present, non-self House indices.
@@ -283,6 +287,7 @@ pub fn parse_house_roster(
         let side = fields.read_name("Side", 0x80).map(str::to_string);
         let player_control = fields.read_bool_value("PlayerControl");
         let iq = fields.read_int("IQ", 0);
+        let ui_name = fields.read_name("UIName", 0x20).map(str::to_string);
         let base_plan = parse_scenario_base_plan(section, rules);
 
         houses.push(HouseDefinition {
@@ -292,6 +297,7 @@ pub fn parse_house_roster(
             side,
             player_control,
             iq,
+            ui_name,
             allies: 0,
             base_plan,
         });
@@ -472,6 +478,18 @@ mod tests {
             "Americans",
             "Russians"
         ));
+    }
+
+    #[test]
+    fn ui_name_reads_at_most_31_bytes_and_empty_is_absent() {
+        // 500C5D..500C77: ReadString into a 0x20-byte buffer.
+        let long = "K".repeat(40);
+        let ini = IniFile::from_str(&format!(
+            "[Houses]\n0=A\n1=B\n[A]\nUIName={long}\n[B]\nUIName=\n"
+        ));
+        let roster = parse_house_roster(&ini, &test_schemes(), None);
+        assert_eq!(roster.houses[0].ui_name.as_deref(), Some(&long[..31]));
+        assert_eq!(roster.houses[1].ui_name, None);
     }
 
     #[test]

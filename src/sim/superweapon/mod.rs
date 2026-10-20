@@ -47,6 +47,8 @@ pub mod psychic_dominator;
 mod psychic_dominator_tests;
 pub mod psychic_reveal;
 mod spy_plane;
+mod two_stage;
+pub use two_stage::PaidSuperWeaponSelection;
 #[cfg(test)]
 mod spy_plane_tests;
 mod targeting;
@@ -61,6 +63,39 @@ use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::native_x87::{NativeF32Bits, X87Chop53, X87Ordering};
+
+/// The `[SuperWeaponTypes]` entry at a type's `PreDependent=` index: the
+/// Super Fire_SW pairs a `PostClick=` type with (`HouseClass+0x258` indexed by
+/// `Type+0xF0`, `0x004FAE6C..0x004FAE7E`).
+pub fn pre_dependent<'r>(
+    rules: &'r RuleSet,
+    sw: &SuperWeaponType,
+) -> Option<(&'r str, &'r SuperWeaponType)> {
+    let name = rules
+        .super_weapon_order
+        .get(usize::try_from(sw.pre_dependent).ok()?)?;
+    Some((name.as_str(), rules.super_weapon(name)?))
+}
+
+/// The source of a paid two-stage pair (VERA extension, Ares settlement): a
+/// `PostClick=` type whose [`pre_dependent`] pair carries money on either
+/// side. Stock zero-cost pairs answer `None` and keep the native path.
+pub fn paid_pair_source<'r>(
+    rules: &'r RuleSet,
+    sw: &SuperWeaponType,
+) -> Option<(&'r str, &'r SuperWeaponType)> {
+    if !sw.post_click {
+        return None;
+    }
+    pre_dependent(rules, sw).filter(|(_, source)| source.money_amount != 0 || sw.money_amount != 0)
+}
+
+/// The type whose money/refusal settings final activation uses. PostClick
+/// borrows the source, including a zero source amount; it never adds its fee.
+/// Rule-only presentation and runtime views share this same interpretation.
+pub fn financial_type<'a>(rules: &'a RuleSet, sw: &'a SuperWeaponType) -> &'a SuperWeaponType {
+    paid_pair_source(rules, sw).map_or(sw, |(_, source)| source)
+}
 
 /// Leptons `SuperClass::Launch` raises an invoke animation above its cell.
 const INVOKE_ANIM_Z_LIFT_LEPTONS: i32 = 5;
@@ -192,6 +227,83 @@ fn strength_receiver_event(
     ))
 }
 
+/// A House's super weapons, keyed by type.
+pub(crate) type HouseSuperWeapons = std::collections::BTreeMap<InternedId, SuperWeaponInstance>;
+
+/// Every House's super weapons. The HouseClass constructor's Supers vector
+/// ([`construct_house_supers`]) installs a House's set once; nothing adds or
+/// removes a type afterwards, and instances change only through their own
+/// operations.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct SuperWeapons {
+    by_house: std::collections::BTreeMap<InternedId, HouseSuperWeapons>,
+}
+
+impl SuperWeapons {
+    pub(crate) fn get(&self, house: &InternedId) -> Option<&HouseSuperWeapons> {
+        self.by_house.get(house)
+    }
+
+    pub(crate) fn instance_mut(
+        &mut self,
+        house: &InternedId,
+        ty: &InternedId,
+    ) -> Option<&mut SuperWeaponInstance> {
+        self.by_house.get_mut(house)?.get_mut(ty)
+    }
+
+    /// A House's instances in type order; the set itself stays fixed.
+    #[cfg(feature = "debug-tools")]
+    pub(crate) fn house_instances_mut(
+        &mut self,
+        house: &InternedId,
+    ) -> impl Iterator<Item = (&InternedId, &mut SuperWeaponInstance)> {
+        self.by_house
+            .get_mut(house)
+            .into_iter()
+            .flat_map(|supers| supers.iter_mut())
+    }
+
+    pub(crate) fn iter(
+        &self,
+    ) -> std::collections::btree_map::Iter<'_, InternedId, HouseSuperWeapons> {
+        self.by_house.iter()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.by_house.is_empty()
+    }
+
+    /// The HouseClass constructor's Supers vector: each House's set, once.
+    fn install_house(&mut self, house: InternedId, supers: HouseSuperWeapons) {
+        assert!(
+            self.by_house.insert(house, supers).is_none(),
+            "a House constructs its Supers once"
+        );
+    }
+
+    /// Read view for the app.
+    pub(crate) fn as_map(&self) -> &std::collections::BTreeMap<InternedId, HouseSuperWeapons> {
+        &self.by_house
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn map_mut_for_test(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<InternedId, HouseSuperWeapons> {
+        &mut self.by_house
+    }
+}
+
+impl std::ops::Index<&InternedId> for SuperWeapons {
+    type Output = HouseSuperWeapons;
+
+    fn index(&self, house: &InternedId) -> &HouseSuperWeapons {
+        &self.by_house[house]
+    }
+}
+
 /// Per-house, per-superweapon-type runtime state.
 ///
 /// Tracks charging progress, readiness, and power suspension.
@@ -263,6 +375,10 @@ pub struct SuperWeaponInstance {
     /// new one. None when that grant did not list it.
     #[serde(default)]
     timer_place: Option<u32>,
+    #[serde(default)]
+    paid_sequence: u64,
+    #[serde(default)]
+    paid_selection: Option<PaidSuperWeaponSelection>,
 }
 
 fn idle_fade() -> i32 {
@@ -435,6 +551,8 @@ impl SuperWeaponInstance {
             fade_countdown: idle_fade(),
             fade_coords: [0; 3],
             timer_place: None,
+            paid_sequence: 0,
+            paid_selection: None,
         }
     }
 
@@ -599,6 +717,7 @@ impl SuperWeaponInstance {
     /// timer list; its timer and hold stay as they were. The entry stays; a
     /// later grant activates it again.
     pub fn deactivate(&mut self) {
+        self.paid_selection = None;
         self.is_active = false;
         self.is_ready = false;
     }
@@ -621,6 +740,9 @@ impl SuperWeaponInstance {
         }
         self.store_charge_timer(timer);
         self.is_suspended = on;
+        if on {
+            self.paid_selection = None;
+        }
         true
     }
 
@@ -703,6 +825,7 @@ impl SuperWeaponInstance {
     /// `CameoChargeState` (`+0x78`, -1) is the sidebar's. The grant, the hold
     /// and the drain state stay.
     fn reset(&mut self, sw: &SuperWeaponType, current_frame: u32) {
+        self.paid_selection = None;
         let frame = current_frame as i32;
         let stopped = self.charge_start_tick == -1;
         self.is_ready = false;
@@ -744,13 +867,21 @@ pub(crate) fn reset_super(sim: &mut Simulation, rules: &RuleSet, owner: Interned
     let (Some(type_id), Some(sw)) = (sim.interner.get(sw_type), rules.super_weapon(sw_type)) else {
         return;
     };
-    sim.release_super_anim(owner, type_id);
-    let frame = sim.session.binary_frame();
-    if let Some(instance) = sim
-        .super_weapons
-        .get_mut(&owner)
-        .and_then(|weapons| weapons.get_mut(&type_id))
+    if let Some(selection) = sim.paid_super_weapon_selection(owner)
+        && (selection.source == type_id || selection.destination == type_id)
     {
+        Simulation::cancel_paid_super_weapon_selection(
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            &mut sim.super_weapons,
+            rules,
+            owner,
+            selection,
+        );
+    }
+    Simulation::release_super_anim(&mut sim.substrate, &mut sim.super_weapons, owner, type_id);
+    let frame = sim.session.binary_frame();
+    if let Some(instance) = sim.super_weapons.instance_mut(&owner, &type_id) {
         instance.reset(sw, frame);
     }
 }
@@ -864,8 +995,8 @@ pub(crate) fn supers_of_kind_remaining(
 /// The place a Super joining the timer list takes: after every place taken.
 fn next_timer_place(sim: &Simulation) -> u32 {
     sim.super_weapons
-        .values()
-        .flat_map(|weapons| weapons.values())
+        .iter()
+        .flat_map(|(_, weapons)| weapons.values())
         .filter_map(|instance| instance.timer_place)
         .max()
         .map_or(0, |place| place + 1)
@@ -994,14 +1125,21 @@ pub fn superweapon_views_for_owner(
         let Some(sw_type) = rules.super_weapon(type_id_str) else {
             continue;
         };
+        let paid_source = paid_pair_source(rules, sw_type);
+        let money_type = financial_type(rules, sw_type);
         views.push(SuperWeaponView {
             type_id: inst.type_id,
             display_name: type_id_str.to_string(),
             progress: inst.charge_progress(sim.session.binary_frame(), inst.recharge_time(sw_type)),
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
-            can_fire: inst.can_fire(sw_type),
-            can_afford: money::can_afford(sim, *owner, sw_type),
+            can_fire: if paid_source.is_some() {
+                sim.paid_super_weapon_selection(*owner)
+                    .is_some_and(|selection| selection.destination == inst.type_id)
+            } else {
+                inst.can_fire(sw_type)
+            },
+            can_afford: money::can_afford(sim, *owner, money_type),
             sidebar_image: sw_type.sidebar_image.clone(),
         });
     }
@@ -1021,8 +1159,7 @@ pub(crate) fn tick_house_superweapon_instances(
         let (fade, ready) = {
             let instance = sim
                 .super_weapons
-                .get_mut(&owner)
-                .and_then(|weapons| weapons.get_mut(&type_id))
+                .instance_mut(&owner, &type_id)
                 .expect("selected retained Super");
             // The fade head precedes the granted/held/readiness gates.
             let fade = instance.step_fade();
@@ -1043,7 +1180,7 @@ pub(crate) fn tick_house_superweapon_instances(
         {
             let (rx, ry, sub_x, sub_y, _) =
                 crate::sim::anim_class::AnimWorldCoord { x, y, z }.to_cell_sub_z();
-            sim.sound_events.push(SimSoundEvent::VocAt {
+            sim.sound_events.emit(SimSoundEvent::VocAt {
                 sound_id,
                 audible_to: None,
                 rx,
@@ -1054,7 +1191,7 @@ pub(crate) fn tick_house_superweapon_instances(
             });
         }
         if ready {
-            sim.sound_events.push(SimSoundEvent::SuperWeaponReady {
+            sim.sound_events.emit(SimSoundEvent::SuperWeaponReady {
                 owner,
                 sw_type: type_id,
             });
@@ -1090,10 +1227,7 @@ pub(crate) fn construct_house_supers(
             "distinct Super type registry"
         );
     }
-    assert!(
-        sim.super_weapons.insert(owner, supers).is_none(),
-        "a House constructs its Supers once"
-    );
+    sim.super_weapons.install_house(owner, supers);
 }
 
 /// Supers are constructed by the scenario House owner before map objects.
@@ -1129,7 +1263,7 @@ pub(crate) fn tick_active_superweapon_effects(
         sim.update_lighting();
     }
     let dominator = psychic_dominator::process(sim, rules, overlay_registry, frame_effects);
-    let chrono = sim.process_chrono_screen_effect();
+    let chrono = sim.session.process_chrono_screen_effect();
     sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
     unit_delivery::tick(sim, rules, overlay_registry, frame_effects);
@@ -1268,6 +1402,7 @@ fn provider_supers(
 /// Native code reads the shared building providers and retained power totals;
 /// it does not grant or construct. Changed hold/loss re-dirties House+1FC.
 pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
+    let paid_before = sim.paid_super_weapon_selection(owner);
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
@@ -1282,37 +1417,89 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
             continue;
         };
         let allowed = sim.session.game_options().super_weapons || !sw.disableable_from_shell;
+        let frame = sim.session.binary_frame();
         let changed = {
             let instance = sim
                 .super_weapons
-                .get_mut(&owner)
-                .and_then(|weapons| weapons.get_mut(&type_id))
+                .instance_mut(&owner, &type_id)
                 .expect("selected retained Super");
-            if !instance.is_active {
-                false
-            } else if !defeated && (!instance.can_lose || instance.one_time) {
-                //50AF5B..50AF78 bypasses shell/provider/power checks, but a
-                //defeated House still reaches the ordinary Deactivate owner.
-                false
-            } else if defeated || !allowed || !provided.contains(&type_id) {
-                instance.deactivate();
-                true
-            } else if !low_power && online.contains(&type_id) {
-                instance.suspend(false, sw.manual_control, sim.session.binary_frame())
-            } else if sw.is_powered {
-                instance.suspend(true, sw.manual_control, sim.session.binary_frame())
-            } else {
-                false
+            let hold = super_hold(
+                instance,
+                sw,
+                defeated,
+                allowed,
+                provided.contains(&type_id),
+                !low_power && online.contains(&type_id),
+            );
+            match hold {
+                SuperHold::Unchanged => false,
+                SuperHold::Deactivate => {
+                    instance.deactivate();
+                    true
+                }
+                SuperHold::Suspend(on) => instance.suspend(on, sw.manual_control, frame),
             }
         };
         if changed {
-            sim.request_house_tech_tree_recheck(owner);
+            sim.houses.request_house_tech_tree_recheck(owner);
             sim.sound_events
-                .push(SimSoundEvent::SuperWeaponStatusChanged {
+                .emit(SimSoundEvent::SuperWeaponStatusChanged {
                     owner,
                     sw_type: type_id,
                 });
         }
+    }
+    if let Some(selection) = paid_before
+        && sim.paid_super_weapon_selection(owner) != Some(selection)
+    {
+        Simulation::release_super_anim(
+            &mut sim.substrate,
+            &mut sim.super_weapons,
+            owner,
+            selection.source,
+        );
+        sim.sound_events
+            .emit(SimSoundEvent::SuperWeaponStatusChanged {
+                owner,
+                sw_type: selection.destination,
+            });
+    }
+}
+
+/// One instance's outcome in [`update_owned_supers`]'s hold pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SuperHold {
+    Unchanged,
+    Deactivate,
+    /// Suspend (`true`) or resume (`false`) the charge.
+    Suspend(bool),
+}
+
+/// The hold pass's decision for one retained instance: `allowed` is the shell
+/// option, `provided` a live provider building, `powered_online` an online
+/// provider while the House is not low on power.
+pub(super) fn super_hold(
+    instance: &SuperWeaponInstance,
+    sw: &SuperWeaponType,
+    defeated: bool,
+    allowed: bool,
+    provided: bool,
+    powered_online: bool,
+) -> SuperHold {
+    if !instance.is_active {
+        SuperHold::Unchanged
+    } else if !defeated && (!instance.can_lose || instance.one_time) {
+        //50AF5B..50AF78 bypasses shell/provider/power checks, but a
+        //defeated House still reaches the ordinary Deactivate owner.
+        SuperHold::Unchanged
+    } else if defeated || !allowed || !provided {
+        SuperHold::Deactivate
+    } else if powered_online {
+        SuperHold::Suspend(false)
+    } else if sw.is_powered {
+        SuperHold::Suspend(true)
+    } else {
+        SuperHold::Unchanged
     }
 }
 
@@ -1367,11 +1554,7 @@ fn grant_super(
         return false;
     };
     let place = next_timer_place(sim);
-    let Some(instance) = sim
-        .super_weapons
-        .get_mut(&owner)
-        .and_then(|weapons| weapons.get_mut(&type_id))
-    else {
+    let Some(instance) = sim.super_weapons.instance_mut(&owner, &type_id) else {
         return false;
     };
     if !instance.apply_grant_state(sw, sim.session.binary_frame(), one_time, on_hold) {
@@ -1379,7 +1562,7 @@ fn grant_super(
     }
     instance.timer_place = (sw.show_timer && !passive).then_some(place);
     if !sw.manual_control {
-        sim.release_super_anim(owner, type_id);
+        Simulation::release_super_anim(&mut sim.substrate, &mut sim.super_weapons, owner, type_id);
     }
     true
 }
@@ -1406,9 +1589,7 @@ pub(crate) fn trigger_grant_super(
     grant_super(sim, rules, owner, type_id, one_time, false);
     if !one_time {
         sim.super_weapons
-            .get_mut(&owner)
-            .unwrap()
-            .get_mut(&type_id)
+            .instance_mut(&owner, &type_id)
             .unwrap()
             .can_lose = false;
     }

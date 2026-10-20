@@ -342,11 +342,11 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
     let mut sim = Simulation::new();
     // Explicit fixture Map Size=(6,4), separate from the generous LocalSize
     // bounds. Foot's production precheck consumes both header dimensions.
-    sim.playfield_bounds = Some(PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
         base: 6,
         ..rectangular_spawn_bounds(6)
-    });
-    sim.playfield_size_height = Some(4);
+    }));
+    sim.set_playfield_size_height_for_test(Some(4));
     sim.install_resolved_terrain_for_new_map(terrain);
     sim.zone_grid = Some(zone_grid);
     let engineer_id = sim

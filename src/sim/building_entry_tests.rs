@@ -893,12 +893,13 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
         )),
         "entry sound uses the arriving Foot's GetCoords"
     );
-    sim.mission_assign_exact(
-        reactor,
-        MissionId::from_known(MissionType::Unload),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            reactor,
+            MissionId::from_known(MissionType::Unload),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
 
     // Mission_Unload's scan uses the building Location (`vt+0x1B8`),
     // distinct from GetCoords' foundation center used by its sound tail.
@@ -1002,7 +1003,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
     expected_rng.next_range_u32_inclusive(0, 2);
     let successful_state = expected_rng.logical_state();
 
-    sim.power_states.insert(
+    sim.power_states.map_mut_for_test().insert(
         owner,
         crate::sim::power_system::PowerState::settled_for_test(),
     );
@@ -1119,7 +1120,7 @@ fn a_bio_reactor_unlimbo_failure_keeps_the_placement_draw_and_restores_cargo() {
         .unwrap()
         .lifecycle
         .set_cell_marked_for_test(true);
-    sim.power_states.insert(
+    sim.power_states.map_mut_for_test().insert(
         owner,
         crate::sim::power_system::PowerState::settled_for_test(),
     );
@@ -1467,7 +1468,6 @@ fn absorbed_infantry_tracking_is_restored_after_building_death_and_sale() {
                 &rules,
                 None,
                 reactor,
-                false,
                 |_, _| {},
                 crate::sim::world::FrameEffects::default(),
             );
@@ -1502,7 +1502,7 @@ fn a_bio_reactor_unload_only_dirties_power_for_positive_extra_power() {
         let owner = sim.interner.get("YuriCountry").unwrap();
         let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
         absorb(&mut sim, &rules, reactor, 1);
-        sim.power_states.insert(
+        sim.power_states.map_mut_for_test().insert(
             owner,
             crate::sim::power_system::PowerState::settled_for_test(),
         );
@@ -1620,7 +1620,8 @@ fn a_full_bio_reactor_takes_an_arriving_contact() {
     let (mut sim, _) = arena(&rules);
     let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
     let foot = spawn(&mut sim, &rules, "INIT", "YuriCountry", 13, 10);
-    sim.mission_assign_exact(foot, MissionId::from_known(MissionType::Enter), 0)
+    sim.substrate
+        .mission_assign_exact(foot, MissionId::from_known(MissionType::Enter), 0)
         .unwrap();
     let _ = sim.assign_destination_represented(
         foot,
@@ -1788,7 +1789,7 @@ fn an_order_into_an_absorber_is_admitted_by_its_can_load() {
     assert!(!admits(&sim, tank), "a vehicle into an infantry absorber");
     assert!(!admits(&sim, guest), "an enemy house's infantryman");
     for (house, ally) in [("YURICOUNTRY", "AMERICANS"), ("AMERICANS", "YURICOUNTRY")] {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(house.to_string())
             .or_default()
             .insert(ally.to_string());
@@ -1920,7 +1921,7 @@ fn occupants_are_admitted_in_order_and_a_human_drops_its_seek() {
             true,
         );
     }
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
 
     for id in [first, second] {
         assert!(crate::sim::passenger::add_garrison_occupant(
@@ -2096,7 +2097,8 @@ fn the_guard_head_garrison_seek_answers_captures_rate() {
     let infantry = spawn(&mut sim, &rules, "E1", "YuriCountry", 10, 10);
     set_should_enter_occupiable_for_test(sim.substrate.entities.get_mut(infantry).unwrap(), true);
     let now = sim.session.binary_frame();
-    sim.mission_assign_exact(infantry, MissionId::from_known(MissionType::Guard), now)
+    sim.substrate
+        .mission_assign_exact(infantry, MissionId::from_known(MissionType::Guard), now)
         .unwrap();
     let before_rng = sim.scenario_rng.logical_state();
 
@@ -2607,12 +2609,13 @@ fn nearest_occupiable_production_matches_native_controls() {
             })
             .collect();
         let now = sim.session.binary_frame();
-        sim.mission_assign_exact(
-            foot,
-            MissionId::from_raw(row["mission"].as_i64().unwrap() as i32),
-            now,
-        )
-        .unwrap();
+        sim.substrate
+            .mission_assign_exact(
+                foot,
+                MissionId::from_raw(row["mission"].as_i64().unwrap() as i32),
+                now,
+            )
+            .unwrap();
         let nav = row["nav"].as_u64().map(|index| buildings[index as usize]);
         sim.substrate
             .entities
@@ -2713,13 +2716,13 @@ fn nearest_occupiable_uses_native_playfield_instead_of_navigation_rectangle() {
     let occupier = spawn(&mut sim, &rules, "E1", "YuriCountry", 10, 10);
     assert!(entity(&sim, building).position.rx() < grid.width());
     assert!(whole_map_garrison_seek(&mut sim, &rules, occupier));
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 1,
         off_fc: 0,
         off_100: 0,
         off_104: 1,
         off_108: 1,
-    });
+    }));
 
     assert!(!whole_map_garrison_seek(&mut sim, &rules, occupier));
     assert!(
@@ -2741,7 +2744,8 @@ fn guard_and_area_guard_retry_script64_without_a_scenario_draw() {
             true,
         );
         let now = sim.session.binary_frame();
-        sim.mission_assign_exact(occupier, MissionId::from_known(mission), now)
+        sim.substrate
+            .mission_assign_exact(occupier, MissionId::from_known(mission), now)
             .unwrap();
         let rng = sim.scenario_rng.logical_state();
 

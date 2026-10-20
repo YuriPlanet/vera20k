@@ -642,7 +642,7 @@ fn crash_fall_matches_native_frames_to_the_impact() {
         let start = sim.session.binary_frame();
         for (n, frame) in frames.iter().enumerate() {
             sim.session.set_binary_frame_for_test(start + n as u32);
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
             let impact = n + 1 == frames.len();
             let expected: Vec<i32> = frame["xyz"]
                 .as_array()
@@ -1084,8 +1084,8 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
     sim.add_entity_occupancy(1);
     // This held-aircraft midpoint follows native takeoff's tracker Add;
     // marking a Jumpjet does not manufacture that retained registration.
-    sim.aircraft_tracker_add(1);
-    assert!(sim.set_cell_air_slot((52, 52), Some(1)));
+    Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
+    assert!(sim.substrate.set_cell_air_slot((52, 52), Some(1)));
     for _ in 0..2 {
         let rider = sim
             .construct_object_limbo_at_height(
@@ -1164,7 +1164,7 @@ fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
         impact_booms: 0,
     };
     for frame in 1..40 {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let booms_before = sim
             .substrate
             .anims
@@ -1465,7 +1465,8 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
     for (mission, scans) in [(MissionType::Guard, true), (MissionType::Attack, false)] {
         let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
         let frame = sim.session.binary_frame();
-        sim.mission_assign_exact(1, MissionId::from_known(mission), frame)
+        sim.substrate
+            .mission_assign_exact(1, MissionId::from_known(mission), frame)
             .unwrap();
         // An enemy two cells east, inside `CrashGun`'s range.
         let soviets = sim.interner.intern("Soviets");

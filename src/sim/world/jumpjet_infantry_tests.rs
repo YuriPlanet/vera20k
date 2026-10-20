@@ -131,7 +131,7 @@ pub(super) fn retail_dustbowl_rocketeer()
         ("RUSSIANS", "PLAYER"),
         ("PLAYER", "RUSSIANS"),
     ] {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(house.to_string())
             .or_default()
             .insert(ally.to_string());
@@ -910,8 +910,8 @@ fn rocketeer_crash_fixture(
     if height > 0 {
         // This oracle midpoint is already airborne: native takeoff has added
         // its tracker entry before the held-cell slot is established.
-        sim.aircraft_tracker_add(1);
-        assert!(sim.set_cell_air_slot((52, 52), Some(1)));
+        crate::sim::world::Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
+        assert!(sim.substrate.set_cell_air_slot((52, 52), Some(1)));
     }
     // The row's action, started by Do_Action (forced) as the oracle starts it.
     let doing = input["doing"].as_i64().unwrap() as i32;

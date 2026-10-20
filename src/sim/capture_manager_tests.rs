@@ -261,10 +261,11 @@ fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
         house.set_is_human_for_test(input["human"] == 1);
         house.set_player_control_for_test(input["player"] == 1);
         if input["owner_allied_with_viewer"] == true {
-            sim.house_alliances
+            let viewer_name = sim.interner.resolve(viewer).to_owned();
+            sim.house_alliances_mut_for_test()
                 .entry("Americans".into())
                 .or_default()
-                .insert(sim.interner.resolve(viewer).to_owned());
+                .insert(viewer_name);
         }
         let tree = sim.interner.intern("TREE01");
         let entity = sim.substrate.entities.get_mut(target).unwrap();
@@ -282,7 +283,7 @@ fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
         // Both input values ensure this is a write, not an accidentally
         // correct constructor default. Native used a nonzero poison byte.
         for initial_hidden in [false, true] {
-            sim.set_anim_hidden(ring, initial_hidden);
+            sim.substrate.set_anim_hidden(ring, initial_hidden);
             sim.update_disguise_ring_visibility(target);
             assert_eq!(
                 u8::from(sim.anim(ring).unwrap().draw_runtime().hidden),
@@ -379,7 +380,9 @@ fn a_captured_buildings_ring_sits_height_levels_above_its_centre() {
     let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 10);
     // Built: CanCapture refuses a building still in Construction.
     let now = sim.session.binary_frame();
-    let _ = sim.mission_assign_exact(plant, MissionId::from_known(MissionType::Guard), now);
+    let _ =
+        sim.substrate
+            .mission_assign_exact(plant, MissionId::from_known(MissionType::Guard), now);
     assert!(sim.capture_unit(
         yuri,
         plant,
@@ -427,7 +430,7 @@ fn a_single_link_controller_releases_its_victim_first() {
         .ring_anim
         .unwrap();
     let mut replay = sim.scenario_rng.clone();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
 
     assert!(sim.capture_unit(
         yuri,
@@ -468,11 +471,11 @@ fn can_capture_gates() {
     assert!(!sim.can_capture(yuri, dog, &rules), "ImmuneToPsionics");
     assert!(sim.can_capture(yuri, gi, &rules));
     // An ally is not refused: only the controller's own house is.
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("YURICOUNTRY".to_string())
         .or_default()
         .insert("RUSSIANS".to_string());
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("RUSSIANS".to_string())
         .or_default()
         .insert("YURICOUNTRY".to_string());
@@ -530,7 +533,11 @@ fn can_capture_gates() {
 
     let seller = spawn(&mut sim, &rules, "E1", "Americans", 19, 12);
     let now = sim.session.binary_frame();
-    let _ = sim.mission_assign_exact(seller, MissionId::from_known(MissionType::Selling), now);
+    let _ = sim.substrate.mission_assign_exact(
+        seller,
+        MissionId::from_known(MissionType::Selling),
+        now,
+    );
     assert!(!sim.can_capture(yuri, seller, &rules), "Selling");
 }
 
@@ -559,7 +566,7 @@ fn the_controllers_death_frees_its_captives_newest_first() {
         crate::sim::world::FrameEffects::default()
     ));
     let mut replay = sim.scenario_rng.clone();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
 
     let warhead = sim.interner.intern("KILLWH");
     let hit = EntityDamageEvent::direct_receiver(
@@ -620,7 +627,7 @@ fn a_captives_death_drops_its_node_silently() {
         None,
         crate::sim::world::FrameEffects::default()
     ));
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.uninit_with_rules(gi, &rules);
     assert!(victims(&sim, tower).is_empty());
     assert!(voc_sounds(&sim).is_empty());
@@ -713,7 +720,9 @@ fn native_decide_unit_fate_corpus() {
         let mut power_state = crate::sim::power_system::PowerState::default();
         power_state.set_total_output_for_test(int("produced"));
         power_state.set_total_drain_for_test(int("drained"));
-        sim.power_states.insert(controller_house, power_state);
+        sim.power_states
+            .map_mut_for_test()
+            .insert(controller_house, power_state);
         let russians = sim.interner.get("Russians").unwrap();
         sim.houses
             .get_mut(&russians)
@@ -723,7 +732,9 @@ fn native_decide_unit_fate_corpus() {
         let mut power_state = crate::sim::power_system::PowerState::default();
         power_state.set_total_output_for_test(0);
         power_state.set_total_drain_for_test(100);
-        sim.power_states.insert(russians, power_state);
+        sim.power_states
+            .map_mut_for_test()
+            .insert(russians, power_state);
         let seed = input["seed"].as_u64().unwrap();
         sim.scenario_rng = SimRng::new(seed);
         assert_ne!(queued_mission(&sim, unit), Some(MissionType::Hunt));
@@ -987,7 +998,7 @@ fn native_overload_update_corpus() {
             }
             let health = sim.substrate.entities.get(mind).unwrap().health.current();
             let systems: Vec<u64> = sim.particle_systems().iter().map(|(&id, _)| id).collect();
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
 
             sim.capture_manager_update(
                 mind,
@@ -1727,7 +1738,7 @@ fn a_controlled_mcv_cannot_deploy_and_a_controlled_yard_cannot_repack() {
         .unwrap()
         .mcv_deploy_pending
         .set_for_test(true);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     assert!(!sim.deploy_mcv(
         mcv,
         &rules,
@@ -1757,7 +1768,11 @@ fn a_controlled_mcv_cannot_deploy_and_a_controlled_yard_cannot_repack() {
     let own = spawn(&mut sim, &rules, "GACNST", "Americans", 22, 26);
     for yard in [stolen, own] {
         let now = sim.session.binary_frame();
-        let _ = sim.mission_assign_exact(yard, MissionId::from_known(MissionType::Guard), now);
+        let _ = sim.substrate.mission_assign_exact(
+            yard,
+            MissionId::from_known(MissionType::Guard),
+            now,
+        );
     }
     assert!(sim.capture_unit(
         prime,
@@ -1804,7 +1819,7 @@ fn selling_a_psychic_tower_frees_its_captives() {
         None,
         crate::sim::world::FrameEffects::default()
     ));
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
 
     assert!(crate::sim::production::sell_building_now_for_test(
         &mut sim, &rules, tower
@@ -1837,7 +1852,9 @@ fn a_building_mid_construction_cannot_be_captured() {
     let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
     let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 10);
     let now = sim.session.binary_frame();
-    let _ = sim.mission_assign_exact(plant, MissionId::from_known(MissionType::Guard), now);
+    let _ =
+        sim.substrate
+            .mission_assign_exact(plant, MissionId::from_known(MissionType::Guard), now);
     sim.substrate
         .entities
         .get_mut(plant)
@@ -1948,7 +1965,7 @@ fn a_captive_boarding_an_absorber_is_freed_first() {
             .slot(0),
         Some(reactor)
     );
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     // PerCellProcess boards from the absorber's own foundation cell once
     // the queued Enter is current.
     let now = sim.session.binary_frame();

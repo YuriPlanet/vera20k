@@ -145,7 +145,7 @@ pub(crate) fn is_clear_to_build(
     {
         return false;
     }
-    if !crate::sim::cell_rect::retained_cell_is_in_playfield(cell, sim.playfield_bounds, cells) {
+    if !crate::sim::cell_rect::retained_cell_is_in_playfield(cell, sim.playfield_bounds(), cells) {
         return false;
     }
     // Deliberate developer override; object occupancy and bounds above still apply.
@@ -266,7 +266,7 @@ pub(crate) fn flush_for_placement(
             continue;
         };
         let allied = crate::map::houses::is_allied_with(
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             sim.interner.resolve(object.owner()),
             sim.interner.resolve(house),
         );

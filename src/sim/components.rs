@@ -749,15 +749,17 @@ impl AnimClassSpawnDescriptor {
     }
 }
 
-/// Emitted by the refinery dock state machine for EVERY due dump gate of
-/// `UnitClass::Mission_Unload @ 0x0073D630` state 3 (`HarvesterDumpRate × 900
-/// <= unit+0xF8`, `0x0073E355..0x0073E374`), including the final gate that finds
-/// no cargo. The authoritative master-frame tail consumes it to spawn the
-/// refinery smoke burst (`BuildingClass` vtable+0x468 → `0x00459900`, fired
-/// first on each gate at `0x0073E37E`), start SpecialAnim slot 10 only while
-/// none is live (`building+0x584 == NULL`, `0x0073E384`), and cut the running
-/// SpecialAnim on the empty gate (`ClearAnimSlot(0xA)`, `0x0073E530`) before
-/// the returned state hash. The queue itself is transient and serde-skipped.
+/// Test observation of EVERY due dump gate of `UnitClass::Mission_Unload @
+/// 0x0073D630` state 3 (`HarvesterDumpRate × 900 <= unit+0xF8`,
+/// `0x0073E355..0x0073E374`), including the final gate that finds no cargo.
+/// The refinery dock commits the gate's effects itself
+/// (`building_anim::begin_refinery_unload_gate`, `end_refinery_unload_empty`):
+/// the refinery smoke burst (`BuildingClass` vtable+0x468 → `0x00459900`,
+/// fired first on each gate at `0x0073E37E`), SpecialAnim slot 10 only while
+/// none is live (`building+0x584 == NULL`, `0x0073E384`), and the cut of the
+/// running SpecialAnim on the empty gate (`ClearAnimSlot(0xA)`, `0x0073E530`).
+/// The frame tail drops the event.
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BaleDepositEvent {
     /// Refinery stable_id where the bale was deposited.
@@ -772,20 +774,19 @@ pub struct BaleDepositEvent {
     pub empty: bool,
 }
 
-/// Emitted by the tank-bunker lifecycle when the walls rise (install) or fall
-/// (teardown). The authoritative frame tail creates the bunker's SpecialAnim
-/// overlays — document order within `kind == Special` decides the pair: 0/1 =
-/// walls-up, 2/3 = walls-down. `damaged` selects the `…Damaged` art variant when
-/// the building was at/below ConditionRed health at emit time. The queue is
-/// transient; its resulting overlay component participates in the frame hash.
+/// Test observation of the tank-bunker walls rising (install) or falling
+/// (teardown). The bunker link sets the wall anim slots itself
+/// (`building_anim::set_bunker_wall_slots`); `damaged` is the `…Damaged`
+/// variant choice it passed. The frame tail drops the event.
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct BunkerWallAnimEvent {
     /// Bunker building stable_id whose walls are animating.
     pub building_id: u64,
     /// `true` = walls rising (install), `false` = walls falling (teardown).
     pub up: bool,
-    /// Building was at/below ConditionRed when the event fired — use the
-    /// `…Damaged` SpecialAnim variant.
+    /// The building was at or below ConditionYellow when the event fired, so
+    /// the walls use the `…Damaged` SpecialAnim variant.
     pub damaged: bool,
 }
 

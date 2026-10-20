@@ -316,15 +316,11 @@ impl<'a> NativeCellQuery<'a> {
         }
     }
 
-    /// Retained CellClass+44, without another lookup or dummy replacement.
-    pub(crate) fn overlay_identity(&self, cell: NativeCellIdentity) -> i32 {
-        match cell {
-            NativeCellIdentity::Real(index) => self.terrain.cells[index]
-                .bridge_facts
-                .overlay_id
-                .map_or(-1, i32::from),
-            NativeCellIdentity::Dummy => self.dummy.overlay_identity_state().0,
-        }
+    /// This query's fallback CellClass+44, without another lookup or dummy
+    /// replacement. A real cell's identity belongs to the simulation's
+    /// OverlayGrid.
+    pub(crate) fn dummy_overlay_identity(&self) -> i32 {
+        self.dummy.overlay_identity_state().0
     }
 
     /// CellClass+EC through an already retained allocation identity. Reading
@@ -758,7 +754,11 @@ impl SharedCellDummy {
                 | BridgeStampSlot::Forward2
                 | BridgeStampSlot::Opposite
         ) {
-            self.write_overlay_state(facts.state_byte);
+            self.write_overlay_state(if stamp.set {
+                crate::map::bridge_facts::bridge_setter_state(stamp.direction)
+            } else {
+                0
+            });
         }
     }
 
@@ -932,13 +932,6 @@ impl ResolvedTerrainGrid {
         }
     }
 
-    pub(crate) fn native_cell_state(&self, cell: NativeCellIdentity) -> u8 {
-        match cell {
-            NativeCellIdentity::Real(index) => self.cells[index].bridge_facts.state_byte,
-            NativeCellIdentity::Dummy => self.shared_cell_dummy.overlay_identity_state().1,
-        }
-    }
-
     pub(crate) fn native_cell_anchor(
         &self,
         cell: NativeCellIdentity,
@@ -985,13 +978,6 @@ impl ResolvedTerrainGrid {
         }
     }
 
-    pub(crate) fn write_native_cell_state(&mut self, cell: NativeCellIdentity, state: u8) {
-        match cell {
-            NativeCellIdentity::Real(index) => self.cells[index].bridge_facts.state_byte = state,
-            NativeCellIdentity::Dummy => self.shared_cell_dummy.write_overlay_state(state),
-        }
-    }
-
     /// Native568E40/569760 raw Cell+11B write, without47D2B0 Recalc.
     /// Evidence: tools/spatial_oracle/bridge_repair.{py,json}. The world owns
     /// subsequent publication to current readers; retained zone inputs stay intact.
@@ -1015,25 +1001,6 @@ impl ResolvedTerrainGrid {
                 self.cells[index].bridge_facts.native_anchor = anchor
             }
             NativeCellIdentity::Dummy => self.shared_cell_dummy.write_native_anchor(anchor),
-        }
-    }
-
-    pub(crate) fn clear_native_cell_overlay(&mut self, cell: NativeCellIdentity) {
-        self.write_native_cell_overlay(cell, None);
-    }
-
-    /// Raw Cell+44 publication; derived Recalc fields remain untouched until
-    /// the caller reaches47D2B0. Ordinary repair stores all three identities first.
-    pub(crate) fn write_native_cell_overlay(
-        &mut self,
-        cell: NativeCellIdentity,
-        overlay: Option<u8>,
-    ) {
-        match cell {
-            NativeCellIdentity::Real(index) => self.cells[index].bridge_facts.overlay_id = overlay,
-            NativeCellIdentity::Dummy => self
-                .shared_cell_dummy
-                .write_overlay_identity(overlay.map_or(-1, i32::from)),
         }
     }
 

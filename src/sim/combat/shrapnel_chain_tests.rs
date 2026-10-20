@@ -225,7 +225,7 @@ fn retail_comet_selects_a_terrain_head_and_copies_its_bounce_beam() {
 
     let parent = scene.launch();
     let origin = scene.world.projectiles.get(parent).unwrap().position();
-    scene.world.lifecycle_outputs.clear();
+    scene.world.lifecycle_outputs.clear_for_test();
     scene.detonate(parent);
     let mut children: Vec<_> = scene
         .world
@@ -370,7 +370,7 @@ fn retail_elite_comet_terrain_child_recurses_from_its_tree_on_first_logic() {
             id
         })
         .unwrap();
-    scene.world.lifecycle_outputs.clear();
+    scene.world.lifecycle_outputs.clear_for_test();
     scene
         .world
         .session
@@ -775,7 +775,7 @@ fn retail_comet_creates_each_bounce_beam_at_the_live_child_birth() {
     };
     let parent = scene.launch();
     let origin = scene.world.projectiles.get(parent).unwrap().position();
-    scene.world.lifecycle_outputs.clear();
+    scene.world.lifecycle_outputs.clear_for_test();
     scene.detonate(parent);
     let beams: Vec<_> = scene
         .world
@@ -942,7 +942,8 @@ fn shrapnel_children_and_lasers_match_original_spawn_shrapnel() {
         }
         // Native actors are supplied boundaries, but Terrain representation
         // still enters through its real constructor/registration owner.
-        world.substrate.next_stable_object_id = row["actors"].as_array().unwrap().len() as u64 + 1;
+        world
+            .set_next_stable_object_id_for_test(row["actors"].as_array().unwrap().len() as u64 + 1);
         let terrain_actors: Vec<_> = row["actors"]
             .as_array()
             .unwrap()
@@ -1303,7 +1304,7 @@ fn building_bounce_places_child_at_get_coords_and_beam_at_target_offset() {
         "retail yard TargetCoordOffset exercises the different target virtuals"
     );
     let parent = scene.launch();
-    scene.world.lifecycle_outputs.clear();
+    scene.world.lifecycle_outputs.clear_for_test();
     scene.detonate(parent);
     let child = scene
         .world
@@ -1329,7 +1330,7 @@ fn elite_bounces_recurse_only_when_children_get_their_logic_visits() {
         return;
     };
     let parent = scene.launch();
-    scene.world.lifecycle_outputs.clear();
+    scene.world.lifecycle_outputs.clear_for_test();
     scene.detonate(parent);
     let first_child = scene
         .world
@@ -1410,7 +1411,7 @@ fn stock_truck_death_clears_already_born_child_owners_but_preserves_beams() {
         .unwrap()
         .owner();
     let parent = scene.launch();
-    scene.world.lifecycle_outputs.clear();
+    scene.world.lifecycle_outputs.clear_for_test();
     scene.detonate(parent);
     assert!(
         !scene

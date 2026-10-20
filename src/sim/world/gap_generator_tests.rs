@@ -73,7 +73,7 @@ fn insert(sim: &mut Simulation, id: u64, owner: InternedId, name: &str, x: u16, 
         );
         entity.locomotor = Some(loco);
     }
-    sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(id + 1);
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(id);
     // Unlimbo's House+0x68 append, which the SpySat scan walks.
@@ -193,7 +193,11 @@ fn gap_operational_original_gate_and_native_order_corpus() {
                 ai_counter: 0,
                 dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
             });
-        let power = sim.power_states.entry(owner).or_default();
+        let power = sim
+            .power_states
+            .map_mut_for_test()
+            .entry(owner)
+            .or_default();
         power.set_total_output_for_test(v["output"].as_i64().unwrap() as i32);
         power.set_total_drain_for_test(v["drain"].as_i64().unwrap() as i32);
         power.set_is_low_power_for_test(!power.has_full_power());

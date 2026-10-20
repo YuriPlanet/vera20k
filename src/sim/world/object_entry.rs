@@ -267,7 +267,7 @@ impl PreludeCells for PreludeReads<'_> {
 /// ([`EntryMover::is_ally_of`]).
 fn allied(live: &EntryReadContext<'_>, asker: InternedId, other: InternedId) -> bool {
     crate::sim::combat::combat_weapon::is_ally_by_object(
-        Some(&live.sim.house_alliances),
+        Some(live.sim.house_alliances.as_map()),
         &live.sim.interner,
         asker,
         other,
@@ -982,7 +982,7 @@ fn full_foot_entry<'a>(
                 return Ok(7);
             }
         } else if c.land_type != required.as_index()
-            && !(matches!(c.bridge_facts.overlay_id, Some(237 | 238))
+            && !(matches!(live.sim.cell_overlay(cell).overlay_id, Some(237 | 238))
                 && args.height != i32::from(initial_level))
         {
             return Ok(7);
@@ -1951,12 +1951,13 @@ mod tests {
             .as_ref()
             .unwrap()
             .stamp_dummy_cell_requested_coord(7, 8);
-        sim.mission_assign_exact(
-            infantry,
-            crate::sim::mission::MissionId::from_known(MissionType::Move),
-            sim.session.binary_frame(),
-        )
-        .unwrap();
+        sim.substrate
+            .mission_assign_exact(
+                infantry,
+                crate::sim::mission::MissionId::from_known(MissionType::Move),
+                sim.session.binary_frame(),
+            )
+            .unwrap();
         assert!(!probe(&mut sim));
         assert_eq!(
             sim.resolved_terrain
@@ -1965,12 +1966,13 @@ mod tests {
                 .dummy_cell_requested_coord(),
             (7, 8)
         );
-        sim.mission_assign_exact(
-            infantry,
-            crate::sim::mission::MissionId::from_known(MissionType::Capture),
-            sim.session.binary_frame(),
-        )
-        .unwrap();
+        sim.substrate
+            .mission_assign_exact(
+                infantry,
+                crate::sim::mission::MissionId::from_known(MissionType::Capture),
+                sim.session.binary_frame(),
+            )
+            .unwrap();
         sim.substrate
             .entities
             .get_mut(infantry)

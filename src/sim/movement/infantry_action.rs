@@ -320,7 +320,7 @@ impl Simulation {
                 let location =
                     super::ground_pose::object_location(actor, self.resolved_terrain.as_ref());
                 self.sound_events
-                    .push(crate::sim::world::SimSoundEvent::VocAt {
+                    .emit(crate::sim::world::SimSoundEvent::VocAt {
                         sound_id: sound_id.clone(),
                         audible_to: None,
                         rx: actor.position.rx(),
@@ -417,24 +417,6 @@ impl Simulation {
             }
         }
         Ok(true)
-    }
-
-    /// `InfantryClass::AI`'s Health reset (`0x0051BC57..0x0051BC96`), before
-    /// `FootClass::AI`: an infantryman at Health 0 or below whose action is
-    /// not a death sequence ([`in_death_sequence`]) is set to Health 1. A
-    /// corpse on its death sequence and a crashing Jumpjet infantryman keep
-    /// Health 0; a death whose `Do_Action` was refused (a sequence with no
-    /// frames, `0x0051D70F`) left the previous action, and is raised here.
-    pub(crate) fn infantry_health_reset(&mut self, id: u64) {
-        let Some(actor) = self.substrate.entities.get_mut(id) else {
-            return;
-        };
-        let Some(doing) = actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) else {
-            return;
-        };
-        if actor.health.current() <= 0 && !in_death_sequence(doing) {
-            actor.health.set(1);
-        }
     }
 
     /// What `InfantryClass::AI` does with an infantryman's action after its
@@ -940,6 +922,26 @@ impl Simulation {
         let result = self.infantry_do_action(id, requested, true, rules, effects);
         if let Err(cause) = result {
             log::debug!("infantry {id} action {action} completion: {cause}");
+        }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// `InfantryClass::AI`'s Health reset (`0x0051BC57..0x0051BC96`), before
+    /// `FootClass::AI`: an infantryman at Health 0 or below whose action is
+    /// not a death sequence ([`in_death_sequence`]) is set to Health 1. A
+    /// corpse on its death sequence and a crashing Jumpjet infantryman keep
+    /// Health 0; a death whose `Do_Action` was refused (a sequence with no
+    /// frames, `0x0051D70F`) left the previous action, and is raised here.
+    pub(crate) fn infantry_health_reset(&mut self, id: u64) {
+        let Some(actor) = self.entities.get_mut(id) else {
+            return;
+        };
+        let Some(doing) = actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) else {
+            return;
+        };
+        if actor.health.current() <= 0 && !in_death_sequence(doing) {
+            actor.health.set(1);
         }
     }
 }

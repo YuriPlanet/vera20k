@@ -184,26 +184,16 @@ fn tactical_cell_tip_text(
 fn tactical_world_tip_text(
     view: crate::sim::runtime::SimView<'_>,
     rules: &crate::rules::ruleset::RuleSet,
-    height_map: &std::collections::BTreeMap<(u16, u16), u8>,
     csf: Option<&crate::assets::csf_file::CsfFile>,
     world: (f32, f32),
     cursor_coordinates: bool,
 ) -> String {
-    tactical_world_tip_text_sampled(
-        view,
-        rules,
-        height_map,
-        csf,
-        world,
-        cursor_coordinates,
-        None,
-    )
+    tactical_world_tip_text_sampled(view, rules, csf, world, cursor_coordinates, None)
 }
 
 fn tactical_world_tip_text_sampled(
     view: crate::sim::runtime::SimView<'_>,
     rules: &crate::rules::ruleset::RuleSet,
-    height_map: &std::collections::BTreeMap<(u16, u16), u8>,
     csf: Option<&crate::assets::csf_file::CsfFile>,
     world: (f32, f32),
     cursor_coordinates: bool,
@@ -231,29 +221,23 @@ fn tactical_world_tip_text_sampled(
     // and foundation fallback, instead of keeping a tooltip object pointer.
     let sim = view.simulation();
     let order = crate::app::presentation::instances::tactical_entity_encounter_order(sim);
-    let pick = |source| {
-        crate::app::input::entity_pick::pick_entity_at_point(
-            source,
-            &order,
-            Some(view.fog()),
-            Some(view.interner().resolve(viewer)),
-            world.0,
-            world.1,
-            crate::app::input::dispatch::CLICK_SELECT_RADIUS,
-            Some(rules),
-            Some(sim.houses()),
-            height_map,
-            crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
-            Some(view.interner()),
-            Some(terrain),
-        )
-    };
-    // A concrete source keeps the ordinary picker and its admission unchanged.
     let native = crate::app::presentation::interpolation::RenderInterpolation::new(false);
-    let picked = pick(crate::app::input::entity_pick::PresentedWorld {
-        sim,
-        interpolation: interpolation.unwrap_or(&native),
-    });
+    let picked = crate::app::input::entity_pick::pick_entity_at_point(
+        crate::app::input::entity_pick::PresentedWorld {
+            sim,
+            interpolation: interpolation.unwrap_or(&native),
+        },
+        &order,
+        Some(view.fog()),
+        Some(view.interner().resolve(viewer)),
+        world.0,
+        world.1,
+        crate::app::input::dispatch::CLICK_SELECT_RADIUS,
+        Some(rules),
+        Some(sim.houses()),
+        Some(view.interner()),
+        Some(terrain),
+    );
     let Some(entity) = picked.and_then(|id| view.entities().get(id)) else {
         return String::new();
     };
@@ -329,7 +313,6 @@ fn tactical_tip_text(state: &AppState) -> String {
     tactical_world_tip_text_sampled(
         view,
         rules,
-        state.height_map(),
         state.process_assets.csf.as_ref(),
         world,
         input.cursor_coordinates,
@@ -496,7 +479,13 @@ fn sync_in_game_regions(state: &mut AppState) {
                 let amount = item
                     .super_weapon_section
                     .as_deref()
-                    .and_then(|name| state.rules()?.super_weapon(name))
+                    .and_then(|name| {
+                        let rules = state.rules()?;
+                        Some(crate::sim::superweapon::financial_type(
+                            rules,
+                            rules.super_weapon(name)?,
+                        ))
+                    })
                     .map_or(0, |sw| sw.money_amount);
                 let money_format = state
                     .process_assets
@@ -832,7 +821,7 @@ mod tests {
 
     struct MappedTipFixture {
         runtime: crate::sim::runtime::SimRuntime,
-        heights: std::collections::BTreeMap<(u16, u16), u8>,
+
         csf: crate::assets::csf_file::CsfFile,
         entity_id: u64,
         world: (f32, f32),
@@ -853,7 +842,6 @@ mod tests {
             let text = tactical_world_tip_text(
                 fixture.runtime.view(),
                 &fixture.runtime.resources.rules,
-                &fixture.heights,
                 Some(&fixture.csf),
                 fixture.world,
                 false,
@@ -937,7 +925,7 @@ mod tests {
         let world = crate::app::presentation::instances::interpolated_screen_position_entity(
             sim.entities().get(entity_id).unwrap(),
         );
-        let heights = sim.resolved_terrain().unwrap().build_height_map();
+
         let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
         assert_eq!(
             crate::app::input::entity_pick::pick_entity_at_point(
@@ -950,8 +938,6 @@ mod tests {
                 0.0,
                 Some(&rules),
                 Some(sim.houses()),
-                &heights,
-                None,
                 Some(sim.interner()),
                 sim.resolved_terrain(),
             ),
@@ -962,7 +948,7 @@ mod tests {
         runtime.resources.rules = rules;
         Some(MappedTipFixture {
             runtime,
-            heights,
+
             csf,
             entity_id,
             world,
@@ -979,7 +965,7 @@ mod tests {
 
         let Some(MappedTipFixture {
             mut runtime,
-            heights,
+
             csf,
             entity_id,
             world,
@@ -1001,7 +987,6 @@ mod tests {
         let text = tactical_world_tip_text(
             runtime.view(),
             &runtime.resources.rules,
-            &heights,
             Some(&csf),
             world,
             false,
@@ -1033,7 +1018,6 @@ mod tests {
         let text = tactical_world_tip_text(
             runtime.view(),
             &runtime.resources.rules,
-            &heights,
             Some(&csf),
             world,
             false,

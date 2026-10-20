@@ -1157,6 +1157,11 @@ mod tests {
                     .trackbars
                     .map(|(id, rect)| (id.plaque_reserve() > 0, rect)),
             );
+            windows.extend(
+                crate::ui::shell::sound::ShellSoundLayout::new(width as i32, height as i32)
+                    .sliders
+                    .map(|rect| (true, rect)),
+            );
             for (plaque, rect) in windows {
                 assert!(
                     trackbar_frame_slot(plaque, rect.w, rect.h).is_some(),

@@ -18,6 +18,8 @@ pub(crate) struct InGameKeyEdge<'a> {
     pub location: KeyLocation,
     pub state: ElementState,
     pub repeat: bool,
+    /// The characters the press types (WM_CHAR), for the chat edit.
+    pub text: Option<&'a str>,
 }
 
 pub(crate) fn in_game_key_edge(
@@ -25,6 +27,16 @@ pub(crate) fn in_game_key_edge(
     edge: InGameKeyEdge<'_>,
     paused_at_event: bool,
 ) {
+    // Native chat owns its edit keys before game-local chords or hotkeys.
+    if crate::app::input::chat::key_edge(state, &edge) {
+        if !edge.state.is_pressed() {
+            state.match_state.input.keys_held.remove(&edge.physical);
+            if let Some(scroll_key) = hotkeys::physical_scroll_key(edge.physical) {
+                state.match_state.input.keys_held.remove(&scroll_key);
+            }
+        }
+        return;
+    }
     // Local prototype control; consume the chord before retail key dispatch.
     let modifiers = state.match_state.input.hotkey_modifiers;
     if edge.physical == KeyCode::KeyI && modifiers.control_key() && modifiers.alt_key() {

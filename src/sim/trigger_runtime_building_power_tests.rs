@@ -102,7 +102,7 @@ fn building_toggle_scans_tagged_live_marked_unlimboed_buildings_and_returns_a_re
         .lifecycle
         .set_in_limbo_for_test(true);
     let rng = sim.rng_state();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     assert!(!run(&mut sim, &rules, &registry, 61, false));
     assert!(run(&mut sim, &rules, &registry, 61, true));
     for id in [local, foreign] {
@@ -122,7 +122,8 @@ fn building_toggle_scans_tagged_live_marked_unlimboed_buildings_and_returns_a_re
         Some(false)
     );
     assert_eq!(
-        std::mem::take(&mut sim.sound_events)
+        sim.sound_events
+            .take_for_test()
             .into_iter()
             .filter_map(|event| {
                 if let SimSoundEvent::HouseEva { event, owner } = event {
@@ -152,7 +153,7 @@ fn counted_tag_runs_off_and_on_in_order_without_a_second_state_or_rng_draws() {
     let load = spawn(&mut sim, &rules, "LOAD", "House0", 15);
     sim.attach_object_trigger_tag(load, Some("CONTROLTAG"));
     let rng = sim.rng_state();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[0],
@@ -169,7 +170,8 @@ fn counted_tag_runs_off_and_on_in_order_without_a_second_state_or_rng_draws() {
             .stuff_enabled()
     );
     assert_eq!(
-        std::mem::take(&mut sim.sound_events)
+        sim.sound_events
+            .take_for_test()
             .into_iter()
             .filter_map(|event| {
                 if let SimSoundEvent::HouseEva { event, .. } = event {

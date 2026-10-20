@@ -32,7 +32,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         true,
     );
     sim.substrate.entities.insert(manager);
-    sim.substrate.next_stable_object_id = 1000;
+    sim.set_next_stable_object_id_for_test(1000);
     sim.initialize_airstrike(999, &manager_rules);
     let flh = input.get("flh").cloned().unwrap_or(json!([0, 0, 0]));
     let elite = input.get("elite_flh").unwrap_or(&flh);

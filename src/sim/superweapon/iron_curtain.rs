@@ -127,13 +127,13 @@ pub(crate) fn launch(
         target_rx,
         target_ry,
     );
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx: target_rx,
         ry: target_ry,
     });
-    sim.sound_events.push(SimSoundEvent::RadarEvent {
+    sim.sound_events.emit(SimSoundEvent::RadarEvent {
         radar: RadarEventRequest::new(RadarEventType::ImpactSilent, target_rx, target_ry),
     });
 

@@ -235,7 +235,7 @@ pub(crate) fn retaliation_weapon_index(
     source_type: &ObjectType,
 ) -> i32 {
     let allied = is_ally_by_object(
-        Some(&world.house_alliances),
+        Some(world.house_alliances.as_map()),
         &world.interner,
         victim.owner(),
         source.owner(),
@@ -321,7 +321,7 @@ pub(crate) fn should_retaliate(
     // `0x00708880`: the owner's one-way alliance with the source's house;
     // `0x00708899`: the source is disguised to the owner (vt+0xC8).
     let allied = is_ally_by_object(
-        Some(&world.house_alliances),
+        Some(world.house_alliances.as_map()),
         interner,
         victim.owner(),
         source.owner(),
@@ -330,7 +330,7 @@ pub(crate) fn should_retaliate(
         || source.is_disguised_to(
             victim.owner(),
             Some(&world.fog),
-            Some(&world.house_alliances),
+            Some(world.house_alliances.as_map()),
             interner,
         )
     {
@@ -343,7 +343,7 @@ pub(crate) fn should_retaliate(
         world,
         rules,
         overlay_registry: None,
-        fog: Some(world.fog.fire_view(&world.house_alliances)),
+        fog: Some(world.fog.fire_view(world.house_alliances.as_map())),
         firer: victim,
         obj: victim_type,
         target: Some(TargetKind::Entity(source_id)),
@@ -427,7 +427,7 @@ pub(crate) fn should_retaliate(
                 rules,
                 interner,
                 world.resolved_terrain.as_ref(),
-                Some(&world.house_alliances),
+                Some(world.house_alliances.as_map()),
                 victim_enemy,
             ),
             calculate_ai_threat_score(
@@ -437,7 +437,7 @@ pub(crate) fn should_retaliate(
                 rules,
                 interner,
                 world.resolved_terrain.as_ref(),
-                Some(&world.house_alliances),
+                Some(world.house_alliances.as_map()),
                 victim_enemy,
             ),
         )

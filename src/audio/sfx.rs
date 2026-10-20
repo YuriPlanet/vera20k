@@ -64,6 +64,8 @@ mod gattling_loop_tests;
 #[cfg(test)]
 mod house_cue_tests;
 #[cfg(test)]
+mod ring_resample_tests;
+#[cfg(test)]
 mod unit_voice_lifecycle_tests;
 #[cfg(test)]
 mod unit_voice_tests;
@@ -742,6 +744,12 @@ enum SfxChannel {
     /// Trigger: an EVA line during the score dialog. Player effect: none
     /// reachable today. Frequency: never. Downstream risk: none.
     EvaStream,
+    /// The taunt stream `[0x00B1D4D8]`: SpeechSystem::Init (`0x00752AD0`)
+    /// links none of its channel's groups (the constructor `0x00407860`
+    /// zeroes `+0x90..+0x9C` and only the EVA stream gets `0x00407B40` /
+    /// `0x00407B50`), so neither master nor the exit fade reaches it;
+    /// CombineInterps skips the null groups (`0x00402252..0x00402292`).
+    TauntStream,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -789,6 +797,9 @@ impl SfxOutputGain {
         let master = match self.channel {
             SfxChannel::Sound => scales.sound_volume,
             SfxChannel::EvaStream => scales.voice_volume,
+            SfxChannel::TauntStream => {
+                return native_volume_amplitude(self.base_linear) * scales.focus_output_scale;
+            }
         };
         let master_linear = X87Chop53::ftol_f64_low_masked(
             f64::from(master.clamp(0.0, 1.0)) * f64::from(VOLUME_SCALE),
@@ -1241,6 +1252,10 @@ pub struct SfxPlayer {
     /// [`Self::advance_voice_queue`] observes it finished and reports the end
     /// time to `vox` (`StreamPlayer::GetEndTime` stand-in).
     eva_player: Option<LiveSfxOutput>,
+    /// The taunt stream `[0x00B1D4D8]` ("Taunt Stream", `0x00752AD0`): a
+    /// second StreamPlayer beside EVA's. `PlayFile` stops what it plays, so
+    /// a new taunt cuts the last one.
+    taunt_player: Option<LiveSfxOutput>,
     /// The per-object voice latch: `TechnoClass::Queue_Voice @ 0x00708D90`
     /// writes it, `TechnoClass::AI_Update @ 0x006F9EBB` drains it.
     voice_queue: VoiceQueue,
@@ -1345,6 +1360,7 @@ impl SfxPlayer {
             now_ms: 0,
             vox: VoxQueue::new(),
             eva_player: None,
+            taunt_player: None,
             voice_queue: VoiceQueue::new(),
             sound_volume: 0.7,
             voice_volume: 0.7,
@@ -1941,6 +1957,53 @@ impl SfxPlayer {
         effect.inserted
     }
 
+    /// `SpeechSystem::PlayTaunt` `0x00752B70` for the taunt byte
+    /// `(country << 4) | n`: n must be 1..8 and the country 0..9, which
+    /// picks `taunts\tau{am,ko,fr,ge,br,li,ir,cu,ru,yu}%02i.wav` (jump table
+    /// `0x00752C6C`). `StreamPlayer::PlayFile(name, 0)` `0x00407B60` tries
+    /// the loose file first, then CCFile; a new taunt stops the last one.
+    /// RESIDUAL: the suppress counter `[0x00B1D480]` is taken as 0; its
+    /// writers `0x00753520`/`0x00753540` have no direct caller.
+    pub(crate) fn play_taunt(&mut self, byte: u8, assets: &AssetManager) {
+        const COUNTRIES: [&str; 10] = ["am", "ko", "fr", "ge", "br", "li", "ir", "cu", "ru", "yu"];
+        let number = byte & 0xF;
+        let Some(country) = COUNTRIES.get(usize::from(byte >> 4)) else {
+            return;
+        };
+        if !(1..=8).contains(&number) {
+            return;
+        }
+        let name = format!("taunts\\tau{country}{number:02}.wav");
+        if let Some(output) = self.taunt_player.take() {
+            output.player.stop();
+        }
+        let decoded = match assets.read_install_file(&name) {
+            Some(bytes) => decode_wav(&bytes, &name),
+            None => assets
+                .get_ref(&name)
+                .and_then(|bytes| decode_wav(bytes, &name)),
+        };
+        let Some(decoded) = decoded else {
+            log::debug!("Taunt {name} is missing");
+            return;
+        };
+        let Some(output) = self.start_voice_output(decoded, VOLUME_SCALE, SfxChannel::TauntStream)
+        else {
+            return;
+        };
+        if self.paused {
+            output.player.pause();
+        }
+        self.taunt_player = Some(output);
+    }
+
+    /// Whether the taunt stream has audio left to play.
+    pub(crate) fn taunt_stream_busy(&self) -> bool {
+        self.taunt_player
+            .as_ref()
+            .is_some_and(|output| !output.player.empty())
+    }
+
     /// `StreamPlayer::Stop` on the announcement stream, if one is open.
     fn stop_eva_stream(&mut self) {
         if let Some(output) = self.eva_player.take() {
@@ -2331,7 +2394,9 @@ impl SfxPlayer {
     /// `VoxClass::UnpauseEVA @ 0x00753620`. Neither call sits behind the
     /// `FUN_0053bad0` gate that the SFX half does. The SFX half covers the
     /// unit voice events (Voc channels natively); the stream half is
-    /// `eva_player`.
+    /// `eva_player`, and the speech stream SpeechSystem pauses is
+    /// `taunt_player` (GamePause::Enter is its only pauser, so a movie hold
+    /// leaves it playing).
     ///
     /// Idempotent — call it with the current pause state every frame.
     pub fn set_paused(&mut self, paused: bool, now_ms: u64) {
@@ -2371,6 +2436,13 @@ impl SfxPlayer {
         }
         if let Some(output) = &self.eva_player {
             if self.movie_held || self.paused {
+                output.player.pause();
+            } else {
+                output.player.play();
+            }
+        }
+        if let Some(output) = &self.taunt_player {
+            if self.paused {
                 output.player.pause();
             } else {
                 output.player.play();
@@ -2422,7 +2494,12 @@ impl SfxPlayer {
 
     fn apply_live_output_scales(&self) {
         let scales = self.output_scales();
-        for output in self.live.values().chain(self.eva_player.iter()) {
+        for output in self
+            .live
+            .values()
+            .chain(self.eva_player.iter())
+            .chain(self.taunt_player.iter())
+        {
             output.apply_scales(scales);
         }
     }
@@ -2453,6 +2530,11 @@ impl SfxPlayer {
         // effect's406E80 call only clears the shared event pool.
         self.voice_queue = VoiceQueue::new();
         self.stop_eva_stream();
+        // SpeechSystem::Stop `0x00752CA0`: every scenario exit and the
+        // restart stop the taunt stream.
+        if let Some(output) = self.taunt_player.take() {
+            output.player.stop();
+        }
         self.vox.reset_all();
         self.paused = false;
         self.movie_held = false;
@@ -3513,6 +3595,18 @@ mod tests {
             prepare_eva_stream_output(test_decoded_audio(), 13107, background).initial_volume,
             0.0
         );
+    }
+
+    #[test]
+    fn the_taunt_stream_takes_no_master_and_no_exit_fade() {
+        let silent_masters = test_output_scales(0.0, 0.0, 0.0, 1.0);
+        let gain = SfxOutputGain::new(VOLUME_SCALE, SfxChannel::TauntStream);
+        assert_eq!(
+            gain.effective(silent_masters),
+            native_volume_amplitude(VOLUME_SCALE)
+        );
+        // The foreground gate is the primary buffer: it still silences it.
+        assert_eq!(gain.effective(test_output_scales(1.0, 1.0, 1.0, 0.0)), 0.0);
     }
 
     /// Original action21 lookup/admission controls, through the process's

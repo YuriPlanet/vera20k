@@ -66,6 +66,11 @@ pub(crate) fn handle_mouse_input(
     button: MouseButton,
     btn_state: ElementState,
 ) {
+    handle_mouse_input_inner(state, button, btn_state);
+    super::commands::reconcile_paid_super_weapon_cursor(state);
+}
+
+fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state: ElementState) {
     use crate::app::input::gadget_input::GadgetConsume;
     let pressed = btn_state.is_pressed();
     state
@@ -75,6 +80,19 @@ pub(crate) fn handle_mouse_input(
         .record_physical_button(button, pressed);
     if state.frontend.keyboard_dialog.is_some() {
         crate::app::input::keyboard::mouse(state, button, pressed);
+        return;
+    }
+    // 0xEA is pushed over the game and any open page.
+    if state.match_state.network_wait.dialog_open() {
+        if !pressed {
+            state.match_state.input.cancel_tactical_drag();
+            state
+                .match_state
+                .match_presentation
+                .in_game_gadgets
+                .cancel_pointer_capture();
+        }
+        crate::app::input::connection::mouse(state, button, pressed);
         return;
     }
     // Paused in-game Options overlay owns the mouse: route press/release/checkbox/
@@ -140,6 +158,11 @@ pub(crate) fn handle_mouse_input(
     // The stock tactical handler has no middle-button case.
     if button == MouseButton::Middle {
         return;
+    }
+    // MessageList::Input 0x005D4510 ends an open chat edit on the right
+    // button, press or release, and leaves the click to the game.
+    if button == MouseButton::Right {
+        crate::app::input::chat::right_button(state);
     }
     match crate::app::input::gadget_input::handle_mouse_button_event(state, button, pressed) {
         GadgetConsume::Tactical => tactical_mouse(state, button, btn_state),
@@ -404,8 +427,6 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                     CLICK_SELECT_RADIUS,
                                     state.rules(),
                                     Some(sim.houses()),
-                                    state.height_map(),
-                                    crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
                                     Some(sim.interner()),
                                     sim.resolved_terrain(),
                                 );
@@ -434,10 +455,6 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                         shift,
                                         state.rules(),
                                         Some(sim.houses()),
-                                        state.height_map(),
-                                        crate::app::match_runtime::sim_tick::tactical_bridge_cells(
-                                            sim,
-                                        ),
                                         Some(sim.interner()),
                                         sim.playfield_bounds().is_some(),
                                         sim.resolved_terrain(),
@@ -457,8 +474,6 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                     shift,
                                     state.rules(),
                                     Some(sim.houses()),
-                                    state.height_map(),
-                                    crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
                                     Some(sim.interner()),
                                     sim.playfield_bounds().is_some(),
                                     sim.resolved_terrain(),
@@ -725,6 +740,10 @@ fn clamp_tactical_drag_endpoint(
 pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     if state.frontend.keyboard_dialog.is_some() {
         crate::app::input::keyboard::cursor_moved(state);
+        return;
+    }
+    if state.match_state.network_wait.dialog_open() {
+        crate::app::input::connection::cursor_moved(state);
         return;
     }
     // Paused in-game Options overlay: drive a live slider drag (visual/stored only —
@@ -1094,6 +1113,11 @@ fn sidebar_cameo_press(
 }
 
 pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) {
+    apply_sidebar_action_inner(state, action);
+    super::commands::reconcile_paid_super_weapon_cursor(state);
+}
+
+fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
     if crate::app::input::campaign_input::is_locked(state) {
         return;
     }
@@ -1154,7 +1178,11 @@ pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) 
                 {
                     let cue = state
                         .rules()
-                        .and_then(|rules| rules.super_weapon(&section))
+                        .and_then(|rules| {
+                            rules
+                                .super_weapon(&section)
+                                .map(|sw| crate::sim::superweapon::financial_type(rules, sw))
+                        })
                         .and_then(|sw| sw.insufficient_funds_eva.clone());
                     if let Some(cue) = cue {
                         push_local_eva(state, &cue);
@@ -1166,14 +1194,11 @@ pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) 
                 }
                 super::superweapon_cameo::SuperWeaponClick::Launch(sw_type_id) => {
                     let owner = preferred_local_owner_name(state).unwrap_or_default();
-                    crate::app::input::commands::try_schedule_command(
+                    crate::app::input::commands::queue_super_weapon_click(
                         state,
                         &owner,
-                        Command::LaunchSuperWeapon {
-                            sw_type_id,
-                            target_rx: 0,
-                            target_ry: 0,
-                        },
+                        sw_type_id,
+                        (0, 0),
                     );
                 }
                 _ => {}
@@ -1526,6 +1551,15 @@ pub(crate) fn handle_hotkey_pressed(
     resolution: HotkeyResolution,
     physical_code: winit::keyboard::KeyCode,
 ) {
+    handle_hotkey_pressed_inner(state, resolution, physical_code);
+    super::commands::reconcile_paid_super_weapon_cursor(state);
+}
+
+fn handle_hotkey_pressed_inner(
+    state: &mut AppState,
+    resolution: HotkeyResolution,
+    physical_code: winit::keyboard::KeyCode,
+) {
     if crate::app::input::campaign_input::is_locked(state)
         && resolution != HotkeyResolution::Command(HotkeyCommand::Options)
     {
@@ -1724,21 +1758,24 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             state,
             crate::app::types::CategoryNavigationKind::Veterancy,
         ),
-        // UNCHECKED residual, all still no-ops. Two of them are audio
-        // triggers whose rules keys VERA already parses or could:
-        // `PlaceBeacon` should place the beacon and play `[AudioVisual]
-        // PlaceBeaconSound` (`Rules+0x1CC`, stock `BeaconPlaced`), and
-        // `Taunt(n)` should broadcast the multiplayer taunt sample.
-        // None of their native command handlers was
-        // read this session, so no mapping is asserted and nothing is wired.
-        // Trigger: pressing the bound key. Player effect: the key does
-        // nothing. Frequency: rare in skirmish — both are multiplayer
-        // social commands. Downstream risk: beacons and taunts are network
-        // messages, so they belong with `net/`, not with this row.
-        HotkeyCommand::ToggleAlliance
-        | HotkeyCommand::PlaceBeacon
-        | HotkeyCommand::PageUser
-        | HotkeyCommand::Taunt(_) => {}
+        HotkeyCommand::ToggleAlliance => {
+            crate::app::input::diplomacy::toggle_alliance_hotkey(state)
+        }
+        // `TauntCommandClass::Execute 0x00536350`; the command's +4
+        // parameter is the catalog's `n + 1`.
+        HotkeyCommand::Taunt(n) => crate::app::input::taunt::execute(
+            state,
+            n as u8 + 1,
+            crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+        ),
+        // UNCHECKED residual, still no-ops. `PlaceBeacon` should place the
+        // beacon and play `[AudioVisual] PlaceBeaconSound` (`Rules+0x1CC`,
+        // stock `BeaconPlaced`). Neither native command handler was read,
+        // so no mapping is asserted and nothing is wired. Trigger: pressing
+        // the bound key. Player effect: the key does nothing. Frequency:
+        // rare — both are multiplayer social commands. Downstream risk:
+        // beacons are network messages.
+        HotkeyCommand::PlaceBeacon | HotkeyCommand::PageUser => {}
     }
 }
 

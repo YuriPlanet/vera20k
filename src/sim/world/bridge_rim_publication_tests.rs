@@ -47,8 +47,6 @@ fn stock_world(rules: &RuleSet, input: &Value) -> Simulation {
         cell.level = level;
         cell.land_type = land;
         cell.bridge_facts = BridgeCellFacts {
-            state_byte: state,
-            overlay_id: overlay,
             family: if flags & 0x1f80 != 0 {
                 BridgeStampFamily::Nesw
             } else {
@@ -64,7 +62,7 @@ fn stock_world(rules: &RuleSet, input: &Value) -> Simulation {
         if let Some(overlay) = overlay {
             grid.place_overlay(x, y, overlay, state);
         }
-        grid.write_literal_bridge_state(&mut terrain, x, y, state);
+        grid.write_literal_bridge_state(x, y, state);
     }
     terrain.test_set_native_allocated_cells(&allocated);
     let mut ini = String::from("[General]\n");
@@ -102,9 +100,10 @@ fn stock_world(rules: &RuleSet, input: &Value) -> Simulation {
 fn snapshot(sim: &Simulation, coord: (u16, u16)) -> Value {
     let terrain = sim.resolved_terrain.as_ref().unwrap();
     let cell = terrain.cell(coord.0, coord.1).unwrap();
+    let live = sim.overlay_grid.as_ref().unwrap().cell(coord.0, coord.1);
     json!({"coord": coord, "flags": cell.bridge_facts.raw_flags,
-        "state": cell.bridge_facts.state_byte,
-        "overlay": cell.bridge_facts.overlay_id.map_or(-1, i32::from),
+        "state": live.overlay_data,
+        "overlay": live.overlay_id.map_or(-1, i32::from),
         "anchor": cell.bridge_facts.native_anchor.map(|a| terrain.native_cell_coord(a))})
 }
 

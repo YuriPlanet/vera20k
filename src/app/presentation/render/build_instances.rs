@@ -48,8 +48,6 @@ pub(super) struct WorldInstances {
     /// PixelFX water/ore sparkles — 1-pixel cell dots emitted per frame.
     /// Empty when the live `[Options] DetailLevel` projection is zero.
     pub cell_sparkles: Vec<SpriteInstance>,
-    /// Sonic's legacy outline fallback; Magnetic bodies use retained parents.
-    pub weapon_waves: Vec<SpriteInstance>,
 }
 
 /// Debug visualization overlays (toggled by hotkeys at runtime).
@@ -385,8 +383,7 @@ pub(super) fn build_world_instances(
             });
         }
     }
-    let weapon_waves =
-        instances::build_weapon_wave_instances(state, &mut planned_objects, &display_order);
+    instances::build_weapon_wave_instances(state, &mut planned_objects, &display_order);
     // Body/canopy builders already sampled their anchors. Cancel the same
     // sampled height for depth and per-pixel Z rather than the authority's
     // next height; otherwise climbing units slide through their occluders.
@@ -452,7 +449,6 @@ pub(super) fn build_world_instances(
         bridge_body_shadow,
         particle_draws,
         cell_sparkles,
-        weapon_waves,
     }
 }
 

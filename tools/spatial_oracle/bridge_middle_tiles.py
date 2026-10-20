@@ -119,6 +119,37 @@ SEQUENCES = [
     ['DamageB','CollapseA','CollapseA'], ['DamageA','CollapseB','CollapseB'],
 ]
 
+def body_sequences(case):
+    """Admitted original576BA0 visits on both sides of a physical middle.
+
+    One neighboring span can collapse while the middle remains at level4.
+    The opposite span's collapse publishes level0. Object/radar sinks retain
+    their existing OriginalMiddle/OriginalRim scope; outer damage is excluded.
+    """
+    result = []
+    for axis, points in [
+        ('NS', [(91, 50), (91, 50), (93, 50), (93, 50)]),
+        ('EW', [(111, 118), (111, 118), (111, 120), (111, 120)]),
+    ]:
+        native = OriginalMiddle(case)
+        def scalars(pointer):
+            cell = native.snapshot(pointer)
+            return dict(coord=cell['coord'], level=cell['attributes'][1],
+                        flags=cell['flags'], tile=cell['tile'],
+                        overlay=cell['overlay'], state=cell['state'])
+        steps = []
+        for point in points:
+            before = {coord: scalars(pointer) for coord, pointer in native.ptrs.items()}
+            native.uc.mem_write(COORD, packed(*point))
+            returned = native.call(0x576BA0, args=(COORD,))
+            changes = [dict(before=before[coord], after=scalars(pointer))
+                       for coord, pointer in native.ptrs.items()
+                       if before[coord] != scalars(pointer)]
+            steps.append(dict(input_coord=point, returned=returned, changed_cells=changes))
+        result.append(dict(axis=axis, steps=steps))
+    return result
+
+
 def cases():
     source=Path(__file__).with_name('bridge_middle_stock_inputs.json')
     case=json.loads(source.read_text(encoding='utf-8'))
@@ -137,11 +168,11 @@ def cases():
             changes=[dict(before=before[c],after=native.snapshot(p)) for c,p in native.ptrs.items() if before[c]!=native.snapshot(p)]
             steps.append(dict(phase=phase,changes=changes,recalc=list(native.recalculations),events=list(native.events),writes=list(native.writes)))
         rows.append(dict(axis=axis,target=target[:2],input=input_coord,direction=direction,steps=steps))
-    return dict(cases=rows,asset_sha256=native.assets,stock_input_sha256=hashlib.sha256(source.read_bytes()).hexdigest())
+    return dict(cases=rows,body_sequences=body_sequences(case),asset_sha256=native.assets,stock_input_sha256=hashlib.sha256(source.read_bytes()).hexdigest())
 
 if __name__=='__main__':
     finish_vectors(cases,Path(__file__).with_suffix('.json'),provenance=lambda:provenance(
-        scope='Twelve sequences through all eight high perpendicular helpers with original connected tile replacement and Recalc; supplied retail middle cells',
+        scope='Twelve sequences through all eight high perpendicular helpers with original connected tile replacement and Recalc; supplied retail middle cells, plus admitted576BA0 visits on both neighboring spans',
         assumptions=[
             'Retailc3y03md.map NEWURBAN source/hash and loader commit are recorded in bridge_middle_stock_inputs.json; native loading excluded',
             '338 supplied scalar cells; two13x13 crops match full18258-cell outputs for DamageA,DamageB,CollapseA on both orientations',
@@ -151,6 +182,7 @@ if __name__=='__main__':
             'No objects, CellTags, occupation, or Tube inputs; unsupplied cached+11D/zone fields initiallyzero. Compare after-Recalc fields only for visited cells',
             'Non-self anchors reconstructed from supplied literal coordinates; self-anchor+2C initializedzero, compare anchor only after a recorded native+2C write',
             'Inputs target road subtiles4(NS) and2(EW); terminal recursion covers both halves and preserves duplicate fallout',
+            'Two additional four-visit original576BA0 body sequences execute perpendicular/flood/Recalc on both physical neighboring structural spans. The first collapsed span leaves middle level4; collapse of the opposite span writes level0. No direct level replacement is supplied.',
             'No weapon dispatch, damage RNG, fallout reentry, runtime navigation connectivity, radar color, or rendered-output equivalence claim',
         ],substitutions=[
             '47DD70 records ordered receiver state then returns; object damage,DropIn,debris and synchronous reentry excluded',
@@ -158,4 +190,4 @@ if __name__=='__main__':
             '6D2140 supplies screen0,0 and6D2790 records screen call; projection/display excluded',
             '56DAE0 records connectivity sink and returns; this sink is not reached by the admitted perpendicular sequences',
         ],entry_points={**{axis+'_'+phase:address for axis,phases in PHASES.items() for phase,address in phases.items()},
-            'flood':0x56EB80,'recalc':0x47D2B0,'lat':0x47CA80,'zone':0x483C80,'slope':0x5471B0,'land':0x544BE0,'dimensions':0x547150}))
+            'high_body':0x576BA0,'flood':0x56EB80,'recalc':0x47D2B0,'lat':0x47CA80,'zone':0x483C80,'slope':0x5471B0,'land':0x544BE0,'dimensions':0x547150}))

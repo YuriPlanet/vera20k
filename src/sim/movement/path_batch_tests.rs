@@ -146,9 +146,24 @@ fn a_batched_answer_is_the_serial_search() {
                 }
                 if batched {
                     sim.batch_path_searches();
-                    assert!(sim.defer_path_search(id, kind));
+                    assert!(crate::sim::world::Simulation::defer_path_search(
+                        &mut sim.path_batch,
+                        &sim.resolved_terrain,
+                        &sim.overlay_grid,
+                        id,
+                        kind
+                    ));
                     sim.answer_batched_path_searches(Some(&rules), None);
-                    assert!(!sim.defer_path_search(id, kind), "the request claims it");
+                    assert!(
+                        !crate::sim::world::Simulation::defer_path_search(
+                            &mut sim.path_batch,
+                            &sim.resolved_terrain,
+                            &sim.overlay_grid,
+                            id,
+                            kind
+                        ),
+                        "the request claims it"
+                    );
                 }
                 let request = match kind {
                     WaitingRequest::NoQueue => sim.no_queue_request(id),
@@ -193,10 +208,22 @@ fn an_answer_for_another_request_is_not_used() {
     let rules = rules();
     let (mut sim, [tank, _]) = jam(&rules);
     sim.batch_path_searches();
-    assert!(sim.defer_path_search(tank, CODE2));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        tank,
+        CODE2
+    ));
     sim.answer_batched_path_searches(Some(&rules), None);
     assert!(
-        !sim.defer_path_search(tank, CODE2),
+        !crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            tank,
+            CODE2
+        ),
         "an answered Foot no longer waits"
     );
     let request = sim.code2_ladder_request(tank, 2).unwrap();
@@ -221,14 +248,32 @@ fn a_left_out_code2_repath_keeps_its_urgency() {
     let others = 1_000_000..1_000_000 + SEARCHES_PER_PASS as u64;
     let leave_out = |sim: &mut Simulation| {
         for id in others.clone() {
-            assert!(sim.defer_path_search(id, WaitingRequest::NoQueue));
+            assert!(crate::sim::world::Simulation::defer_path_search(
+                &mut sim.path_batch,
+                &sim.resolved_terrain,
+                &sim.overlay_grid,
+                id,
+                WaitingRequest::NoQueue
+            ));
         }
         sim.path_batch.as_mut().unwrap().next_turn = others.start;
         sim.answer_batched_path_searches(Some(&rules), None);
         sim.finish_batched_path_searches();
     };
-    assert!(sim.defer_path_search(tank, CODE2));
-    assert!(sim.defer_path_search(infantry, CODE2));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        tank,
+        CODE2
+    ));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        infantry,
+        CODE2
+    ));
     leave_out(&mut sim);
     let batch = sim.path_batch.as_ref().unwrap();
     assert!(!batch.answered.contains(&tank) && !batch.answered.contains(&infantry));
@@ -240,8 +285,20 @@ fn a_left_out_code2_repath_keeps_its_urgency() {
     // The tank asks again at urgency 2 and keeps 1; the infantryman asks a
     // no-queue request instead.
     let urgent = WaitingRequest::Code2Ladder { urgency: 2 };
-    assert!(sim.defer_path_search(tank, urgent));
-    assert!(sim.defer_path_search(infantry, WaitingRequest::NoQueue));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        tank,
+        urgent
+    ));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        infantry,
+        WaitingRequest::NoQueue
+    ));
     assert_eq!(
         sim.path_batch.as_ref().unwrap().pending[..2],
         [(tank, CODE2), (infantry, WaitingRequest::NoQueue)]
@@ -269,7 +326,13 @@ fn a_left_out_code2_repath_keeps_its_urgency() {
     sim.answer_batched_path_searches(Some(&rules), None);
     sim.finish_batched_path_searches();
     assert!(sim.path_batch.as_ref().unwrap().left_out_code2.is_empty());
-    assert!(sim.defer_path_search(tank, urgent));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        tank,
+        urgent
+    ));
     assert_eq!(sim.path_batch.as_ref().unwrap().pending, [(tank, urgent)]);
 }
 
@@ -328,7 +391,13 @@ fn a_ladder_left_out_past_its_blockage_timer_takes_its_first_urgency() {
         let mut left_out_at_2 = 0;
         for _ in 0..300 {
             for id in others.clone() {
-                assert!(sim.defer_path_search(id, WaitingRequest::NoQueue));
+                assert!(crate::sim::world::Simulation::defer_path_search(
+                    &mut sim.path_batch,
+                    &sim.resolved_terrain,
+                    &sim.overlay_grid,
+                    id,
+                    WaitingRequest::NoQueue
+                ));
             }
             sim.path_batch.as_mut().unwrap().next_turn = others.start;
             sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
@@ -373,7 +442,13 @@ fn a_redirected_request_is_left_to_find_path() {
         "the building on the destination redirects (code {answer})"
     );
     sim.batch_path_searches();
-    assert!(sim.defer_path_search(tank, CODE2));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        tank,
+        CODE2
+    ));
     sim.answer_batched_path_searches(Some(&rules), None);
     assert_eq!(sim.path_batch.as_ref().unwrap().ready[&tank].answer, None);
     let request = sim.code2_ladder_request(tank, 1).unwrap();
@@ -406,7 +481,13 @@ fn batched_answers_do_not_depend_on_the_threads() {
     }
     sim.batch_path_searches();
     for &(id, request) in &movers {
-        assert!(sim.defer_path_search(id, request));
+        assert!(crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            id,
+            request
+        ));
     }
     sim.answer_batched_path_searches(Some(&rules), None);
     let grid = sim.path_grid_snapshot().unwrap();
@@ -576,9 +657,21 @@ fn registrations_survive_a_save_and_answers_do_not() {
     let rules = rules();
     let (mut sim, [tank, infantry]) = jam(&rules);
     sim.batch_path_searches();
-    assert!(sim.defer_path_search(tank, CODE2));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        tank,
+        CODE2
+    ));
     sim.answer_batched_path_searches(Some(&rules), None);
-    assert!(sim.defer_path_search(infantry, WaitingRequest::NoQueue));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        infantry,
+        WaitingRequest::NoQueue
+    ));
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "path_batch", 0);
     let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .expect("the save loads")
@@ -605,13 +698,25 @@ fn answers_expire_with_their_pass() {
         .map(|grid| (*grid).clone())
         .unwrap();
     sim.batch_path_searches();
-    assert!(sim.defer_path_search(tank, CODE2));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        tank,
+        CODE2
+    ));
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
     let batch = sim.path_batch.as_ref().unwrap();
     assert_eq!(batch.answered, [tank], "the pass answered the tank");
     assert!(batch.ready.is_empty(), "its answers expired with it");
     assert!(
-        sim.defer_path_search(tank, WaitingRequest::NoQueue),
+        crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            tank,
+            WaitingRequest::NoQueue
+        ),
         "a request between passes waits"
     );
 }
@@ -625,22 +730,55 @@ fn a_foots_first_request_in_a_frame_claims_its_answer() {
     let rules = rules();
     let (mut sim, [tank, infantry]) = jam(&rules);
     sim.batch_path_searches();
-    assert!(sim.defer_path_search(tank, WaitingRequest::NoQueue));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        tank,
+        WaitingRequest::NoQueue
+    ));
     sim.answer_batched_path_searches(Some(&rules), None);
     assert!(
-        !sim.defer_path_search(tank, WaitingRequest::NoQueue),
+        !crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            tank,
+            WaitingRequest::NoQueue
+        ),
         "the first request searches"
     );
-    assert!(sim.defer_path_search(tank, CODE2), "a later one waits");
     assert!(
-        sim.defer_path_search(infantry, WaitingRequest::NoQueue),
+        crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            tank,
+            CODE2
+        ),
+        "a later one waits"
+    );
+    assert!(
+        crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            infantry,
+            WaitingRequest::NoQueue
+        ),
         "an unanswered Foot waits"
     );
     assert_eq!(
         sim.path_batch.as_ref().unwrap().pending,
         [(tank, CODE2), (infantry, WaitingRequest::NoQueue)]
     );
-    assert!(sim.defer_path_search(tank, WaitingRequest::NoQueue));
+    assert!(crate::sim::world::Simulation::defer_path_search(
+        &mut sim.path_batch,
+        &sim.resolved_terrain,
+        &sim.overlay_grid,
+        tank,
+        WaitingRequest::NoQueue
+    ));
     sim.answer_batched_path_searches(Some(&rules), None);
     let slot = &sim.path_batch.as_ref().unwrap().ready[&tank];
     assert!(slot.answer.is_some());
@@ -805,18 +943,36 @@ fn a_pass_answers_at_most_its_cap_and_the_rest_wait() {
     // Ids no object holds: each search finds no request to answer.
     let (first, end) = (1_000_000, 1_000_000 + cap + 10);
     for id in first..end {
-        assert!(sim.defer_path_search(id, WaitingRequest::NoQueue));
+        assert!(crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            id,
+            WaitingRequest::NoQueue
+        ));
     }
     sim.answer_batched_path_searches(Some(&rules), None);
     let batch = sim.path_batch.as_ref().unwrap();
     assert_eq!(batch.answered, (first..first + cap).collect::<Vec<_>>());
     assert_eq!(batch.next_turn, first + cap);
     assert!(
-        sim.defer_path_search(end - 1, WaitingRequest::NoQueue),
+        crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            end - 1,
+            WaitingRequest::NoQueue
+        ),
         "a Foot the pass left out registers again"
     );
     assert!(
-        !sim.defer_path_search(first, WaitingRequest::NoQueue),
+        !crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            first,
+            WaitingRequest::NoQueue
+        ),
         "a Foot the pass answered claims its slot"
     );
 
@@ -832,7 +988,13 @@ fn a_pass_answers_at_most_its_cap_and_the_rest_wait() {
 
     sim.finish_batched_path_searches();
     for id in first..end {
-        assert!(sim.defer_path_search(id, WaitingRequest::NoQueue));
+        assert!(crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            id,
+            WaitingRequest::NoQueue
+        ));
     }
     sim.answer_batched_path_searches(Some(&rules), None);
     let batch = sim.path_batch.as_ref().unwrap();
@@ -876,7 +1038,13 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
             let (mut sim, ladders) = eight_ladders(&rules);
             let register = |sim: &mut Simulation, ids: &[u64]| {
                 for &id in ids {
-                    assert!(sim.defer_path_search(id, URGENT));
+                    assert!(crate::sim::world::Simulation::defer_path_search(
+                        &mut sim.path_batch,
+                        &sim.resolved_terrain,
+                        &sim.overlay_grid,
+                        id,
+                        URGENT
+                    ));
                 }
             };
             // Without a budget every re-path is answered; alone, each makes
@@ -915,7 +1083,16 @@ fn a_pass_answers_urgency2_repaths_within_its_budget() {
                 assert_eq!(batch.ready[id].answer, *answer, "{id}'s answer");
             }
             for &id in &ladders[3..] {
-                assert!(sim.defer_path_search(id, CODE2), "{id} registers again");
+                assert!(
+                    crate::sim::world::Simulation::defer_path_search(
+                        &mut sim.path_batch,
+                        &sim.resolved_terrain,
+                        &sim.overlay_grid,
+                        id,
+                        CODE2
+                    ),
+                    "{id} registers again"
+                );
                 let pending = &sim.path_batch.as_ref().unwrap().pending;
                 assert_eq!(pending.last(), Some(&(id, URGENT)), "{id} keeps urgency 2");
             }
@@ -958,10 +1135,22 @@ fn the_urgency2_budget_leaves_the_caps_turn_alone() {
     // Ids no object holds: each search finds no request to answer.
     let (first, end) = (1_000_000, 1_000_000 + cap + 10);
     for id in first..end {
-        assert!(sim.defer_path_search(id, WaitingRequest::NoQueue));
+        assert!(crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            id,
+            WaitingRequest::NoQueue
+        ));
     }
     for &id in &ladders {
-        assert!(sim.defer_path_search(id, URGENT));
+        assert!(crate::sim::world::Simulation::defer_path_search(
+            &mut sim.path_batch,
+            &sim.resolved_terrain,
+            &sim.overlay_grid,
+            id,
+            URGENT
+        ));
     }
     sim.answer_path_searches_within(Some(&rules), None, 1);
     let batch = sim.path_batch.as_ref().unwrap();

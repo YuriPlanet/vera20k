@@ -1311,6 +1311,11 @@ fn release_contact(
     }
 }
 
+/// Mission_Repair's return for a type with none of its ConstructionYard,
+/// Hospital, Armory, UnitRepair and UnitReload families (`0x0044C971`), such
+/// as a plain `Bunker=` type.
+const PLAIN_REPAIR_DELAY_FRAMES: i32 = 0xF;
+
 /// BuildingClass::MissionRepairAndProduce44B780's UnitRepair arm. MissionCom
 /// owns status/dispatch; BuildingMissionLeaf owns the independent+620 progress;
 /// Techno RepairTick owns heal/payment. Original corpus: building_repair.depot_service.
@@ -1328,6 +1333,11 @@ pub(crate) fn mission_repair(
     };
     let building = sim.substrate.entities.get(depot)?;
     let object = sim.object_type(building.type_ref(), rules)?;
+    // 0x0044B791..0x0044B7A3: a Bunker= type steps its install first.
+    if object.bunker {
+        super::bunker_install::update_bunker(sim, rules, registry, depot, frame_effects);
+    }
+    let building = sim.substrate.entities.get(depot)?;
     if object.hospital && !object.construction_yard {
         return Some(super::hospital::mission_repair(
             sim,
@@ -1339,11 +1349,19 @@ pub(crate) fn mission_repair(
     }
     if !object.unit_repair {
         // The ConstructionYard, Hospital and Armory arms come first.
-        let reload =
-            object.unit_reload && !object.construction_yard && !object.hospital && !object.armory();
-        return reload.then(|| {
-            super::airfield_reload::mission_reload(sim, rules, depot, registry, frame_effects)
-        });
+        if object.unit_reload && !object.construction_yard && !object.hospital && !object.armory() {
+            return Some(super::airfield_reload::mission_reload(
+                sim,
+                rules,
+                depot,
+                registry,
+                frame_effects,
+            ));
+        }
+        // 0x0044C836 -> 0x0044C970: a type in none of the five families.
+        let plain =
+            !(object.unit_reload || object.construction_yard || object.hospital || object.armory());
+        return plain.then_some(PLAIN_REPAIR_DELAY_FRAMES);
     }
     let status = building.mission.handler_state();
     let current = building
@@ -1442,7 +1460,12 @@ pub(crate) fn mission_repair(
             if powered {
                 // `0x0044C243`: ILoco+0x5C, Hover's override included.
                 if crate::sim::movement::motion_query::is_moving(contact) == Some(false) {
-                    sim.locomotor_power_off(unit);
+                    Simulation::locomotor_power_off(
+                        &mut sim.scenario_rng,
+                        &mut sim.substrate,
+                        &sim.resolved_terrain,
+                        unit,
+                    );
                 }
                 return Some(1);
             }
@@ -1490,7 +1513,7 @@ pub(crate) fn mission_repair(
             // Local+41A is resolved by the app, as for ToggleRepair4470B7.
             // Original44C507 announces before the service animation writes.
             let owner = sim.substrate.entities.get(depot)?.owner();
-            sim.sound_events.push(SimSoundEvent::Repairing { owner });
+            sim.sound_events.emit(SimSoundEvent::Repairing { owner });
             sim.substrate
                 .entities
                 .get_mut(depot)?
@@ -1569,7 +1592,7 @@ pub(crate) fn mission_repair(
                 // a nonzero shortfall remains silent. Client filters +41A.
                 let owner = sim.substrate.entities.get(depot)?.owner();
                 if crate::sim::credit_income::available_money(sim, owner) == 0 {
-                    sim.sound_events.push(SimSoundEvent::HouseEva {
+                    sim.sound_events.emit(SimSoundEvent::HouseEva {
                         owner,
                         event: "EVA_InsufficientFunds",
                     });
@@ -1586,7 +1609,7 @@ pub(crate) fn mission_repair(
                 // client's type8 radar admission; simulation publishes the
                 // request and the app resolves local ownership and admission.
                 let building = sim.substrate.entities.get(depot)?;
-                sim.sound_events.push(SimSoundEvent::UnitRepaired {
+                sim.sound_events.emit(SimSoundEvent::UnitRepaired {
                     owner: building.owner(),
                     radar: crate::sim::radar::RadarEventRequest::new(
                         crate::sim::radar::RadarEventType::UnitRepaired,
@@ -2119,8 +2142,8 @@ mod tests {
             );
         }
         sim.substrate.entities.insert(ge);
-        if sim.substrate.next_stable_object_id <= sid {
-            sim.substrate.next_stable_object_id = sid + 1;
+        if sim.next_stable_object_id() <= sid {
+            sim.set_next_stable_object_id_for_test(sid + 1);
         }
     }
 
@@ -2218,7 +2241,8 @@ mod tests {
         let pending = DEPOT + 1;
         link_for_service(&mut sim, 1);
         set_pending_entry(&mut sim, 1, Some(pending));
-        sim.mission_assign_exact(DEPOT, MissionId::from_known(MissionType::Repair), 0)
+        sim.substrate
+            .mission_assign_exact(DEPOT, MissionId::from_known(MissionType::Repair), 0)
             .unwrap();
         let building = sim.substrate.entities.get_mut(DEPOT).unwrap();
         building.mission.set_handler_state(2);
@@ -2317,7 +2341,8 @@ mod tests {
     #[test]
     fn a_moving_pending_unit_commences_enter_before_its_pad_order() {
         let (mut sim, rules) = setup(1);
-        sim.mission_assign_exact(1, MissionId::from_known(MissionType::Move), 0)
+        sim.substrate
+            .mission_assign_exact(1, MissionId::from_known(MissionType::Move), 0)
             .unwrap();
         assert!(sim.set_unit_destination(
             1,
@@ -2701,7 +2726,8 @@ mod tests {
         assert!(order_repair(&mut sim, &rules, 3));
         // Tank 2 idles on Guard with a due dispatch timer.
         let now = sim.session.binary_frame();
-        sim.mission_assign_exact(2, MissionId::from_known(MissionType::Guard), now)
+        sim.substrate
+            .mission_assign_exact(2, MissionId::from_known(MissionType::Guard), now)
             .expect("assign Guard");
         sim.session
             .set_binary_frame_for_test(sim.session.binary_frame() + 1);
@@ -2734,7 +2760,8 @@ mod tests {
         );
 
         let after_ai = sim.scenario_rng.state();
-        sim.mission_assign_exact(DEPOT, MissionId::from_known(MissionType::Repair), 1)
+        sim.substrate
+            .mission_assign_exact(DEPOT, MissionId::from_known(MissionType::Repair), 1)
             .unwrap();
         sim.substrate
             .entities
@@ -3057,7 +3084,8 @@ mod tests {
             "[Enter]\nRate=.1\n[Guard]\nRate=.03\n",
         ));
         sim.scenario_rng = crate::sim::rng::SimRng::new(1);
-        sim.mission_assign_exact(1, MissionId::from_known(MissionType::Enter), 0)
+        sim.substrate
+            .mission_assign_exact(1, MissionId::from_known(MissionType::Enter), 0)
             .unwrap();
 
         let delay = crate::sim::mission::enter::mission_enter(
@@ -3274,7 +3302,8 @@ mod tests {
         // The house's building list holds its factory (FindFactory scans it).
         sim.append_house_base_building_for_test(501);
         link_for_service(&mut sim, 1);
-        sim.mission_assign_exact(DEPOT, MissionId::from_known(MissionType::Repair), 0)
+        sim.substrate
+            .mission_assign_exact(DEPOT, MissionId::from_known(MissionType::Repair), 0)
             .unwrap();
         sim.substrate
             .entities
@@ -3282,7 +3311,8 @@ mod tests {
             .unwrap()
             .mission
             .set_handler_state(1);
-        sim.mission_assign_exact(1, MissionId::from_known(MissionType::Sleep), 0)
+        sim.substrate
+            .mission_assign_exact(1, MissionId::from_known(MissionType::Sleep), 0)
             .unwrap();
         sim.substrate
             .entities
@@ -3350,7 +3380,8 @@ mod tests {
                 .get_mut(DEPOT)
                 .unwrap()
                 .mark_live_contact_with(1);
-            sim.mission_assign_exact(1, MissionId::from_known(MissionType::Enter), 0)
+            sim.substrate
+                .mission_assign_exact(1, MissionId::from_known(MissionType::Enter), 0)
                 .expect("unit exists");
             assert!(linked(&sim, 1));
             (sim, rules)

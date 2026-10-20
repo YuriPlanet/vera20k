@@ -57,7 +57,7 @@ fn fixture(selector: i32) -> Simulation {
             .install_drive_state_for_test(Some(DriveLocomotionRuntime::default()))
     );
     sim.substrate.entities.insert(entity);
-    sim.substrate.next_stable_object_id = 2;
+    sim.set_next_stable_object_id_for_test(2);
     assert!(matches!(
         sim.reveal(1),
         super::super::RevealOutcome::Revealed { .. }
@@ -146,7 +146,7 @@ fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel(
                 // empty-list Foot. Apply only that documented load transition
                 // to the control and earlier probes at each new save boundary.
                 // Their track, occupation, mission and facing state stay live.
-                sim.restore_move_sound_state_after_load(1);
+                sim.substrate.restore_move_sound_state_after_load(1);
                 for (_, probe) in &mut restored_probes {
                     assert!(
                         !probe
@@ -157,7 +157,7 @@ fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel(
                             .move_sound
                             .is_active()
                     );
-                    probe.restore_move_sound_state_after_load(1);
+                    probe.substrate.restore_move_sound_state_after_load(1);
                 }
                 restored.rebuild_caches_after_load(
                     sim.resolved_terrain.as_ref().unwrap().clone(),

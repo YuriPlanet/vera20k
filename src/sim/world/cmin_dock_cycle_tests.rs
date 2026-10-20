@@ -199,6 +199,7 @@ fn spawn_returning_cmin(s: &mut Scene, cell: (u16, u16)) -> u64 {
         .expect("second miner");
     let now = s.sim.session.binary_frame();
     s.sim
+        .substrate
         .mission_assign_exact(id, MissionId::from_known(MissionType::Harvest), now)
         .unwrap();
     let entity = s.sim.substrate.entities.get_mut(id).unwrap();

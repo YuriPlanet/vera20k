@@ -106,7 +106,7 @@ fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
     assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
     assert_eq!(ids.into_iter().collect::<BTreeSet<_>>().len(), ids.len());
 
-    let next_id = sim.substrate.next_stable_object_id;
+    let next_id = sim.next_stable_object_id();
     // In-scenario retail load consumes the saved Scenario RNG bytes and then
     // resets that cursor to seed zero. Normalize the source at that proven
     // post-load baseline so this test isolates object identity preservation.
@@ -133,7 +133,7 @@ fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
             .map(|(&id, wave)| (id, wave.id())),
         Some((wave_id, wave_id))
     );
-    assert_eq!(restored.substrate.next_stable_object_id, next_id);
+    assert_eq!(restored.next_stable_object_id(), next_id);
     assert_eq!(restored.allocate_stable_id(), next_id);
 }
 
@@ -226,7 +226,7 @@ fn gsi_05_01_restore_rejects_mismatch_duplicate_and_counter_behind() {
             ProjectileCoord::new(1, 0, 0),
         ),
     );
-    behind.substrate.next_stable_object_id = highest_id;
+    behind.set_next_stable_object_id_for_test(highest_id);
     assert_eq!(
         behind.restore_after_snapshot_load(),
         Err(SnapshotRestoreError::ObjectIdCounterBehind {

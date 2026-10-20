@@ -167,14 +167,14 @@ fn fixture_world(
         )
     }));
     let span = i32::from(FIXTURE_MAP);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
         base: size.0,
         off_fc: -span,
         off_100: -span,
         off_104: span * 2,
         off_108: span * 2,
-    });
-    sim.playfield_size_height = Some(size.1);
+    }));
+    sim.set_playfield_size_height_for_test(Some(size.1));
     let terrain_key: Vec<_> = specs
         .iter()
         .map(|(at, spec)| (*at, spec.to_string()))
@@ -187,9 +187,11 @@ fn fixture_world(
         let mut state = HouseState::new(id, 0, None, Some(index) == player, 0, 10);
         state.set_is_defeated_for_test(flag(&house[1]));
         sim.houses.register(state);
-        sim.power_states.insert(id, PowerState::settled_for_test());
+        sim.power_states
+            .map_mut_for_test()
+            .insert(id, PowerState::settled_for_test());
         let bits = int(&house[0]);
-        let allies = sim.house_alliances.entry(name).or_default();
+        let allies = sim.house_alliances_mut_for_test().entry(name).or_default();
         for other in (0..31).filter(|other| bits & (1 << other) != 0) {
             allies.insert(format!("H{other}"));
         }
@@ -651,7 +653,7 @@ fn storm_strike_matches_native_rows() {
             &[serde_json::json!([1, false]), serde_json::json!([2, false])],
             Some(0),
         );
-        sim.metallic_debris = row["debris"]
+        *sim.metallic_debris_mut_for_test() = row["debris"]
             .as_array()
             .unwrap()
             .iter()
@@ -1055,7 +1057,6 @@ fn a_strikes_explosion_precedes_its_area_damage_on_ore() {
             .is_none(),
         "the explosion's crater met dense ore"
     );
-    assert!(sim.pending_smudge_requests.is_empty());
     // The bolt's type is the only draw.
     let mut expected = SimRng::new(1);
     let _ = expected.next_u32();
@@ -1436,7 +1437,7 @@ fn retail_storm_strikes_through_production_frames() {
     let mut warnings = Vec::new();
     let mut frames = 0;
     while !lightning_storm::raging(&sim) {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
         frames += 1;
         if sim
@@ -1467,7 +1468,7 @@ fn retail_storm_strikes_through_production_frames() {
 
     let mut strikes = 0;
     while lightning_storm::raging(&sim) {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
         frames += 1;
         strikes += sim
