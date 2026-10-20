@@ -10100,6 +10100,7 @@ mod tests {
         // 453 -> 454: the House left-game flag.
         // 454 -> 455: BunkerState::WallsUp.
         // 455 -> 456: saved paid two-stage selections and ticketed commands.
+        // 456 -> 457: retained per-pass Warhead Verses table.
         // 457 -> 458: host-owned installed upgrades and shared type art.
         assert_eq!(super::SNAPSHOT_VERSION, 458);
     }

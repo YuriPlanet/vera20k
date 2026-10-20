@@ -69,8 +69,8 @@ mod tests {
         let upgrade_type = sim.interner.intern("UPGRADE");
         let owner = sim.interner.intern("OWNER");
         let other = sim.interner.intern("OTHER");
-        let host_id = sim.allocate_stable_id();
-        let upgrade_id = sim.allocate_stable_id();
+        let host_id = sim.substrate_mut_for_test().allocate_stable_id();
+        let upgrade_id = sim.substrate_mut_for_test().allocate_stable_id();
         let mut host = GameEntity::test_default_of_category(
             host_id,
             host,
