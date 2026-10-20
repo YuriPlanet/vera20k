@@ -226,7 +226,8 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return false;
         };
-        let (Some(bounds), Some(size_height)) = (self.playfield_bounds, self.playfield_size_height)
+        let (Some(bounds), Some(size_height)) =
+            (self.playfield_bounds(), self.playfield_size_height())
         else {
             return false;
         };
@@ -438,16 +439,16 @@ mod tests {
             Some(&ini),
         );
         assert!(crate::map::houses::is_allied_with(
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             "A",
             "B"
         ));
         assert!(!crate::map::houses::is_allied_with(
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             "B",
             "A"
         ));
-        let alliances = sim.house_alliances.clone();
+        let alliances = sim.house_alliances.as_map().clone();
         let order = sim.houses.order().to_vec();
         let house_ids: Vec<_> = order
             .iter()
@@ -461,7 +462,7 @@ mod tests {
             &overlays,
             &absent_late_roster,
         ));
-        assert_eq!(sim.house_alliances, alliances);
+        assert_eq!(sim.house_alliances.as_map(), &alliances);
         assert_eq!(sim.houses.order(), order);
         assert_eq!(
             order

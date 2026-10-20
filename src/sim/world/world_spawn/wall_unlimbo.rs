@@ -148,7 +148,7 @@ impl Simulation {
             .load_objects
             .begin_mark(handle, Some([coord.x, coord.y, coord.z]))
             .expect("wall Overlay enters Mark once");
-        self.tactical_dirty_cells.push(dirty);
+        self.dirty_cells.mark_tactical(dirty);
         //5FD270 reaches the one OverlayClass::Mark port; Location is the
         //requested coordinate, and its wall arm owns slope, Track and writes.
         let flags = registry
@@ -230,7 +230,7 @@ impl Simulation {
             let heights = self.sight_height_grid(&config);
             let viewers = self.reveal_viewers.direct(
                 &self.fog,
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 owner,
                 &config,
                 &self.interner,

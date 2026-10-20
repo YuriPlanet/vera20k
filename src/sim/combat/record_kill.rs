@@ -284,7 +284,7 @@ impl crate::sim::world::Simulation {
             &mut self.substrate.entities,
             &mut self.houses,
             &self.interner,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             victim_id,
             source,
             victim_cost,

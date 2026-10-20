@@ -90,7 +90,7 @@ fn null_coord(coord: Option<DriveCoord>) -> DriveCoord {
 fn path_word(entity: &GameEntity, index: usize) -> Option<u8> {
     entity
         .navigation
-        .path_replay
+        .path_replay()
         .remaining_directions()
         .get(index)
         .copied()
@@ -153,7 +153,7 @@ pub(crate) fn hover_stop_moving(entity: &mut GameEntity) -> bool {
         return false;
     };
     if hover.stop_moving() {
-        entity.navigation.path_replay.clear_live_head();
+        entity.navigation.path_replay_mut().clear_live_head();
     }
     true
 }
@@ -226,7 +226,7 @@ impl Simulation {
     /// 1)`, the four zeroed speeds and `SetSpeedFraction(0.0)`.
     fn hover_drop_track(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.navigation.path_replay.clear_live_head();
+            entity.navigation.path_replay_mut().clear_live_head();
             if let Some(hover) = runtime_mut(entity) {
                 hover.head = None;
             }
@@ -418,7 +418,7 @@ impl Simulation {
     ) -> Result<Arrival, FrameAdvanceError> {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.foot_occupation_enabled.resume();
-            entity.navigation.path_runtime.set_path_blocked(false);
+            entity.navigation.path_runtime_mut().clear_blockage();
             if let Some(hover) = runtime_mut(entity) {
                 hover.pushed = false;
             }
@@ -524,7 +524,7 @@ impl Simulation {
             self.track_raw_mark_at(location, false);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.foot_occupation_enabled.suspend();
-                entity.navigation.path_runtime.set_path_blocked(false);
+                entity.navigation.path_runtime_mut().clear_blockage();
             }
         }
         let Some(facing) = self.hover(id).map(|hover| hover.facing.current(frame)) else {
@@ -782,7 +782,7 @@ impl Simulation {
         if self.foot_can_fire_at_target(id, rules, registry) == Some(true)
             && let Some(entity) = self.substrate.entities.get_mut(id)
         {
-            entity.navigation.path_replay.clear_live_head();
+            entity.navigation.path_replay_mut().clear_live_head();
         }
     }
 
@@ -827,7 +827,7 @@ impl Simulation {
         }
         if !entity
             .navigation
-            .path_runtime
+            .path_runtime()
             .movement_timer()
             .expired(frame as i32)
         {
@@ -838,7 +838,7 @@ impl Simulation {
             id,
             destination,
             urgency,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )
         .ok_or_else(|| self.hover_error(id, "retired Hover Find_Path requester"))?;
         let found = self
@@ -848,7 +848,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity
                 .navigation
-                .path_runtime
+                .path_runtime_mut()
                 .start_movement(frame, rules.general.path_delay_ticks());
         } else {
             return Ok(());
@@ -877,7 +877,7 @@ impl Simulation {
             let cell = (i32::from(current.0) + dx, i32::from(current.1) + dy);
             if crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 cell,
-                self.playfield_bounds,
+                self.playfield_bounds(),
                 self.resolved_terrain.as_ref(),
             ) && self.hover_can_enter(
                 id,
@@ -892,10 +892,7 @@ impl Simulation {
             }
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity
-                .navigation
-                .path_runtime
-                .set_retries_left(crate::sim::components::FootPathRuntime::RETRY_RELOAD);
+            entity.navigation.path_runtime_mut().reload_retries();
         }
         Ok(())
     }
@@ -938,7 +935,7 @@ impl Simulation {
         };
         let allied = self.substrate.entities.get(nearest).is_some_and(|object| {
             crate::map::houses::is_allied_with(
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 self.interner.resolve(entity.owner()),
                 self.interner.resolve(object.owner()),
             )
@@ -1011,10 +1008,13 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|e| e.navigation.path_runtime.retries_left() > 0)
+            .is_some_and(|e| e.navigation.path_runtime().retries_left() > 0)
         {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.navigation.path_runtime.decrement_retries_left();
+                entity
+                    .navigation
+                    .path_runtime_mut()
+                    .decrement_retries_left();
             }
         } else {
             //5167D5..51681B: give up, with the retained scold sound.
@@ -1024,7 +1024,7 @@ impl Simulation {
             }
             self.play_foot_path_scold(id, rules);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.navigation.path_runtime.clear_scold_latch();
+                entity.navigation.path_runtime_mut().clear_scold_latch();
             }
         }
         //516822..5168C3: a stopped Foot drops a target it cannot fire at;
@@ -1202,9 +1202,9 @@ impl Simulation {
                     self.track_raw_mark_at(head, true);
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
-                    let queue = &mut entity.navigation.path_replay;
-                    super::super::path_markers::consume_path_replay(queue, 1);
-                    queue.set_reference_cell(Some(coord_cell(head)));
+                    let queue = entity.navigation.path_replay_mut();
+                    queue.consume(1);
+                    queue.rebase(coord_cell(head));
                 }
                 Ok(0)
             }
@@ -1237,15 +1237,12 @@ impl Simulation {
                     .entities
                     .get_mut(id)
                     .expect("same Hover Foot");
-                let runtime = &mut entity.navigation.path_runtime;
-                if !runtime.path_blocked() {
-                    runtime.set_path_blocked(true);
-                    runtime.start_blocked(frame, rules.general.blockage_path_delay_ticks);
-                }
+                let runtime = entity.navigation.path_runtime_mut();
+                runtime.latch_blockage(frame, rules.general.blockage_path_delay_ticks);
                 if runtime.movement_timer().expired(frame as i32) {
-                    entity.navigation.path_replay.clear_live_head();
+                    entity.navigation.path_replay_mut().clear_live_head();
                 }
-                let runtime = &entity.navigation.path_runtime;
+                let runtime = &entity.navigation.path_runtime_mut();
                 let urgency =
                     if runtime.path_blocked() && runtime.blocked_timer().expired(frame as i32) {
                         2
@@ -1322,8 +1319,11 @@ impl Simulation {
     fn hover_restart_path(&mut self, id: u64) {
         let frame = self.session.binary_frame();
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.navigation.path_runtime.start_movement(frame, 0);
-            entity.navigation.path_replay.clear_live_head();
+            entity
+                .navigation
+                .path_runtime_mut()
+                .start_movement(frame, 0);
+            entity.navigation.path_replay_mut().clear_live_head();
         }
     }
 }
@@ -1360,7 +1360,7 @@ mod tests {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(10, 10)
+                .cell_mut_for_test(10, 10)
                 .unwrap();
             cell.land_type = input["land"].as_u64().unwrap_or(2) as u8;
             let mut entity = GameEntity::test_default(1, "ROBO", "Americans", 10, 10);

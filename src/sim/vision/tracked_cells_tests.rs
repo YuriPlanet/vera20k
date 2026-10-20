@@ -71,7 +71,7 @@ fn tracked_fog_passes_match_visiting_every_cell() {
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x70AF50);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.input_delay_ticks = 0;
+        sim.set_input_delay_ticks(0);
         let grid = sim
             .path_grid_snapshot()
             .map(|grid| (*grid).clone())

@@ -92,7 +92,7 @@ fn ambient_action_matches_native_controller_writes_without_resetting_timer_or_ti
         assert_eq!(light.selected_profile(), prior.selected_profile());
         assert_eq!(light.alternate_rgb(), prior.alternate_rgb());
         assert!(
-            sim.lighting_sources.pending.is_empty(),
+            sim.lighting_sources.pending().is_empty(),
             "73 has no immediate relight"
         );
         assert_eq!(
@@ -175,7 +175,7 @@ fn retail_transylv_ambient_action_reaches_native_fade_and_large_flash_request() 
             row["timer"]
         );
         let emitted = !row["events"].as_array().unwrap().is_empty();
-        assert_eq!(sim.lighting_sources.pending.len(), usize::from(emitted));
+        assert_eq!(sim.lighting_sources.pending().len(), usize::from(emitted));
     }
     // Flat empty declared crop, not Transylv terrain/scene pixel parity.
     sim.session
@@ -589,7 +589,7 @@ fn ambient_rate_and_step_match_original_action_bits_and_due_logic_rung() {
             *sim.session.lighting().transition_timer(),
             CdTimer::started(12, 8)
         );
-        assert!(sim.lighting_sources.pending.is_empty());
+        assert!(sim.lighting_sources.pending().is_empty());
         sim.session.set_binary_frame_for_test(20);
         sim.tick_scenario_lighting_transition(&rules);
         assert_eq!(
@@ -606,7 +606,7 @@ fn ambient_rate_and_step_match_original_action_bits_and_due_logic_rung() {
             timer,
             "{kind}: {operand}"
         );
-        assert_eq!(!sim.lighting_sources.pending.is_empty(), relight);
+        assert_eq!(!sim.lighting_sources.pending().is_empty(), relight);
         let changed = sim.session.lighting_mut().retire_ambient_change_inputs();
         assert_eq!(changed[usize::from(kind == 71)].unwrap().bits(), stored);
         assert!(changed[usize::from(kind == 72)].is_none());

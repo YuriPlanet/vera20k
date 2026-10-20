@@ -25,7 +25,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
         return;
     };
     let owner = preferred_local_owner_name(state).unwrap_or_else(|| "Americans".to_string());
-    let ready = sim.interner.get(&owner).map_or([false; 2], |owner| {
+    let ready = sim.interner().get(&owner).map_or([false; 2], |owner| {
         state
             .match_state
             .match_presentation
@@ -38,7 +38,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
         false,
         false,
     ];
-    let (tick, frame) = (sim.session.tick(), sim.session.binary_frame() as i32);
+    let (tick, frame) = (sim.session().tick(), sim.session().binary_frame() as i32);
     state
         .match_state
         .match_presentation
@@ -51,7 +51,7 @@ fn has_charged_sw_for_owner(
     rules: &crate::rules::ruleset::RuleSet,
     owner: &str,
 ) -> bool {
-    let owner_iid = sim.interner.get(owner).unwrap_or_default();
+    let owner_iid = sim.interner().get(owner).unwrap_or_default();
     crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner_iid)
         .iter()
         .any(|sw| sw.is_ready)

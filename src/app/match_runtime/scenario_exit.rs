@@ -40,23 +40,43 @@ pub(crate) fn outcome_detail(kind: crate::sim::house_state::HouseOutcomeKind) ->
     }
 }
 
-/// Front-end route selected after consuming an executed EXIT event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ExecutedExitDisposition {
-    Outcome,
-    Abort,
+/// The termination bytes Main_Game samples once per loop: the local House's
+/// ready victory/loss (`0x00A83D49`/`0x00A8ECD0`, one House holds at most
+/// one), the campaign restart request (`0x008B41C0`) and an executed EXIT
+/// (`0x00A83D48`). Main_Tick `0x0055DE4F..0x0055DE71` advances no frame while
+/// any is set.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TerminationRequests {
+    pub outcome_ready: bool,
+    pub restart: bool,
+    pub exit: bool,
 }
 
-/// Preserve Main_Game's terminal-route priority when House expiry and EXIT
-/// execute in the same late frame. `FUN_0055CFD0` tests victory/loss before
-/// the EXIT termination byte, so the already-ready House result owns teardown.
-pub(crate) const fn arbitrate_executed_exit(
-    local_outcome_exit_ready: bool,
-) -> ExecutedExitDisposition {
-    if local_outcome_exit_ready {
-        ExecutedExitDisposition::Outcome
+/// The one route `Main_Game__Route_Scenario_Termination 0x0055CFD0` takes.
+/// Every taken route clears all four bytes, so a lower-priority request
+/// raised in the same pass is dropped, not deferred.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TerminationRoute {
+    /// GameExit::Victory `0x00685670` or GameExit::Defeat `0x00685DC0`.
+    Outcome,
+    /// `0x006863E0`: Start_Scenario on the same map, no movie, prompt or score.
+    Restart,
+    /// GameExit::BattleControlTerminated `0x00686570`.
+    Exit,
+}
+
+/// Priority victory > defeat > restart > exit, as `0x0055CFD0` tests them.
+pub(crate) const fn route_scenario_termination(
+    requests: TerminationRequests,
+) -> Option<TerminationRoute> {
+    if requests.outcome_ready {
+        Some(TerminationRoute::Outcome)
+    } else if requests.restart {
+        Some(TerminationRoute::Restart)
+    } else if requests.exit {
+        Some(TerminationRoute::Exit)
     } else {
-        ExecutedExitDisposition::Abort
+        None
     }
 }
 
@@ -105,12 +125,9 @@ pub(crate) enum ScenarioExitDestination {
     },
     /// Campaign victory with `[Basic] SkipScore=yes` continues directly.
     CampaignVictoryContinue,
-    /// Campaign defeat bypasses `0x108`; its native retry prompt remains a
-    /// separate route from the campaign victory score page.
-    CampaignDefeat {
-        title: String,
-        detail: String,
-    },
+    /// Campaign defeat bypasses `0x108`: GameExit::Defeat plays the Lose
+    /// movie and asks `TXT_TO_REPLAY` instead (`0x00686060..0x006860F6`).
+    CampaignDefeat,
     MainMenu,
 }
 
@@ -162,9 +179,7 @@ pub(crate) fn scenario_exit_destination(
         Some(CampaignOutcomeRoute::VictoryContinue) => {
             ScenarioExitDestination::CampaignVictoryContinue
         }
-        Some(CampaignOutcomeRoute::DefeatPrompt) => {
-            ScenarioExitDestination::CampaignDefeat { title, detail }
-        }
+        Some(CampaignOutcomeRoute::DefeatPrompt) => ScenarioExitDestination::CampaignDefeat,
         None => ScenarioExitDestination::Score {
             title,
             detail,
@@ -382,10 +397,7 @@ mod tests {
             || panic!("campaign defeat does not build a score model"),
             || panic!("campaign defeat must not build multiplayer score"),
         );
-        assert!(matches!(
-            defeat,
-            ScenarioExitDestination::CampaignDefeat { .. }
-        ));
+        assert!(matches!(defeat, ScenarioExitDestination::CampaignDefeat));
 
         let skirmish = scenario_exit_destination(
             SessionMode::Skirmish,
@@ -403,6 +415,25 @@ mod tests {
             skirmish,
             ScenarioExitDestination::Score { model, .. } if model.side == 3
         ));
+    }
+
+    /// `0x0055CFD0` routes victory/defeat before restart and restart before
+    /// EXIT; the taken route clears the others.
+    #[test]
+    fn termination_router_takes_outcome_then_restart_then_exit() {
+        let route = |outcome_ready, restart, exit| {
+            route_scenario_termination(TerminationRequests {
+                outcome_ready,
+                restart,
+                exit,
+            })
+        };
+        assert_eq!(route(false, false, false), None);
+        assert_eq!(route(true, true, true), Some(TerminationRoute::Outcome));
+        assert_eq!(route(true, false, true), Some(TerminationRoute::Outcome));
+        assert_eq!(route(false, true, true), Some(TerminationRoute::Restart));
+        assert_eq!(route(false, true, false), Some(TerminationRoute::Restart));
+        assert_eq!(route(false, false, true), Some(TerminationRoute::Exit));
     }
 
     #[test]

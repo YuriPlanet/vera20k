@@ -40,6 +40,11 @@ use crate::rules::ruleset::RuleSet;
 const GROWTH_PAGE_SIZE: u32 = 4096;
 const INFANTRY_FACING_STEP: u8 = crate::util::direction::FACING_UNITS_PER_DIRECTION;
 const INFANTRY_FACING_BUCKETS: u8 = 8;
+/// The shadow InfantryClass::DrawIt draws under an airborne infantry: the
+/// `INFSHDW.SHP` literal at `0x00825524`, cached at `0x00A8F244`, frame 1
+/// (`0x0051957C`).
+const INFANTRY_AIR_SHADOW_SHP: &str = "INFSHDW";
+const INFANTRY_AIR_SHADOW_FRAME: u16 = 1;
 
 fn register_effect_anim_frames(
     needed: &mut HashSet<ShpSpriteKey>,
@@ -537,6 +542,18 @@ impl SpriteAtlas {
         self.entries.get(key)
     }
 
+    /// [`INFANTRY_AIR_SHADOW_SHP`]'s frame 1, the shadow an airborne infantry
+    /// casts.
+    pub(crate) fn infantry_air_shadow(&self) -> Option<&ShpSpriteEntry> {
+        self.get(&ShpSpriteKey {
+            palette_context: ShpPaletteContext::GlobalAnim,
+            type_id: INFANTRY_AIR_SHADOW_SHP.to_string(),
+            facing: 0,
+            frame: INFANTRY_AIR_SHADOW_FRAME,
+            house_color: HouseColorIndex(0),
+        })
+    }
+
     /// Physical frame count from the object type's resolved SHP source.
     pub(crate) fn object_shp_frame_count(&self, type_id: &str) -> Option<u16> {
         self.object_shp_frame_counts
@@ -831,9 +848,9 @@ fn anim_remap_base_keys<'a>(
     house_colors: &'a HouseColorMap,
 ) -> impl Iterator<Item = (String, HouseColorIndex)> + 'a {
     sim.anims().filter_map(move |(_, anim)| {
-        let color = anim_remap_color(anim, &sim.interner, house_colors)?;
+        let color = anim_remap_color(anim, sim.interner(), house_colors)?;
         Some((
-            sim.interner.resolve(anim.type_id()).to_ascii_uppercase(),
+            sim.interner().resolve(anim.type_id()).to_ascii_uppercase(),
             color,
         ))
     })
@@ -1584,6 +1601,57 @@ pub fn build_sprite_atlas(
         }
     }
 
+    // Step 1c': a war factory's unload art (`ArtEntry::factory_door`), every
+    // frame of each SHP, shadows included. `BuildingClass::DrawIt @
+    // 0x0043D290` draws it through the building's own DrawSHP, like the bib.
+    if let Some(art_reg) = art {
+        for (type_id, color) in &new_objects {
+            if type_id.contains('_') {
+                continue;
+            }
+            let rules_image: String = rules
+                .and_then(|r| r.object(type_id))
+                .map(|o| o.image.clone())
+                .unwrap_or_else(|| type_id.clone());
+            let Some(entry) = art_reg.resolve_metadata_entry(type_id, &rules_image) else {
+                continue;
+            };
+            let palette_context = if entry.terrain_palette {
+                ShpPaletteContext::Cell
+            } else {
+                ShpPaletteContext::SelectedScheme
+            };
+            for name in entry.factory_door.names() {
+                let upper = name.to_ascii_uppercase();
+                let count = match object_shp_frame_counts.get(&upper) {
+                    Some(&count) => count,
+                    None => {
+                        let candidates = art_data::theater_shp_names(&upper, theater_name)
+                            .map(|name| format!("{name}.SHP"));
+                        let Some((file, data)) = find_shp(asset_manager, &candidates) else {
+                            continue;
+                        };
+                        let Ok(count) = ShpFile::frame_count_from_bytes(data) else {
+                            continue;
+                        };
+                        object_shp_frame_counts.insert(upper.clone(), count);
+                        shp_files.insert(upper.clone(), file.to_string());
+                        count
+                    }
+                };
+                for frame in 0..count {
+                    needed.insert(ShpSpriteKey {
+                        palette_context,
+                        type_id: upper.clone(),
+                        facing: 0,
+                        frame,
+                        house_color: *color,
+                    });
+                }
+            }
+        }
+    }
+
     // Step 1d: Pre-load world effect SHPs (warp animations, explosions, etc.)
     // once, at map load. Names come from rules.ini [General]
     // WarpIn=/WarpOut=/WarpAway= — NOT hardcoded. These use anim.pal (effect
@@ -1686,6 +1754,28 @@ pub fn build_sprite_atlas(
                 "Parachute SHP {} not found in MIX archives — chute will not render",
                 shp_name
             ),
+        }
+    }
+
+    // Step 1f: the airborne infantry shadow, the literal `INFSHDW.SHP`
+    // (`0x00825524`) InfantryClass::DrawIt loads on first use and draws at
+    // frame 1 ([`INFANTRY_AIR_SHADOW_SHP`]).
+    if previous_atlas.is_none() {
+        let candidates = ["infshdw.shp".to_string(), "INFSHDW.SHP".to_string()];
+        match find_shp(asset_manager, &candidates)
+            .and_then(|(file, data)| Some((file, ShpFile::frame_count_from_bytes(data).ok()?)))
+        {
+            Some((file, frame_count)) if frame_count > INFANTRY_AIR_SHADOW_FRAME => {
+                needed.insert(ShpSpriteKey {
+                    palette_context: ShpPaletteContext::GlobalAnim,
+                    type_id: INFANTRY_AIR_SHADOW_SHP.to_string(),
+                    facing: 0,
+                    frame: INFANTRY_AIR_SHADOW_FRAME,
+                    house_color: HouseColorIndex(0),
+                });
+                shp_files.insert(INFANTRY_AIR_SHADOW_SHP.to_string(), file.to_string());
+            }
+            _ => log::warn!("INFSHDW.SHP frame 1 missing: airborne infantry draw no shadow"),
         }
     }
 
@@ -2574,6 +2664,12 @@ impl SpriteAtlas {
     /// still provide actual pages through the existing device-backed owner.
     pub(crate) fn from_test_entries(entries: HashMap<ShpSpriteKey, ShpSpriteEntry>) -> Self {
         Self::new(Vec::new(), entries, ShpPalettes::default())
+    }
+
+    /// Record `type_id`'s physical SHP frame count, as an atlas build does.
+    pub(crate) fn set_object_shp_frame_count_for_test(&mut self, type_id: &str, count: u16) {
+        self.object_shp_frame_counts
+            .insert(type_id.to_ascii_uppercase(), count);
     }
 
     /// A one-page atlas whose page holds `indices` resolved through

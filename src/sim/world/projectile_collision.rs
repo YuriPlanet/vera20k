@@ -700,7 +700,7 @@ mod tests {
             entities: &sim.substrate.entities,
             terrain_objects: sim.terrain_objects.objects(),
             interner: &sim.interner,
-            alliances: &sim.house_alliances,
+            alliances: sim.house_alliances.as_map(),
             overlays: sim.overlay_grid.as_ref(),
             overlay_registry: None,
             rules: None,
@@ -735,7 +735,7 @@ mod tests {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(bridge.0, bridge.1)
+                .cell_mut_for_test(bridge.0, bridge.1)
                 .unwrap();
             let supplied =
                 super::super::lifecycle_tests::common_raw_terrain_cell(bridge.0, bridge.1, 0, true);
@@ -880,7 +880,7 @@ mod tests {
         sim.resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(10, 20)
+            .cell_mut_for_test(10, 20)
             .unwrap()
             .level = 6;
         crate::sim::terrain_spawn::construct_terrain_objects(
@@ -899,7 +899,7 @@ mod tests {
         sim.resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(10, 20)
+            .cell_mut_for_test(10, 20)
             .unwrap()
             .level = 0;
         let mut collision = world(&sim);
@@ -1096,7 +1096,7 @@ mod tests {
                 }
             }
             if row["allied"].as_bool().unwrap_or(false) {
-                sim.house_alliances
+                sim.house_alliances_mut_for_test()
                     .insert("AMERICANS".into(), ["RUSSIANS".into()].into());
             }
             let mut spawn = gsi_05_02_projectile(if source_present { 1 } else { 999 }, None);
@@ -1204,11 +1204,11 @@ mod tests {
                 );
             }
             if flag("source_allied") {
-                sim.house_alliances
+                sim.house_alliances_mut_for_test()
                     .insert("AMERICANS".into(), ["RUSSIANS".into()].into());
             }
             if flag("wall_allied") {
-                sim.house_alliances
+                sim.house_alliances_mut_for_test()
                     .insert("RUSSIANS".into(), ["AMERICANS".into()].into());
             }
             let dimensions = row["foundation_dimensions"]
@@ -1261,7 +1261,7 @@ mod tests {
                 }
                 entity
                     .lifecycle
-                    .set_cell_marked(target["marked"].as_bool().unwrap_or(true));
+                    .set_cell_marked_for_test(target["marked"].as_bool().unwrap_or(true));
                 entity.set_on_bridge(target["on_bridge"].as_bool().unwrap_or(false));
                 // The supplied phase is the installed Rocket's MissionState.
                 if target["rocket"].as_bool().unwrap_or(false)
@@ -1474,7 +1474,7 @@ mod tests {
     /// Admit `shot` as bullet 100, already in flight: the allocator moves
     /// past it, so the frame's combat tail does not take it for a new shot.
     fn admit_existing(sim: &mut Simulation, shot: crate::sim::projectile::ProjectileSpawn) {
-        sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(101);
+        sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(101));
         sim.admit_projectile(100, shot);
     }
 
@@ -2247,7 +2247,7 @@ mod tests {
             sim.resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(2, 2)
+                .cell_mut_for_test(2, 2)
                 .unwrap()
                 .bridge_facts
                 .raw_flags = cell["flags"].as_u64().unwrap_or(0) as u32;
@@ -2295,7 +2295,7 @@ mod tests {
                 );
             }
             if row["source_allied"] == true {
-                sim.house_alliances
+                sim.house_alliances_mut_for_test()
                     .insert("AMERICANS".into(), ["RUSSIANS".into()].into());
             }
             let mut shot = gsi_05_02_projectile(

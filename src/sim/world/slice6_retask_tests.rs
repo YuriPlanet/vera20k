@@ -376,7 +376,12 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // only: a temporary control hashing the bool gave the previous value in the
 // same test binary, with every tripwire above green. Control removed.
 // Previous: 0x000C_DEC1_A4D5_BC42.
-const SLICE6_BASELINE_HASH: u64 = 0xDE7B_17EE_FC74_D0AF;
+// Snapshot 449 hashes the Techno disguise firing blink timer (+1EC/+1F4,
+// #2183), which every entity carries. Hash composition only: a temporary
+// control on #2183's merge without that hash gave the previous value, with
+// every tripwire above green. Control removed.
+// Previous: 0xDE7B_17EE_FC74_D0AF.
+const SLICE6_BASELINE_HASH: u64 = 0xF35B_3382_2DEF_1F00;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -582,7 +587,7 @@ fn replay_hash_stable_through_slice6() {
             // 741C4F..741C78): the stale suffix behind it is never read.
             assert!(
                 tank.navigation
-                    .path_replay
+                    .path_replay()
                     .remaining_directions()
                     .is_empty(),
                 "Stop clears the live path head"

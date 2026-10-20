@@ -78,7 +78,7 @@ fn retained_base_repair_matches_native_selectors_and_adoption_without_live_publi
             );
             *zones.map_mut(movement).unwrap() = map;
         }
-        if let Some(cell) = terrain.cell_mut(x as u16, y as u16) {
+        if let Some(cell) = terrain.cell_mut_for_test(x as u16, y as u16) {
             cell.level = 20;
             cell.zone_type = zone_class::OUTSIDE;
             cell.outside_playfield = true;

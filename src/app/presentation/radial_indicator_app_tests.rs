@@ -31,16 +31,16 @@ fn state(rules: &RuleSet) -> Simulation {
     let mut sim = Simulation::with_seed(1);
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     for name in ["Americans", "British"] {
-        let owner = sim.interner.intern(name);
-        sim.houses
+        let owner = sim.intern(name);
+        sim.houses_mut_for_test()
             .register(crate::sim::house_state::HouseState::new(
                 owner, 0, None, true, 0, 10,
             ));
     }
-    sim.session
+    sim.session_mut_for_test()
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session
-        .set_current_house_for_test(sim.interner.get("Americans"));
+    let house = sim.interner().get("Americans");
+    sim.session_mut_for_test().set_current_house_for_test(house);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim
@@ -49,9 +49,9 @@ fn state(rules: &RuleSet) -> Simulation {
 fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialIndicatorDraw> {
     let before = (
         sim.state_hash(),
-        sim.main_rng.native_state_hex(),
-        sim.scenario_rng.native_state_hex(),
-        sim.mapgen_rng.native_state_hex(),
+        sim.main_rng().native_state_hex(),
+        sim.scenario_rng().native_state_hex(),
+        sim.mapgen_rng().native_state_hex(),
     );
     let mut pulse = SuperweaponRangePulse::default();
     let result = build(
@@ -74,9 +74,9 @@ fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialI
         before,
         (
             sim.state_hash(),
-            sim.main_rng.native_state_hex(),
-            sim.scenario_rng.native_state_hex(),
-            sim.mapgen_rng.native_state_hex()
+            sim.main_rng().native_state_hex(),
+            sim.scenario_rng().native_state_hex(),
+            sim.mapgen_rng().native_state_hex()
         )
     );
     result
@@ -472,7 +472,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
         .unwrap();
     // A retained dummy target makes the dummy coordinate part of lockstep
     // state. This supplied prior isolates rendering from target acquisition.
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(tank)
         .unwrap()
         .set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
@@ -496,8 +496,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
     let before_save = save();
     for cell in [(40, 40), (u16::MAX, u16::MAX)] {
         assert!(
-            sim.resolved_terrain
-                .as_ref()
+            sim.resolved_terrain()
                 .unwrap()
                 .native_fixed_cell_index(cell.0 as i16, cell.1 as i16)
                 .is_none()
@@ -581,8 +580,8 @@ fn stock_selected_gap_uses_current_house_ledger_order_and_online_not_power() {
         query(&sim, rules, &[pillbox], 0).is_empty(),
         "weapon range alone does not grant HasRadialIndicator"
     );
-    sim.session
-        .set_current_house_for_test(sim.interner.get("British"));
+    let house = sim.interner().get("British");
+    sim.session_mut_for_test().set_current_house_for_test(house);
     assert!(query(&sim, rules, &[a], 0).is_empty());
     assert_eq!(query(&sim, rules, &[rival], 0).len(), 1);
 }

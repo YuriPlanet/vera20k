@@ -103,7 +103,7 @@ fn fixture(input: &Value, shape: u8) -> Simulation {
     actor
         .navigation
         .set_pending_destination_setter_for_test(true);
-    actor.navigation.path_runtime.start_movement(40, 30);
+    actor.navigation.path_runtime_mut().start_movement(40, 30);
     sim.substrate.entities.insert(actor);
     sim.mission_assign_exact(
         1,

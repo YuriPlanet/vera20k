@@ -74,7 +74,7 @@ pub(crate) fn build_projectile_visual_instances(
     let assets = state.process_assets.manager();
     let mut pose_cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
     let sim = &rt.simulation;
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = sim.resolved_terrain() else {
         return;
     };
     let rules = &rt.resources.rules;
@@ -89,11 +89,11 @@ pub(crate) fn build_projectile_visual_instances(
     let local_scheme = crate::app::input::commands::preferred_local_owner_name(state)
         .and_then(|owner| house_colors.get(&owner).copied())
         .unwrap_or(crate::rules::house_colors::NO_REMAP);
-    for (_, projectile) in sim.projectiles.iter() {
+    for (_, projectile) in sim.projectiles().iter() {
         let Some(type_id) = projectile
             .payload()
             .projectile_type()
-            .map(|id| sim.interner.resolve(id))
+            .map(|id| sim.interner().resolve(id))
         else {
             continue;
         };
@@ -102,7 +102,7 @@ pub(crate) fn build_projectile_visual_instances(
         };
         let scheme = projectile
             .firer_house()
-            .and_then(|house| house_colors.get(sim.interner.resolve(house)).copied())
+            .and_then(|house| house_colors.get(sim.interner().resolve(house)).copied())
             .unwrap_or(local_scheme);
         if let Some(object) = projectile_draw_instance(
             projectile,

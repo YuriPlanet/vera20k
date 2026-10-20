@@ -37,6 +37,15 @@ impl MpModeClass {
     pub const fn lists_in_skirmish(self) -> bool {
         matches!(self, Self::Battle | Self::FreeForAll)
     }
+
+    /// Vtable `+0x4` and `+0x8`, which the sidebar Diplomacy button asks
+    /// before choosing the mission briefing over Diplomacy in LAN/WOL
+    /// (`0x00653918..0x00653938`). Only Cooperative (vtable `0x007EE27C`)
+    /// overrides the base `0x005C0E30`/`0x005C0E40` (false) with
+    /// `0x005C4EE0`/`0x005C4EF0` (true).
+    pub const fn restates_mission_for_diplomacy(self) -> bool {
+        matches!(self, Self::Cooperative)
+    }
 }
 
 /// Effects of the mode's successful Start validation. The shell/session owner

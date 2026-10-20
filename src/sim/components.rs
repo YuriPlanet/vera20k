@@ -166,8 +166,35 @@ impl FootPathRuntime {
         self.path_blocked
     }
 
-    /// Store the blockage latch.
-    pub(crate) fn set_path_blocked(&mut self, blocked: bool) {
+    /// The code-2 refusal's latch (Walk `0x0075B8A9..0x0075B979`, Drive/Ship
+    /// `0x004B3656..0x004B368D`, Hover's code 2): the first refusal stores
+    /// `Foot+0x6B7` and starts the BlockagePathDelay grace (`+0x668`); a
+    /// latched blockage keeps its running grace.
+    pub(crate) fn latch_blockage(&mut self, frame: u32, delay: i32) {
+        if !self.path_blocked {
+            self.path_blocked = true;
+            self.start_blocked(frame, delay);
+        }
+    }
+
+    /// Clear the blockage latch (`Foot+0x6B7 = 0`), keeping the grace timer:
+    /// progress, a found path or a new command ends the blockage.
+    pub(crate) fn clear_blockage(&mut self) {
+        self.path_blocked = false;
+    }
+
+    /// `Set_Destination_Internal` (`0x004D94B0`) tail `0x004D96C2..0x004D9707`
+    /// for every accepted destination: `+0x6B7 = 0`, `+0x668 = (frame,
+    /// Rules+1768)`, `+0x640 = (frame, 0)`. It never writes `+0x64C`.
+    pub(crate) fn accept_destination(&mut self, frame: u32, blockage_delay: i32) {
+        self.start_movement(frame, 0);
+        self.start_blocked(frame, blockage_delay);
+        self.path_blocked = false;
+    }
+
+    /// A fixture's blockage latch.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_path_blocked_for_test(&mut self, blocked: bool) {
         self.path_blocked = blocked;
     }
 
@@ -176,8 +203,16 @@ impl FootPathRuntime {
         self.retries_left
     }
 
-    /// Store the path retries left.
-    pub(crate) fn set_retries_left(&mut self, retries: u32) {
+    /// Reload the path retries (`Foot+0x64C`) to [`Self::RETRY_RELOAD`]: a
+    /// found path (the no-head Process FindPath success, Walk `0x0075B2E2`)
+    /// restores the full budget.
+    pub(crate) fn reload_retries(&mut self) {
+        self.retries_left = Self::RETRY_RELOAD;
+    }
+
+    /// A fixture's path retries.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_retries_left_for_test(&mut self, retries: u32) {
         self.retries_left = retries;
     }
 
@@ -275,6 +310,7 @@ pub struct FootPathQueue {
 
 impl FootPathQueue {
     /// `Foot+0x5E0`, every direction word, consumed prefix included.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn directions(&self) -> &[u8] {
         &self.directions
     }
@@ -289,31 +325,78 @@ impl FootPathQueue {
         self.reference_cell
     }
 
-    /// Drop every direction word.
-    pub(crate) fn clear_directions(&mut self) {
-        self.directions.clear();
-    }
-
-    /// Append a direction word.
-    pub(crate) fn push_direction(&mut self, direction: u8) {
-        self.directions.push(direction);
-    }
-
-    /// Overwrite the word at `slot`, when there is one.
-    pub(crate) fn set_direction(&mut self, slot: usize, direction: u8) {
+    /// Write the native `-1` terminator at `slot`, when there is a word there:
+    /// the NavCom trim cuts the queue short.
+    pub(crate) fn terminate_at(&mut self, slot: usize) {
         if let Some(word) = self.directions.get_mut(slot) {
-            *word = direction;
+            *word = u8::MAX;
         }
     }
 
-    /// Store the cursor.
-    pub(crate) fn set_cursor(&mut self, cursor: u16) {
+    /// `Path[0] = -1`: every word consumed, the empty queue.
+    pub(crate) fn exhaust(&mut self) {
+        self.cursor = self.directions.len().min(u16::MAX as usize) as u16;
+    }
+
+    /// `Foot+0x558`, the cell the remaining directions start from.
+    pub(crate) fn rebase(&mut self, reference_cell: (i16, i16)) {
+        self.reference_cell = Some(reference_cell);
+    }
+
+    /// The queue `FootClass::Find_Path @ 0x004D3920` installs from a found
+    /// route (`0x004D393A..0x004D4003`): the directions from `reference`
+    /// through `path` from `first_destination` on, unconsumed.
+    pub(crate) fn install(
+        &mut self,
+        reference: (u16, u16),
+        path: &[(u16, u16)],
+        first_destination: usize,
+    ) {
+        let mut from = (reference.0 as i16, reference.1 as i16);
+        self.directions.clear();
+        for &destination in path.iter().skip(first_destination) {
+            self.directions.push(direction_from_step(from, destination));
+            from = (destination.0 as i16, destination.1 as i16);
+        }
+        self.cursor = 0;
+        self.reference_cell = Some((reference.0 as i16, reference.1 as i16));
+    }
+
+    /// Fresh acceptance (`0x004B4618`/`0x006A3C47`): `endpoint` becomes the
+    /// reference and `consumed_directions` words are popped.
+    pub(crate) fn accept(&mut self, endpoint: (i16, i16), consumed_directions: usize) {
+        self.reference_cell = Some(endpoint);
+        self.consume(consumed_directions);
+    }
+
+    /// Accepted chain `0x004B1DF7`/`0x006A143A` and the tube entries (Walk
+    /// `0x0075B3E0..0x0075B3EB`, Drive `0x004B135D..0x004B1373`, Ship
+    /// `0x006A0A25..0x006A0A3B`) pop the queue without rewriting `Foot+0x558`.
+    pub(crate) fn consume(&mut self, consumed_directions: usize) {
+        let cursor = usize::from(self.cursor)
+            .saturating_add(consumed_directions)
+            .min(self.directions.len());
+        self.cursor = cursor.min(u16::MAX as usize) as u16;
+    }
+
+    /// A fixture's cursor.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_cursor_for_test(&mut self, cursor: u16) {
         self.cursor = cursor;
     }
 
-    /// Store the reference cell.
-    pub(crate) fn set_reference_cell(&mut self, reference_cell: Option<(i16, i16)>) {
+    /// A fixture's reference cell.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_reference_cell_for_test(&mut self, reference_cell: Option<(i16, i16)>) {
         self.reference_cell = reference_cell;
+    }
+
+    /// A fixture's direction word at `slot`, when there is one.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_direction_for_test(&mut self, slot: usize, direction: u8) {
+        if let Some(word) = self.directions.get_mut(slot) {
+            *word = direction;
+        }
     }
 
     /// A fixture's direction words.
@@ -364,7 +447,7 @@ impl FootPathQueue {
     /// step rewrites it from the object's position after every paid step, and
     /// `hover_process` rewrites it per cell. The chain and tube pops
     /// (`track_host`, `tube_movement`) preserve it, as
-    /// [`crate::sim::movement::path_markers::consume_path_replay`] records, so on
+    /// [`FootPathQueue::consume`] records, so on
     /// those paths the reference stays at the accepted endpoint while the cursor
     /// moves on and a suffix walked from it falls a cell further behind the mover
     /// per paid step. The anchor is therefore the caller's to supply: pass the
@@ -465,7 +548,20 @@ impl FootSpeedState {
         self.crush_slowdown
     }
 
-    pub(crate) fn set_crush_slowdown(&mut self, active: bool) {
+    /// Drive's straight/CrusherAll pre-entry arm (`0x004B1A2F`) sets
+    /// `Foot+0x6B5`.
+    pub(crate) fn arm_crush_slowdown(&mut self) {
+        self.crush_slowdown = true;
+    }
+
+    /// Unit's admitted overlay tail (`0x0073B067`) clears `Foot+0x6B5`.
+    pub(crate) fn clear_crush_slowdown(&mut self) {
+        self.crush_slowdown = false;
+    }
+
+    /// A fixture's crush slowdown.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_crush_slowdown_for_test(&mut self, active: bool) {
         self.crush_slowdown = active;
     }
 
@@ -653,15 +749,17 @@ impl AnimClassSpawnDescriptor {
     }
 }
 
-/// Emitted by the refinery dock state machine for EVERY due dump gate of
-/// `UnitClass::Mission_Unload @ 0x0073D630` state 3 (`HarvesterDumpRate × 900
-/// <= unit+0xF8`, `0x0073E355..0x0073E374`), including the final gate that finds
-/// no cargo. The authoritative master-frame tail consumes it to spawn the
-/// refinery smoke burst (`BuildingClass` vtable+0x468 → `0x00459900`, fired
-/// first on each gate at `0x0073E37E`), start SpecialAnim slot 10 only while
-/// none is live (`building+0x584 == NULL`, `0x0073E384`), and cut the running
-/// SpecialAnim on the empty gate (`ClearAnimSlot(0xA)`, `0x0073E530`) before
-/// the returned state hash. The queue itself is transient and serde-skipped.
+/// Test observation of EVERY due dump gate of `UnitClass::Mission_Unload @
+/// 0x0073D630` state 3 (`HarvesterDumpRate × 900 <= unit+0xF8`,
+/// `0x0073E355..0x0073E374`), including the final gate that finds no cargo.
+/// The refinery dock commits the gate's effects itself
+/// (`building_anim::begin_refinery_unload_gate`, `end_refinery_unload_empty`):
+/// the refinery smoke burst (`BuildingClass` vtable+0x468 → `0x00459900`,
+/// fired first on each gate at `0x0073E37E`), SpecialAnim slot 10 only while
+/// none is live (`building+0x584 == NULL`, `0x0073E384`), and the cut of the
+/// running SpecialAnim on the empty gate (`ClearAnimSlot(0xA)`, `0x0073E530`).
+/// The frame tail drops the event.
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BaleDepositEvent {
     /// Refinery stable_id where the bale was deposited.
@@ -676,20 +774,19 @@ pub struct BaleDepositEvent {
     pub empty: bool,
 }
 
-/// Emitted by the tank-bunker lifecycle when the walls rise (install) or fall
-/// (teardown). The authoritative frame tail creates the bunker's SpecialAnim
-/// overlays — document order within `kind == Special` decides the pair: 0/1 =
-/// walls-up, 2/3 = walls-down. `damaged` selects the `…Damaged` art variant when
-/// the building was at/below ConditionRed health at emit time. The queue is
-/// transient; its resulting overlay component participates in the frame hash.
+/// Test observation of the tank-bunker walls rising (install) or falling
+/// (teardown). The bunker link sets the wall anim slots itself
+/// (`building_anim::set_bunker_wall_slots`); `damaged` is the `…Damaged`
+/// variant choice it passed. The frame tail drops the event.
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct BunkerWallAnimEvent {
     /// Bunker building stable_id whose walls are animating.
     pub building_id: u64,
     /// `true` = walls rising (install), `false` = walls falling (teardown).
     pub up: bool,
-    /// Building was at/below ConditionRed when the event fired — use the
-    /// `…Damaged` SpecialAnim variant.
+    /// The building was at or below ConditionYellow when the event fired, so
+    /// the walls use the `…Damaged` SpecialAnim variant.
     pub damaged: bool,
 }
 
@@ -764,4 +861,13 @@ mod tests {
 
         assert_ne!(hash_drive(&drive_a), hash_drive(&drive_b));
     }
+}
+
+/// The direction word of one route step; a non-adjacent step is the tube
+/// direction.
+fn direction_from_step(from: (i16, i16), to: (u16, u16)) -> u8 {
+    let dx = i32::from(to.0 as i16) - i32::from(from.0);
+    let dy = i32::from(to.1 as i16) - i32::from(from.1);
+    crate::util::direction::direction_from_delta(dx, dy)
+        .unwrap_or(crate::util::direction::TUBE_STEP_DIRECTION)
 }

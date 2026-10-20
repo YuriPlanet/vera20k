@@ -596,7 +596,7 @@ fn unit_delivery_foot_placement_commits_the_selected_bridge_plane() {
         sim.resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(12, 10)
+            .cell_mut_for_test(12, 10)
             .unwrap()
             .bridge_facts
             .raw_flags |= 0x100;

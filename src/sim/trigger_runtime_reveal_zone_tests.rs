@@ -133,8 +133,8 @@ fn native_reveal_zone_dispatch_uses_literal_waypoint_raw_zone_and_radius_two() {
         sim.zone_grid = Some(zones);
         sim.install_resolved_terrain_for_new_map(terrain);
         sim.install_fixture_path_grid(Some(&path));
-        sim.playfield_bounds = Some(bounds(row));
-        sim.playfield_size_height = Some(number(&row["size"][1]));
+        sim.set_playfield_bounds_for_test(Some(bounds(row)));
+        sim.set_playfield_size_height_for_test(Some(number(&row["size"][1])));
         let player = sim.interner.intern("Player");
         let other = sim.interner.intern("Other");
         sim.session.set_current_house_for_test(Some(player));

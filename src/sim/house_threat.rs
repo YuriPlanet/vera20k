@@ -181,7 +181,7 @@ impl Simulation {
         for (&owner, house) in &mut self.houses {
             if owner == source
                 || is_allied_with(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     self.interner.resolve(owner),
                     source_name,
                 )
@@ -259,7 +259,7 @@ impl Simulation {
         } else {
             terrain.or(self.resolved_terrain.as_ref()).map(|terrain| {
                 terrain.native_cell_coord(
-                    terrain.native_cell_identity(actor.navigation.neighbor_state.cell()),
+                    terrain.native_cell_identity(actor.navigation.neighbor_state().cell()),
                 )
             })
         };
@@ -280,7 +280,7 @@ impl Simulation {
         } else {
             self.resolved_terrain.as_ref().map(|terrain| {
                 terrain.native_cell_coord(
-                    terrain.native_cell_identity(actor.navigation.neighbor_state.cell()),
+                    terrain.native_cell_identity(actor.navigation.neighbor_state().cell()),
                 )
             })
         }?;
@@ -310,7 +310,7 @@ impl Simulation {
         if actor.category() == EntityCategory::Structure {
             return;
         }
-        let old = actor.navigation.neighbor_state.cell();
+        let old = actor.navigation.neighbor_state().cell();
         if old == (0, 0) {
             return;
         }
@@ -384,12 +384,12 @@ impl Simulation {
                 // Native non-Foot arm intentionally has no house/ally filter.
                 self.spatial_threat_current_cell(id, None)?
             } else {
-                let cell = actor.navigation.neighbor_state.cell();
+                let cell = actor.navigation.neighbor_state().cell();
                 if cell == (0, 0)
                     || actor.owner() == owner
                     || (controlled
                         && is_allied_with(
-                            &self.house_alliances,
+                            self.house_alliances.as_map(),
                             self.interner.resolve(owner),
                             self.interner.resolve(actor.owner()),
                         ))

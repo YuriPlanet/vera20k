@@ -268,7 +268,7 @@ fn damage_feedback_matches_original_draws_house_admission_coordinates_and_contin
         target.set_category_for_test(EntityCategory::Infantry);
         target.health.set_for_test(100);
         target.lifecycle.set_in_limbo_for_test(false);
-        target.lifecycle.set_cell_marked(true);
+        target.lifecycle.set_cell_marked_for_test(true);
         target.set_in_playfield(true);
         let coordinate = &input["coordinate"];
         target.position.put_location(DriveCoord {

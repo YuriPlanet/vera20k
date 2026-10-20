@@ -319,7 +319,7 @@ fn scene(golden: &Value, row: &Value) -> Scene {
     if let Some(level) = case["terrain_level"].as_u64() {
         for y in 0..32 {
             for x in 0..32 {
-                terrain.cell_mut(x, y).unwrap().level = level as u8;
+                terrain.cell_mut_for_test(x, y).unwrap().level = level as u8;
             }
         }
     }
@@ -469,7 +469,7 @@ fn scene(golden: &Value, row: &Value) -> Scene {
         }
         if row["foot_before"].is_object() {
             let foot = &row["foot_before"];
-            let path = &mut unit.navigation.path_runtime;
+            let path = unit.navigation.path_runtime_mut();
             path.set_movement_timer_for_test(CdTimer::from_raw(
                 int(&foot["movement_timer"][0]),
                 int(&foot["movement_timer"][1]),
@@ -478,8 +478,8 @@ fn scene(golden: &Value, row: &Value) -> Scene {
                 int(&foot["blocked_timer"][0]),
                 int(&foot["blocked_timer"][1]),
             ));
-            path.set_retries_left(foot["retries_left"].as_u64().unwrap() as u32);
-            path.set_path_blocked(foot["path_blocked"].as_bool().unwrap());
+            path.set_retries_left_for_test(foot["retries_left"].as_u64().unwrap() as u32);
+            path.set_path_blocked_for_test(foot["path_blocked"].as_bool().unwrap());
             assert_eq!(unit.in_playfield(), foot["in_playfield"].as_bool().unwrap());
             assert_eq!(
                 unit.is_mission_only(),

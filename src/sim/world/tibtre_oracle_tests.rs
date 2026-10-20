@@ -58,7 +58,7 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(rx, ry)
+                .cell_mut_for_test(rx, ry)
                 .unwrap()
                 .allows_tiberium = input["tile_allows_tiberium"] != false;
         }
@@ -129,7 +129,7 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
                     .resolved_terrain
                     .as_mut()
                     .unwrap()
-                    .cell_mut(at.0, at.1)
+                    .cell_mut_for_test(at.0, at.1)
                     .unwrap();
                 c.land_type = 1;
                 c.allows_tiberium = false;
@@ -139,7 +139,7 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
                     .resolved_terrain
                     .as_mut()
                     .unwrap()
-                    .cell_mut(at.0, at.1)
+                    .cell_mut_for_test(at.0, at.1)
                     .unwrap()
                     .slope_type = 1
             }
@@ -148,7 +148,7 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
                     .resolved_terrain
                     .as_mut()
                     .unwrap()
-                    .cell_mut(at.0, at.1)
+                    .cell_mut_for_test(at.0, at.1)
                     .unwrap()
                     .bridge_facts
                     .raw_flags = 0x100
@@ -325,9 +325,7 @@ fn forced_spread_matches_original_admission_placement_queues_and_rng() {
                 binary_frame: case["input"]["frame"].as_u64().unwrap_or(200) as u32,
                 growth_enabled: true,
                 spread_enabled: case["input"]["spreads"] != false,
-                radar_dirty_cells: None,
-                radar_dirty_generation: None,
-                tactical_dirty_cells: None,
+                dirty_cells: None,
             },
             coords[0],
             true,
@@ -429,13 +427,11 @@ fn same_frame_ore_terrain_ai_publishes_the_path_view_before_return() {
         .expect("force1 Terrain turn creates actual ore");
     let cell = s.sim.resolved_terrain.as_ref().unwrap().cell(x, y).unwrap();
     assert_eq!(cell.land_type, 5, "native Mark published ore attributes");
-    assert!(
-        s.sim
-            .path_grid
-            .as_ref()
-            .unwrap()
-            .resolved_cell_is_current(cell, false)
-    );
+    assert!(s.sim.path_grid.as_ref().unwrap().resolved_cell_is_current(
+        cell,
+        s.sim.overlay_grid.as_ref(),
+        false
+    ));
     assert!(
         !s.sim
             .overlay_grid

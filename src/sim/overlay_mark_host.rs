@@ -83,18 +83,17 @@ impl<'a> SimulationMarkHost<'a> {
         let sim = &mut *self.sim;
         #[cfg(any(test, feature = "test-support"))]
         let mut detach_trace = Vec::new();
+        let playfield_bounds = sim.playfield_bounds();
         let mut host = SimulationWallRuntimeHost {
             entities: &mut sim.substrate.entities,
             target_terrain_objects: sim.terrain_objects.objects(),
             #[cfg(any(test, feature = "test-support"))]
             detach_trace: &mut detach_trace,
-            radar_dirty_cells: &mut sim.radar_terrain_dirty_cells,
-            radar_dirty_generation: &mut sim.radar_terrain_dirty_generation,
-            tactical_dirty_cells: &mut sim.tactical_dirty_cells,
+            dirty_cells: &mut sim.dirty_cells,
             zone_grid: &mut sim.zone_grid,
             path_grid: &mut sim.path_grid,
             bridge_state: sim.bridge_state.as_ref(),
-            playfield_bounds: sim.playfield_bounds,
+            playfield_bounds,
         };
         let (Some(grid), Some(terrain)) =
             (sim.overlay_grid.as_mut(), sim.resolved_terrain.as_mut())
@@ -183,7 +182,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         match self.real_coord(cell) {
             Some((x, y)) => {
                 if let Some(grid) = self.sim.overlay_grid.as_mut() {
-                    grid.write_cell_data(self.sim.resolved_terrain.as_mut(), x, y, data);
+                    grid.write_cell_data(x, y, data);
                 }
             }
             None => self.terrain().shared_cell_dummy().write_overlay_state(data),
@@ -222,7 +221,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         // `0x0047E040`/`0x0047E470` store the data byte on these four visits,
         // with its radar-dirty event, before the flag transaction; a miss
         // writes the shared dummy, which ends on the setter's final visit.
-        let data = if direction == 0 { 0 } else { 9 };
+        let data = crate::map::bridge_facts::bridge_setter_state(direction);
         for (slot, coord) in slots {
             if !matches!(
                 slot,
@@ -239,11 +238,8 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
             let target = self.cell((x as i16, y as i16));
             match self.real_coord(target) {
                 Some((rx, ry)) => {
-                    if let (Some(grid), Some(terrain)) = (
-                        self.sim.overlay_grid.as_mut(),
-                        self.sim.resolved_terrain.as_mut(),
-                    ) {
-                        grid.write_crate_mark_data_field(terrain, rx, ry, data);
+                    if let Some(grid) = self.sim.overlay_grid.as_mut() {
+                        grid.write_crate_mark_data_field(rx, ry, data);
                     }
                 }
                 None => self.terrain().shared_cell_dummy().write_overlay_state(data),
@@ -288,10 +284,11 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
 
     fn merge_wall_zones(&mut self, anchor: NativeCellIdentity) -> Result<(), Infallible> {
         let (x, y) = self.coord(anchor);
-        self.with_wall_host(|_, terrain, host| {
+        self.with_wall_host(|grid, terrain, host| {
             use crate::sim::overlay_grid::WallDamageTransactionHost;
             host.navigation_step(
                 terrain,
+                grid,
                 (x as u16, y as u16),
                 false,
                 ZoneRepairKind::MergeAdjacent,

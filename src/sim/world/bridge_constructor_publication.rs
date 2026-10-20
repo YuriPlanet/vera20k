@@ -89,8 +89,8 @@ impl LivePublication<'_> {
             .begin_mark(handle, None)
             .map_err(|error| error.to_string())?;
         self.sim
-            .tactical_dirty_cells
-            .push((lookup.0 as u16, lookup.1 as u16));
+            .dirty_cells
+            .mark_tactical((lookup.0 as u16, lookup.1 as u16));
         let request = OverlayMarkRequest {
             overlay_id: overlay,
             flags,
@@ -126,8 +126,8 @@ impl LivePublication<'_> {
 }
 
 /// The bridge publication as the CellClass surface of `OverlayClass::Mark`.
-/// Its overlay identity and data are the live scalar cells the publication
-/// reads (`bridge_facts`), which the OverlayGrid mirrors on every store.
+/// Its overlay identity and data stores go to the OverlayGrid, or to the
+/// shared dummy for a missing cell, which the publication then reads.
 struct BridgeMarkHost<'p, 'a> {
     publication: &'p mut LivePublication<'a>,
     registry: &'a crate::rules::overlay_types::OverlayTypeRegistry,
@@ -153,12 +153,11 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
     }
 
     fn identity(&self, cell: Cell) -> i32 {
-        let terrain = self.publication.terrain();
-        let identity = match cell {
-            Cell::Real(index) => terrain.cells()[index].bridge_facts.overlay_id,
-            Cell::Dummy => terrain.shared_cell_dummy().overlay_fields().0,
-        };
-        identity.map_or(NO_OVERLAY, i32::from)
+        self.publication
+            .sim
+            .cell_overlay(cell)
+            .overlay_id
+            .map_or(NO_OVERLAY, i32::from)
     }
 
     fn data(&self, cell: Cell) -> u8 {

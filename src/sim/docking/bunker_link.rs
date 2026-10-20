@@ -641,6 +641,7 @@ pub(crate) fn emit_bunker_wall_anim(
         rules.general.condition_yellow,
     );
     crate::sim::world::building_anim::set_bunker_wall_slots(sim, rules, building_id, up, damaged);
+    #[cfg(any(test, feature = "test-support"))]
     sim.bunker_wall_events
         .push(crate::sim::components::BunkerWallAnimEvent {
             building_id,

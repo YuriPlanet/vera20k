@@ -99,9 +99,9 @@ fn offscreen_first_sinking_draw_survives_descent_camera_pan_and_save_load() {
     };
     let mut cache = SinkingWaterlines::default();
     let mut sim = crate::sim::world::Simulation::new();
-    sim.session
+    sim.session_mut_for_test()
         .set_map_name_for_test("DRAW-ADMISSION.MAP".into());
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng_mut_for_test() = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     for step in corpus["sequence"].as_array().unwrap() {
         let input = &step["input"];

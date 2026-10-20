@@ -81,13 +81,13 @@ fn chemical_strike_uses_original_edge_origins_and_fixed_unowned_launch() {
         ((17, 31), [6272, 9856, 0]),
     ] {
         let (rules, mut sim, _) = world_with(rules(false), 64, &[]);
-        sim.playfield_bounds = Some(PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
             base: 32,
             off_fc: 2,
             off_100: 2,
             off_104: 28,
             off_108: 28,
-        });
+        }));
         waypoint(&mut sim, cell);
         let before = rng(&sim);
         assert!(run(&mut sim, &rules, 96));
@@ -145,7 +145,7 @@ fn counted_trigger_dispatches_both_strikes_then_continues() {
         None,
     );
     sim.classify_map_triggers(None);
-    sim.session.set_started(true);
+    sim.session.publish_started();
     sim.advance_triggers(Some(&rules), None, FrameEffects::default());
     assert!(sim.trigger_local_is_set_for_test(0));
     assert_eq!(sim.projectiles.iter().count(), 1);

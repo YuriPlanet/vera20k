@@ -135,7 +135,7 @@ fn computer_crusher_heads_for_a_crushable_target_within_reach() {
         "Russians",
         ("E1", "Americans", (11, 10)),
         &|sim, _| {
-            sim.house_alliances = crate::map::houses::HouseAllianceMap::from([(
+            *sim.house_alliances_mut_for_test() = crate::map::houses::HouseAllianceMap::from([(
                 "RUSSIANS".to_string(),
                 std::collections::BTreeSet::from(["AMERICANS".to_string()]),
             )]);

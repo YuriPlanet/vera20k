@@ -21,6 +21,10 @@
 //! The shared `mission::enter` owner re-runs that setter on each dispatch.
 //! Evidence: tools/spatial_oracle/cmin_dock.json.
 //!
+//! A computer miner standing still on the pad more than 300 frames into its
+//! mission is sent off by `UnitClass::AI`'s last block
+//! (`miner_system::unit_ai_nudge_off_refinery_pad`, `0x0073681D`).
+//!
 //! RESIDUALS (named trigger, effect, frequency):
 //! - The shared Enter, pending-entry and destination owners handle depot and
 //!   refinery consumers; retained controls/histories compare their native
@@ -48,6 +52,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::components::BaleDepositEvent;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
@@ -184,6 +189,7 @@ fn unload_dumping(
                 // `Unit+0xF8 = 0` (`0x0073E493`).
                 entity.set_native_stage_value(0);
             }
+            #[cfg(any(test, feature = "test-support"))]
             sim.bale_events.push(BaleDepositEvent {
                 building_id: building,
                 tick: sim.session.tick(),
@@ -195,6 +201,7 @@ fn unload_dumping(
             // SpecialAnim destroyed.
             crate::sim::world::building_anim::end_refinery_unload_empty(sim, rules, building);
             set_status(sim, id, UNLOAD_FINISHING);
+            #[cfg(any(test, feature = "test-support"))]
             sim.bale_events.push(BaleDepositEvent {
                 building_id: building,
                 tick: sim.session.tick(),

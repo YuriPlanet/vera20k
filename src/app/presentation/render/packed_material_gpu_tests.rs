@@ -542,7 +542,7 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
                 arm["stage"].as_u64().unwrap() as u8,
                 CdTimer::from_raw(int(&arm["tint"][0]), int(&arm["tint"][1])),
             ));
-            sim.session
+            sim.session_mut_for_test()
                 .set_binary_frame_for_test(arm["frame"].as_u64().unwrap() as u32);
             let light = PaletteLight::color_scheme([1000; 3], int(&arm["intensity"]))
                 .with_colour_word(int(&arm["word"]) as u16);
@@ -552,7 +552,7 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
                 tint,
                 light,
                 Some(&rules_by_selector[&(int(&arm["iron_color"]), int(&arm["berserk_color"]))]),
-                sim.session.binary_frame(),
+                sim.session().binary_frame(),
             );
             assert_eq!(light.brightness(), int(&arm["out_intensity"]), "{name}");
             assert_eq!(

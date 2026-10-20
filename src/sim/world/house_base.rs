@@ -752,6 +752,23 @@ impl Simulation {
             })
     }
 
+    /// House+0x80, the UnitRepair stations (Items `+0x84`, Count `+0x90`), in
+    /// vector order. Unlimbo appends a `UnitRepair=` building (Type
+    /// `+0x16A9`, `0x0044122C..0x0044127A`) ahead of its House+0xB0 and
+    /// House+68 appends; ChangeOwner removes it from the old House
+    /// (`0x00448790..0x004487E0`) and appends it to the new one
+    /// (`0x00448E6E..0x00448EC5`) under the same gate, ahead of the same
+    /// lists; pointer expiry stable-removes it (`0x004FBA59..0x004FBA99`). As
+    /// with [`Self::house_absorbers`], it is House+68 filtered by the gate,
+    /// in order.
+    pub(crate) fn house_unit_repair_stations(
+        &self,
+        owner: InternedId,
+        rules: &RuleSet,
+    ) -> Vec<u64> {
+        self.house_buildings_where(owner, rules, |object| object.unit_repair)
+    }
+
     /// House+0xB0, the absorbers (Items `+0xB4`, Count `+0xC0`), in vector
     /// order. Unlimbo appends a `UnitAbsorb=`/`InfantryAbsorb=` building
     /// (Type `+0x16AE`/`+0x16AF`, `0x004412D4..0x00441335`) ahead of its
@@ -1097,7 +1114,7 @@ mod tests {
             for cell in cells {
                 let x = cell["xy"][0].as_u64().unwrap() as u16;
                 let y = cell["xy"][1].as_u64().unwrap() as u16;
-                let target = terrain.cell_mut(x, y).unwrap();
+                let target = terrain.cell_mut_for_test(x, y).unwrap();
                 if let Some(level) = cell["level"].as_i64() {
                     target.level = level as u8;
                 }
@@ -1123,9 +1140,9 @@ mod tests {
             sim.playfield_bounds,
         );
         let overrides = input["zone_overrides"].as_array();
-        let base = zones.base_topology_mut();
-        base.zone_ids.fill(0);
-        base.movement_classes.fill(0);
+        let base = zones.base_topology_mut_for_test();
+        base.zone_ids_mut_for_test().fill(0);
+        base.movement_classes_mut_for_test().fill(0);
         let row = crate::rules::locomotor_type::MovementZone::Normal
             .matrix_row()
             .unwrap();
@@ -1133,16 +1150,17 @@ mod tests {
         // for all13 Map+18 rows. Only Normal's values are exercised here, but
         // the unused rows must still form a coherent saved navigation owner.
         let labels = overrides.map_or(0, Vec::len) + 1;
-        for raw_row in &mut base.raw_zone_ids_by_row {
+        for raw_row in base.raw_zone_ids_by_row_mut_for_test() {
             raw_row.resize(labels, 1);
         }
-        base.raw_zone_ids_by_row[row].fill(1);
+        base.raw_zone_ids_by_row_mut_for_test()[row].fill(1);
         if let Some(overrides) = overrides {
             for (index, zone) in overrides.iter().enumerate() {
                 let x = zone["xy"][0].as_u64().unwrap() as usize;
                 let y = zone["xy"][1].as_u64().unwrap() as usize;
-                base.zone_ids[y * 17 + x] = index as u16 + 1;
-                base.raw_zone_ids_by_row[row][index + 1] = zone["group"].as_u64().unwrap() as u16;
+                base.zone_ids_mut_for_test()[y * 17 + x] = index as u16 + 1;
+                base.raw_zone_ids_by_row_mut_for_test()[row][index + 1] =
+                    zone["group"].as_u64().unwrap() as u16;
             }
         }
         sim.zone_grid = Some(zones);

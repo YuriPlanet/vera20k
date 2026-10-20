@@ -215,7 +215,7 @@ fn assert_houses(
             if index != target_index {
                 assert_eq!(
                     is_allied_with(
-                        &sim.house_alliances,
+                        sim.house_alliances.as_map(),
                         &roster.houses[index].name,
                         &target.name
                     ),

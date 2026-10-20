@@ -47,7 +47,7 @@ fn retail_slave_miner_selling_stage_queues_its_pack_voice_before_deploy_sound() 
         sim.entities_mut().insert(entity);
         let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(16);
         if row["name"] == "resource_destination" {
-            terrain.cell_mut(rx, ry).unwrap().land_type =
+            terrain.cell_mut_for_test(rx, ry).unwrap().land_type =
                 crate::rules::terrain_rules::LandType::Tiberium.as_index();
         }
         sim.install_resolved_terrain_for_new_map(terrain);

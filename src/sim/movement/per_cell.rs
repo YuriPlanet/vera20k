@@ -68,7 +68,7 @@ impl Simulation {
             |coord| {
                 !crate::sim::cell_rect::cell_is_in_playfield_leptons(
                     (coord.x, coord.y, coord.z),
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                     self.resolved_terrain.as_ref(),
                 )
             },
@@ -302,6 +302,7 @@ impl Simulation {
             .occupancy
             .get(at.0, at.1)
             .and_then(|list| list.first_on_layer(layer));
+        let mut crushed_unit = false;
         while let Some(victim) = cursor {
             // Save successor BEFORE lifecycle can remove the current object.
             cursor = self
@@ -324,7 +325,7 @@ impl Simulation {
                 &[victim],
                 &self.substrate.entities,
                 id,
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 &self.interner,
                 (coord.x, coord.y),
                 capability,
@@ -342,6 +343,20 @@ impl Simulation {
                         &mut self.interner,
                         &mut self.sound_events,
                     );
+                }
+                // The victim's vtable `+0x170` (`0x007418E5`): a Unit's
+                // `0x00746D60` runs Death_Explosion (`0x00738680`), then
+                // FreeAllMindControlCaptures (`0x00710460`), which is all the
+                // other classes run; VERA releases captives in the victim's
+                // UnInit below.
+                if self
+                    .substrate
+                    .entities
+                    .get(victim)
+                    .is_some_and(|entity| entity.category() == EntityCategory::Unit)
+                {
+                    crushed_unit = true;
+                    self.unit_death_explosion(rules, victim, &mut Vec::new());
                 }
                 // `UnitClass::Crush_Or_Prescatter_Cell @ 0x007416A0`: the
                 // victim records its kill by the crusher (vtable `+0xE0`,
@@ -368,6 +383,15 @@ impl Simulation {
                     reason: UninitReason::Crush,
                 });
             }
+        }
+        // The loop's tail (`0x00741925..0x00741954`): any crush uncloaks the
+        // crusher (vtable `+0x45C`, argument 0; no stock crusher cloaks),
+        // and crushing a Unit tilts a level crusher forwards.
+        if crushed_unit && let Some(crusher) = self.substrate.entities.get_mut(id) {
+            crusher
+                .rocking
+                .get_or_insert_with(Default::default)
+                .tilt_after_unit_crush();
         }
         // 0x0073B08F tests only IsAlive (`+0x90`) before the Foot body.
         if self.per_cell_owner_alive(id) {
@@ -443,7 +467,7 @@ impl Simulation {
                 .recoil_after_overlay_crush();
             //73B067 clears Foot+6B5 after the damage call, even when the
             //Cell refuses a non-Wall overlay. TiltsWhenCrushes is not a gate.
-            actor.foot_speed.set_crush_slowdown(false);
+            actor.foot_speed.clear_crush_slowdown();
         }
     }
 
@@ -1294,7 +1318,7 @@ impl Simulation {
             .get(id)
             .map(|entity| super::foot_path::coord_cell(position_world_coord(&entity.position)));
         // Partial worlds without a configured Map cannot admit an exit.
-        if let (Some((x, y)), Some(bounds)) = (cell, self.playfield_bounds)
+        if let (Some((x, y)), Some(bounds)) = (cell, self.playfield_bounds())
             && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(x), i32::from(y)),
                 Some(bounds),
@@ -1418,7 +1442,7 @@ impl Simulation {
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             // Keep the backing suffix/cursor/reference; this is one DWORD.
-            entity.navigation.path_replay.clear_live_head();
+            entity.navigation.path_replay_mut().clear_live_head();
         }
     }
 }
@@ -1426,6 +1450,10 @@ impl Simulation {
 #[cfg(test)]
 #[path = "per_cell_exit_tests.rs"]
 mod exit_tests;
+
+#[cfg(test)]
+#[path = "per_cell_crush_tests.rs"]
+mod crush_tests;
 
 #[cfg(test)]
 mod discovery_tests {

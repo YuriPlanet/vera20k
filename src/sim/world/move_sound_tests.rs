@@ -85,7 +85,7 @@ fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
     actor
         .lifecycle
         .set_object_alive_for_test(input["alive"].as_u64().unwrap_or(1) != 0);
-    actor.lifecycle.set_cell_marked(false);
+    actor.lifecycle.set_cell_marked_for_test(false);
     actor.locomotor = Some(LocomotorState::from_object_type(
         rules.object("SQD").unwrap(),
         0,

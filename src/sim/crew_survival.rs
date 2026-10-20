@@ -6,7 +6,9 @@
 //!   `BuildingClass::DestructionEffects` (`0x00441F1B`) while the building is
 //!   still on the map: absorbed passengers leave first (Phase A), then each
 //!   foundation cell gets one survivor roll followed by that cell's
-//!   scorch/crater mark (Phase B);
+//!   scorch/crater mark (Phase B). A building that outlives its killing blow
+//!   at Health 0 (an `Explodes=` type, or one dying while Selling) takes a
+//!   second round from its Update, after its Limbo (`0x004400D4`);
 //! - `BuildingClass::Mission_Selling`'s stage 1 (`0x0044A2EE`, driven by
 //!   `production::production_sell`): absorbed passengers, then the survivor
 //!   count's crew, each on a random foundation cell;
@@ -39,17 +41,6 @@
 //! CRT48E480 initialization of the five89E9F0 subcell offsets.
 //!
 //! RESIDUALS:
-//! - A second SpawnSurvivors after Limbo: DestructionEffects arms the death
-//!   timer (`+0x528`) at 0 for an `Explodes=` type (TechnoType `+0xD15`) or a
-//!   building killed while Selling (`0x00441C43..0x00441C8C`), so the building
-//!   stays alive at 0 HP and `BuildingClass::Update` runs SpawnSurvivors again
-//!   after its Limbo (`0x004400D4`), then UnInit. VERA UnInits at once and
-//!   runs one round. Trigger: every NANRCT death (the only stock `Crewed=yes`
-//!   `Explodes=yes` building) and any crewed building killed while sold.
-//!   Effect: one survivor round and its per-cell marks instead of two.
-//!   Frequency: every Soviet Nuclear Reactor death. Risk: survivor count,
-//!   marks and the Scenario stream after them. Needs a breakpoint at
-//!   `0x004400D4` (kill a NANRCT) to confirm Update reaches that arm.
 //! - Sale44A6ED's CellPlace481180 overwrites the literal request Z0 with
 //!   ground height at the original within-cell(128,164), before44A72D
 //!   Unlimbo. VERA's caller uses the coarse cell floor. Flat foundations,
@@ -155,6 +146,38 @@ impl HasBeenCaptured {
     }
 
     /// `BuildingClass::ChangeOwner`'s write (`0x00448723`).
+    pub(crate) fn mark(&mut self) {
+        self.set = true;
+    }
+
+    /// Install a fixture's byte.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_for_test(&mut self, set: bool) {
+        self.set = set;
+    }
+}
+
+/// A building's NoSurvivor byte, `BuildingClass+0x6E0`. The constructor
+/// clears it (`0x0043B95A`) and DestructionEffects sets it from the killing
+/// ReceiveDamage's IgnoreDefenses (`0x00441EFC..0x00441F0B`, [`Self::mark`]).
+/// How_Many_Survivors (`0x00451334`), SpawnSurvivors' absorbed passengers
+/// (`0x00442F2A`) and Mission_Selling (`0x0044A4CA`) read it, and the frame CRC
+/// hashes it (`0x00454407`). A building that outlives its killing blow at
+/// Health 0 keeps it for its Update's second SpawnSurvivors (`0x004400D4`).
+/// Hashed and persisted (v453).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct NoSurvivor {
+    set: bool,
+}
+
+impl NoSurvivor {
+    /// No survivor leaves the building.
+    pub(crate) const fn is_set(self) -> bool {
+        self.set
+    }
+
+    /// DestructionEffects' write (`0x00441F0B`).
     pub(crate) fn mark(&mut self) {
         self.set = true;
     }
@@ -292,22 +315,17 @@ impl Simulation {
     }
 
     /// `BuildingClass::How_Many_Survivors @ 0x00451330`: zero when
-    /// NoSurvivor (`+0x6E0`), uncrewed or owned by a house outside the three
-    /// sides; otherwise the refund over the side's divisor (doubled once
+    /// [`NoSurvivor`] (`+0x6E0`), uncrewed or owned by a house outside the
+    /// three sides; otherwise the refund over the side's divisor (doubled once
     /// captured), clamped to 1..5.
-    pub(crate) fn building_survivor_count(
-        &self,
-        rules: &RuleSet,
-        building_id: u64,
-        no_survivor: bool,
-    ) -> i32 {
+    pub(crate) fn building_survivor_count(&self, rules: &RuleSet, building_id: u64) -> i32 {
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return 0;
         };
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return 0;
         };
-        if no_survivor || !object.crewed {
+        if entity.no_survivor.is_set() || !object.crewed {
             return 0;
         }
         let Some(house) = self.houses.get(&entity.owner()) else {
@@ -341,18 +359,18 @@ impl Simulation {
         refund.checked_div(divisor).unwrap_or(0).clamp(1, 5)
     }
 
-    /// `BuildingClass::SpawnSurvivors @ 0x00442D90` for a dying building
-    /// still on the map. `no_survivor` is the killing ReceiveDamage's
-    /// IgnoreDefenses, which DestructionEffects stores in `+0x6E0`
-    /// (`0x00441EFC..0x00441F0B`); a C4 expiry passes it set (`0x00440345`).
-    /// `commit_cell_smudge` places one foundation cell's scorch/crater mark
-    /// through the smudge owner, after that cell's survivor roll.
+    /// `BuildingClass::SpawnSurvivors @ 0x00442D90`: from DestructionEffects
+    /// for a dying building still on the map, and again from Update after
+    /// the Limbo of one that outlived its killing blow (`0x004400D4`). Its
+    /// [`NoSurvivor`] byte holds the killing call's IgnoreDefenses; a C4
+    /// expiry passes it set (`0x00440345`). `commit_cell_smudge` places one
+    /// foundation cell's scorch/crater mark through the smudge owner, after
+    /// that cell's survivor roll.
     pub(crate) fn spawn_building_survivors(
         &mut self,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         building_id: u64,
-        no_survivor: bool,
         mut commit_cell_smudge: impl FnMut(&mut Simulation, (u16, u16)),
         effects: FrameEffects<'_>,
     ) {
@@ -373,18 +391,11 @@ impl Simulation {
             .pending()
             .and_then(|pending| pending.source_entity_id());
         let chance_max = if c4_source.is_some() { 1 } else { 2 } + if captured { 6 } else { 0 };
-        let mut count = self.building_survivor_count(rules, building_id, no_survivor);
+        let mut count = self.building_survivor_count(rules, building_id);
 
         // Phase A (0x00442DF2..0x00443011): every absorbed passenger advances
         // the foundation cursor that Phase B then continues from.
-        let cursor = self.eject_absorbed_passengers(
-            rules,
-            registry,
-            building_id,
-            &cells,
-            no_survivor,
-            effects,
-        );
+        let cursor = self.eject_absorbed_passengers(rules, registry, building_id, &cells, effects);
 
         // Phase B (0x00443017..0x004433F4): nothing at all, smudges
         // included, when no survivor is owed.
@@ -448,7 +459,7 @@ impl Simulation {
             let enemy_planter = c4_source.filter(|&planter| {
                 sim.substrate.entities.get(planter).is_some_and(|planter| {
                     !crate::map::houses::is_allied_with(
-                        &sim.house_alliances,
+                        sim.house_alliances.as_map(),
                         owner_name,
                         sim.interner.resolve(planter.owner()),
                     )
@@ -497,14 +508,15 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         building_id: u64,
         cells: &[(u16, u16)],
-        no_survivor: bool,
         effects: FrameEffects<'_>,
     ) -> usize {
+        let Some(building) = self.substrate.entities.get(building_id) else {
+            return 0;
+        };
+        // `0x00442F2A`, `0x0044A4CA`.
+        let no_survivor = building.no_survivor.is_set();
         let absorbs = self
-            .substrate
-            .entities
-            .get(building_id)
-            .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            .object_type(building.type_ref(), rules)
             .is_some_and(|object| object.absorbs_passengers());
         let mut cursor = 0;
         if !absorbs {

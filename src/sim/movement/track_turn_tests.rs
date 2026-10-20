@@ -125,7 +125,7 @@ fn fixture(kind: LocomotorKind) -> Simulation {
     entity.set_owner_for_test(sim.intern("Americans"));
     entity.lifecycle.set_object_alive_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(true);
+    entity.lifecycle.set_cell_marked_for_test(true);
     entity.locomotor = Some(LocomotorState::for_test_kind(kind));
     match kind {
         LocomotorKind::Drive => assert!(
@@ -189,12 +189,11 @@ fn track_entry_matches_all_144_native_rows_and_only_changes_rejected_residual() 
             track,
         );
         // A consumed prefix must not become the native live queue head.
-        entity.navigation.path_replay.set_directions_for_test(vec![
-            8,
-            integer(&input["queue_head"]) as u8,
-            6,
-        ]);
-        entity.navigation.path_replay.set_cursor(1);
+        entity
+            .navigation
+            .path_replay_mut()
+            .set_directions_for_test(vec![8, integer(&input["queue_head"]) as u8, 6]);
+        entity.navigation.path_replay_mut().set_cursor_for_test(1);
         let mut expected = serde_json::to_value(&*entity).unwrap();
         let field = if kind == LocomotorKind::Drive {
             "Drive"
@@ -678,8 +677,9 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
                 entity
                     .navigation
                     .set_nav_com_for_test(Some(NavTargetRef::cell(10, 8)));
-                entity.navigation.path_replay =
-                    FootPathQueue::for_test(vec![2, 2], 0, Some((8, 8)));
+                entity
+                    .navigation
+                    .set_path_replay_for_test(FootPathQueue::for_test(vec![2, 2], 0, Some((8, 8))));
                 set_retained(entity, kind, false, false, {
                     let mut value = TrackProgress::default();
                     value.set_residual(residual);
@@ -722,7 +722,7 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
                     blocker.set_owner_for_test(sim.intern("Americans"));
                     blocker.lifecycle.set_object_alive_for_test(true);
                     blocker.lifecycle.set_in_limbo_for_test(false);
-                    blocker.lifecycle.set_cell_marked(true);
+                    blocker.lifecycle.set_cell_marked_for_test(true);
                     sim.substrate.entities.insert(blocker);
                     sim.substrate.occupancy =
                         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
@@ -792,7 +792,7 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
                 if !refused {
                     assert_eq!(entity.body_facing.destination(), 0x4000);
                     assert_eq!(
-                        entity.navigation.path_replay.remaining_directions(),
+                        entity.navigation.path_replay().remaining_directions(),
                         &[2, 2]
                     );
                 }
@@ -846,10 +846,12 @@ fn live_rotation_returns_before_fresh_selection_with_a_queued_path_and_no_displa
         entity
             .navigation
             .set_nav_com_for_test(Some(NavTargetRef::cell(8, 7)));
-        entity.navigation.path_replay = FootPathQueue::for_test(vec![0, 0], 0, Some((8, 8)));
+        entity
+            .navigation
+            .set_path_replay_for_test(FootPathQueue::for_test(vec![0, 0], 0, Some((8, 8))));
         let before_position = super::super::ground_pose::position_world_coord(&entity.position);
         let before_facing = serde_json::to_value(entity.body_facing).unwrap();
-        let before_queue = entity.navigation.path_replay.clone();
+        let before_queue = entity.navigation.path_replay().clone();
         let before_track = retained(entity, kind).2;
         let stats = sim
             .process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
@@ -867,7 +869,7 @@ fn live_rotation_returns_before_fresh_selection_with_a_queued_path_and_no_displa
             serde_json::to_value(entity.body_facing).unwrap(),
             before_facing
         );
-        assert_eq!(entity.navigation.path_replay, before_queue);
+        assert_eq!(entity.navigation.path_replay().clone(), before_queue);
         assert_eq!(retained(entity, kind), (false, true, before_track));
         assert_eq!(
             super::super::slope_transition::state_for_entity(entity)
@@ -965,7 +967,7 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                         victim.crushable_facts.set_crushable_for_test(true);
                         victim.lifecycle.set_object_alive_for_test(true);
                         victim.lifecycle.set_in_limbo_for_test(false);
-                        victim.lifecycle.set_cell_marked(true);
+                        victim.lifecycle.set_cell_marked_for_test(true);
                         victim.invulnerability = Some(InvulnerabilityState::new(
                             crate::sim::timer::CdTimer::started((frame - age) as i32, 30),
                             shield,

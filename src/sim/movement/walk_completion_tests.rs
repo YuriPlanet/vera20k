@@ -59,15 +59,17 @@ fn completed_path_head_speed_matches_original_pre_percell_gate() {
         actor
             .navigation
             .set_nav_com_for_test(Some(NavTargetRef::cell(10, 10)));
-        actor.navigation.path_replay = FootPathQueue::for_test(
-            if path_head == -1 {
-                vec![2]
-            } else {
-                vec![2, path_head as u8]
-            },
-            0,
-            Some((5, 5)),
-        );
+        actor
+            .navigation
+            .set_path_replay_for_test(FootPathQueue::for_test(
+                if path_head == -1 {
+                    vec![2]
+                } else {
+                    vec![2, path_head as u8]
+                },
+                0,
+                Some((5, 5)),
+            ));
         actor
             .foot_speed
             .set_speed_fraction(fraction(&row["input"]["requested_bits"]));
@@ -128,7 +130,9 @@ fn completed_corner_keeps_heading_until_next_head_is_accepted() {
     actor
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(6, 6)));
-    actor.navigation.path_replay = FootPathQueue::for_test(vec![2, 4], 0, Some((5, 5)));
+    actor
+        .navigation
+        .set_path_replay_for_test(FootPathQueue::for_test(vec![2, 4], 0, Some((5, 5))));
     let loco = actor.locomotor.as_mut().unwrap();
     loco.set_walk_destination(Some(DriveCoord::cell(6, 6, 0)));
     loco.set_step_head(Some(head));
@@ -145,7 +149,7 @@ fn completed_corner_keeps_heading_until_next_head_is_accepted() {
     .unwrap();
     let actor = sim.substrate.entities.get(id).unwrap();
     assert_eq!(ground_pose::position_world_coord(&actor.position), head);
-    assert_eq!(actor.navigation.path_replay.remaining_directions(), &[4]);
+    assert_eq!(actor.navigation.path_replay().remaining_directions(), &[4]);
     assert_eq!(actor.locomotor.as_ref().unwrap().step_head(), None);
     assert_eq!(
         actor.body_facing, body,
@@ -267,9 +271,9 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
         // The corpus enters after PerCell with supplied class bytes still set,
         // including the null-destination contrast and replacement-head rows.
         if let LocomotorRuntimePayload::Walk(state) = loco.runtime_payload_mut() {
-            state.set_head(retained(&input["head"]));
-            state.set_moving(true);
-            state.set_animation_moving(true);
+            state.set_head_for_test(retained(&input["head"]));
+            state.set_moving_for_test(true);
+            state.set_animation_moving_for_test(true);
         }
         actor
             .navigation
@@ -280,14 +284,19 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
         actor
             .navigation
             .set_nav_queue_for_test(vec![NavTargetRef::cell(20, 15), NavTargetRef::cell(21, 15)]);
-        actor.navigation.path_replay = FootPathQueue::for_test(vec![2, 3, 4, 5], 0, Some((9, 8)));
-        actor.navigation.path_runtime.start_movement(50, 5);
-        actor.navigation.path_runtime.start_blocked(40, 6);
         actor
             .navigation
-            .path_runtime
-            .set_retries_left(input["retries"].as_u64().unwrap() as u32);
-        actor.navigation.path_runtime.set_scold_latch_for_test(255);
+            .set_path_replay_for_test(FootPathQueue::for_test(vec![2, 3, 4, 5], 0, Some((9, 8))));
+        actor.navigation.path_runtime_mut().start_movement(50, 5);
+        actor.navigation.path_runtime_mut().start_blocked(40, 6);
+        actor
+            .navigation
+            .path_runtime_mut()
+            .set_retries_left_for_test(input["retries"].as_u64().unwrap() as u32);
+        actor
+            .navigation
+            .path_runtime_mut()
+            .set_scold_latch_for_test(255);
         actor.foot_speed.set_speed_fraction(SimFixed::lit("0.75"));
         let owner = actor.owner();
         sim.houses
@@ -301,7 +310,7 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
         // This existing native corpus ends before final Mark(PUT). Neither
         // the null setter nor WalkStop owns the later75BF77 byte clear.
         assert_eq!(
-            actor.navigation.path_runtime.scold_latch_raw(),
+            actor.navigation.path_runtime().scold_latch_raw(),
             255,
             "{input}"
         );
@@ -336,7 +345,7 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
             .map(|value| value.as_u64().unwrap() as u8)
             .collect::<Vec<_>>();
         assert_eq!(
-            actor.navigation.path_replay.remaining_directions(),
+            actor.navigation.path_replay().remaining_directions(),
             expected_queue,
             "{input}"
         );
@@ -347,11 +356,11 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
         );
         for (timer, expected) in [
             (
-                actor.navigation.path_runtime.movement_timer(),
+                actor.navigation.path_runtime().movement_timer(),
                 &row["movement_timer"],
             ),
             (
-                actor.navigation.path_runtime.blocked_timer(),
+                actor.navigation.path_runtime().blocked_timer(),
                 &row["blocked_timer"],
             ),
         ] {
@@ -364,7 +373,7 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
             );
         }
         assert_eq!(
-            actor.navigation.path_runtime.retries_left() as u64,
+            actor.navigation.path_runtime().retries_left() as u64,
             row["retries"].as_u64().unwrap(),
             "{input}"
         );
@@ -402,7 +411,7 @@ fn paid_walk_world_scold_tails_match_original_boundaries() {
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         actor
             .navigation
-            .path_runtime
+            .path_runtime_mut()
             .set_scold_latch_for_test(row["supplied_byte"].as_u64().unwrap() as u8);
         actor
             .lifecycle
@@ -456,7 +465,7 @@ fn paid_walk_world_scold_tails_match_original_boundaries() {
                     .get(1)
                     .unwrap()
                     .navigation
-                    .path_runtime
+                    .path_runtime()
                     .scold_latch_raw()
             ),
             row["final_byte"].as_u64().unwrap(),

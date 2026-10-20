@@ -422,18 +422,6 @@ fn recalc_target<H: AuthoredOverlayLoadHost>(
     Ok(Some(outcome))
 }
 
-fn mirror_real_overlay_pair(
-    terrain: &mut ResolvedTerrainGrid,
-    cells: &LiveOverlayCells,
-    cell: AuthoredOverlayCellRef,
-) {
-    let NativeOverlayCellTarget::Real(index) = cell.target else {
-        return;
-    };
-    let value = cells.read(cell.target);
-    terrain.mirror_authored_overlay_pair(index, value.overlay_id(), value.state());
-}
-
 /// One consuming authored-reader transaction. It owns the exact packed y/x
 /// traversal, Mark dispatch, independent data pass, reader drain, and first
 /// anti-diagonal Recalc boundary.
@@ -505,7 +493,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         host: &'load mut H,
     ) -> Self {
         let cells = LiveOverlayCells::empty_for_terrain(terrain);
-        let recalc = LoadCellRecalcState::synthetic(overlay_types, terrain.cells.len());
+        let recalc = LoadCellRecalcState::synthetic(overlay_types, terrain.cells().len());
         Self {
             terrain,
             recalc: LoadRecalcOwner::Synthetic(Box::new(recalc)),
@@ -556,16 +544,8 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
                     }
                     let value = data.read_byte(x, y).unwrap_or(0);
                     let target = self.cells.target(cell.0, cell.1);
-                    if let NativeOverlayCellTarget::Real(index) = target {
+                    if let NativeOverlayCellTarget::Real(_) = target {
                         self.cells.write_state(target, value);
-                        mirror_real_overlay_pair(
-                            self.terrain,
-                            &self.cells,
-                            AuthoredOverlayCellRef {
-                                target: NativeOverlayCellTarget::Real(index),
-                                coord: cell,
-                            },
-                        );
                     }
                 }
             }
@@ -680,9 +660,6 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         };
         let target = self.cells.target(packed.0, packed.1);
         self.cells.write_state(target, state);
-        if let NativeOverlayCellTarget::Real(index) = target {
-            self.terrain.mirror_authored_overlay_state(index, state);
-        }
     }
 
     fn recalc_cell(
@@ -702,8 +679,8 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
 
 /// The load-local CellClass surface as the host of `OverlayClass::Mark`. The
 /// map reader keeps ScenarioInit raised, so the passability, Overrides and
-/// zone-merge branches never run here. Identity and data stores reach the
-/// terrain's bridge mirror as they happen; Recalc is the load Recalc.
+/// zone-merge branches never run here. Identity and data stores go to the
+/// load's live cells as they happen; Recalc is the load Recalc.
 struct FinalizerMarkHost<'a, 'resources, H: AuthoredOverlayLoadHost> {
     terrain: &'a mut ResolvedTerrainGrid,
     recalc: &'a mut LoadCellRecalcState<'resources>,
@@ -747,18 +724,11 @@ impl<H: AuthoredOverlayLoadHost> OverlayMarkHost for FinalizerMarkHost<'_, '_, H
         overlay_id: u8,
     ) -> Result<(), Self::Error> {
         self.cells.write_identity(cell, i32::from(overlay_id));
-        if let NativeOverlayCellTarget::Real(index) = cell {
-            self.terrain
-                .mirror_authored_overlay_identity(index, Some(overlay_id));
-        }
         Ok(())
     }
 
     fn write_data(&mut self, cell: NativeOverlayCellTarget, data: u8) -> Result<(), Self::Error> {
         self.cells.write_state(cell, data);
-        if let NativeOverlayCellTarget::Real(index) = cell {
-            self.terrain.mirror_authored_overlay_state(index, data);
-        }
         Ok(())
     }
 
@@ -809,7 +779,10 @@ impl<H: AuthoredOverlayLoadHost> OverlayMarkHost for FinalizerMarkHost<'_, '_, H
                     | BridgeStampSlot::Forward2
                     | BridgeStampSlot::Opposite
             ) {
-                self.write_data(target, if direction == 0 { 0 } else { 9 })?;
+                self.write_data(
+                    target,
+                    crate::map::bridge_facts::bridge_setter_state(direction),
+                )?;
             }
         }
         Ok(())
@@ -829,11 +802,9 @@ impl<H: AuthoredOverlayLoadHost> OverlayMarkHost for FinalizerMarkHost<'_, '_, H
         let (terrain, recalc, host) = (&mut *self.terrain, &mut *self.recalc, &mut *self.host);
         self.cells
             .post_wall_cleanup(self.overlay_types, anchor, |cells, effect| match effect {
-                AuthoredWallEffect::TacticalDirty(cell) => {
-                    mirror_real_overlay_pair(terrain, cells, cell);
-                    host.publish_dirty(MapLoadDirtyKind::WallTactical, cell)
-                        .map_err(AuthoredOverlayFinalizeError::Host)
-                }
+                AuthoredWallEffect::TacticalDirty(cell) => host
+                    .publish_dirty(MapLoadDirtyKind::WallTactical, cell)
+                    .map_err(AuthoredOverlayFinalizeError::Host),
                 AuthoredWallEffect::RadarDirty(cell) => host
                     .publish_dirty(MapLoadDirtyKind::WallRadar, cell)
                     .map_err(AuthoredOverlayFinalizeError::Host),
@@ -1194,7 +1165,7 @@ mod tests {
         coord: (i16, i16),
         overlay_id: u8,
     ) -> Result<OverlayMarkOutcome, AuthoredOverlayFinalizeError<Infallible>> {
-        let mut recalc = LoadCellRecalcState::synthetic(overlay_types, terrain.cells.len());
+        let mut recalc = LoadCellRecalcState::synthetic(overlay_types, terrain.cells().len());
         let request = OverlayMarkRequest {
             overlay_id,
             flags: overlay_types.flags(overlay_id).expect("registered type"),
@@ -1572,7 +1543,7 @@ mod tests {
         );
 
         let mut slope_terrain = flat_terrain(6, 6);
-        slope_terrain.cells[8].slope_type = 5;
+        slope_terrain.cells_mut_for_test()[8].slope_type = 5;
         let mut slope_host = LoadHost::default();
         let slope_payload = AuthoredOverlayFinalizer::new(
             &mut slope_terrain,
@@ -1608,7 +1579,7 @@ mod tests {
         let tiberium_types = TiberiumTypeRegistry::default();
 
         let mut b2_terrain = flat_terrain(6, 6);
-        b2_terrain.cells[8].slope_type = 5;
+        b2_terrain.cells_mut_for_test()[8].slope_type = 5;
         let b2_registry = registry_with_count(0xB3);
         let b2_shp = BTreeSet::from([0xB2]);
         let mut b2_host = LoadHost::default();
@@ -1945,17 +1916,12 @@ mod tests {
                 let index = y * 24 + center_x;
                 assert_eq!(cells[index].overlay_id(), Some(0x4A + (draw as u8 & 3)));
                 assert_eq!(cells[index].state(), state as u8);
-                assert_eq!(
-                    terrain.cells[index].bridge_facts.overlay_id,
-                    cells[index].overlay_id()
-                );
-                assert_eq!(terrain.cells[index].bridge_facts.state_byte, state as u8);
             }
         }
     }
 
     #[test]
-    fn map_owned_recalc_clears_sloped_resource_pair_on_both_live_surfaces() {
+    fn map_owned_recalc_clears_the_sloped_resource_pair() {
         let registry = OverlayTypeRegistry::from_ini(
             &IniFile::from_str(
                 "[OverlayTypes]\n0=SLOPED_RESOURCE\n\
@@ -1969,8 +1935,8 @@ mod tests {
             (5, FinalizedOverlayCell::default()),
         ] {
             let mut terrain = flat_terrain(6, 6);
-            terrain.cells[8].slope_type = slope;
-            let mut recalc = LoadCellRecalcState::synthetic(&registry, terrain.cells.len());
+            terrain.cells_mut_for_test()[8].slope_type = slope;
+            let mut recalc = LoadCellRecalcState::synthetic(&registry, terrain.cells().len());
             let mut cells = LiveOverlayCells::empty_for_terrain(&terrain);
             let target = real(8, (2, 1));
             cells.write(target.target, 0, 7);
@@ -1980,11 +1946,6 @@ mod tests {
                 .expect("map-owned resource Recalc");
 
             assert_eq!(cells.real_cell(8), expected, "slope {slope}");
-            assert_eq!(
-                terrain.cells[8].bridge_facts.overlay_id,
-                expected.overlay_id()
-            );
-            assert_eq!(terrain.cells[8].bridge_facts.state_byte, expected.state());
             assert_eq!(host.events, vec![LoadEvent::Recalc(target, expected)]);
         }
     }
@@ -1992,9 +1953,9 @@ mod tests {
     #[test]
     fn map_owned_recalc_returns_before_reading_or_observing_the_shared_dummy() {
         let mut terrain = flat_terrain(2, 2);
-        let before = format!("{:?}", terrain.cells);
+        let before = format!("{:?}", terrain.cells());
         let registry = registry_with_count(1);
-        let mut recalc = LoadCellRecalcState::synthetic(&registry, terrain.cells.len());
+        let mut recalc = LoadCellRecalcState::synthetic(&registry, terrain.cells().len());
         let mut cells = LiveOverlayCells::empty_for_terrain(&terrain);
         cells.write(NativeOverlayCellTarget::Dummy, 0, 9);
         let dummy = AuthoredOverlayCellRef {
@@ -2010,7 +1971,7 @@ mod tests {
             cells.read(NativeOverlayCellTarget::Dummy),
             FinalizedOverlayCell::from_parts(0, 9)
         );
-        assert_eq!(format!("{:?}", terrain.cells), before);
+        assert_eq!(format!("{:?}", terrain.cells()), before);
         assert!(host.events.is_empty());
     }
 
@@ -2062,7 +2023,6 @@ mod tests {
             let anchor_index = usize::from(y) * 16 + 7;
             assert_eq!(cells[anchor_index].overlay_id(), Some(later_dir0));
             assert_eq!(cells[anchor_index].state(), 9);
-            assert_eq!(terrain.cells[anchor_index].bridge_facts.state_byte, 9);
         }
     }
 
@@ -2141,7 +2101,7 @@ mod tests {
     #[test]
     fn authored_wall_cleanup_skips_zone_merge_when_recalc_keeps_zone() {
         let mut terrain = flat_terrain(6, 6);
-        terrain.cells[14].zone_type = zone_class::WALL;
+        terrain.cells_mut_for_test()[14].zone_type = zone_class::WALL;
         let shape = NativeOverlayMapShape::new(2, 2);
         let registry = wall_registry();
         let tiberium_types = TiberiumTypeRegistry::default();
@@ -2626,7 +2586,7 @@ mod tests {
     #[test]
     fn authored_wall_slope_rejects_before_stamp_or_effect() {
         let mut terrain = flat_terrain(3, 3);
-        terrain.cell_mut(1, 1).expect("anchor").slope_type = 5;
+        terrain.cell_mut_for_test(1, 1).expect("anchor").slope_type = 5;
         let registry = wall_registry();
         let mut live = LiveOverlayCells::empty_for_terrain(&terrain);
         let mut host = LoadHost::default();

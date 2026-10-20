@@ -50,10 +50,10 @@ fn cncnet_campaign_keeps_logical_identity_for_loose_and_archived_missions() {
     let retail = TestDirectory::new("cncnet-campaign-retail");
     client.write(
         "spawn.ini",
-        b"[Settings]\nIsSinglePlayer=Yes\nScenario=ALL01UMD.MAP\n",
+        b"[Settings]\nIsSinglePlayer=Yes\nScenario=ALL01uMd.map\n",
     );
-    client.write("ALL01UMD.MAP", CLIENT_MAP);
-    client.write("ALL02UMD.MAP", CLIENT_MAP);
+    client.write("ALL01uMd.map", CLIENT_MAP);
+    client.write("ALL02uMd.map", CLIENT_MAP);
     retail.write(
         "mapsmd03.mix",
         &make_new_format_mix_bytes(&[("ALL03MD.MAP", CLIENT_MAP)]),
@@ -82,11 +82,12 @@ fn cncnet_campaign_keeps_logical_identity_for_loose_and_archived_missions() {
         &mut OrdinaryMatchSeedClock,
     )
     .unwrap();
+    assert_eq!(startup.scenario(), "ALL01UMD.MAP");
     let loaded =
         load_map_by_name_or_path_with_assets(retail.path(), startup.selected_map_file(), &assets)
             .unwrap();
     assert!(
-        matches!(loaded.source, LoadedMapSource::Loose { path, .. } if path == client.path().join("ALL01UMD.MAP"))
+        matches!(loaded.source, LoadedMapSource::Loose { path, .. } if path == client.path().join("ALL01uMd.map"))
     );
     let mut metadata = crate::rules::campaign_loading::CampaignLoadingMetadata::default();
     metadata.apply_ini(
@@ -96,11 +97,11 @@ fn cncnet_campaign_keeps_logical_identity_for_loose_and_archived_missions() {
     assert_eq!(metadata.load_message_key(), "MISSION:AL1");
 
     let next = startup.next_mission(
-        "ALL02UMD.MAP".into(),
+        "ALL02uMd.map".into(),
         2,
         1,
         3,
-        [false; crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT],
+        crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
         &mut OrdinaryMatchSeedClock,
     );
     assert_eq!(next.scenario(), "ALL02UMD.MAP");
@@ -108,15 +109,15 @@ fn cncnet_campaign_keeps_logical_identity_for_loose_and_archived_missions() {
         load_map_by_name_or_path_with_assets(retail.path(), next.selected_map_file(), &assets)
             .unwrap();
     assert!(
-        matches!(loaded.source, LoadedMapSource::Loose { path, .. } if path == client.path().join("ALL02UMD.MAP"))
+        matches!(loaded.source, LoadedMapSource::Loose { path, .. } if path == client.path().join("ALL02uMd.map"))
     );
 
     let archived = next.next_mission(
-        "ALL03MD.MAP".into(),
+        "all03md.map".into(),
         3,
         1,
         3,
-        [false; crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT],
+        crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
         &mut OrdinaryMatchSeedClock,
     );
     let loaded =
@@ -124,7 +125,7 @@ fn cncnet_campaign_keeps_logical_identity_for_loose_and_archived_missions() {
             .unwrap();
     assert_eq!(archived.scenario(), "ALL03MD.MAP");
     assert!(
-        matches!(loaded.source, LoadedMapSource::Mix { logical_name, .. } if logical_name == "ALL03MD.MAP")
+        matches!(loaded.source, LoadedMapSource::Mix { logical_name, .. } if logical_name.eq_ignore_ascii_case("ALL03MD.MAP"))
     );
 }
 

@@ -121,7 +121,7 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
                 let LocomotorRuntimePayload::Walk(walk) = locomotor.runtime_payload_mut() else {
                     unreachable!()
                 };
-                walk.set_moving(moving);
+                walk.set_moving_for_test(moving);
                 blocker.locomotor = Some(locomotor);
             } else if category == EntityCategory::Unit {
                 blocker.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));

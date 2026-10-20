@@ -203,7 +203,7 @@ fn meteor_landing_runs_children_without_expire_and_uses_last_water_splash() {
         .resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(40, 40)
+        .cell_mut_for_test(40, 40)
         .unwrap()
         .land_type = 2;
     assert!(!water.anim_bounce_landing(

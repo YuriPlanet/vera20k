@@ -952,8 +952,8 @@ fn retail_chrono_update_position_matches_native_rows() {
                 let index = terrain
                     .index(int(&cell[0]) as u16, int(&cell[1]) as u16)
                     .unwrap();
-                terrain.cells[index].level = int(&cell[2]) as u8;
-                terrain.cells[index].bridge_facts.raw_flags = int(&cell[3]) as u32;
+                terrain.cells_mut_for_test()[index].level = int(&cell[2]) as u8;
+                terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = int(&cell[3]) as u32;
             }
         }
         sim.zone_grid = None;
@@ -1094,8 +1094,8 @@ fn retail_chrono_warp_destinations_match_native_rows() {
                 let index = terrain
                     .index(int(&cell[0]) as u16, int(&cell[1]) as u16)
                     .unwrap();
-                terrain.cells[index].level = int(&cell[2]) as u8;
-                terrain.cells[index].bridge_facts.raw_flags = int(&cell[3]) as u32;
+                terrain.cells_mut_for_test()[index].level = int(&cell[2]) as u8;
+                terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = int(&cell[3]) as u32;
             }
         }
         sim.zone_grid = None;

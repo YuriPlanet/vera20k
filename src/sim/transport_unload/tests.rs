@@ -115,19 +115,19 @@ impl Fixture {
         let rules = rules();
         let mut sim = Simulation::new();
         let span = i32::from(MAP);
-        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
             base: 0,
             off_fc: -span,
             off_100: -span,
             off_104: span * 2,
             off_108: span * 2,
-        });
+        }));
         sim.install_resolved_terrain_for_new_map(flat_terrain(water));
         let grid = PathGrid::test_all_passable(MAP, MAP);
         sim.install_fixture_path_grid(Some(&grid));
         // Hover's Find_Path and its zone precheck read the zone topology and
         // the Map Size.
-        sim.playfield_size_height = Some(i32::from(MAP));
+        sim.set_playfield_size_height_for_test(Some(i32::from(MAP)));
         let terrain = sim.resolved_terrain.as_ref().expect("fixture terrain");
         sim.zone_grid = Some(
             crate::sim::pathfinding::zone_map::ZoneGrid::build_with_terrain(
@@ -174,7 +174,7 @@ impl Fixture {
                 .unwrap()
                 .cell(cell.0, cell.1)
                 .unwrap()
-                .land_type()
+                .land_type
                 == LandType::Water.as_index();
             let pax = if water {
                 // Supply already-limbo cargo for the landing-craft prestate.
@@ -838,7 +838,7 @@ fn hover_transport_on_water_is_sent_to_a_raised_bank() {
     let terrain = fx.sim.resolved_terrain.as_mut().unwrap();
     for y in 0..MAP {
         for x in 25..MAP {
-            terrain.cell_mut(x, y).unwrap().level = 2;
+            terrain.cell_mut_for_test(x, y).unwrap().level = 2;
         }
     }
     let lcrf = fx.spawn("LCRF", 20, 20, 0x40);
@@ -1057,7 +1057,7 @@ fn ifv_keeps_gunner_weapon_when_every_exit_is_refused() {
         let terrain = fx.sim.resolved_terrain.as_mut().expect("terrain");
         for (dx, dy) in super::DIRECTION_DELTAS {
             let cell = terrain
-                .cell_mut((20 + dx) as u16, (20 + dy) as u16)
+                .cell_mut_for_test((20 + dx) as u16, (20 + dy) as u16)
                 .expect("neighbour cell");
             cell.bridge_facts.raw_flags |= BRIDGE_FLAG_STRUCTURAL;
         }
@@ -1214,7 +1214,7 @@ fn exit_scorer_keeps_a_cell_with_three_allied_infantry_open() {
 fn vehicle_unload_scan_refuses_an_exit_two_levels_up() {
     let mut fx = Fixture::new(|_, _| false);
     let terrain = fx.sim.resolved_terrain.as_mut().unwrap();
-    terrain.cell_mut(19, 21).unwrap().level = 2;
+    terrain.cell_mut_for_test(19, 21).unwrap().level = 2;
     let bfrt = fx.spawn("BFRT", 20, 20, 0x20);
     let pax = fx.board(bfrt, 1);
     assert!(fx.apply(Command::UnloadPassengers { transport_id: bfrt }));
@@ -1283,9 +1283,9 @@ fn vehicle_passenger_leaves_with_its_turret_on_the_exit_direction() {
 fn vehicle_unload_scan_judges_the_far_cell_from_the_transport_height() {
     let mut fx = Fixture::new(|_, _| false);
     let terrain = fx.sim.resolved_terrain.as_mut().unwrap();
-    terrain.cell_mut(20, 20).unwrap().slope_type = 1;
+    terrain.cell_mut_for_test(20, 20).unwrap().slope_type = 1;
     for (x, y) in [(19, 21), (18, 22)] {
-        terrain.cell_mut(x, y).unwrap().level = 1;
+        terrain.cell_mut_for_test(x, y).unwrap().level = 1;
     }
     let bfrt = fx.spawn("BFRT", 20, 20, 0x20);
     let pax = fx.board(bfrt, 1);
@@ -1321,13 +1321,14 @@ fn relaxed_pass_takes_an_exit_whose_far_cell_is_off_the_map() {
 #[test]
 fn vehicle_unload_scan_refuses_exits_outside_the_playfield() {
     let mut fx = Fixture::new(|_, _| false);
-    fx.sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
-        base: 0,
-        off_fc: -1,
-        off_100: -100,
-        off_104: 100,
-        off_108: 200,
-    });
+    fx.sim
+        .set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
+            base: 0,
+            off_fc: -1,
+            off_100: -100,
+            off_104: 100,
+            off_108: 200,
+        }));
     let bfrt = fx.spawn("BFRT", 20, 20, 0);
     let pax = fx.board(bfrt, 1);
     fx.sim
@@ -1354,16 +1355,17 @@ fn vehicle_unload_scan_refuses_exits_outside_the_playfield() {
 #[test]
 fn vehicle_passenger_off_the_playfield_exit_lands_on_raised_in_playfield_ground() {
     let mut fx = Fixture::new(|_, _| false);
-    fx.sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
-        base: 0,
-        off_fc: -1,
-        off_100: -100,
-        off_104: 100,
-        off_108: 200,
-    });
+    fx.sim
+        .set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
+            base: 0,
+            off_fc: -1,
+            off_100: -100,
+            off_104: 100,
+            off_108: 200,
+        }));
     let terrain = fx.sim.resolved_terrain.as_mut().unwrap();
     for (x, y) in [(19, 20), (20, 21)] {
-        terrain.cell_mut(x, y).unwrap().level = 2;
+        terrain.cell_mut_for_test(x, y).unwrap().level = 2;
     }
     let bfrt = fx.spawn("BFRT", 20, 20, 0);
     let bggy = fx.spawn("BGGY", 24, 24, 0);
@@ -1845,7 +1847,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                     .get_mut(passenger)
                     .unwrap()
                     .lifecycle
-                    .set_cell_marked(true);
+                    .set_cell_marked_for_test(true);
             }
             fx.sim
                 .substrate
@@ -2074,7 +2076,7 @@ fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(
         fx.sim.resolved_terrain.as_ref().unwrap().clone(),
-        fx.sim.terrain_speed_config.clone(),
+        fx.sim.terrain_speed_config().clone(),
         &fx.rules,
     );
     assert!(restored.rebuild_dynamic_navigation(&fx.rules));

@@ -29,7 +29,7 @@ fn bridge_neighbor_terrain_retains_native_surface_coords_through_damage_and_rest
         }
         let mut sim = Simulation::with_seed(1);
         let mut grid = crate::map::resolved_terrain::test_flat_ground_grid(32);
-        let cell = grid.cell_mut(10, 20).unwrap();
+        let cell = grid.cell_mut_for_test(10, 20).unwrap();
         cell.level = input["level"].as_i64().unwrap() as i8 as u8;
         cell.slope_type = input["slope"].as_u64().unwrap() as u8;
         cell.bridge_facts.raw_flags = input["flags"].as_u64().unwrap() as u32;
@@ -64,7 +64,7 @@ fn bridge_neighbor_terrain_retains_native_surface_coords_through_damage_and_rest
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(10, 20)
+            .cell_mut_for_test(10, 20)
             .unwrap();
         cell.level = 7;
         cell.slope_type = 0;

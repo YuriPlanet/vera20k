@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use crate::map::lighting::{self, LIGHT_CLAMP_MAX, LIGHT_UNIT, PointLight};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RadiationRules;
-use crate::sim::light_sources::LightingEvent;
+use crate::sim::light_sources::{LightingEvent, LightingSources};
 use crate::sim::timer::CdTimer;
 use crate::util::lepton::{UnsupportedGroundSlope, ground_height_leptons};
 use crate::util::native_x87::sqrt_approx_length;
@@ -564,7 +564,7 @@ impl RadiationState {
         theater: &str,
         rules: &RadiationRules,
         terrain: Option<&ResolvedTerrainGrid>,
-        lights: &mut Vec<LightingEvent>,
+        lights: &mut LightingSources,
     ) {
         let center = (det.rx, det.ry);
         let merged = self.sites.get(&center).map(|site| {
@@ -614,7 +614,7 @@ impl RadiationState {
         // interval, even if another change later returns to the same inputs.
         let source = self.sites.get(&center).and_then(RadSite::light_source);
         if light_changed {
-            lights.push(LightingEvent::Radiation { center, source });
+            lights.publish(LightingEvent::Radiation { center, source });
         }
     }
 
@@ -627,7 +627,7 @@ impl RadiationState {
         frame: u32,
         rules: &RadiationRules,
         terrain: Option<&ResolvedTerrainGrid>,
-        lights: &mut Vec<LightingEvent>,
+        lights: &mut LightingSources,
     ) {
         if self.sites.is_empty() {
             return;
@@ -656,7 +656,7 @@ impl RadiationState {
                     .light
                     .advance(frame, site.remaining, site.duration, rules)
             {
-                lights.push(LightingEvent::Radiation {
+                lights.publish(LightingEvent::Radiation {
                     center,
                     source: site.light_source(),
                 });
@@ -664,7 +664,7 @@ impl RadiationState {
             if dead {
                 self.sites.remove(&center);
                 self.creation_order.retain(|retained| *retained != center);
-                lights.push(LightingEvent::Radiation {
+                lights.publish(LightingEvent::Radiation {
                     center,
                     source: None,
                 });
@@ -810,7 +810,7 @@ mod tests {
             "TEMPERATE",
             &rules,
             None,
-            &mut Vec::new(),
+            &mut crate::sim::light_sources::LightingSources::default(),
         );
         assert_eq!(rad.cell_level((2, 2)), 500.0);
         assert!(rad.cell_level((0, 0)) > 0.0);
@@ -827,10 +827,15 @@ mod tests {
             "TEMPERATE",
             &rules,
             None,
-            &mut Vec::new(),
+            &mut crate::sim::light_sources::LightingSources::default(),
         );
         for frame in 6..=130 {
-            rad.tick_decay(frame, &rules, None, &mut Vec::new());
+            rad.tick_decay(
+                frame,
+                &rules,
+                None,
+                &mut crate::sim::light_sources::LightingSources::default(),
+            );
         }
         let bytes = crate::util::save_codec::serialize(&rad).expect("serialize");
         let restored: RadiationState =

@@ -65,14 +65,14 @@ fn walk_attack_scene() -> (Simulation, RuleSet, u64, u64) {
     // The scene lies near the grid's origin. A map `Size=` 16 cells wide puts
     // it in the map's diamond (a 64-wide one starts past x + y = 64), where
     // sight reveals (`MapClass::RevealArea @ 0x005678E0`).
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 16,
         off_fc: -64,
         off_100: -64,
         off_104: 128,
         off_108: 128,
-    });
-    sim.playfield_size_height = Some(64);
+    }));
+    sim.set_playfield_size_height_for_test(Some(64));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let actor = sim.spawn_object("E1", "Local", 10, 10, 0, &rules).unwrap();
     // Production visibility is recomputed by the frame host, not by spawn.
@@ -150,7 +150,7 @@ fn walk_destination_search_observes_route_opened_before_process() {
     ));
     sim.path_grid = Some(open_grid.clone());
     let e = sim.substrate.entities.get(actor).unwrap();
-    assert!(e.navigation.path_replay.remaining_directions().is_empty());
+    assert!(e.navigation.path_replay().remaining_directions().is_empty());
     assert_eq!(
         e.navigation.nav_com(),
         Some(crate::sim::components::NavTargetRef::Cell { rx: 14, ry: 10 })
@@ -161,7 +161,7 @@ fn walk_destination_search_observes_route_opened_before_process() {
     assert!(e.locomotor.as_ref().unwrap().step_head().is_some());
     assert!(
         e.navigation
-            .path_replay
+            .path_replay()
             .remaining_cells_from((e.position.rx() as i16, e.position.ry() as i16))
             .contains(&(12, 10)),
         "the first Process searches the now-open route"
@@ -215,7 +215,7 @@ fn the_read_route_starts_at_the_object_after_a_paid_walk_step() {
         .get(actor)
         .unwrap()
         .navigation
-        .path_replay
+        .path_replay()
         .cursor();
     let mut frames = 0;
     while frames < 200 {
@@ -227,14 +227,14 @@ fn the_read_route_starts_at_the_object_after_a_paid_walk_step() {
             .get(actor)
             .unwrap()
             .navigation
-            .path_replay
+            .path_replay()
             .cursor();
         if cursor > paid_at_order {
             break;
         }
     }
     let e = sim.substrate.entities.get(actor).unwrap();
-    let queue = &e.navigation.path_replay;
+    let queue = e.navigation.path_replay();
     assert!(
         queue.cursor() > paid_at_order,
         "the fixture must pay at least one step (frames={frames})"
@@ -256,7 +256,7 @@ fn walk_cell_order_defers_queue_publication_and_first_head_motion() {
     let (mut sim, rules, actor, _) = walk_attack_scene();
     let queue = FootPathQueue::for_test(vec![2, 3, 4, 5], 0, Some((9, 8)));
     let entity = sim.substrate.entities.get_mut(actor).unwrap();
-    entity.navigation.path_replay = queue.clone();
+    entity.navigation.set_path_replay_for_test(queue.clone());
     entity
         .locomotor
         .as_mut()
@@ -283,7 +283,8 @@ fn walk_cell_order_defers_queue_publication_and_first_head_motion() {
     let mut invalidated = queue;
     invalidated.clear_live_head();
     assert_eq!(
-        entity.navigation.path_replay, invalidated,
+        entity.navigation.path_replay().clone(),
+        invalidated,
         "accepted setter writes one native path head"
     );
     assert_eq!(
@@ -306,12 +307,12 @@ fn walk_cell_order_defers_queue_publication_and_first_head_motion() {
     assert!(
         !entity
             .navigation
-            .path_replay
+            .path_replay()
             .remaining_directions()
             .is_empty()
     );
     assert_eq!(
-        entity.navigation.path_replay.reference_cell(),
+        entity.navigation.path_replay().reference_cell(),
         Some((10, 10))
     );
     assert_eq!(
@@ -451,7 +452,7 @@ fn ordered_walk_attack_nulls_destination_but_preserves_paid_head_and_queues() {
         // Distinguish the two Foot queues using supplied existing backing state.
         let queue = FootPathQueue::for_test(vec![6, 2, 3, 4, 5], 1, Some((9, 10)));
         let e = sim.substrate.entities.get_mut(actor).unwrap();
-        e.navigation.path_replay = queue.clone();
+        e.navigation.set_path_replay_for_test(queue.clone());
         e.navigation
             .push_nav_queue_for_test(NavTargetRef::Cell { rx: 25, ry: 10 });
         let queued = e.navigation.nav_queue().to_vec();
@@ -483,7 +484,7 @@ fn ordered_walk_attack_nulls_destination_but_preserves_paid_head_and_queues() {
         assert!(e.navigation.nav_com().is_none());
         let mut expected = queue;
         expected.clear_live_head();
-        assert_eq!(e.navigation.path_replay, expected);
+        assert_eq!(e.navigation.path_replay().clone(), expected);
         assert_eq!(e.navigation.nav_queue(), queued);
         for _ in 0..80 {
             walk_frame(&mut sim, &rules);
@@ -640,7 +641,8 @@ fn walk_null_setter_matches_original_caller_rows() {
             .set_nav_com_for_test(Some(NavTargetRef::Object { id: victim }));
         e.navigation
             .set_nav_com_aux_for_test(Some(NavTargetRef::Object { id: victim }));
-        e.navigation.path_replay = FootPathQueue::for_test(vec![2, 3, 4, 5], 0, Some((10, 10)));
+        e.navigation
+            .set_path_replay_for_test(FootPathQueue::for_test(vec![2, 3, 4, 5], 0, Some((10, 10))));
         if input["nav_queue"] == 1 {
             e.navigation
                 .push_nav_queue_for_test(NavTargetRef::Object { id: victim });
@@ -648,9 +650,11 @@ fn walk_null_setter_matches_original_caller_rows() {
         if input["contact"] == true {
             e.radio_contacts.insert(victim);
         }
-        e.navigation.path_runtime.start_movement(0, 5);
-        e.navigation.path_runtime.start_blocked(0, 6);
-        e.navigation.path_runtime.set_path_blocked(true);
+        e.navigation.path_runtime_mut().start_movement(0, 5);
+        e.navigation.path_runtime_mut().start_blocked(0, 6);
+        e.navigation
+            .path_runtime_mut()
+            .set_path_blocked_for_test(true);
         let loco = e.locomotor.as_mut().unwrap();
         loco.set_walk_destination(Some(DriveCoord {
             x: 7808,
@@ -702,13 +706,13 @@ fn walk_null_setter_matches_original_caller_rows() {
             .iter()
             .map(|v| v.as_i64().unwrap() as u8)
             .collect();
-        assert_eq!(e.navigation.path_replay.directions(), expected, "{input}");
-        assert_eq!(e.navigation.path_replay.reference_cell(), Some((10, 10)));
+        assert_eq!(e.navigation.path_replay().directions(), expected, "{input}");
+        assert_eq!(e.navigation.path_replay().reference_cell(), Some((10, 10)));
         assert_eq!(
             e.navigation.nav_queue().len(),
             row["nav_queue_count"].as_u64().unwrap() as usize
         );
-        let path = &e.navigation.path_runtime;
+        let path = e.navigation.path_runtime();
         assert!(!path.path_blocked());
         assert_eq!(
             path.movement_timer()

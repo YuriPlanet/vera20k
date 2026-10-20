@@ -94,7 +94,7 @@ impl ZoneBatchHost for LivePublication<'_> {
             .ok_or("zone batch has no live zone owner")?;
         let (base, hierarchy) = zones.base_and_hierarchy_mut();
         hierarchy.levels_mut()[0]
-            .set_native_zone_at(coord, base.native_bridge_source_size, 0)
+            .set_native_zone_at(coord, base.native_bridge_source_size(), 0)
             .ok_or_else(|| "zone batch coordinate has no native zone storage".into())
     }
 
@@ -186,7 +186,7 @@ mod tests {
         );
         terrain.test_set_high_bridge_set_starts(Some(100), Some(200));
         for (x, y) in [(5, 5), (10, 5)] {
-            let cell = terrain.cell_mut(x, y).unwrap();
+            let cell = terrain.cell_mut_for_test(x, y).unwrap();
             cell.final_tile_index = 106;
             cell.final_sub_tile = 4;
         }
@@ -196,7 +196,7 @@ mod tests {
         assert_eq!(bridges.endpoint_records().len(), 1);
         assert!(!bridges.endpoint_records()[0].active);
         bridges.test_set_endpoint_records(Vec::new());
-        let mut path = PathGrid::from_resolved_terrain_with_bridges(&terrain);
+        let mut path = PathGrid::from_resolved_terrain_with_bridges(&terrain, None);
         path.set_blocked(7, 7, true); // Retained structure blocking.
         let mut sim = Simulation::with_seed(31);
         sim.install_resolved_terrain_for_new_map(terrain);

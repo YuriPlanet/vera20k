@@ -188,7 +188,7 @@ fn original_can_auto_cloak_matches_retail_inputs_and_retained_target_controls() 
         let mut terrain = sim.resolved_terrain.take().unwrap();
         for y in 0..64 {
             for x in 0..64 {
-                terrain.cell_mut(x, y).unwrap().level =
+                terrain.cell_mut_for_test(x, y).unwrap().level =
                     native["inputs"]["world_boundary"]["flat_cell_level"]
                         .as_u64()
                         .unwrap() as u8;

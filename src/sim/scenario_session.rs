@@ -1175,7 +1175,19 @@ impl ScenarioSession {
         self.input_locked
     }
 
-    pub fn set_input_locked(&mut self, locked: bool) {
+    /// Trigger action46 and the campaign Flag announcement lock Scenario+35A2.
+    /// Returns the previous lock for the ordered presentation effect.
+    pub(crate) fn lock_input(&mut self) -> bool {
+        std::mem::replace(&mut self.input_locked, true)
+    }
+
+    /// Trigger action47 unlocks Scenario+35A2. Returns the previous lock.
+    pub(crate) fn unlock_input(&mut self) -> bool {
+        std::mem::replace(&mut self.input_locked, false)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_input_locked_for_test(&mut self, locked: bool) {
         self.input_locked = locked;
     }
 
@@ -1209,8 +1221,15 @@ impl ScenarioSession {
         self.started
     }
 
-    pub fn set_started(&mut self, started: bool) {
-        self.started = started;
+    /// StartScenario683E75 and a committed LoadGame67E6C4 publish A8ED5C=1.
+    pub fn publish_started(&mut self) {
+        self.started = true;
+    }
+
+    /// MainGame48CEBF clears A8ED5C when the match returns; a restart clears
+    /// it at686424.
+    pub fn retire_started(&mut self) {
+        self.started = false;
     }
 
     pub(super) fn initialize_campaign_startup(

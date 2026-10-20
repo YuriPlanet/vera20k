@@ -206,7 +206,7 @@ fn engineer_gate_applies_to_other_allied_houses_too() {
     else {
         return;
     };
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("AMERICANS".into())
         .or_default()
         .insert("FRENCH".into());

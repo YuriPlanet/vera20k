@@ -111,7 +111,7 @@ fn unit(
     for cell in input["cells"].as_array().into_iter().flatten() {
         let (x, y) = pair(cell);
         let level = cell[2].as_u64().unwrap() as u8;
-        let target = terrain.cell_mut(x as u16, y as u16).unwrap();
+        let target = terrain.cell_mut_for_test(x as u16, y as u16).unwrap();
         target.level = level;
         // Cell+140, the bridge bits the +68B comparison reads.
         target.bridge_facts.raw_flags = cell[3].as_u64().unwrap() as u32;
@@ -139,7 +139,7 @@ fn unit(
     for tunnel in input["tunnel"].as_array().into_iter().flatten() {
         let (x, y) = pair(tunnel);
         crate::map::resolved_terrain::install_tunnel_repair_test_catalog(terrain);
-        let cell = terrain.cell_mut(x as u16, y as u16).unwrap();
+        let cell = terrain.cell_mut_for_test(x as u16, y as u16).unwrap();
         cell.final_tile_index = 1;
         cell.land_type = 10;
         cell.base_land_type = 10;
@@ -174,7 +174,7 @@ fn unit(
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         for y in 0..33 {
             for x in 0..33 {
-                let costs = &mut terrain.cell_mut(x, y).unwrap().speed_costs;
+                let costs = &mut terrain.cell_mut_for_test(x, y).unwrap().speed_costs;
                 costs.track = percent;
                 costs.wheel = percent;
             }
@@ -331,7 +331,7 @@ fn compare(sim: &Simulation, id: u64, row: &Value, out: bool) {
     });
     // Native shifts consumed words out of Foot+5E0; the Rust queue advances
     // a cursor over the same words.
-    let queue = &e.navigation.path_replay;
+    let queue = e.navigation.path_replay();
     let path: Vec<i32> = (0..6)
         .map(|i| {
             queue
@@ -341,7 +341,7 @@ fn compare(sim: &Simulation, id: u64, row: &Value, out: bool) {
         })
         .collect();
     let reference = queue.reference_cell().unwrap_or((0, 0));
-    let p = &e.navigation.path_runtime;
+    let p = e.navigation.path_runtime();
     let fields = [
         ("destination", coord(destination)),
         ("head", coord(head)),
@@ -427,15 +427,19 @@ fn fresh_arm_rows_match_the_original_responses() {
         let movement = frame(input, "movement_timer", [100, 0, 0]);
         let blocked = frame(input, "blocked_timer", [100, 0, 22]);
         let e = sim.substrate.entities.get_mut(id).unwrap();
-        e.navigation.path_replay.set_directions_for_test(route);
-        e.navigation.path_replay.set_cursor(0);
-        e.navigation.path_replay.set_reference_cell(Some((9, 8)));
+        e.navigation
+            .path_replay_mut()
+            .set_directions_for_test(route);
+        e.navigation.path_replay_mut().set_cursor_for_test(0);
+        e.navigation
+            .path_replay_mut()
+            .set_reference_cell_for_test(Some((9, 8)));
         e.body_facing = FacingClass::with_rate_of(rest, &e.body_facing);
-        let runtime = &mut e.navigation.path_runtime;
+        let runtime = e.navigation.path_runtime_mut();
         runtime.start_movement(movement[0] as u32, movement[2] as i32);
         runtime.start_blocked(blocked[0] as u32, blocked[2] as i32);
-        runtime.set_path_blocked(input["latched"] == true);
-        runtime.set_retries_left(input["retries"].as_u64().unwrap_or(10) as u32);
+        runtime.set_path_blocked_for_test(input["latched"] == true);
+        runtime.set_retries_left_for_test(input["retries"].as_u64().unwrap_or(10) as u32);
         // FootClass ParalysisTimer (+6A0).
         if let Some(paralysis) = input["paralysis"].as_array() {
             e.parasite
@@ -522,16 +526,16 @@ fn crusher_all_non_wall_overlay_uses_ground_unit_for_straight_latch() {
         let actor = sim.substrate.entities.get_mut(id).unwrap();
         actor
             .navigation
-            .path_replay
+            .path_replay_mut()
             .set_directions_for_test(vec![2, 2, 2]);
-        actor.navigation.path_replay.set_cursor(0);
+        actor.navigation.path_replay_mut().set_cursor_for_test(0);
         actor
             .navigation
-            .path_replay
-            .set_reference_cell(Some((9, 8)));
+            .path_replay_mut()
+            .set_reference_cell_for_test(Some((9, 8)));
         actor.body_facing = FacingClass::with_rate_of(2 << 13, &actor.body_facing);
-        actor.navigation.path_runtime.start_movement(100, 0);
-        actor.navigation.path_runtime.start_blocked(100, 22);
+        actor.navigation.path_runtime_mut().start_movement(100, 0);
+        actor.navigation.path_runtime_mut().start_blocked(100, 22);
         sim.session.set_binary_frame_for_test(101);
         fresh_oracle_seam::install(vec![0], vec![]);
         let result = sim.run_track_process_movement(
@@ -577,14 +581,16 @@ fn first_code7_scold_request_retains_the_native_byte() {
         order(&mut sim, &rules, id, (13, 10));
         let e = sim.substrate.entities.get_mut(id).unwrap();
         e.navigation
-            .path_replay
+            .path_replay_mut()
             .set_directions_for_test(vec![2, 2, 2]);
-        e.navigation.path_replay.set_cursor(0);
-        e.navigation.path_replay.set_reference_cell(Some((9, 8)));
-        e.body_facing = FacingClass::with_rate_of(2 << 13, &e.body_facing);
-        e.navigation.path_runtime.start_movement(100, 0);
+        e.navigation.path_replay_mut().set_cursor_for_test(0);
         e.navigation
-            .path_runtime
+            .path_replay_mut()
+            .set_reference_cell_for_test(Some((9, 8)));
+        e.body_facing = FacingClass::with_rate_of(2 << 13, &e.body_facing);
+        e.navigation.path_runtime_mut().start_movement(100, 0);
+        e.navigation
+            .path_runtime_mut()
             .set_scold_latch_for_test(row["supplied_byte"].as_u64().unwrap() as u8);
         sim.session.set_binary_frame_for_test(101);
         fresh_oracle_seam::install(vec![7], vec![]);
@@ -616,7 +622,7 @@ fn first_code7_scold_request_retains_the_native_byte() {
                     .get(id)
                     .unwrap()
                     .navigation
-                    .path_runtime
+                    .path_runtime()
                     .scold_latch_raw()
             ),
             row["final_byte"]

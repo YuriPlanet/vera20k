@@ -736,9 +736,6 @@ impl ResolvedTerrainGrid {
                 i32::from(overlay.rx),
                 i32::from(overlay.ry),
             );
-            if let Some(index) = anchor_index {
-                cells[index].bridge_facts.overlay_id = Some(overlay.overlay_id);
-            }
             if overlay_load_source == OverlayLoadSource::Authored
                 && let Some((family, direction)) =
                     crate::map::bridge_facts::high_bridge_stamp_for_overlay(overlay.overlay_id)
@@ -754,21 +751,6 @@ impl ResolvedTerrainGrid {
                     stamp,
                     Some(family),
                 );
-            }
-        }
-
-        let raw_overlay_data = projection.is_eager().then(|| {
-            map.overlay_data_pack()
-                .expect("legacy terrain projection must precede authored pack consumption")
-        });
-        if let Some(raw_overlay_data) = raw_overlay_data.filter(|data| data.is_present()) {
-            for (index, cell) in cells.iter_mut().enumerate() {
-                if native_allocated
-                    .as_deref()
-                    .is_none_or(|mask| mask.get(index).copied().unwrap_or(false))
-                {
-                    cell.bridge_facts.state_byte = raw_overlay_data.byte_at(cell.rx, cell.ry);
-                }
             }
         }
 
@@ -1567,9 +1549,6 @@ pub(super) fn classify_overlay_effects(
         return result;
     };
     for overlay in entries {
-        let name = overlay_registry
-            .and_then(|reg| reg.name(overlay.overlay_id))
-            .unwrap_or("");
         // Bridge overlays identified by hardcoded index, matching original engine.
         let is_bridge = crate::rules::overlay_types::is_bridge_overlay_index(overlay.overlay_id);
 
@@ -1602,27 +1581,11 @@ pub(super) fn classify_overlay_effects(
         }
         if is_bridge && result.bridge_layer.is_none() {
             result.has_bridge_deck = true;
-            // Direction determined by index: 24/237=EW, 25/238=NS, rest=Low.
-            let direction = match overlay.overlay_id {
-                24 | 237 => BridgeDirection::EastWest,
-                25 | 238 => BridgeDirection::NorthSouth,
-                _ => BridgeDirection::Low,
-            };
-            // High bridges: deck 4 levels above ground (HighBridgeHeight=4).
-            // Low bridges: deck at ground level (no elevation change).
-            let deck_level = match direction {
-                BridgeDirection::EastWest | BridgeDirection::NorthSouth => level.saturating_add(4),
-                BridgeDirection::Low => level,
-            };
-            if direction == BridgeDirection::Low {
+            let layer = BridgeLayer::for_overlay(overlay.overlay_id, level);
+            if layer.direction == BridgeDirection::Low {
                 result.is_low_bridge = true;
             }
-            result.bridge_layer = Some(BridgeLayer {
-                overlay_id: overlay.overlay_id,
-                overlay_name: name.to_string(),
-                deck_level,
-                direction,
-            });
+            result.bridge_layer = Some(layer);
         }
     }
     result

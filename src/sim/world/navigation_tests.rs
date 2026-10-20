@@ -20,7 +20,7 @@ fn native_bridge_record_geometry_changes_rebuild_and_restore_navigation() {
     let mut sim = Simulation::with_seed(0x56c510);
     let mut terrain = gsi_04_10_clear_terrain(16, 16);
     for y in 0..16 {
-        let cell = terrain.cell_mut(8, y).unwrap();
+        let cell = terrain.cell_mut_for_test(8, y).unwrap();
         cell.zone_type = zone_class::OUTSIDE;
         cell.ground_walk_blocked = true;
         cell.base_ground_walk_blocked = true;
@@ -152,7 +152,7 @@ fn recalc_keeps_marked_structure_over_partial_terrain_occupation_and_bridge_deck
     let (rules, _) = rules_and_overlays();
     let mut sim = Simulation::with_seed(47);
     let mut terrain = gsi_04_10_clear_terrain(16, 16);
-    let tree_cell = terrain.cell_mut(6, 6).unwrap();
+    let tree_cell = terrain.cell_mut_for_test(6, 6).unwrap();
     tree_cell.terrain_object_occupation = Some(1);
     tree_cell.terrain_object_blocks = true;
     let ground = crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain);
@@ -165,7 +165,7 @@ fn recalc_keeps_marked_structure_over_partial_terrain_occupation_and_bridge_deck
         crate::sim::game_entity::GameEntity::test_default(47, "YARD", "Americans", 6, 6);
     structure.set_category_for_test(EntityCategory::Structure);
     structure.set_type_ref_for_test(sim.interner.intern("YARD"));
-    structure.lifecycle.set_cell_marked(true);
+    structure.lifecycle.set_cell_marked_for_test(true);
     structure.death.set_dying_for_test(true); // Dying still owns its marked footprint.
     sim.substrate.entities.insert(structure);
     assert!(sim.rebuild_dynamic_navigation(&rules));
@@ -176,7 +176,7 @@ fn recalc_keeps_marked_structure_over_partial_terrain_occupation_and_bridge_deck
     );
     let before = sim.path_grid_snapshot().unwrap();
     let terrain = sim.resolved_terrain.as_mut().unwrap();
-    let cell = terrain.cell_mut(6, 6).unwrap();
+    let cell = terrain.cell_mut_for_test(6, 6).unwrap();
     cell.level = 4;
     cell.slope_type = 1;
     cell.bridge_deck_level = 8;
@@ -187,6 +187,7 @@ fn recalc_keeps_marked_structure_over_partial_terrain_occupation_and_bridge_deck
     crate::sim::world::navigation::NavigationCaches {
         zones: &mut sim.zone_grid,
         path: &mut sim.path_grid,
+        overlays: sim.overlay_grid.as_ref(),
         playfield_bounds: sim.playfield_bounds,
     }
     .publish_recalculated_cell(
@@ -420,7 +421,7 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
         crate::sim::game_entity::GameEntity::test_default(9, "YARD", "Americans", 6, 6);
     structure.set_category_for_test(EntityCategory::Structure);
     structure.set_type_ref_for_test(sim.interner.intern("YARD"));
-    structure.lifecycle.set_cell_marked(true);
+    structure.lifecycle.set_cell_marked_for_test(true);
     sim.substrate.entities.insert(structure);
     assert!(
         sim.finalize_frame_overlays_and_navigation(Some(&rules), Some(&overlays), false, true)
@@ -445,7 +446,7 @@ fn structure_changes_publish_footprint_cells_without_rebuilding_zones() {
         .get_mut(9)
         .unwrap()
         .lifecycle
-        .set_cell_marked(false);
+        .set_cell_marked_for_test(false);
     let zones_before = zone_storage(&sim);
     sim.finalize_frame_overlays_and_navigation(Some(&rules), Some(&overlays), false, true);
     assert_eq!(*sim.path_grid_snapshot().unwrap(), *open);

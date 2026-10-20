@@ -136,11 +136,11 @@ pub(crate) fn build_target_line_instances(
     // per-Techno 43B150 walk when the player has no operational detector.
     // Collect the player's detectors once for the frame's Techno walk.
     let psychic = rules.and_then(|rules| {
-        let viewer = sim.session.current_house()?;
+        let viewer = sim.session().current_house()?;
         let sites: Vec<_> = sim.psychic_detection_sites(viewer, rules).collect();
         (!sites.is_empty()).then_some((rules, viewer, sites))
     });
-    let cells = sim.resolved_terrain.as_ref().map(NativeCellQuery::isolated);
+    let cells = sim.resolved_terrain().map(NativeCellQuery::isolated);
     let project = |p: ScreenPoint| {
         [
             p.x as i32 - viewport.camera[0],
@@ -169,7 +169,7 @@ pub(crate) fn build_target_line_instances(
         let Some(line) = action_line_endpoints(entity, sim, Some(*rules), cells.as_ref()) else {
             return;
         };
-        let owner = sim.interner.resolve(entity.owner());
+        let owner = sim.interner().resolve(entity.owner());
         let color = house_colors.get(owner).copied().unwrap_or(NO_REMAP);
         let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, color);
         emit_psychic_detection_line(
@@ -194,7 +194,7 @@ pub(crate) fn build_target_line_instances(
         return instances;
     }
     let colors = line_state
-        .is_selected_action_active(sim.session.binary_frame())
+        .is_selected_action_active(sim.session().binary_frame())
         .then(|| {
             palette_bytes.and_then(|bytes| crate::assets::pal_file::Palette::from_bytes(bytes).ok())
         })
@@ -452,7 +452,7 @@ pub(crate) fn build_factory_rally_line_instances(
     let (Some(sim), Some(rules), Some(local_owner)) = (sim, rules, local_owner) else {
         return instances;
     };
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = sim.resolved_terrain() else {
         return instances;
     };
     // Presentation must not stamp the simulation's shared fallback CellClass.
@@ -474,11 +474,11 @@ pub(crate) fn build_factory_rally_line_instances(
         {
             continue;
         }
-        let owner = sim.interner.resolve(entity.owner());
+        let owner = sim.interner().resolve(entity.owner());
         if owner != local_owner {
             continue;
         }
-        let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
+        let Some(obj) = sim.interner().object_type(entity.type_ref(), rules) else {
             continue;
         };
         if !obj.has_rally_line() {
@@ -508,7 +508,7 @@ pub(crate) fn build_factory_rally_line_instances(
             start,
             end,
             tint,
-            sim.session.binary_frame(),
+            sim.session().binary_frame(),
             viewport,
             &mut alpha_at,
         );
@@ -569,7 +569,7 @@ fn action_line_endpoints(
     use crate::sim::movement::ground_pose::{
         object_location, query_ground_height, target_get_coords,
     };
-    let terrain = sim.resolved_terrain.as_ref();
+    let terrain = sim.resolved_terrain();
     let mut end = target_get_coords(TargetKind::from(nav_target), sim, cells)?;
     let end_cell = (
         crate::util::lepton::lepton_to_cell_packed(end.x),
@@ -745,21 +745,22 @@ mod tests {
     fn sim_with_selected_unit_that_has_attack_and_move() -> Simulation {
         let mut sim = Simulation::new();
         let mut unit = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
-        unit.set_owner_for_test(sim.interner.intern("Americans"));
-        unit.set_type_ref_for_test(sim.interner.intern("MTNK"));
+        unit.set_owner_for_test(sim.intern("Americans"));
+        unit.set_type_ref_for_test(sim.intern("MTNK"));
         unit.selection.set_selected_for_test(true);
-        sim.session.set_game_mode(
+        sim.session_mut_for_test().set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.set_current_house_for_test(Some(unit.owner()));
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(unit.owner()));
         unit.navigation
             .set_nav_com_for_test(Some(NavTargetRef::cell(25, 25)));
         unit.attack_target.set_for_test(Some(TargetKind::Entity(2)));
         let mut target = GameEntity::test_default(2, "HTNK", "Soviet", 14, 10);
-        target.set_owner_for_test(sim.interner.intern("Soviet"));
-        target.set_type_ref_for_test(sim.interner.intern("HTNK"));
-        sim.entities_mut().insert(unit);
-        sim.entities_mut().insert(target);
+        target.set_owner_for_test(sim.intern("Soviet"));
+        target.set_type_ref_for_test(sim.intern("HTNK"));
+        sim.entities_mut_for_test().insert(unit);
+        sim.entities_mut_for_test().insert(target);
         sim
     }
 

@@ -532,6 +532,15 @@ impl crate::sim::game_entity::GameEntity {
         let Some(disguise) = self.disguise.as_ref() else {
             return false;
         };
+        // Building and Aircraft keep the Techno base (`0x0041C020`): the raw
+        // `+0x1D8` flag, whoever asks.
+        if matches!(
+            self.category(),
+            crate::map::entities::EntityCategory::Structure
+                | crate::map::entities::EntityCategory::Aircraft
+        ) {
+            return disguise.disguised;
+        }
         let allied = |asker: InternedId, other: InternedId| {
             crate::sim::combat::combat_weapon::is_ally_by_object(alliances, interner, asker, other)
         };
@@ -546,6 +555,51 @@ impl crate::sim::game_entity::GameEntity {
                 .is_some_and(|fake| allied(observer, fake)),
             disguise.disguised_as_house.is_some(),
         )
+    }
+
+    /// vtable `+0xD0` `GetDisguiseHouse(skip_own)`: the house an observer
+    /// reads off this object.
+    /// - Unit `0x007465F0` and Infantry `0x005226C0` answer the owner when it
+    ///   is allied with the current player (`0x004F9A50`) and `skip_own` is
+    ///   false; otherwise the worn house (`+0x51C`), which Infantry replaces
+    ///   with the current player's when NULL. So a Mirage worn as terrain
+    ///   has none, a Spy always has one.
+    /// - Building and Aircraft keep the Techno base (`0x0041BE70`): NULL.
+    pub fn disguise_house(
+        &self,
+        skip_own: bool,
+        current_player: Option<InternedId>,
+        owner_allied_with_player: bool,
+    ) -> Option<InternedId> {
+        use crate::map::entities::EntityCategory;
+        let worn = self.disguise.as_ref().and_then(DisguiseRuntime::house);
+        match self.category() {
+            EntityCategory::Unit | EntityCategory::Infantry
+                if owner_allied_with_player && !skip_own =>
+            {
+                Some(self.owner())
+            }
+            EntityCategory::Unit => worn,
+            EntityCategory::Infantry => worn.or(current_player),
+            EntityCategory::Structure | EntityCategory::Aircraft => None,
+        }
+    }
+
+    /// Whether `player` sees this object disguised with no house behind it:
+    /// `+0xC8` ([`Self::is_disguised_to`]) with `+0xD0(1)`
+    /// ([`Self::disguise_house`]) NULL, as for a Mirage worn as terrain to an
+    /// enemy that cannot see through it. DrawExtras then skips the hover
+    /// health bar (`0x006F5E4B..0x006F5E70`), Flash skips its write and
+    /// `ObjectClass::Is_Selectable` (`+0x138`, `0x005F6C30`) refuses.
+    pub fn disguise_hides_house_from(
+        &self,
+        player: InternedId,
+        fog: Option<&crate::sim::vision::FogState>,
+        alliances: Option<&crate::map::houses::HouseAllianceMap>,
+        interner: &crate::sim::intern::StringInterner,
+    ) -> bool {
+        self.disguise_house(true, Some(player), false).is_none()
+            && self.is_disguised_to(player, fog, alliances, interner)
     }
 }
 
@@ -966,7 +1020,7 @@ impl crate::sim::world::Simulation {
                         )
                         .and_then(|other| self.substrate.entities.get(other))
                         && !crate::sim::combat::combat_weapon::is_ally_by_object(
-                            Some(&self.house_alliances),
+                            Some(self.house_alliances.as_map()),
                             &self.interner,
                             entity.owner(),
                             neighbor.owner(),

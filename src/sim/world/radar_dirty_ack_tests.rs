@@ -12,28 +12,28 @@ fn radar_dirty_ack_dedups_one_window_rearms_and_never_changes_hash() {
     let other = (18, 23);
     let baseline_hash = sim.state_hash();
 
-    sim.mark_radar_terrain_dirty_cells([cell, cell]);
-    assert_eq!(sim.radar_terrain_dirty_generation, 1);
-    assert_eq!(sim.radar_terrain_dirty_cells, vec![cell]);
-    sim.mark_radar_terrain_dirty_cells([other, cell, other]);
-    let generation = sim.radar_terrain_dirty_generation;
+    sim.dirty_cells.mark_radar([cell, cell]);
+    assert_eq!(sim.dirty_cells.radar_generation(), 1);
+    assert_eq!(sim.dirty_cells.radar(), vec![cell]);
+    sim.dirty_cells.mark_radar([other, cell, other]);
+    let generation = sim.dirty_cells.radar_generation();
     assert_eq!(generation, 2);
-    assert_eq!(sim.radar_terrain_dirty_cells, vec![cell, other]);
-    sim.mark_radar_terrain_dirty_cells([cell, other]);
-    assert_eq!(sim.radar_terrain_dirty_generation, generation);
+    assert_eq!(sim.dirty_cells.radar(), vec![cell, other]);
+    sim.dirty_cells.mark_radar([cell, other]);
+    assert_eq!(sim.dirty_cells.radar_generation(), generation);
     assert_eq!(sim.state_hash(), baseline_hash);
 
     // A skipped/absent presentation performs no acknowledgement. A stale
     // acknowledgement likewise cannot erase the pending native dirty batch.
     assert!(!sim.acknowledge_radar_terrain_dirty(generation.wrapping_add(1)));
-    assert_eq!(sim.radar_terrain_dirty_cells, vec![cell, other]);
+    assert_eq!(sim.dirty_cells.radar(), vec![cell, other]);
     assert!(sim.acknowledge_radar_terrain_dirty(generation));
-    assert!(sim.radar_terrain_dirty_cells.is_empty());
+    assert!(sim.dirty_cells.radar().is_empty());
     assert_eq!(sim.state_hash(), baseline_hash);
 
-    sim.mark_radar_terrain_dirty_cells([cell]);
-    assert_eq!(sim.radar_terrain_dirty_cells, vec![cell]);
-    assert_eq!(sim.radar_terrain_dirty_generation, generation + 1);
+    sim.dirty_cells.mark_radar([cell]);
+    assert_eq!(sim.dirty_cells.radar(), vec![cell]);
+    assert_eq!(sim.dirty_cells.radar_generation(), generation + 1);
     assert_eq!(sim.state_hash(), baseline_hash);
 }
 
@@ -53,9 +53,9 @@ fn radar_dirty_wall_partial_damage_marks_nothing() {
         sim.overlay_grid.as_ref().unwrap().cell(4, 5).overlay_data,
         0x10
     );
-    assert!(sim.radar_terrain_dirty_cells.is_empty());
-    assert_eq!(sim.radar_terrain_dirty_generation, 0);
-    assert_eq!(sim.tactical_dirty_cells, vec![(4, 5)]);
+    assert!(sim.dirty_cells.radar().is_empty());
+    assert_eq!(sim.dirty_cells.radar_generation(), 0);
+    assert_eq!(sim.dirty_cells.tactical_for_test(), vec![(4, 5)]);
 }
 
 #[test]
@@ -73,13 +73,13 @@ fn radar_dirty_ack_survives_action40_and_load_rebuild_needs_no_stale_batch() {
     };
     let mut sim = Simulation::new();
     sim.install_playfield_from_map_header(&header);
-    sim.mark_radar_terrain_dirty_cells([(20, 20)]);
+    sim.dirty_cells.mark_radar([(20, 20)]);
     assert!(sim.change_visible_map_area([4, 40, 54, 12], None));
     assert_eq!(sim.playfield_revision, 1);
-    assert_eq!(sim.radar_terrain_dirty_cells, vec![(20, 20)]);
+    assert_eq!(sim.dirty_cells.radar(), vec![(20, 20)]);
     assert!(sim.acknowledge_radar_terrain_dirty(1));
 
-    sim.mark_radar_terrain_dirty_cells([(20, 20)]);
+    sim.dirty_cells.mark_radar([(20, 20)]);
     let hash_with_pending_client_state = sim.state_hash();
     let bytes_with_pending = GameSnapshot::save(&sim, 0, 0, "all06umd.map", 0);
     assert!(sim.acknowledge_radar_terrain_dirty(2));
@@ -92,7 +92,7 @@ fn radar_dirty_ack_survives_action40_and_load_rebuild_needs_no_stale_batch() {
     let restored = GameSnapshot::load(&bytes_with_pending)
         .expect("snapshot loads")
         .sim;
-    assert!(restored.radar_terrain_dirty_cells.is_empty());
-    assert_eq!(restored.radar_terrain_dirty_generation, 0);
+    assert!(restored.dirty_cells.radar().is_empty());
+    assert_eq!(restored.dirty_cells.radar_generation(), 0);
     assert_eq!(restored.playfield_revision, sim.playfield_revision);
 }

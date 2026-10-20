@@ -740,7 +740,7 @@ pub(crate) mod tests {
                 lepton::CELL_CENTER_LEPTON,
             );
             pax.lifecycle.set_in_limbo_for_test(false);
-            pax.lifecycle.set_cell_marked(true);
+            pax.lifecycle.set_cell_marked_for_test(true);
             sim.substrate.entities.insert(pax);
             give_walk_locomotor(&mut sim, id);
         }
@@ -878,7 +878,7 @@ pub(crate) mod tests {
                 let pax = sim.substrate.entities.get_mut(id).unwrap();
                 pax.attack_target.set_for_test(Some(TargetKind::Entity(20)));
                 pax.navigation
-                    .path_replay
+                    .path_replay_mut()
                     .set_directions_for_test(vec![9, 2, 3]);
                 crate::sim::building_entry::set_should_enter_occupiable_for_test(pax, true);
                 crate::sim::building_entry::set_should_enter_nearest_occupiable_for_test(pax, true);
@@ -923,7 +923,12 @@ pub(crate) mod tests {
                 assert!(pax.lifecycle.cell_marked());
                 assert!(pax.passenger_role.is_none());
                 assert!(pax.attack_target.target().is_none());
-                assert!(pax.navigation.path_replay.remaining_directions().is_empty());
+                assert!(
+                    pax.navigation
+                        .path_replay()
+                        .remaining_directions()
+                        .is_empty()
+                );
                 assert_eq!(pax.building_entry.should_enter_occupiable(), !human);
                 assert_eq!(pax.building_entry.should_enter_nearest_occupiable(), !human);
                 assert_eq!(
@@ -1003,7 +1008,7 @@ pub(crate) mod tests {
             .get_mut(22)
             .unwrap()
             .lifecycle
-            .set_cell_marked(true);
+            .set_cell_marked_for_test(true);
         assert_eq!(
             sell_building_occupants(
                 &mut sim,

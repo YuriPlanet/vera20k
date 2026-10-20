@@ -96,7 +96,7 @@ impl Scene {
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         terrain.set_land_speed_rules_for_test(&rules.terrain_rules);
         let clear = rules.terrain_rules.semantics_for_land_type(0).unwrap();
-        for cell in &mut terrain.cells {
+        for cell in terrain.cells_mut_for_test() {
             cell.speed_costs = clear.speed_costs;
             cell.base_speed_costs = clear.speed_costs;
         }
@@ -499,7 +499,7 @@ fn native_whole_wall_autofill_constructs_retires_and_keeps_the_refused_middle() 
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(x, y)
+                .cell_mut_for_test(x, y)
                 .unwrap();
             cell.land_type = land;
             cell.speed_costs = semantics.speed_costs;

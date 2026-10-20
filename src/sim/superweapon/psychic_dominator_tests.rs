@@ -57,7 +57,7 @@ fn pair(value: &Value) -> (i32, i32) {
 
 fn global_lighting_events(sim: &Simulation) -> usize {
     sim.lighting_sources
-        .pending
+        .pending()
         .iter()
         .filter(|event| matches!(event, LightingEvent::Global { .. }))
         .count()
@@ -66,7 +66,7 @@ fn global_lighting_events(sim: &Simulation) -> usize {
 /// The cell profiles of the pending relight-profile changes, in order.
 fn relight_profiles(sim: &Simulation) -> Vec<ScenarioLightingProfile> {
     sim.lighting_sources
-        .pending
+        .pending()
         .iter()
         .filter_map(|event| match event {
             LightingEvent::RelightProfile { cell_profile, .. } => Some(*cell_profile),

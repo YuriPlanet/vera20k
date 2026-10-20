@@ -453,7 +453,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
             // claim about ordinary placement, occupancy or scene loading.
             supply_primary_actor_flags(&mut sim, id, &case["initial"]["actors"][index]["flags"]);
             let entity = sim.substrate.entities.get_mut(id).unwrap();
-            entity.lifecycle.set_cell_marked(true);
+            entity.lifecycle.set_cell_marked_for_test(true);
             entity.selection.set_selected_for_test(false);
             sim.append_house_base_building_for_test(id);
             if actor["primary"].as_u64() == Some(1) {

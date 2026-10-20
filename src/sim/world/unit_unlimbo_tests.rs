@@ -119,7 +119,7 @@ fn retail_world(rules: &RuleSet, terrain_rules: &TerrainRules) -> Simulation {
 
 fn apply_cell_inputs(sim: &mut Simulation, cell: (u16, u16), input: &Value) {
     let terrain = sim.resolved_terrain.as_mut().unwrap();
-    let target = terrain.cell_mut(cell.0, cell.1).unwrap();
+    let target = terrain.cell_mut_for_test(cell.0, cell.1).unwrap();
     let has_bridge = input["bridge"].as_bool().unwrap_or(false);
     target.bridge_facts.raw_flags = if has_bridge { 0x100 } else { 0 };
     target.has_bridge_deck = has_bridge;
@@ -767,7 +767,7 @@ fn exact_unit_placement_input_z_matches_existing_original_ramp_controls() {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(cell.0, cell.1)
+                .cell_mut_for_test(cell.0, cell.1)
                 .unwrap();
             target.level = int(&case["level"]) as u8;
             target.slope_type = case["ramp"].as_u64().unwrap() as u8;
@@ -1185,7 +1185,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(cell.0, cell.1)
+                .cell_mut_for_test(cell.0, cell.1)
                 .unwrap();
             target.level = native["level"].as_u64().unwrap() as u8;
             target.slope_type = native["slope"].as_u64().unwrap() as u8;

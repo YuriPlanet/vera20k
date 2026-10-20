@@ -116,7 +116,7 @@ fn ground_walk_order_preserves_native_human_deploy_refusal() {
     let (mut sim, rules, id) = Simulation::walk_cell_input_test_scene(false);
     let actor = sim.substrate.entities.get_mut(id).unwrap();
     actor.mission_leaf.set_infantry_doing_verified(27).unwrap();
-    actor.navigation.path_runtime.start_movement(50, 5);
+    actor.navigation.path_runtime_mut().start_movement(50, 5);
     let navigation_before = serde_json::to_value(&actor.navigation).unwrap();
     let rng_before = sim.rng_state();
 
@@ -140,7 +140,7 @@ fn ground_walk_order_preserves_native_human_deploy_refusal() {
         json!(u8::from(walk.walk_is_moving().unwrap())),
         native["moving"]
     );
-    let timer = actor.navigation.path_runtime.movement_timer();
+    let timer = actor.navigation.path_runtime().movement_timer();
     assert_eq!(
         json!({"start_frame": timer.start_frame(), "duration": timer.duration()}),
         native["movement_timer"]
@@ -324,7 +324,8 @@ fn an_object_click_keeps_an_object_its_zone_reaches() {
 /// An object across the river: the retail GI's zone cannot reach its Cell,
 /// so FNPC sends the GI to its own bank (`0x004D7B5E..0x004D7BF3`). An
 /// Aircraft is special and keeps the object (`0x004D7AFB`), but its wrapper
-/// refuses NoMove (`0x00417C12`).
+/// refuses NoMove (`0x00417C12`). Its 0 is its own Cell action under the
+/// object (`0x00417D7C`), Move over this open Cell.
 #[test]
 fn an_object_across_the_river_sends_the_mover_to_its_own_bank() {
     let Some((mut sim, rules, owner, gi, harrier)) = retail_scene("ORCA") else {
@@ -345,7 +346,10 @@ fn an_object_across_the_river_sends_the_mover_to_its_own_bank() {
         Some(TargetKind::Entity(far))
     );
     assert_eq!(click(harrier, MoveAction::NoMove), None);
-    assert_eq!(click(harrier, MoveAction::None), None, "no Aircraft tail");
+    assert_eq!(
+        click(harrier, MoveAction::None),
+        Some(TargetKind::Entity(far))
+    );
 }
 
 /// NoMove's own shroud test (`0x004D77BD..0x004D77EA`): over an object whose
@@ -608,7 +612,7 @@ impl Simulation {
         let terrain = self.resolved_terrain.as_mut().unwrap();
         for x in 8..=10 {
             let cell = terrain
-                .cells
+                .cells_mut_for_test()
                 .iter_mut()
                 .find(|c| c.rx == x && c.ry == 6)
                 .unwrap();

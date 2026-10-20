@@ -25,6 +25,10 @@ const COMMAND_RECORD_PROCESSED_FLAG: u8 = 0x01;
 pub const SELL_WALL_AT_CELL_OPCODE: u8 = 0x17;
 /// Native `EventClass` opcode for leaving the active scenario.
 pub const EXIT_OPCODE: u8 = 0x13;
+/// Native header-only DESTRUCT event: `EventClass::Execute`'s type-8 entry
+/// (`0x004C7BDF`) calls `HouseClass::Flag_To_Die 0x004FC980` on the header
+/// House, ungated.
+pub const DESTRUCT_OPCODE: u8 = 0x08;
 /// House-wide Cheer, issued by AllToCheer730F30.
 pub const CHEER_OPCODE: u8 = 0x2d;
 /// Native `EventClass` opcode for a MegaMission order envelope.
@@ -803,6 +807,10 @@ pub enum Command {
         target: Option<crate::sim::combat::TargetKind>,
         destination: Option<crate::sim::combat::TargetKind>,
     },
+    /// EVENT_DESTRUCT for the command House: the in-game abort's Leave and
+    /// Observe results 3/4 (`0x0048CA34`, `0x0048CAB2`) queue it for the
+    /// local House. Appended to preserve existing serialized variant indices.
+    Destruct,
 }
 
 impl Command {

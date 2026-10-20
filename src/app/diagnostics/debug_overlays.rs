@@ -97,7 +97,7 @@ pub(crate) fn build_terrain_cost_overlay_instances(
         return Vec::new();
     };
     let speed_type = resolve_debug_speed_type(state);
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = sim.resolved_terrain() else {
         log::warn!("Terrain cost overlay: no resolved terrain");
         return Vec::new();
     };
@@ -361,7 +361,7 @@ pub(crate) fn build_path_overlay_instances(
         // The unpaid Foot+5E0 words, walked from the mover's live cell.
         let path: Vec<(u16, u16)> = entity
             .navigation
-            .path_replay
+            .path_replay()
             .remaining_cells_from((entity.position.rx() as i16, entity.position.ry() as i16))
             .into_iter()
             .map(|(x, y)| (x as u16, y as u16))
@@ -688,7 +688,7 @@ pub(crate) fn build_foot_path_overlay_instances(
         // The unpaid Foot+5E0 words, walked from the mover's live cell.
         let mut path: Vec<(u16, u16)> = entity
             .navigation
-            .path_replay
+            .path_replay()
             .remaining_cells_from((entity.position.rx() as i16, entity.position.ry() as i16))
             .into_iter()
             .map(|(x, y)| (x as u16, y as u16))

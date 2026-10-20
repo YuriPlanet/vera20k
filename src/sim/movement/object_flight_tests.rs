@@ -42,7 +42,7 @@ fn unmarked_object_flight_predicates_do_not_query_the_map() {
     dummy.stamp_coord(111, -222);
     let mut entity = GameEntity::test_default(1, "FV", "Americans", 10, 20);
     entity.position.set_exact_z_leptons_for_test(Some(624));
-    entity.lifecycle.set_cell_marked(false);
+    entity.lifecycle.set_cell_marked_for_test(false);
     assert!(!is_low_flying(&entity, Some(&terrain), None));
     assert!(!is_high_flying(&entity, Some(&terrain), None));
     assert_eq!(dummy.snapshot().coord, (111, -222));
@@ -80,7 +80,9 @@ fn native_object_flight_queries_use_live_ground_bridge_and_mark() {
             .set_sub_y_for_test(SimFixed::from_num(y % 256));
         entity.position.set_exact_z_leptons_for_test(Some(z));
         entity.set_on_bridge(row.input.on_bridge != 0);
-        entity.lifecycle.set_cell_marked(row.input.marked != 0);
+        entity
+            .lifecycle
+            .set_cell_marked_for_test(row.input.marked != 0);
         assert_eq!(
             current_fly_height(&entity, Some(&terrain)),
             row.height,
@@ -130,7 +132,7 @@ fn a_paratroopers_fall_moves_its_location_z_to_the_ground_or_deck() {
         ));
         let mut paratrooper = GameEntity::test_default(1, "E1", "Americans", 10, 10);
         paratrooper.lifecycle.set_in_limbo_for_test(false);
-        paratrooper.lifecycle.set_cell_marked(true);
+        paratrooper.lifecycle.set_cell_marked_for_test(true);
         paratrooper.set_on_bridge(on_bridge);
         sim.substrate.entities.insert(paratrooper);
         assert!(begin_parachute_descent(
@@ -212,7 +214,7 @@ fn a_falling_paratrooper_is_marked_again_at_the_head_of_its_cell() {
         let mut infantry = GameEntity::test_default(id, "E1", "Americans", 10, 10);
         infantry.set_category_for_test(EntityCategory::Infantry);
         infantry.lifecycle.set_in_limbo_for_test(false);
-        infantry.lifecycle.set_cell_marked(false);
+        infantry.lifecycle.set_cell_marked_for_test(false);
         infantry.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         infantry.position.set_exact_z_leptons_for_test(Some(0));
         sim.substrate.entities.insert(infantry);

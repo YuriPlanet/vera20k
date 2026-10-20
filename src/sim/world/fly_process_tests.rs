@@ -211,10 +211,10 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         "airport_bound": flag(input, "airport_bound", false),
     }))
     .unwrap();
-    fly.set_target_speed(SimFixed::from_num(
+    fly.set_target_speed_for_test(SimFixed::from_num(
         input["target_speed"].as_f64().unwrap_or(1.0),
     ));
-    fly.set_current_speed(SimFixed::from_num(input["speed"].as_f64().unwrap_or(1.0)));
+    fly.set_current_speed_for_test(SimFixed::from_num(input["speed"].as_f64().unwrap_or(1.0)));
     sim.aircraft_tracker_add(AIRCRAFT);
     sim.add_entity_occupancy(AIRCRAFT);
     sim.submit_entity_display(AIRCRAFT, Some(&rules), None);

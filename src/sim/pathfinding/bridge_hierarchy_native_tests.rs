@@ -78,8 +78,9 @@ pub(crate) fn hierarchy_native_fixture(
                 row[1][0].as_u64().unwrap() as u16,
                 row[1][1].as_u64().unwrap() as u16,
             );
-            terrain.cells[usize::from(a.1) * usize::from(width) + usize::from(a.0)]
-                .final_tile_index = row[3].as_i64().unwrap() as i32;
+            terrain.cells_mut_for_test()
+                [usize::from(a.1) * usize::from(width) + usize::from(a.0)]
+            .final_tile_index = row[3].as_i64().unwrap() as i32;
             records.push(BridgeEndpointRecord {
                 endpoint_a: a,
                 endpoint_b: b,
@@ -285,7 +286,7 @@ fn bridge_hierarchy_native_full_and_local_graphs_queries_and_padding() {
                         base.zone_ids[i] = v as u16;
                     }
                     if let Some(v) = change["cell_level"].as_u64() {
-                        terrain.cells[i].level = v as u8;
+                        terrain.cells_mut_for_test()[i].level = v as u8;
                     }
                     if change["clear_level0"].as_bool().unwrap_or(false) {
                         hierarchy.levels_mut()[0].set_zone_at(i32::from(x), i32::from(y), 0);
@@ -516,7 +517,7 @@ fn live_world_navigation_and_sentinel_repair_match_native_hierarchy_graphs() {
         let bounds = hierarchy_native_bounds(input);
         let path = PathGrid::from_resolved_terrain(&terrain);
         let mut sim = crate::sim::world::Simulation::with_seed(0x584550);
-        sim.playfield_bounds = Some(bounds);
+        sim.set_playfield_bounds_for_test(Some(bounds));
         sim.bridge_state = Some(
             crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain_with_map_size(
                 &terrain,
@@ -546,7 +547,7 @@ fn live_world_navigation_and_sentinel_repair_match_native_hierarchy_graphs() {
         if name.starts_with("sentinel") {
             zones.base_topology_mut().movement_classes[10 * 16 + 10] = zone_class::OUTSIDE;
             // This stale projection must not preempt the actual mode-one query.
-            terrain.cell_mut(10, 10).unwrap().outside_playfield = true;
+            terrain.cell_mut_for_test(10, 10).unwrap().outside_playfield = true;
         }
         let outcome = repair_zone_cell(
             zones,

@@ -261,15 +261,21 @@ pub fn bridge_hut_can_repair(sim: &Simulation, hut_center: (u16, u16)) -> bool {
         .map_or(&[][..], |state| state.endpoint_records());
     crate::sim::bridge_state::repair_query::can_repair(
         &crate::map::resolved_terrain::NativeCellQuery::isolated(terrain),
+        sim.overlay_grid.as_ref(),
         records,
         (hut_center.0 as i16, hut_center.1 as i16),
     )
 }
 
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) fn hut_span_can_repair(terrain: &ResolvedTerrainGrid, hut_center: (u16, u16)) -> bool {
+pub(crate) fn hut_span_can_repair(
+    terrain: &ResolvedTerrainGrid,
+    overlays: &crate::sim::overlay_grid::OverlayGrid,
+    hut_center: (u16, u16),
+) -> bool {
     crate::sim::bridge_state::repair_query::can_repair(
         &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+        Some(overlays),
         &[],
         (hut_center.0 as i16, hut_center.1 as i16),
     )
@@ -426,8 +432,8 @@ fn bridge_overlay_at(sim: &Simulation, rx: u16, ry: u16) -> Option<u8> {
     // read that authority.
     sim.resolved_terrain
         .as_ref()
-        .and_then(|terrain| terrain.cell(rx, ry))
-        .and_then(|cell| cell.bridge_facts.overlay_id)
+        .and_then(|terrain| terrain.cell(rx, ry))?;
+    sim.overlay_grid.as_ref()?.cell(rx, ry).overlay_id
 }
 
 /// The CABHUT death fallback: the tail of
@@ -998,14 +1004,16 @@ mod tests {
     use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
     use crate::sim::occupancy::CellListInsertion;
 
-    /// Write CellClass+44 on each listed cell.
-    pub(super) fn seed_bridge_overlay(
-        terrain: &mut ResolvedTerrainGrid,
-        cells: &[(u16, u16)],
-        overlay: u8,
-    ) {
+    /// Write CellClass+44 on each listed cell of `sim`'s overlay grid,
+    /// installed over its terrain when absent.
+    pub(super) fn seed_bridge_overlay(sim: &mut Simulation, cells: &[(u16, u16)], overlay: u8) {
+        let terrain = sim.resolved_terrain.as_ref().expect("seeded terrain");
+        let (width, height) = (terrain.width(), terrain.height());
+        let grid = sim
+            .overlay_grid
+            .get_or_insert_with(|| crate::sim::overlay_grid::OverlayGrid::new(width, height));
         for &(x, y) in cells {
-            terrain.cell_mut(x, y).unwrap().bridge_facts.overlay_id = Some(overlay);
+            grid.cell_mut_for_test(x, y).overlay_id = Some(overlay);
         }
     }
 
@@ -1053,7 +1061,7 @@ mod tests {
     /// Build a Drive locomotor on the Bridge layer (mimics `high=true` spawn).
     fn drive_loco_on_bridge() -> LocomotorState {
         let mut loco = LocomotorState::for_test_kind(LocomotorKind::Drive);
-        loco.set_layer(MovementLayer::Bridge);
+        loco.set_layer_for_test(MovementLayer::Bridge);
         loco
     }
 
@@ -1075,7 +1083,7 @@ mod tests {
         );
         entity.set_on_bridge(true);
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.lifecycle.set_cell_marked(true);
+        entity.lifecycle.set_cell_marked_for_test(true);
         entity.locomotor = Some(drive_loco_on_bridge());
         sim.substrate.entities.insert(entity);
         1
@@ -1220,9 +1228,8 @@ mod tests {
         let mut sim = Simulation::new();
         let seed = 0x48A7_51DE_u64;
         sim.initialize_random_number_system(seed as u32);
-        let mut terrain = water_below_bridge_terrain(3);
-        seed_bridge_overlay(&mut terrain, &[(4, 3), (4, 4)], 0xE0);
-        sim.resolved_terrain = Some(terrain);
+        sim.resolved_terrain = Some(water_below_bridge_terrain(3));
+        seed_bridge_overlay(&mut sim, &[(4, 3), (4, 4)], 0xE0);
         sim.bridge_state = Some(crate::sim::bridge_state::BridgeRuntimeState::default());
         let bridge_explosion = sim.interner.intern("BRIDGEEXP1");
         sim.bridge_explosions.push(bridge_explosion);
@@ -1249,10 +1256,7 @@ mod tests {
             "intermediate-only fixture must not add BlowUpBridge fallout draws"
         );
         assert_eq!(
-            sim.resolved_terrain
-                .as_ref()
-                .and_then(|terrain| terrain.cell(4, 4))
-                .and_then(|cell| cell.bridge_facts.overlay_id),
+            sim.overlay_grid.as_ref().unwrap().cell(4, 4).overlay_id,
             Some(0xE0),
             "fixture must run the real hut dispatcher without a terminal transition"
         );
@@ -1313,15 +1317,15 @@ mod tests {
         let mut terrain = water_below_bridge_terrain(4);
         // A raw overlay alone admits only D. A also needs a real concrete
         // Middle tile class (without0x100 its height gate is bypassed).
-        terrain.cell_mut(5, 5).unwrap().final_tile_index = 1019;
+        terrain.cell_mut_for_test(5, 5).unwrap().final_tile_index = 1019;
         terrain.test_set_high_bridge_rim_tiles(
             crate::map::bridge_rim_tiles::HighBridgeRimTiles::from_ini(
                 1000,
                 b"[General]\nBridgeMiddle1=20\nBridgeMiddle2=40\n",
             ),
         );
-        seed_bridge_overlay(&mut terrain, &[(5, 5)], 0xCD);
         sim.resolved_terrain = Some(terrain);
+        seed_bridge_overlay(&mut sim, &[(5, 5)], 0xCD);
         sim.bridge_state = Some(BridgeRuntimeState::default());
 
         let bridge_strength = 1500i32;
@@ -1370,7 +1374,11 @@ mod tests {
                 crate::map::resolved_terrain::test_flat_cell,
             );
             for &((x, y), flags) in cells {
-                terrain.cell_mut(x, y).unwrap().bridge_facts.raw_flags = flags;
+                terrain
+                    .cell_mut_for_test(x, y)
+                    .unwrap()
+                    .bridge_facts
+                    .raw_flags = flags;
             }
             terrain
         };
@@ -1392,7 +1400,11 @@ mod tests {
         // 0x100 alone anchors on +0x2C.
         let mut terrain = grid(&[((12, 10), BRIDGE_FLAG_STRUCTURAL)]);
         let anchor = terrain.native_cell_identity((13, 12));
-        terrain.cell_mut(12, 10).unwrap().bridge_facts.native_anchor = Some(anchor);
+        terrain
+            .cell_mut_for_test(12, 10)
+            .unwrap()
+            .bridge_facts
+            .native_anchor = Some(anchor);
         assert_eq!(hut_fallback_anchor(terrain, hut), Some(((13, 12), 0)));
 
         // A pure 0x400 starter scans direction 2 over at most three more
@@ -1443,7 +1455,7 @@ mod tests {
         // TopRight1 at sub-tile 12 is a ramp; BottomLeft1 at sub-tile 2 ends
         // a walk heading direction 4. Tiles are base + key - 1.
         for (cell, tile, sub_tile) in [((10, 4), 104, 12), ((10, 6), 104, 12), ((10, 9), 106, 2)] {
-            let cell = terrain.cell_mut(cell.0, cell.1).unwrap();
+            let cell = terrain.cell_mut_for_test(cell.0, cell.1).unwrap();
             cell.final_tile_index = tile;
             cell.final_sub_tile = sub_tile;
         }
@@ -1610,7 +1622,7 @@ mod tests {
             true,
         );
         let mut loco = drive_loco_on_bridge();
-        loco.set_layer(MovementLayer::Air);
+        loco.set_layer_for_test(MovementLayer::Air);
         air.locomotor = Some(loco);
         air.set_on_bridge(false);
         sim.substrate.entities.insert(air);
@@ -1643,7 +1655,7 @@ mod tests {
         .unwrap();
         let ground = sim.substrate.entities.get_mut(1).unwrap();
         ground.lifecycle.set_in_limbo_for_test(false);
-        ground.lifecycle.set_cell_marked(true);
+        ground.lifecycle.set_cell_marked_for_test(true);
         sim.substrate.occupancy.add(
             5,
             5,

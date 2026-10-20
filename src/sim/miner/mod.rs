@@ -20,6 +20,10 @@ pub(crate) use refinery_dock::UnloadImage;
 #[path = "outbound_drive_tests.rs"]
 mod outbound_drive_tests;
 
+#[cfg(test)]
+#[path = "pad_nudge_tests.rs"]
+mod pad_nudge_tests;
+
 pub(crate) use self::harvest_mission::mission_harvest;
 pub(crate) use self::miner_system::extract_bale;
 pub(crate) use self::refinery_dock::{

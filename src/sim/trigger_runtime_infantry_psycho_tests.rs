@@ -181,7 +181,7 @@ fn go_berzerk_admission_uses_live_trigger_identity_and_the_infantry_array() {
         let entity = sim.substrate.entities.get_mut(actor).unwrap();
         match variant {
             "dead" => entity.lifecycle.set_object_alive_for_test(false),
-            "unmarked" => entity.lifecycle.set_cell_marked(false),
+            "unmarked" => entity.lifecycle.set_cell_marked_for_test(false),
             "limbo" => entity.lifecycle.set_in_limbo_for_test(true),
             "zero_health" => entity.health.set_for_test(0),
             _ => {}

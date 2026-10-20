@@ -96,7 +96,7 @@ impl SoundBoundary for FrameClientBoundary<'_> {
                 sim,
                 rules,
                 self.local_owner,
-                &mut |request| (*admit_radar)(request, sim.session.tick(), rules),
+                &mut |request| (*admit_radar)(request, sim.session().tick(), rules),
                 &mut output,
             );
         }

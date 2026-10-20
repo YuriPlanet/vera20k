@@ -799,3 +799,42 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
             .object_alive()
     );
 }
+
+/// Retail YAGRND answers CAN_LOAD with ROGER (`0x0043C4F8`), but carries no
+/// one: the Infantry Enter row asks only a carrier with `Passengers=` above 0
+/// (`0x0051ED7C..0x0051ED96`), so a GI is not offered transport entry. A Bio
+/// Reactor (`Passengers=5`) still is.
+#[test]
+fn a_retail_grinder_answers_roger_without_offering_transport_entry() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 60);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let grinder = sim
+        .spawn_object("YAGRND", "Americans", 20, 10, 0, rules)
+        .unwrap();
+    let reactor = sim
+        .spawn_object("YAPOWR", "Americans", 20, 18, 0, rules)
+        .unwrap();
+    let gi = sim
+        .spawn_object("E1", "Americans", 12, 10, 0, rules)
+        .unwrap();
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 12, 14, 0, rules)
+        .unwrap();
+    for carried in [gi, tank] {
+        assert_eq!(
+            crate::sim::radio::receive::can_load_query(&sim, grinder, carried, rules),
+            crate::sim::radio::RadioResponse::Roger
+        );
+    }
+    assert!(!crate::sim::passenger::can_enter_transport(
+        &sim, rules, gi, grinder
+    ));
+    assert!(crate::sim::passenger::can_enter_transport(
+        &sim, rules, gi, reactor
+    ));
+}

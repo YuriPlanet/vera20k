@@ -96,7 +96,7 @@ fn place_registered_crate(
     let index = (0..crate::sim::crates::state::CRATE_SLOT_CAPACITY)
         .find(|&index| sim.crate_authority.slots()[index].is_empty())
         .expect("a free crate slot");
-    *sim.crate_authority.slot_mut(index) = CrateSlot {
+    *sim.crate_authority.slot_mut_for_test(index) = CrateSlot {
         start_frame: 50,
         aux: 777,
         duration: 100,
@@ -151,8 +151,8 @@ fn multiplayer_fixture(slot: u8) -> (Simulation, RuleSet, OverlayTypeRegistry, I
     rules.powerups.weights = STOCK_WEIGHTS;
     rules.crate_rules.radius = 768;
     sim.session.set_binary_frame_for_test(100);
-    sim.playfield_bounds.as_mut().unwrap().base = 10;
-    sim.playfield_size_height = Some(10);
+    sim.playfield_bounds_mut_for_test().as_mut().unwrap().base = 10;
+    sim.set_playfield_size_height_for_test(Some(10));
     let registry = crate_registry();
     place_registered_crate(&mut sim, &registry, CELL, slot);
     let owner = house(&mut sim, "H0", false);
@@ -199,8 +199,8 @@ fn original_pickup_rows_match_through_the_dispatcher() {
         // `0x00A8B261` is zero in the fixture: no replacement placer.
         sim.session.game_options_mut_for_test().crates = false;
         sim.session.set_binary_frame_for_test(100);
-        sim.playfield_bounds.as_mut().unwrap().base = 10;
-        sim.playfield_size_height = Some(10);
+        sim.playfield_bounds_mut_for_test().as_mut().unwrap().base = 10;
+        sim.set_playfield_size_height_for_test(Some(10));
         let mut rules = crate_ruleset("");
         rules.powerups.weights = STOCK_WEIGHTS;
         if let Some(weights) = input["weights"].as_array() {
@@ -244,7 +244,7 @@ fn original_pickup_rows_match_through_the_dispatcher() {
             } else {
                 input["duplicate_slot"] == true
             };
-            *sim.crate_authority.slot_mut(index) = if occupied {
+            *sim.crate_authority.slot_mut_for_test(index) = if occupied {
                 CrateSlot {
                     start_frame: start,
                     aux,
@@ -369,7 +369,7 @@ fn money_crate_draws_once_pays_the_owner_and_sounds() {
 fn multiplayer_pickup_places_one_replacement_crate() {
     let (mut sim, rules, registry, _owner, actor) = multiplayer_fixture(0);
     sim.session.game_options_mut_for_test().crates = true;
-    *sim.crate_authority.slot_mut(0) = CrateSlot {
+    *sim.crate_authority.slot_mut_for_test(0) = CrateSlot {
         start_frame: 0,
         aux: 0,
         duration: 100,
@@ -717,7 +717,7 @@ fn unit_crate_under_its_picker_lands_the_goodie_on_the_first_ring_at_any_level()
     for y in 0..32 {
         for x in 0..32 {
             if (x, y) != at {
-                terrain.cell_mut(x, y).unwrap().level = 2;
+                terrain.cell_mut_for_test(x, y).unwrap().level = 2;
             }
         }
     }
@@ -1078,7 +1078,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
             local_height: local[3].as_u64().unwrap() as u32,
         };
         sim.install_playfield_from_map_header(&header);
-        let bounds = sim.playfield_bounds.unwrap();
+        let bounds = sim.playfield_bounds().unwrap();
         assert_eq!(
             json!([
                 bounds.off_fc,

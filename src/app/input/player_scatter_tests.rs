@@ -83,7 +83,7 @@ fn player_scatter_matches_native_selected_order_cue_and_no_voice_rng() {
         let actual_ids: Vec<_> = pending
             .iter()
             .map(|cmd| {
-                assert_eq!(cmd.owner, f.sim.session.current_house().unwrap());
+                assert_eq!(cmd.owner, f.sim.session().current_house().unwrap());
                 let Command::Scatter { entity_id } = cmd.payload else {
                     panic!("not a Scatter event");
                 };

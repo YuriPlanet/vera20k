@@ -358,16 +358,10 @@ impl RetailBridgeFixture {
         );
         for cell_input in &cells {
             let cell = terrain
-                .cell_mut(coords(cell_input, 0), coords(cell_input, 1))
+                .cell_mut_for_test(coords(cell_input, 0), coords(cell_input, 1))
                 .unwrap();
             cell.level = cell_input["level"].as_i64().unwrap() as u8;
             cell.bridge_facts.raw_flags = cell_input["flags"].as_u64().unwrap() as u32;
-            cell.bridge_facts.state_byte = cell_input["state"].as_u64().unwrap() as u8;
-            cell.bridge_facts.overlay_id = Some(
-                self.registry
-                    .id_for_name(cell_input["type"].as_str().unwrap())
-                    .unwrap(),
-            );
         }
         let mut interner = crate::sim::intern::StringInterner::new();
         let mut overlay_entries = Vec::new();
@@ -382,7 +376,8 @@ impl RetailBridgeFixture {
             // A 1x2 foundation has two overlay anchors but only its origin
             // records the BuildingType; the second cell must not duplicate it.
             for y in [ry, ry + 1] {
-                terrain.cell_mut(rx, y).unwrap().level = first["level"].as_i64().unwrap() as u8;
+                terrain.cell_mut_for_test(rx, y).unwrap().level =
+                    first["level"].as_i64().unwrap() as u8;
                 overlay_entries.push(crate::map::overlay::OverlayEntry {
                     rx,
                     ry: y,
@@ -397,7 +392,7 @@ impl RetailBridgeFixture {
             );
             if first["clear_rubble_type"] != true {
                 let type_id = interner.intern(input["building_type"].as_str().unwrap());
-                grid.cell_mut(rx, ry).rubble_building_type = Some(type_id);
+                grid.cell_mut_for_test(rx, ry).rubble_building_type = Some(type_id);
             }
             if first["overlay_id"].as_i64() == Some(-1) {
                 // Preserve the published anchors while the real overlay owner
@@ -432,6 +427,21 @@ impl RetailBridgeFixture {
             }
             live_grid = Some(grid);
         }
+        // Bridge cases carry their live identity and state on the cell itself.
+        let live_grid = live_grid.unwrap_or_else(|| {
+            let mut grid =
+                crate::sim::overlay_grid::OverlayGrid::new(terrain.width(), terrain.height());
+            for cell_input in &cells {
+                let live = grid.cell_mut_for_test(coords(cell_input, 0), coords(cell_input, 1));
+                live.overlay_id = Some(
+                    self.registry
+                        .id_for_name(cell_input["type"].as_str().unwrap())
+                        .unwrap(),
+                );
+                live.overlay_data = cell_input["state"].as_u64().unwrap() as u8;
+            }
+            grid
+        });
         // These original caller cases supply the unraised cell screen point.
         // Align the existing isometric projection with that seam. The actual
         // bridge builder must apply the live signed height, flags and frame.
@@ -452,7 +462,7 @@ impl RetailBridgeFixture {
                 atlas,
                 &self.names,
                 &overlay_entries,
-                live_grid.as_ref(),
+                Some(&live_grid),
                 (is_rubble || is_crate).then_some(&self.registry),
                 is_rubble.then_some((&self.rules, &interner)),
                 camera.world_origin_y,
@@ -465,6 +475,7 @@ impl RetailBridgeFixture {
             ),
             BridgeFrameKind::Body => build_bridge_body_instances_inner(
                 &terrain,
+                Some(&live_grid),
                 atlas,
                 &self.names,
                 &crate::map::lighting::CellLightGrid::new(),
@@ -507,15 +518,16 @@ fn assert_native_cell_sweep_order(
         .filter(|call| call["piece"] == "shadow")
         .collect();
     let mut terrain = test_grid(32, 32, test_flat_cell);
+    let mut live_grid = crate::sim::overlay_grid::OverlayGrid::new(32, 32);
     let id = fixture.registry.id_for_name("BRIDGE1").unwrap();
     let mut identity_by_position = BTreeMap::new();
     let mut expected = Vec::new();
     for call in calls {
         let coords: [u16; 2] = std::array::from_fn(|i| call["coords"][i].as_u64().unwrap() as u16);
         expected.push(coords);
-        let cell = terrain.cell_mut(coords[0], coords[1]).unwrap();
+        let cell = terrain.cell_mut_for_test(coords[0], coords[1]).unwrap();
         cell.bridge_facts.raw_flags = 0x180;
-        cell.bridge_facts.overlay_id = Some(id);
+        live_grid.cell_mut_for_test(coords[0], coords[1]).overlay_id = Some(id);
         let point = crate::map::terrain::iso_to_screen(coords[0], coords[1], 0);
         // VERA's documented world frame adds fifteen rows to every layer;
         // the camera absorbs that translation. Pin it to original traversal
@@ -540,7 +552,7 @@ fn assert_native_cell_sweep_order(
         atlas,
         &fixture.names,
         &[],
-        None,
+        Some(&live_grid),
         None,
         None,
         -100.0,
@@ -1318,14 +1330,15 @@ fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
         visit_retail_high_bridge_stages(kind, |phase, scene| {
             let sim = scene.sim();
             let before = sim.state_hash();
-            let terrain = sim.resolved_terrain.as_ref().unwrap();
+            let terrain = sim.resolved_terrain().unwrap();
+            let overlays = sim.overlay_grid().unwrap();
             let mut instances = Vec::new();
             build_bridge_shadow_instances_inner(
                 terrain,
                 &atlas,
                 &fixture.names,
                 &[],
-                None,
+                Some(overlays),
                 None,
                 None,
                 view.world_origin_y,
@@ -1390,18 +1403,18 @@ fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
             let cells: Vec<_> = terrain
                 .iter()
                 .filter(|c| c.rx.abs_diff(center.0) <= 8 && c.ry.abs_diff(center.1) <= 8)
-                .filter(|c| {
-                    c.bridge_facts
-                        .overlay_id
+                .filter_map(|c| {
+                    let live = overlays.cell(c.rx, c.ry);
+                    live.overlay_id
                         .is_some_and(|id| fixture.names.contains_key(&id))
-                })
-                .map(|c| {
-                    serde_json::json!({"coords":[c.rx,c.ry],"level":c.level,
-                "overlay":c.bridge_facts.overlay_id,"state":c.bridge_facts.state_byte,
+                        .then(|| {
+                            serde_json::json!({"coords":[c.rx,c.ry],"level":c.level,
+                "overlay":live.overlay_id,"state":live.overlay_data,
                 "flags":c.bridge_facts.raw_flags})
+                        })
                 })
                 .collect();
-            let receipt = serde_json::json!({"scene":label,"phase":phase,"frame":sim.session.binary_frame(),
+            let receipt = serde_json::json!({"scene":label,"phase":phase,"frame":sim.session().binary_frame(),
             "state_hash":format!("{before:016x}"),"cells":cells,"instances":instances.len(),
             "instance_sha256":sha256_hex(bytemuck::cast_slice(&instances)),
             "changed_pixels":changed,"color_sha256":sha256_hex(&output[0]),

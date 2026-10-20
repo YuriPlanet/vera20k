@@ -336,7 +336,7 @@ fn paradrop(
 ) -> Result<(), DepartureFailure> {
     if !cell_is_in_playfield_leptons(
         (landing.x, landing.y, landing.z),
-        sim.playfield_bounds,
+        sim.playfield_bounds(),
         sim.resolved_terrain.as_ref(),
     ) {
         return Err(DepartureFailure::Placement);
@@ -552,7 +552,7 @@ mod tests {
                 crate::map::resolved_terrain::test_retail_clear_grid(64, 64),
             );
         }
-        sim.playfield_bounds = Some(DROP_PLAYFIELD);
+        sim.set_playfield_bounds_for_test(Some(DROP_PLAYFIELD));
         let mut aircraft = GameEntity::test_default_of_category(
             aircraft_id,
             "PDPLANE",
@@ -1337,12 +1337,12 @@ mod tests {
             let rules = drop_test_rules();
             insert_loaded_paradrop_pair(&mut sim, 1, 2);
             let mut loco = LocomotorState::from_object_type(rules.object("E1").unwrap(), 0);
-            loco.set_layer(MovementLayer::Bridge);
+            loco.set_layer_for_test(MovementLayer::Bridge);
             {
                 let passenger = sim.substrate.entities.get_mut(2).unwrap();
                 passenger.locomotor = Some(loco);
                 passenger.lifecycle.set_object_alive_for_test(post_attach);
-                passenger.lifecycle.set_cell_marked(post_attach);
+                passenger.lifecycle.set_cell_marked_for_test(post_attach);
             }
             let mut peer = GameEntity::test_default(9, "E1", "Americans", 30, 30);
             peer.mark_live_contact_with(2);
@@ -1423,7 +1423,7 @@ mod tests {
                     .get_mut(2)
                     .unwrap()
                     .lifecycle
-                    .set_cell_marked(false);
+                    .set_cell_marked_for_test(false);
                 drop_payload(
                     &mut sim,
                     1,

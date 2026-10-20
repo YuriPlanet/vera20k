@@ -64,8 +64,8 @@ fn insert_structure(
         false,
     );
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(false);
-    sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(stable_id + 1);
+    entity.lifecycle.set_cell_marked_for_test(false);
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(stable_id + 1));
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(stable_id);
     // Unlimbo's House+0x68 append, which the SpySat scan walks.
@@ -89,8 +89,8 @@ fn insert_sight_unit(sim: &mut Simulation, stable_id: u64, owner: InternedId, rx
         false,
     );
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(false);
-    sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(stable_id + 1);
+    entity.lifecycle.set_cell_marked_for_test(false);
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(stable_id + 1));
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(stable_id);
 }
@@ -330,7 +330,7 @@ fn gsi_04_18_spy_sat_latch_and_persisted_fog_are_hash_authority() {
     let gapper = sim.interner.intern("Soviet");
     crate::sim::vision::apply_gap_generators(
         &mut sim.fog,
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         &[(gapper, 12, 12, 3)],
         &sim.interner,
     );
@@ -468,7 +468,7 @@ fn shroud_current_sight_fresh_direct_allied_psychic_reaches_authoritative_view()
         ("ALLIANCE", "SOVIET"),
         ("SOVIET", "ALLIANCE"),
     ] {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(left.into())
             .or_default()
             .insert(right.into());
@@ -527,7 +527,7 @@ fn shroud_current_sight_psychic_never_gapped_and_mixed_views_are_nontransitive()
             ("ALLIANCE", "SOVIET"),
             ("SOVIET", "ALLIANCE"),
         ] {
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .entry(left.into())
                 .or_default()
                 .insert(right.into());
@@ -581,13 +581,13 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
     let b = sim.interner.intern("Alliance");
     let c = sim.interner.intern("Third");
     let reverse = sim.interner.intern("ReverseOnly");
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("REVERSEONLY".into())
         .or_default()
         .insert("AMERICANS".into());
     let gapper = sim.interner.intern("Soviet");
     for (left, right) in [("Americans", "Alliance"), ("Alliance", "Americans")] {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(left.to_ascii_uppercase())
             .or_default()
             .insert(right.to_ascii_uppercase());
@@ -600,13 +600,13 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         let entity = sim.substrate.entities.get_mut(2).unwrap();
         entity.set_in_playfield(true);
         let mut loco = LocomotorState::for_test_kind(LocomotorKind::Jumpjet);
-        loco.set_layer(MovementLayer::Air);
+        loco.set_layer_for_test(MovementLayer::Air);
         // Keep the admitted high-flight height through the actual Process below.
 
         let runtime = loco.jumpjet_runtime_mut().expect("jumpjet runtime");
         let mut flight = runtime.flight();
         // The kernel flies toward its own retained target height.
-        flight.set_target_height(208);
+        flight.set_target_height_for_test(208);
         *runtime = runtime
             .clone()
             .with_phase_for_test(
@@ -718,7 +718,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
     // A newly direct allied viewer still has its constructor-equivalent due
     // timer, even though other viewers reloaded on this same binary frame.
     for (left, right) in [("Americans", "Third"), ("Third", "Americans")] {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(left.to_ascii_uppercase())
             .or_default()
             .insert(right.to_ascii_uppercase());
@@ -760,10 +760,10 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
     insert_sight_unit(&mut sim, 2, owner, 13, 13);
     let mut loco = LocomotorState::for_test_kind(LocomotorKind::Fly);
-    loco.set_layer(MovementLayer::Air);
+    loco.set_layer_for_test(MovementLayer::Air);
     loco.fly_runtime_mut()
         .unwrap()
-        .set_current_speed(SimFixed::from_num(1));
+        .set_current_speed_for_test(SimFixed::from_num(1));
     sim.substrate.entities.get_mut(2).unwrap().locomotor = Some(loco);
     sim.set_object_height_unmarked(2, 207);
     sim.session.set_binary_frame_for_test(119);
@@ -789,7 +789,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
             .unwrap();
         loco.fly_runtime_mut()
             .unwrap()
-            .set_current_speed(SimFixed::from_num(0));
+            .set_current_speed_for_test(SimFixed::from_num(0));
     }
     sim.set_object_height_unmarked(2, 208);
     sim.refresh_high_flying_sight_before_process(2, None);
@@ -812,7 +812,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
         .unwrap()
         .fly_runtime_mut()
         .unwrap()
-        .set_current_speed(SimFixed::from_num(-1));
+        .set_current_speed_for_test(SimFixed::from_num(-1));
     // Membership is false: the admitted FootAI event calls leaves which reject,
     // then still reloads15. Native moving compares !=0, so negative speed admits.
     sim.refresh_high_flying_sight_before_process(2, None);
@@ -1005,11 +1005,11 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
         let (mut sim, rules, viewer) = fixture();
         let ally = sim.interner.intern("Alliance");
         let hostile = sim.interner.intern("Soviet");
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry("ALLIANCE".into())
             .or_default()
             .insert("AMERICANS".into());
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry("AMERICANS".into())
             .or_default()
             .insert("ALLIANCE".into());
@@ -1060,11 +1060,11 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
 fn reset_shroud_replays_own_sight_and_allied_buildings() {
     let (mut sim, rules, viewer) = fixture();
     let ally = sim.interner.intern("Alliance");
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("ALLIANCE".into())
         .or_default()
         .insert("AMERICANS".into());
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("AMERICANS".into())
         .or_default()
         .insert("ALLIANCE".into());

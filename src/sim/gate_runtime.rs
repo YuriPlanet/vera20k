@@ -74,7 +74,7 @@ pub(crate) fn request_gate_open_for_cell(
             continue;
         }
         if crate::map::houses::is_allied_with(
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             sim.interner.resolve(candidate.owner()),
             sim.interner.resolve(mover_owner),
         ) {
@@ -335,7 +335,7 @@ mod tests {
         // The native fixture supplies an already admitted cell-list object;
         // class construction/reveal is outside this comparison boundary.
         gate.lifecycle.set_in_limbo_for_test(false);
-        gate.lifecycle.set_cell_marked(true);
+        gate.lifecycle.set_cell_marked_for_test(true);
         gate.set_in_playfield(true);
         sim.substrate.entities.insert(gate);
         let mover_type = sim.interner.intern("MTNK");

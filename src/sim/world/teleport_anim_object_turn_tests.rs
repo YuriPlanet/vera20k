@@ -114,7 +114,7 @@ fn relocating_owner(category: EntityCategory, type_name: &str, target: (u16, u16
         0,
     )));
     sim.substrate.entities.insert(entity);
-    sim.substrate.next_stable_object_id = 2;
+    sim.set_next_stable_object_id_for_test(2);
     assert!(matches!(
         sim.reveal(1),
         super::super::RevealOutcome::Revealed { .. }
@@ -253,7 +253,7 @@ fn teleport_target_loss_and_pointer_expiry_match_native_controls() {
             });
             entity
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap());
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap());
             let mut shot = super::super::lifecycle_tests::gsi_05_02_projectile(1, None);
             shot.target = ProjectileTarget::Entity(1);
             sim.admit_projectile(99, shot);

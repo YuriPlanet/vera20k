@@ -103,7 +103,7 @@ fn edit_cells(input: &Value, terrain: &mut ResolvedTerrainGrid) {
         Vec::new()
     };
     for &(bx, by) in &bridge {
-        let c = terrain.cell_mut(bx, by).unwrap();
+        let c = terrain.cell_mut_for_test(bx, by).unwrap();
         c.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
         c.has_bridge_deck = true;
         c.bridge_walkable = true;
@@ -125,7 +125,7 @@ fn edit_cells(input: &Value, terrain: &mut ResolvedTerrainGrid) {
             hover: Some(0),
         };
         for (wx, wy) in water {
-            let c = terrain.cell_mut(wx, wy).unwrap();
+            let c = terrain.cell_mut_for_test(wx, wy).unwrap();
             c.land_type = 2;
             c.base_land_type = 2;
             c.speed_costs = none;
@@ -133,7 +133,7 @@ fn edit_cells(input: &Value, terrain: &mut ResolvedTerrainGrid) {
         }
     }
     if let Some(slope) = input["slope"].as_u64() {
-        let c = terrain.cell_mut(x, y).unwrap();
+        let c = terrain.cell_mut_for_test(x, y).unwrap();
         c.slope_type = slope as u8;
         c.has_ramp = true;
     }
@@ -155,7 +155,7 @@ fn scene(input: &Value) -> Scene {
         ));
     if input["foreign_allied"] == true {
         for (a, b) in [("AMERICANS", "FOREIGN"), ("FOREIGN", "AMERICANS")] {
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .entry(a.to_string())
                 .or_default()
                 .insert(b.to_string());

@@ -4,12 +4,16 @@
 use super::Simulation;
 use crate::rules::ruleset::RuleSet;
 
-/// Drop observation packets after their synchronous producers have run.
-/// PLACE radio C owns the yard's Production8 animation at43CC4C; replaying
-/// it here would allocate another animation, IDs and RNG at the frame tail.
-pub(crate) fn finalize(sim: &mut Simulation) {
-    sim.bale_events.clear();
-    sim.bunker_wall_events.clear();
+/// Drop the test observation packets after their synchronous producers have
+/// run. PLACE radio C owns the yard's Production8 animation at43CC4C;
+/// replaying it here would allocate another animation, IDs and RNG at the
+/// frame tail.
+pub(crate) fn finalize(_sim: &mut Simulation) {
+    #[cfg(any(test, feature = "test-support"))]
+    {
+        _sim.bale_events.clear();
+        _sim.bunker_wall_events.clear();
+    }
 }
 
 fn at_or_below_condition_yellow(current: i32, strength: i32, yellow: f64) -> bool {

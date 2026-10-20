@@ -57,7 +57,7 @@ fn fixture(selector: i32) -> Simulation {
             .install_drive_state_for_test(Some(DriveLocomotionRuntime::default()))
     );
     sim.substrate.entities.insert(entity);
-    sim.substrate.next_stable_object_id = 2;
+    sim.set_next_stable_object_id_for_test(2);
     assert!(matches!(
         sim.reveal(1),
         super::super::RevealOutcome::Revealed { .. }
@@ -192,7 +192,7 @@ fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel(
                 crate::sim::movement::track_head::committed_track_head(entity).is_none()
                     || entity
                         .navigation
-                        .path_replay
+                        .path_replay()
                         .remaining_directions()
                         .is_empty()
             );

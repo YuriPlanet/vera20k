@@ -44,7 +44,7 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
             sim.resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(10, 20)
+                .cell_mut_for_test(10, 20)
                 .unwrap()
                 .level = 6;
             let falling = sim
@@ -187,7 +187,7 @@ fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
     }
     let mut sim = Simulation::with_seed(31);
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    for cell in &mut sim.resolved_terrain.as_mut().unwrap().cells {
+    for cell in sim.resolved_terrain.as_mut().unwrap().cells_mut_for_test() {
         cell.level = 6;
     }
     sim.session
@@ -389,7 +389,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         for ry in 44..68 {
             for rx in 44..68 {
-                let cell = terrain.cell_mut(rx, ry).unwrap();
+                let cell = terrain.cell_mut_for_test(rx, ry).unwrap();
                 cell.land_type = int(input, "land_type", 0) as u8;
                 if input["bridge"].as_bool() == Some(true) {
                     cell.bridge_facts.raw_flags |= 0x100;
@@ -456,7 +456,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     loco.set_fly_target_height(int(input, "target_height", 1500) as i32);
     loco.fly_runtime_mut()
         .unwrap()
-        .set_current_speed(SimFixed::from_bits(int(input, "speed_bits", 65536) as i32));
+        .set_current_speed_for_test(SimFixed::from_bits(int(input, "speed_bits", 65536) as i32));
     if int(input, "moving", 1) != 0 {
         let destination = input["destination"].as_array().map_or(
             DriveCoord {
@@ -1068,7 +1068,7 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
         let runtime = loco.jumpjet_runtime_mut().unwrap();
         let mut flight = runtime.flight();
         flight.facing_mut().snap(0x4000, 1000);
-        flight.set_target_height(500);
+        flight.set_target_height_for_test(500);
         *runtime = runtime
             .clone()
             .with_phase_for_test(crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_HOLD)
@@ -1417,7 +1417,7 @@ fn a_jumpjet_shot_down_touching_down_still_crashes() {
         let loco = entity.locomotor.as_mut().unwrap();
         let runtime = loco.jumpjet_runtime_mut().unwrap();
         let mut flight = runtime.flight();
-        flight.set_target_height(0);
+        flight.set_target_height_for_test(0);
         *runtime = runtime
             .clone()
             .with_phase_for_test(

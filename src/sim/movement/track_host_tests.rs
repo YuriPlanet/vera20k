@@ -17,7 +17,7 @@ fn fixture(family: TrackFamily, budget: i32) -> (Simulation, TrackInvocation, i3
     ));
     entity.lifecycle.set_object_alive_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(true);
+    entity.lifecycle.set_cell_marked_for_test(true);
     let head = DriveCoord {
         x: 10 * 256 + 128,
         y: 9 * 256 + 128,
@@ -585,14 +585,22 @@ fn terminal_saved_reached_clears_callback_navcom_and_only_live_queue_head() {
             entity
                 .navigation
                 .set_nav_com_for_test(Some(NavTargetRef::cell(25, 25)));
-            entity.navigation.path_replay = FootPathQueue::for_test(vec![1, 2, 3], 1, Some((7, 8)));
+            entity
+                .navigation
+                .set_path_replay_for_test(FootPathQueue::for_test(vec![1, 2, 3], 1, Some((7, 8))));
         }
     });
     let entity = sim.substrate.entities.get(1).unwrap();
     assert!(entity.navigation.nav_com().is_none());
-    assert_eq!(entity.navigation.path_replay.directions(), vec![1, 255, 3]);
-    assert_eq!(entity.navigation.path_replay.cursor(), 1);
-    assert_eq!(entity.navigation.path_replay.reference_cell(), Some((7, 8)));
+    assert_eq!(
+        entity.navigation.path_replay().directions(),
+        vec![1, 255, 3]
+    );
+    assert_eq!(entity.navigation.path_replay().cursor(), 1);
+    assert_eq!(
+        entity.navigation.path_replay().reference_cell(),
+        Some((7, 8))
+    );
 }
 
 #[test]
@@ -654,7 +662,9 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
                 .unwrap()
                 .store_track_progress(family, TrackProgress::for_test(1, 37, false, 0))
         );
-        entity.navigation.path_replay = FootPathQueue::for_test(vec![2, 3], 0, Some((10, 10)));
+        entity
+            .navigation
+            .set_path_replay_for_test(FootPathQueue::for_test(vec![2, 3], 0, Some((10, 10))));
         let saved_fraction = entity.foot_speed.applied_fraction();
         let mut callbacks = 0;
         sim.run_track_points_observed(
@@ -675,8 +685,13 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
                     assert_eq!(head(entity, family), DriveCoord { x: 0, y: 0, z: 0 });
                     assert!(valid(entity, family));
                     set_head(entity, family, Some(DriveCoord::cell(1, 1, 0)));
-                    entity.navigation.path_replay =
-                        FootPathQueue::for_test(vec![7, 3, 4], 0, Some((6, 7)));
+                    entity
+                        .navigation
+                        .set_path_replay_for_test(FootPathQueue::for_test(
+                            vec![7, 3, 4],
+                            0,
+                            Some((6, 7)),
+                        ));
                     entity
                         .foot_speed
                         .set_speed_fraction(SimFixed::from_num(0.25));
@@ -694,9 +709,9 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
             // it never reaches accepted candidate publication or restoration.
             assert!(!valid(entity, family));
             assert_eq!(head(entity, family), DriveCoord::cell(1, 1, 0));
-            assert_eq!(entity.navigation.path_replay.cursor(), 0);
+            assert_eq!(entity.navigation.path_replay().cursor(), 0);
             assert_eq!(
-                entity.navigation.path_replay.remaining_directions(),
+                entity.navigation.path_replay().remaining_directions(),
                 &[7, 3, 4]
             );
             assert_eq!(
@@ -709,9 +724,9 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
         assert!(valid(entity, family));
         assert!(progress(entity, family).unwrap().cursor() > i32::from(selected.entry_index));
         assert_eq!(progress(entity, family).unwrap().residual(), 1);
-        assert_eq!(entity.navigation.path_replay.cursor(), 1);
+        assert_eq!(entity.navigation.path_replay().cursor(), 1);
         assert_eq!(
-            entity.navigation.path_replay.remaining_directions(),
+            entity.navigation.path_replay().remaining_directions(),
             &[3, 4]
         );
         assert_eq!(entity.foot_speed.applied_fraction(), saved_fraction);
@@ -947,8 +962,9 @@ fn terminal_retires_the_head_before_callback_and_keeps_a_new_order() {
                         .navigation
                         .set_nav_com_for_test(Some(NavTargetRef::cell(12, 9)));
                     // The callback's new route: Foot+5E0 words from (10,9).
-                    entity.navigation.path_replay =
-                        crate::sim::movement::fixture_path_replay(&[(10, 9), (11, 9), (12, 9)]);
+                    entity.navigation.set_path_replay_for_test(
+                        crate::sim::movement::fixture_path_replay(&[(10, 9), (11, 9), (12, 9)]),
+                    );
                 }
             }
         });
@@ -957,7 +973,7 @@ fn terminal_retires_the_head_before_callback_and_keeps_a_new_order() {
         assert_eq!(
             entity
                 .navigation
-                .path_replay
+                .path_replay()
                 .remaining_directions()
                 .is_empty(),
             !retarget
@@ -1079,7 +1095,7 @@ fn factory_per_cell_fixture(
     producer.set_on_bridge(producer_on_bridge);
     producer.lifecycle.set_object_alive_for_test(true);
     producer.lifecycle.set_in_limbo_for_test(false);
-    producer.lifecycle.set_cell_marked(true);
+    producer.lifecycle.set_cell_marked_for_test(true);
     producer.mission.apply_test_fixture(guard);
     sim.substrate.entities.insert(producer);
     sim.substrate.occupancy =
@@ -1151,7 +1167,7 @@ fn per_cell_factory_clearance_precedes_ready_and_preserves_foot_stop_scope() {
             .cloned(),
     )
     .unwrap();
-    let path_runtime = unit.navigation.path_runtime;
+    let path_runtime = unit.navigation.path_runtime().clone();
     let producer_mission = sim.substrate.entities.get(2).unwrap().mission;
     let rng = sim.rng_state();
     assert_eq!(
@@ -1208,7 +1224,7 @@ fn per_cell_factory_clearance_precedes_ready_and_preserves_foot_stop_scope() {
         .unwrap(),
         drive
     );
-    assert_eq!(unit.navigation.path_runtime, path_runtime);
+    assert_eq!(*unit.navigation.path_runtime(), path_runtime);
     assert_eq!(unit.navigation.nav_com(), None);
     assert_eq!(unit.navigation.nav_com_aux(), None);
     assert_eq!(
@@ -1976,8 +1992,8 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         let bounds = crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
             16, -16, -16, 64, 64,
         );
-        sim.playfield_bounds = Some(bounds);
-        sim.playfield_size_height = Some(16);
+        sim.set_playfield_bounds_for_test(Some(bounds));
+        sim.set_playfield_size_height_for_test(Some(16));
         sim.session.set_map_width_for_test(16);
         sim.session.set_map_height_for_test(16);
         let terrain = test_flat_ground_grid(32);
@@ -2264,9 +2280,9 @@ fn idle_base_fixture(category: EntityCategory) -> Simulation {
     actor.locomotor = None;
     actor.lifecycle.set_object_alive_for_test(true);
     actor.lifecycle.set_in_limbo_for_test(false);
-    actor.lifecycle.set_cell_marked(false);
+    actor.lifecycle.set_cell_marked_for_test(false);
     sim.substrate.entities.insert(actor);
-    sim.substrate.next_stable_object_id = 2;
+    sim.set_next_stable_object_id_for_test(2);
     sim
 }
 
@@ -2995,7 +3011,7 @@ fn drive_crush_fixture(
     actor.foot_speed.set_speed_fraction(SIM_ONE);
     actor
         .foot_speed
-        .set_crush_slowdown(input["initial_flag"].as_bool().unwrap());
+        .set_crush_slowdown_for_test(input["initial_flag"].as_bool().unwrap());
     let mut rocking = crate::sim::rocking::RockingState::default();
     rocking.set_angles_native_for_test([0.0, f32::from_bits(0x3e99_999a)]);
     rocking.set_vel_forwards_native(NativeF32Bits::from_bits(0x3d23_d70a));
@@ -3206,7 +3222,7 @@ fn crush_slowdown_is_foot_owned_saved_and_hashed() {
         .get_mut(1)
         .unwrap()
         .foot_speed
-        .set_crush_slowdown(true);
+        .set_crush_slowdown_for_test(true);
     assert_ne!(sim.state_hash(), clear);
     let actor = sim.substrate.entities.get_mut(1).unwrap();
     actor.locomotor = Some(super::super::locomotor::LocomotorState::for_test_kind(

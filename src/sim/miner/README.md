@@ -18,6 +18,7 @@ movement, placement, capture and refinery/depot exits.
 | Shared refinery/depot Enter | `mission::enter` with `MissionCom` cadence | Foot `4D9290`, current control `5B3A00` |
 | Unit destination and per-cell docking | `movement::track_path` / `movement::per_cell` | Unit `741970` / `73A31F` |
 | Unload, cargo payment and departure | `miner::refinery_dock` with shared House economy | Unit `73D630` → House `4F9610` |
+| Computer miner stuck on its pad | `miner_system::unit_ai_nudge_off_refinery_pad`, after the Unit's second Commence | Unit AI `73681D..73697B` |
 
 The committed selector chooses one handler. A Miner component never admits
 Harvest while Attack, Move or another mission is current. Harvest returns its

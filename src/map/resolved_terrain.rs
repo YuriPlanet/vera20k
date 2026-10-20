@@ -166,14 +166,42 @@ pub enum BridgeDirection {
     Low,
 }
 
+impl BridgeDirection {
+    /// The direction of a bridge overlay class: BRIDGE1/BRIDGEB1 (24/237) run
+    /// EW, BRIDGE2/BRIDGEB2 (25/238) NS, and every other bridge overlay is low.
+    pub fn from_overlay_id(overlay_id: u8) -> Self {
+        match overlay_id {
+            24 | 237 => Self::EastWest,
+            25 | 238 => Self::NorthSouth,
+            _ => Self::Low,
+        }
+    }
+}
+
+/// The deck a bridge overlay identity projects onto its cell. OverlayGrid owns
+/// the identity itself.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct BridgeLayer {
-    pub overlay_id: u8,
-    pub overlay_name: String,
     /// Bridge deck height level (ground level + offset).
     pub deck_level: u8,
     /// Bridge direction — determines height offset and rendering.
     pub direction: BridgeDirection,
+}
+
+impl BridgeLayer {
+    /// A high deck sits four levels above `level` (HighBridgeHeight=4); a low
+    /// deck sits at ground level.
+    pub fn for_overlay(overlay_id: u8, level: u8) -> Self {
+        let direction = BridgeDirection::from_overlay_id(overlay_id);
+        let deck_level = match direction {
+            BridgeDirection::Low => level,
+            BridgeDirection::EastWest | BridgeDirection::NorthSouth => level.saturating_add(4),
+        };
+        Self {
+            deck_level,
+            direction,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -195,13 +223,10 @@ pub struct ResolvedTerrainCell {
     /// land attribute gamemd stores per cell (constructor `0x0047BC93`,
     /// RecalcAttributes `0x0047D2B0`). Water, cliff and the rest are asked of
     /// it, never cached beside it. Reduced `zone_type`, not this field, selects
-    /// the movement matrix column. Other modules read [`Self::land_type`];
-    /// production writes stay in this module's load, Recalc, CliffBack,
-    /// overlay and snapshot writers. Test builds may write it directly.
-    #[cfg(any(test, feature = "test-support"))]
+    /// the movement matrix column. Only this module's load, Recalc,
+    /// CliffBack, overlay and snapshot writers change it: the grid hands out
+    /// no mutable cell outside this module.
     pub land_type: u8,
-    #[cfg(not(any(test, feature = "test-support")))]
-    land_type: u8,
     pub slope_type: u8,
     /// Registered pristine TMP +0x28 height field (CellClass-owned).
     pub template_height: u8,
@@ -258,10 +283,7 @@ pub struct ResolvedTerrainCell {
     /// `recalc_overlay_passability` restores `land_type` from it when an
     /// overlay goes (an ore overlay fully harvested), where RecalcAttributes
     /// would re-read the TMP. Same pattern as `base_ground_walk_blocked`.
-    #[cfg(any(test, feature = "test-support"))]
     pub base_land_type: u8,
-    #[cfg(not(any(test, feature = "test-support")))]
-    base_land_type: u8,
     /// Underlying terrain speed-cost profile before overlay overrides. Restored
     /// on overlay removal so harvested ore cells revert to the original
     /// terrain's per-locomotor speed table.
@@ -288,11 +310,6 @@ pub struct ResolvedTerrainCell {
 }
 
 impl ResolvedTerrainCell {
-    /// `CellClass+0xEC` LandType, compared against [`LandType::as_index`].
-    pub fn land_type(&self) -> u8 {
-        self.land_type
-    }
-
     /// Refresh byte-encoded height views of the current Cell, independently of
     /// its Recalc-owned class, flags and cached topology. Preserve the encoded
     /// signed-level +4 result: raw252 (-4) has a structural deck at level0.
@@ -428,9 +445,9 @@ const CELL_CENTRE_LEPTONS: i32 = LEPTONS_PER_CELL / 2;
 /// and skipped by Simulation snapshots, so collapse projects these exact
 /// fields into Simulation and reapplies them after map reconstruction.
 ///
-/// Only [`Self::capture`] (or a saved game) makes one and only
-/// [`ResolvedTerrainGrid::apply_dynamic_cell_state`] writes it back, so the
-/// two land values stay this module's, as on [`ResolvedTerrainCell`].
+/// [`DynamicTerrainCells`] keeps one per replaced cell: only
+/// [`Self::capture`] (or a saved game) makes one, and only
+/// [`ResolvedTerrainGrid::apply_dynamic_cell_state`] writes it back.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct DynamicTerrainCellState {
     pub final_tile_index: i32,
@@ -439,10 +456,7 @@ pub struct DynamicTerrainCellState {
     pub level: u8,
     pub filled_clear: bool,
     pub tileset_index: Option<u16>,
-    #[cfg(any(test, feature = "test-support"))]
     pub land_type: u8,
-    #[cfg(not(any(test, feature = "test-support")))]
-    land_type: u8,
     pub slope_type: u8,
     pub template_height: u8,
     pub height_in_pixels: i8,
@@ -460,10 +474,7 @@ pub struct DynamicTerrainCellState {
     pub zone_type: u8,
     pub base_ground_walk_blocked: bool,
     pub base_build_blocked: bool,
-    #[cfg(any(test, feature = "test-support"))]
     pub base_land_type: u8,
-    #[cfg(not(any(test, feature = "test-support")))]
-    base_land_type: u8,
     pub base_speed_costs: SpeedCostProfile,
     pub has_bridge_deck: bool,
     pub bridge_walkable: bool,
@@ -556,6 +567,54 @@ impl DynamicTerrainCellState {
     }
 }
 
+/// Every CellClass whose isometric tile was replaced after map construction,
+/// as its [`DynamicTerrainCellState`], keyed by cell. Tile replacement records
+/// a cell when it changes it; snapshot restore reapplies every record onto the
+/// rebuilt grid before overlay, bridge and navigation reconstruction.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct DynamicTerrainCells(BTreeMap<(u16, u16), DynamicTerrainCellState>);
+
+impl DynamicTerrainCells {
+    /// Record `cell`'s current replacement state, superseding an earlier one.
+    pub fn record(&mut self, cell: &ResolvedTerrainCell) {
+        self.0
+            .insert((cell.rx, cell.ry), DynamicTerrainCellState::capture(cell));
+    }
+
+    /// Forget every record: a newly constructed map has replaced no tile.
+    pub(crate) fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    /// Reapply every record onto `grid`; the error names the first recorded
+    /// cell the grid does not allocate.
+    pub(crate) fn apply_to(&self, grid: &mut ResolvedTerrainGrid) -> Result<(), (u16, u16)> {
+        for (&(rx, ry), state) in &self.0 {
+            if !grid.apply_dynamic_cell_state(rx, ry, state) {
+                return Err((rx, ry));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn get(&self, cell: &(u16, u16)) -> Option<&DynamicTerrainCellState> {
+        self.0.get(cell)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&(u16, u16), &DynamicTerrainCellState)> {
+        self.0.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 #[derive(Debug, Clone)]
 struct PristineTmpHeader {
     subtiles: Vec<(i32, bool)>,
@@ -588,9 +647,6 @@ pub struct ResolvedTerrainGrid {
     /// Derived asset data, keyed by tile identity rather than mutable cell:
     /// never serialized or included in simulation hashes.
     native_tmp_draw_heights: HashMap<u16, PristineTmpHeader>,
-    #[cfg(any(test, feature = "test-support"))]
-    pub cells: Vec<ResolvedTerrainCell>,
-    #[cfg(not(any(test, feature = "test-support")))]
     cells: Vec<ResolvedTerrainCell>,
     /// One live identity handle, normally bound to the process owner before
     /// scenario construction. Synthetic constructors own a fresh detached
@@ -1191,7 +1247,8 @@ impl ResolvedTerrainGrid {
         &self.cells
     }
 
-    /// Mutable cell access that moves `mutation_epoch`. The terrain-object
+    /// Mutable cell access that moves `mutation_epoch`, private to this
+    /// module: no other module writes a cell. The terrain-object
     /// occupation writer (`set_terrain_object_occupation`) goes through here,
     /// and that occupation flag is the only terrain field the movement
     /// blocker-plane cache (`MovementPassCache`) reads, so the epoch is a
@@ -1201,10 +1258,23 @@ impl ResolvedTerrainGrid {
     /// run in game builds as well as tests: a tree destroyed mid-match must
     /// invalidate the plane in the shipped binary. An earlier revision bumped
     /// only a `cfg(test)` body, which the suite could not detect.
-    pub fn cell_mut(&mut self, rx: u16, ry: u16) -> Option<&mut ResolvedTerrainCell> {
+    fn cell_mut(&mut self, rx: u16, ry: u16) -> Option<&mut ResolvedTerrainCell> {
         let idx = self.index(rx, ry)?;
         self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
         self.cells.get_mut(idx)
+    }
+
+    /// [`Self::cell_mut`] for fixtures outside this module.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn cell_mut_for_test(&mut self, rx: u16, ry: u16) -> Option<&mut ResolvedTerrainCell> {
+        self.cell_mut(rx, ry)
+    }
+
+    /// The cell storage, for fixtures that reshape a grid. Does not move
+    /// `mutation_epoch`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn cells_mut_for_test(&mut self) -> &mut Vec<ResolvedTerrainCell> {
+        &mut self.cells
     }
 
     /// Epoch of mutable cell access; see the field note.

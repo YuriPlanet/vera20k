@@ -209,7 +209,7 @@ fn aircraft_unlimbo_height_and_tail_match_original_runs() {
         sim.resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(cell.0, cell.1)
+            .cell_mut_for_test(cell.0, cell.1)
             .unwrap()
             .slope_type = slope;
         sim.playfield_bounds = Some(bounds);

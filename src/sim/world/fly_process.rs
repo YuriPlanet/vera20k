@@ -35,13 +35,14 @@ use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::air_movement::{self, AirMovementTickStats};
+use crate::sim::movement::fly_height::{ARRIVAL_STOP, ARRIVAL_THREE_QUARTERS};
 // The cell of a coordinate as `0x0041BEA0` (vt+0x1B8) and the Fly's cell
 // tests form it.
 use crate::sim::movement::coord_cell;
 use crate::sim::movement::ground_pose;
 use crate::sim::rng::SimRng;
 use crate::sim::world::FrameEffects;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::fixed_math::SIM_ZERO;
 
 #[cfg(test)]
 #[path = "fly_process_tests.rs"]
@@ -49,14 +50,6 @@ mod tests;
 
 /// `CoordStruct` empty (`0x008B3C78`), Fly's "no destination".
 const NULL_COORD: DriveCoord = DriveCoord { x: 0, y: 0, z: 0 };
-
-/// Horizontal_Step's arrival distances (`0x004CF4F1`, `0x004CF527`,
-/// `0x004CF543`) and the speeds they ask for.
-const ARRIVAL_STOP: i32 = 0x80;
-const ARRIVAL_HALF: i32 = 0x200;
-const ARRIVAL_THREE_QUARTERS: i32 = 0x300;
-const HALF_SPEED: SimFixed = SimFixed::lit("0.5");
-const THREE_QUARTER_SPEED: SimFixed = SimFixed::lit("0.75");
 
 /// Horizontal_Step's Secondary turns to land or to the Target within this
 /// distance (`0x004CF29A`).
@@ -320,7 +313,7 @@ impl Simulation {
     ///   (`0x004CDD75..0x004CDDD3`);
     /// - the height step (`FlyRuntime::step_height`) and, after a descent,
     ///   the landing drift ([`Self::fly_landing_drift`]);
-    /// - the target speed (`air_movement::write_fly_target_speed`), the
+    /// - the target speed (`FlyRuntime::write_target_speed`), the
     ///   IsDropship approach attitude (`0x004CE2E5..0x004CE3BA`), the landing
     ///   trigger ([`Self::fly_landing_trigger`]) and the speed ramp
     ///   (`0x004CE441..0x004CE495`).
@@ -391,8 +384,12 @@ impl Simulation {
         let rules_context = rules.map(|rules| (rules, &self.interner));
         let entity = self.substrate.entities.get_mut(id).unwrap();
         let facts = air_movement::fly_speed_facts(entity, distance, terrain, rules_context);
-        if let Some(locomotor) = entity.locomotor.as_mut() {
-            air_movement::write_fly_target_speed(locomotor, &facts);
+        if let Some(state) = entity
+            .locomotor
+            .as_mut()
+            .and_then(|locomotor| locomotor.fly_runtime_mut())
+        {
+            state.write_target_speed(&facts);
         }
         if let Some(object) = object.filter(|_| dropship)
             && entity.health.current() > 0
@@ -416,7 +413,7 @@ impl Simulation {
                 .as_mut()
                 .and_then(|locomotor| locomotor.fly_runtime_mut())
         {
-            air_movement::ramp_fly_speed(state);
+            state.ramp_speed();
         }
         // Mark refuses an object in Limbo (`0x005F5854`).
         if self
@@ -757,13 +754,7 @@ impl Simulation {
             .unwrap();
         state.set_flight_level(level);
         if arrival && may_slow {
-            if distance < ARRIVAL_STOP {
-                state.set_target_speed(SIM_ZERO);
-            } else if distance < ARRIVAL_HALF {
-                state.set_target_speed(HALF_SPEED);
-            } else if distance < ARRIVAL_THREE_QUARTERS {
-                state.set_target_speed(THREE_QUARTER_SPEED);
-            }
+            state.slow_for_arrival(distance);
         }
         if land {
             self.begin_fly_landing(id, rules, registry, frame_effects);

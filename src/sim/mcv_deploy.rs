@@ -357,13 +357,7 @@ pub(crate) fn mission_unload(
         );
         if let Some(e) = sim.substrate.entities.get_mut(id) {
             // `Path[0] = -1`, the empty queue (`0x0073DD8E`).
-            e.navigation.path_replay.set_cursor(
-                e.navigation
-                    .path_replay
-                    .directions()
-                    .len()
-                    .min(u16::MAX as usize) as u16,
-            );
+            e.navigation.path_replay_mut().exhaust();
             e.mission.set_handler_state(1);
         }
         // Native state 0 falls through to state 1 in this same invocation.

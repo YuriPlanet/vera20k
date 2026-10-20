@@ -236,12 +236,11 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
     match dialog.parent {
         KeyboardParent::Launcher => App::open_launcher_options_dialog(state),
         KeyboardParent::GameControls => {
-            let mut options = crate::app::persistence::options::in_game_options_from_profile(
-                &state.persistence.options_profile,
-            );
-            options.sound_enabled = state.audio.launcher_audio_available;
-            options.on_open();
-            state.match_state.match_presentation.in_game_options = options;
+            state.match_state.match_presentation.in_game_options =
+                crate::app::persistence::options::in_game_options_from_profile(
+                    &state.persistence.options_profile,
+                );
+            crate::app::input::in_game_options::on_open(state);
             state.match_state.match_presentation.in_game_menu =
                 crate::ui::pause_menu::InGameMenuState::Options;
         }

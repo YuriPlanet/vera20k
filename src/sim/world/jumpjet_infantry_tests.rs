@@ -131,7 +131,7 @@ pub(super) fn retail_dustbowl_rocketeer()
         ("RUSSIANS", "PLAYER"),
         ("PLAYER", "RUSSIANS"),
     ] {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(house.to_string())
             .or_default()
             .insert(ally.to_string());
@@ -898,7 +898,7 @@ fn rocketeer_crash_fixture(
         flight.facing_mut().snap(0x4000, 1000);
         // The oracle's locomotor holds `JumpjetHeight=` as its target height
         // whatever the row's height (`jumpjet_infantry_actions` ROCKETEER).
-        flight.set_target_height(500);
+        flight.set_target_height_for_test(500);
         *runtime = runtime
             .clone()
             .with_phase_for_test(input["owner"]["phase"].as_i64().unwrap() as i32)
@@ -1260,7 +1260,7 @@ fn grounded_rocketeer() -> (super::Simulation, crate::rules::ruleset::RuleSet, u
         .locomotor
         .as_mut()
         .unwrap()
-        .set_layer(crate::sim::movement::locomotor::MovementLayer::Ground);
+        .set_layer_for_test(crate::sim::movement::locomotor::MovementLayer::Ground);
     (sim, rules, shooter)
 }
 
@@ -1468,7 +1468,7 @@ fn give_cells_hover_costs(sim: &mut super::Simulation) {
     let terrain = sim.resolved_terrain.as_mut().unwrap();
     for y in 0..70 {
         for x in 0..70 {
-            terrain.cell_mut(x, y).unwrap().speed_costs.hover = Some(100);
+            terrain.cell_mut_for_test(x, y).unwrap().speed_costs.hover = Some(100);
         }
     }
 }

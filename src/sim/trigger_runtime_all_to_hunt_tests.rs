@@ -122,7 +122,7 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
                 );
                 entity
                     .lifecycle
-                    .set_cell_marked(actor["down"].as_bool().unwrap());
+                    .set_cell_marked_for_test(actor["down"].as_bool().unwrap());
                 entity
                     .lifecycle
                     .set_in_limbo_for_test(actor["limbo"].as_bool().unwrap());

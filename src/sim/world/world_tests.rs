@@ -458,7 +458,7 @@ fn a_jumpjet_cruising_over_water_leaves_no_wake() {
         .spawn_object("JJV", "Americans", 0, 0, 64, &rules)
         .expect("spawn Jumpjet");
     let mut terrain = water_terrain(2, 1);
-    for cell in &mut terrain.cells {
+    for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
     sim.resolved_terrain = Some(terrain);
@@ -537,7 +537,7 @@ fn a_ship_wakes_every_eighth_frame_unless_it_is_underwater() {
     }
     // The gate reads the `CellClass+0xEC` mirror; stamp Water on the fixture.
     let mut terrain = water_terrain(4, 1);
-    for cell in &mut terrain.cells {
+    for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
     sim.resolved_terrain = Some(terrain);
@@ -607,7 +607,7 @@ Rate=120
     // The native gate reads CellClass+0xEC == 2 (Water); the fixture's water
     // grid carries land type 4 for movement, so stamp the binary's mirror.
     let mut terrain = water_terrain(2, 1);
-    for cell in &mut terrain.cells {
+    for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
     sim.resolved_terrain = Some(terrain);
@@ -941,7 +941,10 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
     let rules = RuleSet::from_ini(&ini).expect("terminal overlay rules");
     let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
     let mut terrain = gsi_04_10_clear_terrain(2, 1);
-    terrain.cell_mut(0, 0).expect("terrain cell").slope_type = 5;
+    terrain
+        .cell_mut_for_test(0, 0)
+        .expect("terrain cell")
+        .slope_type = 5;
 
     let mut sim = Simulation::new();
     sim.resolved_terrain = Some(terrain);
@@ -1503,12 +1506,13 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
         "a cell adjacent only to the sold source proves that source was not decremented"
     );
     assert_eq!(
-        sim.tactical_dirty_cells,
+        sim.dirty_cells.tactical_for_test(),
         vec![(4, 3), (5, 4), (4, 5), (3, 4), (4, 4)]
     );
-    assert_eq!(sim.radar_terrain_dirty_cells, sim.tactical_dirty_cells);
+    assert_eq!(sim.dirty_cells.radar(), sim.dirty_cells.tactical_for_test());
     assert_eq!(
-        sim.radar_terrain_dirty_generation, 5,
+        sim.dirty_cells.radar_generation(),
+        5,
         "sale publishes each first-unique cleanup radar call before recompute; the sold-cell tail is a duplicate"
     );
     assert!(
@@ -1535,6 +1539,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     assert!(sim.path_grid.as_deref().unwrap().is_walkable(5, 4));
     let projected = PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().expect("terrain"),
+        sim.overlay_grid.as_ref(),
     );
     assert_eq!(
         sim.path_grid.as_deref().unwrap().diff_cells(&projected),
@@ -1708,8 +1713,8 @@ fn wall_sale_cleanup_reaches_fixed_stride_alias_and_reverses_that_source_only() 
         expected.as_slice(),
         "sale keeps the sold aliasing source but reverses the cleanup-removed aliased source"
     );
-    assert!(sim.tactical_dirty_cells.contains(&(511, 0)));
-    assert!(sim.radar_terrain_dirty_cells.contains(&(511, 0)));
+    assert!(sim.dirty_cells.tactical_for_test().contains(&(511, 0)));
+    assert!(sim.dirty_cells.radar().contains(&(511, 0)));
 }
 
 #[test]
@@ -1725,27 +1730,29 @@ fn dynamic_navigation_publication_composes_structures_bibs_and_bridges() {
     .expect("dynamic navigation rules");
     let mut terrain = gsi_04_10_clear_terrain(16, 16);
     for rx in [1, 3] {
-        let cell = terrain.cell_mut(rx, 1).expect("bridgehead cell");
+        let cell = terrain.cell_mut_for_test(rx, 1).expect("bridgehead cell");
         cell.bridge_walkable = true;
         cell.bridge_transition = true;
         cell.bridge_deck_level = 4;
     }
     {
-        let cell = terrain.cell_mut(2, 1).expect("bridge body cell");
+        let cell = terrain.cell_mut_for_test(2, 1).expect("bridge body cell");
         cell.ground_walk_blocked = true;
         cell.base_build_blocked = true;
         cell.bridge_walkable = true;
         cell.has_bridge_deck = true;
         cell.bridge_deck_level = 4;
-        // A legacy deck (no bit0x100) is intact while its +44 decodes.
-        cell.bridge_facts.overlay_id = Some(0xCD);
     }
+    // A legacy deck (no bit0x100) is intact while its +44 decodes.
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(16, 16);
+    overlays.cell_mut_for_test(2, 1).overlay_id = Some(0xCD);
 
     let mut sim = Simulation::new();
     sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain(
         &terrain, true, 10,
     ));
     sim.resolved_terrain = Some(terrain);
+    sim.overlay_grid = Some(overlays);
     let mut building = make_test_entity("GAREFN", EntityCategory::Structure);
     building.cell_x = 8;
     building.cell_y = 8;
@@ -1777,13 +1784,7 @@ fn dynamic_navigation_publication_composes_structures_bibs_and_bridges() {
         "canonical publication must assign a reachable ground cell"
     );
 
-    sim.resolved_terrain
-        .as_mut()
-        .expect("bridge terrain")
-        .cell_mut(2, 1)
-        .expect("bridge body cell")
-        .bridge_facts
-        .overlay_id = Some(0xE8);
+    sim.overlay_cell_mut_for_test(2, 1).overlay_id = Some(0xE8);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let collapsed_grid = sim.path_grid().expect("collapsed navigation publication");
     assert!(
@@ -2105,7 +2106,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         None
     );
     assert_eq!(
-        fatal.radar_terrain_dirty_cells,
+        fatal.dirty_cells.radar(),
         vec![
             (8, 5),
             (8, 3),
@@ -2176,7 +2177,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             .overlay_id,
         Some(0)
     );
-    assert!(boundary.radar_terrain_dirty_cells.is_empty());
+    assert!(boundary.dirty_cells.radar().is_empty());
     assert_eq!(boundary_rng, SimRng::new(1).state());
 }
 
@@ -2208,7 +2209,7 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
 
     let mut sim = Simulation::with_seed(1);
     let mut terrain = gsi_04_10_clear_terrain(10, 10);
-    for cell in &mut terrain.cells {
+    for cell in terrain.cells_mut_for_test() {
         cell.filled_clear = true;
         cell.accepts_smudge = true;
         cell.allows_tiberium = true;
@@ -2308,7 +2309,7 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
     let ore_id = registry.id_for_name("ORE").unwrap();
     let mut sim = Simulation::with_seed(7);
     let mut terrain = gsi_04_10_clear_terrain(10, 10);
-    for cell in &mut terrain.cells {
+    for cell in terrain.cells_mut_for_test() {
         cell.filled_clear = true;
         cell.accepts_smudge = true;
         cell.allows_tiberium = true;
@@ -2481,7 +2482,7 @@ fn gsi_04_10_clear_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
     use crate::rules::terrain_rules::LandType;
 
     let mut terrain = water_terrain(width, height);
-    for cell in &mut terrain.cells {
+    for cell in terrain.cells_mut_for_test() {
         cell.land_type = LandType::Clear.as_index();
         cell.speed_costs = OPEN_SPEED_COSTS;
         cell.ground_walk_blocked = false;
@@ -2514,11 +2515,11 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
         (EntityCategory::Infantry, "TESTINF"),
     ] {
         let mut clear = gsi_04_10_clear_terrain(3, 1);
-        clear.cells[0].tube_index = Some(TubeId(0));
+        clear.cells_mut_for_test()[0].tube_index = Some(TubeId(0));
         let terrain = ResolvedTerrainGrid::from_cells_with_tubes(
             3,
             1,
-            clear.cells,
+            clear.cells().to_vec(),
             vec![TubeFact::explicit((0, 0), (1, 0), 2, vec![2])],
         );
         let path = PathGrid::from_resolved_terrain(&terrain);
@@ -2541,7 +2542,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
             true,
         );
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.lifecycle.set_cell_marked(false);
+        entity.lifecycle.set_cell_marked_for_test(false);
         if category == EntityCategory::Unit {
             entity.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(
                 Some(crate::sim::combat::TargetKind::Cell(2, 0)),
@@ -2737,6 +2738,7 @@ fn gsi_04_10_in_tick_refresh_updates_the_tail_path_before_consumers() {
     mark_terrain_occupation(&tree, sim.resolved_terrain.as_mut());
     let mut input_path_grid = PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().expect("resolved terrain"),
+        sim.overlay_grid.as_ref(),
     );
     input_path_grid.set_blocked(1, 0, true);
     assert!(!input_path_grid.is_walkable(0, 0));
@@ -2778,6 +2780,7 @@ fn gsi_04_10_zero_occupation_removal_forces_ground_zone_with_same_walkability() 
     );
     let input_path_grid = PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().expect("resolved terrain"),
+        sim.overlay_grid.as_ref(),
     );
     assert!(input_path_grid.is_walkable(0, 0));
     sim.rebuild_zone_grid_full(&input_path_grid);
@@ -2856,8 +2859,13 @@ fn install_rectangular_test_map(sim: &mut Simulation, width: u16, height: u16) {
 
 /// Structural deck fixture for the576BA0 ->47E040 damage path, matching
 /// bridge_body_publication's native anchor25/state15 collapse input.
-/// All four deck slots come from the actual direction6 flag stamp.
-fn structural_bridge_for_damage_dispatch() -> (ResolvedTerrainGrid, BridgeRuntimeState) {
+/// All four deck slots come from the actual direction6 flag stamp; their
+/// overlay fields come back in the returned grid.
+fn structural_bridge_for_damage_dispatch() -> (
+    ResolvedTerrainGrid,
+    BridgeRuntimeState,
+    crate::sim::overlay_grid::OverlayGrid,
+) {
     use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
     let mut terrain = ResolvedTerrainGrid::from_cells(
         10,
@@ -2870,9 +2878,15 @@ fn structural_bridge_for_damage_dispatch() -> (ResolvedTerrainGrid, BridgeRuntim
         BridgeFlagStamp::new((5, 5), 6, true),
         BridgeStampFamily::Nesw,
     );
-    let anchor = terrain.native_cell_identity((5, 5));
-    terrain.write_native_cell_state(anchor, 15);
-    terrain.cell_mut(5, 5).unwrap().bridge_facts.overlay_id = Some(25);
+    // The constructing setter's four slot visits store state 9 (direction
+    // 6); the anchor then carries overlay 25 at state 15.
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(10, 10);
+    for x in [3, 4, 6] {
+        overlays.cell_mut_for_test(x, 5).overlay_data = 9;
+    }
+    let anchor = overlays.cell_mut_for_test(5, 5);
+    anchor.overlay_id = Some(25);
+    anchor.overlay_data = 15;
     let state = BridgeRuntimeState::from_resolved_terrain(&terrain, true, 15);
     for x in 3..=6 {
         assert!(
@@ -2883,15 +2897,15 @@ fn structural_bridge_for_damage_dispatch() -> (ResolvedTerrainGrid, BridgeRuntim
                 .has_structural_bridge()
         );
     }
-    (terrain, state)
+    (terrain, state, overlays)
 }
 
 /// The direction6 structural deck over water: every cell takes
 /// `water_terrain`'s ground, the deck spans (3..=6, 5).
 fn water_under_structural_bridge() -> (ResolvedTerrainGrid, BridgeRuntimeState) {
-    let (mut terrain, _) = structural_bridge_for_damage_dispatch();
-    let water = water_terrain(1, 1).cells[0].clone();
-    for cell in &mut terrain.cells {
+    let (mut terrain, _, _) = structural_bridge_for_damage_dispatch();
+    let water = water_terrain(1, 1).cells()[0].clone();
+    for cell in terrain.cells_mut_for_test() {
         cell.land_type = water.land_type;
         cell.speed_costs = water.speed_costs;
         cell.ground_walk_blocked = water.ground_walk_blocked;
@@ -2912,9 +2926,9 @@ fn structural_bridge_for_fallout(
     water_below: bool,
 ) -> (ResolvedTerrainGrid, BridgeRuntimeState) {
     use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
-    let (mut terrain, _) = structural_bridge_for_damage_dispatch();
+    let (mut terrain, _, _) = structural_bridge_for_damage_dispatch();
     for x in 3..=6 {
-        let cell = terrain.cell_mut(x, 5).unwrap();
+        let cell = terrain.cell_mut_for_test(x, 5).unwrap();
         cell.level = ground_level;
         cell.bridge_deck_level = ground_level + 4;
         if water_below {
@@ -2940,7 +2954,10 @@ fn assert_structural_bridge_collapsed(sim: &Simulation) {
     for x in 3..=6 {
         let cell = sim.resolved_terrain.as_ref().unwrap().cell(x, 5).unwrap();
         assert_eq!(cell.bridge_facts.raw_flags, 0x400, "collapsed cell({x},5)");
-        assert_eq!(cell.bridge_facts.state_byte, 0);
+        assert_eq!(
+            sim.overlay_grid.as_ref().unwrap().cell(x, 5).overlay_data,
+            0
+        );
         assert!(!cell.has_bridge_deck);
         assert!(!cell.bridge_walkable);
         assert!(!cell.bridge_transition);
@@ -2950,13 +2967,7 @@ fn assert_structural_bridge_collapsed(sim: &Simulation) {
         assert!(!published.transition);
     }
     assert_eq!(
-        sim.resolved_terrain
-            .as_ref()
-            .unwrap()
-            .cell(5, 5)
-            .unwrap()
-            .bridge_facts
-            .overlay_id,
+        sim.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_id,
         None,
         "the structural body clears its anchor overlay"
     );
@@ -4185,7 +4196,7 @@ fn one_way_alliance_does_not_end_the_game() {
         let b = insert_house_with_counts(&mut sim, "Russians", 1, 1);
         let opponent = insert_house_with_counts(&mut sim, "YuriCountry", 1, 0);
         sim.session.set_current_house_for_test(Some(a));
-        sim.house_alliances = if mutual {
+        *sim.house_alliances_mut_for_test() = if mutual {
             directed_alliances(&[("Americans", "Russians"), ("Russians", "Americans")])
         } else {
             directed_alliances(&[("Americans", "Russians")])
@@ -4352,7 +4363,7 @@ fn spawn_object_reads_the_live_terrain_level() {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(rx, ry)
+                .cell_mut_for_test(rx, ry)
                 .unwrap();
             cell.level = 4;
         }
@@ -4455,7 +4466,7 @@ fn test_bridge_collapse_kills_ground_unit_under_destroyed_cell() {
     let unit = sim.substrate.entities.get_mut(id).unwrap();
     unit.set_on_bridge(false);
     if let Some(locomotor) = unit.locomotor.as_mut() {
-        locomotor.set_layer(MovementLayer::Ground);
+        locomotor.set_layer_for_test(MovementLayer::Ground);
     }
     sim.add_entity_occupancy(id);
     assert!(
@@ -4595,11 +4606,6 @@ fn assert_concrete_damage_result(sim: &Simulation, native: &serde_json::Value) {
         let expected = row[2].as_u64().unwrap() as u8;
         let cell = sim.resolved_terrain.as_ref().unwrap().cell(x, y).unwrap();
         assert_eq!(
-            cell.bridge_facts.overlay_id,
-            Some(expected),
-            "cell ({x}, {y})"
-        );
-        assert_eq!(
             sim.overlay_grid.as_ref().unwrap().cell(x, y).overlay_id,
             Some(expected)
         );
@@ -4612,7 +4618,6 @@ fn assert_concrete_damage_result(sim: &Simulation, native: &serde_json::Value) {
         assert!(cell.has_bridge_deck);
         let layer = cell.bridge_layer.as_ref().unwrap();
         assert_eq!(layer.direction, BridgeDirection::Low);
-        assert_eq!(layer.overlay_id, expected);
         assert_eq!(layer.deck_level, cell.level);
         assert_eq!(cell.bridge_deck_level, cell.level);
         assert!(!cell.bridge_walkable);
@@ -4653,7 +4658,7 @@ fn test_bridge_walker_collapses_full_3_cell_strip_on_single_hit() {
     assert_eq!(changed, native["result"]["returned"].as_u64() == Some(1));
     assert_concrete_damage_result(&sim, &native);
     for x in 16..=18 {
-        assert!(sim.radar_terrain_dirty_cells.contains(&(x, 15)));
+        assert!(sim.dirty_cells.radar().contains(&(x, 15)));
     }
 }
 
@@ -4663,9 +4668,10 @@ fn test_bridge_walker_collapses_full_3_cell_strip_on_single_hit() {
 #[test]
 fn test_structural_bridge_collapse_preserves_dynamic_navigation_and_snapshot() {
     let mut sim = Simulation::new();
-    let (resolved, bridge_state) = structural_bridge_for_damage_dispatch();
+    let (resolved, bridge_state, overlays) = structural_bridge_for_damage_dispatch();
     sim.resolved_terrain = Some(resolved);
     sim.bridge_state = Some(bridge_state);
+    sim.overlay_grid = Some(overlays);
     crate::sim::arena_fixture::supply_native_map(&mut sim);
 
     // This navigation fixture supplies a foundation at the native (0,0)
@@ -5396,7 +5402,7 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
     assert!(
         stopped
             .navigation
-            .path_replay
+            .path_replay()
             .remaining_directions()
             .is_empty()
     );
@@ -5589,7 +5595,7 @@ fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
     assert!(
         stopped
             .navigation
-            .path_replay
+            .path_replay()
             .remaining_directions()
             .is_empty()
     );
@@ -7029,7 +7035,9 @@ fn parked_friendly_on_the_route_is_scattered_out_of_the_way() {
         };
         let terrain = sim.resolved_terrain.as_mut().expect("stacking terrain");
         for ry in (0..24).filter(|&ry| ry != PARKED_AT.1) {
-            let cell = terrain.cell_mut(PARKED_AT.0, ry).expect("wall cell");
+            let cell = terrain
+                .cell_mut_for_test(PARKED_AT.0, ry)
+                .expect("wall cell");
             cell.land_type = LandType::Rock.as_index();
             cell.speed_costs = rock;
             cell.zone_type = zone_class::IMPASSABLE;
@@ -7180,11 +7188,11 @@ fn unit_route_beside_building(
 /// object has no order or no installed words.
 fn found_route(e: &GameEntity, start: (u16, u16)) -> Vec<(u16, u16)> {
     if crate::sim::movement::motion_query::is_moving(&e) != Some(true)
-        || e.navigation.path_replay.directions().is_empty()
+        || e.navigation.path_replay().directions().is_empty()
     {
         return Vec::new();
     }
-    e.navigation.path_replay.installed_cells(start)
+    e.navigation.path_replay().installed_cells(start)
 }
 
 /// Find_Path's search calls the Unit's own +1AC for every neighbour
@@ -7304,8 +7312,8 @@ fn stacking_motion_state(sim: &Simulation, id: u64) -> String {
             e.position.ry(),
             e.position.sub_x(),
             e.position.sub_y(),
-            e.navigation.path_replay.route_cells(),
-            e.navigation.path_replay.remaining_directions().len(),
+            e.navigation.path_replay().route_cells(),
+            e.navigation.path_replay().remaining_directions().len(),
             crate::sim::movement::movement_goal_cell(e)
         ),
     };
@@ -8066,7 +8074,7 @@ fn repro_two_moving_vehicles_pass_through_each_other() {
             .entities
             .get(id)
             .filter(|e| crate::sim::movement::motion_query::is_moving(&e) == Some(true))
-            .map(|e| e.navigation.path_replay.route_cells())
+            .map(|e| e.navigation.path_replay().route_cells())
             .unwrap_or_default()
     };
     let mut previous_paths = [path_of(&sim, west), path_of(&sim, east)];
@@ -8934,7 +8942,7 @@ fn a_group_spread_asks_each_members_can_enter_cell_at_the_target_height() {
     sim.resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(20, 20)
+        .cell_mut_for_test(20, 20)
         .unwrap()
         .level = 2;
     let west = sim
@@ -9009,7 +9017,7 @@ fn a_group_spread_asks_infantry_with_a_flagged_targets_deck_height() {
         .resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(20, 20)
+        .cell_mut_for_test(20, 20)
         .unwrap();
     target.level = 1;
     target.bridge_facts.raw_flags |= crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
@@ -9040,31 +9048,22 @@ fn a_group_spread_asks_infantry_with_a_flagged_targets_deck_height() {
     assert_eq!(targets, [(20, 20), (20, 20)]);
 }
 
-/// The radar-terrain batch de-duplicates through its derived index, rebuilt
-/// whenever another writer appended or the batch was acknowledged: a cell the
-/// wall writer appended is not appended again, and an acknowledged cell
-/// re-arms.
+/// The radar-terrain batch de-duplicates across marks, the generation moves
+/// only when a cell is new, and an acknowledged cell re-arms.
 #[test]
-fn radar_terrain_dirty_marks_deduplicate_across_other_writers_and_clears() {
+fn radar_terrain_dirty_marks_deduplicate_and_clear() {
     let mut sim = Simulation::new();
-    sim.mark_radar_terrain_dirty_cells([(1, 1), (2, 2), (1, 1)]);
-    assert_eq!(sim.radar_terrain_dirty_cells, [(1, 1), (2, 2)]);
-    let generation = sim.radar_terrain_dirty_generation;
-    sim.mark_radar_terrain_dirty_cells([(2, 2)]);
-    assert_eq!(sim.radar_terrain_dirty_generation, generation);
-    mark_wall_radar_dirty_cell(
-        &mut sim.radar_terrain_dirty_cells,
-        &mut sim.radar_terrain_dirty_generation,
-        (3, 3),
-    );
-    sim.mark_radar_terrain_dirty_cells([(3, 3), (4, 4)]);
-    assert_eq!(
-        sim.radar_terrain_dirty_cells,
-        [(1, 1), (2, 2), (3, 3), (4, 4)]
-    );
-    assert!(sim.acknowledge_radar_terrain_dirty(sim.radar_terrain_dirty_generation));
-    sim.mark_radar_terrain_dirty_cells([(1, 1)]);
-    assert_eq!(sim.radar_terrain_dirty_cells, [(1, 1)]);
+    sim.dirty_cells.mark_radar([(1, 1), (2, 2), (1, 1)]);
+    assert_eq!(sim.dirty_cells.radar(), [(1, 1), (2, 2)]);
+    let generation = sim.dirty_cells.radar_generation();
+    sim.dirty_cells.mark_radar([(2, 2)]);
+    assert_eq!(sim.dirty_cells.radar_generation(), generation);
+    sim.dirty_cells.mark_radar([(3, 3)]);
+    sim.dirty_cells.mark_radar([(3, 3), (4, 4)]);
+    assert_eq!(sim.dirty_cells.radar(), [(1, 1), (2, 2), (3, 3), (4, 4)]);
+    assert!(sim.acknowledge_radar_terrain_dirty(sim.dirty_cells.radar_generation()));
+    sim.dirty_cells.mark_radar([(1, 1)]);
+    assert_eq!(sim.dirty_cells.radar(), [(1, 1)]);
 }
 
 /// `BuildingClass::ChangeOwner` takes along a `WeaponsFactory=` building's
@@ -9128,7 +9127,7 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     assert_ne!(adjacent, native_id);
     let cursor = sim.native_identity_cursor();
     let rng = sim.scenario_rng.logical_state();
-    let stable_cursor = sim.substrate.next_stable_object_id;
+    let stable_cursor = sim.next_stable_object_id();
     sim.admit_death_debris(packets);
     assert_eq!(
         sim.voxel_anims().get(id).unwrap().native_unique_id(),
@@ -9136,7 +9135,7 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     );
     assert_eq!(sim.native_identity_cursor(), cursor);
     assert_eq!(sim.scenario_rng.logical_state(), rng);
-    assert_eq!(sim.substrate.next_stable_object_id, stable_cursor);
+    assert_eq!(sim.next_stable_object_id(), stable_cursor);
     assert_eq!(sim.live_object_order_snapshot(), [id]);
     sim.debug_assert_logic_membership_consistent();
 }

@@ -99,7 +99,7 @@ fn counted_action94_uses_ground_then_real_frame_damage_and_cleanup() {
         None,
     );
     sim.classify_map_triggers(None);
-    sim.session.set_started(true);
+    sim.session.publish_started();
     sim.advance_triggers(Some(&rules), None, FrameEffects::default());
     assert!(sim.trigger_local_is_set_for_test(0));
     assert_eq!(
@@ -157,7 +157,7 @@ fn water_selects_last_splash_and_only_raw100_adds_a_deck_area() {
         let (rules, mut sim, _) = world_with(rules(), 64, &[]);
         waypoint(&mut sim, (20, 20));
         let terrain = sim.resolved_terrain.as_mut().unwrap();
-        terrain.cell_mut(20, 20).unwrap().land_type = land;
+        terrain.cell_mut_for_test(20, 20).unwrap().land_type = land;
         let cell = terrain.native_cell_identity((20, 20));
         terrain.write_native_cell_flags(cell, flags);
         assert!(sim.trigger_ion_blast(1));
@@ -300,7 +300,7 @@ fn pending_damaging_blasts_survive_save_and_hash_while_visual_blasts_do_not() {
     assert_eq!(sim.state_hash(), restored.state_hash());
     let mut entity =
         crate::sim::game_entity::GameEntity::test_default(1, "TANK", "Americans", 20, 20);
-    entity.set_ion_blast_lift(7);
+    entity.lift_by_ion_blast(7);
     let restored: crate::sim::game_entity::GameEntity =
         crate::util::save_codec::deserialize(&crate::util::save_codec::serialize(&entity).unwrap())
             .unwrap();

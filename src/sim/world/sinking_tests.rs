@@ -34,7 +34,7 @@ fn fixture(relative_z: i32) -> (Simulation, RuleSet, u64) {
     entity.set_category_for_test(EntityCategory::Unit);
     entity.health.set_for_test(0);
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(false);
+    entity.lifecycle.set_cell_marked_for_test(false);
     entity.position.set_sub_x_for_test(SimFixed::from_num(128));
     entity.position.set_sub_y_for_test(SimFixed::from_num(128));
     entity.position.set_z_for_test(2);

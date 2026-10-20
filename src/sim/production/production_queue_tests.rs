@@ -294,7 +294,7 @@ fn busy_factory_exit_restores_building_attachment_after_success() {
     let product = busy_factory_exit_product(&mut sim, &rules, owner, true);
     let registry = sim.production.factories().clone();
     let credits = sim.houses[&owner].economy().credits();
-    let next_id = sim.substrate.next_stable_object_id;
+    let next_id = sim.next_stable_object_id();
     assert_eq!(
         busy_factory_exit_attempt(&mut sim, &rules, owner, product),
         Some(product)
@@ -303,7 +303,7 @@ fn busy_factory_exit_restores_building_attachment_after_success() {
     assert_eq!(*sim.production.factories(), registry);
     assert!(sim.production.factories().building_factory(3).is_none());
     assert_eq!(sim.houses[&owner].economy().credits(), credits);
-    assert_eq!(sim.substrate.next_stable_object_id, next_id);
+    assert_eq!(sim.next_stable_object_id(), next_id);
     assert_eq!(
         sim.production
             .primary_factory_ids(owner, ProductionCategory::Vehicle)
@@ -332,7 +332,7 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     let registry = sim.production.factories().clone();
     let source = sim.production.factories().building_factory(1).cloned();
     let credits = sim.houses[&owner].economy().credits();
-    let next_id = sim.substrate.next_stable_object_id;
+    let next_id = sim.next_stable_object_id();
     for (from, to) in [(1, 3), (1, 1), (4, 2)] {
         assert!(
             !sim.production
@@ -360,7 +360,7 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     );
     assert_eq!(*sim.production.factories(), registry);
     assert_eq!(sim.houses[&owner].economy().credits(), credits);
-    assert_eq!(sim.substrate.next_stable_object_id, next_id);
+    assert_eq!(sim.next_stable_object_id(), next_id);
 }
 
 #[test]
@@ -380,10 +380,10 @@ fn busy_factory_exit_failed_chosen_receiver_returns_once_and_restores_attachment
             .get_mut(product)
             .unwrap()
             .lifecycle
-            .set_cell_marked(true);
+            .set_cell_marked_for_test(true);
         let registry = sim.production.factories().clone();
         let credits = sim.houses[&owner].economy().credits();
-        let next_id = sim.substrate.next_stable_object_id;
+        let next_id = sim.next_stable_object_id();
         let rng = (
             sim.main_rng.logical_state(),
             sim.scenario_rng.logical_state(),
@@ -403,7 +403,7 @@ fn busy_factory_exit_failed_chosen_receiver_returns_once_and_restores_attachment
         assert_eq!(*sim.production.factories(), registry);
         assert!(sim.production.factories().building_factory(3).is_none());
         assert_eq!(sim.houses[&owner].economy().credits(), credits);
-        assert_eq!(sim.substrate.next_stable_object_id, next_id);
+        assert_eq!(sim.next_stable_object_id(), next_id);
         assert_eq!(
             (
                 sim.main_rng.logical_state(),
@@ -598,7 +598,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(rx, ry)
+                .cell_mut_for_test(rx, ry)
                 .unwrap();
             target.level = native["level"].as_u64().unwrap() as u8;
             target.slope_type = native["slope"].as_u64().unwrap() as u8;
@@ -615,13 +615,13 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
                 "{name}: these three measured placement cells have no bridge"
             );
         }
-        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
             base: 0,
             off_fc: -128,
             off_100: -128,
             off_104: 256,
             off_108: 256,
-        });
+        }));
         sim.session.set_map_width_for_test(128);
         sim.session.set_map_height_for_test(128);
         sim.session
@@ -741,7 +741,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
             // delayed result, restoration and RNG. Mark/lifecycle parity for
             // this different refusal cause is explicitly excluded.
             assert_eq!(before["product"]["marked"], 0);
-            actor.lifecycle.set_cell_marked(true);
+            actor.lifecycle.set_cell_marked_for_test(true);
         }
         // Native before is post-constructor. Import that declared boundary;
         // this compares ExitObject, not Factory construction/charge or release.
@@ -750,7 +750,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         sim.mapgen_rng = serde_json::from_value(row["rng_before"]["mapgen"].clone()).unwrap();
         let registry = sim.production.factories().clone();
         let credits = sim.houses[&owner].economy().credits();
-        let next_id = sim.substrate.next_stable_object_id;
+        let next_id = sim.next_stable_object_id();
         for (label, id) in &labels {
             assert_eq!(
                 json!(
@@ -847,7 +847,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
             "{name}: same Factory values"
         );
         assert_eq!(sim.houses[&owner].economy().credits(), credits);
-        assert_eq!(sim.substrate.next_stable_object_id, next_id);
+        assert_eq!(sim.next_stable_object_id(), next_id);
         assert_eq!(
             sim.production
                 .primary_factory_ids(owner, ProductionCategory::Vehicle)
@@ -1837,14 +1837,14 @@ fn published_completions_dispatch_each_owners_next_frame_place() {
 /// whose GetDock refuses water; the refund and promotion these tests pin
 /// follow any arm's refusal alike.
 fn install_exit_map_size(sim: &mut Simulation) {
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 16,
         off_fc: -64,
         off_100: -64,
         off_104: 128,
         off_108: 128,
-    });
-    sim.playfield_size_height = Some(32);
+    }));
+    sim.set_playfield_size_height_for_test(Some(32));
 }
 
 #[test]
@@ -1926,7 +1926,7 @@ fn blocked_vehicle_delivery_refunds_disposes_and_promotes_next_item() {
     assert_eq!(projected.len(), 1);
     assert_eq!(projected[0].state, BuildQueueState::Building);
     assert_eq!(projected[0].progress, 0);
-    let allocated = sim.substrate.next_stable_object_id;
+    let allocated = sim.next_stable_object_id();
     for _ in 0..3 {
         assert!(!dispatch_production_changes_for_tests(
             &mut sim, &rules, None
@@ -1936,7 +1936,7 @@ fn blocked_vehicle_delivery_refunds_disposes_and_promotes_next_item() {
         super::lifecycle_tests::held_id(&sim, americans_id, ProductionCategory::Vehicle),
         successor
     );
-    assert_eq!(sim.substrate.next_stable_object_id, allocated);
+    assert_eq!(sim.next_stable_object_id(), allocated);
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     assert_eq!(credits_for_owner(&sim, "Americans"), 1700);
 }
@@ -2005,7 +2005,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     assert_eq!(factory.progress, 0);
     assert!(factory.queue.is_empty());
     assert_eq!(credits_for_owner(&sim, "Americans"), 50_700);
-    for cell in &mut terrain.cells {
+    for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
         cell.speed_costs.track = Some(100);
         cell.speed_costs.wheel = Some(100);

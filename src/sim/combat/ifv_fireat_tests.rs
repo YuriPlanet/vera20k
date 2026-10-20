@@ -66,7 +66,7 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
     let terrain = world.resolved_terrain.as_mut().unwrap();
     for y in 16..25 {
         for x in 6..25 {
-            terrain.cell_mut(x, y).unwrap().level = 6;
+            terrain.cell_mut_for_test(x, y).unwrap().level = 6;
         }
     }
     let firer_id = world

@@ -113,7 +113,7 @@ fn save(
         .match_state
         .scenario_elapsed_clock
         .begin_save(clock_now);
-    let mut map = crate::sim::snapshot::scenario_resources::SavedMapMetadata::capture(
+    let map = crate::sim::snapshot::scenario_resources::SavedMapMetadata::capture(
         map_hash,
         source,
         &state.match_state.map_basic,
@@ -125,8 +125,8 @@ fn save(
         clock_save.accumulated_buckets(),
         state.match_state.session.local_player_name(),
         state.audio.theme.saved_slots(),
+        presentation.radar_movies.scenario_hold(),
     );
-    map.set_radar_pause_credit(presentation.radar_movies.scenario_hold());
     let resources = crate::sim::snapshot::scenario_resources::SavedScenarioResourcesRef::capture(
         &runtime.resources,
         processed,
@@ -138,7 +138,7 @@ fn save(
         sim,
         map_hash,
         runtime.resources.rules.simulation_config_hash(),
-        name.unwrap_or(&sim.session.map_name()),
+        name.unwrap_or(&sim.session().map_name()),
         now,
         &sinking_waterlines,
         sidebar_order.as_ref(),
@@ -146,7 +146,7 @@ fn save(
         Some(&local_view),
         Some(&resources),
     );
-    let tick = sim.session.tick();
+    let tick = sim.session().tick();
     let result = if let Some(path) = overwrite {
         state
             .persistence
@@ -377,7 +377,7 @@ mod save_name_tests {
         assert_eq!(filename_part.chars().count(), 64);
 
         let mut sim = Simulation::new();
-        sim.session
+        sim.session_mut_for_test()
             .set_map_name_for_test("OFFICIAL.MAP".to_string());
         let bytes = GameSnapshot::save_validated(&sim, 1, 2, &raw_description, 3);
         let header = GameSnapshot::read_header(&bytes).expect("current VERA header");

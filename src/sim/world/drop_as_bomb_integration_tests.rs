@@ -118,7 +118,7 @@ fn put_on_deck(sim: &mut Simulation, rules: &RuleSet, id: u64, water: bool) {
         .resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(CELL.0, CELL.1)
+        .cell_mut_for_test(CELL.0, CELL.1)
         .unwrap();
     cell.bridge_facts.raw_flags |= crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     cell.has_bridge_deck = true;
@@ -148,7 +148,7 @@ fn remove_deck(sim: &mut Simulation) {
         .resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(CELL.0, CELL.1)
+        .cell_mut_for_test(CELL.0, CELL.1)
         .unwrap();
     cell.bridge_facts.raw_flags &= !crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     cell.has_bridge_deck = false;

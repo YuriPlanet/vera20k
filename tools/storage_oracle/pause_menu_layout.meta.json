@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original RT_DIALOG 0xBBA and 0xFF controls, their 0x006040B0 help labels and every FF ordinary child's complete 0x0060B7A0 placement",
+  "assumptions": [
+    "Template bytes read from the mapped original resource directory; supplied 6x13 dialog base units, not emulated font metrics",
+    "0x0060C3E6 sends FF's ordinary children to 0x0060B7A0; buttons, title and status line take dedicated placements, established by original instruction inspection",
+    "Parent origin 0 and extents 640x480, 800x600, 1024x768",
+    "Help: only the table fallback"
+  ],
+  "substitutions": [
+    "Shared native_child_case supplies GetParent/GetWindowRect/MoveWindow and true 0x0069BBE0 hooks",
+    "Shared help_label supplies the record-table hash and GetDlgCtrlID"
+  ],
+  "entry_points": {
+    "menu": "0x004F10E0",
+    "dialog_proc": "0x004F11B0",
+    "dispatcher": "0x0060C0C0",
+    "ordinary_child": "0x0060B7A0",
+    "help_lookup": "0x006040B0"
+  },
+  "replay_command": "python -m tools.storage_oracle.pause_menu_layout",
+  "payload_sha256": "9988c065fd49ada751a87c079a54496ba0632e7dd0b94fefc8e9564910bc91d4"
+}

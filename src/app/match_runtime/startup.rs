@@ -89,7 +89,7 @@ impl MatchStartup {
     ) -> Result<(), String> {
         let simulation =
             simulation.ok_or_else(|| "campaign map load produced no Simulation".to_string())?;
-        let session = &simulation.session;
+        let session = &simulation.session();
         if !matches!(self.phase, StartupPhase::Noncertifying) || !screen_is_loading {
             return Err("campaign map load lost its loading admission".to_string());
         }

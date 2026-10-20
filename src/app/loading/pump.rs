@@ -1155,11 +1155,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
         if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
             native_rules_owner.consume_outgoing_scenario_rules(
                 runtime.simulation.retire_object_type_tech_levels(),
-                runtime
-                    .simulation
-                    .session
-                    .lighting_mut()
-                    .retire_ambient_change_inputs(),
+                runtime.simulation.retire_ambient_change_inputs(),
             )?;
         }
         let load_result = {
@@ -2014,8 +2010,8 @@ pub(crate) fn after_loading_frame_presented(state: &mut AppState) {
             );
             log::debug!(target: "vera20k::loading_attempt", "install_begin");
             super::transitions::finish_fresh_scenario_read(state, *result);
-            for (owner, display) in disconnected {
-                crate::app::input::messages::post_connection_lost(state, &owner, &display);
+            for owner in disconnected {
+                crate::app::input::messages::post_house_line(state, "TXT_CONNECTION_LOST", owner);
             }
             log::debug!(target: "vera20k::loading_attempt", "install_end screen={:?} assets_available={} accepted={}", state.frontend.screen, state.process_assets.is_available(), state.match_state.startup.accepted().is_some());
         }
@@ -2029,7 +2025,7 @@ fn apply_network_loading_disconnects(
     session: &mut crate::app::match_runtime::session::MatchSession,
     result: &mut MapLoadResult,
     indices: &[usize],
-) -> Vec<(String, String)> {
+) -> Vec<crate::sim::intern::InternedId> {
     let Some(launch) = result.scenario.startup.launch_session() else {
         return Vec::new();
     };
@@ -2041,10 +2037,10 @@ fn apply_network_loading_disconnects(
                 .iter()
                 .find(|slot| slot.source_human_index == Some(index))
             && let Some(sim) = result.scenario.simulation.as_mut()
-            && let Some(owner) = sim.interner.get(&slot.owner_name)
+            && let Some(owner) = sim.interner().get(&slot.owner_name)
         {
             sim.flag_house_to_die(owner);
-            disconnected.push((slot.owner_name.clone(), launch.humans[index].name.clone()));
+            disconnected.push(owner);
         }
     }
     disconnected

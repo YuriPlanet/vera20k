@@ -521,7 +521,7 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
             .get(victim_id)
             .map(|victim| victim.owner())
         && crate::map::houses::are_houses_friendly(
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             sim.interner.resolve(target_owner),
             sim.interner.resolve(victim_owner),
         )

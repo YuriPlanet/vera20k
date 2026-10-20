@@ -61,7 +61,7 @@ fn bridge_batch_simulation(case: &serde_json::Value) -> Simulation {
     let width = terrain.width();
     let bounds = hierarchy_native_bounds(input);
     for (row, values) in base
-        .raw_zone_ids_by_row
+        .raw_zone_ids_by_row_mut_for_test()
         .iter_mut()
         .zip(case["initial"]["raw_rows"].as_array().unwrap())
     {
@@ -88,7 +88,7 @@ fn bridge_batch_simulation(case: &serde_json::Value) -> Simulation {
         Some(size),
         Some(bounds),
     );
-    *zones.base_topology_mut() = base.clone();
+    *zones.base_topology_mut_for_test() = base.clone();
     zones.replace_hierarchy(build_zone_hierarchy_with_query(
         &base,
         Some(&terrain),
@@ -180,7 +180,8 @@ fn live_bridge_batch_matches_original_order_recalc_cache_and_hierarchy() {
                 }
                 let terrain = sim.resolved_terrain.as_mut().unwrap();
                 if let Some(value) = change.get("tile") {
-                    terrain.cells[i].final_tile_index = value.as_i64().unwrap() as i32;
+                    terrain.cells_mut_for_test()[i].final_tile_index =
+                        value.as_i64().unwrap() as i32;
                 }
                 if change["missing"] == true {
                     let allocated: Vec<_> = (0..width)
@@ -195,15 +196,15 @@ fn live_bridge_batch_matches_original_order_recalc_cache_and_hierarchy() {
                     terrain.test_set_native_allocated_cells(&allocated);
                 }
                 let zones = sim.zone_grid.as_mut().unwrap();
-                let base = zones.base_topology_mut();
+                let base = zones.base_topology_mut_for_test();
                 if let Some(value) = change.get("class") {
-                    base.movement_classes[i] = value.as_u64().unwrap() as u8;
+                    base.movement_classes_mut_for_test()[i] = value.as_u64().unwrap() as u8;
                 }
                 if let Some(value) = change.get("level") {
-                    base.levels[i] = value.as_u64().unwrap() as u8;
+                    base.levels_mut_for_test()[i] = value.as_u64().unwrap() as u8;
                 }
                 if let Some(value) = change.get("base_id") {
-                    base.zone_ids[i] = value.as_u64().unwrap() as u16;
+                    base.zone_ids_mut_for_test()[i] = value.as_u64().unwrap() as u16;
                 }
                 if change["clear_level0"] == true {
                     let (_, hierarchy) = zones.base_and_hierarchy_mut();
@@ -257,24 +258,24 @@ fn live_bridge_batch_matches_original_order_recalc_cache_and_hierarchy() {
                 expected,
                 label,
             );
-            let base = zones.base_topology_mut();
+            let base = zones.base_topology_mut_for_test();
             assert_eq!(
-                serde_json::json!(base.movement_classes),
+                serde_json::json!(base.movement_classes()),
                 expected["classes"],
                 "{label}: retained class"
             );
             assert_eq!(
-                serde_json::json!(base.levels),
+                serde_json::json!(base.levels()),
                 expected["levels"],
                 "{label}: retained height"
             );
             assert_eq!(
-                serde_json::json!(base.zone_ids),
+                serde_json::json!(base.zone_ids()),
                 expected["base_ids"],
                 "{label}: base IDs conserved"
             );
             assert_eq!(
-                serde_json::json!(base.raw_zone_ids_by_row),
+                serde_json::json!(base.raw_zone_ids_by_row()),
                 expected["raw_rows"],
                 "{label}: all raw rows conserved"
             );
@@ -331,7 +332,12 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
         .unwrap();
     let mut sim = bridge_batch_simulation(case);
     let before_path = sim.path_grid_snapshot().unwrap();
-    let before = sim.zone_grid.as_mut().unwrap().base_topology_mut().clone();
+    let before = sim
+        .zone_grid
+        .as_mut()
+        .unwrap()
+        .base_topology_mut_for_test()
+        .clone();
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
     let registry =
         crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&IniFile::from_str(""), None);
@@ -346,7 +352,7 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
     live.write_raw_bridge_level(cell, 4).unwrap();
     let terrain = sim.resolved_terrain.as_ref().unwrap();
     assert_eq!(terrain.cell(12, 10).unwrap().level, 4);
-    assert_eq!(sim.dynamic_terrain_cells[&(12, 10)].level, 4);
+    assert_eq!(sim.dynamic_terrain_cells.get(&(12, 10)).unwrap().level, 4);
     assert_eq!(
         sim.path_grid().unwrap().cell(12, 10).unwrap().ground_level,
         4
@@ -367,11 +373,11 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
         &case["initial"],
         "raw height before batch",
     );
-    let base = zones.base_topology_mut();
-    assert_eq!(base.levels, before.levels);
-    assert_eq!(base.movement_classes, before.movement_classes);
-    assert_eq!(base.zone_ids, before.zone_ids);
-    assert_eq!(base.raw_zone_ids_by_row, before.raw_zone_ids_by_row);
+    let base = zones.base_topology_mut_for_test();
+    assert_eq!(base.levels(), before.levels());
+    assert_eq!(base.movement_classes(), before.movement_classes());
+    assert_eq!(base.zone_ids(), before.zone_ids());
+    assert_eq!(base.raw_zone_ids_by_row(), before.raw_zone_ids_by_row());
     let mut live = LivePublication {
         frame_effects: crate::sim::world::FrameEffects::default(),
         sim: &mut sim,
@@ -391,7 +397,7 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
         "raw height after native batch",
     );
     assert_eq!(
-        serde_json::json!(zones.base_topology_mut().levels),
+        serde_json::json!(zones.base_topology_mut_for_test().levels()),
         expected["levels"]
     );
 }
@@ -482,7 +488,7 @@ fn live_bridge_batch_recovers_rust_append_capacity_without_replacing_base_connec
         .unwrap();
     let mut sim = bridge_batch_simulation(case);
     let zones = sim.zone_grid.as_mut().unwrap();
-    let before = zones.base_topology_mut().clone();
+    let before = zones.base_topology_mut_for_test().clone();
     let (_, hierarchy) = zones.base_and_hierarchy_mut();
     let fine = &mut hierarchy.levels_mut()[0];
     while let Ok(id) = u16::try_from(fine.record_slot_count()) {
@@ -511,9 +517,9 @@ fn live_bridge_batch_recovers_rust_append_capacity_without_replacing_base_connec
         &case["initial"],
         "Rust capacity recovery",
     );
-    let after = zones.base_topology_mut();
-    assert_eq!(after.zone_ids, before.zone_ids);
-    assert_eq!(after.raw_zone_ids_by_row, before.raw_zone_ids_by_row);
-    assert_eq!(after.movement_classes, before.movement_classes);
-    assert_eq!(after.levels, before.levels);
+    let after = zones.base_topology_mut_for_test();
+    assert_eq!(after.zone_ids(), before.zone_ids());
+    assert_eq!(after.raw_zone_ids_by_row(), before.raw_zone_ids_by_row());
+    assert_eq!(after.movement_classes(), before.movement_classes());
+    assert_eq!(after.levels(), before.levels());
 }

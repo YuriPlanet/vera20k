@@ -80,7 +80,7 @@ fn building(sim: &mut Simulation, id: u64, owner: InternedId, kind: &str, health
     entity.estimated_health = EstimatedHealth::from_raw(health);
     entity.lifecycle.set_object_alive_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(true);
+    entity.lifecycle.set_cell_marked_for_test(true);
     entity.set_in_playfield(true);
     entity.building_art.set_actually_placed_for_test(true);
     entity.finish_building_construction_for_test();
@@ -475,7 +475,7 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
         );
         provider
             .lifecycle
-            .set_cell_marked(flag(input, "marked", true));
+            .set_cell_marked_for_test(flag(input, "marked", true));
         provider
             .lifecycle
             .set_in_limbo_for_test(flag(input, "limbo", false));

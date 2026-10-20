@@ -44,9 +44,7 @@ pub struct ReduceTiberiumContext<'a> {
     pub rng: Option<&'a mut SimRng>,
     pub binary_frame: u32,
     pub spread_enabled: bool,
-    pub radar_dirty_cells: Option<&'a mut Vec<(u16, u16)>>,
-    pub radar_dirty_generation: Option<&'a mut u64>,
-    pub tactical_dirty_cells: Option<&'a mut Vec<(u16, u16)>>,
+    pub dirty_cells: Option<&'a mut crate::sim::dirty_cells::DirtyCells>,
 }
 
 /// Overlay-backed resource facts for one live map cell.
@@ -329,9 +327,7 @@ pub struct PlaceTiberiumContext<'a> {
     pub binary_frame: u32,
     pub growth_enabled: bool,
     pub spread_enabled: bool,
-    pub radar_dirty_cells: Option<&'a mut Vec<(u16, u16)>>,
-    pub radar_dirty_generation: Option<&'a mut u64>,
-    pub tactical_dirty_cells: Option<&'a mut Vec<(u16, u16)>>,
+    pub dirty_cells: Option<&'a mut crate::sim::dirty_cells::DirtyCells>,
 }
 
 /// Cell result plus an ordered constructor effect for the shared transient
@@ -408,10 +404,11 @@ pub(crate) fn place_tiberium(
         // 4872A0: the identity store already registered the cell mutation.
         // Write the exact raw byte, even when Mark refused the identity,
         // without creating a second deferred overlay-dirty item.
-        ctx.overlay_grid
-            .write_cell_data(None, cell.0, cell.1, amount);
-        mark_place_tactical_dirty(ctx, cell);
-        mark_place_radar_dirty(ctx, cell);
+        ctx.overlay_grid.write_cell_data(cell.0, cell.1, amount);
+        if let Some(dirty) = ctx.dirty_cells.as_deref_mut() {
+            dirty.mark_tactical_once(cell);
+            dirty.mark_radar([cell]);
+        }
         return Some(TiberiumPlacement {
             cell,
             overlay_construction: Some(crate::sim::world::OverlayConstructionReceipt::new(
@@ -438,7 +435,9 @@ pub(crate) fn place_tiberium(
 
     let new_data = view.overlay_data.wrapping_add(amount).min(11);
     ctx.overlay_grid.set_overlay_data(cell.0, cell.1, new_data);
-    mark_place_tactical_dirty(ctx, cell);
+    if let Some(dirty) = ctx.dirty_cells.as_deref_mut() {
+        dirty.mark_tactical_once(cell);
+    }
     ctx.ore_growth_state.add_native_spread_queue_cell(
         type_id,
         ctx.overlay_grid,
@@ -513,8 +512,7 @@ struct PlaceTiberiumMarkUnsupported(&'static str);
 
 /// [`OverlayMarkHost`] on the batched ore placement's borrows: the
 /// OverlayGrid, the shared CellClass array and the live occupation planes.
-/// Identity and data writes go through the OverlayGrid owner without the
-/// terrain bridge cache, which this batch holds shared (#722). Recalc of the
+/// Identity and data writes go through the OverlayGrid owner. Recalc of the
 /// stamped cells is published by the caller before Logic's next object:
 /// the TiberiumClass drivers after their batch (`publish_tiberium_cells`),
 /// a Terrain AI slot before it returns. Within a batch, admission refuses a
@@ -601,7 +599,7 @@ impl OverlayMarkHost for PlaceTiberiumMarkHost<'_, '_> {
     fn write_data(&mut self, cell: NativeCellIdentity, data: u8) -> Result<(), Self::Error> {
         match self.real_coord(cell) {
             Some((x, y)) => {
-                self.grid.write_cell_data(None, x, y, data);
+                self.grid.write_cell_data(x, y, data);
             }
             None => self.terrain.shared_cell_dummy().write_overlay_state(data),
         }
@@ -735,25 +733,6 @@ pub(crate) fn spread_tiberium(
     None
 }
 
-fn mark_place_radar_dirty(ctx: &mut PlaceTiberiumContext<'_>, cell: (u16, u16)) {
-    if let Some(cells) = ctx.radar_dirty_cells.as_deref_mut()
-        && !cells.contains(&cell)
-    {
-        cells.push(cell);
-        if let Some(generation) = ctx.radar_dirty_generation.as_deref_mut() {
-            *generation = (*generation).wrapping_add(1);
-        }
-    }
-}
-
-fn mark_place_tactical_dirty(ctx: &mut PlaceTiberiumContext<'_>, cell: (u16, u16)) {
-    if let Some(cells) = ctx.tactical_dirty_cells.as_deref_mut()
-        && !cells.contains(&cell)
-    {
-        cells.push(cell);
-    }
-}
-
 /// Result of one `Reduce_Tiberium` call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReduceTiberiumOutcome {
@@ -836,7 +815,9 @@ pub fn reduce_tiberium(
         if let Some(grid) = ctx.overlay_grid.as_deref_mut() {
             grid.set_overlay_data(cell.0, cell.1, remaining);
         }
-        mark_tactical_dirty(ctx, cell);
+        if let Some(dirty) = ctx.dirty_cells.as_deref_mut() {
+            dirty.mark_tactical_once(cell);
+        }
         return ReduceTiberiumOutcome {
             removed_amount: amount as u16,
             resource_type: Some(view.resource_type),
@@ -857,7 +838,9 @@ pub fn reduce_tiberium(
 
     // Retail dirties radar immediately after clear/recalc, before touching any
     // spread bitmap or queue state.
-    mark_radar_dirty(ctx, cell);
+    if let Some(dirty) = ctx.dirty_cells.as_deref_mut() {
+        dirty.mark_radar([cell]);
+    }
     ctx.ore_growth_state
         .clear_native_spread_bitmap_cell(cell.0, cell.1);
     if let (Some(grid), Some(registry), Some(types), Some(source_object_cells), Some(rng)) = (
@@ -882,31 +865,14 @@ pub fn reduce_tiberium(
                 rng,
             );
     }
-    mark_tactical_dirty(ctx, cell);
+    if let Some(dirty) = ctx.dirty_cells.as_deref_mut() {
+        dirty.mark_tactical_once(cell);
+    }
 
     ReduceTiberiumOutcome {
         removed_amount: u16::from(current),
         resource_type: Some(view.resource_type),
         fully_removed: true,
-    }
-}
-
-fn mark_radar_dirty(ctx: &mut ReduceTiberiumContext<'_>, cell: (u16, u16)) {
-    if let Some(cells) = ctx.radar_dirty_cells.as_deref_mut()
-        && !cells.contains(&cell)
-    {
-        cells.push(cell);
-        if let Some(generation) = ctx.radar_dirty_generation.as_deref_mut() {
-            *generation = (*generation).wrapping_add(1);
-        }
-    }
-}
-
-fn mark_tactical_dirty(ctx: &mut ReduceTiberiumContext<'_>, cell: (u16, u16)) {
-    if let Some(cells) = ctx.tactical_dirty_cells.as_deref_mut()
-        && !cells.contains(&cell)
-    {
-        cells.push(cell);
     }
 }
 
@@ -1056,7 +1022,7 @@ SpreadPercentage=.06
     fn gsi_04_09_new_placement_requires_proof_and_rejects_outside_playfield() {
         let (overlay_registry, tiberium_types) = native_tiberium_fixture();
         let mut terrain = flat_clear_terrain();
-        terrain.cell_mut(0, 0).unwrap().outside_playfield = true;
+        terrain.cell_mut_for_test(0, 0).unwrap().outside_playfield = true;
         let rules_ini = IniFile::from_str(
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
         );
@@ -1082,9 +1048,7 @@ SpreadPercentage=.06
         let source_cells = BTreeSet::new();
         let mut rng = SimRng::new(0x409);
         let before_rng = rng.logical_state();
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
+        let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
 
         for admission in [None, Some(runtime_admission)] {
             let mut ctx = PlaceTiberiumContext {
@@ -1100,9 +1064,7 @@ SpreadPercentage=.06
                 binary_frame: 40,
                 growth_enabled: true,
                 spread_enabled: true,
-                radar_dirty_cells: Some(&mut radar_dirty),
-                radar_dirty_generation: Some(&mut radar_generation),
-                tactical_dirty_cells: Some(&mut tactical_dirty),
+                dirty_cells: Some(&mut dirty),
             };
             assert!(place_tiberium(&mut ctx, (0, 0), TiberiumTypeId(0), 3).is_none());
         }
@@ -1114,9 +1076,9 @@ SpreadPercentage=.06
                 && class.growth_bitmap.is_empty()
                 && class.spread_bitmap.is_empty()
         }));
-        assert!(radar_dirty.is_empty());
-        assert_eq!(radar_generation, 0);
-        assert!(tactical_dirty.is_empty());
+        assert!(dirty.radar().is_empty());
+        assert_eq!(dirty.radar_generation(), 0);
+        assert!(dirty.tactical_for_test().is_empty());
         assert_eq!(rng.logical_state(), before_rng);
     }
 
@@ -1137,9 +1099,7 @@ SpreadPercentage=.06
         let terrain = test_support::flat_terrain(8, 8);
         let no_objects = test_support::NoLiveObjects::new();
         let admission = NewTiberiumAdmission::runtime(&terrain, no_objects.context());
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
+        let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
         {
             let mut ctx = PlaceTiberiumContext {
                 overlay_grid: &mut overlay,
@@ -1154,9 +1114,7 @@ SpreadPercentage=.06
                 binary_frame: 40,
                 growth_enabled: true,
                 spread_enabled: true,
-                radar_dirty_cells: Some(&mut radar_dirty),
-                radar_dirty_generation: Some(&mut radar_generation),
-                tactical_dirty_cells: Some(&mut tactical_dirty),
+                dirty_cells: Some(&mut dirty),
             };
             assert!(place_tiberium(&mut ctx, (4, 4), TiberiumTypeId(0), 11).is_some());
         }
@@ -1170,9 +1128,9 @@ SpreadPercentage=.06
         );
         assert!(class.growth_bitmap.contains(&(4, 4)));
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
-        assert_eq!(radar_dirty, vec![(4, 4)]);
-        assert_eq!(radar_generation, 1);
-        assert_eq!(tactical_dirty, vec![(4, 4)]);
+        assert_eq!(dirty.radar(), vec![(4, 4)]);
+        assert_eq!(dirty.radar_generation(), 1);
+        assert_eq!(dirty.tactical_for_test(), vec![(4, 4)]);
 
         let state_before_reject = rng.logical_state();
         let mut reject_ctx = PlaceTiberiumContext {
@@ -1188,9 +1146,7 @@ SpreadPercentage=.06
             binary_frame: 40,
             growth_enabled: true,
             spread_enabled: true,
-            radar_dirty_cells: Some(&mut radar_dirty),
-            radar_dirty_generation: Some(&mut radar_generation),
-            tactical_dirty_cells: Some(&mut tactical_dirty),
+            dirty_cells: Some(&mut dirty),
         };
         assert!(place_tiberium(&mut reject_ctx, (5, 5), TiberiumTypeId(0), 12,).is_none());
         assert_eq!(rng.logical_state(), state_before_reject);
@@ -1213,9 +1169,7 @@ SpreadPercentage=.06
             growth.reset_native_tiberium_classes(tiberium_types.len(), 0);
             let mut rng = SimRng::new(12);
             let source_cells = BTreeSet::new();
-            let mut radar_dirty = Vec::new();
-            let mut radar_generation = 0;
-            let mut tactical_dirty = Vec::new();
+            let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
             let mut ctx = PlaceTiberiumContext {
                 overlay_grid: &mut overlay,
                 ore_growth_state: &mut growth,
@@ -1229,9 +1183,7 @@ SpreadPercentage=.06
                 binary_frame: 0,
                 growth_enabled: true,
                 spread_enabled: true,
-                radar_dirty_cells: Some(&mut radar_dirty),
-                radar_dirty_generation: Some(&mut radar_generation),
-                tactical_dirty_cells: Some(&mut tactical_dirty),
+                dirty_cells: Some(&mut dirty),
             };
 
             assert_eq!(
@@ -1243,10 +1195,10 @@ SpreadPercentage=.06
                 overlay.cell(4, 4).overlay_data,
                 if succeeds { 11 } else { 10 }
             );
-            assert!(radar_dirty.is_empty());
-            assert_eq!(radar_generation, 0);
+            assert!(dirty.radar().is_empty());
+            assert_eq!(dirty.radar_generation(), 0);
             assert_eq!(
-                tactical_dirty,
+                dirty.tactical_for_test(),
                 if succeeds { vec![(4, 4)] } else { Vec::new() }
             );
             assert_eq!(
@@ -1419,9 +1371,7 @@ SpreadPercentage=.06
             overlay.place_overlay(4, 4, tib01, data);
             let mut growth = OreGrowthState::new(8, 8);
             growth.reset_native_tiberium_classes(tiberium_types.len(), 0);
-            let mut radar_dirty = Vec::new();
-            let mut radar_generation = 0;
-            let mut tactical_dirty = Vec::new();
+            let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
             let mut ctx = ReduceTiberiumContext {
                 overlay_grid: Some(&mut overlay),
                 ore_growth_state: &mut growth,
@@ -1433,9 +1383,7 @@ SpreadPercentage=.06
                 rng: None,
                 binary_frame: 0,
                 spread_enabled: false,
-                radar_dirty_cells: Some(&mut radar_dirty),
-                radar_dirty_generation: Some(&mut radar_generation),
-                tactical_dirty_cells: Some(&mut tactical_dirty),
+                dirty_cells: Some(&mut dirty),
             };
 
             let outcome = reduce_tiberium(&mut ctx, (4, 4), amount);
@@ -1456,16 +1404,19 @@ SpreadPercentage=.06
                 Some(expected) => {
                     assert_eq!(overlay.cell(4, 4).overlay_id, Some(tib01));
                     assert_eq!(overlay.cell(4, 4).overlay_data, expected);
-                    assert!(radar_dirty.is_empty(), "partial mutation is tactical-only");
-                    assert_eq!(radar_generation, 0);
+                    assert!(
+                        dirty.radar().is_empty(),
+                        "partial mutation is tactical-only"
+                    );
+                    assert_eq!(dirty.radar_generation(), 0);
                 }
                 None => {
                     assert_eq!(overlay.cell(4, 4).overlay_id, None);
-                    assert_eq!(radar_dirty, vec![(4, 4)]);
-                    assert_eq!(radar_generation, 1);
+                    assert_eq!(dirty.radar(), vec![(4, 4)]);
+                    assert_eq!(dirty.radar_generation(), 1);
                 }
             }
-            assert_eq!(tactical_dirty, vec![(4, 4)]);
+            assert_eq!(dirty.tactical_for_test(), vec![(4, 4)]);
         }
 
         let mut overlay = OverlayGrid::new(8, 8);
@@ -1482,9 +1433,7 @@ SpreadPercentage=.06
             rng: None,
             binary_frame: 0,
             spread_enabled: false,
-            radar_dirty_cells: None,
-            radar_dirty_generation: None,
-            tactical_dirty_cells: None,
+            dirty_cells: None,
         };
         assert_eq!(reduce_tiberium(&mut ctx, (4, 4), 0).removed_amount, 0);
         assert_eq!(reduce_tiberium(&mut ctx, (4, 4), -3).removed_amount, 0);
@@ -1512,9 +1461,7 @@ SpreadPercentage=.06
             rng: Some(&mut rng),
             binary_frame: 42,
             spread_enabled: false,
-            radar_dirty_cells: None,
-            radar_dirty_generation: None,
-            tactical_dirty_cells: None,
+            dirty_cells: None,
         };
 
         let outcome = reduce_tiberium(&mut ctx, (4, 4), 11);
@@ -1554,7 +1501,7 @@ SpreadPercentage=.06
         sim.ore_growth_state
             .reset_native_tiberium_classes(rules.tiberium_types.len(), 0);
         let mut terrain = flat_clear_terrain();
-        let cell = terrain.cell_mut(0, 0).unwrap();
+        let cell = terrain.cell_mut_for_test(0, 0).unwrap();
         cell.speed_costs.foot = Some(37);
         cell.base_speed_costs.foot = Some(37);
         let mut overlay = OverlayGrid::new(1, 1);
@@ -1704,9 +1651,7 @@ SpreadPercentage=.06
             rng: Some(&mut rng),
             binary_frame: 200,
             spread_enabled: true,
-            radar_dirty_cells: None,
-            radar_dirty_generation: None,
-            tactical_dirty_cells: None,
+            dirty_cells: None,
         };
 
         let outcome = reduce_tiberium(&mut ctx, (5, 5), 2);
@@ -1796,9 +1741,7 @@ SpreadPercentage=.06
             rng: Some(&mut rng),
             binary_frame: 200,
             spread_enabled: true,
-            radar_dirty_cells: None,
-            radar_dirty_generation: None,
-            tactical_dirty_cells: None,
+            dirty_cells: None,
         };
 
         let outcome = reduce_tiberium(&mut ctx, (5, 5), 4);

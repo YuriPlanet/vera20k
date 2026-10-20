@@ -104,7 +104,7 @@ fn wakeup_selection_and_deferred_mission_state_match_original_controls() {
                 .set_object_alive_for_test(input["alive"].as_bool().unwrap());
             entity
                 .lifecycle
-                .set_cell_marked(input["cell_marked"].as_bool().unwrap());
+                .set_cell_marked_for_test(input["cell_marked"].as_bool().unwrap());
             entity
                 .lifecycle
                 .set_in_limbo_for_test(input["limbo"].as_bool().unwrap());

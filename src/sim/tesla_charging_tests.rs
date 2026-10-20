@@ -176,7 +176,7 @@ fn retail_electric_assault_enables_the_coils_overpowered_weapon() {
         &f.sim,
         &f.sim.interner,
         f.sim.resolved_terrain.as_ref(),
-        Some(&f.sim.house_alliances),
+        Some(f.sim.house_alliances.as_map()),
     )
     .unwrap();
     assert_eq!(
@@ -494,7 +494,7 @@ fn adjacency_uses_native_direction_order_and_same_owner_not_alliance() {
         .spawn_object("SHK", "Americans", 20, 20, 0, &f.rules)
         .unwrap();
     f.sim
-        .house_alliances
+        .house_alliances_mut_for_test()
         .entry("Americans".into())
         .or_default()
         .insert("Russians".into());

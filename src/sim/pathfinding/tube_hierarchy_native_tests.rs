@@ -49,7 +49,9 @@ fn native_tube_hierarchy_pairs_match_original_executable() {
             .collect();
         let tw = allocated.iter().map(|(_, x, _)| x + 1).max().unwrap_or(1);
         let th = allocated.iter().map(|(_, _, y)| y + 1).max().unwrap_or(1);
-        let mut cells = redirect_terrain(tw, th, None, None, |_| {}).cells;
+        let mut cells = redirect_terrain(tw, th, None, None, |_| {})
+            .cells()
+            .to_vec();
         for &(i, x, y) in &allocated {
             let cell = &mut cells[usize::from(y) * usize::from(tw) + usize::from(x)];
             cell.tube_index = Some(TubeId(i as u16));
@@ -141,7 +143,8 @@ fn tube_hierarchy_generated_records_connect_full_and_local_precheck() {
             cell.zone_type = zone_class::OUTSIDE;
         }
     })
-    .cells;
+    .cells()
+    .to_vec();
     let tubes: Vec<_> = [15u16, 16, 17]
         .into_iter()
         .enumerate()

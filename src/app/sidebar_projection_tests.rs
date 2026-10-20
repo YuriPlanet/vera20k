@@ -53,9 +53,10 @@ fn world(rules: &RuleSet, factories: &[&str]) -> (Simulation, InternedId) {
     sim.resolve_type_handles(rules);
     let owner = sim.intern("Americans");
     let mut house = HouseState::new(owner, 0, None, true, 50_000, 10);
-    house.project_country_mults(rules, &sim.interner);
-    sim.houses.register(house);
-    sim.session.set_current_house_for_test(Some(owner));
+    house.project_country_mults(rules, sim.interner());
+    sim.houses_mut_for_test().register(house);
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
     for (index, name) in factories.iter().enumerate() {
         let x = 4 + (index % 4) as u16 * 7;
@@ -74,11 +75,11 @@ fn superweapon_money_cameo_refresh_tracks_wallet_without_membership_rebuild() {
         ), &crate::rules::ini_parser::IniFile::empty(),
     ).unwrap();
     let (mut sim, owner) = world(&rules, &[]);
-    let id = sim.interner.get("Paid").unwrap();
+    let id = sim.interner().get("Paid").unwrap();
     let mut instance = crate::sim::superweapon::SuperWeaponInstance::new(id, owner, 0);
     instance.set_is_active_for_test(true);
     instance.set_is_ready_for_test(true);
-    sim.super_weapons
+    sim.super_weapons_mut_for_test()
         .entry(owner)
         .or_default()
         .insert(id, instance);
@@ -100,7 +101,7 @@ fn superweapon_money_cameo_refresh_tracks_wallet_without_membership_rebuild() {
         &[],
         None,
         &[],
-        Some(&sim.interner),
+        Some(sim.interner()),
         &supers,
         &SidebarGadgetState::new(),
         None,
@@ -113,7 +114,7 @@ fn superweapon_money_cameo_refresh_tracks_wallet_without_membership_rebuild() {
     assert_eq!(view.items.len(), 1);
     assert!(!view.items[0].enabled);
     let order = projection.cameo_strips().saved_identities();
-    sim.houses
+    sim.houses_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .economy_mut_for_test()
@@ -123,7 +124,7 @@ fn superweapon_money_cameo_refresh_tracks_wallet_without_membership_rebuild() {
     assert!(view.items[0].enabled);
     assert!(view.items[0].is_ready);
     assert_eq!(sim.state_hash(), before);
-    sim.houses
+    sim.houses_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .economy_mut_for_test()
@@ -173,7 +174,7 @@ fn view_with_gadgets(
         &[],
         None,
         &[],
-        Some(&sim.interner),
+        Some(sim.interner()),
         &[],
         gadgets,
         None,
@@ -212,7 +213,7 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
     assert_eq!(projection.ready_building_tabs(&sim, owner), [false; 2]);
     for category in [ProductionCategory::Building, ProductionCategory::Defense] {
         assert!(
-            sim.production
+            sim.production_mut_for_test()
                 .factories_mut_for_test()
                 .test_arm_ready(owner, category)
         );
@@ -379,17 +380,17 @@ fn trigger_cameo_flash_reaches_view_and_survives_projection_save_lifecycle() {
     }));
     let options: Vec<_> = all_build_options_for_owner(&sim, &rules, "Americans")
         .into_iter()
-        .filter(|item| sim.interner.resolve(item.type_id) != "UNLISTED")
+        .filter(|item| sim.interner().resolve(item.type_id) != "UNLISTED")
         .collect();
     let candidates = cameo_candidates(&sim, &rules, Some(&csf), owner, &options, &[], &[]);
     let mut projection = SidebarProjectionState::default();
     projection.reconcile_fixture(owner, &candidates, 3);
     let control = &native["flash_controls"][0];
     projection.flash_cameo(
-        sim.interner.get("HTNK").unwrap(),
+        sim.interner().get("HTNK").unwrap(),
         control["duration"].as_i64().unwrap() as i32,
         control["frame"].as_i64().unwrap() as i32,
-        &sim.interner,
+        sim.interner(),
         &rules,
     );
     projection.set_cameo_frame(control["frame"].as_i64().unwrap() as i32);
@@ -425,7 +426,7 @@ fn trigger_cameo_flash_reaches_view_and_survives_projection_save_lifecycle() {
     let mut removed = candidates.clone();
     removed
         .iter_mut()
-        .find(|item| item.id == CameoId::Object(sim.interner.get("ORCA").unwrap()))
+        .find(|item| item.id == CameoId::Object(sim.interner().get("ORCA").unwrap()))
         .unwrap()
         .available = false;
     loaded.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
@@ -471,7 +472,7 @@ fn original_post_removal_scroll_reaches_view_and_hit_test() {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|name| name.as_str().unwrap() == sim.interner.resolve(item.type_id))
+                .any(|name| name.as_str().unwrap() == sim.interner().resolve(item.type_id))
         })
         .collect();
     let mut candidates = cameo_candidates(&sim, &rules, Some(&csf), owner, &options, &[], &[]);
@@ -486,7 +487,7 @@ fn original_post_removal_scroll_reaches_view_and_hit_test() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|name| name.as_str().unwrap() == sim.interner.resolve(id));
+            .any(|name| name.as_str().unwrap() == sim.interner().resolve(id));
     }
     projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
     projection.reconcile_fixture(owner, &candidates, 3);
@@ -534,7 +535,7 @@ fn production_projection_uses_rule_side_category_flags_and_csf_utf16_inputs() {
         .map(|item| {
             let name = item["id"].as_str().unwrap();
             let id = sim
-                .interner
+                .interner()
                 .get(name)
                 .unwrap_or_else(|| panic!("native ordinary type was not interned: {name}"));
             let key = keys
@@ -624,7 +625,7 @@ fn native_order_reaches_localized_views_scrolling_and_click_identity() {
                 );
                 let option = options
                     .iter()
-                    .find(|option| sim.interner.resolve(option.type_id) == item.type_id)
+                    .find(|option| sim.interner().resolve(option.type_id) == item.type_id)
                     .unwrap();
                 assert_eq!(item.cost, Some(option.cost));
                 assert_eq!(item.queue_category, option.queue_category);
@@ -645,7 +646,7 @@ fn only_an_accepted_new_object_in_the_same_house_announces_construction_options(
     let options = all_build_options_for_owner(&sim, &rules, "Americans");
     let candidates = cameo_candidates(&sim, &rules, Some(&csf), owner, &options, &[], &[]);
     let mut initial = candidates.clone();
-    let tank = CameoId::Object(sim.interner.get("tank").unwrap());
+    let tank = CameoId::Object(sim.interner().get("tank").unwrap());
     initial
         .iter_mut()
         .find(|item| item.id == tank)
@@ -688,7 +689,7 @@ fn only_an_accepted_new_object_in_the_same_house_announces_construction_options(
             .build_inserted(),
         "a later accepted reinsertion announces again"
     );
-    let other = sim.interner.get("TESTBUILD").unwrap();
+    let other = sim.interner().get("TESTBUILD").unwrap();
     assert!(
         !projection
             .reconcile_fixture(other, &candidates, 3)
@@ -706,7 +707,7 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
     let (mut sim, rules, owner, csf, _) = native_history_world();
     let options = all_build_options_for_owner(&sim, &rules, "Americans");
     let candidates = cameo_candidates(&sim, &rules, Some(&csf), owner, &options, &[], &[]);
-    let new_infantry = CameoId::Object(sim.interner.get("engineer").unwrap());
+    let new_infantry = CameoId::Object(sim.interner().get("engineer").unwrap());
     let initial: Vec<_> = candidates
         .iter()
         .filter(|entry| entry.id != new_infantry)
@@ -732,12 +733,12 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
         .0;
     // This strip fixture supplies an already discovered barracks; it does
     // not run the map's Cell PUT/discovery transaction.
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(factory)
         .unwrap()
         .discovery
         .set_discovered_by_current_house_for_test(true);
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(factory)
         .unwrap()
         .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
@@ -758,13 +759,13 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
     assert!(
         infantry
             .iter()
-            .any(|entry| entry.id == CameoId::Object(sim.interner.get("gi").unwrap()))
+            .any(|entry| entry.id == CameoId::Object(sim.interner().get("gi").unwrap()))
     );
     assert!(
         !infantry.iter().any(|entry| entry.id == new_infantry),
         "retention admission must not insert an infantry option while its adding factory is warped"
     );
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(factory)
         .unwrap()
         .set_temporal_for_test(Default::default());
@@ -990,9 +991,9 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
             // scheduler admits the next ordinary frame, not every queued tick.
             sim.queue_command(CommandEnvelope::new(
                 owner,
-                sim.session.tick() + 100,
+                sim.session().tick() + 100,
                 Command::QueueProduction {
-                    type_id: sim.interner.get(source).unwrap(),
+                    type_id: sim.interner().get(source).unwrap(),
                 },
             ));
             // A different player's due orders must not hold this local strip.
@@ -1000,14 +1001,14 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
             sim.queue_commands([
                 CommandEnvelope::new(
                     foreign,
-                    sim.session.tick() + 1,
+                    sim.session().tick() + 1,
                     Command::QueueProduction {
-                        type_id: sim.interner.get(source).unwrap(),
+                        type_id: sim.interner().get(source).unwrap(),
                     },
                 ),
                 CommandEnvelope::new(
                     foreign,
-                    sim.session.tick() + 1,
+                    sim.session().tick() + 1,
                     Command::SuspendProduction {
                         category: crate::sim::production::category_for_object(
                             rules.object(source).unwrap(),
@@ -1019,7 +1020,7 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
         if matches!(state, "pending" | "pending_hold") {
             let category =
                 crate::sim::production::category_for_object(rules.object(source).unwrap());
-            let type_id = sim.interner.get(source).unwrap();
+            let type_id = sim.interner().get(source).unwrap();
             let click = crate::app::input::sidebar_eva::cameo_click(
                 &[],
                 category,
@@ -1187,18 +1188,18 @@ fn retail_rules_admission_and_csf_names_keep_the_same_identity_in_every_view() {
         .map(|item| item.type_id)
         .collect();
     assert!(
-        visible.contains(&sim.interner.get("E1").unwrap()),
+        visible.contains(&sim.interner().get("E1").unwrap()),
         "placed Allied barracks exposes the GI"
     );
     assert!(
-        !visible.contains(&sim.interner.get("E2").unwrap()),
+        !visible.contains(&sim.interner().get("E2").unwrap()),
         "foreign infantry is not admitted by the Allied factory"
     );
     let mut observed = HashSet::new();
     for tab in SidebarTab::all() {
         let view = view(&sim, &options, &projection, tab, 2400.0);
         for item in &view.items {
-            let id = sim.interner.get(&item.type_id).unwrap();
+            let id = sim.interner().get(&item.type_id).unwrap();
             assert!(
                 observed.insert(id),
                 "no duplicate projected identity: {}",
@@ -1261,7 +1262,7 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
             &[],
             armed,
             &[],
-            Some(&sim.interner),
+            Some(sim.interner()),
             &sw_views,
             &SidebarGadgetState::new(),
             None,
@@ -1314,14 +1315,14 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
     ))
     .unwrap();
     let mut sim = Simulation::with_seed(0);
-    let owner = sim.interner.intern("Americans");
-    sim.houses
+    let owner = sim.intern("Americans");
+    sim.houses_mut_for_test()
         .register(HouseState::new(owner, 0, None, true, 0, 10));
-    let sw_type = sim.interner.intern("NukeSpecial");
+    let sw_type = sim.intern("NukeSpecial");
     let mut instance = SuperWeaponInstance::new(sw_type, owner, 0);
     instance.set_is_active_for_test(true);
     instance.set_is_ready_for_test(true);
-    sim.super_weapons
+    sim.super_weapons_mut_for_test()
         .entry(owner)
         .or_default()
         .insert(sw_type, instance);
@@ -1335,7 +1336,7 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
         Some(false)
     );
 
-    sim.super_weapons
+    sim.super_weapons_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&sw_type)
@@ -1410,7 +1411,7 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
         "held right-click cancels targeting"
     );
 
-    sim.super_weapons
+    sim.super_weapons_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&sw_type)
@@ -1434,7 +1435,7 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
         Some("NukeSpecial")
     );
 
-    sim.super_weapons
+    sim.super_weapons_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&sw_type)

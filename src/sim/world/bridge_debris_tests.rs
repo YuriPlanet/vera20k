@@ -173,7 +173,7 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, BTreeSet<(u16, u16)>)
         .collect();
     let level = input["level"].as_i64().unwrap() as i8;
     let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
-    for cell in &mut terrain.cells {
+    for cell in terrain.cells_mut_for_test() {
         cell.level = level as u8;
         // The structural flag is already gone when collapse calls47DD70.
         // A stale derived deck value must not decide the producer's Z.

@@ -263,7 +263,7 @@ fn replay_crew_row(row: &Value) {
     let rules = &s.scene.rules;
     let sim = &mut s.scene.sim;
     assert_eq!(
-        i64::from(sim.building_survivor_count(rules, refinery, false)),
+        i64::from(sim.building_survivor_count(rules, refinery)),
         row["survivors"].as_i64().unwrap(),
         "{context}: How_Many_Survivors"
     );

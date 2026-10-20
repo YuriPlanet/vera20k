@@ -126,7 +126,7 @@ impl DebugObservation {
             handler: entity.mission.handler_state(),
             miner: entity.miner.is_some(),
             moving: crate::sim::movement::motion_query::is_moving(entity) == Some(true),
-            blocked: entity.navigation.path_runtime.path_blocked(),
+            blocked: entity.navigation.path_runtime().path_blocked(),
             destination: entity.navigation.nav_com(),
             locomotor: entity.locomotor.as_ref().map(|l| l.active_kind()),
             falling: entity.is_falling_down(),

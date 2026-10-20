@@ -351,14 +351,14 @@ fn install_refinery_test_terrain_on(
     sim: &mut Simulation,
     override_cell: impl FnMut(&mut ResolvedTerrainCell),
 ) {
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -100,
         off_100: -100,
         off_104: 200,
         off_108: 200,
-    });
-    sim.playfield_size_height = Some(64);
+    }));
+    sim.set_playfield_size_height_for_test(Some(64));
     let terrain = resolved_clear_grid_with_override(64, 64, override_cell);
     sim.zone_grid = Some(
         crate::sim::pathfinding::zone_map::ZoneGrid::build_with_terrain(
@@ -561,11 +561,14 @@ fn modded_refinery_rules(foundation: &str, free_unit: Option<&str>) -> RuleSet {
 fn mark_allied(sim: &mut Simulation, a: &str, b: &str) {
     let a = a.to_ascii_uppercase();
     let b = b.to_ascii_uppercase();
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry(a.clone())
         .or_default()
         .insert(b.clone());
-    sim.house_alliances.entry(b).or_default().insert(a);
+    sim.house_alliances_mut_for_test()
+        .entry(b)
+        .or_default()
+        .insert(a);
 }
 
 fn ready_building(sim: &mut Simulation, rules: &RuleSet, owner: &str, type_id: &str) {
@@ -1046,7 +1049,7 @@ fn place_ready_building_accepts_clear_mixed_height_footprint() {
         sim.resolved_terrain
             .as_mut()
             .expect("placement fixture terrain")
-            .cell_mut(cell.0, cell.1)
+            .cell_mut_for_test(cell.0, cell.1)
             .expect("footprint cell")
             .level = z;
     }
@@ -1359,7 +1362,7 @@ fn free_unit_total_placement_failure_refunds_once_and_leaves_no_entity() {
             let cell = sim
                 .resolved_terrain
                 .as_mut()
-                .and_then(|terrain| terrain.cell_mut(rx, ry))
+                .and_then(|terrain| terrain.cell_mut_for_test(rx, ry))
                 .expect("fixture terrain cell");
             cell.speed_costs = SpeedCostProfile::default();
             cell.base_speed_costs = SpeedCostProfile::default();
@@ -1529,7 +1532,7 @@ fn placement_command_rejects_marked_ground_mobiles_until_they_are_unmarked() {
         let americans = sim.interner.get("Americans").expect("owner interned");
         let gapowr = sim.interner.get("GAPOWR").expect("type interned");
         let entities_before = sim.substrate.entities.len();
-        let next_id_before = sim.substrate.next_stable_object_id;
+        let next_id_before = sim.next_stable_object_id();
         let occupancy_generation_before = sim.substrate.occupancy.generation();
         let rejected = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
         let tick = sim.advance_tick(&[rejected], Some(&rules), Some(&grid), None, 67);
@@ -1549,7 +1552,7 @@ fn placement_command_rejects_marked_ground_mobiles_until_they_are_unmarked() {
             "rejected placement must emit EVA_CannotDeployHere for {blocker_type}"
         );
         assert_eq!(sim.substrate.entities.len(), entities_before);
-        assert_eq!(sim.substrate.next_stable_object_id, next_id_before);
+        assert_eq!(sim.next_stable_object_id(), next_id_before);
         assert_eq!(
             sim.substrate.occupancy.generation(),
             occupancy_generation_before,
@@ -1614,7 +1617,7 @@ fn placement_command_rejects_nonblocking_overlay_and_preserves_ready_building() 
     let americans = sim.interner.get("Americans").expect("owner interned");
     let gapowr = sim.interner.get("GAPOWR").expect("type interned");
     let entities_before = sim.substrate.entities.len();
-    let next_id_before = sim.substrate.next_stable_object_id;
+    let next_id_before = sim.next_stable_object_id();
     let occupancy_generation_before = sim.substrate.occupancy.generation();
     let rejected = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
     let tick = sim.advance_tick(&[rejected], Some(&rules), Some(&grid), None, 67);
@@ -1622,7 +1625,7 @@ fn placement_command_rejects_nonblocking_overlay_and_preserves_ready_building() 
     assert_eq!(tick.executed_commands, 1);
     assert!(!tick.spawned_entities);
     assert_eq!(sim.substrate.entities.len(), entities_before);
-    assert_eq!(sim.substrate.next_stable_object_id, next_id_before);
+    assert_eq!(sim.next_stable_object_id(), next_id_before);
     assert_eq!(
         sim.substrate.occupancy.generation(),
         occupancy_generation_before
@@ -2037,9 +2040,7 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
         expected
     );
 
-    sim.tactical_dirty_cells.clear();
-    sim.radar_terrain_dirty_cells.clear();
-    sim.radar_terrain_dirty_generation = 0;
+    sim.dirty_cells = Default::default();
 
     let placed = place_building(
         &mut sim,
@@ -2114,7 +2115,8 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
         ]);
     }
     assert_eq!(
-        sim.tactical_dirty_cells, expected_tactical,
+        sim.dirty_cells.tactical_for_test(),
+        expected_tactical,
         "each clicked/filler Mark must finish its N/E/S/W/self tactical sequence before the next stamp"
     );
     for (rx, ry) in std::iter::once(origin).chain(expected.iter().copied()) {
@@ -2313,9 +2315,7 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
         .expect("construction yard listener")
         .attack_target
         .set_for_test(Some(TargetKind::Cell(13, 10)));
-    sim.tactical_dirty_cells.clear();
-    sim.radar_terrain_dirty_cells.clear();
-    sim.radar_terrain_dirty_generation = 0;
+    sim.dirty_cells = Default::default();
 
     let placed = place_building(
         &mut sim,
@@ -2361,10 +2361,11 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
     // existing N/E/S/W/self visits; radar belongs to connectivity only.
     let mut expected_tactical = vec![(12, 10)];
     expected_tactical.extend_from_slice(&expected_dirty);
-    assert_eq!(sim.tactical_dirty_cells, expected_tactical);
-    assert_eq!(sim.radar_terrain_dirty_cells, expected_dirty);
+    assert_eq!(sim.dirty_cells.tactical_for_test(), expected_tactical);
+    assert_eq!(sim.dirty_cells.radar(), expected_dirty);
     assert_eq!(
-        sim.radar_terrain_dirty_generation, 5,
+        sim.dirty_cells.radar_generation(),
+        5,
         "each first-unique native radar callback is published at its inline visit"
     );
     let live_path = sim
@@ -2807,15 +2808,16 @@ fn place_ready_building_rejects_destroyed_bridge_over_blocked_ground() {
             cell.bridge_deck_level = 3;
             // A legacy deck whose +44 bridge identity 47E040 has destroyed:
             // state 0, bit0x100 clear, bit0x400 set.
-            cell.bridge_facts.overlay_id = Some(0x18);
             cell.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_DESTROYED_OR_RAMP;
-            cell.bridge_facts.state_byte = 0;
         }
     });
     sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(&resolved, true, 5),
     );
     sim.resolved_terrain = Some(resolved);
+    let deck = sim.overlay_cell_mut_for_test(12, 10);
+    deck.overlay_id = Some(0x18);
+    deck.overlay_data = 0;
 
     let preview = preview_at(&sim, &rules, "Americans", "GAPOWR", (12, 10), None);
     assert_eq!(preview.reason, Some(BuildingPlacementError::BlockedTerrain));

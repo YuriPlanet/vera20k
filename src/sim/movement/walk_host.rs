@@ -126,12 +126,12 @@ impl Simulation {
                     y: coord.y,
                 },
             ));
-        e.navigation.path_runtime.set_path_blocked(false);
+        e.navigation.path_runtime_mut().clear_blockage();
         self.foot_mark_put(id, rules, registry, effects);
         //75C1EA: the boundary placement tail clears +68A after Mark(PUT).
         //This is not the post-PerCell dead/limbo/falling exit at75C1F1.
         if let Some(e) = self.substrate.entities.get_mut(id) {
-            e.navigation.path_runtime.clear_scold_latch();
+            e.navigation.path_runtime_mut().clear_scold_latch();
         }
     }
 
@@ -152,7 +152,7 @@ impl Simulation {
             .as_ref()
             .and_then(|l| l.step_head())
             .unwrap_or(head);
-        super::path_markers::consume_walk_path_replay(&mut e.navigation.path_replay);
+        super::path_markers::consume_walk_path_replay(e.navigation.path_replay_mut());
         //75BDC0: SetLocation (vt+0x1B4) at the completed head.
         ground_pose::foot_set_location(
             &mut self.substrate.entities,
@@ -165,8 +165,8 @@ impl Simulation {
             return Ok(false);
         };
         e.navigation
-            .path_replay
-            .set_reference_cell(Some((e.position.rx() as i16, e.position.ry() as i16)));
+            .path_replay_mut()
+            .rebase((e.position.rx() as i16, e.position.ry() as i16));
         //Infantry+1CC=5F5FA0; marked is already false, so the SetHeight0
         //receiver samples current ground+OnBridge without nested Mark calls.
         let on_bridge = e.on_bridge();
@@ -177,7 +177,7 @@ impl Simulation {
             self.path_grid.as_deref(),
         );
         //75BE11 clears only the paid-step latch before head retirement/PerCell.
-        e.navigation.path_runtime.set_path_blocked(false);
+        e.navigation.path_runtime_mut().clear_blockage();
         let (sub_x, sub_y) = (e.position.sub_x(), e.position.sub_y());
         e.sub_cell.hold_offset(sub_x, sub_y);
         //75BE18: FindSubCellDest(null) retires the head, clearing its raw
@@ -194,7 +194,7 @@ impl Simulation {
         //An intermediate head retains its fraction. Native execution controls:
         //tools/spatial_oracle/foot_speed_owner.walk_arrival.json (Steam3e81a617).
         if let Some(e) = self.substrate.entities.get_mut(id)
-            && e.navigation.path_replay.remaining_directions().is_empty()
+            && e.navigation.path_replay().remaining_directions().is_empty()
         {
             e.foot_speed
                 .set_speed_fraction(crate::util::fixed_math::SIM_ZERO);
@@ -222,7 +222,7 @@ impl Simulation {
         //75BF77 follows the final Mark(PUT). The earlier post-PerCell exits
         //jump to75C1F1 and must retain the byte on a surviving object.
         if let Some(e) = self.substrate.entities.get_mut(id) {
-            e.navigation.path_runtime.clear_scold_latch();
+            e.navigation.path_runtime_mut().clear_scold_latch();
         }
         Ok(changed)
     }

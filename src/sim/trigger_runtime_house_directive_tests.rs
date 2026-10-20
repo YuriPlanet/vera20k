@@ -177,17 +177,17 @@ fn house_directive_make_ally_runs_both_directions_and_preserves_native_receipt()
         true
     ));
     assert!(crate::map::houses::is_allied_with(
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         "H0",
         "H1"
     ));
     assert!(crate::map::houses::is_allied_with(
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         "H1",
         "H0"
     ));
     assert!(!crate::map::houses::is_allied_with(
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         "H0",
         "H2"
     ));
@@ -222,7 +222,7 @@ fn house_directive_make_ally_runs_both_directions_and_preserves_native_receipt()
         true
     ));
     assert!(!crate::map::houses::is_allied_with(
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         "H0",
         "H2"
     ));

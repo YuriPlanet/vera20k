@@ -617,7 +617,7 @@ fn losing_robot_power_drops_water_hover_and_keeps_land_hover_alive() {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(water_cell.0, water_cell.1)
+            .cell_mut_for_test(water_cell.0, water_cell.1)
             .unwrap();
         terrain_cell.land_type = 2;
         terrain_cell.base_land_type = 2;

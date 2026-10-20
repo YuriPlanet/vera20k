@@ -125,19 +125,11 @@ struct LiveOrdinary<'a, 'world> {
 
 impl LiveOrdinary<'_, '_> {
     fn overlay_identity(&self, cell: Cell) -> i32 {
-        match cell {
-            Cell::Real(index) => self.live.terrain().cells()[index]
-                .bridge_facts
-                .overlay_id
-                .map_or(-1, i32::from),
-            Cell::Dummy => {
-                self.live
-                    .terrain()
-                    .shared_cell_dummy()
-                    .overlay_identity_state()
-                    .0
-            }
-        }
+        self.live
+            .sim
+            .cell_overlay(cell)
+            .overlay_id
+            .map_or(-1, i32::from)
     }
 }
 
@@ -255,16 +247,17 @@ impl OrdinaryBridgeHost for LiveOrdinary<'_, '_> {
         {
             self.live.collapsed = true;
         }
-        self.live
-            .sim
-            .resolved_terrain
-            .as_mut()
-            .unwrap()
-            .write_native_cell_overlay(cell, Some(overlay));
-        if let Some((x, y)) = self.live.real_coord(cell)
-            && let Some(grid) = self.live.sim.overlay_grid.as_mut()
-        {
-            grid.write_bridge_overlay_identity(x, y, overlay);
+        match self.live.real_coord(cell) {
+            Some((x, y)) => {
+                if let Some(grid) = self.live.sim.overlay_grid.as_mut() {
+                    grid.write_bridge_overlay_identity(x, y, overlay);
+                }
+            }
+            None => self
+                .live
+                .terrain()
+                .shared_cell_dummy()
+                .write_overlay_identity(i32::from(overlay)),
         }
         self.live.retain_real_write(cell);
     }
@@ -272,7 +265,8 @@ impl OrdinaryBridgeHost for LiveOrdinary<'_, '_> {
     fn radar(&mut self, p: CellCoord) {
         self.live
             .sim
-            .mark_radar_terrain_dirty_cells([(p.0 as u16, p.1 as u16)]);
+            .dirty_cells
+            .mark_radar([(p.0 as u16, p.1 as u16)]);
     }
     fn recalc(&mut self, cell: Cell) -> Result<(), String> {
         self.live.recalc_cell(cell, -1)

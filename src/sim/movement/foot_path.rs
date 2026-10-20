@@ -212,7 +212,8 @@ impl Simulation {
                 return Ok(true);
             }
             let direction = if foot.foot_speed.applied_fraction() == SIM_ZERO {
-                let Some(&word) = foot.navigation.path_replay.remaining_directions().first() else {
+                let Some(&word) = foot.navigation.path_replay().remaining_directions().first()
+                else {
                     return Ok(false);
                 };
                 word & 7
@@ -373,7 +374,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
         };
-        if actor.navigation.path_runtime.scold_latch_raw() != 0
+        if actor.navigation.path_runtime().scold_latch_raw() != 0
             && let Some(sound_id) = rules.general.scold_sound.clone()
         {
             self.sound_events
@@ -430,18 +431,18 @@ impl Simulation {
             request.urgency,
         ) {
             use super::fresh_oracle_seam::SuppliedPath;
-            let queue = &mut self
+            let queue = self
                 .substrate
                 .entities
                 .get_mut(id)
                 .ok_or("retired Find_Path requester")?
                 .navigation
-                .path_replay;
+                .path_replay_mut();
             match path {
                 SuppliedPath::FoundUnchanged => return Ok(FindPathResult::Route),
                 SuppliedPath::Found(words) => {
                     queue.set_directions_for_test(words);
-                    queue.set_cursor(0);
+                    queue.set_cursor_for_test(0);
                     return Ok(FindPathResult::Route);
                 }
                 SuppliedPath::Failed => return Ok(FindPathResult::Failed),
@@ -455,7 +456,7 @@ impl Simulation {
             .get_mut(id)
             .ok_or("retired Find_Path requester")?
             .navigation
-            .path_replay
+            .path_replay_mut()
             .clear_live_head();
         let Some(answer) =
             self.find_path_target_answer(id, request.destination, rules, registry)?
@@ -492,7 +493,7 @@ impl Simulation {
                     .get_mut(id)
                     .ok_or("retired Find_Path core receiver")?
                     .navigation
-                    .path_runtime
+                    .path_runtime_mut()
                     .start_movement(frame, rules.general.path_delay_ticks());
                 self.foot_stop_driver(id, rules, registry, frame_effects)?;
                 self.finish_find_path_failure(id, goal, rules, registry, frame_effects)?;
@@ -609,7 +610,7 @@ impl Simulation {
             .get_mut(id)
             .ok_or("retired Find_Path core receiver")?;
         //4D3EB2..3ECA: +640 = (Frame, 0) on success and failure alike.
-        actor.navigation.path_runtime.start_movement(frame, 0);
+        actor.navigation.path_runtime_mut().start_movement(frame, 0);
         use super::movement_path::MovePathFailure;
         use crate::sim::pathfinding::zone_search::PathSearchFailure as Search;
         match searched {
@@ -673,7 +674,7 @@ impl Simulation {
             interner: &self.interner,
             grid,
             terrain: self.resolved_terrain.as_ref(),
-            playfield_bounds: self.playfield_bounds,
+            playfield_bounds: self.playfield_bounds(),
         }
         .reading(
             &self.substrate.entities,
@@ -718,7 +719,7 @@ impl Simulation {
                 path_grid: Some(grid),
                 zone_grid: self.zone_grid.as_ref(),
                 resolved_terrain: self.resolved_terrain.as_ref(),
-                playfield_bounds: self.playfield_bounds,
+                playfield_bounds: self.playfield_bounds(),
                 blocker_neighbor_counts: Some(counts),
             },
             &entry,
@@ -1123,14 +1124,14 @@ impl Simulation {
             zones.bridge_records(),
             &start_cell,
             start_bridge,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )?;
         let goal_projection = live_hierarchy_projection(
             terrain,
             zones.bridge_records(),
             &goal_cell,
             goal_bridge,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )?;
         let hierarchy = zones
             .hierarchy_for(object.movement_zone)
@@ -1188,7 +1189,7 @@ impl Simulation {
                     packed(goal),
                     0,
                     fine_path[count - 2],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1197,7 +1198,7 @@ impl Simulation {
                     packed(goal),
                     0,
                     fine_path[count - 1],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1215,7 +1216,7 @@ impl Simulation {
                     packed(start),
                     0,
                     fine_path[1],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1224,7 +1225,7 @@ impl Simulation {
                     packed(start),
                     0,
                     fine_path[0],
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                 )?;
             }
             if adjacent == (0, 0) {
@@ -1361,7 +1362,7 @@ impl Simulation {
             .as_ref()
             .ok_or("Foot precheck requires zone topology")?;
         let bounds = self
-            .playfield_bounds
+            .playfield_bounds()
             .ok_or("Foot precheck requires playfield bounds")?;
         let size = self
             .map_size_diamond()
@@ -1453,9 +1454,14 @@ mod tests {
             ));
             sim.zone_grid = Some(zones);
             let goal = DriveCoord::cell(goal_cell.0, goal_cell.1, 0);
-            let request =
-                FootPathRequest::track(&sim.substrate.entities, id, goal, 0, sim.playfield_bounds)
-                    .unwrap();
+            let request = FootPathRequest::track(
+                &sim.substrate.entities,
+                id,
+                goal,
+                0,
+                sim.playfield_bounds(),
+            )
+            .unwrap();
             let found = sim
                 .search_foot_path(
                     &request,
@@ -1471,7 +1477,7 @@ mod tests {
                 .get(id)
                 .unwrap()
                 .navigation
-                .path_replay
+                .path_replay()
                 .route_cells();
             assert_eq!(found.is_ok(), !in_playfield, "in_playfield={in_playfield}");
             assert_eq!(

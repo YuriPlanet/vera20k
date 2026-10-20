@@ -19,8 +19,8 @@ fn fixture() -> (Simulation, RuleSet, InternedId, [InternedId; 2]) {
     .unwrap();
     let (sim, owner) = simulation(&rules);
     let types = [
-        sim.interner.get("FIRST").unwrap(),
-        sim.interner.get("LATER").unwrap(),
+        sim.interner().get("FIRST").unwrap(),
+        sim.interner().get("LATER").unwrap(),
     ];
     (sim, rules, owner, types)
 }
@@ -29,13 +29,14 @@ fn simulation(rules: &RuleSet) -> (Simulation, InternedId) {
     let mut sim = load_fixture_simulation(true);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    let owner = sim.interner.intern("Americans");
-    sim.houses
+    let owner = sim.intern("Americans");
+    sim.houses_mut_for_test()
         .register(crate::sim::house_state::HouseState::new(
             owner, 0, None, true, 50_000, 10,
         ));
-    sim.session.set_current_house_for_test(Some(owner));
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    *sim.scenario_rng_mut_for_test() = crate::sim::rng::SimRng::new(0);
     (sim, owner)
 }
 
@@ -86,7 +87,7 @@ fn scrolling_fixture() -> (Simulation, RuleSet, InternedId, Vec<Cameo>) {
                 .map(|name| {
                     let kind = rules.object(name).unwrap();
                     Cameo {
-                        id: SavedCameoId::Object(sim.interner.get(name).unwrap()),
+                        id: SavedCameoId::Object(sim.interner().get(name).unwrap()),
                         tab,
                         available: true,
                         key: CameoKey::Techno {
@@ -302,7 +303,7 @@ fn nonzero_rows_on_every_strip_roundtrip_prepare_commit_and_refresh() {
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
     runtime
         .simulation
-        .houses
+        .houses_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .economy_mut_for_test()
@@ -323,7 +324,7 @@ fn nonzero_rows_on_every_strip_roundtrip_prepare_commit_and_refresh() {
     assert_eq!(strips.scroll_rows(), SAVED_SCROLL_ROWS);
     assert_eq!(strips.saved_identities(), *saved.strips());
     assert_eq!(
-        runtime.simulation.houses[&owner].economy().credits(),
+        runtime.simulation.houses()[&owner].economy().credits(),
         50_000
     );
     assert_eq!(outgoing.saved_order(), Some(saved.clone()));

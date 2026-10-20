@@ -108,7 +108,7 @@ impl Simulation {
                 .get_mut(id)
                 .unwrap()
                 .navigation
-                .neighbor_state
+                .neighbor_state_mut()
                 .cell = cell;
         }
         high_flight
@@ -126,7 +126,7 @@ impl Simulation {
             .get(id)
             .unwrap()
             .navigation
-            .neighbor_state
+            .neighbor_state()
             .cell;
         if old == (0, 0) {
             return;
@@ -138,7 +138,7 @@ impl Simulation {
             .get_mut(id)
             .unwrap()
             .navigation
-            .neighbor_state
+            .neighbor_state_mut()
             .cell = cell;
         self.adjust_foot_neighbors(cell, true);
     }
@@ -151,7 +151,7 @@ impl Simulation {
         }
         let entity = self.substrate.entities.get(id).unwrap();
         if !entity.lifecycle.in_limbo() {
-            self.adjust_foot_neighbors(entity.navigation.neighbor_state.cell, false);
+            self.adjust_foot_neighbors(entity.navigation.neighbor_state().cell, false);
         }
     }
 
@@ -169,7 +169,7 @@ impl Simulation {
                 .get_mut(id)
                 .unwrap()
                 .navigation
-                .neighbor_state
+                .neighbor_state_mut()
                 .cell = cell;
         }
     }
@@ -182,7 +182,8 @@ impl Simulation {
         });
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             let centre_cell = |n: i16| ((i32::from(n) * 256 + 128) / 256) as i16;
-            entity.navigation.neighbor_state.cell = (centre_cell(cell.0), centre_cell(cell.1));
+            entity.navigation.neighbor_state_mut().cell =
+                (centre_cell(cell.0), centre_cell(cell.1));
         }
     }
 
@@ -198,7 +199,7 @@ impl Simulation {
             .get(id)
             .unwrap()
             .navigation
-            .neighbor_state
+            .neighbor_state()
             .cell;
         if old != (0, 0) {
             self.adjust_foot_neighbors(old, false);
@@ -208,7 +209,7 @@ impl Simulation {
             .get_mut(id)
             .unwrap()
             .navigation
-            .neighbor_state
+            .neighbor_state_mut()
             .cell = cell;
         self.adjust_foot_neighbors(cell, true);
     }
@@ -268,11 +269,11 @@ mod tests {
             entity.lifecycle.set_in_limbo_for_test(false);
             entity
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap_or(true));
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap_or(true));
             entity
                 .position
                 .set_exact_z_leptons_for_test(Some(input["z"].as_i64().unwrap_or(0) as i32));
-            entity.navigation.neighbor_state.cell = (
+            entity.navigation.neighbor_state_mut().cell = (
                 input["old"][0].as_i64().unwrap() as i16,
                 input["old"][1].as_i64().unwrap() as i16,
             );
@@ -318,7 +319,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .navigation
-                .neighbor_state
+                .neighbor_state()
                 .cell;
             assert_eq!(
                 serde_json::json!([cell.0, cell.1]),
@@ -357,7 +358,7 @@ mod tests {
         entity.set_type_ref_for_test(sim.intern("MTNK"));
         entity.set_owner_for_test(sim.intern("Americans"));
         sim.substrate.entities.insert(entity);
-        sim.substrate.next_stable_object_id = 2;
+        sim.set_next_stable_object_id_for_test(2);
         sim.reveal(1);
         assert_eq!(
             sim.substrate
@@ -365,7 +366,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .navigation
-                .neighbor_state
+                .neighbor_state()
                 .cell,
             (3, 3)
         );
@@ -401,7 +402,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .navigation
-                .neighbor_state
+                .neighbor_state()
                 .cell,
             (3, 3)
         );
@@ -432,7 +433,7 @@ mod tests {
             .get_mut(1)
             .unwrap()
             .navigation
-            .neighbor_state
+            .neighbor_state_mut()
             .cell = (5, 3);
         assert_ne!(restored.state_hash(), hash);
         restored
@@ -441,7 +442,7 @@ mod tests {
             .get_mut(1)
             .unwrap()
             .navigation
-            .neighbor_state
+            .neighbor_state_mut()
             .cell = (3, 3);
         restored.resolved_terrain = sim.resolved_terrain.clone();
         restored.techno_limbo(1);
@@ -471,7 +472,7 @@ mod tests {
                 .get(1)
                 .unwrap()
                 .navigation
-                .neighbor_state
+                .neighbor_state()
                 .cell,
             (3, 3)
         );
@@ -496,7 +497,7 @@ mod tests {
             let mut sim = fixture(128, 0);
             let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 64, 64);
             let old = &row["before"]["neighbor_cell"];
-            entity.navigation.neighbor_state.cell = (
+            entity.navigation.neighbor_state_mut().cell = (
                 old[0].as_i64().unwrap() as i16,
                 old[1].as_i64().unwrap() as i16,
             );

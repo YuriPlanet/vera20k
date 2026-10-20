@@ -32,7 +32,12 @@ pub(super) fn sample(latched: &mut bool, rotating: bool) -> bool {
 /// clearing +4C, unless the descriptor (or Foot queue8) and turn gates admit.
 /// The world TrackProcess entry calls this once before the scalar prefix.
 pub(super) fn admit_track_entry(entity: &mut GameEntity, has_turret: bool) -> bool {
-    let queue_eight = entity.navigation.path_replay.remaining_directions().first() == Some(&8);
+    let queue_eight = entity
+        .navigation
+        .path_replay()
+        .remaining_directions()
+        .first()
+        == Some(&8);
     let Some(loco) = entity.locomotor.as_mut() else {
         return false;
     };
@@ -179,7 +184,7 @@ impl Simulation {
             && loco.track_head(TrackFamily::Drive).is_none()
             && entity
                 .navigation
-                .path_replay
+                .path_replay()
                 .remaining_directions()
                 .is_empty()
             && entity.foot_speed.applied_fraction() > crate::util::fixed_math::SIM_ZERO
@@ -213,7 +218,7 @@ impl Simulation {
         if !moving
             && entity
                 .navigation
-                .path_replay
+                .path_replay()
                 .remaining_directions()
                 .is_empty()
         {

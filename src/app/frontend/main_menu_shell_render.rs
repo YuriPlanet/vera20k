@@ -477,7 +477,7 @@ fn render_main_menu_shell_to_target_inner(
     // through the quit fade (nothing repaints after OK); here the backdrop
     // shows alone (evidence note residual).
     let backdrop =
-        state.frontend.exit_confirm_modal.is_some() || state.frontend.quit_cascade.is_some();
+        state.frontend.shell_message_box.is_some() || state.frontend.quit_cascade.is_some();
     if !backdrop {
         ensure_movie_for_current_layout(state, Ra2tsDialogOwner::MainMenu0xE2)?;
     }
@@ -628,7 +628,7 @@ fn render_main_menu_shell_to_target_inner(
     // Quit-confirm SHP modal overlay (blocking; drawn over the menu, under the
     // cursor). `None` when the modal is closed or the skirmish atlas (which holds
     // PUDLGBGN/MNBTTN) is not loaded.
-    let modal_overlay = build_exit_confirm_modal_overlay(state);
+    let modal_overlay = build_shell_message_box_overlay(state);
     let skirmish_chrome = state.frontend.skirmish_shell_chrome.as_ref();
 
     state.renderer.batch_renderer.update_camera(
@@ -884,14 +884,14 @@ const EXIT_CONFIRM_MODAL_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDe
     text: 0.00040,
 };
 
-/// Build the quit-confirm (0x120) SHP modal overlay when it is open: the centered
+/// Build the shell message box (0x120) SHP modal overlay when it is open: the centered
 /// PUDLGBGN panel + MNBTTN OK/Cancel buttons + body/OK/Cancel labels, sourced from
 /// the skirmish chrome atlas (the only atlas that loads PUDLGBGN/MNBTTN). The
 /// pressed button is read from the shared shell controller (its top dialog is the
 /// modal while open). Returns `None` when the modal is closed or its art is absent.
-fn build_exit_confirm_modal_overlay(state: &AppState) -> Option<shell_paint::ModalDraw> {
+fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::ModalDraw> {
     use crate::ui::shell::modal;
-    let modal_state = state.frontend.exit_confirm_modal.as_ref()?;
+    let modal_state = &state.frontend.shell_message_box.as_ref()?.labels;
     let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
     let layout = modal::quit_confirm_layout(
         state.renderer.gpu.config.width as i32,

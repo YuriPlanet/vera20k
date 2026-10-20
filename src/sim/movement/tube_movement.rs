@@ -211,7 +211,7 @@ impl Simulation {
             .entities
             .get(id)
             .ok_or("retired Walk tube owner")?;
-        let Some(word) = tube_word(&actor.navigation.path_replay, &actor.position, terrain) else {
+        let Some(word) = tube_word(actor.navigation.path_replay(), &actor.position, terrain) else {
             return Ok(false);
         };
         match word {
@@ -220,7 +220,7 @@ impl Simulation {
             }
             TubeWord::NoTube => {
                 if let Some(actor) = self.substrate.entities.get_mut(id) {
-                    actor.navigation.path_replay.clear_live_head();
+                    actor.navigation.path_replay_mut().clear_live_head();
                     if let Some(locomotor) = actor.locomotor.as_mut() {
                         locomotor.set_step_head(None);
                     }
@@ -274,7 +274,7 @@ impl Simulation {
         if let Some(locomotor) = actor.locomotor.as_mut() {
             locomotor.set_step_head(Some(head));
         }
-        super::path_markers::consume_path_replay(&mut actor.navigation.path_replay, 1);
+        actor.navigation.path_replay_mut().consume(1);
         actor.low_bridge_tube_state = Some(LowBridgeTubeMovementState {
             tube_id,
             cursor: 0,
@@ -327,7 +327,7 @@ impl Simulation {
         {
             return Ok(false);
         }
-        let Some(word) = tube_word(&actor.navigation.path_replay, &actor.position, terrain) else {
+        let Some(word) = tube_word(actor.navigation.path_replay(), &actor.position, terrain) else {
             return Ok(false);
         };
         // The target reads only the Location and the floor, which Mark(UP)
@@ -363,7 +363,7 @@ impl Simulation {
         match entry {
             Some((tube_id, head, target)) => {
                 locomotor.store_track_head(family, Some(head));
-                super::path_markers::consume_path_replay(&mut actor.navigation.path_replay, 1);
+                actor.navigation.path_replay_mut().consume(1);
                 actor.low_bridge_tube_state = Some(LowBridgeTubeMovementState {
                     tube_id,
                     cursor: 0,
@@ -371,7 +371,7 @@ impl Simulation {
                 });
                 locomotor.store_track_valid(family, true);
             }
-            None => actor.navigation.path_replay.clear_live_head(),
+            None => actor.navigation.path_replay_mut().clear_live_head(),
         }
         progress.retire_selector();
         locomotor.store_track_progress(family, progress);
@@ -991,7 +991,7 @@ mod tests {
             true,
         );
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.lifecycle.set_cell_marked(true);
+        entity.lifecycle.set_cell_marked_for_test(true);
         entity.locomotor = Some(LocomotorState::for_test_kind(
             crate::rules::locomotor_type::LocomotorKind::Drive,
         ));
@@ -1016,7 +1016,7 @@ mod tests {
         .expect("rules");
         let mut terrain = explicit_terrain(vec![2, 2]);
         for x in 0..=3 {
-            terrain.cell_mut(x, 0).unwrap().speed_costs.foot = Some(100);
+            terrain.cell_mut_for_test(x, 0).unwrap().speed_costs.foot = Some(100);
         }
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
@@ -1036,7 +1036,7 @@ mod tests {
             true,
         );
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.lifecycle.set_cell_marked(false);
+        entity.lifecycle.set_cell_marked_for_test(false);
         let spot = DriveCoord {
             x: 2 * 256 + 64,
             y: 192,
@@ -1074,7 +1074,7 @@ mod tests {
     #[test]
     fn infantry_leaves_a_tube_at_the_floor_of_its_spot() {
         let (mut sim, rules) = infantry_at_tube_end();
-        sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+        sim.set_playfield_bounds_for_test(Some(crate::sim::arena_fixture::OPEN_PLAYFIELD));
         sim.substrate
             .entities
             .get_mut(1)
@@ -1083,7 +1083,7 @@ mod tests {
         sim.resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(2, 0)
+            .cell_mut_for_test(2, 0)
             .unwrap()
             .slope_type = 1;
         let turn = sim
@@ -1136,8 +1136,9 @@ mod tests {
         infantry.locomotor.as_mut().unwrap().set_step_head(None);
         infantry.position.put_location(spot);
         infantry.set_sub_cell(Some(3));
-        infantry.navigation.path_replay =
-            crate::sim::components::FootPathQueue::for_test(vec![8, 2], 0, Some((0, 0)));
+        infantry.navigation.set_path_replay_for_test(
+            crate::sim::components::FootPathQueue::for_test(vec![8, 2], 0, Some((0, 0))),
+        );
         infantry
             .navigation
             .set_nav_com_for_test(Some(NavTargetRef::Cell { rx: 3, ry: 0 }));
@@ -1229,7 +1230,7 @@ mod tests {
         assert!(
             infantry
                 .navigation
-                .path_replay
+                .path_replay()
                 .remaining_directions()
                 .is_empty()
         );
@@ -1282,10 +1283,11 @@ mod tests {
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
             0,
         );
-        vehicle.lifecycle.set_cell_marked(false);
+        vehicle.lifecycle.set_cell_marked_for_test(false);
         vehicle.position.put_location(DriveCoord::cell(rx, 0, 0));
-        vehicle.navigation.path_replay =
-            crate::sim::components::FootPathQueue::for_test(vec![8, 2], 0, Some((rx as i16, 0)));
+        vehicle.navigation.set_path_replay_for_test(
+            crate::sim::components::FootPathQueue::for_test(vec![8, 2], 0, Some((rx as i16, 0))),
+        );
         vehicle
             .navigation
             .set_nav_com_for_test(Some(NavTargetRef::Cell { rx: 3, ry: 0 }));
@@ -1366,9 +1368,9 @@ mod tests {
         assert!(!sim.substrate.occupancy.contains_entity(0, 0, 1));
         assert_eq!(vehicle_bits(&sim, 0), 0);
         assert!(vehicle.foot_occupation_enabled.get());
-        assert_eq!(vehicle.navigation.path_replay.remaining_directions(), [2]);
+        assert_eq!(vehicle.navigation.path_replay().remaining_directions(), [2]);
         assert_eq!(
-            vehicle.navigation.path_replay.reference_cell(),
+            vehicle.navigation.path_replay().reference_cell(),
             Some((0, 0))
         );
         assert_eq!(
@@ -1384,8 +1386,9 @@ mod tests {
         let (mut sim, rules) = unit_driving_into(2);
         sim.remove_entity_occupancy(1);
         let vehicle = sim.substrate.entities.get_mut(1).unwrap();
-        vehicle.navigation.path_replay =
-            crate::sim::components::FootPathQueue::for_test(vec![8, 2], 1, Some((0, 0)));
+        vehicle.navigation.set_path_replay_for_test(
+            crate::sim::components::FootPathQueue::for_test(vec![8, 2], 1, Some((0, 0))),
+        );
         vehicle.low_bridge_tube_state = Some(LowBridgeTubeMovementState {
             tube_id: TubeId(0),
             cursor: 2,

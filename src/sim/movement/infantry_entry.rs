@@ -173,7 +173,7 @@ mod tests {
                 terrain.write_native_cell_level(cell, level);
                 terrain.write_native_cell_flags(cell, flags);
                 terrain
-                    .cell_mut(coord.0 as u16, coord.1 as u16)
+                    .cell_mut_for_test(coord.0 as u16, coord.1 as u16)
                     .unwrap()
                     .slope_type = slope;
                 cell

@@ -102,7 +102,7 @@ fn native_track_fixture(kind: LocomotorKind, budget: i32) -> (Simulation, TrackI
     entity.locomotor = Some(LocomotorState::for_test_kind(kind));
     entity.lifecycle.set_object_alive_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(true);
+    entity.lifecycle.set_cell_marked_for_test(true);
     let head = DriveCoord::cell(10, 9, 0);
     let track = TrackProgress::for_test(0, 0, false, 0);
     if kind == LocomotorKind::Drive {

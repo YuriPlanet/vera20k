@@ -142,7 +142,6 @@ impl ModalResult {
     /// Map a resolved message-box control id to its native result, or `None` for a
     /// control that produces no result (the body static). OK(`0x5AE`)->0,
     /// Cancel(control 2)->1, third(`0x5AF`)->2.
-    #[cfg(test)]
     pub fn from_message_box_control(control: u16) -> Option<ModalResult> {
         let code = match control {
             control::OK => 0,

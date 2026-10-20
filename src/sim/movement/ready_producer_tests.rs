@@ -169,8 +169,8 @@ fn retained_motion_and_walk_readiness_match_original_queries() {
                 else {
                     unreachable!()
                 };
-                state.set_head(head);
-                state.set_moving(input["moving"].as_bool().unwrap());
+                state.set_head_for_test(head);
+                state.set_moving_for_test(input["moving"].as_bool().unwrap());
                 // The harness pokes Foot+0x578 directly, including -1, which
                 // SetSpeedFraction (its only writer) never stores: the owner
                 // stores +0 for it. IsMovingNow's `<= 0` test (0x0075AB52..63)
@@ -183,11 +183,11 @@ fn retained_motion_and_walk_readiness_match_original_queries() {
         }
         // A Foot+5E0 route must not affect any represented query.
         for has_order in [false, true] {
-            entity.navigation.path_replay = if has_order {
+            entity.navigation.set_path_replay_for_test(if has_order {
                 order_route()
             } else {
                 Default::default()
-            };
+            });
             entity.navigation.set_nav_com_for_test(
                 has_order.then(|| crate::sim::components::NavTargetRef::cell(6, 5)),
             );

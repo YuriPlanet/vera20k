@@ -219,7 +219,7 @@ fn tactical_world_tip_text(
         world.1,
         crate::app::input::dispatch::CLICK_SELECT_RADIUS,
         Some(rules),
-        Some(&sim.houses),
+        Some(sim.houses()),
         height_map,
         crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
         Some(view.interner()),
@@ -265,7 +265,7 @@ fn tactical_world_tip_text(
                 && !entity.is_disguised_to(
                     viewer,
                     Some(view.fog()),
-                    Some(&sim.house_alliances),
+                    Some(sim.house_alliances()),
                     view.interner(),
                 ) => {}
         // Positive TurretCount can reach HasTurretTooltips and the passenger/
@@ -870,16 +870,17 @@ mod tests {
         sim.resolve_type_handles(&rules);
         let owner = sim.intern(owner_name);
         let viewer = sim.intern(viewer_name);
-        sim.houses
+        sim.houses_mut_for_test()
             .register(HouseState::new(viewer, 0, None, true, 50_000, 10));
         if owner != viewer {
-            sim.houses
+            sim.houses_mut_for_test()
                 .register(HouseState::new(owner, 1, None, false, 50_000, 10));
         }
-        sim.session.set_current_house_for_test(Some(viewer));
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(viewer));
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
-        sim.fog
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+        sim.fog_mut_for_test()
             .reveal_cells_for_owner(viewer, (0..32).flat_map(|y| (0..32).map(move |x| (x, y))));
         // Admitted, mapped constructor prior. Paid production is a separate
         // witness; this test exercises the actual text/pick owners. Stock E2
@@ -906,23 +907,23 @@ mod tests {
         let world = crate::app::presentation::instances::interpolated_screen_position_entity(
             sim.entities().get(entity_id).unwrap(),
         );
-        let heights = sim.resolved_terrain.as_ref().unwrap().build_height_map();
+        let heights = sim.resolved_terrain().unwrap().build_height_map();
         let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
         assert_eq!(
             crate::app::input::entity_pick::pick_entity_at_point(
                 sim.entities(),
                 &order,
-                Some(&sim.fog),
+                Some(sim.fog()),
                 Some(viewer_name),
                 world.0,
                 world.1,
                 0.0,
                 Some(&rules),
-                Some(&sim.houses),
+                Some(sim.houses()),
                 &heights,
                 None,
-                Some(&sim.interner),
-                sim.resolved_terrain.as_ref(),
+                Some(sim.interner()),
+                sim.resolved_terrain(),
             ),
             Some(entity_id),
             "fixture must reach the same ordinary picker before testing the text"

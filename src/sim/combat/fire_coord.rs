@@ -1029,7 +1029,7 @@ mod tests {
             ));
             source
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap());
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap());
             let obj = rules.object("DISK").unwrap();
             assert_eq!(obj.has_turret, input["has_turret"].as_bool().unwrap());
             assert_eq!(

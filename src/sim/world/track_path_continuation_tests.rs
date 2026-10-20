@@ -102,7 +102,8 @@ fn unit(
     sim.mission_assign_exact(id, MissionId::from_known(mission), 100)
         .unwrap();
     let e = sim.substrate.entities.get_mut(id).unwrap();
-    e.navigation.path_replay = FootPathQueue::for_test(vec![2, 3, 4, 5], 0, Some((9, 8)));
+    e.navigation
+        .set_path_replay_for_test(FootPathQueue::for_test(vec![2, 3, 4, 5], 0, Some((9, 8))));
     (sim, rules, registry, id)
 }
 
@@ -123,7 +124,7 @@ fn order(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)) {
 /// object-NavCom trim (0x4B2770) writes -1 into an installed route; these
 /// orders name cells.
 fn route_installed(e: &crate::sim::game_entity::GameEntity) -> bool {
-    let words = &e.navigation.path_replay.directions();
+    let words = &e.navigation.path_replay().directions();
     !words.is_empty() && !words.contains(&u8::MAX)
 }
 
@@ -156,7 +157,7 @@ fn compare(sim: &Simulation, id: u64, row: &Value, outcome: Option<FootPathOutco
             .unwrap();
         (s.destination(), s.head_to(), s.track().turn_index())
     };
-    let p = &e.navigation.path_runtime;
+    let p = e.navigation.path_runtime();
     let nav = e.navigation.nav_com().map(|n| match n {
         NavTargetRef::Cell { rx, ry } => json!([rx, ry]),
         other => panic!("cell fixture, got {other:?}"),
@@ -192,7 +193,7 @@ fn compare(sim: &Simulation, id: u64, row: &Value, outcome: Option<FootPathOutco
         let head = head.unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         fields.push(("head", json!([head.x, head.y, head.z])));
         fields.push(("selector", json!(selector)));
-        fields.push(("path", json!(words(&e.navigation.path_replay))));
+        fields.push(("path", json!(words(e.navigation.path_replay()))));
     }
     for (key, actual) in fields {
         assert_eq!(actual, state[key], "{key}: {row}");
@@ -224,18 +225,18 @@ fn supplied_find_path_results_take_the_native_continuations() {
         );
         let e = sim.substrate.entities.get_mut(id).unwrap();
         if input["empty_path"] == true {
-            e.navigation.path_replay.clear_live_head();
+            e.navigation.path_replay_mut().clear_live_head();
         }
         e.navigation
-            .path_runtime
-            .set_retries_left(input["retries"].as_u64().unwrap_or(10) as u32);
+            .path_runtime_mut()
+            .set_retries_left_for_test(input["retries"].as_u64().unwrap_or(10) as u32);
         sim.session.set_binary_frame_for_test(101);
         if row["events"].as_array().unwrap().is_empty() {
             // 0x741C54..0x741C78: Enter without a radio contact keeps the path
             // word, so Process never reaches the no-queue arm.
             let e = sim.substrate.entities.get(id).unwrap();
             assert_eq!(
-                e.navigation.path_replay.remaining_directions(),
+                e.navigation.path_replay().remaining_directions(),
                 &[2, 3, 4, 5]
             );
             compare(&sim, id, &row, None);
@@ -245,7 +246,7 @@ fn supplied_find_path_results_take_the_native_continuations() {
         let e = sim.substrate.entities.get_mut(id).unwrap();
         // 0x4B284B / 0x6A1EA0: the caller arms PathDelay before Find_Path.
         e.navigation
-            .path_runtime
+            .path_runtime_mut()
             .start_movement(101, rules.general.path_delay_ticks());
         let found = if input["find_path"] == "found" {
             let mut directions: Vec<u8> = input["route"]
@@ -255,8 +256,10 @@ fn supplied_find_path_results_take_the_native_continuations() {
                 .map(|v| v.as_u64().unwrap() as u8)
                 .collect();
             directions.resize(24, u8::MAX);
-            e.navigation.path_replay.set_directions_for_test(directions);
-            e.navigation.path_replay.set_cursor(0);
+            e.navigation
+                .path_replay_mut()
+                .set_directions_for_test(directions);
+            e.navigation.path_replay_mut().set_cursor_for_test(0);
             FindPathResult::Route
         } else {
             FindPathResult::Failed
@@ -313,7 +316,7 @@ fn far_native_rows_through_the_process_corridor() {
             // body already faces east (a turn would return after Do_Turn,
             // 0x4B343B, as drive_fresh_turn records).
             let e = sim.substrate.entities.get(id).unwrap();
-            assert_eq!(words(&e.navigation.path_replay)[..3], [2, 2, 2]);
+            assert_eq!(words(e.navigation.path_replay())[..3], [2, 2, 2]);
             assert!(crate::sim::movement::track_head::committed_track_head(e).is_some());
         }
         checked += 1;
@@ -387,11 +390,13 @@ fn post_warp_rows_refuse_the_own_cell_search() {
         }
         let (mut sim, rules, registry, id) = unit(input);
         let e = sim.substrate.entities.get_mut(id).unwrap();
-        e.navigation.path_replay.clear_live_head();
-        e.navigation.path_runtime.set_retries_left(10);
+        e.navigation.path_replay_mut().clear_live_head();
+        e.navigation
+            .path_runtime_mut()
+            .set_retries_left_for_test(10);
         // The oracle fixture's Foot+668 prestate, which only a setter rewrites.
         e.navigation
-            .path_runtime
+            .path_runtime_mut()
             .set_blocked_timer_for_test(crate::sim::timer::CdTimer::started(40, 6));
         let own = crate::sim::movement::ground_pose::position_world_coord(&e.position);
         assert!(sim.force_track(
@@ -708,9 +713,9 @@ fn a_teleporter_its_redirect_stops_waits_behind_a_moving_tank_without_a_destinat
         "the ladder cleared the head"
     );
     assert!(
-        words(&e.navigation.path_replay).starts_with(&[-1, 2]),
+        words(e.navigation.path_replay()).starts_with(&[-1, 2]),
         "the redirect's route without its head word: {:?}",
-        words(&e.navigation.path_replay)
+        words(e.navigation.path_replay())
     );
 }
 
@@ -740,7 +745,7 @@ fn batched_the_teleporter_ladder_waits_and_keeps_the_redirect_navcom() {
     let e = sim.substrate.entities.get(miner).unwrap();
     assert!(e.navigation.nav_com().is_some(), "no NULL destination");
     assert!(
-        e.navigation.path_runtime.path_blocked(),
+        e.navigation.path_runtime().path_blocked(),
         "the ladder latched its blockage and waited"
     );
     assert_eq!((e.position.rx(), e.position.ry()), (13, 10));
@@ -851,7 +856,7 @@ fn first_process_request_waits_for_the_movement_timer_and_keeps_power() {
         order(&mut sim, &rules, id, (11, 10));
         let e = sim.substrate.entities.get_mut(id).unwrap();
         e.navigation
-            .path_runtime
+            .path_runtime_mut()
             .start_movement(100, input["delay"].as_i64().unwrap() as i32);
         sim.session.set_binary_frame_for_test(100);
         let grid = sim.path_grid.clone();
@@ -908,7 +913,8 @@ fn forced_track_end_requests_its_own_cell_in_the_same_process() {
     // Force_Track sets only the target fraction; with no acceleration factor
     // in the fixture rules the Accelerates ramp would never leave 0.
     let e = sim.substrate.entities.get_mut(id).unwrap();
-    e.navigation.path_replay = FootPathQueue::default();
+    e.navigation
+        .set_path_replay_for_test(FootPathQueue::default());
     e.mover_facts.set_drive_accelerates_for_test(false);
     let head = DriveCoord {
         x: 10 * 256,
@@ -941,7 +947,7 @@ fn forced_track_end_requests_its_own_cell_in_the_same_process() {
         );
         // The refusal arms +640 = (Frame, PathDelay) (0x4D4016..0x4D4041),
         // dating this Process's request.
-        let timer = e.navigation.path_runtime.movement_timer();
+        let timer = e.navigation.path_runtime().movement_timer();
         assert_eq!(
             (timer.start_frame(), timer.duration()),
             (frame as i32, rules.general.path_delay_ticks())
@@ -954,7 +960,7 @@ fn forced_track_end_requests_its_own_cell_in_the_same_process() {
         for later in frame + 1..frame + 10 {
             visit(&mut sim, &rules, &registry, id, later);
             let e = sim.substrate.entities.get(id).unwrap();
-            let timer = e.navigation.path_runtime.movement_timer();
+            let timer = e.navigation.path_runtime().movement_timer();
             assert_eq!(timer.start_frame(), frame as i32, "frame {later} searched");
             assert_eq!((e.position.rx(), e.position.ry()), cell);
         }
@@ -1079,15 +1085,16 @@ fn after_active_rows_gate_the_same_call_continuation() {
             }
         }
         let queue_head = int(input, "queue_head", -1);
-        e.navigation.path_replay = FootPathQueue::for_test(
-            if queue_head < 0 {
-                Vec::new()
-            } else {
-                vec![queue_head as u8]
-            },
-            0,
-            None,
-        );
+        e.navigation
+            .set_path_replay_for_test(FootPathQueue::for_test(
+                if queue_head < 0 {
+                    Vec::new()
+                } else {
+                    vec![queue_head as u8]
+                },
+                0,
+                None,
+            ));
         if int(input, "unit_6d1", 0) != 0 {
             let mut miner = crate::sim::miner::Miner::new(
                 crate::sim::miner::MinerKind::War,
@@ -1292,7 +1299,8 @@ fn a_still_drive_is_reaimed_at_its_navcom_by_the_outer_process_unless_guarding()
     for (mission, reaimed) in [(2, Some((14, 10))), (5, None)] {
         let (mut sim, rules, registry, id) = unit(&json!({"family": "drive", "mission": mission}));
         let e = sim.substrate.entities.get_mut(id).unwrap();
-        e.navigation.path_replay = FootPathQueue::default();
+        e.navigation
+            .set_path_replay_for_test(FootPathQueue::default());
         e.navigation
             .set_nav_com_for_test(Some(NavTargetRef::cell(14, 10)));
         visit(&mut sim, &rules, &registry, id, 101);
@@ -1507,7 +1515,7 @@ fn queued_waypoint_arrival_returns_before_the_continuation() {
         assert_eq!((destination.x / 256, destination.y / 256), (14, 10));
         assert!(committed_track_head(e).is_none());
         assert!(
-            e.navigation.path_replay.remaining_directions().is_empty(),
+            e.navigation.path_replay().remaining_directions().is_empty(),
             "frame {frame}: the arrival Process requested no route"
         );
         visit(&mut sim, &rules, &registry, id, frame + 1);

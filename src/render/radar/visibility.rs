@@ -542,22 +542,22 @@ mod tests {
         let id = sim.allocate_stable_id();
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(id, "TEST", "Americans", 4, 5);
-        entity.set_type_ref_for_test(sim.interner.intern("TEST"));
-        entity.set_owner_for_test(sim.interner.intern("Americans"));
+        entity.set_type_ref_for_test(sim.intern("TEST"));
+        entity.set_owner_for_test(sim.intern("Americans"));
         entity.set_category_for_test(EntityCategory::Unit);
         entity.lifecycle.set_in_limbo_for_test(false);
-        sim.substrate.entities.insert(entity);
+        sim.entities_mut_for_test().insert(entity);
         let update = |sim: &crate::sim::world::Simulation| {
             build_radar_object_update(
                 sim.entities().get(id).unwrap(),
-                &sim.houses,
+                sim.houses(),
                 None,
-                &sim.fog,
-                &sim.house_alliances,
+                sim.fog(),
+                sim.house_alliances(),
                 true,
                 false,
                 Some(&rules),
-                Some(&sim.interner),
+                Some(sim.interner()),
                 visibility_projection(),
                 None,
                 None,

@@ -871,11 +871,11 @@ impl crate::sim::world::Simulation {
                 id,
                 &target,
                 terrain,
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &LineOfFireInputs {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
-                    alliances: Some(&self.house_alliances),
+                    alliances: Some(self.house_alliances.as_map()),
                 },
             )
         })
@@ -1019,7 +1019,7 @@ mod tests {
         let mut e = GameEntity::test_default(1, "MTNK", "Test", 10, 10);
         e.position.set_z_for_test(level);
         e.set_category_for_test(EntityCategory::Unit);
-        e.lifecycle.set_cell_marked(true);
+        e.lifecycle.set_cell_marked_for_test(true);
         e
     }
 
@@ -1027,7 +1027,7 @@ mod tests {
     fn aircraft_at_altitude(altitude_lep: i64) -> GameEntity {
         let mut e = GameEntity::test_default(2, "ORCA", "Test", 10, 10);
         e.set_category_for_test(EntityCategory::Aircraft);
-        e.lifecycle.set_cell_marked(true);
+        e.lifecycle.set_cell_marked_for_test(true);
         e.position
             .set_exact_z_leptons_for_test(Some(altitude_lep as i32));
         let mut loco = LocomotorState::for_test_kind(LocomotorKind::Fly);
@@ -1043,7 +1043,7 @@ mod tests {
         entity.position.set_sub_x_for_test(SimFixed::from_num(64));
         entity.position.set_sub_y_for_test(SimFixed::from_num(192));
         let mut terrain = flat_terrain(16, 16);
-        let cell = &mut terrain.cells[10 * 16 + 10];
+        let cell = &mut terrain.cells_mut_for_test()[10 * 16 + 10];
         cell.level = 2;
         cell.slope_type = 1;
         assert_eq!(
@@ -1056,7 +1056,7 @@ mod tests {
     fn gsi_04_03b_world_z_uses_entity_on_bridge_not_cell_deck() {
         let mut entity = ground_entity_at_level(0);
         let mut terrain = flat_terrain(16, 16);
-        terrain.cells[10 * 16 + 10].has_bridge_deck = true;
+        terrain.cells_mut_for_test()[10 * 16 + 10].has_bridge_deck = true;
 
         assert_eq!(
             crate::sim::movement::ground_pose::object_world_z_leptons(&entity, Some(&terrain)),
@@ -1244,7 +1244,7 @@ mod tests {
                 let x = cell["coord"][0].as_u64().unwrap() as u16;
                 let y = cell["coord"][1].as_u64().unwrap() as u16;
                 allocated.push((x, y));
-                let out = terrain.cell_mut(x, y).unwrap();
+                let out = terrain.cell_mut_for_test(x, y).unwrap();
                 out.level = cell["level"].as_i64().unwrap_or(0) as u8;
                 out.slope_type = cell["slope"].as_u64().unwrap_or(0) as u8;
                 out.final_tile_index = cell["tile"].as_i64().unwrap_or(0) as i32;
@@ -1300,7 +1300,7 @@ mod tests {
             actor.position.set_exact_z_leptons_for_test(Some(z));
             actor
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap_or(false));
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap_or(false));
             actor.set_on_bridge(input["on_bridge"].as_bool().unwrap_or(false));
             if !row["source_geometry"].is_null() {
                 let geometry = object_get_coords(&actor, Some(&terrain));
@@ -1361,7 +1361,7 @@ mod tests {
                 target.position.set_exact_z_leptons_for_test(Some(at(2)));
                 target
                     .lifecycle
-                    .set_cell_marked(object["marked"].as_bool().unwrap_or(true));
+                    .set_cell_marked_for_test(object["marked"].as_bool().unwrap_or(true));
                 let mut objects = Simulation::new();
                 objects.substrate.entities.insert(target);
                 let target = TargetKind::Entity(2);
@@ -1523,7 +1523,7 @@ mod tests {
         let mut e = GameEntity::test_default(100, type_ref, "Attackers", rx, ry);
         e.position.set_z_for_test(level);
         e.set_category_for_test(EntityCategory::Unit);
-        e.lifecycle.set_cell_marked(true);
+        e.lifecycle.set_cell_marked_for_test(true);
         e
     }
 
@@ -1531,7 +1531,7 @@ mod tests {
         let mut e = GameEntity::test_default(200, type_ref, "Defenders", rx, ry);
         e.position.set_z_for_test(level);
         e.set_category_for_test(EntityCategory::Unit);
-        e.lifecycle.set_cell_marked(true);
+        e.lifecycle.set_cell_marked_for_test(true);
         e
     }
 
@@ -1761,7 +1761,7 @@ mod tests {
         // Snapshot after the target has interned its Aircraft type identity.
         let interner = test_interner();
         let mut terrain = flat_terrain(8, 1);
-        terrain.cells[4].slope_type = 1;
+        terrain.cells_mut_for_test()[4].slope_type = 1;
 
         let (_, _, target_z) = resolve_target_coords_3d(
             &TargetKind::Entity(200),
@@ -1783,7 +1783,7 @@ mod tests {
         // Snapshot after the target has interned its Aircraft type identity.
         let interner = test_interner();
         let mut terrain = flat_terrain(1, 1);
-        terrain.cells[0].has_bridge_deck = true;
+        terrain.cells_mut_for_test()[0].has_bridge_deck = true;
 
         let non_structural_z = resolve_target_coords_3d(
             &TargetKind::Entity(200),
@@ -1799,7 +1799,8 @@ mod tests {
             "generic or low deck state does not satisfy Cell+0x140 bit 0x100"
         );
 
-        terrain.cells[0].bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+        terrain.cells_mut_for_test()[0].bridge_facts.raw_flags =
+            crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
         let structural_z = resolve_target_coords_3d(
             &TargetKind::Entity(200),
             &entities,
@@ -1816,18 +1817,18 @@ mod tests {
     fn gsi_04_03b_cell_ground_z_uses_center_and_range_bridge_delta() {
         let mut terrain = flat_terrain(1, 1);
         terrain.set_projectile_water_set_base(314);
-        terrain.cells[0].slope_type = 1;
+        terrain.cells_mut_for_test()[0].slope_type = 1;
         let cell = terrain.native_cell_identity((0, 0));
         assert_eq!(
             native_cell_range_coords(cell, &NativeCellQuery::canonical(&terrain)),
             Some((128, 128, 52))
         );
-        terrain.cells[0].has_bridge_deck = true;
+        terrain.cells_mut_for_test()[0].has_bridge_deck = true;
         assert_eq!(
             native_cell_range_coords(cell, &NativeCellQuery::canonical(&terrain)),
             Some((128, 128, 52))
         );
-        terrain.cells[0].bridge_facts.raw_flags = 0x100;
+        terrain.cells_mut_for_test()[0].bridge_facts.raw_flags = 0x100;
         assert_eq!(
             native_cell_range_coords(cell, &NativeCellQuery::canonical(&terrain)),
             Some((128, 128, 52 + i64::from(BRIDGE_DECK_HEIGHT_LEPTONS)))
@@ -2042,7 +2043,7 @@ mod tests {
         // The airship hovers over a level-5 plateau and the target stands on
         // level-0 ground one cell away, so the height term is what decides.
         let mut terrain = flat_terrain(64, 64);
-        terrain.cells[5 * 64 + 5].level = 5;
+        terrain.cells_mut_for_test()[5 * 64 + 5].level = 5;
         let mut entities = Simulation::new();
         entities
             .substrate
@@ -2141,7 +2142,7 @@ mod tests {
         let attacker = ground_attacker(0, 0, 0, "ATKR");
         let interner = test_interner();
         let mut terrain = flat_terrain(64, 64);
-        terrain.cells[5].level = 5;
+        terrain.cells_mut_for_test()[5].level = 5;
         let mut entities = Simulation::new();
         entities
             .substrate
@@ -2166,7 +2167,7 @@ mod tests {
         // Two cells out (512 leptons flat) is inside a 599-lepton minimum, but
         // five terrain levels of climb push the 3-D distance to 730 — legal.
         let mut close = flat_terrain(64, 64);
-        close.cells[2].level = 5;
+        close.cells_mut_for_test()[2].level = 5;
         let mut close_entities = Simulation::new();
         close_entities
             .substrate
@@ -2338,7 +2339,7 @@ mod tests {
         let with = |cells: &[((u16, u16), u32)]| {
             let mut terrain = flat_terrain(16, 16);
             for &((rx, ry), flags) in cells {
-                terrain.cells[ry as usize * 16 + rx as usize]
+                terrain.cells_mut_for_test()[ry as usize * 16 + rx as usize]
                     .bridge_facts
                     .raw_flags = flags;
             }
@@ -2422,7 +2423,7 @@ mod tests {
 
         let mut ridged = flat_terrain(16, 16);
         for ry in 0..16u16 {
-            ridged.cell_mut(4, ry).expect("ridge cell").level = 4;
+            ridged.cell_mut_for_test(4, ry).expect("ridge cell").level = 4;
         }
         assert!(
             !compute_in_range(
@@ -2471,7 +2472,7 @@ mod tests {
 
         let mut ridged = flat_terrain(16, 16);
         for ry in 0..16u16 {
-            ridged.cell_mut(4, ry).expect("ridge cell").level = 4;
+            ridged.cell_mut_for_test(4, ry).expect("ridge cell").level = 4;
         }
         assert!(
             !compute_in_range(
@@ -2513,7 +2514,7 @@ mod tests {
 
         let mut ridged = flat_terrain(16, 16);
         for ry in 0..16u16 {
-            ridged.cell_mut(4, ry).expect("ridge cell").level = 4;
+            ridged.cell_mut_for_test(4, ry).expect("ridge cell").level = 4;
         }
         assert!(compute_in_range(
             &attacker,
@@ -2605,7 +2606,11 @@ mod tests {
             entities.substrate.entities.insert(target);
             let interner = test_interner();
             let mut terrain = flat_terrain(16, 16);
-            terrain.cell_mut(6, 2).unwrap().bridge_facts.raw_flags |= 0x100;
+            terrain
+                .cell_mut_for_test(6, 2)
+                .unwrap()
+                .bridge_facts
+                .raw_flags |= 0x100;
             let cells = NativeCellQuery::isolated(&terrain);
             let resolved = resolve_target_coords_3d(
                 &TargetKind::Entity(200),

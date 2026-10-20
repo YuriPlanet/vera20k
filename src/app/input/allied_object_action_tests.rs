@@ -15,19 +15,26 @@ use crate::sim::world::Simulation;
 fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation, u64, u64) {
     let mut sim = Simulation::with_seed(0xC9_0001);
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
     for (index, (name, human)) in [("Americans", true), ("Russians", false)]
         .into_iter()
         .enumerate()
     {
-        let owner = sim.interner.intern(name);
-        sim.houses
-            .register(HouseState::new(owner, index as u8, None, human, 10_000, 10));
+        let owner = sim.intern(name);
+        sim.houses_mut_for_test().register(HouseState::new(
+            owner,
+            index as u8,
+            None,
+            human,
+            10_000,
+            10,
+        ));
     }
-    let owner = sim.interner.get("Americans").unwrap();
-    sim.session
+    let owner = sim.interner().get("Americans").unwrap();
+    sim.session_mut_for_test()
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.set_current_house_for_test(Some(owner));
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
     if relation == "ally" || relation == "reverse-ally" {
         let (asker, other) = if relation == "ally" {
             ("AMERICANS", "RUSSIANS")
@@ -36,7 +43,7 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
         };
         // An admitted directional alliance is an input to this component
         // scene; production House diplomacy owns installing/mutating it.
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry(asker.into())
             .or_default()
             .insert(other.into());
@@ -58,8 +65,8 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
             rules,
         )
         .unwrap();
-    sim.fog.reveal_all_for_owner(owner);
-    sim.entities_mut()
+    sim.fog_mut_for_test().reveal_all_for_owner(owner);
+    sim.entities_mut_for_test()
         .get_mut(actor)
         .unwrap()
         .selection
@@ -210,7 +217,7 @@ fn allied_object_ivan_bomb_refusal_matches_native_consumer() {
         assert_eq!(
             ivan_bomb_refused(
                 entity,
-                sim.interner.object_type(entity.type_ref(), &battle.rules)
+                sim.interner().object_type(entity.type_ref(), &battle.rules)
             ),
             row["output"]["action"] == 54,
             "{}",
@@ -328,7 +335,7 @@ fn allied_object_shared_grants_match_original_without_forking_weapon_selection()
         let (mut sim, actor, target) = object_pair(&battle.rules, "MTNK", "ally");
         if input["infested"] == true {
             crate::sim::arena_fixture::install_action_infestation(
-                sim.entities_mut().get_mut(target).unwrap(),
+                sim.entities_mut_for_test().get_mut(target).unwrap(),
                 actor,
             );
         }

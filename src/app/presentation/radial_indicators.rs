@@ -70,7 +70,7 @@ pub(crate) fn build(
         let Some(entity) = sim.entities().get(id) else {
             continue;
         };
-        let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
+        let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
             continue;
         };
         if !object.has_radial_indicator() || entity.category() != EntityCategory::Structure {
@@ -81,7 +81,7 @@ pub(crate) fn build(
             object,
             sim.entities(),
             rules,
-            &sim.interner,
+            sim.interner(),
         );
         //Residual: Mission_Unload44E29D..44E36B's+268/+669 toggle and the
         //454B91 operational-off reset are a separate gap lifecycle. Stock
@@ -92,10 +92,8 @@ pub(crate) fn build(
         if range <= 0 || !entity.building_online() || !sim.house_is_human_player(entity.owner()) {
             continue;
         }
-        let position = crate::sim::movement::ground_pose::object_get_coords(
-            entity,
-            sim.resolved_terrain.as_ref(),
-        );
+        let position =
+            crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain());
         let (x, y) =
             crate::util::lepton::absolute_leptons_to_screen(position.x, position.y, position.z);
         let center = [
@@ -103,7 +101,7 @@ pub(crate) fn build(
             y as i32 - viewport.camera[1] + viewport.clip[1],
         ];
         let index = colors
-            .get(sim.interner.resolve(entity.owner()))
+            .get(sim.interner().resolve(entity.owner()))
             .copied()
             .unwrap_or(crate::rules::house_colors::NO_REMAP);
         let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index);
@@ -115,7 +113,7 @@ pub(crate) fn build(
             rgb,
             fade: true,
             rays: true,
-            frame: sim.session.binary_frame() as i32,
+            frame: sim.session().binary_frame() as i32,
         };
         if !object.concentric_radial_indicator() {
             draws.push(draw);
@@ -164,7 +162,7 @@ pub(crate) fn build(
         let position = cursor_cell.and_then(|(cell_x, cell_y)| {
             let center = || {
                 crate::sim::cell_rect::get_cellclass_fallback(
-                    sim.resolved_terrain.as_ref(),
+                    sim.resolved_terrain(),
                     i32::from(cell_x),
                     i32::from(cell_y),
                 )
@@ -172,7 +170,7 @@ pub(crate) fn build(
             };
             // Missing-cell drawing may read the fallback's retained height,
             // but its coordinate stamp must stay private to presentation.
-            match sim.resolved_terrain.as_ref() {
+            match sim.resolved_terrain() {
                 Some(terrain) => terrain.shared_cell_dummy().detached(center),
                 None => center(),
             }
@@ -194,9 +192,9 @@ pub(crate) fn build(
             // The native caller selects CurrentPlayerPtr's HouseClass RGB. The
             // current house's existing map/ramp projection owns that same color.
             let color_index = sim
-                .session
+                .session()
                 .current_house()
-                .and_then(|house| colors.get(sim.interner.resolve(house)).copied())
+                .and_then(|house| colors.get(sim.interner().resolve(house)).copied())
                 .unwrap_or(crate::rules::house_colors::NO_REMAP);
             let house_rgb = crate::render::palette_light::house_color_rgb(
                 &rules.house_color_ramps,
@@ -210,7 +208,7 @@ pub(crate) fn build(
                 rgb: house_rgb,
                 fade: true,
                 rays: false,
-                frame: sim.session.binary_frame() as i32,
+                frame: sim.session().binary_frame() as i32,
             };
             if super_weapon.line_multiplier < 1 {
                 // Native +0x20 pre-ftol flag is enabled for the single-ring path.

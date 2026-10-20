@@ -95,7 +95,7 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     let terrain = sim.resolved_terrain.as_mut().unwrap();
     for y in 24..48 {
         for x in 24..48 {
-            *terrain.cell_mut(x, y).unwrap() = water.cell(x, y).unwrap().clone();
+            *terrain.cell_mut_for_test(x, y).unwrap() = water.cell(x, y).unwrap().clone();
         }
     }
     let owner = sim.interner.intern("Americans");
@@ -824,7 +824,7 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
         restored.resolve_type_handles(rules);
         restored.rebuild_caches_after_load(
             sim.resolved_terrain.as_ref().unwrap().clone(),
-            sim.terrain_speed_config.clone(),
+            sim.terrain_speed_config().clone(),
             rules,
         );
         assert!(restored.rebuild_dynamic_navigation(rules));
@@ -1005,7 +1005,7 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
                 .as_ref()
                 .unwrap()
                 .clone(),
-            runtime.simulation.terrain_speed_config.clone(),
+            runtime.simulation.terrain_speed_config().clone(),
             rules,
         );
         assert!(restored.rebuild_dynamic_navigation(rules));
@@ -1198,7 +1198,7 @@ fn retail_barracks_sale_callbacks_reject_successor_or_keep_surviving_producer() 
             sim.scenario_rng.logical_state(),
             sim.mapgen_rng.logical_state(),
         );
-        let identity = sim.substrate.next_stable_object_id;
+        let identity = sim.next_stable_object_id();
         let credits = sim.houses[&owner].economy().credits();
         let paid = sim.houses[&owner].economy().spent_credits();
         let before_native = &row["after_selling"];
@@ -1222,7 +1222,8 @@ fn retail_barracks_sale_callbacks_reject_successor_or_keep_surviving_producer() 
         let context = UninitContext::with_rules(&runtime.resources.rules);
         sim.techno_limbo_with_context(barracks, context);
         assert_eq!(
-            sim.substrate.next_stable_object_id, identity,
+            sim.next_stable_object_id(),
+            identity,
             "{successor}: no StartNext constructor before admission"
         );
         assert_eq!(
@@ -1278,14 +1279,14 @@ fn retail_barracks_sale_callbacks_reject_successor_or_keep_surviving_producer() 
         let after = (
             sim.houses[&owner].economy().credits(),
             sim.houses[&owner].economy().spent_credits(),
-            sim.substrate.next_stable_object_id,
+            sim.next_stable_object_id(),
         );
         sim.techno_limbo_with_context(barracks, context);
         assert_eq!(
             (
                 sim.houses[&owner].economy().credits(),
                 sim.houses[&owner].economy().spent_credits(),
-                sim.substrate.next_stable_object_id
+                sim.next_stable_object_id()
             ),
             after,
             "repeated callback, {successor}"
@@ -1853,13 +1854,13 @@ fn retail_superweapon_construction_survives_revalidation() {
         sim.install_resolved_terrain_for_new_map(
             crate::map::resolved_terrain::test_flat_ground_grid(64),
         );
-        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
             base: 0,
             off_fc: -100,
             off_100: -100,
             off_104: 200,
             off_108: 200,
-        });
+        }));
         sim.intern_rule_type_ids(rules);
         sim.resolve_type_handles(rules);
         sim.session.set_game_mode(
@@ -1938,7 +1939,7 @@ fn retail_superweapon_construction_survives_revalidation() {
         );
         let factories = sim.production.factories().clone();
         let wallet = sim.houses[&owner].economy().clone();
-        let next_identity = sim.substrate.next_stable_object_id;
+        let next_identity = sim.next_stable_object_id();
         // House4FA5A8/4FA628 admits this same completed product through the
         // held-build limit exception. Resume refuses without writes, so this
         // is a relink, not another copy (factory_hold_resume.json/.md).
@@ -1964,7 +1965,8 @@ fn retail_superweapon_construction_survives_revalidation() {
             "{building}: no charge"
         );
         assert_eq!(
-            sim.substrate.next_stable_object_id, next_identity,
+            sim.next_stable_object_id(),
+            next_identity,
             "{building}: no new object"
         );
         assert_eq!(held_id(&sim, owner, category), head);
@@ -2192,7 +2194,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             counts(&sim, owner),
             (before.0, before.1 + 1 + child_ids.len() as u32)
         );
-        let allocated = sim.substrate.next_stable_object_id;
+        let allocated = sim.next_stable_object_id();
         assert!(enqueue_by_type(
             &mut sim,
             &rules,
@@ -2201,7 +2203,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             crate::sim::world::FrameEffects::default(),
             false,
         ));
-        assert_eq!(sim.substrate.next_stable_object_id, allocated);
+        assert_eq!(sim.next_stable_object_id(), allocated);
         // ABANDON removes the queued copy first (`0x004FAAEE`), then the active build.
         assert!(cancel_production_for_owner(
             &mut sim,
@@ -2232,7 +2234,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
         ));
         assert_gone(&sim, parent, &child_ids);
         assert_eq!(counts(&sim, owner), before);
-        assert_eq!(sim.substrate.next_stable_object_id, allocated);
+        assert_eq!(sim.next_stable_object_id(), allocated);
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
         assert_eq!(
             sim.houses[&owner].produced_count(
@@ -2658,7 +2660,7 @@ fn missing_barracks_retains_completed_infantry_and_queued_successor() {
         sim.scenario_rng.logical_state(),
         sim.mapgen_rng.logical_state(),
     );
-    let allocated = sim.substrate.next_stable_object_id;
+    let allocated = sim.next_stable_object_id();
     assert!(!dispatch_production_changes_for_tests(
         &mut sim, &rules, None
     ));
@@ -2674,7 +2676,7 @@ fn missing_barracks_retains_completed_infantry_and_queued_successor() {
     let object = sim.substrate.entities.get(held).unwrap();
     assert!(object.lifecycle.in_limbo() && !object.lifecycle.cell_marked());
     assert_eq!(sim.houses[&owner].economy().credits(), credits);
-    assert_eq!(sim.substrate.next_stable_object_id, allocated);
+    assert_eq!(sim.next_stable_object_id(), allocated);
     assert!(
         !sim.sound_events.iter().any(|event| {
             matches!(event, crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
@@ -2762,13 +2764,13 @@ fn factory_loss_revalidation_disposes_parent_and_children_before_returning() {
             sim.cost_of(owner, rules.object(parent_type).unwrap(), &rules) - balance
         };
         let before = sim.houses[&owner].economy().credits();
-        let allocated = sim.substrate.next_stable_object_id;
+        let allocated = sim.next_stable_object_id();
         let rng = sim.scenario_rng.logical_state();
         sim.uninit_with_rules(1, &rules);
         assert_gone(&sim, parent, &child_ids);
         assert_eq!(sim.houses[&owner].economy().credits(), before + spent);
         assert_eq!(sim.owned_object_counts(owner).1, 0);
-        assert_eq!(sim.substrate.next_stable_object_id, allocated);
+        assert_eq!(sim.next_stable_object_id(), allocated);
         assert_eq!(sim.scenario_rng.logical_state(), rng);
         assert!(
             sim.production

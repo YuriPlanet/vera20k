@@ -86,7 +86,7 @@ fn zero_slot_priors(sim: &mut Simulation) {
     // The native fixture deliberately clears all256 physical slot records.
     // This prior differs from CrateAuthority's ordinary constructor timer -1.
     for index in 0..256 {
-        *sim.crate_authority.slot_mut(index) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority.slot_mut_for_test(index) = crate::sim::crates::CrateSlot {
             start_frame: 0,
             aux: 0,
             duration: 0,
@@ -130,7 +130,7 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
         zero_slot_priors(&mut sim);
         if input["slots_full"] == true {
             for index in 0..256 {
-                *sim.crate_authority.slot_mut(index) = crate::sim::crates::CrateSlot {
+                *sim.crate_authority.slot_mut_for_test(index) = crate::sim::crates::CrateSlot {
                     start_frame: 50,
                     aux: 777,
                     duration: 100,
@@ -169,7 +169,7 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
             terrain.set_land_speed_rules_for_test(&speed_rules);
             for y in 0..33 {
                 for x in 0..33 {
-                    let c = terrain.cell_mut(x, y).unwrap();
+                    let c = terrain.cell_mut_for_test(x, y).unwrap();
                     c.land_type = 2;
                     c.base_land_type = 2;
                     c.speed_costs = costs;
@@ -398,7 +398,7 @@ fn money_pickup_matches_original_reentrant_owner_alive_and_notification_controls
                 .set_object_alive_for_test(false);
         }
         zero_slot_priors(&mut sim);
-        *sim.crate_authority.slot_mut(0) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority.slot_mut_for_test(0) = crate::sim::crates::CrateSlot {
             start_frame: 50,
             aux: 777,
             duration: 100,
@@ -637,7 +637,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(x, y)
+                .cell_mut_for_test(x, y)
                 .unwrap();
             cell.speed_costs = clear.speed_costs;
             cell.base_speed_costs = clear.speed_costs;

@@ -23,7 +23,7 @@ fn eligible_air_target(sim: &Simulation, rules: &RuleSet, aegis: u64) -> Option<
         LineOfFireInputs {
             overlay_grid: sim.overlay_grid.as_ref(),
             overlay_registry: None,
-            alliances: Some(&sim.house_alliances),
+            alliances: Some(sim.house_alliances.as_map()),
         },
         Some(sim),
         None,

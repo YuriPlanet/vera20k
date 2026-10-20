@@ -430,7 +430,7 @@ fn ground_command_fixture(
         .navigation
         .set_nav_com_for_test(ground_command_nav_target(state));
     actor.set_archive_target(ground_command_archive_target(state));
-    actor.navigation.path_replay.set_directions_for_test(
+    actor.navigation.path_replay_mut().set_directions_for_test(
         state["path"]
             .as_array()
             .unwrap()
@@ -445,24 +445,24 @@ fn ground_command_fixture(
     let reference = fixture_cell(&state["reference_cell"]);
     actor
         .navigation
-        .path_replay
-        .set_reference_cell(Some((reference.0 as i16, reference.1 as i16)));
+        .path_replay_mut()
+        .set_reference_cell_for_test(Some((reference.0 as i16, reference.1 as i16)));
     actor
         .navigation
-        .path_runtime
+        .path_runtime_mut()
         .set_movement_timer_for_test(timer(&state["movement_timer"]));
     actor
         .navigation
-        .path_runtime
+        .path_runtime_mut()
         .set_blocked_timer_for_test(timer(&state["blocked_timer"]));
     actor
         .navigation
-        .path_runtime
-        .set_path_blocked(state["raw_6b7"] != 0);
+        .path_runtime_mut()
+        .set_path_blocked_for_test(state["raw_6b7"] != 0);
     actor
         .navigation
-        .path_runtime
-        .set_retries_left(state["retry"].as_u64().unwrap() as u32);
+        .path_runtime_mut()
+        .set_retries_left_for_test(state["retry"].as_u64().unwrap() as u32);
     assert_eq!(state["nav_queue"]["count"], 0);
     assert_eq!(state["destination_history"]["count"], 0);
     let loco = actor.locomotor.as_mut().unwrap();
@@ -862,24 +862,24 @@ fn assert_ground_command_fields(sim: &Simulation, id: u64, row: &Value, state: &
         .map(|word| word.as_i64().unwrap() as u8)
         .collect();
     assert_eq!(
-        &actor.navigation.path_replay.directions()
-            [usize::from(actor.navigation.path_replay.cursor())..],
+        &actor.navigation.path_replay().directions()
+            [usize::from(actor.navigation.path_replay().cursor())..],
         native_path,
         "{context}: full path backing suffix"
     );
     let reference = fixture_cell(&state["reference_cell"]);
     assert_eq!(
-        actor.navigation.path_replay.reference_cell(),
+        actor.navigation.path_replay().reference_cell(),
         Some((reference.0 as i16, reference.1 as i16)),
         "{context}: path reference"
     );
     for (actual, expected) in [
         (
-            actor.navigation.path_runtime.movement_timer(),
+            actor.navigation.path_runtime().movement_timer(),
             &state["movement_timer"],
         ),
         (
-            actor.navigation.path_runtime.blocked_timer(),
+            actor.navigation.path_runtime().blocked_timer(),
             &state["blocked_timer"],
         ),
     ] {
@@ -890,11 +890,11 @@ fn assert_ground_command_fields(sim: &Simulation, id: u64, row: &Value, state: &
         );
     }
     assert_eq!(
-        actor.navigation.path_runtime.path_blocked(),
+        actor.navigation.path_runtime().path_blocked(),
         state["raw_6b7"] != 0
     );
     assert_eq!(
-        actor.navigation.path_runtime.retries_left(),
+        actor.navigation.path_runtime().retries_left(),
         state["retry"].as_u64().unwrap() as u32
     );
     assert_eq!(

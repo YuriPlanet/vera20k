@@ -70,7 +70,7 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
         (record.opcode(), record.house_id(), record.frame_stamp()),
         (CHEER_OPCODE, 1, -2)
     );
-    sim.session.set_input_locked(true);
+    sim.session.set_input_locked_for_test(true);
     let event = sim.decode_native_command_record(&record, 99).unwrap();
     assert_eq!(event.owner, owner);
     assert_eq!(event.payload, Command::Cheer);

@@ -79,7 +79,7 @@ pub(crate) fn poll(state: &mut AppState, wall_ms: u64) {
         .scenario_pause
         .elapsed(wall_ms)
         && let Some(rt) = state.match_state.sim_runtime.as_ref()
-        && rt.simulation.session.scenario_pause_timed()
+        && rt.simulation.session().scenario_pause_timed()
     {
         apply_service(state, ScenarioServiceInput::ExpireTimedPause);
     }

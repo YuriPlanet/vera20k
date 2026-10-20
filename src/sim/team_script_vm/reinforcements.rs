@@ -141,7 +141,7 @@ impl Simulation {
         let nearby = waypoint_override != -1
             && crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(origin.0), i32::from(origin.1)),
-                self.playfield_bounds,
+                self.playfield_bounds(),
                 self.resolved_terrain.as_ref(),
             );
         let placed = if metadata.droppod {
@@ -162,7 +162,7 @@ impl Simulation {
             .filter(|&current| {
                 placed
                     && crate::map::houses::is_allied_with(
-                        &self.house_alliances,
+                        self.house_alliances.as_map(),
                         self.interner.resolve(owner),
                         self.interner.resolve(current),
                     )
@@ -403,7 +403,7 @@ impl Simulation {
                 .current_house()
                 .filter(|&current| {
                     crate::map::houses::is_allied_with(
-                        &self.house_alliances,
+                        self.house_alliances.as_map(),
                         self.interner.resolve(owner),
                         self.interner.resolve(current),
                     )

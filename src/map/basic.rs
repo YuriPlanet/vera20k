@@ -28,6 +28,9 @@ pub struct BasicSection {
     pub briefing: Option<String>,
     /// Post-read movie catalog name (Scenario+1444, Basic.Action).
     pub action: Option<String>,
+    /// Scenario+0x1440 movie (`ReadMovie` at `0x0068A066`), which campaign
+    /// defeat plays before its retry prompt (`0x0068606B`).
+    pub lose: Option<String>,
     /// Opening campaign waypoint; SetDefaults683622 resets it to699.
     pub home_cell: Option<i32>,
     /// Alternate opening waypoint; SetDefaults683628 resets it to699.
@@ -166,6 +169,9 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         action: section
             .is_present("Action")
             .then(|| section.read_string("Action", "", 128)),
+        lose: section
+            .is_present("Lose")
+            .then(|| section.read_string("Lose", "", 128)),
         // Current-default reads at68A601..68A656, after fresh SetDefaults.
         home_cell: section
             .is_present("HomeCell")

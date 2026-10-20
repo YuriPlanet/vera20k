@@ -38,7 +38,7 @@ fn authority(sim: &Simulation, source: u64, expected_load: bool) -> Value {
         "logic":sim.substrate.logic.snapshot(),"display":sim.substrate.display,
         "pending_delete":sim.substrate.pending_delete.object_ids(),
         "native_id_cursor":sim.native_unique_ids.as_ref().unwrap().current_raw(),
-        "next_stable_id":sim.substrate.next_stable_object_id,
+        "next_stable_id":sim.next_stable_object_id(),
         "clock":[sim.session.tick(), u64::from(sim.session.binary_frame())],
         "bridge_authority":crate::util::sha256::sha256_hex(
             &save_codec::serialize(&sim.bridge_state).unwrap()),
@@ -106,15 +106,7 @@ fn checkpoint(
             (48..=59).flat_map(|y| (84..=90).map(move |x| (x, y))),
         ),
         transients: transient_ids(sim, ambient),
-        collapsed: sim
-            .resolved_terrain
-            .as_ref()
-            .unwrap()
-            .cell(87, 54)
-            .unwrap()
-            .bridge_facts
-            .overlay_id
-            == Some(232),
+        collapsed: sim.overlay_grid.as_ref().unwrap().cell(87, 54).overlay_id == Some(232),
     }
 }
 
@@ -173,15 +165,7 @@ fn retail_fv_pursuit_missiles_collapse_and_guard_survive_restore() {
             }
             2 if output.tick.bridge_state_changed
                 && actor.attack_target.target().is_none()
-                && sim
-                    .resolved_terrain
-                    .as_ref()
-                    .unwrap()
-                    .cell(87, 54)
-                    .unwrap()
-                    .bridge_facts
-                    .overlay_id
-                    == Some(232) =>
+                && sim.overlay_grid.as_ref().unwrap().cell(87, 54).overlay_id == Some(232) =>
             {
                 Some("collapsed")
             }

@@ -730,6 +730,12 @@ pub struct GameEntity {
     /// [`HasBeenCaptured`]: crate::sim::crew_survival::HasBeenCaptured
     #[serde(default)]
     pub(crate) has_been_captured: crate::sim::crew_survival::HasBeenCaptured,
+    /// A building's NoSurvivor byte (`BuildingClass+0x6E0`), a
+    /// [`NoSurvivor`] that `crew_survival` owns.
+    ///
+    /// [`NoSurvivor`]: crate::sim::crew_survival::NoSurvivor
+    #[serde(default)]
+    pub(crate) no_survivor: crate::sim::crew_survival::NoSurvivor,
     /// Both ends of the tank-bunker reciprocal link, a [`BunkerLinks`] that
     /// `docking::bunker_link` owns.
     ///
@@ -855,8 +861,14 @@ impl GameEntity {
         self.ion_blast_lift
     }
 
-    pub(crate) fn set_ion_blast_lift(&mut self, pixels: i8) {
+    /// IonBlast (`0x0053CF7F`) stores the ripple's signed pixel lift.
+    pub(crate) fn lift_by_ion_blast(&mut self, pixels: i8) {
         self.ion_blast_lift = pixels;
+    }
+
+    /// FootAI (`0x004DAECA`) clears the transient draw lift.
+    pub(crate) fn clear_ion_blast_lift(&mut self) {
+        self.ion_blast_lift = 0;
     }
 
     /// The infantry house-total latches (`Techno+0x438/+0x439`). Only
@@ -1063,7 +1075,7 @@ impl GameEntity {
     /// Foot+5E0=-1; retained suffix/reference words and the destination
     /// remain intact.
     pub(crate) fn clear_live_path_head(&mut self) {
-        self.navigation.path_replay.clear_live_head();
+        self.navigation.path_replay_mut().clear_live_head();
     }
 
     /// The stored playfield membership (`TechnoClass+0x3D5`).
@@ -1580,6 +1592,7 @@ impl GameEntity {
             capture_infantry_type_index: crate::sim::world::CapturedInfantryType::constructed(),
             pending_c4_detonation: Default::default(),
             has_been_captured: Default::default(),
+            no_survivor: Default::default(),
             bunker: Default::default(),
             building_gate: None,
             door: crate::sim::door::DoorClass::at_frame(construction_frame),
@@ -2069,7 +2082,7 @@ mod lifecycle_tests {
         for bits in 0u8..64 {
             e.lifecycle.set_object_alive_for_test(bits & 0b00_0001 != 0);
             e.lifecycle.set_in_limbo_for_test(bits & 0b00_0010 != 0);
-            e.lifecycle.set_cell_marked(bits & 0b00_0100 != 0);
+            e.lifecycle.set_cell_marked_for_test(bits & 0b00_0100 != 0);
             e.in_logic_vector.set_for_test(bits & 0b00_1000 != 0);
             e.death.set_dying_for_test(bits & 0b01_0000 != 0);
             e.health

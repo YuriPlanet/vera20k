@@ -280,59 +280,15 @@ impl DeferredBridgeMarkerSearch<'_> {
     }
 }
 
-fn direction_from_step(from: (i16, i16), to: (u16, u16)) -> u8 {
-    let dx = i32::from(to.0 as i16) - i32::from(from.0);
-    let dy = i32::from(to.1 as i16) - i32::from(from.1);
-    crate::util::direction::direction_from_delta(dx, dy).unwrap_or(TUBE_STEP_DIRECTION)
-}
-
-/// The queue `FootClass::Find_Path @ 0x004D3920` installs from a found route
-/// (`0x004D393A..0x004D4003`): the directions from `reference` through `path`
-/// from `first_destination` on, unconsumed.
-pub(super) fn install_path_replay(
-    queue: &mut FootPathQueue,
-    reference: (u16, u16),
-    path: &[(u16, u16)],
-    first_destination: usize,
-) {
-    let mut from = (reference.0 as i16, reference.1 as i16);
-    queue.clear_directions();
-    for &destination in path.iter().skip(first_destination) {
-        queue.push_direction(direction_from_step(from, destination));
-        from = (destination.0 as i16, destination.1 as i16);
-    }
-    queue.set_cursor(0);
-    queue.set_reference_cell(Some((reference.0 as i16, reference.1 as i16)));
-}
-
 /// Fixture queue for a found route, written by the production install from
 /// `path[0]`.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn fixture_path_replay(path: &[(u16, u16)]) -> FootPathQueue {
     let mut queue = FootPathQueue::default();
     if let Some(&start) = path.first() {
-        install_path_replay(&mut queue, start, path, 1);
+        queue.install(start, path, 1);
     }
     queue
-}
-
-pub(super) fn accept_path_replay(
-    queue: &mut FootPathQueue,
-    endpoint: (i16, i16),
-    consumed_directions: usize,
-) {
-    queue.set_reference_cell(Some(endpoint));
-    consume_path_replay(queue, consumed_directions);
-}
-
-/// Accepted chain4B1DF7/6A143A and the tube entries (Walk 75B3E0..75B3EB,
-/// Drive 4B135D..4B1373, Ship 6A0A25..6A0A3B) pop the queue without rewriting
-/// Foot+558.
-pub(super) fn consume_path_replay(queue: &mut FootPathQueue, consumed_directions: usize) {
-    let cursor = usize::from(queue.cursor())
-        .saturating_add(consumed_directions)
-        .min(queue.directions().len());
-    queue.set_cursor(cursor.min(u16::MAX as usize) as u16);
 }
 
 /// Walk75BD89..75BDB1 propagates a -1 head into the next word before
@@ -340,7 +296,7 @@ pub(super) fn consume_path_replay(queue: &mut FootPathQueue, consumed_directions
 /// Original block comparisons: tools/spatial_oracle/walk_first_step.json.
 pub(super) fn consume_walk_path_replay(queue: &mut FootPathQueue) {
     let invalidated = queue.remaining_directions().is_empty();
-    consume_path_replay(queue, 1);
+    queue.consume(1);
     if invalidated {
         queue.clear_live_head();
     }
@@ -351,7 +307,7 @@ pub(super) fn consume_walk_path_replay(queue: &mut FootPathQueue) {
 fn remaining_path_from_entity(
     entity: &crate::sim::game_entity::GameEntity,
 ) -> ((i16, i16), Vec<u8>) {
-    let queue = &entity.navigation.path_replay;
+    let queue = entity.navigation.path_replay();
     // Foot+558 and its retained direction queue are the native source.
     let reference = queue
         .reference_cell()

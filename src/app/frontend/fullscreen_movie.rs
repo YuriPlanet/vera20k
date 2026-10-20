@@ -38,6 +38,9 @@ pub(crate) enum MovieReturn {
     /// A won campaign mission's PostScore/PreMapSelect/FinalMovie
     /// (`0x00685928..0x006859E9`) continues its victory tail.
     CampaignVictory(Box<crate::app::campaign_victory::CampaignVictory>),
+    /// A lost campaign mission's Lose movie (`0x00686073`) returns to the
+    /// empty backdrop and the `TXT_TO_REPLAY` prompt.
+    CampaignDefeat(Box<crate::app::campaign_defeat::CampaignDefeat>),
 }
 
 /// The name Play_Movie resolves: truncated at the first `.`.

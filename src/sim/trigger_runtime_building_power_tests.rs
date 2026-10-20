@@ -88,7 +88,7 @@ fn building_toggle_scans_tagged_live_marked_unlimboed_buildings_and_returns_a_re
         .get_mut(unmarked)
         .unwrap()
         .lifecycle
-        .set_cell_marked(false);
+        .set_cell_marked_for_test(false);
     sim.substrate
         .entities
         .get_mut(dead)
@@ -115,7 +115,10 @@ fn building_toggle_scans_tagged_live_marked_unlimboed_buildings_and_returns_a_re
     assert!(sim.power_states[&houses[0]].power_recheck_for_test());
     assert!(sim.power_states[&houses[0]].radar_recheck_for_test());
     assert_eq!(
-        sim.lighting_sources.buildings.get(&local).map(|s| s.active),
+        sim.lighting_sources
+            .buildings()
+            .get(&local)
+            .map(|s| s.active),
         Some(false)
     );
     assert_eq!(
@@ -251,7 +254,7 @@ fn authored_power_flag_and_needs_engineer_use_distinct_latches_and_survive_save_
     assert_eq!(
         restored
             .lighting_sources
-            .buildings
+            .buildings()
             .get(&load)
             .map(|source| source.active),
         Some(false)

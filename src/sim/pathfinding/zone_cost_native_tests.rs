@@ -448,7 +448,7 @@ fn structural_bridge_cost_exits_match_original_six_probe_order() {
         terrain.test_set_high_bridge_set_starts(Some(10000), None);
         for facts in row["cells"].as_array().unwrap() {
             let xy = cell(&facts["coord"]);
-            let entry = terrain.cell_mut(xy.0 as u16, xy.1 as u16).unwrap();
+            let entry = terrain.cell_mut_for_test(xy.0 as u16, xy.1 as u16).unwrap();
             entry.final_tile_index = facts["tile"].as_i64().unwrap() as i32;
             entry.land_type = facts["land"].as_u64().unwrap() as u8;
             entry.bridge_facts.raw_flags = facts["flags"].as_u64().unwrap() as u32;

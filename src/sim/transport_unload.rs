@@ -168,7 +168,7 @@ fn octant_cell_open(sim: &Simulation, cell: (u16, u16), transport_owner: &str) -
         .and_then(|id| sim.substrate.entities.get(id))
         .is_none_or(|object| {
             crate::map::houses::is_allied_with(
-                &sim.house_alliances,
+                sim.house_alliances.as_map(),
                 transport_owner,
                 sim.interner.resolve(object.owner()),
             )
@@ -786,7 +786,7 @@ pub(crate) fn unit_mission_unload(
                 .resolved_terrain
                 .as_ref()
                 .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
-                .is_some_and(|cell| cell.land_type() == LandType::Water.as_index());
+                .is_some_and(|cell| cell.land_type == LandType::Water.as_index());
             if entity.navigation.nav_com().is_none() && on_water {
                 // `PUSH 0x2` at `0x0073D790`: the search runs for speed-type
                 // index 2 — Wheel in the native `SpeedType` order (Foot 0,

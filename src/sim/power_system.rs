@@ -735,7 +735,7 @@ mod tests {
                 .set_in_limbo_for_test(row["limbo"].as_bool().unwrap());
             entity
                 .lifecycle
-                .set_cell_marked(row["marked"].as_bool().unwrap());
+                .set_cell_marked_for_test(row["marked"].as_bool().unwrap());
             let mut entities = EntityStore::default();
             entities.insert(entity);
             let mut states = BTreeMap::from([(owner, PowerState::default())]);
@@ -836,7 +836,7 @@ mod tests {
         );
         e.health = Health::new(hp);
         e.lifecycle.set_in_limbo_for_test(false);
-        e.lifecycle.set_cell_marked(true);
+        e.lifecycle.set_cell_marked_for_test(true);
         e
     }
 
@@ -967,7 +967,7 @@ BuildSpeed=0.02
             let mut plant = make_building(1, "GAPOWR", "Allies", 600);
             plant
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap());
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap());
             plant
                 .lifecycle
                 .set_object_alive_for_test(input["alive"].as_bool().unwrap());
@@ -1007,7 +1007,9 @@ BuildSpeed=0.02
                     plant
                         .lifecycle
                         .set_in_limbo_for_test(input["member"] == "limbo");
-                    plant.lifecycle.set_cell_marked(input["member"] == "limbo");
+                    plant
+                        .lifecycle
+                        .set_cell_marked_for_test(input["member"] == "limbo");
                     store.insert(plant);
                 }
                 "empty" | "null" => {}

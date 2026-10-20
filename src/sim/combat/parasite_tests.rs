@@ -81,7 +81,7 @@ impl Arena {
     fn new(rules: &RuleSet) -> Self {
         const SIZE: u16 = 32;
         let mut sim = Simulation::with_seed(7);
-        sim.input_delay_ticks = 0;
+        sim.set_input_delay_ticks(0);
         sim.session.set_map_width_for_test(SIZE);
         sim.session.set_map_height_for_test(SIZE);
         // Retail [Clear]: Foot/Track/Wheel 100%, Hover 50%, Amphibious 80%.
@@ -109,14 +109,14 @@ impl Arena {
                     .collect(),
             ),
         );
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 20,
             off_fc: -128,
             off_100: -128,
             off_104: 256,
             off_108: 256,
-        });
-        sim.playfield_size_height = Some(20);
+        }));
+        sim.set_playfield_size_height_for_test(Some(20));
         assert!(sim.rebuild_dynamic_navigation(rules));
         let grid = sim
             .path_grid_snapshot()
@@ -1165,7 +1165,7 @@ fn a_dog_released_on_a_bridge_deck_stays_on_the_deck() {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(x, y)
+            .cell_mut_for_test(x, y)
             .unwrap();
         cell.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
         cell.has_bridge_deck = true;
@@ -1293,7 +1293,8 @@ fn naval_owner_water_gate_matches_original_can_infect() {
         };
         let terrain = arena.sim.resolved_terrain.as_mut().unwrap();
         terrain.set_projectile_water_set_base(row["water_set"].as_i64().unwrap() as i32);
-        terrain.cell_mut(5, 2).unwrap().final_tile_index = row["tile"].as_i64().unwrap() as i32;
+        terrain.cell_mut_for_test(5, 2).unwrap().final_tile_index =
+            row["tile"].as_i64().unwrap() as i32;
         if row["victim_cell"] != serde_json::json!([5, 2]) {
             arena
                 .sim

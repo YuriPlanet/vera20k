@@ -670,10 +670,13 @@ mod tests {
 
     #[test]
     fn only_the_multiplayer_queue_route_checksums_a_frame() {
-        use crate::sim::world::{CommandQueueRoute, FrameEffects, TickLane};
+        use crate::sim::world::{FrameEffects, TickLane};
         let mut single = Simulation::with_seed(0x6476);
         let mut multi = Simulation::with_seed(0x6476);
-        multi.set_command_queue_route(CommandQueueRoute::Multiplayer);
+        multi
+            .session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+        multi.session.install_network_timing(10);
         let frame = multi.session.binary_frame();
         let mut expected_rng = single.scenario_rng.clone();
 

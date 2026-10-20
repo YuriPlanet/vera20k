@@ -72,7 +72,7 @@ fn fixture(row: &Value) -> (Simulation, TargetLineState, TacticalViewport) {
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
     let input = &row["input"];
     let mut sim = Simulation::new();
-    let owner = sim.interner.intern("Americans");
+    let owner = sim.intern("Americans");
     let mut cells: Vec<_> = (0..32)
         .flat_map(|y| (0..32).map(move |x| ResolvedTerrainCell::clear_for_test(x, y)))
         .collect();
@@ -88,7 +88,7 @@ fn fixture(row: &Value) -> (Simulation, TargetLineState, TacticalViewport) {
         let mut actor =
             GameEntity::test_default(construction_index as u64 + 1, "MTNK", "Americans", 20, 20);
         actor.set_owner_for_test(owner);
-        actor.set_type_ref_for_test(sim.interner.intern("MTNK"));
+        actor.set_type_ref_for_test(sim.intern("MTNK"));
         actor
             .selection
             .set_selected_for_test(actor_input["selected"].as_bool().unwrap_or(true));
@@ -118,26 +118,26 @@ fn fixture(row: &Value) -> (Simulation, TargetLineState, TacticalViewport) {
             target.slope_type = actor_input["slope"].as_u64().unwrap_or(0) as u8;
             target.has_bridge_deck = actor_input["flags"].as_u64().unwrap_or(0) & 0x100 != 0;
         }
-        sim.entities_mut().insert(actor);
+        sim.entities_mut_for_test().insert(actor);
     }
-    sim.session.set_game_mode(
+    sim.session_mut_for_test().set_game_mode(
         crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
             input["mode"].as_u64().unwrap_or(1) != 0,
         ),
     );
-    sim.session
+    sim.session_mut_for_test()
         .set_current_house_for_test(input["local"].as_bool().unwrap_or(true).then_some(owner));
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
     if let Some(flags) = input["campaign_flags"].as_array() {
         house.set_is_human_for_test(flags[0].as_bool().unwrap());
         house.set_player_control_for_test(flags[1].as_bool().unwrap());
     }
-    sim.houses.register(house);
-    sim.session
+    sim.houses_mut_for_test().register(house);
+    sim.session_mut_for_test()
         .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(100) as u32);
     // The timer must consume the binary frame, independently of VERA's tick.
-    sim.session.set_tick_for_test(999_999);
-    sim.resolved_terrain =
+    sim.session_mut_for_test().set_tick_for_test(999_999);
+    *sim.resolved_terrain_mut_for_test() =
         Some(ResolvedTerrainGrid::from_cells(32, 32, cells).test_mark_decks_structural());
     {
         let size = input
@@ -253,11 +253,12 @@ fn drawing_fixture(
         "prepared raw speed is bound to the original type reader's authored input"
     );
     assert_eq!(speed["flag_owner"], -1, "retail CTF is dormant");
-    for house in sim.houses.values_mut() {
-        house.project_country_mults(&rules, &sim.interner);
+    let interner = sim.interner().clone();
+    for house in sim.houses_mut_for_test().values_mut() {
+        house.project_country_mults(&rules, &interner);
     }
-    let frame = sim.session.binary_frame();
-    let actor = sim.entities_mut().get_mut(1).unwrap();
+    let frame = sim.session().binary_frame();
+    let actor = sim.entities_mut_for_test().get_mut(1).unwrap();
     actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     actor
         .body_facing
@@ -310,7 +311,7 @@ fn drawing_fixture(
         crate::sim::movement::motion_query::is_moving(&target),
         input["target_moving"].as_bool()
     );
-    sim.entities_mut().insert(target);
+    sim.entities_mut_for_test().insert(target);
     (sim, Some(rules), state, view)
 }
 
@@ -425,10 +426,10 @@ pub(super) fn workload_fixture(
         // Keep the one unselected moving target outside the20k source IDs.
         // This is synthetic load setup, before measurement; no gameplay tick
         // or identity-lifecycle equivalence is claimed for it.
-        let mut target = sim.entities_mut().remove(2).unwrap();
+        let mut target = sim.entities_mut_for_test().remove(2).unwrap();
         target.set_stable_id_for_test(20_001);
-        sim.entities_mut().insert(target);
-        sim.entities_mut()
+        sim.entities_mut_for_test().insert(target);
+        sim.entities_mut_for_test()
             .get_mut(1)
             .unwrap()
             .attack_target
@@ -541,10 +542,10 @@ fn original_unit_attack_line_pixels_and_read_only_coordinate_queries() {
         let (sim, rules, state, view) = drawing_fixture(row);
         let hash = sim.state_hash();
         let rng = (
-            sim.main_rng.logical_state(),
-            sim.scenario_rng.logical_state(),
+            sim.main_rng().logical_state(),
+            sim.scenario_rng().logical_state(),
         );
-        let query = NativeCellQuery::canonical(sim.resolved_terrain.as_ref().unwrap());
+        let query = NativeCellQuery::canonical(sim.resolved_terrain().unwrap());
         let dummy = query.dummy().snapshot();
         let instances = build_target_line_instances(
             &state,
@@ -562,8 +563,8 @@ fn original_unit_attack_line_pixels_and_read_only_coordinate_queries() {
         assert_eq!(sim.state_hash(), hash, "{}", row["input"]);
         assert_eq!(
             (
-                sim.main_rng.logical_state(),
-                sim.scenario_rng.logical_state()
+                sim.main_rng().logical_state(),
+                sim.scenario_rng().logical_state()
             ),
             rng
         );
@@ -671,7 +672,7 @@ fn original_source_and_target_projection_before_surface_clipping() {
             continue;
         };
         let (sim, rules, _, view) = drawing_fixture(row);
-        let cells = sim.resolved_terrain.as_ref().map(NativeCellQuery::isolated);
+        let cells = sim.resolved_terrain().map(NativeCellQuery::isolated);
         let line = selected_action_line_for_entity(
             sim.entities().get(1).unwrap(),
             &sim,
@@ -811,12 +812,12 @@ fn original_action_timer_wrap_sentinel_and_positive_remainder() {
 #[test]
 fn move_line_query_leaves_the_simulation_dummy_unchanged() {
     let (mut sim, state, view) = fixture(baseline_rows().next().unwrap());
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(1)
         .unwrap()
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(u16::MAX, u16::MAX)));
-    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    let terrain = sim.resolved_terrain().unwrap();
     let query = NativeCellQuery::canonical(terrain);
     let before = query.dummy().snapshot().coord;
     let _ = build_target_line_instances(

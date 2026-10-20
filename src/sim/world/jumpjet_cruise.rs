@@ -222,7 +222,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn cell_land_type(&self, xy: [i32; 2]) -> u8 {
         self.terrain().map_or(0, |terrain| {
             match terrain.native_cell_identity(self.cell_of(xy)) {
-                NativeCellIdentity::Real(index) => terrain.cells()[index].land_type(),
+                NativeCellIdentity::Real(index) => terrain.cells()[index].land_type,
                 NativeCellIdentity::Dummy => 0,
             }
         })
@@ -826,7 +826,7 @@ mod tests {
             let cell = sim
                 .resolved_terrain
                 .as_mut()
-                .and_then(|terrain| terrain.cell_mut(9, 10))
+                .and_then(|terrain| terrain.cell_mut_for_test(9, 10))
                 .expect("fixture cell");
             cell.level = 2;
             cell.slope_type = 1;
@@ -859,7 +859,7 @@ mod tests {
             // doubles and the bob zero, `+0x80` at `JumpjetHeight=`).
             let mut flight = runtime.flight();
             flight.facing_mut().snap(u16::from(body_facing) << 8, 0);
-            flight.set_target_height(500);
+            flight.set_target_height_for_test(500);
             *runtime = runtime
                 .clone()
                 .with_phase_for_test(STATE_TRANSLATE)
@@ -915,7 +915,7 @@ mod tests {
         e.set_owner_for_test(owner);
         e.set_type_ref_for_test(type_ref);
         e.lifecycle.set_in_limbo_for_test(false);
-        e.lifecycle.set_cell_marked(true);
+        e.lifecycle.set_cell_marked_for_test(true);
         e.position.put_z(0);
         let runtime = e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap();
         *runtime = runtime
@@ -1096,7 +1096,7 @@ mod tests {
             .set_nav_com_for_test(Some(NavTargetRef::object(building)));
         let runtime = e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap();
         let mut flight = runtime.flight();
-        flight.set_target_height(0);
+        flight.set_target_height_for_test(0);
         *runtime = runtime
             .clone()
             .with_phase_for_test(STATE_DESCEND)
@@ -1382,7 +1382,7 @@ mod tests {
         {
             let jumpjet = sim.substrate.entities.get_mut(1).expect("jumpjet");
             jumpjet.lifecycle.set_in_limbo_for_test(false);
-            jumpjet.lifecycle.set_cell_marked(true);
+            jumpjet.lifecycle.set_cell_marked_for_test(true);
             jumpjet.position.set_sub_x_for_test(SimFixed::from_num(250));
             let runtime = jumpjet
                 .locomotor

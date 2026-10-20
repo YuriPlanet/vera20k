@@ -141,7 +141,7 @@ mod tests {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(10, 10)
+            .cell_mut_for_test(10, 10)
             .unwrap()
             .level = 2;
         assert_eq!(
@@ -171,7 +171,7 @@ mod tests {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(10, 10)
+            .cell_mut_for_test(10, 10)
             .unwrap()
             .level = 7;
         let before_hash = world.state_hash();

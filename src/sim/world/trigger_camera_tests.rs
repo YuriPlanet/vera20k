@@ -43,7 +43,10 @@ fn waypoint_ground_bridge_and_dummy_coordinates_match_original_actions48_and112(
             terrain.shared_cell_dummy().set_level_slope(level, slope);
         } else {
             terrain.test_set_native_allocated_cells(&[(x as u16, y as u16)]);
-            terrain.cell_mut(x as u16, y as u16).unwrap().slope_type = slope;
+            terrain
+                .cell_mut_for_test(x as u16, y as u16)
+                .unwrap()
+                .slope_type = slope;
         }
         let identity = if missing {
             NativeCellIdentity::Dummy
@@ -129,7 +132,7 @@ fn eleven_original_waypoint_location_controls_keep_receiver_identity_and_signed_
         let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, test_flat_cell);
         terrain.test_set_native_allocated_cells(&real.into_iter().collect::<Vec<_>>());
         let identity = if let Some((x, y)) = real {
-            terrain.cell_mut(x, y).unwrap().slope_type = slope;
+            terrain.cell_mut_for_test(x, y).unwrap().slope_type = slope;
             terrain.native_cell_identity((x as i16, y as i16))
         } else {
             terrain.shared_cell_dummy().set_level_slope(level, slope);

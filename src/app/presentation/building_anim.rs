@@ -70,7 +70,8 @@ impl<'a> SoundSpatialContext<'a> {
             registry,
             listener,
             sim,
-            local_owner_id: local_owner.and_then(|name| sim.and_then(|sim| sim.interner.get(name))),
+            local_owner_id: local_owner
+                .and_then(|name| sim.and_then(|sim| sim.interner().get(name))),
         }
     }
 
@@ -78,8 +79,8 @@ impl<'a> SoundSpatialContext<'a> {
     fn shrouded(&self, rx: u16, ry: u16) -> bool {
         match (self.sim, self.local_owner_id) {
             (Some(sim), Some(owner)) => {
-                !sim.fog.is_cell_revealed(owner, rx, ry)
-                    || sim.fog.is_cell_gap_covered(owner, rx, ry)
+                !sim.fog().is_cell_revealed(owner, rx, ry)
+                    || sim.fog().is_cell_gap_covered(owner, rx, ry)
             }
             _ => false,
         }
@@ -451,7 +452,7 @@ pub(crate) fn local_eva_side(state: &AppState) -> crate::rules::sound_ini::EvaSi
     use crate::rules::sound_ini::EvaSide;
     let side_index = preferred_local_owner_name(state).and_then(|owner| {
         let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
-        crate::sim::house_state::house_state_for_owner(&sim.houses, &owner, &sim.interner)
+        crate::sim::house_state::house_state_for_owner(sim.houses(), &owner, sim.interner())
             .map(|house| i32::from(house.side_index()))
     });
     EvaSide::from_side_index(side_index.unwrap_or(0))

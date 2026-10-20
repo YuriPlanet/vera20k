@@ -801,7 +801,7 @@ fn unit_source_arm_matches_original_execution() {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(at(0) as u16, at(1) as u16)
+                .cell_mut_for_test(at(0) as u16, at(1) as u16)
                 .unwrap();
             out.level = at(2) as u8;
             out.bridge_facts.raw_flags = at(3) as u32;
@@ -965,7 +965,7 @@ fn an_idle_tank_behind_a_cliff_scatters_every_sixty_four_frames() {
     sim.resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(11, 11)
+        .cell_mut_for_test(11, 11)
         .unwrap()
         .level = 4;
     assert_eq!(idle_scatter(&mut sim, 126), None, "off the cadence");

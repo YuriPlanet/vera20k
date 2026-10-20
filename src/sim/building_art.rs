@@ -393,9 +393,10 @@ impl Simulation {
         self.add_building_sensor_array_if_powered(id, rules, registry);
         self.announce_super_weapon_building_complete(id, rules);
         if !captured && !scenario_initialization {
-            self.mission_spawned_entities |= crate::sim::production::spawn_building_free_unit(
-                self, id, rules, registry, effects,
-            );
+            if crate::sim::production::spawn_building_free_unit(self, id, rules, registry, effects)
+            {
+                self.note_mission_spawned_entities();
+            }
         }
     }
     fn building_anim_config(
@@ -1184,7 +1185,7 @@ mod slot_tests {
         // coordinate commit and verify its already retained slot moves in place.
         let entity = sim.entities_mut().get_mut(id).unwrap();
         entity.lifecycle.set_in_limbo_for_test(true);
-        entity.lifecycle.set_cell_marked(false);
+        entity.lifecycle.set_cell_marked_for_test(false);
         let outcome = sim.try_reveal_entity_with_context(
             id,
             RevealRequest {

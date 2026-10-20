@@ -654,7 +654,7 @@ mod corpse_tests {
             &sim.session.theater(),
             &rules.radiation,
             sim.resolved_terrain.as_ref(),
-            &mut sim.lighting_sources.pending,
+            &mut sim.lighting_sources,
         );
         let nukedie = |sim: &Simulation| {
             sim.anims()

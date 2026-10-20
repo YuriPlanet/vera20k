@@ -617,7 +617,11 @@ pub(super) mod tests {
         .unwrap();
         let mut sim = one_cell_sim(terrain_cell(0, 0));
         add_building(&mut sim, 1, "Solid");
-        sim.overlay_grid.as_mut().unwrap().cell_mut(0, 0).overlay_id = Some(0x02);
+        sim.overlay_grid
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(0, 0)
+            .overlay_id = Some(0x02);
         let world = SparkCollisionWorld::new(&sim, &rules).unwrap();
         let terrain = sim.resolved_terrain.as_ref().unwrap();
         let motion = motion_between(IVec3::new(0, 0, 100), IVec3::new(256, 0, 100));
@@ -640,7 +644,11 @@ pub(super) mod tests {
     #[test]
     fn gsi_04_03_candidate_real_keeps_wall_after_old_dummy_restamp() {
         let mut sim = one_cell_sim(terrain_cell(0, 0));
-        sim.overlay_grid.as_mut().unwrap().cell_mut(0, 0).overlay_id = Some(0x02);
+        sim.overlay_grid
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(0, 0)
+            .overlay_id = Some(0x02);
         let rules = empty_rules();
         let world = SparkCollisionWorld::new(&sim, &rules).unwrap();
         let terrain = sim.resolved_terrain.as_ref().unwrap();

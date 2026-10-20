@@ -157,7 +157,7 @@ fn fixture(case: &Value) -> Simulation {
     entity
         .lifecycle
         .set_in_limbo_for_test(integer(&before["owner_limbo"]) != 0);
-    entity.lifecycle.set_cell_marked(false);
+    entity.lifecycle.set_cell_marked_for_test(false);
     entity.set_foot_occupation_enabled(input["occupation_enabled"].as_bool().unwrap_or(false));
     entity
         .foot_speed

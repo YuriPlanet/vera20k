@@ -398,7 +398,7 @@ impl Simulation {
             alive.iter().all(|right| {
                 left == right
                     || crate::map::houses::are_houses_mutually_allied(
-                        &self.house_alliances,
+                        self.house_alliances.as_map(),
                         self.interner.resolve(*left),
                         self.interner.resolve(*right),
                     )
@@ -535,8 +535,7 @@ impl Simulation {
             return;
         }
         if campaign {
-            let was_locked = self.session.input_locked();
-            self.session.set_input_locked(true);
+            let was_locked = self.session.lock_input();
             self.publish_trigger_effects(vec![
                 crate::sim::trigger_runtime::TriggerEffect::InputLockChanged {
                     locked: true,
@@ -613,6 +612,14 @@ impl Simulation {
         }
         // Each original TAction arm returns AL1 independently of Flag AL.
         true
+    }
+
+    /// Diagnostic producer for a map's TAction 68 (Lose) on the current
+    /// House, through the same [`Self::trigger_house_outcome`] owner. Only
+    /// the dev chord's capture routes reach it; shipping builds omit it.
+    #[cfg(feature = "dev-overlays")]
+    pub fn dev_trigger_current_house_lose(&mut self, rules: &RuleSet) -> bool {
+        self.trigger_house_outcome(68, -1, Some(rules), FrameEffects::empty())
     }
 
     /// Session `+0x300` (`0x00A8B538`), written when the current house is

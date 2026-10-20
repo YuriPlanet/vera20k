@@ -281,7 +281,12 @@ mod tests {
             let mut world = crate::sim::arena_fixture::rival_arena_with_size(&rules, 31, 64);
             world.intern_rule_type_ids(&rules);
             world.resolve_type_handles(&rules);
-            for cell in &mut world.resolved_terrain.as_mut().unwrap().cells {
+            for cell in world
+                .resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cells_mut_for_test()
+            {
                 cell.level = 6;
             }
             let mut targets = Vec::new();

@@ -76,10 +76,10 @@ fn assert_light_lifecycle(map: &str, packet: &'static str) {
             spread,
         };
         let mut state = RadiationState::default();
-        let mut events = Vec::new();
+        let mut events = crate::sim::light_sources::LightingSources::default();
         let mut source = None;
-        let mut publish = |events: &mut Vec<LightingEvent>| {
-            for event in events.drain(..) {
+        let mut publish = |events: &mut crate::sim::light_sources::LightingSources| {
+            for event in events.take_pending() {
                 match event {
                     LightingEvent::Radiation {
                         center: at,
@@ -320,7 +320,7 @@ fn field_operations_match_native_overlap_controls() {
             row["factor_bits"]
         );
         let mut state = RadiationState::default();
-        let mut lights = Vec::new();
+        let mut lights = crate::sim::light_sources::LightingSources::default();
         let mut frame = 0;
         for stage in row["stages"].as_array().unwrap() {
             let action = &stage["action"];
@@ -429,7 +429,7 @@ fn restore_rejects_missing_or_duplicate_radiation_update_slots() {
         &sim.session.theater(),
         &RadiationRules::default(),
         None,
-        &mut Vec::new(),
+        &mut crate::sim::light_sources::LightingSources::default(),
     );
     sim.radiation.creation_order.push((10, 10));
     assert_eq!(
@@ -468,7 +468,7 @@ fn equal_current_fields_with_different_update_order_hash_differently() {
                 &world.session.theater(),
                 &RadiationRules::default(),
                 None,
-                &mut Vec::new(),
+                &mut crate::sim::light_sources::LightingSources::default(),
             );
         }
     }
@@ -500,7 +500,7 @@ fn serialized_radius_that_changes_future_decay_is_hash_relevant() {
         &original.session.theater(),
         &RadiationRules::default(),
         None,
-        &mut Vec::new(),
+        &mut crate::sim::light_sources::LightingSources::default(),
     );
     let mut restored = crate::sim::world::Simulation::new();
     restored.radiation =

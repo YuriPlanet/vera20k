@@ -28,7 +28,7 @@ fn waiter_scene(golden: &Value, case: &Value, control: &Value) -> Scene {
 
 fn compare_foot(scene: &Scene, expected: &Value) {
     let actor = scene.sim.substrate.entities.get(scene.tank).unwrap();
-    let path = &actor.navigation.path_runtime;
+    let path = actor.navigation.path_runtime();
     let drive = actor
         .locomotor
         .as_ref()
@@ -36,10 +36,10 @@ fn compare_foot(scene: &Scene, expected: &Value) {
         .and_then(|runtime| runtime.retained())
         .unwrap();
     let head = drive.head_to().unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
-    assert_eq!(actor.navigation.path_replay.cursor(), 0);
+    assert_eq!(actor.navigation.path_replay().cursor(), 0);
     let words: Vec<i32> = actor
         .navigation
-        .path_replay
+        .path_replay()
         .directions()
         .iter()
         .map(|&word| if word == u8::MAX { -1 } else { i32::from(word) })
@@ -271,7 +271,7 @@ fn native_actual_ally_entry_near_stop_preserves_pending_until_foundation_refusal
     {
         // Exact pre-Process native route/facing priors; no prior travel claim.
         let actor = scene.sim.substrate.entities.get_mut(scene.tank).unwrap();
-        actor.navigation.path_replay = {
+        actor.navigation.set_path_replay_for_test({
             let mut value = FootPathQueue::default();
             value.set_directions_for_test(
                 native["foot_before"]["path"]
@@ -282,7 +282,7 @@ fn native_actual_ally_entry_near_stop_preserves_pending_until_foundation_refusal
                     .collect(),
             );
             value
-        };
+        });
         actor.body_facing = crate::sim::movement::FacingClass::new(0x8000, 0);
     }
     compare_foot(&scene, &native["foot_before"]);

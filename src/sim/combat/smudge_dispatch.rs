@@ -47,9 +47,7 @@ pub struct SmudgeTiberiumContext<'a> {
     pub live_objects: Option<crate::sim::tiberium::NativeCellObjectView<'a>>,
     pub binary_frame: u32,
     pub spread_enabled: bool,
-    pub radar_dirty_cells: &'a mut Vec<(u16, u16)>,
-    pub radar_dirty_generation: &'a mut u64,
-    pub tactical_dirty_cells: &'a mut Vec<(u16, u16)>,
+    pub dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
 }
 
 impl SmudgeTiberiumContext<'_> {
@@ -75,9 +73,7 @@ impl SmudgeTiberiumContext<'_> {
             rng: Some(rng),
             binary_frame: self.binary_frame,
             spread_enabled: self.spread_enabled,
-            radar_dirty_cells: Some(&mut *self.radar_dirty_cells),
-            radar_dirty_generation: Some(&mut *self.radar_dirty_generation),
-            tactical_dirty_cells: Some(&mut *self.tactical_dirty_cells),
+            dirty_cells: Some(&mut *self.dirty_cells),
         };
         reduce_tiberium(&mut ctx, cell, i32::from(amount));
     }
@@ -616,9 +612,7 @@ mod dispatch_tests {
     fn tiberium_ctx<'a>(
         overlay_grid: &'a mut OverlayGrid,
         ore_growth_state: &'a mut OreGrowthState,
-        radar_dirty_cells: &'a mut Vec<(u16, u16)>,
-        radar_dirty_generation: &'a mut u64,
-        tactical_dirty_cells: &'a mut Vec<(u16, u16)>,
+        dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     ) -> SmudgeTiberiumContext<'a> {
         SmudgeTiberiumContext {
             overlay_grid,
@@ -629,9 +623,7 @@ mod dispatch_tests {
             live_objects: None,
             binary_frame: 0,
             spread_enabled: false,
-            radar_dirty_cells,
-            radar_dirty_generation,
-            tactical_dirty_cells,
+            dirty_cells,
         }
     }
 
@@ -699,17 +691,9 @@ mod dispatch_tests {
         let occupancy = OccupancyGrid::new();
         let mut rng = SimRng::new(1);
         let mut growth = OreGrowthState::new(8, 8);
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
+        let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
         {
-            let mut tiberium = tiberium_ctx(
-                &mut overlay,
-                &mut growth,
-                &mut radar_dirty,
-                &mut radar_generation,
-                &mut tactical_dirty,
-            );
+            let mut tiberium = tiberium_ctx(&mut overlay, &mut growth, &mut dirty);
             tiberium.overlay_registry = Some(&overlay_registry);
             tiberium.tiberium_types = Some(&tiberium_types);
             dispatch_anim_middle_marks(
@@ -761,16 +745,8 @@ mod dispatch_tests {
                 let location = input["location"].as_array().unwrap();
                 let size = row["foundation_size"].as_array().unwrap();
                 let mut growth = OreGrowthState::new(oracle_fixture::SIDE, oracle_fixture::SIDE);
-                let mut radar_dirty = Vec::new();
-                let mut radar_generation = 0;
-                let mut tactical_dirty = Vec::new();
-                let mut tiberium = tiberium_ctx(
-                    &mut map.overlay,
-                    &mut growth,
-                    &mut radar_dirty,
-                    &mut radar_generation,
-                    &mut tactical_dirty,
-                );
+                let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
+                let mut tiberium = tiberium_ctx(&mut map.overlay, &mut growth, &mut dirty);
                 let mut rng = oracle_fixture::seeded_rng(row);
                 try_dispatch_building_destruction_smudges(
                     (int(&location[0]) / 256) as u16,
@@ -818,16 +794,16 @@ mod dispatch_tests {
                 1, 2, &raw, &terrain, &overlay,
             ));
 
-            terrain.cell_mut(1, 3).unwrap().speed_costs.track = None;
+            terrain.cell_mut_for_test(1, 3).unwrap().speed_costs.track = None;
             assert!(!survivor_smudge_cell_passable(
                 1, 3, &raw, &terrain, &overlay,
             ));
-            terrain.cell_mut(1, 4).unwrap().speed_costs.track = Some(0);
+            terrain.cell_mut_for_test(1, 4).unwrap().speed_costs.track = Some(0);
             assert!(!survivor_smudge_cell_passable(
                 1, 4, &raw, &terrain, &overlay,
             ));
 
-            let bridge = terrain.cell_mut(1, 5).unwrap();
+            let bridge = terrain.cell_mut_for_test(1, 5).unwrap();
             bridge.speed_costs.track = Some(0);
             bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
             raw.mark_ground(1, 5, 0x40);
@@ -840,7 +816,7 @@ mod dispatch_tests {
                 1, 5, &raw, &terrain, &overlay,
             ));
 
-            let wall_bridge = terrain.cell_mut(1, 6).unwrap();
+            let wall_bridge = terrain.cell_mut_for_test(1, 6).unwrap();
             wall_bridge.speed_costs.track = Some(0);
             wall_bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
             overlay.place_overlay(1, 6, 0, 0);
@@ -853,9 +829,7 @@ mod dispatch_tests {
             let occupancy = OccupancyGrid::new();
             let mut grid = SmudgeGrid::new(8, 8);
             let mut growth = OreGrowthState::new(8, 8);
-            let mut radar_dirty = Vec::new();
-            let mut radar_generation = 0;
-            let mut tactical_dirty = Vec::new();
+            let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
             let mut rng = SimRng::new(17);
             let before = rng.logical_state();
             let mut tiberium = SmudgeTiberiumContext {
@@ -867,9 +841,7 @@ mod dispatch_tests {
                 live_objects: None,
                 binary_frame: 0,
                 spread_enabled: false,
-                radar_dirty_cells: &mut radar_dirty,
-                radar_dirty_generation: &mut radar_generation,
-                tactical_dirty_cells: &mut tactical_dirty,
+                dirty_cells: &mut dirty,
             };
             try_dispatch_building_survivor_smudge(
                 1,
@@ -917,9 +889,7 @@ mod dispatch_tests {
             survivor_overlay.take_dirty_cells();
             let raw = RawCellOccupationGrid::new();
             let mut survivor_growth = OreGrowthState::new(8, 8);
-            let mut survivor_radar = Vec::new();
-            let mut survivor_generation = 0;
-            let mut survivor_tactical = Vec::new();
+            let mut survivor_dirty = crate::sim::dirty_cells::DirtyCells::default();
             let mut survivor_rng = SimRng::new(crater_seed);
             let mut expected_rng = SimRng::new(crater_seed);
             assert!(expected_rng.next_range_u32(100) >= 50);
@@ -934,9 +904,7 @@ mod dispatch_tests {
                 let mut tiberium = tiberium_ctx(
                     &mut survivor_overlay,
                     &mut survivor_growth,
-                    &mut survivor_radar,
-                    &mut survivor_generation,
-                    &mut survivor_tactical,
+                    &mut survivor_dirty,
                 );
                 tiberium.overlay_registry = Some(&overlay_registry);
                 tiberium.tiberium_types = Some(&tiberium_types);
@@ -970,9 +938,9 @@ mod dispatch_tests {
                     .iter()
                     .all(|class| class.growth.is_empty() && class.spread.is_empty())
             );
-            assert!(survivor_radar.is_empty());
-            assert_eq!(survivor_generation, 0);
-            assert!(survivor_tactical.is_empty());
+            assert!(survivor_dirty.radar().is_empty());
+            assert_eq!(survivor_dirty.radar_generation(), 0);
+            assert!(survivor_dirty.tactical_for_test().is_empty());
             assert_eq!(survivor_rng.logical_state(), expected_rng.logical_state());
         }
     }

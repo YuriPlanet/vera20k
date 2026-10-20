@@ -3451,7 +3451,7 @@ pub(crate) fn occupant_slot_a4_answers_true(
     };
     let path_head = occupant
         .navigation
-        .path_replay
+        .path_replay()
         .remaining_directions()
         .first()
         .copied();

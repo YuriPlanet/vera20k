@@ -69,9 +69,9 @@ impl PlanningInputState {
             None
         } else {
             sim.and_then(|sim| {
-                let owner = sim.session.current_house()?;
+                let owner = sim.session().current_house()?;
                 let record = sim.encode_plan_commit_record(owner)?;
-                SynchronizedCommand::opaque(record).decode_for_simulation(sim, sim.session.tick())
+                SynchronizedCommand::opaque(record).decode_for_simulation(sim, sim.session().tick())
             })
         };
         if !active {
@@ -185,7 +185,7 @@ pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
         .match_state
         .sim_runtime
         .as_ref()
-        .map(|rt| rt.simulation.session.tick())
+        .map(|rt| rt.simulation.session().tick())
     else {
         return;
     };
@@ -244,7 +244,7 @@ pub(crate) fn queue_orders(
     let Some(rt) = state.match_state.sim_runtime.as_mut() else {
         return false;
     };
-    let Some(owner) = rt.simulation.session.current_house() else {
+    let Some(owner) = rt.simulation.session().current_house() else {
         return false;
     };
     match queue_orders_in_sim(&mut rt.simulation, owner, selected, orders) {
@@ -302,7 +302,7 @@ fn queue_orders_in_sim(
 pub(crate) fn node_at_cursor(state: &AppState) -> Option<(u16, u16)> {
     let point = hover_native_screen(state)?;
     let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
-    let owner = sim.session.current_house()?;
+    let owner = sim.session().current_house()?;
     sim.planning_node_at_screen(owner, &selected_in_order(state), point)
 }
 
@@ -393,14 +393,14 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
     }
     let point = cursor_native_screen(state);
     if let Some(rt) = state.match_state.sim_runtime.as_mut()
-        && let Some(owner) = rt.simulation.session.current_house()
+        && let Some(owner) = rt.simulation.session().current_house()
     {
         for actor in rt.simulation.planning_connect_actors(owner, &selected) {
             if let Some(record) = rt
                 .simulation
                 .encode_plan_connect_record_at_screen(owner, actor, point)
                 && let Some(command) = SynchronizedCommand::opaque(record)
-                    .decode_for_simulation(&rt.simulation, rt.simulation.session.tick())
+                    .decode_for_simulation(&rt.simulation, rt.simulation.session().tick())
             {
                 rt.simulation.queue_command(command);
             }
@@ -417,12 +417,12 @@ pub(crate) fn delete_at_cursor(state: &mut AppState) {
     }
     let point = cursor_native_screen(state);
     if let Some(rt) = state.match_state.sim_runtime.as_mut()
-        && let Some(owner) = rt.simulation.session.current_house()
+        && let Some(owner) = rt.simulation.session().current_house()
         && let Some(record) = rt
             .simulation
             .encode_plan_node_delete_record_at_screen(owner, point)
         && let Some(command) = SynchronizedCommand::opaque(record)
-            .decode_for_simulation(&rt.simulation, rt.simulation.session.tick())
+            .decode_for_simulation(&rt.simulation, rt.simulation.session().tick())
     {
         rt.simulation.queue_command(command);
     }
@@ -502,9 +502,9 @@ mod tests {
 
     fn populated_sim() -> (Simulation, crate::sim::intern::InternedId) {
         let mut sim = Simulation::new();
-        let local = sim.interner.intern("Local");
-        let kind = sim.interner.intern("TESTUNIT");
-        sim.houses
+        let local = sim.intern("Local");
+        let kind = sim.intern("TESTUNIT");
+        sim.houses_mut_for_test()
             .register(HouseState::new(local, 0, None, false, 0, 10));
         for id in [42, 43] {
             let mut entity = GameEntity::new_at_frame_zero_for_test(
@@ -522,7 +522,7 @@ mod tests {
                 false,
             );
             entity.lifecycle.set_in_limbo_for_test(false);
-            sim.substrate.entities.insert(entity);
+            sim.entities_mut_for_test().insert(entity);
         }
         (sim, local)
     }
@@ -710,16 +710,19 @@ mod tests {
         let mut sim = Simulation::with_seed(0x004A_BFA9);
         sim.intern_rule_type_ids(rules);
         sim.resolve_type_handles(rules);
-        sim.session.set_game_mode(
+        sim.session_mut_for_test().set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.game_options_mut_for_test().short_game = false;
+        sim.session_mut_for_test()
+            .game_options_mut_for_test()
+            .short_game = false;
         let owner = sim.intern("Americans");
         let side = rules.country_side_index("Americans").unwrap().0;
         let mut house = HouseState::new(owner, side, Some(owner), true, 50_000, 10);
-        house.project_country_mults(rules, &sim.interner);
-        sim.houses.register(house);
-        sim.session.set_current_house_for_test(Some(owner));
+        house.project_country_mults(rules, sim.interner());
+        sim.houses_mut_for_test().register(house);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
         crate::sim::arena_fixture::flat_ground(&mut sim, rules);
         let first = sim
             .spawn_object("GAWEAP", "Americans", 6, 6, 0, rules)
@@ -727,8 +730,8 @@ mod tests {
         let second = sim
             .spawn_object("GAWEAP", "Americans", 20, 6, 0, rules)
             .expect("stock nonprimary War Factory");
-        assert!(sim.production.is_primary_factory(first));
-        assert!(!sim.production.is_primary_factory(second));
+        assert!(sim.production().is_primary_factory(first));
+        assert!(!sim.production().is_primary_factory(second));
         Some((sim, retail, first, second))
     }
 
@@ -741,7 +744,7 @@ mod tests {
         let Some((mut sim, retail, first, second)) = retail_primary_planning_fixture() else {
             return;
         };
-        let owner = sim.session.current_house().unwrap();
+        let owner = sim.session().current_house().unwrap();
         let overlays =
             OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
@@ -771,11 +774,11 @@ mod tests {
                 .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
                 .expect("ordinary planning-active primary-selection frame");
             assert_eq!(
-                runtime.simulation.production.is_primary_factory(second),
+                runtime.simulation.production().is_primary_factory(second),
                 selected
             );
             assert_eq!(
-                runtime.simulation.production.is_primary_factory(first),
+                runtime.simulation.production().is_primary_factory(first),
                 !selected
             );
             assert!(runtime.simulation.planning_paths(owner).is_empty());
@@ -795,7 +798,7 @@ mod tests {
             let Some((mut sim, retail, first, second)) = retail_primary_planning_fixture() else {
                 return;
             };
-            let owner = sim.session.current_house().unwrap();
+            let owner = sim.session().current_house().unwrap();
             assert_eq!(
                 retail.rules.general.scold_sound.as_deref(),
                 admission["scold_sound"]["name"].as_str()
@@ -860,7 +863,7 @@ mod tests {
             }
             for (index, actor) in [first, second].into_iter().enumerate() {
                 assert_eq!(
-                    u8::from(sim.production.is_primary_factory(actor)),
+                    u8::from(sim.production().is_primary_factory(actor)),
                     native["state"]["primary"][index].as_u64().unwrap() as u8
                 );
             }
@@ -966,11 +969,18 @@ mod tests {
                 } else {
                     sim.intern(&format!("Other{slot}"))
                 };
-                sim.houses
-                    .register(HouseState::new(owner, 0, None, slot == index, 0, 10));
+                sim.houses_mut_for_test().register(HouseState::new(
+                    owner,
+                    0,
+                    None,
+                    slot == index,
+                    0,
+                    10,
+                ));
             }
-            sim.session.set_current_house_for_test(Some(local));
-            sim.houses
+            sim.session_mut_for_test()
+                .set_current_house_for_test(Some(local));
+            sim.houses_mut_for_test()
                 .get_mut(&local)
                 .unwrap()
                 .set_is_defeated_for_test(case["initial"]["session300"] != 0);
@@ -986,14 +996,15 @@ mod tests {
             assert_eq!(case["detach"], serde_json::json!([]));
             for phase in case["phases"].as_array().unwrap() {
                 let frame = phase["frame"].as_u64().unwrap();
-                sim.session.set_tick_for_test(frame);
-                sim.session.set_binary_frame_for_test(frame as u32);
+                sim.session_mut_for_test().set_tick_for_test(frame);
+                sim.session_mut_for_test()
+                    .set_binary_frame_for_test(frame as u32);
                 let requested = match phase["input"].as_str().unwrap() {
                     "house_defeat_tail" => {
                         // The native component starts after the House flag
                         // store. Its production trigger is tested through the
                         // real lifecycle/House rung in planning_defeat_tests.
-                        sim.houses
+                        sim.houses_mut_for_test()
                             .get_mut(&local)
                             .unwrap()
                             .set_is_defeated_for_test(true);

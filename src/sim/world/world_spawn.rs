@@ -267,6 +267,27 @@ impl Simulation {
         self.substrate.entities.insert(entity);
         stable_id
     }
+
+    /// Moves a diagnostic insert from `insert_synthetic_techno_for_diagnostics`
+    /// to `coord` for the telemetry demo's stroll. No simulation system moves
+    /// these lifecycle-free inserts; an object in the logic vector moves only
+    /// through its locomotor, so it is refused (`false`).
+    #[doc(hidden)]
+    #[cfg(feature = "telemetry")]
+    pub fn place_synthetic_for_diagnostics(
+        &mut self,
+        stable_id: u64,
+        coord: crate::sim::components::DriveCoord,
+    ) -> bool {
+        let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
+            return false;
+        };
+        if entity.in_logic_vector.is_member() {
+            return false;
+        }
+        entity.position.put_location(coord);
+        true
+    }
 }
 
 impl Simulation {

@@ -23,7 +23,7 @@ pub(super) fn on_map(sim: &Simulation, cell: (u16, u16)) -> bool {
         .is_some()
         && crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
             (i32::from(cell.0), i32::from(cell.1)),
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
             sim.resolved_terrain.as_ref(),
             None,
         )
@@ -120,7 +120,7 @@ pub(super) fn check_with_sites(
             relation: if entity.owner() == owner {
                 HouseMask::OWNER
             } else if is_allied_with(
-                &sim.house_alliances,
+                sim.house_alliances.as_map(),
                 sim.interner.resolve(owner),
                 sim.interner.resolve(entity.owner()),
             ) {
@@ -149,7 +149,7 @@ pub(super) fn check_with_sites(
         contents: &contents,
         target_in_bounds: true,
         terrain_is_water: Some(
-            target.land_type() == crate::rules::terrain_rules::LandType::Water.as_index(),
+            target.land_type == crate::rules::terrain_rules::LandType::Water.as_index(),
         ),
         fire_into_shroud: targeting.fire_into_shroud,
         shrouded,

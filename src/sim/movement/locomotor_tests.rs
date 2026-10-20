@@ -31,7 +31,7 @@ fn walk_destination_and_cell_producer_match_original_startup_conversion() {
                 })
                 .collect(),
         );
-        let c = terrain.cell_mut(10, 10).unwrap();
+        let c = terrain.cell_mut_for_test(10, 10).unwrap();
         c.slope_type = 1;
         c.bridge_facts.raw_flags = if input["structural"].as_bool().unwrap() {
             0x100

@@ -75,9 +75,9 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         .collect();
 
     let mut sim = Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
-    let owner_ids = owner_names.map(|owner| sim.interner.intern(owner));
-    let infantry_type = sim.interner.intern("E1");
+    *sim.interner_mut_for_test() = crate::sim::intern::test_interner();
+    let owner_ids = owner_names.map(|owner| sim.intern(owner));
+    let infantry_type = sim.intern("E1");
     let positions = [(10, 10), (14, 14)];
     let mut body_ids = Vec::with_capacity(2);
     for (owner, (rx, ry)) in owner_ids.iter().copied().zip(positions) {
@@ -97,11 +97,15 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
             false,
         );
         entity.lifecycle.set_in_limbo_for_test(false);
-        sim.entities_mut().insert(entity);
-        assert!(begin_parachute_descent(sim.entities_mut(), id, 600));
+        sim.entities_mut_for_test().insert(entity);
+        assert!(begin_parachute_descent(
+            sim.entities_mut_for_test(),
+            id,
+            600
+        ));
         body_ids.push(id);
     }
-    let parachute_anim_type = sim.interner.intern(parachute_type);
+    let parachute_anim_type = sim.intern(parachute_type);
     let mut anim_ids = Vec::with_capacity(body_ids.len());
     for (&body_id, &owner) in body_ids.iter().zip(&owner_ids) {
         let body = sim.entities().get(body_id).unwrap();
@@ -135,7 +139,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
             Some(crate::sim::anim_class::AnimRemap::House(owner))
         );
         assert_eq!(
-            anim_remap_color(anim, &sim.interner, &house_colors),
+            anim_remap_color(anim, sim.interner(), &house_colors),
             Some(color),
             "house identity resolves through the match color map"
         );
@@ -171,7 +175,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         &no_cell_drawers,
         None,
         None,
-        Some(&sim.interner),
+        Some(sim.interner()),
     )
     .expect("retail E1 and live PARACH remap atlas");
 

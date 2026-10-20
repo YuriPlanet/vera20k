@@ -77,7 +77,7 @@ impl Encounter {
             terrain.set_projectile_water_set_base(tile);
             for y in 0..64 {
                 for x in 0..64 {
-                    let cell = terrain.cell_mut(x, y).unwrap();
+                    let cell = terrain.cell_mut_for_test(x, y).unwrap();
                     cell.source_tile_index = tile;
                     cell.final_tile_index = tile;
                 }

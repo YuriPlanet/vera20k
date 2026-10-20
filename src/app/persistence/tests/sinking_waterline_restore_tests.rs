@@ -18,7 +18,7 @@ fn native_saved_waterline() -> i16 {
 #[test]
 fn sinking_waterline_envelope_preserves_native_short_without_changing_simulation() {
     let mut sim = load_fixture_simulation(true);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng_mut_for_test() = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let waterlines = [(7, native_saved_waterline()), (8, i16::MIN)];
     let bytes = GameSnapshot::save_validated_with_presentation(
@@ -54,10 +54,10 @@ fn sinking_waterline_load_replaces_presentation_only_after_commit() {
     let id = sim.allocate_stable_id();
     let mut entity =
         crate::sim::game_entity::GameEntity::test_default(id, "TEST", "Americans", 0, 0);
-    entity.set_type_ref_for_test(sim.interner.intern("TEST"));
-    entity.set_owner_for_test(sim.interner.intern("Americans"));
-    sim.substrate.entities.insert(entity);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    entity.set_type_ref_for_test(sim.intern("TEST"));
+    entity.set_owner_for_test(sim.intern("Americans"));
+    sim.entities_mut_for_test().insert(entity);
+    *sim.scenario_rng_mut_for_test() = crate::sim::rng::SimRng::new(0);
     let waterline = native_saved_waterline();
     let bytes = GameSnapshot::save_validated_with_presentation(
         &sim,

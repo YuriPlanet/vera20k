@@ -23,6 +23,7 @@ pub mod slide;
 pub mod static_reveal;
 pub mod warning_monitor;
 pub mod abort;
+pub mod diplomacy;
 pub mod button;
 
 pub mod sound;

@@ -1,5 +1,7 @@
-//! Native offline pause B5, sharing72F540 composition with Game Controls.
+//! Native in-game menu B5/BBA/FF, sharing72F540 composition with Game
+//! Controls.
 
+use super::controls::{ControlPaint, group_box_geometry, paint_control, push_group_or_plain_frame};
 use super::in_game_shell::{self, InGameShellFrame};
 use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
@@ -7,10 +9,11 @@ use crate::assets::csf_file::CsfFile;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::pause_menu::{
-    PAUSE_MENU_FOOTER, PAUSE_MENU_TITLE, PauseMenuButton, PauseMenuButtonState, PauseMenuLayout,
-    pause_menu_layout,
+    InternetSlider, PAUSE_MENU_FOOTER, PauseMenuButtonState, PauseMenuLayout, PauseMenuTemplate,
 };
+use crate::ui::shell::trackbar::value_text_rect;
 use crate::ui::sidebar::SidebarTheme;
 
 /// Type2 chooses released0 / pressed1 / timer-highlight2 (612EE8..612F5B).
@@ -45,6 +48,8 @@ fn caption(csf: Option<&CsfFile>, key: &str) -> String {
         "GUI:AbortMission" => "Abort Mission",
         "GUI:ResumeMission" => "Resume Mission",
         "GUI:GameOptions" => "Game Options",
+        "GUI:OptionsInternet" => "Internet Options",
+        "GUI:InternetGameControls" => "Internet Game Controls",
         _ => "",
     }
     .to_string()
@@ -90,34 +95,49 @@ fn text_draws(
     font: &BitFont,
     csf: Option<&CsfFile>,
     theme: SidebarTheme,
-    layout: PauseMenuLayout,
+    layout: &PauseMenuLayout,
     states: [PauseMenuButtonState; 6],
+    help: Option<&str>,
 ) -> Vec<ShellTextDraw> {
     let mut draws = Vec::new();
-    for button in PauseMenuButton::ALL {
+    for (button, rect) in layout.buttons() {
         let state = states[button as usize];
+        let control = layout.template.control(button).expect("template button");
         draws.push(text_draw(
             font,
-            &caption(csf, button.descriptor().csf_key),
-            button_text_rect(layout.buttons[button as usize], state.pressed),
+            &caption(csf, control.csf_key),
+            button_text_rect(rect, state.pressed),
             button_text_rgb(theme, state.enabled),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         ));
     }
-    for (control, rect, align) in [
-        (PAUSE_MENU_TITLE, layout.title, ShellAlign::H_CENTER),
-        (PAUSE_MENU_FOOTER, layout.footer, ShellAlign::NONE),
-    ] {
-        let text = caption(csf, control.csf_key);
-        if !text.is_empty() {
-            draws.push(text_draw(font, &text, rect, SHELL_LABEL_TEXT_RGB, align));
-        }
+    let title = caption(csf, layout.template.title().csf_key);
+    if !title.is_empty() {
+        draws.push(text_draw(
+            font,
+            &title,
+            layout.title,
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::H_CENTER,
+        ));
+    }
+    // The common handler shows the hovered control's 6040B0 help in 0x695.
+    let footer = caption(csf, help.unwrap_or(PAUSE_MENU_FOOTER.csf_key));
+    if !footer.is_empty() {
+        draws.push(text_draw(
+            font,
+            &footer,
+            layout.footer,
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::NONE,
+        ));
     }
     draws
 }
 
-/// The app supplies all six states, including Load/Delete eligibility. This
-/// renderer owns no button actions and cannot silently substitute a no-op route.
+/// The app supplies every button state, including Load/Delete eligibility.
+/// This renderer owns no button actions and cannot silently substitute a
+/// no-op route.
 pub(crate) fn render_pause_menu_shell(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
@@ -128,39 +148,113 @@ pub(crate) fn render_pause_menu_shell(
         width,
         height,
         layout: shell,
-        button_size,
+        ..
     } = in_game_shell::current_in_game_shell_layout(state).expect("active shell geometry");
-    let layout = pause_menu_layout(width, height, shell, button_size);
+    let layout = crate::app::input::pause_menu::current_layout(state).expect("active shell");
     let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .expect("active side art");
     let mut art = in_game_shell::background_instances(atlas, shell, width, height);
-    for button in PauseMenuButton::ALL {
+    for (button, rect) in layout.buttons() {
         let frame = button_frame(buttons[button as usize]);
         if let Some(entry) = atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0]) {
-            in_game_shell::push_art(
-                &mut art,
-                entry,
-                layout.buttons[button as usize],
-                RectPx::new(0, 0, width, height),
-            );
+            in_game_shell::push_art(&mut art, entry, rect, RectPx::new(0, 0, width, height));
         }
     }
-    let texts = text_draws(
-        &state.renderer.bit_font,
-        state.process_assets.csf.as_ref(),
+    let help = crate::app::input::pause_menu::hovered_help(state);
+    let font = &state.renderer.bit_font;
+    let csf = state.process_assets.csf.as_ref();
+    let mut texts = text_draws(
+        font,
+        csf,
         crate::app::presentation::sidebar_render::current_sidebar_theme(state),
-        layout,
+        &layout,
         buttons,
+        help,
     );
+    let mut controls = Vec::new();
+    if let Some(internet) = layout.internet {
+        // FF's group box, both plaque trackbars and their statics (60B7A0).
+        let chrome_atlas = state
+            .frontend
+            .skirmish_shell_chrome
+            .as_ref()
+            .expect("active FF controls");
+        let group_caption = caption(csf, "GUI:InternetGameControls");
+        let cell = font.cell_height() as i32;
+        let (frame, caption_rect) = group_box_geometry(internet.group, cell, cell);
+        push_group_or_plain_frame(
+            &mut controls,
+            chrome_atlas,
+            frame,
+            Some(font.text_width(&group_caption) as i32),
+            false,
+        );
+        texts.push(text_draw(
+            font,
+            &group_caption,
+            caption_rect,
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::NONE,
+        ));
+        let pause = &state.match_state.match_presentation.internet_pause;
+        let chrome = chrome_atlas.control_chrome();
+        for slider in InternetSlider::ALL {
+            let index = slider as usize;
+            let rect = internet.sliders[index];
+            let value = pause.positions[index];
+            paint_control(
+                &mut controls,
+                &chrome,
+                ControlPaint::Trackbar {
+                    rect,
+                    thumb_left: slider
+                        .range()
+                        .thumb_left_in(value, rect, ShellScale::RETAIL),
+                    plaque: true,
+                },
+                ShellScale::RETAIL,
+            );
+            texts.push(text_draw(
+                font,
+                &value.to_string(),
+                value_text_rect(rect, ShellScale::RETAIL),
+                SHELL_LABEL_TEXT_RGB,
+                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            ));
+            let (key, fallback) = slider.caption();
+            let left = csf.map_or_else(|| fallback.to_string(), |csf| csf.text(key).into_owned());
+            texts.push(text_draw(
+                font,
+                &left,
+                internet.captions[index],
+                SHELL_LABEL_TEXT_RGB,
+                ShellAlign::H_RIGHT,
+            ));
+            let (key, fallback) = pause.value_caption(slider);
+            let right = csf.map_or_else(|| fallback.to_string(), |csf| csf.text(key).into_owned());
+            texts.push(text_draw(
+                font,
+                &right,
+                internet.values[index],
+                SHELL_LABEL_TEXT_RGB,
+                ShellAlign::NONE,
+            ));
+        }
+    }
+    let label = match layout.template {
+        PauseMenuTemplate::Offline => "Active Pause Menu B5",
+        PauseMenuTemplate::Network => "Active Pause Menu BBA",
+        PauseMenuTemplate::Internet => "Active Pause Menu FF",
+    };
     in_game_shell::render_in_game_shell_frame(
         state,
         encoder,
         destination,
         InGameShellFrame {
             art,
-            controls: Vec::new(),
+            controls,
             texts,
-            label: "Active Pause Menu B5",
+            label,
         },
     )
 }

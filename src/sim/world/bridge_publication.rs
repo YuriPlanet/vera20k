@@ -8,7 +8,6 @@
 
 use super::*;
 use crate::map::cell_index::NativeCellIdentity as Cell;
-use crate::map::resolved_terrain::DynamicTerrainCellState;
 use crate::sim::bridge_state::Phase;
 use crate::sim::bridge_state::publication::{self, BridgePublicationHost, CellCoord};
 use crate::sim::bridge_state::ramp_repair::Family;
@@ -103,10 +102,7 @@ pub(super) fn run_state_machine(
             None => return BodyResult::no_change(),
         }
     };
-    let overlay = match anchor {
-        Cell::Real(index) => terrain.cells()[index].bridge_facts.overlay_id,
-        Cell::Dummy => terrain.shared_cell_dummy().overlay_fields().0,
-    };
+    let overlay = sim.cell_overlay(anchor).overlay_id;
     // Residual: ApplyDamageToCell 0x00587180 also admits a state machine by
     // a middle tile, and neither driver tests the anchor overlay before its
     // +11E switch. This gate keeps the pre-existing concrete behavior for
@@ -191,13 +187,10 @@ impl LivePublication<'_> {
                 terrain.capture_real_cell_bridge_flags_0x1180();
         }
         let resolved = &terrain.cells()[index];
-        let coord = (resolved.rx, resolved.ry);
         self.sim
             .real_cell_bridge_flags_0x1180
             .set_allocated_cell(index, resolved.bridge_facts.raw_flags);
-        self.sim
-            .dynamic_terrain_cells
-            .insert(coord, DynamicTerrainCellState::capture(resolved));
+        self.sim.dynamic_terrain_cells.record(resolved);
     }
 }
 
@@ -214,7 +207,7 @@ impl BridgePublicationHost for LivePublication<'_> {
         self.terrain().native_cell_flags(cell)
     }
     fn state(&self, cell: Cell) -> u8 {
-        self.terrain().native_cell_state(cell)
+        self.sim.cell_overlay(cell).overlay_data
     }
     fn write_flags(&mut self, cell: Cell, flags: u32) {
         self.sim
@@ -225,19 +218,16 @@ impl BridgePublicationHost for LivePublication<'_> {
         self.retain_real_write(cell);
     }
     fn write_state(&mut self, cell: Cell, state: u8) {
-        if let Some((x, y)) = self.real_coord(cell)
-            && let (Some(grid), Some(terrain)) = (
-                self.sim.overlay_grid.as_mut(),
-                self.sim.resolved_terrain.as_mut(),
-            )
-        {
-            grid.write_literal_bridge_state(terrain, x, y, state);
-        } else {
-            self.sim
-                .resolved_terrain
-                .as_mut()
-                .unwrap()
-                .write_native_cell_state(cell, state);
+        match self.real_coord(cell) {
+            Some((x, y)) => {
+                if let Some(grid) = self.sim.overlay_grid.as_mut() {
+                    grid.write_literal_bridge_state(x, y, state);
+                }
+            }
+            None => self
+                .terrain()
+                .shared_cell_dummy()
+                .write_overlay_state(state),
         }
         self.retain_real_write(cell);
     }
@@ -250,15 +240,16 @@ impl BridgePublicationHost for LivePublication<'_> {
         self.retain_real_write(cell);
     }
     fn clear_overlay(&mut self, cell: Cell) {
-        self.sim
-            .resolved_terrain
-            .as_mut()
-            .unwrap()
-            .clear_native_cell_overlay(cell);
-        if let Some((x, y)) = self.real_coord(cell)
-            && let Some(grid) = self.sim.overlay_grid.as_mut()
-        {
-            grid.clear_literal_bridge_identity(x, y);
+        match self.real_coord(cell) {
+            Some((x, y)) => {
+                if let Some(grid) = self.sim.overlay_grid.as_mut() {
+                    grid.clear_literal_bridge_identity(x, y);
+                }
+            }
+            None => self
+                .terrain()
+                .shared_cell_dummy()
+                .write_overlay_identity(-1),
         }
         self.retain_real_write(cell);
     }
@@ -276,8 +267,7 @@ impl BridgePublicationHost for LivePublication<'_> {
     }
     fn radar(&mut self, cell: Cell) {
         let (x, y) = self.coord(cell);
-        self.sim
-            .mark_radar_terrain_dirty_cells([(x as u16, y as u16)]);
+        self.sim.dirty_cells.mark_radar([(x as u16, y as u16)]);
     }
     fn perpendicular(
         &mut self,

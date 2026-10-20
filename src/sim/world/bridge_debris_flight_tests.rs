@@ -302,9 +302,7 @@ fn flight_fixture(rules: &RuleSet, input: &Value) -> (Simulation, BTreeSet<(u16,
         // that boundary with real no-transition state255, not a Rust callback
         // hook. Tile1020/base1000/middle20 still admits the original A block.
         let anchor = terrain.native_cell_identity((0, 0));
-        terrain.cell_mut(0, 0).unwrap().bridge_facts.overlay_id = Some(0x18);
-        terrain.write_native_cell_state(anchor, 255);
-        for cell in &mut terrain.cells {
+        for cell in terrain.cells_mut_for_test() {
             cell.bridge_facts.native_anchor = Some(anchor);
         }
     }
@@ -316,6 +314,11 @@ fn flight_fixture(rules: &RuleSet, input: &Value) -> (Simulation, BTreeSet<(u16,
         ),
     );
     sim.install_resolved_terrain_for_new_map(terrain);
+    if bridge {
+        let anchor = sim.overlay_cell_mut_for_test(0, 0);
+        anchor.overlay_id = Some(0x18);
+        anchor.overlay_data = 255;
+    }
     sim.session.set_binary_frame_for_test(1000);
     (sim, source)
 }

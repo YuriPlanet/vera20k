@@ -561,9 +561,9 @@ mod tests {
         let mut sim = Simulation::with_seed(0x5E45_0A00);
         sim.fog.set_width_for_test(64);
         sim.fog.set_height_for_test(64);
-        sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+        sim.set_playfield_bounds_for_test(Some(PlayfieldBounds::from_normalized_local_size(
             64, 2, 2, 56, 52,
-        ));
+        )));
         sim
     }
 
@@ -913,7 +913,7 @@ mod tests {
     fn authored_scope_and_runtime_unlimbo_playfield_gate_are_distinct() {
         let rules = rules();
         let mut sim = sim_with_map_authority();
-        let bounds = sim.playfield_bounds.unwrap();
+        let bounds = sim.playfield_bounds().unwrap();
         let inside = (0u16..64)
             .flat_map(|ry| (0u16..64).map(move |rx| (rx, ry)))
             .find(|&(rx, ry)| bounds.contains_height_aware_packed(rx.into(), ry.into(), 0, 0))

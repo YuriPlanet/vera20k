@@ -289,7 +289,7 @@ fn original_particle_constructor_separates_supplied_coordinate_from_owner_target
             sim.resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(44, 48)
+                .cell_mut_for_test(44, 48)
                 .unwrap()
                 .bridge_facts
                 .raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;

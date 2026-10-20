@@ -200,7 +200,7 @@ fn pick_enemy(sim: &mut Simulation, owner: InternedId) {
     if let Some(peer) = first {
         update_anger_nodes(
             &mut sim.houses,
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             &sim.interner,
             owner,
             peer,
@@ -229,7 +229,7 @@ fn forget_defeated_enemy(sim: &mut Simulation, owner: InternedId) {
         .unwrap_or(0);
     update_anger_nodes(
         &mut sim.houses,
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         &sim.interner,
         owner,
         enemy,

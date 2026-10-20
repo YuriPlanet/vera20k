@@ -218,8 +218,35 @@ impl ObjectLifecycle {
         self.cell_marked
     }
 
-    /// Store whether Mark/cell-list insertion owns cell membership.
-    pub fn set_cell_marked(&mut self, marked: bool) {
+    /// `ObjectClass::Mark` (`0x005F5850`) DOWN's admission: a Limbo (`+0x81`)
+    /// or already marked (`+0x74`) object is refused; otherwise `+0x74` is
+    /// stored (`0x005F58F7`).
+    pub(crate) fn admit_mark_down(&mut self) -> bool {
+        if self.in_limbo() || self.cell_marked {
+            return false;
+        }
+        self.cell_marked = true;
+        true
+    }
+
+    /// Mark(UP)'s admission: a Limbo or unmarked object is refused; otherwise
+    /// `+0x74` is cleared (`0x005F5913`).
+    pub(crate) fn admit_mark_up(&mut self) -> bool {
+        if self.in_limbo() || !self.cell_marked {
+            return false;
+        }
+        self.cell_marked = false;
+        true
+    }
+
+    /// Replace `+0x74` without Mark's callbacks, answering the old value.
+    pub(crate) fn replace_cell_marked(&mut self, marked: bool) -> bool {
+        std::mem::replace(&mut self.cell_marked, marked)
+    }
+
+    /// A fixture's marked byte.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_cell_marked_for_test(&mut self, marked: bool) {
         self.cell_marked = marked;
     }
 
@@ -2675,7 +2702,7 @@ impl Simulation {
                     .unwrap()
                     .fly_runtime_mut()
                     .unwrap()
-                    .set_target_speed(crate::util::fixed_math::SIM_ONE);
+                    .request_full_speed();
             }
         }
     }

@@ -261,10 +261,11 @@ fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
         house.set_is_human_for_test(input["human"] == 1);
         house.set_player_control_for_test(input["player"] == 1);
         if input["owner_allied_with_viewer"] == true {
-            sim.house_alliances
+            let viewer_name = sim.interner.resolve(viewer).to_owned();
+            sim.house_alliances_mut_for_test()
                 .entry("Americans".into())
                 .or_default()
-                .insert(sim.interner.resolve(viewer).to_owned());
+                .insert(viewer_name);
         }
         let tree = sim.interner.intern("TREE01");
         let entity = sim.substrate.entities.get_mut(target).unwrap();
@@ -468,11 +469,11 @@ fn can_capture_gates() {
     assert!(!sim.can_capture(yuri, dog, &rules), "ImmuneToPsionics");
     assert!(sim.can_capture(yuri, gi, &rules));
     // An ally is not refused: only the controller's own house is.
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("YURICOUNTRY".to_string())
         .or_default()
         .insert("RUSSIANS".to_string());
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("RUSSIANS".to_string())
         .or_default()
         .insert("YURICOUNTRY".to_string());

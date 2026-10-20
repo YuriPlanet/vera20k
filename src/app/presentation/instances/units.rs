@@ -222,7 +222,7 @@ pub(crate) fn build_unit_instances(
     // Presentation runs after the just-completed simulation frame; snapshot
     // the one binary frame used by every Drive/Ship Draw_Matrix in this pass.
     let display_binary_frame =
-        display_binary_frame_for_committed_session(sim.session.binary_frame());
+        display_binary_frame_for_committed_session(sim.session().binary_frame());
     let (cam_x, cam_y, sw, sh) = (
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
@@ -233,7 +233,7 @@ pub(crate) fn build_unit_instances(
         crate::app::input::camera::tactical_viewport_px(state);
     let unit_viewport = [tactical_width as f32 / z, tactical_height as f32 / z];
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
-    let local_owner_id = local_owner.as_deref().and_then(|o| sim.interner.get(o));
+    let local_owner_id = local_owner.as_deref().and_then(|o| sim.interner().get(o));
     let ignore_visibility = state.match_state.sandbox_full_visibility;
     let art_reg: Option<&crate::rules::art_data::ArtRegistry> =
         state.rules().map(|rules| rules.art());
@@ -279,7 +279,7 @@ pub(crate) fn build_unit_instances(
         };
         // Common visibility, passenger, limbo, and DrawState admission is shared below.
         let pos = &entity.position;
-        let owner_str = sim.interner.resolve(entity.owner());
+        let owner_str = sim.interner().resolve(entity.owner());
         let mut observer = super::helpers::observer_draw_context(
             sim,
             entity,
@@ -289,26 +289,26 @@ pub(crate) fn build_unit_instances(
         );
         let Some((type_name, body)) = unit_body_draw(
             entity,
-            &sim.interner,
+            sim.interner(),
             state.rules(),
             band,
-            sim.session.binary_frame(),
+            sim.session().binary_frame(),
             observer,
         ) else {
             continue;
         };
         let no_shadow = state
             .rules()
-            .and_then(|rules| sim.interner.object_type(entity.type_ref(), rules))
+            .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
             .is_some_and(|object| object.no_shadow);
         let type_str = type_name.as_ref();
         observer.drawn_voxel = Some(true);
         let remap_owner = entity
             .disguise
             .as_ref()
-            .filter(|_| DrawState::draws_disguise(entity, sim.session.binary_frame(), observer))
+            .filter(|_| DrawState::draws_disguise(entity, sim.session().binary_frame(), observer))
             .and_then(|state| state.house())
-            .map(|id| sim.interner.resolve(id))
+            .map(|id| sim.interner().resolve(id))
             .unwrap_or(owner_str);
         let hc: HouseColorIndex = state
             .match_state
@@ -323,10 +323,10 @@ pub(crate) fn build_unit_instances(
             owner_str,
             local_owner.as_deref(),
             local_owner_id,
-            &sim.fog,
-            &sim.house_alliances,
+            sim.fog(),
+            sim.house_alliances(),
             ignore_visibility,
-            sim.session.binary_frame(),
+            sim.session().binary_frame(),
             house_color_to_remap_row(hc),
             observer,
         ) else {
@@ -376,7 +376,7 @@ pub(crate) fn build_unit_instances(
             body_tint,
             body_light,
             state.rules(),
-            sim.session.binary_frame(),
+            sim.session().binary_frame(),
         );
         let center_x: f32 = sx;
         let center_y: f32 = sy;
@@ -394,8 +394,7 @@ pub(crate) fn build_unit_instances(
         // native display sort.
         let dock_depth_y_offset: f32 = if entity.miner.is_some()
             && sim
-                .substrate
-                .occupancy
+                .occupancy()
                 .first_building_on_layer(
                     pos.rx(),
                     pos.ry(),
@@ -436,8 +435,8 @@ pub(crate) fn build_unit_instances(
         }
 
         // Sampled at the turret's frame, so the two sprites cannot disagree.
-        let body_facing = body_draw_facing(entity, sim.session.binary_frame());
-        let ground_pose = ground_pose(entity, slope_state, sim.session.binary_frame());
+        let body_facing = body_draw_facing(entity, sim.session().binary_frame());
+        let ground_pose = ground_pose(entity, slope_state, sim.session().binary_frame());
         if let BodyDraw::Pose(tilt) = body {
             let key = UnitSpriteKey {
                 type_id: type_str.to_string(),
@@ -467,10 +466,10 @@ pub(crate) fn build_unit_instances(
                     barrel_elevation,
                 } => (turret, barrel_elevation),
                 _ => (
-                    entity.body_facing_current(sim.session.binary_frame()),
+                    entity.body_facing_current(sim.session().binary_frame()),
                     entity
                         .barrel_elevation()
-                        .current(sim.session.binary_frame()),
+                        .current(sim.session().binary_frame()),
                 ),
             };
             // Turret unit: emit body, turret, and barrel as separate sprites.
@@ -601,7 +600,7 @@ pub(crate) fn build_unit_instances(
                 state,
                 entity,
                 frame,
-                harvest_arm_screen_position(entity, sim.session.binary_frame()),
+                harvest_arm_screen_position(entity, sim.session().binary_frame()),
                 pos.z(),
                 tint,
                 palette_light.brightness(),
@@ -1738,7 +1737,7 @@ fn harvest_overlay_frame(
     display_binary_frame: u32,
 ) -> Option<u16> {
     let harvester = rules
-        .and_then(|rules| sim.interner.object_type(entity.type_ref(), rules))
+        .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
         .is_some_and(|object| object.harvester);
     if !harvester
         || !entity
@@ -1751,14 +1750,14 @@ fn harvest_overlay_frame(
         || crate::sim::movement::motion_query::is_moving_now(
             entity,
             rules.map(|rules| {
-                crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses)
+                crate::sim::movement::SpeedRules::new(rules, sim.interner(), sim.houses())
             }),
             display_binary_frame,
         )
     {
         return None;
     }
-    let frame = sim.session.binary_frame();
+    let frame = sim.session().binary_frame();
     oregath_frame(
         entity.body_frame_counter.get(),
         frame,
@@ -1946,7 +1945,7 @@ mod tests {
             let light =
                 crate::render::palette_light::PaletteLight::color_scheme([1000; 3], intensity)
                     .with_colour_word(int(&row["word"]) as u16);
-            sim.session
+            sim.session_mut_for_test()
                 .set_binary_frame_for_test(int(&row["frame"]) as u32);
             let (lit_tint, lit) =
                 crate::app::presentation::lighting::techno_effect_light(&unit, tint, light, &sim);
@@ -1955,7 +1954,7 @@ mod tests {
                 lit_tint,
                 lit,
                 Some(&rules_by_iron_index[&int(&row["iron_color"])]),
-                sim.session.binary_frame(),
+                sim.session().binary_frame(),
             );
             let out = int(&row["out_intensity"]);
             assert_eq!(lit.brightness(), out, "{row}");
@@ -2278,7 +2277,7 @@ mod tests {
     #[test]
     fn drive_ship_slope_snapshot_uses_production_display_frame_selector() {
         let mut sim = Simulation::with_seed(0);
-        sim.session.set_binary_frame_for_test(51);
+        sim.session_mut_for_test().set_binary_frame_for_test(51);
         let mut entity = GameEntity::test_default(1, "SHIP", "Americans", 0, 0);
         entity.set_owner_for_test(sim.intern("Americans"));
         entity.set_type_ref_for_test(sim.intern("SHIP"));
@@ -2294,18 +2293,18 @@ mod tests {
             .unwrap();
         slope.snap(4, 40);
         slope.sample_process_entry(9, 49);
-        sim.substrate.entities.insert(entity);
+        sim.entities_mut_for_test().insert(entity);
 
         let bytes = GameSnapshot::save(&sim, 1, 2, "slope display selector", 3);
         let restored = GameSnapshot::load(&bytes)
             .expect("current slope snapshot")
             .sim;
         let display_binary_frame =
-            display_binary_frame_for_committed_session(restored.session.binary_frame());
+            display_binary_frame_for_committed_session(restored.session().binary_frame());
         assert_eq!(display_binary_frame, 50);
         assert_eq!(
             locomotor_render_slope_state(
-                restored.substrate.entities.get(1).unwrap(),
+                restored.entities().get(1).unwrap(),
                 display_binary_frame,
             ),
             Some(UnitRenderSlopeState::Transition {

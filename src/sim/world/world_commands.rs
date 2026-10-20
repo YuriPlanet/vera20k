@@ -479,6 +479,23 @@ impl Simulation {
         &self,
         command_owner: crate::sim::intern::InternedId,
     ) -> Option<CommandRecord> {
+        self.encode_header_event(command_owner, crate::sim::command::EXIT_OPCODE)
+    }
+
+    /// EVENT_DESTRUCT's header-only record: `EventClass(index, 8)`
+    /// (`0x004C66C0`) writes only the type, House and frame.
+    pub fn encode_destruct_record(
+        &self,
+        command_owner: crate::sim::intern::InternedId,
+    ) -> Option<CommandRecord> {
+        self.encode_header_event(command_owner, crate::sim::command::DESTRUCT_OPCODE)
+    }
+
+    fn encode_header_event(
+        &self,
+        command_owner: crate::sim::intern::InternedId,
+        opcode: u8,
+    ) -> Option<CommandRecord> {
         if !self.houses.contains_key(&command_owner) {
             return None;
         }
@@ -488,11 +505,12 @@ impl Simulation {
             .iter()
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
-        ExitRecord {
-            house_id,
-            frame: self.session.binary_frame(),
-        }
-        .encode()
+        CommandRecord::encode(
+            opcode,
+            i32::from(house_id),
+            self.session.binary_frame() as i32,
+            &[],
+        )
         .ok()
     }
 
@@ -628,6 +646,15 @@ impl Simulation {
                 .then(|| CommandEnvelope::new(owner, execute_tick, Command::ExitMatch));
         }
 
+        if record.opcode() == crate::sim::command::DESTRUCT_OPCODE {
+            let house_index = usize::try_from(record.house_id()).ok()?;
+            let owner = *self.houses.order().get(house_index)?;
+            return self
+                .houses
+                .contains_key(&owner)
+                .then(|| CommandEnvelope::new(owner, execute_tick, Command::Destruct));
+        }
+
         let typed = SellWallAtCellRecord::decode(record)?;
         let house_index = usize::try_from(typed.house_id).ok()?;
         let owner = *self.houses.order().get(house_index)?;
@@ -664,7 +691,7 @@ impl Simulation {
                 *tail_grid = None;
             }
             if let (Some(tail), Some(cell)) = (tail_grid.as_mut(), terrain.cell(rx, ry)) {
-                let _ = tail.refresh_resolved_cell(cell, false);
+                let _ = tail.refresh_resolved_cell(cell, self.overlay_grid.as_ref(), false);
             }
         }
 
@@ -802,9 +829,7 @@ impl Simulation {
                     target_terrain_objects: self.terrain_objects.objects(),
                     #[cfg(any(test, feature = "test-support"))]
                     detach_trace: &mut detach_trace,
-                    radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
-                    radar_dirty_generation: &mut self.radar_terrain_dirty_generation,
-                    tactical_dirty_cells: &mut self.tactical_dirty_cells,
+                    dirty_cells: &mut self.dirty_cells,
                     zone_grid: &mut self.zone_grid,
                     path_grid: &mut self.path_grid,
                     bridge_state: self.bridge_state.as_ref(),
@@ -873,7 +898,7 @@ impl Simulation {
                     .remove_retained_wall_neighbor_source(Some(terrain), nx, ny);
             }
         }
-        self.mark_radar_terrain_dirty_cells([(rx, ry)]);
+        self.dirty_cells.mark_radar([(rx, ry)]);
 
         // House4FD018 calls70D4A0, not7258D0 pointer expiry: Restore runs
         // before the conditional target clear, then Team targets detach.
@@ -1433,6 +1458,16 @@ impl Simulation {
                 self.house_cheer(owner, rules, frame_effects);
                 true
             }
+            Command::Destruct => {
+                let Some(owner) = self.interner.get(command_owner) else {
+                    return false;
+                };
+                // Type-8 entry 0x004C7BDF: Flag_To_Die on the header House,
+                // with no human or mode test. Destruction waits for the
+                // House rung (Update 0x004F87C2).
+                self.flag_house_to_die(owner);
+                true
+            }
             Command::ExitMatch => {
                 let Some(owner) = self.interner.get(command_owner) else {
                     return false;
@@ -1858,7 +1893,7 @@ impl Simulation {
                 };
                 // Enemy-only.
                 if crate::map::houses::are_houses_friendly(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     command_owner,
                     self.interner.resolve(target_owner),
                 ) {
@@ -2095,9 +2130,9 @@ impl Simulation {
     }
 
     /// Object5F6C30 (+138), with Foot4DFA50's +6AD guard for mobile objects.
-    /// Native +D0(1) is the disguise House: Unit7465F0 may return NULL;
-    /// Infantry5226C0 defaults it to the current House. Reuse the existing
-    /// +C8 disguise owner instead of treating current fog as selectability.
+    /// Its disguise arm (+C8 with a NULL +D0(1)) is
+    /// [`crate::sim::game_entity::GameEntity::disguise_hides_house_from`]; it
+    /// does not treat current fog as selectability.
     pub fn object_is_selectable(&self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
@@ -2107,20 +2142,14 @@ impl Simulation {
         {
             return false;
         }
-        if entity.category() == crate::map::entities::EntityCategory::Unit
-            && entity
-                .disguise
-                .as_ref()
-                .is_some_and(|d| d.house().is_none())
-            && self.session.current_house().is_some_and(|house| {
-                entity.is_disguised_to(
-                    house,
-                    Some(&self.fog),
-                    Some(&self.house_alliances),
-                    &self.interner,
-                )
-            })
-        {
+        if self.session.current_house().is_some_and(|house| {
+            entity.disguise_hides_house_from(
+                house,
+                Some(&self.fog),
+                Some(self.house_alliances.as_map()),
+                &self.interner,
+            )
+        }) {
             return false;
         }
         rules.is_none_or(|r| {
@@ -2354,7 +2383,7 @@ impl Simulation {
             return false;
         }
         let refinery_owner = self.interner.resolve(refinery.owner());
-        if !are_houses_friendly(&self.house_alliances, command_owner, refinery_owner) {
+        if !are_houses_friendly(self.house_alliances.as_map(), command_owner, refinery_owner) {
             return false;
         }
         let refinery_type = self.interner.resolve(refinery.type_ref());
@@ -2399,7 +2428,7 @@ impl Simulation {
         };
         if self.substrate.entities.get(actor_id).is_some_and(|actor| {
             combat::combat_weapon::is_ally_by_object(
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &self.interner,
                 player,
                 actor.owner(),

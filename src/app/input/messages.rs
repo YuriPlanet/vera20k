@@ -51,9 +51,9 @@ pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
     // independent of the current House remains a separate retained-field gap.
     let side = runtime
         .simulation
-        .session
+        .session()
         .current_house()
-        .and_then(|owner| runtime.simulation.houses.get(&owner))
+        .and_then(|owner| runtime.simulation.houses().get(&owner))
         .map_or(0, |house| i32::from(house.side_index()));
     let rules = &runtime.resources.rules;
     let rgb = trigger_message_rgb(&rules.color_schemes, side);
@@ -219,6 +219,9 @@ pub(crate) fn post_selection_navigation_text(state: &mut AppState, text: &str) {
 pub(crate) enum HudMessage {
     LowPower,
     SuperWeapon(&'static str),
+    /// MPlayer_Defeated's line for a non-observer House (`0x004FC271`,
+    /// `0x004FC34F`).
+    PlayerDefeated(crate::sim::intern::InternedId),
 }
 
 impl HudMessage {
@@ -226,6 +229,7 @@ impl HudMessage {
         match self {
             Self::LowPower => "TXT_LOW_POWER", // original House4F8D4A
             Self::SuperWeapon(key) => key,
+            Self::PlayerDefeated(_) => "TXT_PLAYER_DEFEATED",
         }
     }
 
@@ -233,7 +237,9 @@ impl HudMessage {
         match self {
             // House4F8D20..31 uses the same MessageDelay*900/ftol as
             // TAction11; these are 16 ms clock buckets, never speed normalized.
-            Self::LowPower => message_delay_timeout_ms(rules.general.message_delay_minutes),
+            Self::LowPower | Self::PlayerDefeated(_) => {
+                message_delay_timeout_ms(rules.general.message_delay_minutes)
+            }
             Self::SuperWeapon(_) => Some(SUPER_WEAPON_MESSAGE_TIMEOUT_MS),
         }
     }
@@ -264,6 +270,10 @@ fn message_delay_timeout_ms(delay: crate::util::native_x87::NativeF64Bits) -> Op
 /// The callers' text flags still share the existing bitmap-text lane; this
 /// transport does not establish native glyph/style raster equivalence.
 pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
+    if let HudMessage::PlayerDefeated(house) = message {
+        post_house_line(state, message.csf_key(), house);
+        return;
+    }
     let Some(rules) = state.rules() else {
         return;
     };
@@ -276,29 +286,43 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
     post_localized_message(state, &post);
 }
 
-/// Loading timeout684596 -> DestroyConnection5DA750 reason1. Keep native
-/// MessageDelay/color/list ownership; the departed House remains in Simulation.
-pub(crate) fn post_connection_lost(state: &mut AppState, owner: &str, display_name: &str) {
+/// A House-named line: the CSF template formatted with House+0x1602A, in
+/// the House's colour scheme, for MessageDelay*900 buckets, silent 0.
+/// DestroyConnection5DA750 posts TXT_CONNECTION_LOST (name read at
+/// 5DA772); MPlayer_Defeated posts TXT_PLAYER_DEFEATED (4FC271..4FC2DB
+/// local, 4FC34F..4FC3AD remote). The local branch colours through
+/// Session+0x15C, which VERA reads as the local House's own scheme.
+pub(crate) fn post_house_line(
+    state: &mut AppState,
+    key: &str,
+    house: crate::sim::intern::InternedId,
+) {
+    let Some(name) = crate::app::presentation::house_ui::house_ui_name(state, house) else {
+        return;
+    };
+    let Some(owner) = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|runtime| runtime.simulation.interner().resolve(house).to_string())
+    else {
+        return;
+    };
     let Some(rules) = state.rules() else {
         return;
     };
     let rgb = house_message_rgb(
-        Some(owner),
+        Some(&owner),
         &state.match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    let template = state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| csf.text("TXT_CONNECTION_LOST").into_owned())
-        .unwrap_or_else(|| "TXT_CONNECTION_LOST".to_string());
+    let template = crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned();
     let text = crate::assets::csf_file::format_csf(
         &template,
-        &[crate::assets::csf_file::CsfArg::Str(display_name)],
+        &[crate::assets::csf_file::CsfArg::Str(&name)],
     );
-    post_localized_message(
+    post_resolved_message(
         state,
         &crate::ui::messages::MessagePost {
             prefix: None,
@@ -310,13 +334,23 @@ pub(crate) fn post_connection_lost(state: &mut AppState, owner: &str, display_na
     );
 }
 
+/// Post a row whose `text` is a CSF key.
 fn post_localized_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_>) {
+    post_message(state, post, true);
+}
+
+/// Post a row whose `text` is already formatted from its CSF template.
+fn post_resolved_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_>) {
+    post_message(state, post, false);
+}
+
+fn post_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_>, localize: bool) {
     sync_view(state);
     let now = message_now_ms(state);
     let font = &state.renderer.bit_font;
     let outcome = add_localized_message(
         &mut state.match_state.match_presentation.message_list,
-        state.process_assets.csf.as_ref(),
+        state.process_assets.csf.as_ref().filter(|_| localize),
         post,
         now,
         &|s| font.text_width(s) as i32,

@@ -437,10 +437,11 @@ fn persist_setup_preferences(state: &mut AppState) {
     }
 }
 
-/// The native map description can come from the host when no local scenario
-/// record qualifies. It belongs to the accepted session, not a phantom entry
-/// in the discovery catalog (ParsePacket5E51C4..5E5409).
-fn map_display_name(state: &AppState) -> Option<&str> {
+/// The network setup's scenario description, Session+0xEA (`0x00A8B322`).
+/// It can come from the host when no local scenario record qualifies. It
+/// belongs to the accepted session, not a phantom entry in the discovery
+/// catalog (ParsePacket5E51C4..5E5409).
+pub(crate) fn map_display_name(state: &AppState) -> Option<&str> {
     let session = &state.match_state.session;
     let file = session.network_setup()?.selected_map_file.as_deref()?;
     session
@@ -484,13 +485,13 @@ pub(crate) fn commit_back(state: &mut AppState) {
     open_service_lobby(state, dialog);
 }
 
-/// PrepareSession after a network match. LAN builds a new BB; WOL re-runs
-/// the lobby runner with postmatch set (`WOL__RunMain 0x77B44B`), which
-/// rejoins the previous chat lobby.
+/// PrepareSession after a network match. LAN builds a new BB; WOL enters
+/// `WOL_Main` again, whose lobby runner runs with postmatch set
+/// (`0x77B44B`) and rejoins the previous chat lobby.
 pub(crate) fn return_after_match(state: &mut AppState) {
     let dialog = leave_setup(state);
     if dialog.wol() {
-        crate::app::shell_wol::open_lobby(state, true);
+        crate::app::shell_wol::reenter_after_match(state);
     } else {
         App::open_lan_lobby(state);
     }

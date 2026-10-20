@@ -386,7 +386,12 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // only: a temporary control hashing the bool gave the previous value in the
 // same test binary, with every tripwire above green. Control removed.
 // Previous: 0xED02_4584_1661_7711.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x427A_48D7_ED16_244B;
+// Snapshot 449 hashes the Techno disguise firing blink timer (+1EC/+1F4,
+// #2183), which every entity carries. Hash composition only: a temporary
+// control on #2183's merge without that hash gave the previous value, with
+// every tripwire above green. Control removed.
+// Previous: 0x427A_48D7_ED16_244B.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x2B34_7F8A_A70F_EA3F;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -758,9 +763,9 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         // plus one Foot+5E0 word per later cell.
         if order_accepted_path.is_none()
             && crate::sim::movement::motion_query::is_moving(&entity) == Some(true)
-            && !entity.navigation.path_replay.directions().is_empty()
+            && !entity.navigation.path_replay().directions().is_empty()
         {
-            order_accepted_path = Some(entity.navigation.path_replay.directions().len() + 1);
+            order_accepted_path = Some(entity.navigation.path_replay().directions().len() + 1);
         }
         let cell = (entity.position.rx(), entity.position.ry());
         let facts = grid

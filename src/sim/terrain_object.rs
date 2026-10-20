@@ -1210,7 +1210,7 @@ mod tests {
         assert!(!cell.terrain_object_blocks);
         assert_eq!(cell.zone_type, zone_class::BUILDING);
 
-        let cell = grid.cell_mut(0, 0).unwrap();
+        let cell = grid.cell_mut_for_test(0, 0).unwrap();
         cell.overlay_zone_type = Some(zone_class::GROUND);
         terrain.occupation_bits = 7;
         mark_terrain_occupation(&terrain, Some(&mut grid));

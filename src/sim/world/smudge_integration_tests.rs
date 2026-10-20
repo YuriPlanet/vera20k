@@ -171,9 +171,9 @@ fn gsi_04_11_smudge_dirty_flush_publishes_tactical_then_radar_per_cell() {
     sim.flush_smudge_dirty();
 
     let expected = vec![(3, 4), (4, 4), (3, 5), (4, 5)];
-    assert_eq!(sim.tactical_dirty_cells, expected);
-    assert_eq!(sim.radar_terrain_dirty_cells, expected);
-    assert_eq!(sim.radar_terrain_dirty_generation, 4);
+    assert_eq!(sim.dirty_cells.tactical_for_test(), expected);
+    assert_eq!(sim.dirty_cells.radar(), expected);
+    assert_eq!(sim.dirty_cells.radar_generation(), 4);
     assert!(sim.smudge_grid.as_mut().unwrap().drain_dirty().is_empty());
 }
 
@@ -308,8 +308,8 @@ fn action118_matches_original_smudge_fields_dummy_and_first_null_controls() {
             .filter(|write| write["dummy"] == false && write["previous"] != -1)
             .map(|write| pair(&write["cell"]))
             .collect();
-        assert_eq!(sim.tactical_dirty_cells, changed);
-        assert_eq!(sim.radar_terrain_dirty_cells, changed);
+        assert_eq!(sim.dirty_cells.tactical_for_test(), changed);
+        assert_eq!(sim.dirty_cells.radar(), changed);
         assert!(sim.smudge_grid.as_mut().unwrap().drain_dirty().is_empty());
     }
 }

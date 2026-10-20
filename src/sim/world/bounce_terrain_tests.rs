@@ -69,7 +69,7 @@ fn fixture(case: &Value) -> Simulation {
         cell.has_bridge_deck =
             cell.bridge_facts.raw_flags & 256 != 0 || row[5].as_i64() == Some(237);
         let overlay = row[5].as_i64().unwrap();
-        overlays.cell_mut(x, y).overlay_id = (overlay >= 0).then_some(overlay as u8);
+        overlays.cell_mut_for_test(x, y).overlay_id = (overlay >= 0).then_some(overlay as u8);
         cells[usize::from(y) * usize::from(width) + usize::from(x)] = cell;
         allocated.push((x, y));
     }

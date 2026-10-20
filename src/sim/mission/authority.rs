@@ -1517,11 +1517,14 @@ mod tests {
                 actor
                     .navigation
                     .set_nav_com_for_test(Some(NavTargetRef::cell(12, 10)));
-                actor.navigation.path_replay.set_directions_for_test(vec![
-                    before["path_field"].as_u64().unwrap() as u8,
-                    2,
-                    3,
-                ]);
+                actor
+                    .navigation
+                    .path_replay_mut()
+                    .set_directions_for_test(vec![
+                        before["path_field"].as_u64().unwrap() as u8,
+                        2,
+                        3,
+                    ]);
                 actor.locomotor = Some(LocomotorState::for_test_kind(
                     crate::rules::locomotor_type::LocomotorKind::Walk,
                 ));
@@ -1641,7 +1644,7 @@ mod tests {
                 assert_eq!(
                     actor
                         .navigation
-                        .path_replay
+                        .path_replay()
                         .remaining_directions()
                         .first()
                         .copied(),

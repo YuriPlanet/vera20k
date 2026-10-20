@@ -578,7 +578,12 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
         assert_eq!(json!(projectile.inviso), input["inviso"]);
         assert_eq!(json!(projectile.cluster), input["cluster"]);
         let mut world = crate::sim::arena_fixture::rival_arena(&rules, 1);
-        for cell in &mut world.resolved_terrain.as_mut().unwrap().cells {
+        for cell in world
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cells_mut_for_test()
+        {
             cell.level = 6;
         }
         world.intern_rule_type_ids(&rules);

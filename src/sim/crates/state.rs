@@ -65,7 +65,36 @@ impl CrateAuthority {
         &self.slots
     }
 
-    pub fn slot_mut(&mut self, index: usize) -> &mut CrateSlot {
+    /// `CrateSlot__PlaceOverlayAndInitTimer @ 0x004A17C0`: accepted ghosts
+    /// and visible overlays both write the packed coordinate before drawing.
+    pub(crate) fn claim(&mut self, index: usize, cell: (u16, u16)) {
+        let slot = &mut self.slots[index];
+        slot.cell_x = cell.0 as i16;
+        slot.cell_y = cell.1 as i16;
+    }
+
+    /// The same function then installs the start/aux/duration words
+    /// [`crate_timer_words`] computes.
+    pub(crate) fn install_timer(&mut self, index: usize, words: (i32, u32, i32)) {
+        let slot = &mut self.slots[index];
+        (slot.start_frame, slot.aux, slot.duration) = words;
+    }
+
+    /// `CrateSlot__ClearAndPreserveTimer @ 0x004A1750`'s slot writes: the
+    /// coordinate is freed and the timer rebased to its remaining time (a
+    /// paused one keeps its stored duration).
+    pub(crate) fn clear_and_preserve_timer(&mut self, index: usize, current_frame: i32) {
+        let slot = &mut self.slots[index];
+        slot.cell_x = 0;
+        slot.cell_y = 0;
+        let mut timer = slot.timer();
+        timer.pause(current_frame);
+        slot.start_frame = timer.start_frame();
+        slot.duration = timer.duration();
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn slot_mut_for_test(&mut self, index: usize) -> &mut CrateSlot {
         &mut self.slots[index]
     }
 
@@ -186,13 +215,13 @@ mod tests {
         }));
         assert_eq!(authority.first_empty_index(), Some(0));
 
-        authority.slot_mut(0).cell_x = 7;
+        authority.slot_mut_for_test(0).cell_x = 7;
         assert_eq!(authority.first_empty_index(), Some(1));
-        authority.slot_mut(0).cell_x = 0;
-        authority.slot_mut(0).cell_y = -2;
+        authority.slot_mut_for_test(0).cell_x = 0;
+        authority.slot_mut_for_test(0).cell_y = -2;
         assert_eq!(authority.first_empty_index(), Some(1));
-        authority.slot_mut(0).cell_y = 0;
-        authority.slot_mut(0).duration = 99;
+        authority.slot_mut_for_test(0).cell_y = 0;
+        authority.slot_mut_for_test(0).duration = 99;
         assert_eq!(
             authority.first_empty_index(),
             Some(0),
@@ -278,7 +307,7 @@ mod tests {
             },
         ] {
             let mut changed = Simulation::new();
-            *changed.crate_authority.slot_mut(73) = slot;
+            *changed.crate_authority.slot_mut_for_test(73) = slot;
             assert_ne!(baseline_current, changed.state_hash());
         }
     }
@@ -289,7 +318,7 @@ mod tests {
 
         let mut baseline = Simulation::with_seed(0x1414);
         let mut changed = Simulation::with_seed(0x1414);
-        *changed.crate_authority.slot_mut(4) = CrateSlot {
+        *changed.crate_authority.slot_mut_for_test(4) = CrateSlot {
             start_frame: i32::MAX,
             aux: u32::MAX,
             duration: i32::MIN,

@@ -75,9 +75,9 @@ fn fixture(row: &Value, kind: &crate::rules::projectile_type::ProjectileType) ->
     let mut sim = Simulation::with_seed(31);
     let mut terrain = test_flat_ground_grid(32);
     terrain.test_set_native_allocated_cells(&[cell_xy]);
-    *terrain.cell_mut(cell_xy.0, cell_xy.1).unwrap() = cell;
+    *terrain.cell_mut_for_test(cell_xy.0, cell_xy.1).unwrap() = cell;
     sim.install_resolved_terrain_for_new_map(terrain);
-    let warhead = sim.interner.intern("FIXTURE_UNUSED_WARHEAD");
+    let warhead = sim.intern("FIXTURE_UNUSED_WARHEAD");
     let id = sim.allocate_stable_id();
     sim.admit_projectile(
         id,
@@ -116,7 +116,7 @@ fn fixture(row: &Value, kind: &crate::rules::projectile_type::ProjectileType) ->
             collision: ProjectileCollisionPolicy::NONE,
         },
     );
-    sim.projectiles
+    sim.projectiles_mut_for_test()
         .get_mut(id)
         .unwrap()
         .set_on_bridge_for_test(input["on_bridge"].as_i64().unwrap_or(0) != 0);
@@ -263,7 +263,7 @@ fn compare_shape_corpus(
                 &atlas
             };
             let (mut sim, id) = fixture(row, &kind);
-            let grid = sim.resolved_terrain.as_ref().unwrap();
+            let grid = sim.resolved_terrain().unwrap();
             grid.shared_cell_dummy().stamp_coord(123, -44);
             let dummy_before = grid.shared_cell_dummy().snapshot();
             let before_hash = sim.state_hash();
@@ -275,7 +275,7 @@ fn compare_shape_corpus(
             let axis = DepthAxis::NONE;
             let order = NativeDisplayOrder::from_display(sim.display_layers());
             let object = projectile_draw_instance(
-                sim.projectiles.get(id).unwrap(),
+                sim.projectiles().get(id).unwrap(),
                 &kind,
                 type_id,
                 crate::rules::house_colors::HouseColorIndex(0),
@@ -292,7 +292,7 @@ fn compare_shape_corpus(
             // tested by its owning runtime; this pins presentation consumers.
             let (restored_store, restored_display): (ProjectileStore, DisplayLayers) =
                 save_codec::deserialize(
-                    &save_codec::serialize(&(&sim.projectiles, sim.display_layers())).unwrap(),
+                    &save_codec::serialize(&(sim.projectiles(), sim.display_layers())).unwrap(),
                 )
                 .unwrap();
             let restored_order = NativeDisplayOrder::from_display(&restored_display);
@@ -430,16 +430,16 @@ fn compare_shape_corpus(
             // The late store entry survives retirement, but its Display slot
             // is already gone. No storage-order rendering is admissible.
             assert!(sim.retire_non_entity_object(id, crate::sim::world::UninitContext::default()));
-            assert!(sim.projectiles.get(id).is_some());
+            assert!(sim.projectiles().get(id).is_some());
             let removed_order = NativeDisplayOrder::from_display(sim.display_layers());
             assert!(
                 projectile_draw_instance(
-                    sim.projectiles.get(id).unwrap(),
+                    sim.projectiles().get(id).unwrap(),
                     &kind,
                     type_id,
                     crate::rules::house_colors::HouseColorIndex(0),
                     Some(atlas),
-                    sim.resolved_terrain.as_ref().unwrap(),
+                    sim.resolved_terrain().unwrap(),
                     camera_pos,
                     viewport,
                     axis,

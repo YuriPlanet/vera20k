@@ -102,7 +102,7 @@ fn retail_atlas_refresh_costs() {
     // One remap colour per owner, as the launch session assigns them.
     let mut house_colors: HouseColorMap = HashMap::new();
     for entity in sim.entities().values() {
-        let owner = sim.interner.resolve(entity.owner()).to_string();
+        let owner = sim.interner().resolve(entity.owner()).to_string();
         let next = HouseColorIndex(house_colors.len() as u8);
         house_colors.entry(owner).or_insert(next);
     }
@@ -111,13 +111,12 @@ fn retail_atlas_refresh_costs() {
         .entities()
         .values()
         .find(|entity| entity.is_voxel())
-        .map(|entity| sim.interner.resolve(entity.owner()).to_string())
+        .map(|entity| sim.interner().resolve(entity.owner()).to_string())
         .expect("the player starts with a vehicle");
     let owner_color = house_colors[&owner];
     // Terrain-attached animations draw from the theater ISO palette, as in the app.
     let cell_drawers: HashSet<String> = sim
-        .resolved_terrain
-        .as_ref()
+        .resolved_terrain()
         .into_iter()
         .flat_map(|terrain| terrain.tile_animations())
         .map(|anim| anim.anim_name.to_ascii_uppercase())
@@ -125,7 +124,7 @@ fn retail_atlas_refresh_costs() {
     let anchor = sim
         .entities()
         .values()
-        .find(|entity| sim.interner.resolve(entity.owner()) == owner)
+        .find(|entity| sim.interner().resolve(entity.owner()) == owner)
         .map(|entity| (entity.position.rx(), entity.position.ry()))
         .expect("owned anchor");
     // Place `type_id` on the first free cell of growing rings around the
@@ -188,7 +187,7 @@ fn retail_atlas_refresh_costs() {
         &cell_drawers,
         Some(&theater.iso_palette),
         None,
-        Some(&sim.interner),
+        Some(sim.interner()),
     )
     .expect("initial sprite atlas");
     settle(&device, &queue);
@@ -208,7 +207,7 @@ fn retail_atlas_refresh_costs() {
         &assets,
         Some(rules),
         None,
-        Some(&sim.interner),
+        Some(sim.interner()),
     )
     .expect("initial unit atlas");
     settle(&device, &queue);
@@ -230,7 +229,11 @@ fn retail_atlas_refresh_costs() {
     let present: HashSet<String> = sim
         .entities()
         .values()
-        .map(|entity| sim.interner.resolve(entity.type_ref()).to_ascii_uppercase())
+        .map(|entity| {
+            sim.interner()
+                .resolve(entity.type_ref())
+                .to_ascii_uppercase()
+        })
         .collect();
     let mut absent = ["GAPOWR", "NAPOWR", "GAPILE", "NAHAND", "GAREFN", "NAREFN"]
         .into_iter()
@@ -260,13 +263,13 @@ fn retail_atlas_refresh_costs() {
             &house_colors,
             &extra,
             &remaps,
-            Some(&sim.interner),
+            Some(sim.interner()),
         );
         let units_covered = unit_atlas::atlas_covers_world(
             Some(units),
             sim.entities(),
             Some(rules),
-            Some(&sim.interner),
+            Some(sim.interner()),
         );
         (sprites_covered, units_covered)
     };
@@ -309,7 +312,7 @@ fn retail_atlas_refresh_costs() {
                 &cell_drawers,
                 Some(&theater.iso_palette),
                 Some(atlas),
-                Some(&sim.interner),
+                Some(sim.interner()),
             )
             .expect("refreshed sprite atlas");
             settle(&device, &queue);
@@ -353,7 +356,7 @@ fn retail_atlas_refresh_costs() {
         &assets,
         Some(rules),
         Some(units),
-        Some(&sim.interner),
+        Some(sim.interner()),
     )
     .expect("refreshed unit atlas");
     settle(&device, &queue);
@@ -395,7 +398,7 @@ fn retail_atlas_refresh_costs() {
         &assets,
         Some(rules),
         Some(units),
-        Some(&sim.interner),
+        Some(sim.interner()),
     )
     .expect("unit atlas no-op refresh");
     assert_eq!(
@@ -453,7 +456,7 @@ fn retail_atlas_refresh_costs() {
         &cell_drawers,
         Some(&theater.iso_palette),
         None,
-        Some(&sim.interner),
+        Some(sim.interner()),
     )
     .expect("map-load sprite atlas of the grown world");
     settle(&device, &queue);
@@ -484,7 +487,7 @@ fn retail_atlas_refresh_costs() {
         &assets,
         Some(rules),
         None,
-        Some(&sim.interner),
+        Some(sim.interner()),
     )
     .expect("map-load unit atlas of the grown world");
     assert_eq!(units.sprite_count(), loaded_units.sprite_count());

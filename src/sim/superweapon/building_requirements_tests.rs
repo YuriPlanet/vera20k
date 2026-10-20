@@ -48,7 +48,7 @@ fn world(rules: &RuleSet) -> Simulation {
     sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
         super::cell_receiver_tests::test_terrain_cell(x, y)
     }));
-    sim.playfield_bounds = Some(super::cell_receiver_tests::test_playfield_bounds());
+    sim.set_playfield_bounds_for_test(Some(super::cell_receiver_tests::test_playfield_bounds()));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim
 }

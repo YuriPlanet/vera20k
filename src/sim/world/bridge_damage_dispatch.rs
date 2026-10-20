@@ -94,10 +94,7 @@ impl CellReader for LiveCells<'_> {
     fn fields(&self, cell: Self::Cell) -> CellFields {
         let terrain = self.terrain();
         // Every bridge writer publishes CellClass+44 synchronously.
-        let overlay = match cell {
-            NativeCellIdentity::Real(index) => terrain.cells()[index].bridge_facts.overlay_id,
-            NativeCellIdentity::Dummy => terrain.shared_cell_dummy().overlay_fields().0,
-        };
+        let overlay = self.sim.cell_overlay(cell).overlay_id;
         CellFields {
             flags: terrain.native_cell_flags(cell),
             tile: terrain.native_cell_tile_index(cell),
@@ -304,8 +301,8 @@ impl DamageHost for LiveDamage<'_> {
         // same native damage attempt even when its driver returns false.
         self.drivers
             .sim
-            .tactical_dirty_cells
-            .push((self.event.rx, self.event.ry));
+            .dirty_cells
+            .mark_tactical((self.event.rx, self.event.ry));
     }
 }
 

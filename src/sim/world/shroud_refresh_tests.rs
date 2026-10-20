@@ -506,7 +506,7 @@ fn native_trigger_reveal_nearest_resident_and_diagonal_height_consumers_match_or
         }
         assert_eq!(rng_hashes(&sim), row["rng_after"]);
         if input["fresh"] == 0 {
-            assert!(sim.radar_terrain_dirty_cells.is_empty());
+            assert!(sim.dirty_cells.radar().is_empty());
         }
     }
 }
@@ -943,7 +943,7 @@ fn reveal_entire_map_walks_the_size_diamond_and_notifies_each_cell() {
     );
     put(&mut sim, resident, walk[20], false);
     assert_eq!(discovery(&sim, resident), json!([0, 0, 0]));
-    assert!(sim.radar_terrain_dirty_cells.is_empty());
+    assert!(sim.dirty_cells.radar().is_empty());
 
     let ((), calls) =
         trace_reveal_calls(|| sim.reveal_entire_map(Some(player), UninitContext::default()));
@@ -962,7 +962,7 @@ fn reveal_entire_map_walks_the_size_diamond_and_notifies_each_cell() {
             .copied()
             .collect::<std::collections::BTreeSet<_>>()
     );
-    assert_eq!(sim.radar_terrain_dirty_cells, walk);
+    assert_eq!(sim.dirty_cells.radar(), walk);
     assert_eq!(discovery(&sim, resident), json!([0, 1, 0]));
 }
 
@@ -987,7 +987,7 @@ fn edge_update_record(sim: &Simulation, calls: &RevealCalls, residents: &[u64]) 
         "cursor": format!("{:?}", sim.native_allocated_cell_cursor),
         "notifications": calls.notifications,
         "queries": calls.discovery_queries,
-        "radar": sim.radar_terrain_dirty_cells,
+        "radar": sim.dirty_cells.radar(),
         "discovery": residents.iter().map(|&id| discovery(sim, id)).collect::<Vec<_>>(),
     })
 }

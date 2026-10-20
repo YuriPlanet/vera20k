@@ -420,7 +420,7 @@ mod tests {
             ));
             let hash = sim.state_hash();
             let rng = sim.scenario_rng.logical_state();
-            let stable_cursor = sim.substrate.next_stable_object_id;
+            let stable_cursor = sim.next_stable_object_id();
             assert_eq!(
                 sim.next_native_runtime_id() as u32,
                 case["next"].as_u64().unwrap() as u32,
@@ -431,7 +431,7 @@ mod tests {
                 "future constructor phase is authority"
             );
             assert_eq!(sim.scenario_rng.logical_state(), rng);
-            assert_eq!(sim.substrate.next_stable_object_id, stable_cursor);
+            assert_eq!(sim.next_stable_object_id(), stable_cursor);
         }
     }
 

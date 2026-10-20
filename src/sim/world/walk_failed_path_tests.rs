@@ -88,7 +88,7 @@ fn far_failure_stops_walk_clears_target_and_queues_guard_for_a_human_house() {
         .get(id)
         .unwrap()
         .navigation
-        .path_runtime
+        .path_runtime()
         .retries_left();
     order_walk(&mut sim, &rules, id, (15, 15));
     let guard = MissionId::from_known(MissionType::Guard);
@@ -123,9 +123,9 @@ fn far_failure_stops_walk_clears_target_and_queues_guard_for_a_human_house() {
     // A Clear current cell answers 0 at 0x51DBAC.
     assert!(!e.infantry.as_ref().unwrap().cell_entry_blocked());
     // The failure tail never touches +64C; the oracle far row keeps 10.
-    assert_eq!(e.navigation.path_runtime.retries_left(), retries_before);
+    assert_eq!(e.navigation.path_runtime().retries_left(), retries_before);
     // The NULL setter's Set_Destination_Internal tail rewrote +640 to duration 0.
-    assert_eq!(e.navigation.path_runtime.movement_timer().duration(), 0);
+    assert_eq!(e.navigation.path_runtime().movement_timer().duration(), 0);
     assert_eq!(e.position.rx(), 10);
     assert_eq!(e.position.ry(), 10);
 }
@@ -227,7 +227,7 @@ fn receiver_records_an_impassable_current_cell() {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(10, 10)
+            .cell_mut_for_test(10, 10)
             .unwrap();
         cell.land_type = 2;
         cell.speed_costs.foot = Some(0);
@@ -367,7 +367,7 @@ fn infantry_damage_scatter_reaches_the_ordinary_walk_process() {
         Some(DriveCoord::cell(rx, ry, 0))
     );
     assert!(
-        e.navigation.path_replay.remaining_directions().is_empty(),
+        e.navigation.path_replay().remaining_directions().is_empty(),
         "first path belongs to Process"
     );
     assert_eq!(e.locomotor.as_ref().unwrap().step_head(), None);

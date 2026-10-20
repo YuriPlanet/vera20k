@@ -66,21 +66,20 @@ fn an_enemy_tank_sensed_by_a_psychic_sensor_draws_its_detection_line() {
     assert!(pulsed.iter().any(|span| span.tint != box_tint));
 
     // Mode zero: a human-controlled owner other than the local player.
-    let russians = sim.interner.get("Russians").unwrap();
-    let house = sim.houses.get_mut(&russians).unwrap();
+    let russians = sim.interner().get("Russians").unwrap();
+    let house = sim.houses_mut_for_test().get_mut(&russians).unwrap();
     house.set_is_human_for_test(true);
     house.set_player_control_for_test(true);
-    assert!(!sim.session.game_mode_nonzero() && sim.house_is_human_player(russians));
+    assert!(!sim.session().game_mode_nonzero() && sim.house_is_human_player(russians));
     assert!(
         lines(&sim, &rules, false, 0x200, 127).is_empty(),
         "human owner"
     );
-    let house = sim.houses.get_mut(&russians).unwrap();
+    let house = sim.houses_mut_for_test().get_mut(&russians).unwrap();
     house.set_is_human_for_test(false);
     house.set_player_control_for_test(false);
 
-    sim.substrate
-        .entities
+    sim.entities_mut_for_test()
         .get_mut(tank)
         .unwrap()
         .attack_target

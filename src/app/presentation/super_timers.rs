@@ -214,21 +214,21 @@ pub(crate) fn build_super_timer_instances(
         return (Vec::new(), Vec::new());
     };
     let sim = &runtime.simulation;
-    let frame = sim.session.binary_frame();
+    let frame = sim.session().binary_frame();
     let supers = crate::sim::superweapon::super_timer_views(sim, rules);
-    let blackouts = sim.houses.order().iter().map(|&house| {
+    let blackouts = sim.houses().order().iter().map(|&house| {
         let left = sim
-            .power_states
+            .power_states()
             .get(&house)
             .map_or(0, |power| power.blackout_remaining(frame));
         (house, left)
     });
-    let scenario = sim.session.scenario_timer_view();
+    let scenario = sim.session().scenario_timer_view();
     let lines = timer_lines(
         scenario.map(|(left, _)| left),
         &supers,
         blackouts,
-        !sim.session.game_mode_nonzero(),
+        !sim.session().game_mode_nonzero(),
     );
     if lines.is_empty() {
         return (Vec::new(), Vec::new());
@@ -243,7 +243,7 @@ pub(crate) fn build_super_timer_instances(
                     .match_state
                     .match_presentation
                     .house_color_map
-                    .get(sim.interner.resolve(house))
+                    .get(sim.interner().resolve(house))
             })
             .copied()
             .unwrap_or(NO_REMAP);
@@ -254,7 +254,7 @@ pub(crate) fn build_super_timer_instances(
         .map(|line| {
             let (house, label) = match line.source {
                 TimerSource::Scenario => (
-                    sim.session.current_house(),
+                    sim.session().current_house(),
                     scenario
                         .filter(|(_, caption)| !caption.is_empty())
                         .map_or_else(String::new, |(_, caption)| localized(csf, caption)),
@@ -263,7 +263,7 @@ pub(crate) fn build_super_timer_instances(
                     Some(view.owner()),
                     type_ui_name(
                         rules
-                            .super_weapon(sim.interner.resolve(view.sw_type()))
+                            .super_weapon(sim.interner().resolve(view.sw_type()))
                             .and_then(|sw| sw.ui_name.as_deref()),
                         csf,
                     ),

@@ -60,7 +60,7 @@ fn fixture(kind: LocomotorKind) -> Simulation {
     entity.position.set_sub_y_for_test(SimFixed::from_num(128));
     entity.lifecycle.set_object_alive_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(true);
+    entity.lifecycle.set_cell_marked_for_test(true);
     entity.locomotor = Some(LocomotorState::for_test_kind(kind));
     entity.mover_facts.set_drive_accelerates_for_test(false);
     match kind {
@@ -87,7 +87,7 @@ fn fixture(kind: LocomotorKind) -> Simulation {
 }
 
 fn timer_pair(entity: &GameEntity) -> (CdTimer, CdTimer, u32) {
-    let path = &entity.navigation.path_runtime;
+    let path = entity.navigation.path_runtime();
     (
         path.movement_timer(),
         path.blocked_timer(),
@@ -122,11 +122,11 @@ fn accepted_direct_and_regular_orders_keep_signed_rules_delays_and_retry_word() 
                 for command in 0..2 {
                     let mut sim = fixture(kind);
                     let entity = sim.substrate.entities.get_mut(1).unwrap();
-                    let path_runtime = &mut entity.navigation.path_runtime;
+                    let path_runtime = entity.navigation.path_runtime_mut();
                     path_runtime.set_movement_timer_for_test(CdTimer::from_raw(17, -9));
                     path_runtime.set_blocked_timer_for_test(CdTimer::from_raw(19, 42));
-                    path_runtime.set_path_blocked(true);
-                    path_runtime.set_retries_left(u32::MAX);
+                    path_runtime.set_path_blocked_for_test(true);
+                    path_runtime.set_retries_left_for_test(u32::MAX);
                     let timing = DestinationTiming::from_rules(frame, Some(&rules));
                     match command {
                         0 => timing.accept(sim.substrate.entities.get_mut(1).unwrap()),
@@ -153,7 +153,7 @@ fn accepted_direct_and_regular_orders_keep_signed_rules_delays_and_retry_word() 
                         ),
                         "{kind:?} command={command} frame={frame} BlockagePathDelay={raw}"
                     );
-                    assert!(!entity.navigation.path_runtime.path_blocked());
+                    assert!(!entity.navigation.path_runtime().path_blocked());
                 }
             }
         }
@@ -162,7 +162,9 @@ fn accepted_direct_and_regular_orders_keep_signed_rules_delays_and_retry_word() 
 
 fn install_stationary_path_request(sim: &mut Simulation) {
     let entity = sim.substrate.entities.get_mut(1).unwrap();
-    entity.navigation.path_replay = FootPathQueue::for_test(vec![0, 0], 0, Some((8, 8)));
+    entity
+        .navigation
+        .set_path_replay_for_test(FootPathQueue::for_test(vec![0, 0], 0, Some((8, 8))));
 }
 
 #[test]
@@ -209,11 +211,11 @@ fn ordinary_drive_and_ship_process_do_not_age_native_waiting_timer_fields() {
                 json_i32(&call["after"]["blocked_timer"][2]),
             );
             let entity = sim.substrate.entities.get_mut(1).unwrap();
-            let path_runtime = &mut entity.navigation.path_runtime;
+            let path_runtime = entity.navigation.path_runtime_mut();
             path_runtime.set_movement_timer_for_test(expected_movement);
             path_runtime.set_blocked_timer_for_test(expected_blocked);
-            path_runtime.set_path_blocked(true);
-            path_runtime.set_retries_left(0x8000_0001);
+            path_runtime.set_path_blocked_for_test(true);
+            path_runtime.set_retries_left_for_test(0x8000_0001);
             assert!(!expected_movement.expired(frame), "native wait branch");
             sim.session.set_binary_frame_for_test(frame as u32);
             sim.session.set_tick_for_test(u64::from(frame as u32));
@@ -263,9 +265,12 @@ fn rules_driven_sentinel_timers_survive_snapshot_and_same_frame_process() {
         DestinationTiming::from_rules(u32::MAX, Some(&rules)).accept(entity);
         entity
             .navigation
-            .path_runtime
+            .path_runtime_mut()
             .start_movement(u32::MAX, expected_path);
-        entity.navigation.path_runtime.set_retries_left(0x8000_0001);
+        entity
+            .navigation
+            .path_runtime_mut()
+            .set_retries_left_for_test(0x8000_0001);
         let expected = timer_pair(entity);
         assert_eq!(expected.0, CdTimer::from_raw(-1, expected_path));
         assert_eq!(expected.1, CdTimer::from_raw(-1, 65536));
@@ -286,7 +291,7 @@ fn rules_driven_sentinel_timers_survive_snapshot_and_same_frame_process() {
                 assert_eq!(
                     entity
                         .navigation
-                        .path_runtime
+                        .path_runtime()
                         .movement_timer()
                         .remaining(frame as i32),
                     expected_path
@@ -294,7 +299,7 @@ fn rules_driven_sentinel_timers_survive_snapshot_and_same_frame_process() {
                 assert_eq!(
                     entity
                         .navigation
-                        .path_runtime
+                        .path_runtime()
                         .blocked_timer()
                         .remaining(frame as i32),
                     65536
@@ -325,11 +330,17 @@ fn paid_walk_progress_clears_only_blocked_latch_and_retains_timer_words() {
         }));
     entity
         .navigation
-        .path_runtime
+        .path_runtime_mut()
         .start_blocked(101, rules.general.blockage_path_delay_ticks);
-    entity.navigation.path_runtime.set_path_blocked(true);
-    entity.navigation.path_runtime.set_retries_left(0x8000_0001);
-    let expected_blocked = entity.navigation.path_runtime.blocked_timer();
+    entity
+        .navigation
+        .path_runtime_mut()
+        .set_path_blocked_for_test(true);
+    entity
+        .navigation
+        .path_runtime_mut()
+        .set_retries_left_for_test(0x8000_0001);
+    let expected_blocked = entity.navigation.path_runtime().blocked_timer();
     let before = super::ground_pose::position_world_xy(&entity.position);
     sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
         .unwrap();
@@ -344,10 +355,10 @@ fn paid_walk_progress_clears_only_blocked_latch_and_retains_timer_words() {
         (8, 8),
         "no boundary receiver needed"
     );
-    assert!(!entity.navigation.path_runtime.path_blocked());
+    assert!(!entity.navigation.path_runtime().path_blocked());
     assert_eq!(
-        entity.navigation.path_runtime.blocked_timer(),
+        entity.navigation.path_runtime().blocked_timer(),
         expected_blocked
     );
-    assert_eq!(entity.navigation.path_runtime.retries_left(), 0x8000_0001);
+    assert_eq!(entity.navigation.path_runtime().retries_left(), 0x8000_0001);
 }

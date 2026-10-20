@@ -421,6 +421,46 @@ impl Default for LastBuiltTypes {
     }
 }
 
+/// What House+0x1602A holds. Localized text stays app-side, so the House
+/// keeps where its name comes from rather than the resolved string.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum HouseUiName {
+    /// The constructor's copy of its HouseType's UIName text (`0x004F62FF`),
+    /// also Read_Scenario_INI's fallback for an empty `UIName=`
+    /// (`0x00500CF7..0x00500D05`).
+    #[default]
+    TypeName,
+    /// `TXT_COMPUTER`: CreateHouses' computer Houses
+    /// (`0x00688252..0x00688270`).
+    Computer,
+    /// A human node's handle (`0x00688092..0x006880A4`).
+    Handle(String),
+    /// Read_Scenario_INI's `UIName=` CSF key (`0x00500C5D..0x00500CF5`).
+    Csf(String),
+}
+
+impl HouseUiName {
+    /// The field holds at most 20 wide characters: CreateHouses copies
+    /// `wcsncpy(.., 0x15)` and terminates +0x16052; Read_Scenario_INI
+    /// terminates `aUIName[0x14]`.
+    pub const CAPACITY_UTF16: usize = 20;
+
+    pub fn handle(name: &str) -> Self {
+        Self::Handle(Self::bounded(name))
+    }
+
+    /// `text` cut to the field's 20 UTF-16 units, never splitting a pair.
+    pub fn bounded(text: &str) -> String {
+        let mut units = 0;
+        text.chars()
+            .take_while(|c| {
+                units += c.len_utf16();
+                units <= Self::CAPACITY_UTF16
+            })
+            .collect()
+    }
+}
+
 /// Per-player game state.
 ///
 /// Created once per player at game start, lives for the duration of the match.
@@ -436,6 +476,10 @@ pub struct HouseState {
     /// run that admission. Save504080/Load503040 retain the native name.
     #[serde(default)]
     native_scenario_name: Option<String>,
+    /// House+0x1602A, the player-facing name every message, score and
+    /// Diplomacy row reads.
+    #[serde(default)]
+    ui_name: HouseUiName,
     #[serde(default)]
     native_construction: Option<NativeHouseConstruction>,
     #[serde(default)]
@@ -1137,6 +1181,11 @@ impl HouseState {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub fn set_ui_name_for_test(&mut self, name: HouseUiName) {
+        self.ui_name = name;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_is_defeated_for_test(&mut self, value: bool) {
         self.is_defeated = value;
     }
@@ -1432,6 +1481,14 @@ impl HouseState {
         self.native_scenario_name.as_deref()
     }
 
+    pub fn ui_name(&self) -> &HouseUiName {
+        &self.ui_name
+    }
+
+    pub(crate) fn set_ui_name(&mut self, name: HouseUiName) {
+        self.ui_name = name;
+    }
+
     pub(crate) fn validate_scenario_name(&self) -> Result<(), &'static str> {
         if self.native_scenario_name.as_ref().is_some_and(|name| {
             name.contains('\0')
@@ -1439,6 +1496,11 @@ impl HouseState {
                 || name.chars().any(|c| u32::from(c) > 255)
         }) {
             return Err("House native name exceeds its terminated20-byte storage");
+        }
+        if let HouseUiName::Handle(name) = &self.ui_name
+            && name.encode_utf16().count() > HouseUiName::CAPACITY_UTF16
+        {
+            return Err("House UI name exceeds its terminated 20-character storage");
         }
         Ok(())
     }
@@ -2179,7 +2241,7 @@ impl HouseState {
     /// Unlimbo BasePlan satisfaction and the early House-update activation.
     /// `HouseClass::IsControlledByHuman @ 0x0050B730` supplies the former;
     /// `HouseClass__Update @ 0x004F8440` inlines the same branch shape.
-    pub(crate) const fn is_controlled_by_human(&self, game_mode_nonzero: bool) -> bool {
+    pub const fn is_controlled_by_human(&self, game_mode_nonzero: bool) -> bool {
         self.is_human || (!game_mode_nonzero && self.player_control)
     }
 
@@ -2400,6 +2462,7 @@ impl HouseState {
         Self {
             name,
             native_scenario_name: None,
+            ui_name: HouseUiName::TypeName,
             native_construction: None,
             scenario_parameters: HouseScenarioParameters::default(),
             initial_techno_records: Vec::new(),

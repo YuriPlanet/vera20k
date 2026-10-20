@@ -45,7 +45,7 @@ pub(crate) fn cell_is_tiberium_land(
     if let Some(terrain) = sim.resolved_terrain.as_ref() {
         return terrain
             .cell(cell.0, cell.1)
-            .is_some_and(|cell| cell.land_type() == LandType::Tiberium.as_index());
+            .is_some_and(|cell| cell.land_type == LandType::Tiberium.as_index());
     }
     let overlay = sim
         .overlay_grid
@@ -285,7 +285,7 @@ fn is_cell_harvestable(
     let terrain = sim.resolved_terrain.as_ref();
     if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
         candidate,
-        sim.playfield_bounds,
+        sim.playfield_bounds(),
         terrain,
     ) {
         return None;
@@ -323,7 +323,7 @@ fn is_cell_harvestable(
     }
     let reach = harvest_reach(sim, rules, id)?;
     let cells = NativeCellQuery::canonical(sim.resolved_terrain.as_ref()?);
-    let bounds = sim.playfield_bounds?;
+    let bounds = sim.playfield_bounds()?;
     if !sim.zone_grid.as_ref()?.can_reach_native(
         &cells,
         ZoneQueryCell::Copied((reach.source.0 as i16, reach.source.1 as i16)),
@@ -333,7 +333,7 @@ fn is_cell_harvestable(
         false,
         false,
         bounds,
-        (bounds.base, sim.playfield_size_height?),
+        (bounds.base, sim.playfield_size_height()?),
     )? {
         return None;
     }

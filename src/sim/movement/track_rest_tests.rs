@@ -34,7 +34,7 @@ fn drive_stop_retains_speed_until_an_eligible_process_rest_tail() {
     assert!(
         entity
             .navigation
-            .path_replay
+            .path_replay()
             .remaining_directions()
             .is_empty()
     );
@@ -148,7 +148,7 @@ fn drive_rest_admission_matches_original_whole_process_controls() {
         if let Some(word) = input["queue"].as_i64() {
             entity
                 .navigation
-                .path_replay
+                .path_replay_mut()
                 .set_directions_for_test(vec![word as u8]);
         }
         if input["turn"] == true {
@@ -381,7 +381,7 @@ fn drive_stop_rest_and_departure_survive_production_snapshot_restore() {
         restored.restore_after_snapshot_load().unwrap();
         restored.rebuild_caches_after_load(
             original.resolved_terrain.as_ref().unwrap().clone(),
-            original.terrain_speed_config.clone(),
+            original.terrain_speed_config().clone(),
             &rules,
         );
         restored

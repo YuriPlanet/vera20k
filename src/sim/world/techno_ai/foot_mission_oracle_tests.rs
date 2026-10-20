@@ -687,7 +687,7 @@ impl SuppliedFootFixture {
                     .lifecycle
                     .set_object_alive_for_test(control["alive"] != 0);
             }
-            entity.lifecycle.set_cell_marked(true);
+            entity.lifecycle.set_cell_marked_for_test(true);
             entity.set_in_playfield(true);
             entity.locomotor = Some(LocomotorState::from_object_type(object, 0));
             if infantry {
@@ -728,7 +728,7 @@ impl SuppliedFootFixture {
                             .map(|pointer| NavTargetRef::from(target(pointer).unwrap()))
                             .collect(),
                     );
-                    entity.navigation.path_replay.set_directions_for_test(
+                    entity.navigation.path_replay_mut().set_directions_for_test(
                         before["path"]
                             .as_array()
                             .unwrap()
@@ -736,11 +736,14 @@ impl SuppliedFootFixture {
                             .map(|direction| signed(direction) as u8)
                             .collect(),
                     );
-                    entity.navigation.path_replay.set_reference_cell(Some((
-                        signed(&before["reference_cell"][0]) as i16,
-                        signed(&before["reference_cell"][1]) as i16,
-                    )));
-                    let path = &mut entity.navigation.path_runtime;
+                    entity
+                        .navigation
+                        .path_replay_mut()
+                        .set_reference_cell_for_test(Some((
+                            signed(&before["reference_cell"][0]) as i16,
+                            signed(&before["reference_cell"][1]) as i16,
+                        )));
+                    let path = entity.navigation.path_runtime_mut();
                     path.set_movement_timer_for_test(crate::sim::timer::CdTimer::from_raw(
                         signed(&before["movement_timer_words"][0]),
                         signed(&before["movement_timer_words"][2]),
@@ -749,8 +752,8 @@ impl SuppliedFootFixture {
                         signed(&before["blocked_timer_words"][0]),
                         signed(&before["blocked_timer_words"][2]),
                     ));
-                    path.set_path_blocked(before["blocked"] != 0);
-                    path.set_retries_left(signed(&before["retry"]) as u32);
+                    path.set_path_blocked_for_test(before["blocked"] != 0);
+                    path.set_retries_left_for_test(signed(&before["retry"]) as u32);
                 }
                 let head = xyz(&before["loco_head"]);
                 if head != [0, 0, 0] {
@@ -991,7 +994,7 @@ fn assert_recorded_scores(fixture: &SuppliedFootFixture, rules: &RuleSet, row: &
                 rules,
                 &fixture.sim.interner,
                 None,
-                Some(&fixture.sim.house_alliances),
+                Some(fixture.sim.house_alliances.as_map()),
                 coefficients,
                 ThreatReference::Coords(xyz(&score["anchor_xyz"])),
                 None,
@@ -1341,7 +1344,7 @@ fn install_recorded_anytown_query_state(
             receipt["cell"],
             "{name}: original Cell constructor identity"
         );
-        let cell = terrain.cell_mut(x, y).unwrap();
+        let cell = terrain.cell_mut_for_test(x, y).unwrap();
         // Physical map/TMP data establishes these independently of Rust's
         // query result. Flags and Land are the retained native crop state,
         // rather than a claim about every production Cell Recalc writer.
@@ -1560,12 +1563,12 @@ fn assert_destination_projection(fixture: &SuppliedFootFixture, row: &Value) {
         "{name}: Foot NavComAux"
     );
     assert_eq!(
-        actor.navigation.path_replay.cursor(),
+        actor.navigation.path_replay().cursor(),
         0,
         "{name}: unchanged supplied path cursor"
     );
     assert_eq!(
-        actor.navigation.path_replay.directions(),
+        actor.navigation.path_replay().directions(),
         expected["path"]
             .as_array()
             .unwrap()
@@ -1575,7 +1578,7 @@ fn assert_destination_projection(fixture: &SuppliedFootFixture, row: &Value) {
         "{name}: live path head and preserved backing suffix"
     );
     assert_eq!(
-        actor.navigation.path_replay.reference_cell(),
+        actor.navigation.path_replay().reference_cell(),
         Some((
             signed(&expected["reference_cell"][0]) as i16,
             signed(&expected["reference_cell"][1]) as i16,
@@ -1595,7 +1598,7 @@ fn assert_destination_projection(fixture: &SuppliedFootFixture, row: &Value) {
         "{name}: Unit clear versus Infantry preserved navigation vector"
     );
     // Compare live vector entries, not C++ allocator/vtable/backing residues.
-    let path = &actor.navigation.path_runtime;
+    let path = actor.navigation.path_runtime();
     for (actual, key) in [
         (path.movement_timer(), "movement_timer_words"),
         (path.blocked_timer(), "blocked_timer_words"),

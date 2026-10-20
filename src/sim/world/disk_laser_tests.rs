@@ -100,7 +100,7 @@ impl Scene {
         ));
         entity
             .lifecycle
-            .set_cell_marked(input["marked"].as_bool().unwrap());
+            .set_cell_marked_for_test(input["marked"].as_bool().unwrap());
         entity.set_techno_ctor_random_word_for_test(int(
             &native()["lifecycle_priors"]["source_report_selector"],
         ) as u16);

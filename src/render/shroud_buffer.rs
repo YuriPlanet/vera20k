@@ -672,13 +672,14 @@ mod tests {
     #[test]
     fn a_whole_map_reveal_lifts_the_full_shroud_for_the_current_house() {
         let mut sim = crate::sim::world::Simulation::with_seed(0x577F30);
-        sim.fog.set_width_for_test(8);
-        sim.fog.set_height_for_test(6);
-        let local = sim.interner.intern("Player");
-        let other = sim.interner.intern("Computer");
-        sim.session.set_current_house_for_test(Some(local));
+        sim.fog_mut_for_test().set_width_for_test(8);
+        sim.fog_mut_for_test().set_height_for_test(6);
+        let local = sim.intern("Player");
+        let other = sim.intern("Computer");
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
         assert_eq!(
-            cell_fill(&sim.fog, local, 3, 2, &SHROUD_EDGE_LUT),
+            cell_fill(sim.fog(), local, 3, 2, &SHROUD_EDGE_LUT),
             CellFill::Frame(15)
         );
 
@@ -688,11 +689,11 @@ mod tests {
         );
 
         assert_eq!(
-            cell_fill(&sim.fog, local, 3, 2, &SHROUD_EDGE_LUT),
+            cell_fill(sim.fog(), local, 3, 2, &SHROUD_EDGE_LUT),
             CellFill::None
         );
         assert_eq!(
-            cell_fill(&sim.fog, other, 3, 2, &SHROUD_EDGE_LUT),
+            cell_fill(sim.fog(), other, 3, 2, &SHROUD_EDGE_LUT),
             CellFill::Frame(15)
         );
     }

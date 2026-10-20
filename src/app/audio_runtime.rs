@@ -372,6 +372,16 @@ impl AppAudioRuntime {
         saved_shuffle
     }
 
+    /// The lobby-music rule of `0x0077E110` on its own.
+    pub(crate) fn apply_wol_lobby_music_rule(&mut self, lobby_music: bool, wall_ms: u64) {
+        let gates = self.theme_gates();
+        let physical = self.music_output_state();
+        let action = self
+            .theme
+            .wol_lobby_music_rule(lobby_music, gates, physical, wall_ms);
+        self.apply_theme_action(action);
+    }
+
     /// `WOL_Main` exit: the saved shuffle flag returns.
     pub(crate) fn leave_wol_lobby_music(&mut self, saved_shuffle: bool) {
         self.theme.leave_wol_lobby(saved_shuffle);
@@ -438,16 +448,16 @@ pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
     let simulation = &runtime.simulation;
     let local_side = state.match_state.local_player_owner().and_then(|owner| {
         crate::sim::house_state::house_state_for_owner(
-            &simulation.houses,
+            simulation.houses(),
             owner,
-            &simulation.interner,
+            simulation.interner(),
         )
         .map(|house| i32::from(house.side_index()))
     });
     state.audio.theme.begin_scenario(
         ThemeAllowContext {
             local_side,
-            campaign_scenario: simulation.session.campaign_mission_counter(),
+            campaign_scenario: simulation.session().campaign_mission_counter(),
         },
         |name| {
             runtime

@@ -232,7 +232,7 @@ fn rocketeer_pair() -> (EntityStore, RuleSet) {
     let mut firer = make_infantry_entity(1, "JJ", 5, 5, 125);
     firer.body_facing = FacingClass::new(0x4000, 127);
     // Object5F6B90 requires +74 as well as the height for the Hover remap.
-    firer.lifecycle.set_cell_marked(true);
+    firer.lifecycle.set_cell_marked_for_test(true);
     firer.position.set_exact_z_leptons_for_test(Some(500));
     let mut locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
         rules.object("JJ").unwrap(),

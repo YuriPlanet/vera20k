@@ -485,7 +485,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
             .register(crate::sim::house_state::HouseState::new(
                 owner, 0, None, human, 0, 1,
             ));
-        sim.playfield_bounds = Some(bounds);
+        sim.set_playfield_bounds_for_test(Some(bounds));
         if airfield {
             // Find_Docking_Bay walks the house's buildings and its tracked
             // counts, which construction fills.
@@ -520,7 +520,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
         // In flight, on the map: a grounded plane takes Enter_Idle_Mode's
         // landed arm, and an unmarked one is not in the air (vt+0x54).
         plane.position.set_exact_z_leptons_for_test(Some(1500));
-        plane.lifecycle.set_cell_marked(true);
+        plane.lifecycle.set_cell_marked_for_test(true);
         sim.substrate.entities.insert(plane);
         sim.set_logic_order_for_test(vec![1]);
         let mut expected_rng = sim.scenario_rng.clone();

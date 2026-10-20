@@ -64,8 +64,30 @@ pub enum LightingEvent {
 /// claim to native Cell34 lazy reinitialization.
 #[derive(Debug, Clone, Default)]
 pub struct LightingSources {
-    pub buildings: BTreeMap<u64, PointLight>,
-    pub pending: Vec<LightingEvent>,
+    buildings: BTreeMap<u64, PointLight>,
+    pending: Vec<LightingEvent>,
+}
+
+impl LightingSources {
+    /// The live building lights, by building id.
+    pub fn buildings(&self) -> &BTreeMap<u64, PointLight> {
+        &self.buildings
+    }
+
+    /// Outgoing lighting events not yet taken by presentation.
+    pub fn pending(&self) -> &[LightingEvent] {
+        &self.pending
+    }
+
+    /// Queue an outgoing lighting event, in production order.
+    pub(crate) fn publish(&mut self, event: LightingEvent) {
+        self.pending.push(event);
+    }
+
+    /// Take the outgoing events, oldest first.
+    pub fn take_pending(&mut self) -> Vec<LightingEvent> {
+        std::mem::take(&mut self.pending)
+    }
 }
 
 impl Simulation {

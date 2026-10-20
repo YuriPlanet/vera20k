@@ -457,7 +457,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(x, y)
+                .cell_mut_for_test(x, y)
                 .unwrap();
             cell.level = input_cell[2].as_u64().unwrap() as u8;
             cell.bridge_facts.raw_flags = input_cell[3].as_u64().unwrap() as u32;
@@ -467,7 +467,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
             sim.resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(x, y)
+                .cell_mut_for_test(x, y)
                 .unwrap()
                 .slope_type = slope[2].as_u64().unwrap() as u8;
         }
@@ -476,20 +476,14 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(11, 10)
+                .cell_mut_for_test(11, 10)
                 .unwrap();
             cell.land_type = input["land"].as_u64().unwrap_or(0) as u8;
             cell.final_tile_index = 0;
             cell.final_sub_tile = input["subtile"].as_u64().unwrap_or(0) as u8;
         }
         if let Some(overlay) = input["overlay"].as_u64() {
-            sim.resolved_terrain
-                .as_mut()
-                .unwrap()
-                .cell_mut(11, 10)
-                .unwrap()
-                .bridge_facts
-                .overlay_id = Some(overlay as u8);
+            sim.overlay_cell_mut_for_test(11, 10).overlay_id = Some(overlay as u8);
         }
         sim.session.set_binary_frame_for_test(100);
         // The legacy corpus name seeds A8E7AC, not A8B238.
@@ -652,8 +646,8 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                             else {
                                 unreachable!()
                             };
-                            walk.set_moving(state["moving"].as_bool().unwrap());
-                            walk.set_head(head);
+                            walk.set_moving_for_test(state["moving"].as_bool().unwrap());
+                            walk.set_head_for_test(head);
                             blocker.locomotor = Some(loco);
                         }
                         "fly" | "jumpjet" => {
@@ -735,7 +729,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
             sim.resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(11, 10)
+                .cell_mut_for_test(11, 10)
                 .unwrap()
                 .bridge_facts
                 .raw_flags = 0x100;

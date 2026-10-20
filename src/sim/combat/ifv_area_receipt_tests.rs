@@ -63,7 +63,12 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
             .session
             .set_binary_frame_for_test(input["binary_frame"].as_u64().unwrap() as u32);
         crate::sim::arena_fixture::flat_arena(&mut world, &rules);
-        for cell in &mut world.resolved_terrain.as_mut().unwrap().cells {
+        for cell in world
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cells_mut_for_test()
+        {
             cell.level = 6;
         }
         let receiver = if input["receiver_mode"] != "empty" {
@@ -314,7 +319,12 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
                 owner, 0, None, true, 0, 10,
             ));
         crate::sim::arena_fixture::flat_arena(&mut world, &rules);
-        for cell in &mut world.resolved_terrain.as_mut().unwrap().cells {
+        for cell in world
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cells_mut_for_test()
+        {
             cell.level = 6;
         }
         let target = if input["empty"] == true {
@@ -337,7 +347,7 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
                 .set_object_alive_for_test(input["alive"].as_bool().unwrap());
             entity
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap());
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap());
             entity
                 .lifecycle
                 .set_in_limbo_for_test(input["limbo"].as_bool().unwrap());

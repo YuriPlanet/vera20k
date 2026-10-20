@@ -58,11 +58,11 @@ fn insert(sim: &mut Simulation, id: u64, owner: InternedId, name: &str, x: u16, 
         false,
     );
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(false);
+    entity.lifecycle.set_cell_marked_for_test(false);
     entity.set_in_playfield(true);
     if name == "SIGHT" {
         let mut loco = LocomotorState::for_test_kind(LocomotorKind::Jumpjet);
-        loco.set_layer(MovementLayer::Air);
+        loco.set_layer_for_test(MovementLayer::Air);
         entity.position.set_exact_z_leptons_for_test(Some(208));
 
         // The kernel target height is left unset on purpose: the corpus outcome
@@ -73,7 +73,7 @@ fn insert(sim: &mut Simulation, id: u64, owner: InternedId, name: &str, x: u16, 
         );
         entity.locomotor = Some(loco);
     }
-    sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(id + 1);
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(id);
     // Unlimbo's House+0x68 append, which the SpySat scan walks.

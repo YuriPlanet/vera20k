@@ -316,9 +316,9 @@ pub(crate) fn supplied_fixture(row: &Value) -> SuppliedFixture {
         prepare_native_dummy(&terrain);
         for y in 0..33 {
             for x in 0..33 {
-                terrain.cell_mut(x, y).unwrap().outside_playfield =
+                terrain.cell_mut_for_test(x, y).unwrap().outside_playfield =
                     !shape.admits(x as i16, y as i16);
-                terrain.cell_mut(x, y).unwrap().allows_tiberium =
+                terrain.cell_mut_for_test(x, y).unwrap().allows_tiberium =
                     input["tile_allows_tiberium"].as_bool().unwrap_or(true);
             }
         }
@@ -343,15 +343,18 @@ pub(crate) fn supplied_fixture(row: &Value) -> SuppliedFixture {
             c["density"].as_u64().unwrap() as u8,
         );
         if let Some(raw) = c["overlay"].as_i64() {
-            grid.cell_mut(cell.0, cell.1).overlay_id = u8::try_from(raw).ok();
+            grid.cell_mut_for_test(cell.0, cell.1).overlay_id = u8::try_from(raw).ok();
         }
         if natural {
             grid.recalculate_runtime_cell(&mut terrain, &registry, cell);
         }
         if let Some(land) = c["land"].as_u64() {
-            terrain.cell_mut(cell.0, cell.1).unwrap().land_type = land as u8;
+            terrain.cell_mut_for_test(cell.0, cell.1).unwrap().land_type = land as u8;
         }
-        terrain.cell_mut(cell.0, cell.1).unwrap().slope_type = c["slope"].as_u64().unwrap() as u8;
+        terrain
+            .cell_mut_for_test(cell.0, cell.1)
+            .unwrap()
+            .slope_type = c["slope"].as_u64().unwrap() as u8;
         if c["occupied"] == true {
             occupancy.add(
                 cell.0,
@@ -401,14 +404,19 @@ pub(crate) fn supplied_fixture(row: &Value) -> SuppliedFixture {
         match blocked[2].as_str().unwrap() {
             "overlay" => grid.place_overlay(cell.0, cell.1, 7, 0),
             "land" => {
-                let c = terrain.cell_mut(cell.0, cell.1).unwrap();
+                let c = terrain.cell_mut_for_test(cell.0, cell.1).unwrap();
                 c.land_type = 1;
                 c.base_build_blocked = true;
             }
-            "slope" => terrain.cell_mut(cell.0, cell.1).unwrap().slope_type = 1,
+            "slope" => {
+                terrain
+                    .cell_mut_for_test(cell.0, cell.1)
+                    .unwrap()
+                    .slope_type = 1
+            }
             "bridge" => {
                 terrain
-                    .cell_mut(cell.0, cell.1)
+                    .cell_mut_for_test(cell.0, cell.1)
                     .unwrap()
                     .bridge_facts
                     .raw_flags = 0x100
@@ -585,9 +593,7 @@ fn compare_case(row: &Value) {
                         rng: Some(&mut rng),
                         binary_frame: frame,
                         spread_enabled: input["spreads"] == true,
-                        radar_dirty_cells: None,
-                        radar_dirty_generation: None,
-                        tactical_dirty_cells: None,
+                        dirty_cells: None,
                     },
                     cell,
                     input["amount"].as_i64().unwrap_or(1) as i32,
@@ -612,8 +618,6 @@ fn compare_case(row: &Value) {
                     input["grows"] == true,
                     input["spreads"] == true,
                     None,
-                    None,
-                    None,
                 );
             }
             "spread_processor" => {
@@ -628,8 +632,6 @@ fn compare_case(row: &Value) {
                     &mut rng,
                     frame,
                     input["spreads"] == true,
-                    None,
-                    None,
                     None,
                 );
                 constructed.extend(result.into_overlay_constructions());
@@ -649,8 +651,6 @@ fn compare_case(row: &Value) {
                         input["spreads"] == true,
                         input["fast_growth"] == true,
                         None,
-                        None,
-                        None,
                     );
                 }
                 let result = state.tick_native_spread_driver(
@@ -664,8 +664,6 @@ fn compare_case(row: &Value) {
                     frame,
                     input["grows"] == true,
                     input["spreads"] == true,
-                    None,
-                    None,
                     None,
                 );
                 constructed.extend(result.into_overlay_constructions());
@@ -1015,8 +1013,6 @@ fn compare_authored_natural_phases(
                 config.spreads,
                 config.tiberium_grows_flag,
                 None,
-                None,
-                None,
             );
             let spread = state.tick_native_spread_driver(
                 &mut grid,
@@ -1029,8 +1025,6 @@ fn compare_authored_natural_phases(
                 frame,
                 config.grows,
                 config.spreads,
-                None,
-                None,
                 None,
             );
             (growth, spread)
@@ -1409,14 +1403,18 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
             cell.land_type,
             crate::rules::terrain_rules::LandType::Tiberium.as_index()
         );
+        assert!(scene.sim().path_grid().unwrap().resolved_cell_is_current(
+            cell,
+            scene.sim().overlay_grid.as_ref(),
+            false
+        ));
         assert!(
             scene
                 .sim()
-                .path_grid()
-                .unwrap()
-                .resolved_cell_is_current(cell, false)
+                .dirty_cells
+                .tactical_for_test()
+                .contains(&(rx, ry))
         );
-        assert!(scene.sim().tactical_dirty_cells.contains(&(rx, ry)));
         assert!(radar_cells.contains(&(rx, ry)));
         assert!(
             output.overlay_updates.iter().any(|entry| {

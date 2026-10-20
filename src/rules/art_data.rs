@@ -18,6 +18,52 @@ use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::object_type::{BuildingHiddenOccupancyProfile, HIDDEN_OCCUPY_SLOT_COUNT};
 use crate::util::native_x87::NativeF64Bits;
 
+/// A war factory's unload art, read by `BuildingTypeClass::LoadVisualAssets
+/// @ 0x0045F230` from the image section of the art INI: each a 0x40-byte
+/// ReadString, empty by default, plus `.SHP`, looked up like `Buildup=`
+/// (theater letter, then `G`; [`theater_shp_names`]). Names are kept without
+/// the extension. Stock: `[GAWEAP]`, `[NAWEAP]`, `[YAWEAP]`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FactoryDoorArt {
+    /// `DeployingAnim=` (`+0x14E4`, `0x0045F31D`): the body while the factory
+    /// unloads.
+    pub deploying: Option<String>,
+    /// `RoofDeployingAnim=` (`+0x14FC`, `0x0045F3FA`): the body while a
+    /// JumpJet or BalloonHover product leaves.
+    pub roof_deploying: Option<String>,
+    /// `UnderDoorAnim=` (`+0x14EC`, `0x0045F55A`): drawn after the bib while
+    /// the factory unloads.
+    pub under_door: Option<String>,
+    /// `UnderRoofDoorAnim=` (`+0x1504`, `0x0045F706`): the roof variant of
+    /// `under_door`.
+    pub under_roof_door: Option<String>,
+}
+
+impl FactoryDoorArt {
+    fn read(section: &IniSection) -> Self {
+        let name = |key| section.read_name(key, 0x40).map(str::to_owned);
+        Self {
+            deploying: name("DeployingAnim"),
+            roof_deploying: name("RoofDeployingAnim"),
+            under_door: name("UnderDoorAnim"),
+            under_roof_door: name("UnderRoofDoorAnim"),
+        }
+    }
+
+    /// Every name, for atlas loading.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        [
+            &self.deploying,
+            &self.roof_deploying,
+            &self.under_door,
+            &self.under_roof_door,
+        ]
+        .into_iter()
+        .flatten()
+        .map(String::as_str)
+    }
+}
+
 /// Per-object art configuration parsed from an art.ini section.
 #[derive(Debug, Clone)]
 pub struct ArtEntry {
@@ -71,6 +117,8 @@ pub struct ArtEntry {
     pub foundation: Option<u8>,
     /// BibShape: separate SHP for the ground-level pad/bib under a building.
     pub bib_shape: Option<String>,
+    /// A war factory's unload art ([`FactoryDoorArt`]).
+    pub factory_door: FactoryDoorArt,
     /// Custom palette override from art.ini `Palette=`.
     /// Stored as a palette base name without `.pal`.
     pub palette: Option<String>,
@@ -1232,6 +1280,7 @@ impl ArtRegistry {
                         .filter(|name| !name.is_empty()),
                     foundation,
                     bib_shape,
+                    factory_door: FactoryDoorArt::read(section),
                     palette,
                     sequence,
                     crawls,

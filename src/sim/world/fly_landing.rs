@@ -107,7 +107,7 @@ impl Simulation {
             .unwrap()
             .fly_runtime_mut()
             .unwrap()
-            .set_target_speed(SIM_ZERO);
+            .request_stop();
         let entity = self.substrate.entities.get(id).unwrap();
         let base = crate::sim::aircraft::landing_base::landing_base(
             entity,
@@ -236,8 +236,7 @@ impl Simulation {
             .fly_runtime_mut()
             .unwrap();
         fly.finish_landing();
-        fly.set_target_speed(SIM_ZERO);
-        fly.set_current_speed(SIM_ZERO);
+        fly.halt();
         entity.foot_speed.set_speed_fraction(SIM_ZERO);
         self.foot_neighbors_after_fly_landing(id);
         let entity = self.substrate.entities.get(id).unwrap();
@@ -563,7 +562,7 @@ mod tests {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(64, 64)
+            .cell_mut_for_test(64, 64)
             .unwrap();
         cell.level = input["level"].as_u64().unwrap_or(0) as u8;
         cell.slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
@@ -596,13 +595,14 @@ mod tests {
         let l = e.locomotor.as_mut().unwrap();
         *l.fly_runtime_mut().unwrap()=serde_json::from_value::<FlyRuntime>(serde_json::json!({"target_height":0,"taking_off":false,"landing":before["phase"][1]==1,"landing_effect_latched":before["phase"][2]==1,"airport_bound":input["airport_bound"].as_bool().unwrap_or(false),"moving":true,"destination":before["destination"]})).unwrap();
         let fly = l.fly_runtime_mut().unwrap();
-        fly.set_target_speed(SimFixed::lit("0.75"));
-        fly.set_current_speed(SimFixed::lit("0.5"));
+        fly.set_target_speed_for_test(SimFixed::lit("0.75"));
+        fly.set_current_speed_for_test(SimFixed::lit("0.5"));
         e.flight_attitude=serde_json::from_value::<FlightAttitude>(serde_json::json!({"pitch":SimFixed::from_num(input["owner_float_2e8"].as_f64().unwrap_or(0.0))})).unwrap();
-        e.navigation.neighbor_state =
-            serde_json::from_value(serde_json::json!({"cell": before["neighbor_cell"]})).unwrap();
+        e.navigation.set_neighbor_state_for_test(
+            serde_json::from_value(serde_json::json!({"cell": before["neighbor_cell"]})).unwrap(),
+        );
         e.navigation
-            .path_runtime
+            .path_runtime_mut()
             .set_blocked_timer_for_test(crate::sim::timer::CdTimer::from_raw(0, 0));
         if input["air_registered"].as_bool().unwrap_or(true) {
             sim.aircraft_tracker_add(id);
@@ -851,7 +851,7 @@ mod tests {
                 .speed_costs;
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             terrain.set_land_speed_rules_for_test(&rules.terrain_rules);
-            for cell in &mut terrain.cells {
+            for cell in terrain.cells_mut_for_test() {
                 cell.speed_costs = clear;
                 cell.base_speed_costs = clear;
             }
@@ -1044,7 +1044,7 @@ mod tests {
                 "{}",
                 row["input"]
             );
-            let timer = e.navigation.path_runtime.blocked_timer();
+            let timer = e.navigation.path_runtime().blocked_timer();
             assert_eq!(
                 serde_json::json!([timer.start_frame(), timer.duration()]),
                 after["path_timer"],

@@ -206,9 +206,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .expect("marked Foot exists");
-        let was_marked = entity.lifecycle.cell_marked();
-        entity.lifecycle.set_cell_marked(marked);
-        was_marked
+        entity.lifecycle.replace_cell_marked(marked)
     }
 
     /// The object's Mark(2) virtual dispatch reached by Object radio 0xD
@@ -268,10 +266,9 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        if entity.lifecycle.in_limbo() || !entity.lifecycle.cell_marked() {
+        if !entity.lifecycle.admit_mark_up() {
             return false;
         }
-        entity.lifecycle.set_cell_marked(false);
         self.techno_mark_after_object(id, rules, frame_effects);
         self.foot_pick_up(id, rules, registry);
         true
@@ -327,10 +324,9 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        if entity.lifecycle.in_limbo() || entity.lifecycle.cell_marked() {
+        if !entity.lifecycle.admit_mark_down() {
             return false;
         }
-        entity.lifecycle.set_cell_marked(true);
         self.techno_mark_after_object(id, rules, frame_effects);
         self.foot_place_down(id, rules, registry, receive);
         #[cfg(any(test, feature = "test-support"))]

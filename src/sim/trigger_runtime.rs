@@ -4045,8 +4045,11 @@ impl Simulation {
             }
             46 | 47 => {
                 let locked = action.kind == 46;
-                let was_locked = self.session.input_locked();
-                self.session.set_input_locked(locked);
+                let was_locked = if locked {
+                    self.session.lock_input()
+                } else {
+                    self.session.unlock_input()
+                };
                 effects.push(TriggerEffect::InputLockChanged { locked, was_locked });
             }
             ACTION_FORCE_TRIGGER | ACTION_ENABLE_TRIGGER | ACTION_DISABLE_TRIGGER => {

@@ -87,7 +87,7 @@ fn spawn(
     category: EntityCategory,
     health: i32,
 ) -> u64 {
-    let id = sim.substrate.next_stable_object_id;
+    let id = sim.next_stable_object_id();
     let type_ref = sim.interner.intern(type_id);
     let mut entity = GameEntity::new_at_frame_zero_for_test(
         id,
@@ -104,9 +104,9 @@ fn spawn(
         false,
     );
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(true);
+    entity.lifecycle.set_cell_marked_for_test(true);
     sim.substrate.entities.insert(entity);
-    sim.substrate.next_stable_object_id = id + 1;
+    sim.set_next_stable_object_id_for_test(id + 1);
     id
 }
 
@@ -210,7 +210,8 @@ fn the_strategy_matches_native() {
             }
         }
         let owner_name = sim.interner.resolve(owner).to_string();
-        sim.house_alliances.insert(owner_name, allies);
+        sim.house_alliances_mut_for_test()
+            .insert(owner_name, allies);
         let house = sim.houses.get_mut(&owner).unwrap();
         house.set_multiplay_passive_for_test(flag(&row["self_passive"]));
         house.set_enemy_house_for_test(
@@ -472,7 +473,9 @@ fn all_to_hunt_matches_native() {
                 health,
             );
             let entity = sim.substrate.entities.get_mut(id).unwrap();
-            entity.lifecycle.set_cell_marked(flag(&techno["down"]));
+            entity
+                .lifecycle
+                .set_cell_marked_for_test(flag(&techno["down"]));
             entity
                 .lifecycle
                 .set_in_limbo_for_test(flag(&techno["limbo"]));

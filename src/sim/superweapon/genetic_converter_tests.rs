@@ -167,7 +167,7 @@ fn the_launch_matches_native() {
             let (x, y) = at(bridge);
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(x as u16, y as u16).unwrap();
-            terrain.cells[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+            terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         }
         // Prepended in reverse, each list ends in the row's order.
         let mut ids = vec![None; objects.len()];
@@ -386,7 +386,7 @@ fn the_mutation_arm_matches_native() {
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(cell.0, cell.1).unwrap();
             let foot = row["foot_cost"].as_f64().unwrap();
-            terrain.cells[index].speed_costs.foot = Some((foot * 100.0) as u8);
+            terrain.cells_mut_for_test()[index].speed_costs.foot = Some((foot * 100.0) as u8);
         }
         let victim = sim
             .construct_object_limbo_at_height(
@@ -603,7 +603,7 @@ fn the_make_infantry_end_matches_native() {
         if row["bridge"] == true {
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(cell.0, cell.1).unwrap();
-            terrain.cells[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+            terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         }
         if row["unlimbo"] == false {
             sim.substrate.raw_cell_occupation.mark_ground(

@@ -115,7 +115,7 @@ pub fn launch(
         .filter(|building| building.category() == EntityCategory::Structure)
         .map(|building| {
             let allied = is_allied_with(
-                &sim.house_alliances,
+                sim.house_alliances.as_map(),
                 sim.interner.resolve(building.owner()),
                 launcher,
             );

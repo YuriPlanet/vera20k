@@ -207,7 +207,7 @@ fn fixture(row: &Value, rules: &RuleSet, type_name: &str) -> (Simulation, u64) {
     assert_eq!(actor.mission_leaf.as_infantry().unwrap().water_state(), 2);
     // Synthetic rows supply +74=false; physical rows retain the constructor
     // in limbo. Neither premise claims wet/deck Unlimbo or occupation.
-    actor.lifecycle.set_cell_marked(false);
+    actor.lifecycle.set_cell_marked_for_test(false);
     // These action controls supply Location after construction. Constructor
     // arguments do not place the fresh Object at this native cell/pose.
     actor.position.put_location(DriveCoord {

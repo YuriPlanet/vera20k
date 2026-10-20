@@ -46,13 +46,15 @@ const TRACKBAR_FRAME_BORDER: i32 = 2;
 /// one pixel wider and taller than the template conversion
 /// (`ui::shell::geom::child_window`): Skirmish `0x102` and the Options audio
 /// sliders 129x22, Generate Map's Players 226x22, the Options plain sliders
-/// 181x22. The in-game B8 and BBB sliders keep their 263x21 and 192x21.
-pub const TRACKBAR_FRAMES: [(i32, i32, i32); 5] = [
+/// 181x22, the shell's Sound Options `0xD6` volumes 261x22. The in-game B8
+/// and BBB sliders keep their 263x21 and 192x21.
+pub const TRACKBAR_FRAMES: [(i32, i32, i32); 6] = [
     (129, 22, 50),
     (226, 22, 50),
     (263, 21, 50),
     (181, 22, 0),
     (192, 21, 0),
+    (261, 22, 50),
 ];
 const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
     "usai.pcx", "japi.pcx", "frai.pcx", "geri.pcx", "gbri.pcx", "djbi.pcx", "arbi.pcx", "lati.pcx",
@@ -126,6 +128,10 @@ pub struct SkirmishShellChromeAtlas {
     pub modal_button_mnbttn_frame2: Option<SkirmishShellChromeEntry>,
     pub checkbox_unchecked_cue_i: Option<SkirmishShellChromeEntry>,
     pub checkbox_checked_cce_i: Option<SkirmishShellChromeEntry>,
+    /// Dual-state checkbox halves (message 0x4E5 of 0x006163A0): checked
+    /// but not answered (`cce_il`), answered but not checked (`cce_ir`).
+    checkbox_dual_left_cce_il: Option<SkirmishShellChromeEntry>,
+    checkbox_dual_right_cce_ir: Option<SkirmishShellChromeEntry>,
     pub trackbar_thumb_trakgrip: Option<SkirmishShellChromeEntry>,
     pub trackbar_plaque_left_trofl: Option<SkirmishShellChromeEntry>,
     pub trackbar_plaque_mid_trofm: Option<SkirmishShellChromeEntry>,
@@ -174,6 +180,8 @@ pub struct SkirmishShellChromeAtlas {
 pub struct ControlChrome {
     pub checkbox_unchecked_cue_i: Option<SkirmishShellChromeEntry>,
     pub checkbox_checked_cce_i: Option<SkirmishShellChromeEntry>,
+    pub checkbox_dual_left_cce_il: Option<SkirmishShellChromeEntry>,
+    pub checkbox_dual_right_cce_ir: Option<SkirmishShellChromeEntry>,
     /// The frames of the [`TRACKBAR_FRAMES`] windows, in that order.
     pub trackbar_frames: [Option<SkirmishShellChromeEntry>; TRACKBAR_FRAMES.len()],
     /// Keyboard A3 category face, original resource138 DLU.
@@ -288,6 +296,8 @@ impl SkirmishShellChromeAtlas {
         ControlChrome {
             checkbox_unchecked_cue_i: self.checkbox_unchecked_cue_i,
             checkbox_checked_cce_i: self.checkbox_checked_cce_i,
+            checkbox_dual_left_cce_il: self.checkbox_dual_left_cce_il,
+            checkbox_dual_right_cce_ir: self.checkbox_dual_right_cce_ir,
             trackbar_frames: self.trackbar_frames,
             combo_face_249: self.combo_face_249,
             combo_face_207: self.combo_face_207,
@@ -595,6 +605,8 @@ pub fn build_skirmish_shell_chrome_atlas(
         "bde_ri30.pcx",
         "cue_i.pcx",
         "cce_i.pcx",
+        "cce_il.pcx",
+        "cce_ir.pcx",
         "trakgrip.pcx",
         "trofl.pcx",
         "trofm.pcx",
@@ -733,6 +745,8 @@ pub fn build_skirmish_shell_chrome_atlas(
         modal_button_mnbttn_frame2: by_label.get("mnbttn.shp#2").copied(),
         checkbox_unchecked_cue_i: by_label.get("cue_i.pcx").copied(),
         checkbox_checked_cce_i: by_label.get("cce_i.pcx").copied(),
+        checkbox_dual_left_cce_il: by_label.get("cce_il.pcx").copied(),
+        checkbox_dual_right_cce_ir: by_label.get("cce_ir.pcx").copied(),
         trackbar_thumb_trakgrip: by_label.get("trakgrip.pcx").copied(),
         trackbar_plaque_left_trofl: by_label.get("trofl.pcx").copied(),
         trackbar_plaque_mid_trofm: by_label.get("trofm.pcx").copied(),
@@ -820,9 +834,9 @@ fn classify_shell_asset(name: &str) -> ShellAssetRole {
         "sdtp.shp" | "sdbtnbkgd.shp" | "sdbtm.shp" | "sdbtnanm.shp" | "sdmpbtn.shp"
         | "lwscrns.shp" | "lwscrnl.shp" => ShellAssetRole::RightPanelChrome,
         "bue_li30.pcx" | "bue_mi30.pcx" | "bue_ri30.pcx" | "bde_li30.pcx" | "bde_mi30.pcx"
-        | "bde_ri30.pcx" | "cue_i.pcx" | "cce_i.pcx" | "trakgrip.pcx" | "trofl.pcx"
-        | "trofm.pcx" | "trofr.pcx" | "dnarrowr.pcx" | "dnarrowp.pcx" | "gdnarrowr.pcx"
-        | "gdnarrowp.pcx" | "mnbttn.shp" | "sidebttn.shp" => {
+        | "bde_ri30.pcx" | "cue_i.pcx" | "cce_i.pcx" | "cce_il.pcx" | "cce_ir.pcx"
+        | "trakgrip.pcx" | "trofl.pcx" | "trofm.pcx" | "trofr.pcx" | "dnarrowr.pcx"
+        | "dnarrowp.pcx" | "gdnarrowr.pcx" | "gdnarrowp.pcx" | "mnbttn.shp" | "sidebttn.shp" => {
             ShellAssetRole::VerifiedOwnerDrawButton
         }
         "pudlgbgn.shp" | "pudlgbga.shp" | "pudlgbgs.shp" | "pudlgbgy.shp" => {

@@ -261,7 +261,7 @@ fn gate_cell(rx: u16, ry: u16, input: &SparkleInput<'_>) -> Option<(bool, &'stat
     let has_ore = ore_value_nonzero(rx, ry, input);
     // L17: `CMP dword ptr [ESI + 0xEC], 0x2` @ 0x006D7A6C, the cell's
     // LandType against Water.
-    let water = cell.land_type() == crate::rules::terrain_rules::LandType::Water.as_index();
+    let water = cell.land_type == crate::rules::terrain_rules::LandType::Water.as_index();
     if !water && !has_ore {
         return None;
     }

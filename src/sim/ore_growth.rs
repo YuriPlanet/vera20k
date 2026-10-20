@@ -763,9 +763,7 @@ impl OreGrowthState {
         growth_enabled: bool,
         spread_enabled: bool,
         tiberium_grows_flag: bool,
-        mut radar_dirty_cells: Option<&mut Vec<(u16, u16)>>,
-        mut radar_dirty_generation: Option<&mut u64>,
-        mut tactical_dirty_cells: Option<&mut Vec<(u16, u16)>>,
+        mut dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
     ) -> NativeGrowthProcessStats {
         // `0x00722C48`: `ScenarioClass+0x34A6` gates the whole driver.
         if !growth_enabled {
@@ -798,9 +796,7 @@ impl OreGrowthState {
                 current_frame,
                 growth_enabled,
                 spread_enabled,
-                radar_dirty_cells.as_deref_mut(),
-                radar_dirty_generation.as_deref_mut(),
-                tactical_dirty_cells.as_deref_mut(),
+                dirty_cells.as_deref_mut(),
             ));
             if let (Some(class), Some(ty)) = (
                 self.native_tiberium.classes.get_mut(type_id.0 as usize),
@@ -843,8 +839,6 @@ impl OreGrowthState {
             true,
             spread_enabled,
             None,
-            None,
-            None,
         )
     }
 
@@ -861,9 +855,7 @@ impl OreGrowthState {
         current_frame: u32,
         growth_enabled: bool,
         spread_enabled: bool,
-        mut radar_dirty_cells: Option<&mut Vec<(u16, u16)>>,
-        mut radar_dirty_generation: Option<&mut u64>,
-        mut tactical_dirty_cells: Option<&mut Vec<(u16, u16)>>,
+        mut dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
     ) -> NativeGrowthProcessStats {
         let Some(ty) = tiberium_types.get(type_id) else {
             return NativeGrowthProcessStats::default();
@@ -954,9 +946,7 @@ impl OreGrowthState {
                         binary_frame: current_frame,
                         growth_enabled,
                         spread_enabled,
-                        radar_dirty_cells: radar_dirty_cells.as_deref_mut(),
-                        radar_dirty_generation: radar_dirty_generation.as_deref_mut(),
-                        tactical_dirty_cells: tactical_dirty_cells.as_deref_mut(),
+                        dirty_cells: dirty_cells.as_deref_mut(),
                     };
                     place_tiberium(&mut context, (entry.rx, entry.ry), type_id, 1).is_some()
                 };
@@ -1041,9 +1031,7 @@ impl OreGrowthState {
         current_frame: u32,
         growth_enabled: bool,
         spread_enabled: bool,
-        mut radar_dirty_cells: Option<&mut Vec<(u16, u16)>>,
-        mut radar_dirty_generation: Option<&mut u64>,
-        mut tactical_dirty_cells: Option<&mut Vec<(u16, u16)>>,
+        mut dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
     ) -> NativeSpreadProcessStats {
         // `SpreadDriver_AllTypes @ 0x007221B0` tests only Basic growth
         // (`0x007221B8`, Scenario+0x34A6). The spread bit gates sources inside
@@ -1081,9 +1069,7 @@ impl OreGrowthState {
                 rng,
                 current_frame,
                 spread_enabled,
-                radar_dirty_cells.as_deref_mut(),
-                radar_dirty_generation.as_deref_mut(),
-                tactical_dirty_cells.as_deref_mut(),
+                dirty_cells.as_deref_mut(),
             ));
             if let (Some(class), Some(ty)) = (
                 self.native_tiberium.classes.get_mut(type_id.0 as usize),
@@ -1110,9 +1096,7 @@ impl OreGrowthState {
         rng: &mut SimRng,
         current_frame: u32,
         spread_enabled: bool,
-        mut radar_dirty_cells: Option<&mut Vec<(u16, u16)>>,
-        mut radar_dirty_generation: Option<&mut u64>,
-        mut tactical_dirty_cells: Option<&mut Vec<(u16, u16)>>,
+        mut dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
     ) -> NativeSpreadProcessStats {
         let Some(ty) = tiberium_types.get(type_id) else {
             return NativeSpreadProcessStats::default();
@@ -1217,9 +1201,7 @@ impl OreGrowthState {
                 binary_frame: current_frame,
                 growth_enabled: true,
                 spread_enabled,
-                radar_dirty_cells: radar_dirty_cells.as_deref_mut(),
-                radar_dirty_generation: radar_dirty_generation.as_deref_mut(),
-                tactical_dirty_cells: tactical_dirty_cells.as_deref_mut(),
+                dirty_cells: dirty_cells.as_deref_mut(),
             };
             if let Some(placed) = spread_tiberium(&mut placement, (entry.rx, entry.ry), false) {
                 stats.placed_entries += 1;
@@ -2380,9 +2362,7 @@ SpreadPercentage=.06
         let mut expected_rng = rng.clone();
         expected_rng.next_u32(); // GrowthProcessor attempt budget.
         let spread_priority_raw = expected_rng.next_u32();
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
+        let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
 
         let stats = state.tick_native_growth_driver(
             &mut overlay_grid,
@@ -2396,9 +2376,7 @@ SpreadPercentage=.06
             true,
             true,
             false,
-            Some(&mut radar_dirty),
-            Some(&mut radar_generation),
-            Some(&mut tactical_dirty),
+            Some(&mut dirty),
         );
 
         assert_eq!(overlay_grid.cell(1, 1).overlay_data, 11);
@@ -2419,12 +2397,12 @@ SpreadPercentage=.06
             spread_class.spread.heap_entry(0).unwrap().priority_bits,
             growth_queue_priority(100, spread_priority_raw).to_bits()
         );
-        assert_eq!(tactical_dirty, vec![(1, 1)]);
+        assert_eq!(dirty.tactical_for_test(), vec![(1, 1)]);
         assert!(
-            radar_dirty.is_empty(),
+            dirty.radar().is_empty(),
             "existing growth does not dirty radar"
         );
-        assert_eq!(radar_generation, 0);
+        assert_eq!(dirty.radar_generation(), 0);
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
     }
 
@@ -2472,8 +2450,6 @@ SpreadPercentage=.06
                     true,
                     true,
                     tiberium_grows_flag,
-                    None,
-                    None,
                     None,
                 );
                 let after = state.native_tiberium_state().classes[0].growth_timer;
@@ -2644,8 +2620,6 @@ SpreadPercentage=.06
                 true,
                 true,
                 None,
-                None,
-                None,
             );
             (overlay_grid.cell(5, 5).overlay_data, stats, state)
         };
@@ -2809,8 +2783,6 @@ SpreadPercentage=.06
             200,
             true,
             None,
-            None,
-            None,
         );
 
         assert_eq!(stats.processor_calls, 1);
@@ -2873,8 +2845,6 @@ SpreadPercentage=.06
             &mut rng,
             200,
             true,
-            None,
-            None,
             None,
         );
 
@@ -2950,9 +2920,7 @@ SpreadPercentage=.06
         expected_rng.next_range_u32(8); // Initial neighbor direction.
         let expected_overlay = variants[expected_rng.next_range_u32(12) as usize];
         let growth_priority_raw = expected_rng.next_u32();
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
+        let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
 
         let stats = state.tick_native_spread_driver(
             &mut overlay_grid,
@@ -2965,9 +2933,7 @@ SpreadPercentage=.06
             200,
             true,
             true,
-            Some(&mut radar_dirty),
-            Some(&mut radar_generation),
-            Some(&mut tactical_dirty),
+            Some(&mut dirty),
         );
 
         assert_eq!(stats.spread_calls, 1);
@@ -2995,9 +2961,9 @@ SpreadPercentage=.06
             "AddToGrowthQueue runs after Mark germination and before the final amount write"
         );
         assert!(class.growth_bitmap.contains(&(4, 3)));
-        assert_eq!(radar_dirty, vec![(4, 3)]);
-        assert_eq!(radar_generation, 1);
-        assert_eq!(tactical_dirty, vec![(4, 3)]);
+        assert_eq!(dirty.radar(), vec![(4, 3)]);
+        assert_eq!(dirty.radar_generation(), 1);
+        assert_eq!(dirty.tactical_for_test(), vec![(4, 3)]);
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
     }
 
@@ -3052,9 +3018,7 @@ SpreadPercentage=.06
         expected_rng.next_range_u32(8); // Initial neighbor direction.
         expected_rng.next_range_u32(12); // Flat variant.
         let growth_priority_raw = expected_rng.next_u32();
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
+        let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
 
         let stats = state.tick_native_spread_driver(
             &mut overlay_grid,
@@ -3067,9 +3031,7 @@ SpreadPercentage=.06
             200,
             true,
             true,
-            Some(&mut radar_dirty),
-            Some(&mut radar_generation),
-            Some(&mut tactical_dirty),
+            Some(&mut dirty),
         );
 
         assert_eq!(stats.spread_calls, 1);
@@ -3082,8 +3044,8 @@ SpreadPercentage=.06
             growth_queue_priority(200, growth_priority_raw).to_bits(),
             "AddToGrowthQueue still runs after the refused Mark"
         );
-        assert_eq!(radar_dirty, vec![(4, 3)]);
-        assert_eq!(tactical_dirty, vec![(4, 3)]);
+        assert_eq!(dirty.radar(), vec![(4, 3)]);
+        assert_eq!(dirty.tactical_for_test(), vec![(4, 3)]);
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
     }
 
@@ -3149,9 +3111,7 @@ SpreadPercentage=.06
         let mut rng = SimRng::new(0x409);
         let mut expected_rng = rng.clone();
         expected_rng.next_u32(); // SpreadProcessor budget only; target count is zero.
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
+        let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
 
         let stats = state.tick_native_spread_driver(
             &mut overlay_grid,
@@ -3164,9 +3124,7 @@ SpreadPercentage=.06
             200,
             true,
             true,
-            Some(&mut radar_dirty),
-            Some(&mut radar_generation),
-            Some(&mut tactical_dirty),
+            Some(&mut dirty),
         );
 
         assert_eq!(stats.processor_calls, 1);
@@ -3174,9 +3132,9 @@ SpreadPercentage=.06
         assert_eq!(stats.spread_calls, 0);
         assert_eq!(overlay_grid.cell(4, 3).overlay_id, None);
         assert!(state.native_tiberium_state().classes[0].growth.is_empty());
-        assert!(radar_dirty.is_empty());
-        assert_eq!(radar_generation, 0);
-        assert!(tactical_dirty.is_empty());
+        assert!(dirty.radar().is_empty());
+        assert_eq!(dirty.radar_generation(), 0);
+        assert!(dirty.tactical_for_test().is_empty());
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
     }
 
@@ -3189,7 +3147,7 @@ SpreadPercentage=.06
         overlay_grid.place_overlay(3, 3, tib01, 3);
         block_all_neighbors_except(&mut overlay_grid, blocker, (3, 3), Some((4, 3)));
         let mut terrain = flat_clear_resolved_grid(8, 8);
-        terrain.cell_mut(4, 3).unwrap().outside_playfield = true;
+        terrain.cell_mut_for_test(4, 3).unwrap().outside_playfield = true;
 
         let rules_ini = IniFile::from_str(
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
@@ -3224,9 +3182,7 @@ SpreadPercentage=.06
         let mut rng = SimRng::new(0x409);
         let mut expected_rng = rng.clone();
         expected_rng.next_u32(); // SpreadProcessor budget only.
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
+        let mut dirty = crate::sim::dirty_cells::DirtyCells::default();
 
         let stats = state.tick_native_spread_driver(
             &mut overlay_grid,
@@ -3239,9 +3195,7 @@ SpreadPercentage=.06
             200,
             true,
             true,
-            Some(&mut radar_dirty),
-            Some(&mut radar_generation),
-            Some(&mut tactical_dirty),
+            Some(&mut dirty),
         );
 
         assert_eq!(stats.processor_calls, 1);
@@ -3249,9 +3203,9 @@ SpreadPercentage=.06
         assert_eq!(stats.spread_calls, 0);
         assert_eq!(overlay_grid.cell(4, 3).overlay_id, None);
         assert!(state.native_tiberium_state().classes[0].growth.is_empty());
-        assert!(radar_dirty.is_empty());
-        assert_eq!(radar_generation, 0);
-        assert!(tactical_dirty.is_empty());
+        assert!(dirty.radar().is_empty());
+        assert_eq!(dirty.radar_generation(), 0);
+        assert!(dirty.tactical_for_test().is_empty());
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
     }
 

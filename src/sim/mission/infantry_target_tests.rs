@@ -193,11 +193,10 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                     _ => unreachable!(),
                 }),
             );
-        actor.navigation.path_replay.set_directions_for_test(vec![
-            before["path_field"].as_i64().unwrap() as u8,
-            2,
-            3,
-        ]);
+        actor
+            .navigation
+            .path_replay_mut()
+            .set_directions_for_test(vec![before["path_field"].as_i64().unwrap() as u8, 2, 3]);
         // Original51B1F0 observes the single signed +F8 and retained stage
         // timer/rate. +104 is copied stack data; FC/increment are unobserved
         // by this corpus and do not participate in the class setter.
@@ -403,7 +402,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
         );
         let head = actor
             .navigation
-            .path_replay
+            .path_replay()
             .remaining_directions()
             .first()
             .copied();

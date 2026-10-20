@@ -333,7 +333,7 @@ impl Simulation {
                             .houses
                             .get(&entity.owner())
                             .is_some_and(|house| house.is_human())
-                            && cell(own).land_type() == LandType::Water.as_index())
+                            && cell(own).land_type == LandType::Water.as_index())
                     {
                         return false;
                     }

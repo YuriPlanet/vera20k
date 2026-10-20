@@ -372,7 +372,7 @@ mod tests {
                 .set_exact_z_leptons_for_test(Some(input["z"].as_i64().unwrap() as i32));
             entity
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap_or(true));
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap_or(true));
             entity.set_on_bridge(input["on_bridge"].as_bool().unwrap_or(false));
             entity.set_falling_down_for_test(input["falling"].as_bool().unwrap_or(false));
             let loco_kind = match kind {

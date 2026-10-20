@@ -201,7 +201,7 @@ impl Probe {
                     &gpu.device,
                     &gpu.queue,
                     size,
-                    [scene.sim().fog.width(), scene.sim().fog.height()],
+                    [scene.sim().fog().width(), scene.sim().fog().height()],
                     frames,
                     [width, height],
                     crate::render::shroud_buffer::SHROUD_EDGE_LUT,
@@ -215,7 +215,7 @@ impl Probe {
             CellLightGrid::new(),
             crate::map::lighting::parse_lighting(&scene.map.ini),
             2,
-            Some((scene.sim().resolved_terrain.as_ref().unwrap(), scene.sim())),
+            Some((scene.sim().resolved_terrain().unwrap(), scene.sim())),
         );
         Self {
             gpu,
@@ -259,13 +259,13 @@ impl Probe {
                 - input["cell_point"][1].as_i64().unwrap() as f32
                 - input["viewport_y"].as_i64().unwrap() as f32,
         ];
-        let terrain = scene.sim().resolved_terrain.as_ref().unwrap();
+        let terrain = scene.sim().resolved_terrain().unwrap();
         let heights = terrain.build_height_map();
         if let Some((source, owner, expected)) = &mut self.live_a {
             source.rebuild_if_needed(
                 &self.gpu.device,
                 &self.gpu.queue,
-                &scene.sim().fog,
+                scene.sim().fog(),
                 *owner,
                 camera.camera_pos[0],
                 camera.camera_pos[1],
@@ -301,10 +301,10 @@ impl Probe {
                         entries,
                         atlas,
                         names: &self.names,
-                        live_grid: scene.sim().overlay_grid.as_ref(),
+                        live_grid: scene.sim().overlay_grid(),
                         registry: Some(&scene.runtime.resources.overlay_registry),
                         rules: Some(&scene.runtime.resources.rules),
-                        interner: Some(&scene.sim().interner),
+                        interner: Some(scene.sim().interner()),
                         tiberium_types: Some(&scene.runtime.resources.rules.tiberium_types),
                         terrain: Some(terrain),
                         heights: &heights,
@@ -326,7 +326,7 @@ impl Probe {
                     atlas,
                     &self.names,
                     entries,
-                    scene.sim().overlay_grid.as_ref(),
+                    scene.sim().overlay_grid(),
                     Some(&scene.runtime.resources.overlay_registry),
                     None,
                     camera.world_origin_y,
@@ -558,7 +558,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
-    let owner = scene.sim().session.current_house().unwrap();
+    let owner = scene.sim().session().current_house().unwrap();
     let mut orders: Vec<_> = profile["commands"]
         .as_array()
         .unwrap()
@@ -617,12 +617,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
         .overlay_registry
         .id_for_name(wall_name)
         .unwrap();
-    let initial = scene
-        .sim()
-        .overlay_grid
-        .as_ref()
-        .unwrap()
-        .cell(source.0, source.1);
+    let initial = scene.sim().overlay_grid().unwrap().cell(source.0, source.1);
     assert_eq!(initial.overlay_id, initially_authored.then_some(wall));
     if !initially_authored {
         assert_eq!(initial.overlay_data, 0);
@@ -658,7 +653,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
     let observed_cells: std::collections::BTreeSet<_> = rows.iter().map(coords).collect();
     if !initially_authored {
         for &at in &observed_cells {
-            let initial = scene.sim().overlay_grid.as_ref().unwrap().cell(at.0, at.1);
+            let initial = scene.sim().overlay_grid().unwrap().cell(at.0, at.1);
             assert_eq!((initial.overlay_id, initial.overlay_data), (None, 0));
             assert!(!entries.iter().any(|entry| (entry.rx, entry.ry) == at));
         }
@@ -669,7 +664,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
     let mut sale_seen = false;
     for step in 0..=profile["ticks"].as_u64().unwrap() {
         for &at in &observed_cells {
-            let live = scene.sim().overlay_grid.as_ref().unwrap().cell(at.0, at.1);
+            let live = scene.sim().overlay_grid().unwrap().cell(at.0, at.1);
             if live.overlay_id == Some(wall) {
                 let published: Vec<_> = entries
                     .iter()
@@ -692,7 +687,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
                 continue;
             }
             let at = coords(row);
-            let live = scene.sim().overlay_grid.as_ref().unwrap().cell(at.0, at.1);
+            let live = scene.sim().overlay_grid().unwrap().cell(at.0, at.1);
             // Initial absence is not removal. Credit an erased raster only
             // after ordinary placement has published this coordinate's slot.
             if !placed.contains(&at) {
@@ -705,8 +700,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
             }
             let cell = scene
                 .sim()
-                .resolved_terrain
-                .as_ref()
+                .resolved_terrain()
                 .unwrap()
                 .cell(at.0, at.1)
                 .unwrap();
@@ -829,8 +823,7 @@ fn retail_natural_ore_growth_reaches_index_a_and_native_cell_raster() {
     );
     let cell = scene
         .sim()
-        .resolved_terrain
-        .as_ref()
+        .resolved_terrain()
         .unwrap()
         .cell(source.0, source.1)
         .unwrap();
@@ -853,7 +846,7 @@ fn retail_natural_ore_growth_reaches_index_a_and_native_cell_raster() {
             .simulation
             .prepare_fog_view_for("VERA-OBSERVER")
     );
-    let owner = scene.sim().session.current_house().unwrap();
+    let owner = scene.sim().session().current_house().unwrap();
     let hash = scene.sim().state_hash();
     let mut probe = Probe::new(&scene, native, Some(source), Some(owner));
     assert_eq!(
@@ -897,7 +890,7 @@ fn retail_natural_ore_growth_reaches_index_a_and_native_cell_raster() {
     for at in witnesses {
         let retained: Vec<_> = entries.iter().filter(|e| (e.rx, e.ry) == at).collect();
         assert_eq!(retained.len(), 1, "new ordinary spread cell {at:?}");
-        let live = scene.sim().overlay_grid.as_ref().unwrap().cell(at.0, at.1);
+        let live = scene.sim().overlay_grid().unwrap().cell(at.0, at.1);
         assert_eq!(Some(retained[0].overlay_id), live.overlay_id);
         assert_eq!(retained[0].frame, live.overlay_data);
     }
@@ -931,8 +924,8 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
     );
     // Use the existing player's starting-base owner. An added house with
     // only a miner is correctly defeated by the ordinary short-game gate.
-    let owner = scene.sim().session.current_house().unwrap();
-    let owner_name = scene.sim().interner.resolve(owner).to_owned();
+    let owner = scene.sim().session().current_house().unwrap();
+    let owner_name = scene.sim().interner().resolve(owner).to_owned();
     let dock = scene
         .runtime
         .resources
@@ -943,13 +936,12 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
         .first()
         .expect("retail HARV Dock reader")
         .clone();
-    let base = scene.sim().houses[&owner]
+    let base = scene.sim().houses()[&owner]
         .base_center()
         .expect("starting house base center");
     let candidates: Vec<_> = scene
         .sim()
-        .resolved_terrain
-        .as_ref()
+        .resolved_terrain()
         .unwrap()
         .iter()
         .filter(|cell| {
@@ -975,11 +967,11 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
             )
         })
         .expect("an accepted map-placed refinery near the starting base");
-    assert!(scene.sim().substrate.entities.get(refinery).is_some());
+    assert!(scene.sim().entities().get(refinery).is_some());
     assert!(
-        scene.sim().houses[&owner]
+        scene.sim().houses()[&owner]
             .tracking()
-            .owns_any_building([scene.sim().interner.get(&dock).unwrap()])
+            .owns_any_building([scene.sim().interner().get(&dock).unwrap()])
     );
     let miner = scene
         .runtime
@@ -996,7 +988,7 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
         .expect("retail War Miner Unlimbo on the ore cell");
     let order = CommandEnvelope::new(
         owner,
-        scene.sim().session.tick(),
+        scene.sim().session().tick(),
         Command::HarvestCell {
             entity_id: miner,
             target_rx: 123,
@@ -1006,7 +998,7 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
     let mut seen = std::collections::BTreeSet::new();
     let mut zero_cargo = None;
     for tick in 0..240 {
-        let live = scene.sim().overlay_grid.as_ref().unwrap().cell(123, 33);
+        let live = scene.sim().overlay_grid().unwrap().cell(123, 33);
         let key = if live.overlay_id.is_some() {
             format!("density_{}", live.overlay_data)
         } else {
@@ -1043,8 +1035,7 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
         }
         let miner_state = scene
             .sim()
-            .substrate
-            .entities
+            .entities()
             .get(miner)
             .unwrap_or_else(|| panic!("miner missing at tick {tick}, ore {key}"))
             .miner
@@ -1075,7 +1066,7 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
                 hop["state"]["harvesting"].as_u64().unwrap() != 0
             );
             assert!(
-                matches!(scene.sim().substrate.entities.get(miner).unwrap().navigation.nav_com(),
+                matches!(scene.sim().entities().get(miner).unwrap().navigation.nav_com(),
                 Some(crate::sim::components::NavTargetRef::Cell { rx, ry }) if (rx,ry)!=(123,33)),
                 "exhaustion searches onward in the populated stock ore field"
             );
@@ -1104,15 +1095,15 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
         entries.remove_cells(&output.overlay_removals);
         entries.upsert_occupied(output.overlay_updates);
     }
-    let last = scene.sim().substrate.entities.get(miner).unwrap();
+    let last = scene.sim().entities().get(miner).unwrap();
     assert!(
         seen.contains("density_4")
             && seen.contains("density_1")
             && seen.contains("density_0")
             && seen.contains("empty"),
         "native-backed states {seen:?}; tick {} nativeframe {} current {:?} queued {:?} pos ({},{}) nav {:?} miner {:?} cargo {}",
-        scene.sim().session.tick(),
-        scene.sim().session.binary_frame(),
+        scene.sim().session().tick(),
+        scene.sim().session().binary_frame(),
         last.mission.current(),
         last.mission.queued(),
         last.position.rx(),
@@ -1159,8 +1150,7 @@ fn retail_flat_ore_rows_match_original_color_and_depth() {
             .unwrap();
         let cell = runtime
             .simulation
-            .resolved_terrain
-            .as_ref()
+            .resolved_terrain()
             .unwrap()
             .cell(at.0, at.1)
             .unwrap();
@@ -1173,17 +1163,26 @@ fn retail_flat_ore_rows_match_original_color_and_depth() {
             cell.slope_type, 0,
             "this witness is the flat resource branch"
         );
-        let grid = runtime.simulation.overlay_grid.as_mut().unwrap();
+        let mut grid = runtime
+            .simulation
+            .overlay_grid_mut_for_test()
+            .take()
+            .unwrap();
         if row["draws"].as_array().unwrap().is_empty() {
             grid.clear_overlay(at.0, at.1);
         } else {
             grid.place_overlay(at.0, at.1, id, input["state"].as_u64().unwrap() as u8);
         }
         grid.recalculate_runtime_cell(
-            runtime.simulation.resolved_terrain.as_mut().unwrap(),
+            runtime
+                .simulation
+                .resolved_terrain_mut_for_test()
+                .as_mut()
+                .unwrap(),
             &runtime.resources.overlay_registry,
             at,
         );
+        *runtime.simulation.overlay_grid_mut_for_test() = Some(grid);
         let entry = OverlayEntry {
             rx: at.0,
             ry: at.1,

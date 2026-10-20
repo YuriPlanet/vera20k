@@ -547,7 +547,7 @@ mod tests {
         let target = (50, 60);
         let (mut sim, silo) = world(&rules, "NAMISL", target, 0);
         let grid = sim.resolved_terrain.as_mut().unwrap();
-        grid.cell_mut(target.0, target.1)
+        grid.cell_mut_for_test(target.0, target.1)
             .unwrap()
             .bridge_facts
             .raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;

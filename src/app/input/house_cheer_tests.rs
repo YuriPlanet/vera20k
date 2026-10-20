@@ -26,15 +26,22 @@ fn corpus() -> &'static Value {
 fn fixture(house_index: usize) -> (Simulation, InternedId) {
     let mut sim = Simulation::new();
     for index in 0..=house_index {
-        let owner = sim.interner.intern(&format!("CheerFixture{index}"));
-        sim.houses
-            .register(HouseState::new(owner, 0, None, index == house_index, 0, 10));
+        let owner = sim.intern(&format!("CheerFixture{index}"));
+        sim.houses_mut_for_test().register(HouseState::new(
+            owner,
+            0,
+            None,
+            index == house_index,
+            0,
+            10,
+        ));
     }
-    let owner = sim.houses.order()[house_index];
-    sim.session.set_current_house_for_test(Some(owner));
+    let owner = sim.houses().order()[house_index];
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
     // A deliberately distinct ordinal proves that admission reads binary
     // frames, while the ordinary scheduler keeps its own due-tick owner.
-    sim.session.set_tick_for_test(10_000);
+    sim.session_mut_for_test().set_tick_for_test(10_000);
     (sim, owner)
 }
 
@@ -71,11 +78,11 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
         // Historical corpus name: input_locked is the native Session+300
         // dword atA8B538, not Scenario+35A2. These explicit component priors
         // are separate from the real-loader local-loss regression.
-        sim.houses
+        sim.houses_mut_for_test()
             .get_mut(&owner)
             .unwrap()
             .set_is_defeated_for_test(initial["input_locked"].as_u64().unwrap() != 0);
-        assert!(!sim.session.input_locked());
+        assert!(!sim.session().input_locked());
         let mut queue = SynchronizedCommandQueue::new();
         for _ in 0..initial["queue_count"].as_u64().unwrap() {
             assert!(
@@ -94,10 +101,10 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
             let label = format!("{} phase{ordinal}", case["name"]);
             let boundary = &phase["input"];
             let expected = &phase["expected"];
-            sim.session
+            sim.session_mut_for_test()
                 .set_binary_frame_for_test(boundary["current_frame"].as_i64().unwrap() as u32);
             if let Some(session300) = boundary["input_locked"].as_u64() {
-                sim.houses
+                sim.houses_mut_for_test()
                     .get_mut(&owner)
                     .unwrap()
                     .set_is_defeated_for_test(session300 != 0);
@@ -114,7 +121,7 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
                 "press" => {
                     presses += 1;
                     let issued = input.try_issue_cheer(
-                        sim.session.binary_frame() as i32,
+                        sim.session().binary_frame() as i32,
                         rules.general.maximum_cheer_rate(),
                         sim.local_player_defeated(),
                         || {
@@ -125,13 +132,13 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
                             }));
                             queue
                                 .issue(SynchronizedCommand::opaque(record))
-                                .then_some(sim.session.tick())
+                                .then_some(sim.session().tick())
                         },
                     );
                     assert_eq!(
                         issued,
                         (!expected["new_events"].as_array().unwrap().is_empty())
-                            .then_some(sim.session.tick()),
+                            .then_some(sim.session().tick()),
                         "{label}: admitted append"
                     );
                 }
@@ -202,7 +209,7 @@ fn ordinary_cheer_uses_binary_frame_admission_then_the_shared_due_scheduler() {
         .find(|row| row["name"] == "stock_initial_boundary")
         .unwrap();
     let (mut sim, owner) = fixture(history["input"]["house_index"].as_u64().unwrap() as usize);
-    let owner_name = sim.interner.resolve(owner).to_owned();
+    let owner_name = sim.interner().resolve(owner).to_owned();
     let rules = rules_with_rate(history["input"]["maximum_cheer_rate"].as_i64().unwrap());
     let mut input = MatchInputState::new(HotkeyBindings::reload_from_ini_bytes(Some(
         b"[Hotkey]\nAllToCheer=67\n",
@@ -218,13 +225,14 @@ fn ordinary_cheer_uses_binary_frame_admission_then_the_shared_due_scheduler() {
     );
     let before_rng = sim.rng_state();
     for phase in history["phases"].as_array().unwrap() {
-        sim.session
+        sim.session_mut_for_test()
             .set_binary_frame_for_test(phase["input"]["current_frame"].as_i64().unwrap() as u32);
         let expected = &phase["expected"];
         let issued = queue_house_cheer_in_sim(&mut sim, &rules, &mut input, &owner_name);
         assert_eq!(
             issued,
-            (!expected["new_events"].as_array().unwrap().is_empty()).then_some(sim.session.tick()),
+            (!expected["new_events"].as_array().unwrap().is_empty())
+                .then_some(sim.session().tick()),
         );
         let pending = sim.pending_command_snapshot();
         assert_eq!(
@@ -233,7 +241,7 @@ fn ordinary_cheer_uses_binary_frame_admission_then_the_shared_due_scheduler() {
         );
         for envelope in pending {
             assert_eq!(envelope.owner, owner);
-            assert_eq!(envelope.execute_tick, sim.session.tick());
+            assert_eq!(envelope.execute_tick, sim.session().tick());
             assert_eq!(envelope.payload, Command::Cheer);
         }
         assert_eq!(
@@ -253,7 +261,7 @@ fn ordinary_cheer_uses_binary_frame_admission_then_the_shared_due_scheduler() {
 #[test]
 fn saved_local_view_commit_resets_cheer_admission_instead_of_restoring_it() {
     let (mut sim, owner) = fixture(7);
-    let owner_name = sim.interner.resolve(owner).to_owned();
+    let owner_name = sim.interner().resolve(owner).to_owned();
     let rules = rules_with_rate(300);
     let mut source = MatchInputState::new(Default::default());
     source.last_cheer_frame = 77;
@@ -284,7 +292,7 @@ fn saved_local_view_commit_resets_cheer_admission_instead_of_restoring_it() {
         "PostLoad734210 uses the original reset value"
     );
     for phase in reset_history["phases"].as_array().unwrap().iter().skip(1) {
-        sim.session
+        sim.session_mut_for_test()
             .set_binary_frame_for_test(phase["input"]["current_frame"].as_i64().unwrap() as u32);
         let issued = queue_house_cheer_in_sim(&mut sim, &rules, &mut outgoing, &owner_name);
         assert_eq!(

@@ -93,7 +93,7 @@ fn jam(rules: &RuleSet) -> (Simulation, [u64; 2]) {
             .get_mut(blocker)
             .unwrap()
             .navigation
-            .path_replay
+            .path_replay_mut()
             .set_directions_for_test(vec![WEST_STEP; 3]);
         movers[mover] = id;
     }
@@ -140,8 +140,8 @@ fn a_batched_answer_is_the_serial_search() {
                         .get_mut(id)
                         .unwrap()
                         .navigation
-                        .path_runtime;
-                    runtime.set_path_blocked(urgency == 2);
+                        .path_runtime_mut();
+                    runtime.set_path_blocked_for_test(urgency == 2);
                     runtime.start_blocked(frame, 0);
                 }
                 if batched {
@@ -174,7 +174,7 @@ fn a_batched_answer_is_the_serial_search() {
                     );
                 }
                 let route = sim.substrate.entities.get(id).unwrap();
-                (found, route.navigation.path_replay.directions().to_vec())
+                (found, route.navigation.path_replay().directions().to_vec())
             };
             let serial = search(false);
             assert!(
@@ -301,7 +301,7 @@ fn a_ladder_left_out_past_its_blockage_timer_takes_its_first_urgency() {
                 .get(mover)
                 .unwrap()
                 .navigation
-                .path_runtime
+                .path_runtime()
                 .code2_urgency(sim.session.binary_frame())
         };
         // It routes, rolls up to the stuck tank and registers a re-path.
@@ -481,7 +481,10 @@ fn a_waiting_no_queue_request_routes_as_find_path_would() {
         };
         let route = |sim: &Simulation, id: u64| {
             let foot = sim.substrate.entities.get(id).unwrap();
-            foot.navigation.path_replay.remaining_directions().to_vec()
+            foot.navigation
+                .path_replay()
+                .remaining_directions()
+                .to_vec()
         };
         let (mut serial, grid, mover) = setup(false);
         let (mut batched, _, _) = setup(true);
@@ -544,13 +547,13 @@ fn a_waiting_ladder_uses_its_answer_the_next_frame() {
             assert_eq!(batch.answered, registered, "{follower}");
             let frame = sim.session.binary_frame() as i32;
             for &(id, kind) in &batch.pending {
-                let runtime = &sim
+                let runtime = sim
                     .substrate
                     .entities
                     .get(id)
                     .unwrap()
                     .navigation
-                    .path_runtime;
+                    .path_runtime();
                 assert!(
                     runtime.movement_timer().expired(frame),
                     "{follower}: a Foot that waits asks again"
@@ -659,7 +662,10 @@ fn a_refused_walk_retry_waits_for_the_next_batch() {
     let rules = rules();
     let route = |sim: &Simulation, id: u64| {
         let foot = sim.substrate.entities.get(id).unwrap();
-        foot.navigation.path_replay.remaining_directions().to_vec()
+        foot.navigation
+            .path_replay()
+            .remaining_directions()
+            .to_vec()
     };
     let (mut sim, [_, infantry]) = jam(&rules);
     sim.batch_path_searches();
@@ -752,8 +758,10 @@ fn a_drive_retry_recursion_waits_after_the_frames_answer() {
     // The retry's own preparation: no path left and the timer run out.
     let frame = sim.session.binary_frame();
     let foot = sim.substrate.entities.get_mut(tank).unwrap();
-    foot.navigation.path_replay.clear_directions();
-    foot.navigation.path_runtime.start_movement(frame, 0);
+    foot.navigation
+        .path_replay_mut()
+        .set_directions_for_test(Vec::new());
+    foot.navigation.path_runtime_mut().start_movement(frame, 0);
     process(&mut sim, retry);
     let batch = sim.path_batch.as_ref().unwrap();
     assert_eq!(batch.pending.last(), Some(&(tank, WaitingRequest::NoQueue)));
@@ -1041,7 +1049,7 @@ fn an_order_to_more_foots_than_a_pass_answers_routes_over_two_passes() {
         let foot = sim.substrate.entities.get(id).unwrap();
         !foot
             .navigation
-            .path_replay
+            .path_replay()
             .remaining_directions()
             .is_empty()
     };
@@ -1060,7 +1068,12 @@ fn an_order_to_more_foots_than_a_pass_answers_routes_over_two_passes() {
     for &id in left_out {
         assert!(pending(&sim).contains(&id), "{id} asks again");
         let foot = sim.substrate.entities.get(id).unwrap();
-        assert!(foot.navigation.path_runtime.movement_timer().expired(frame));
+        assert!(
+            foot.navigation
+                .path_runtime()
+                .movement_timer()
+                .expired(frame)
+        );
         assert!(!routed(&sim, id), "{id} waits");
     }
 

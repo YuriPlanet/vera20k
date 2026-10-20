@@ -986,7 +986,7 @@ fn a_source_event_keeps_one_notification_admission_across_logical_planes() {
         ));
     // Supplied direct alliance prestate; the test exercises source event
     // admission, not the separate diplomacy producer.
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("AMERICANS".into())
         .or_default()
         .insert("ALLIANCE".into());
@@ -1104,12 +1104,12 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
             // iterator is also the existing PathGrid reader's authority.
             let coords: Vec<_> = terrain.iter().map(|cell| (cell.rx, cell.ry)).collect();
             for (x, y) in coords {
-                terrain.cell_mut(x, y).unwrap().level = level;
+                terrain.cell_mut_for_test(x, y).unwrap().level = level;
             }
             // Derive the LOS cache through its actual existing terrain reader.
             // Full Rust map vs sparse native crop is bounded to these receivers.
             sim.path_grid = Some(std::sync::Arc::new(
-                PathGrid::from_resolved_terrain_with_bridges(terrain),
+                PathGrid::from_resolved_terrain_with_bridges(terrain, sim.overlay_grid.as_ref()),
             ));
         }
         let before_view = serde_json::to_value(&sim.fog.by_owner()[&local]).unwrap();
@@ -1602,7 +1602,7 @@ fn a_reveal_before_navigation_publication_tests_the_cell_heights() {
     // published.
     let terrain = sim.resolved_terrain.as_mut().unwrap();
     for y in 0..32 {
-        terrain.cell_mut(15, y).unwrap().level = 8;
+        terrain.cell_mut_for_test(15, y).unwrap().level = 8;
     }
     sim.path_grid = None;
     sim.reveal_entity_with_context(id, UninitContext::with_rules(&rules));

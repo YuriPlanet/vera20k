@@ -58,13 +58,10 @@ impl crate::sim::world::Simulation {
     /// call.
     ///
     /// The Techno body skips the write when the object is disguised to the
-    /// current player (vt+0xC8) and its GetDisguiseHouse(1) (vt+0xD0) is NULL:
-    /// - Building and Aircraft keep the base pair: their raw disguise flag
-    ///   (`0x0041C020`) and NULL (`0x0041BE70`).
-    /// - Infantry's `0x005226C0` with argument 1 answers `+0x51C`, else the
-    ///   current player's house: never NULL while a player exists.
-    /// - Unit's `0x007465F0` answers `+0x51C` as stored, so a Mirage worn as
-    ///   terrain stays dark to an enemy that cannot see through it.
+    /// current player with no house behind it
+    /// ([`crate::sim::game_entity::GameEntity::disguise_hides_house_from`]):
+    /// a Mirage worn as terrain stays dark to an enemy that cannot see
+    /// through it; a Spy always flashes.
     pub(crate) fn flash_object(&mut self, id: u64, frames: i32) {
         use crate::map::entities::EntityCategory;
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -72,28 +69,15 @@ impl crate::sim::world::Simulation {
         };
         match entity.category() {
             EntityCategory::Structure | EntityCategory::Aircraft => {}
-            EntityCategory::Infantry => {
-                self.substrate
-                    .entities
-                    .get_mut(id)
-                    .unwrap()
-                    .flashing
-                    .start(frames);
-                return;
-            }
-            EntityCategory::Unit => {
-                let hidden = entity
-                    .disguise
-                    .as_ref()
-                    .is_some_and(|disguise| disguise.house().is_none())
-                    && self.session.current_house().is_some_and(|player| {
-                        entity.is_disguised_to(
-                            player,
-                            Some(&self.fog),
-                            Some(&self.house_alliances),
-                            &self.interner,
-                        )
-                    });
+            EntityCategory::Infantry | EntityCategory::Unit => {
+                let hidden = self.session.current_house().is_some_and(|player| {
+                    entity.disguise_hides_house_from(
+                        player,
+                        Some(&self.fog),
+                        Some(self.house_alliances.as_map()),
+                        &self.interner,
+                    )
+                });
                 if !hidden {
                     self.substrate
                         .entities

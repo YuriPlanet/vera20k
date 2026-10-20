@@ -38,7 +38,7 @@ fn live_shot<'r>(
         world,
         &world.interner,
         world.resolved_terrain.as_ref(),
-        Some(&world.house_alliances),
+        Some(world.house_alliances.as_map()),
     )?;
     let selected = selected?;
     let burst = selected.weapon.burst;
@@ -183,7 +183,7 @@ impl CombatStrike<'_, '_, '_> {
             world,
             &world.interner,
             cells.as_ref(),
-            Some(&world.house_alliances),
+            Some(world.house_alliances.as_map()),
         )?;
         Some(ask(&fire_error_world::FireSubject {
             world,
@@ -191,7 +191,7 @@ impl CombatStrike<'_, '_, '_> {
             overlay_registry: self.overlay_registry,
             fog: self
                 .fog_enabled
-                .then(|| world.fog.fire_view(&world.house_alliances)),
+                .then(|| world.fog.fire_view(world.house_alliances.as_map())),
             firer,
             obj: self.obj,
             target: Some(target),

@@ -87,10 +87,10 @@ pub(crate) struct FrontendState {
     pub(crate) quit_cascade: Option<crate::app::frontend::quit_cascade::QuitCascade>,
     /// Retail process-start splash, held until its post-present deadline.
     pub(crate) startup_splash: Option<startup_splash::StartupSplashPresentation>,
-    /// Exit-Game confirm message box, open while the player is being asked to
-    /// confirm quitting. The app only exits on confirm, never on the first
-    /// Exit click.
-    pub(crate) exit_confirm_modal: Option<crate::ui::main_menu_dialogs::ExitConfirmModalState>,
+    /// The two-button shell message box `0x120` over the empty backdrop:
+    /// main-menu Exit Game (the app only exits on its OK, never on the first
+    /// Exit click) or campaign defeat's retry prompt.
+    pub(crate) shell_message_box: Option<ShellMessageBox>,
     /// Retained active-YR launcher Options `0xD5` parent snapshot.
     pub(crate) options_dialog: Option<crate::ui::main_menu_dialogs::OptionsDialogState>,
     /// Shared A3 child, reached from launcher Options or paused Game Controls.
@@ -130,8 +130,16 @@ pub(crate) struct FrontendState {
     pub(crate) wol_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// `0x113`'s background and list art (`0x0072CD60`).
     pub(crate) wol_lobby_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// WOL Options `0x2BC`'s art (`0x0072BAC0`) and its Sound Options
+    /// `0xD6`'s (`0x0072B8E0`).
+    pub(crate) wol_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    pub(crate) wol_sound_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// The custom lobby's process globals (sorts, lobby number, filters).
     pub(crate) wol_lobby_globals: crate::app::shell_wol::lobby::WolLobbyGlobals,
+    /// The live `[WOnline]` globals (`[0xB76234]`..`[0xB73AD0]`): each WOL
+    /// entry copies the profile's (`0x0077DED0`); the chat filter words and
+    /// WOL Options' OK change them.
+    pub(crate) wol_preferences: crate::ui::wol_options::WolPreferences,
     /// Single Player's Load Saved Game `0xB7` while its route shows.
     pub(crate) load_saved_game:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
@@ -196,4 +204,20 @@ pub(crate) struct FrontendState {
     /// persistence of the old app field. Match paths read the runtime-bound
     /// copy via `overlay_registry()`.
     pub(crate) shell_preview_overlay_registry: Option<OverlayTypeRegistry>,
+}
+
+/// One open shell message box `0x120` and the caller its result returns to.
+#[derive(Debug)]
+pub(crate) struct ShellMessageBox {
+    pub(crate) labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels,
+    pub(crate) purpose: ShellMessageBoxPurpose,
+}
+
+#[derive(Debug)]
+pub(crate) enum ShellMessageBoxPurpose {
+    /// Main_Game state 6: OK quits, Cancel rebuilds `0xE2`.
+    ExitGame,
+    /// GameExit::Defeat `0x006860E5`: Yes restarts this start, if VERA can
+    /// rebuild one; No returns to the shell.
+    CampaignReplay(Option<Box<crate::app::match_bootstrap::PreparedCampaignStartup>>),
 }

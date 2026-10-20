@@ -34,14 +34,19 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
     {
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4436F0);
         sim.resolve_type_handles(&rules);
-        let owner = sim.interner.get("Americans").unwrap();
-        sim.session.set_current_house_for_test(Some(owner));
-        sim.session.set_game_mode(
+        let owner = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        sim.session_mut_for_test().set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.game_options_mut_for_test().mcv_redeploy = true;
-        sim.session.game_options_mut_for_test().short_game = false;
-        sim.input_delay_ticks = 0;
+        sim.session_mut_for_test()
+            .game_options_mut_for_test()
+            .mcv_redeploy = true;
+        sim.session_mut_for_test()
+            .game_options_mut_for_test()
+            .short_game = false;
+        sim.set_input_delay_ticks(0);
         sim.spawn_object("GAPOWR", "Russians", 3, 3, 0, &rules)
             .unwrap();
         let actor = sim
@@ -58,7 +63,7 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
         let yard = sim
             .entities()
             .values()
-            .find(|e| sim.interner.resolve(e.type_ref()) == yard_type)
+            .find(|e| sim.interner().resolve(e.type_ref()) == yard_type)
             .unwrap_or_else(|| panic!("{mcv} must deploy into {yard_type}"))
             .stable_id();
         assert!(
@@ -71,13 +76,13 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
         if contact {
             // Supplied existing radio state. The sale owner must retire both
             // sides, rather than requiring an empty link at input time.
-            sim.entities_mut()
+            sim.entities_mut_for_test()
                 .get_mut(yard)
                 .unwrap()
                 .radio_contacts
                 .insert(peer)
                 .unwrap();
-            sim.entities_mut()
+            sim.entities_mut_for_test()
                 .get_mut(peer)
                 .unwrap()
                 .radio_contacts
@@ -98,7 +103,7 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
         };
         let envelopes: Vec<_> = orders
             .into_iter()
-            .map(|payload| CommandEnvelope::new(owner, sim.session.tick(), payload))
+            .map(|payload| CommandEnvelope::new(owner, sim.session().tick(), payload))
             .collect();
         sim.queue_commands(envelopes);
         let mut converted = None;
@@ -107,7 +112,7 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
             converted = sim
                 .entities()
                 .values()
-                .find(|e| sim.interner.resolve(e.type_ref()) == mcv)
+                .find(|e| sim.interner().resolve(e.type_ref()) == mcv)
                 .map(|e| e.stable_id());
             if converted.is_some() {
                 break;
@@ -161,15 +166,17 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
     ] {
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4436F0);
         sim.resolve_type_handles(&rules);
-        let owner = sim.interner.get("Americans").unwrap();
-        sim.houses
+        let owner = sim.interner().get("Americans").unwrap();
+        sim.houses_mut_for_test()
             .get_mut(&owner)
             .unwrap()
             .set_is_human_for_test(human);
-        sim.session.set_game_mode(
+        sim.session_mut_for_test().set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(skirmish),
         );
-        sim.session.game_options_mut_for_test().mcv_redeploy = enabled;
+        sim.session_mut_for_test()
+            .game_options_mut_for_test()
+            .mcv_redeploy = enabled;
         let yard = sim
             .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
             .unwrap();
@@ -177,7 +184,7 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
             .spawn_object("GAPOWR", "Americans", 5, 5, 0, &rules)
             .unwrap();
         if contact {
-            sim.entities_mut()
+            sim.entities_mut_for_test()
                 .get_mut(yard)
                 .unwrap()
                 .radio_contacts
@@ -206,11 +213,14 @@ fn yard_arena(rules: &RuleSet) -> (Simulation, InternedId) {
         (24..32).flat_map(|y| (24..32).map(move |x| (x, y))),
     );
     sim.resolve_type_handles(rules);
-    let owner = sim.interner.get("Americans").unwrap();
-    sim.session.set_current_house_for_test(Some(owner));
-    sim.session
+    let owner = sim.interner().get("Americans").unwrap();
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    sim.session_mut_for_test()
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.game_options_mut_for_test().mcv_redeploy = true;
+    sim.session_mut_for_test()
+        .game_options_mut_for_test()
+        .mcv_redeploy = true;
     (sim, owner)
 }
 
@@ -235,7 +245,7 @@ fn click(
         &registry,
         selection,
         selection,
-        sim.session.current_house().unwrap(),
+        sim.session().current_house().unwrap(),
         hover.as_ref(),
         cell,
         modifier,
@@ -462,7 +472,7 @@ fn a_yard_click_past_the_playfield_edge_packs_up_toward_the_clamped_cell() {
     let yard = sim
         .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
         .unwrap();
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds_mut_for_test() = Some(crate::map::playfield::PlayfieldBounds {
         base: 32,
         off_fc: 4,
         off_100: 4,

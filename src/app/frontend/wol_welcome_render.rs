@@ -55,6 +55,8 @@ pub(crate) fn presented_wol_page(state: &AppState) -> PresentedShell {
     match state.frontend.wol.as_ref().map(|visit| &visit.page) {
         Some(WolPage::Login(_)) => PresentedShell::WolLogin,
         Some(WolPage::Lobby) => PresentedShell::WolLobby,
+        Some(WolPage::Options(page)) if page.sound.is_some() => PresentedShell::WolSoundOptions,
+        Some(WolPage::Options(_)) => PresentedShell::WolOptions,
         _ => PresentedShell::WolWelcome,
     }
 }
@@ -64,6 +66,8 @@ enum Painted {
     Welcome(crate::ui::wol_shell::WolWelcomeLayout),
     Login(crate::ui::wol_login::WolLoginLayout),
     Lobby(crate::ui::wol_lobby::WolLobbyLayout),
+    Options(crate::ui::wol_options::WolOptionsLayout),
+    SoundOptions(crate::ui::shell::sound::ShellSoundLayout),
     /// A dialog has closed: the empty backdrop, under a box or the wait box.
     Backdrop,
 }
@@ -74,6 +78,8 @@ impl Painted {
             Self::Welcome(_) => Some(ShellSlideKind::WolWelcome),
             Self::Login(_) => Some(ShellSlideKind::WolLogin),
             Self::Lobby(_) => Some(ShellSlideKind::WolLobby),
+            Self::Options(_) => Some(ShellSlideKind::WolOptions),
+            Self::SoundOptions(_) => Some(ShellSlideKind::WolSoundOptions),
             Self::Backdrop => None,
         }
     }
@@ -83,6 +89,8 @@ impl Painted {
             Self::Welcome(_) => Some(WOL_WELCOME_PAGE.title_key),
             Self::Login(_) => Some(crate::ui::wol_login::PAGE.title_key),
             Self::Lobby(_) => Some(WOL_LOBBY_TITLE_KEY),
+            Self::Options(_) => Some(crate::ui::wol_options::PAGE.title_key),
+            Self::SoundOptions(_) => Some(crate::ui::shell::sound::SHELL_SOUND_PAGE.title_key),
             Self::Backdrop => None,
         }
     }
@@ -123,12 +131,24 @@ pub(crate) fn render_wol_page(
                 Painted::Backdrop
             }
         }
+        WolPage::Options(page) => {
+            let sound = page.sound.is_some();
+            if sound {
+                crate::app::shell_wol::options::open_sound_art(state);
+                Painted::SoundOptions(crate::app::shell_wol::options::sound_layout(state))
+            } else {
+                crate::app::shell_wol::options::open_art(state);
+                Painted::Options(crate::app::shell_wol::options::layout(state))
+            }
+        }
         WolPage::Backdrop { .. } | WolPage::Message { .. } => Painted::Backdrop,
     };
     // The right panel's geometry is the family's on every WOL page.
     let page: &MenuPageLayout = match &painted {
         Painted::Login(layout) => &layout.page,
         Painted::Lobby(layout) => &layout.page,
+        Painted::Options(layout) => &layout.page,
+        Painted::SoundOptions(layout) => &layout.page,
         _ => &welcome.page,
     };
     let page = page.clone();
@@ -166,6 +186,11 @@ pub(crate) fn render_wol_page(
                 (crate::app::App::wol_status_key(state), layout.status_help)
             }
             Painted::Lobby(layout) => (None, layout.page.status_help),
+            Painted::Options(layout) => (
+                crate::app::shell_wol::options::status_key(state),
+                layout.status_help,
+            ),
+            Painted::SoundOptions(layout) => (None, layout.status_help),
             Painted::Login(layout) => (
                 state
                     .frontend
@@ -203,6 +228,8 @@ pub(crate) fn render_wol_page(
         Painted::Welcome(_) => state.frontend.wol_welcome_art.as_ref(),
         Painted::Login(_) => state.frontend.wol_login_art.as_ref(),
         Painted::Lobby(_) => state.frontend.wol_lobby_art.as_ref(),
+        Painted::Options(_) => state.frontend.wol_options_art.as_ref(),
+        Painted::SoundOptions(_) => state.frontend.wol_sound_options_art.as_ref(),
         Painted::Backdrop => None,
     };
     let mut sprites = Vec::new();
@@ -282,6 +309,23 @@ pub(crate) fn render_wol_page(
             }),
         _ => None,
     };
+    let options_page = match &state.frontend.wol.as_ref().expect("checked").page {
+        WolPage::Options(page) => Some(page.as_ref()),
+        _ => None,
+    };
+    let options_children = match (&painted, children, options_page) {
+        (Painted::Options(layout), true, Some(page)) => Some(
+            crate::app::frontend::skirmish_shell_render::paint_wol_options_children(
+                state, &page.ui, layout,
+            ),
+        ),
+        (Painted::SoundOptions(layout), true, Some(page)) => page.sound.as_ref().map(|dialog| {
+            crate::app::frontend::skirmish_shell_render::paint_shell_sound_children(
+                state, dialog, layout,
+            )
+        }),
+        _ => None,
+    };
     let lobby = state.frontend.wol.as_ref().and_then(|visit| visit.lobby());
     let lobby_children = match (&painted, children, lobby) {
         (Painted::Lobby(layout), true, Some(lobby)) => {
@@ -350,6 +394,38 @@ pub(crate) fn render_wol_page(
                             *button,
                             login.buttons.is_pressed(button.id),
                             login.button_enabled(button.id),
+                        )
+                    })
+                    .collect();
+            }
+            None
+        }
+        (Painted::Options(layout), None) => {
+            spec = Some(&crate::ui::wol_options::PAGE);
+            if let Some(page) = options_page {
+                painted_buttons = layout
+                    .page
+                    .buttons
+                    .iter()
+                    .map(|button| (*button, page.ui.buttons.is_pressed(button.id), true))
+                    .collect();
+            }
+            None
+        }
+        (Painted::SoundOptions(layout), None) => {
+            spec = Some(&crate::ui::shell::sound::SHELL_SOUND_PAGE);
+            if let Some(dialog) = options_page.and_then(|page| page.sound.as_ref()) {
+                painted_buttons = layout
+                    .page
+                    .buttons
+                    .iter()
+                    .map(|button| {
+                        (
+                            *button,
+                            dialog
+                                .buttons
+                                .is_pressed(crate::ui::shell::sound::SoundButton::Back),
+                            true,
                         )
                     })
                     .collect();
@@ -567,6 +643,13 @@ pub(crate) fn render_wol_page(
         });
         text.extend(login.texts);
         text.extend(login.popup_texts);
+    }
+    if let (Some(atlas), Some(options)) = (controls_atlas, options_children) {
+        draws.push(TexturedDraw {
+            texture: &atlas.texture,
+            instances: options.controls,
+        });
+        text.extend(options.texts);
     }
     if let (Some(atlas), Some(mut lobby)) = (controls_atlas, lobby_children) {
         draws.push(TexturedDraw {

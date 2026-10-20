@@ -1202,7 +1202,16 @@ use crate::util::save_codec;
 // 448 -> 449: the Techno disguise state retains the firing blink timer
 // (+1EC/+1F4); WeaponType retains DisguiseFakeBlinkTime= and [General]
 // DisabledDisguiseDetectionPercent=.
-const SNAPSHOT_VERSION: u32 = 449;
+// 449 -> 450: the retained `[Basic]` section carries Scenario+0x1440 `Lose`,
+// the movie campaign defeat plays before its retry prompt.
+// 450 -> 451: HouseState retains House+0x1602A's UI name source (handle,
+// TXT_COMPUTER, map UIName= key or the type's UIName).
+// 451 -> 452: dynamic terrain cell records no longer carry a copy of the
+// cell's overlay identity and state byte, in its bridge facts or its bridge
+// layer; OverlayGrid alone holds them.
+// 452 -> 453: GameEntity retains a building's NoSurvivor byte (+0x6E0) for the
+// second SpawnSurvivors of a building that outlives its killing blow.
+const SNAPSHOT_VERSION: u32 = 453;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -2683,7 +2692,7 @@ fn restore_object_references(
             )?;
         }
     }
-    for (&owner_id, &wave_id) in &sim.active_wave_links {
+    for (owner_id, wave_id) in sim.active_wave_links() {
         require_resolved_reference(
             entity_ids.contains(&owner_id),
             "ActiveWaveLinks",
@@ -2703,7 +2712,7 @@ fn restore_object_references(
         )?;
     }
 
-    for &object_id in sim.object_custom_sounds.keys() {
+    for object_id in sim.custom_sound_objects() {
         require_object_reference(
             &entity_ids,
             sim.terrain_objects.objects(),
@@ -3071,8 +3080,9 @@ impl Simulation {
     /// The full row-major sweep is required because OverlayGrid's dirty queues
     /// are transient: a saved cell may have been cleared since map load, so an
     /// occupied-only replay would leave the original map overlay's passability
-    /// behind. Bridge cell state needs no separate pass: CellClass is its only
-    /// owner and returns through the dynamic terrain cells above.
+    /// behind. Bridge cell state needs no separate pass: its flags return
+    /// through the dynamic terrain cells above, and its overlay identity and
+    /// state byte through OverlayGrid.
     pub fn restore_map_authority_after_snapshot_load(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,
@@ -3136,17 +3146,13 @@ impl Simulation {
 
         // Reproject runtime isometric replacements onto the pristine
         // app-supplied map before overlay, bridge, and zone reconstruction.
-        {
-            let terrain = self
-                .resolved_terrain
-                .as_mut()
-                .expect("validated terrain cache");
-            for (&(rx, ry), state) in &self.dynamic_terrain_cells {
-                if !terrain.apply_dynamic_cell_state(rx, ry, state) {
-                    return Err(SnapshotRestoreError::DynamicTerrainCellMissing { rx, ry });
-                }
-            }
-        }
+        self.dynamic_terrain_cells
+            .apply_to(
+                self.resolved_terrain
+                    .as_mut()
+                    .expect("validated terrain cache"),
+            )
+            .map_err(|(rx, ry)| SnapshotRestoreError::DynamicTerrainCellMissing { rx, ry })?;
 
         // MouseClass::Load @ 0x005BE657 calls the restored-cell TMP admission
         // pass @ 0x00546DA0 before publishing the loaded map. Admission must
@@ -3185,7 +3191,7 @@ impl Simulation {
         // The app-supplied terrain template is the immutable load-time map.
         // Action 40's mutable LocalSize is serialized on Simulation, so replay
         // its CellClass-derived cache before overlay and zone reconstruction.
-        if let Some(bounds) = self.playfield_bounds {
+        if let Some(bounds) = self.playfield_bounds() {
             let _ = self
                 .resolved_terrain
                 .as_mut()
@@ -3290,7 +3296,7 @@ impl Simulation {
         let mut native_rect = self.ore_growth_state.native_rect();
         if native_rect == (0, 0)
             && let (Some(bounds), Some(height)) =
-                (self.playfield_bounds, self.playfield_size_height)
+                (self.playfield_bounds(), self.playfield_size_height())
         {
             native_rect = (
                 u16::try_from(bounds.base).unwrap_or(0),
@@ -3983,14 +3989,14 @@ mod tests {
         let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
         let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
         let mut sim = Simulation::new();
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 2,
             off_fc: -8,
             off_100: -8,
             off_104: 16,
             off_108: 16,
-        });
-        sim.playfield_size_height = Some(2);
+        }));
+        sim.set_playfield_size_height_for_test(Some(2));
         sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
         sim.overlay_grid.as_mut().unwrap().place_overlay(2, 2, 0, 0);
         sim.install_resolved_terrain_for_new_map(flat_terrain(4, 4));
@@ -4002,10 +4008,7 @@ mod tests {
             .unwrap()
             .clone();
         replaced.final_tile_index = 71;
-        sim.dynamic_terrain_cells.insert(
-            (1, 2),
-            crate::map::resolved_terrain::DynamicTerrainCellState::capture(&replaced),
-        );
+        sim.dynamic_terrain_cells.record(&replaced);
         sim.real_cell_bridge_flags_0x1180.set_allocated_cell(
             2 * 4 + 1,
             crate::map::bridge_facts::BRIDGE_FLAG_DIRECTION_ZERO,
@@ -4172,8 +4175,8 @@ mod tests {
     }
 
     fn assert_zone_grids_equivalent(a: &ZoneGrid, b: &ZoneGrid) {
-        assert_eq!(a.width, b.width);
-        assert_eq!(a.height, b.height);
+        assert_eq!(a.width(), b.width());
+        assert_eq!(a.height(), b.height());
         for &mz in MovementZone::all_ground() {
             let map_a = a.map_for(mz).expect("zone map exists for movement zone");
             let map_b = b.map_for(mz).expect("zone map exists for movement zone");
@@ -4192,8 +4195,8 @@ mod tests {
                 }
             }
             assert_eq!(map_a.zone_count(), map_b.zone_count());
-            for y in 0..a.height {
-                for x in 0..a.width {
+            for y in 0..a.height() {
+                for x in 0..a.width() {
                     assert_eq!(
                         map_a.zone_at(x, y, MovementLayer::Ground),
                         map_b.zone_at(x, y, MovementLayer::Ground),
@@ -4653,7 +4656,7 @@ mod tests {
         let ruin = sim.interner.intern("CAOUTP");
         let mut grid = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
         grid.place_overlay(1, 2, 0xEF, 4);
-        grid.cell_mut(1, 2).rubble_building_type = Some(ruin);
+        grid.cell_mut_for_test(1, 2).rubble_building_type = Some(ruin);
         grid.place_overlay(2, 2, 0xEF, 0);
         sim.overlay_grid = Some(grid);
 
@@ -4668,14 +4671,14 @@ mod tests {
     #[test]
     fn phase14_crate_authority_roundtrips_visible_and_ghost_slots() {
         let mut sim = Simulation::with_seed(0);
-        *sim.crate_authority.slot_mut(0) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority.slot_mut_for_test(0) = crate::sim::crates::CrateSlot {
             start_frame: 17,
             aux: 0x40b5_1800,
             duration: 3375,
             cell_x: 6,
             cell_y: 9,
         };
-        *sim.crate_authority.slot_mut(1) = crate::sim::crates::CrateSlot {
+        *sim.crate_authority.slot_mut_for_test(1) = crate::sim::crates::CrateSlot {
             start_frame: -2,
             aux: u32::MAX,
             duration: i32::MIN,
@@ -5471,7 +5474,7 @@ mod tests {
         );
         let moved_edges = active.edge_geometry();
         sim.admit_wave(active_id, active);
-        sim.active_wave_links.insert(owner_ids[0], active_id);
+        sim.link_active_wave_for_test(owner_ids[0], active_id);
 
         let inactive_id = sim.allocate_stable_id();
         let mut inactive = Wave::new_owned(
@@ -5488,7 +5491,7 @@ mod tests {
         inactive.set_direction_octant_for_test(6);
         inactive.replace_recorded_cells(vec![WaveRecordedCell::real(7, 2)]);
         sim.admit_wave(inactive_id, inactive);
-        sim.active_wave_links.insert(owner_ids[1], inactive_id);
+        sim.link_active_wave_for_test(owner_ids[1], inactive_id);
 
         let dummy_id = sim.allocate_stable_id();
         let mut dummy = Wave::new_owned(
@@ -5503,7 +5506,7 @@ mod tests {
         dummy.set_direction_octant_for_test(2);
         dummy.replace_recorded_cells(vec![WaveRecordedCell::shared_dummy()]);
         sim.admit_wave(dummy_id, dummy);
-        sim.active_wave_links.insert(owner_ids[2], dummy_id);
+        sim.link_active_wave_for_test(owner_ids[2], dummy_id);
 
         let expected_hash = sim.state_hash();
         let bytes = GameSnapshot::save(&sim, 0, 0, "wave-state.map", 0);
@@ -5513,7 +5516,10 @@ mod tests {
             .expect("Wave identities restore structurally");
 
         assert_eq!(restored.state_hash(), expected_hash);
-        assert_eq!(restored.active_wave_links, sim.active_wave_links);
+        assert_eq!(
+            restored.active_wave_links().collect::<Vec<_>>(),
+            sim.active_wave_links().collect::<Vec<_>>()
+        );
         assert_eq!(restored.waves.get(active_id), sim.waves.get(active_id));
         assert_eq!(
             restored.waves.get(active_id).unwrap().direction_octant(),
@@ -5981,7 +5987,7 @@ mod tests {
             restored.pending_command_snapshot(),
             sim.pending_command_snapshot()
         );
-        assert!(!restored.quit_requested);
+        assert!(!restored.quit_requested());
         assert_eq!(restored.take_executed_exit_owner(), None);
         assert_eq!(restored.state_hash(), expected_hash);
     }
@@ -6319,7 +6325,7 @@ mod tests {
         sim.fog.reveal_all_for_owner(owner);
         crate::sim::vision::apply_gap_generators(
             &mut sim.fog,
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             &[(gapper, 6, 6, 2)],
             &sim.interner,
         );
@@ -6355,7 +6361,7 @@ mod tests {
         let entity_id = sim.allocate_stable_id();
         let mut entity = GameEntity::test_default(entity_id, "MTNK", "Americans", 5, 7);
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.lifecycle.set_cell_marked(false);
+        entity.lifecycle.set_cell_marked_for_test(false);
         entity.in_logic_vector.set_for_test(true);
         entity.position.set_z_for_test(3);
         entity.position.set_exact_z_leptons_for_test(Some(-37));
@@ -6535,7 +6541,7 @@ mod tests {
             system.set_target_coords_for_test(glam::IVec3::ZERO);
             system
         });
-        sim.substrate.next_stable_object_id = 5;
+        sim.set_next_stable_object_id_for_test(5);
         let owner = sim.interner.intern("ComputerIQ");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 51);
         house.set_current_iq_for_test(2);
@@ -7790,7 +7796,7 @@ mod tests {
         sim.session.set_map_width_for_test(4);
         sim.session.set_map_height_for_test(4);
         let mut terrain = flat_terrain(4, 4);
-        terrain.cell_mut(1, 1).unwrap().level = 2;
+        terrain.cell_mut_for_test(1, 1).unwrap().level = 2;
         let tree_id = sim.allocate_stable_id();
         let tree = TerrainObjectState::new(
             tree_id,
@@ -8457,7 +8463,7 @@ mod tests {
         let mut map_load_terrain = flat_terrain(4, 3);
         map_load_terrain.test_set_native_allocated_cells(&[(0, 0), (1, 1)]);
         {
-            let pristine_bridge_cell = map_load_terrain.cell_mut(1, 1).unwrap();
+            let pristine_bridge_cell = map_load_terrain.cell_mut_for_test(1, 1).unwrap();
             pristine_bridge_cell.level = 2;
             pristine_bridge_cell.slope_type = 1;
             pristine_bridge_cell.bridge_facts.raw_flags = MODELED_CELLCLASS_BRIDGE_FLAG_MASK;
@@ -8637,7 +8643,7 @@ mod tests {
         );
         assert!(restored_terrain.cell(1, 0).is_none());
         assert_eq!(
-            restored_terrain.cells[1].bridge_facts.raw_flags & MODELED_CELLCLASS_BRIDGE_FLAG_MASK,
+            restored_terrain.cells()[1].bridge_facts.raw_flags & MODELED_CELLCLASS_BRIDGE_FLAG_MASK,
             0,
             "unallocated storage is not promoted into real-cell authority"
         );
@@ -9029,7 +9035,7 @@ mod tests {
         let mut entity = GameEntity::test_default(7, "MTNK", "Americans", 5, 5);
         entity.lifecycle.set_object_alive_for_test(false);
         entity.lifecycle.set_in_limbo_for_test(true);
-        entity.lifecycle.set_cell_marked(false);
+        entity.lifecycle.set_cell_marked_for_test(false);
         entity.in_logic_vector.set_for_test(false);
         entity.death.set_dying_for_test(true);
         entity.removal_facts.set_dirty_rect_eligible_for_test(true);
@@ -9068,7 +9074,7 @@ mod tests {
         let mut sim = Simulation::new();
         let mut off_cell_member = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
         off_cell_member.lifecycle.set_in_limbo_for_test(false);
-        off_cell_member.lifecycle.set_cell_marked(false);
+        off_cell_member.lifecycle.set_cell_marked_for_test(false);
         sim.substrate.entities.insert(off_cell_member);
         sim.substrate
             .logic
@@ -9077,7 +9083,7 @@ mod tests {
 
         let mut marked_non_member = GameEntity::test_default(2, "MTNK", "Americans", 6, 6);
         marked_non_member.lifecycle.set_in_limbo_for_test(false);
-        marked_non_member.lifecycle.set_cell_marked(true);
+        marked_non_member.lifecycle.set_cell_marked_for_test(true);
         sim.substrate.entities.insert(marked_non_member);
 
         let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
@@ -9233,7 +9239,7 @@ mod tests {
                 terrain.occupation_bits(),
             );
         }
-        sim.substrate.next_stable_object_id = spawner_id + 1;
+        sim.set_next_stable_object_id_for_test(spawner_id + 1);
         sim.terrain_objects.animations_mut_for_test().insert(
             spawner_cell,
             TerrainAnimationState::new(
@@ -9327,7 +9333,7 @@ mod tests {
                 .spawning_cells()
                 .contains(&spawner_cell)
         );
-        assert_eq!(restored.substrate.next_stable_object_id, spawner_id + 1);
+        assert_eq!(restored.next_stable_object_id(), spawner_id + 1);
         let reconciled = restored
             .resolved_terrain
             .as_ref()
@@ -9365,7 +9371,10 @@ mod tests {
             0
         );
 
-        let path = PathGrid::from_resolved_terrain_with_bridges(reconciled);
+        let path = PathGrid::from_resolved_terrain_with_bridges(
+            reconciled,
+            restored.overlay_grid.as_ref(),
+        );
         assert!(path.is_walkable(destroyed_cell.0, destroyed_cell.1));
         assert!(!path.is_walkable(damaged_cell.0, damaged_cell.1));
         assert!(!path.is_walkable(spawner_cell.0, spawner_cell.1));
@@ -9445,9 +9454,11 @@ mod tests {
 
         let path_a = PathGrid::from_resolved_terrain_with_bridges(
             a.resolved_terrain.as_ref().expect("terrain restored"),
+            a.overlay_grid.as_ref(),
         );
         let path_b = PathGrid::from_resolved_terrain_with_bridges(
             b.resolved_terrain.as_ref().expect("terrain restored"),
+            b.overlay_grid.as_ref(),
         );
         assert_eq!(path_a, path_b);
 
@@ -10056,6 +10067,10 @@ mod tests {
         // 446 -> 447: terrain objects and ore growth have their own owners.
         // 447 -> 448: retained Unit firing counter through parasite release.
         // 448 -> 449: the disguise firing blink and its rules keys.
-        assert_eq!(super::SNAPSHOT_VERSION, 449);
+        // 449 -> 450: the retained `[Basic]` Lose movie.
+        // 450 -> 451: the House UI name source.
+        // 451 -> 452: terrain records drop their overlay identity/state copy.
+        // 452 -> 453: a building's NoSurvivor byte.
+        assert_eq!(super::SNAPSHOT_VERSION, 453);
     }
 }

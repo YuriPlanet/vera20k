@@ -134,7 +134,7 @@ impl FixtureParts {
             .speed_costs;
         for y in 0..33 {
             for x in 0..33 {
-                let c = terrain.cell_mut(x, y).unwrap();
+                let c = terrain.cell_mut_for_test(x, y).unwrap();
                 c.speed_costs = costs;
                 c.base_speed_costs = costs;
             }

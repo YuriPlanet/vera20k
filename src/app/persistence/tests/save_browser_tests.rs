@@ -13,8 +13,9 @@ fn browser_admission_keeps_empty_descriptions_and_uses_file_time() {
     ));
     let repository = SaveRepository::at(&directory);
     let mut sim = Simulation::new();
-    sim.session.set_map_name_for_test("BROWSER.MAP".into());
-    sim.session
+    sim.session_mut_for_test()
+        .set_map_name_for_test("BROWSER.MAP".into());
+    sim.session_mut_for_test()
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let bytes = GameSnapshot::save_validated(&sim, 1, 2, "", 3);
     let path = repository.write_named("valid.bin", &bytes).unwrap();

@@ -280,7 +280,7 @@ fn retail_comet_terrain_child_keeps_construction_height_through_first_logic() {
         .resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(17, 15)
+        .cell_mut_for_test(17, 15)
         .unwrap()
         .level = 6;
     let tree_id = scene.admit_tree(17, 15);
@@ -291,7 +291,7 @@ fn retail_comet_terrain_child_keeps_construction_height_through_first_logic() {
         .resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(17, 15)
+        .cell_mut_for_test(17, 15)
         .unwrap()
         .level = 0;
     let parent = scene.launch();
@@ -601,7 +601,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(10, 20)
+            .cell_mut_for_test(10, 20)
             .unwrap()
             .level = 2;
         let tree_id = scene.admit_tree(10, 20);
@@ -889,7 +889,7 @@ fn shrapnel_children_and_lasers_match_original_spawn_shrapnel() {
                     .resolved_terrain
                     .as_mut()
                     .unwrap()
-                    .cell_mut(x, y)
+                    .cell_mut_for_test(x, y)
                     .unwrap()
                     .level = 6;
             }
@@ -935,14 +935,15 @@ fn shrapnel_children_and_lasers_match_original_spawn_shrapnel() {
                 .position
                 .set_sub_y_for_test(SimFixed::from_num(coord.y % 256));
             entity.position.set_exact_z_leptons_for_test(Some(coord.z));
-            entity
-                .lifecycle
-                .set_cell_marked(!(row["input"]["refused"] == true && actor_name == "victim"));
+            entity.lifecycle.set_cell_marked_for_test(
+                !(row["input"]["refused"] == true && actor_name == "victim"),
+            );
             world.substrate.entities.insert(entity);
         }
         // Native actors are supplied boundaries, but Terrain representation
         // still enters through its real constructor/registration owner.
-        world.substrate.next_stable_object_id = row["actors"].as_array().unwrap().len() as u64 + 1;
+        world
+            .set_next_stable_object_id_for_test(row["actors"].as_array().unwrap().len() as u64 + 1);
         let terrain_actors: Vec<_> = row["actors"]
             .as_array()
             .unwrap()
@@ -981,7 +982,7 @@ fn shrapnel_children_and_lasers_match_original_spawn_shrapnel() {
                         .resolved_terrain
                         .as_mut()
                         .unwrap()
-                        .cell_mut(cell.0, cell.1)
+                        .cell_mut_for_test(cell.0, cell.1)
                         .unwrap()
                         .level = 0;
                 }

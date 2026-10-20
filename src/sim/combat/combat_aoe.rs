@@ -83,6 +83,7 @@ pub(crate) trait AoECellPrelude {
     fn wall_navigation_step(
         &mut self,
         _terrain: &ResolvedTerrainGrid,
+        _overlays: &OverlayGrid,
         _cell: (u16, u16),
         _navigation_changed: bool,
         _repair: ZoneRepairKind,
@@ -110,12 +111,13 @@ impl WallDamageTransactionHost for AoEWallDamageHost<'_, '_> {
     fn navigation_step(
         &mut self,
         terrain: &ResolvedTerrainGrid,
+        overlays: &OverlayGrid,
         cell: (u16, u16),
         navigation_changed: bool,
         repair: ZoneRepairKind,
     ) {
         if let Some(prelude) = self.prelude.as_deref_mut() {
-            prelude.wall_navigation_step(terrain, cell, navigation_changed, repair);
+            prelude.wall_navigation_step(terrain, overlays, cell, navigation_changed, repair);
         }
     }
 
@@ -1648,13 +1650,13 @@ mod tests {
             // Ordinary Aircraft41B920 reaches Object5F6B90: Object+74 must
             // be marked before the physical GetHeight threshold is queried.
             air.lifecycle.set_in_limbo_for_test(false);
-            air.lifecycle.set_cell_marked(true);
+            air.lifecycle.set_cell_marked_for_test(true);
             air.position.set_exact_z_leptons_for_test(Some(altitude));
             let mut locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object(type_id).unwrap(),
                 0,
             );
-            locomotor.set_layer(MovementLayer::Air);
+            locomotor.set_layer_for_test(MovementLayer::Air);
             air.locomotor = Some(locomotor);
             air = air
                 .with_air_spatial_membership_for_test(Some(5 + 5 * 20), stable_id)
@@ -1724,13 +1726,13 @@ mod tests {
             air.set_category_for_test(EntityCategory::Aircraft);
             air.health.set_for_test(1000);
             air.lifecycle.set_in_limbo_for_test(false);
-            air.lifecycle.set_cell_marked(marked);
+            air.lifecycle.set_cell_marked_for_test(marked);
             air.position.set_exact_z_leptons_for_test(Some(0));
             let mut locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object("AIR").unwrap(),
                 0,
             );
-            locomotor.set_layer(layer);
+            locomotor.set_layer_for_test(layer);
             air.locomotor = Some(locomotor);
             air = air
                 .with_air_spatial_membership_for_test(Some(5 + 5 * 20), stable_id)
@@ -1930,7 +1932,7 @@ mod tests {
             vulnerable.position.set_sub_x_for_test(CELL_CENTER_LEPTON);
             vulnerable.position.set_sub_y_for_test(CELL_CENTER_LEPTON);
             vulnerable.lifecycle.set_in_limbo_for_test(false);
-            vulnerable.lifecycle.set_cell_marked(true);
+            vulnerable.lifecycle.set_cell_marked_for_test(true);
             entities.insert(vulnerable);
 
             let mut protected = GameEntity::test_default(2, "TARGET", "Victim", 5, 5);
@@ -1943,7 +1945,7 @@ mod tests {
             ));
             protected.position.set_sub_y_for_test(CELL_CENTER_LEPTON);
             protected.lifecycle.set_in_limbo_for_test(false);
-            protected.lifecycle.set_cell_marked(true);
+            protected.lifecycle.set_cell_marked_for_test(true);
             protected.invulnerability = Some(InvulnerabilityState::new(
                 crate::sim::timer::CdTimer::started(0, 100),
                 kind,
@@ -2067,7 +2069,7 @@ mod tests {
                 air.lifecycle.set_in_limbo_for_test(false);
                 // On the map, so marked (`+0x74`): the airborne phase skips
                 // an unmarked member.
-                air.lifecycle.set_cell_marked(true);
+                air.lifecycle.set_cell_marked_for_test(true);
                 air.health.set_for_test(hp);
                 air.position.set_z_for_test(0);
                 let mut air_locomotor =
@@ -2075,7 +2077,7 @@ mod tests {
                         rules.object("AIRBOMB").unwrap(),
                         0,
                     );
-                air_locomotor.set_layer(MovementLayer::Air);
+                air_locomotor.set_layer_for_test(MovementLayer::Air);
                 air.locomotor = Some(air_locomotor);
                 air.position.set_exact_z_leptons_for_test(Some(1));
                 air = air
@@ -2767,7 +2769,7 @@ mod tests {
             for (above, expected) in [(208, ListLayer::Ground), (209, ListLayer::Bridge)] {
                 let (mut entities, occupancy, mut terrain, rules, warhead, mut interner) =
                     bridge_layer_test_fixture();
-                let cell = terrain.cell_mut(5, 5).unwrap();
+                let cell = terrain.cell_mut_for_test(5, 5).unwrap();
                 cell.level = level;
                 cell.slope_type = 1;
                 let z = floor + above;
@@ -2819,7 +2821,7 @@ mod tests {
                     self.visited = true;
                     terrain
                         .unwrap()
-                        .cell_mut(5, 5)
+                        .cell_mut_for_test(5, 5)
                         .unwrap()
                         .bridge_facts
                         .raw_flags = self.flags;
@@ -2829,7 +2831,11 @@ mod tests {
         for initial_bridge in [false, true] {
             let (mut entities, occupancy, mut terrain, rules, warhead, interner) =
                 bridge_layer_test_fixture();
-            terrain.cell_mut(5, 5).unwrap().bridge_facts.raw_flags = if initial_bridge {
+            terrain
+                .cell_mut_for_test(5, 5)
+                .unwrap()
+                .bridge_facts
+                .raw_flags = if initial_bridge {
                 BRIDGE_FLAG_STRUCTURAL
             } else {
                 0
@@ -3686,13 +3692,18 @@ mod tests {
                 victim.navigation.set_nav_com_aux_for_test(Some(
                     crate::sim::components::NavTargetRef::cell(1, 1),
                 ));
-                victim.navigation.path_replay =
-                    FootPathQueue::for_test(vec![2, 3, 4, 5], 0, Some((9, 8)));
-                let path = &mut victim.navigation.path_runtime;
+                victim
+                    .navigation
+                    .set_path_replay_for_test(FootPathQueue::for_test(
+                        vec![2, 3, 4, 5],
+                        0,
+                        Some((9, 8)),
+                    ));
+                let path = victim.navigation.path_runtime_mut();
                 path.set_movement_timer_for_test(CdTimer::started(50, 5));
                 path.set_blocked_timer_for_test(CdTimer::started(40, 6));
-                path.set_path_blocked(true);
-                path.set_retries_left(7);
+                path.set_path_blocked_for_test(true);
+                path.set_retries_left_for_test(7);
                 let loco = victim.locomotor.as_mut().unwrap();
                 loco.set_powered_for_test(case["power_off"] != true);
                 if let Some(head) = case["head"].as_array() {
@@ -3760,12 +3771,16 @@ mod tests {
                 .collect();
             let mut terrain = ResolvedTerrainGrid::from_cells(10, 10, cells);
             if fixture.first_bridge {
-                terrain.cell_mut(6, 4).unwrap().bridge_facts.raw_flags = 0x100;
+                terrain
+                    .cell_mut_for_test(6, 4)
+                    .unwrap()
+                    .bridge_facts
+                    .raw_flags = 0x100;
             }
             if fixture.all_bridges {
                 for (dx, dy) in crate::util::direction::DIRECTION_DELTAS {
                     terrain
-                        .cell_mut((5 + dx) as u16, (5 + dy) as u16)
+                        .cell_mut_for_test((5 + dx) as u16, (5 + dy) as u16)
                         .unwrap()
                         .bridge_facts
                         .raw_flags = 0x100;
@@ -3783,17 +3798,18 @@ mod tests {
                 };
                 for cell in case["cells"].as_array().into_iter().flatten() {
                     let (x, y) = xy(cell);
-                    let out = terrain.cell_mut(x, y).unwrap();
+                    let out = terrain.cell_mut_for_test(x, y).unwrap();
                     out.level = cell[2].as_i64().unwrap() as u8;
                     out.bridge_facts.raw_flags = cell[3].as_u64().unwrap() as u32;
                 }
                 for cell in case["slopes"].as_array().into_iter().flatten() {
                     let (x, y) = xy(cell);
-                    terrain.cell_mut(x, y).unwrap().slope_type = cell[2].as_u64().unwrap() as u8;
+                    terrain.cell_mut_for_test(x, y).unwrap().slope_type =
+                        cell[2].as_u64().unwrap() as u8;
                 }
                 for cell in case["blocked_terrain"].as_array().into_iter().flatten() {
                     let (x, y) = xy(cell);
-                    terrain.cell_mut(x, y).unwrap().speed_costs.foot = Some(0);
+                    terrain.cell_mut_for_test(x, y).unwrap().speed_costs.foot = Some(0);
                 }
                 for cell in case["raw"].as_array().into_iter().flatten() {
                     let (x, y) = xy(cell);
@@ -3829,17 +3845,17 @@ mod tests {
             world.substrate.raw_cell_occupation = raw;
             world.interner = interner;
             world.resolved_terrain = Some(terrain);
-            world.playfield_bounds = Some(
+            world.set_playfield_bounds_for_test(Some(
                 crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
                     16, -16, -16, 64, 64,
                 ),
-            );
+            ));
             if fixture.outside {
-                world.playfield_bounds = Some(
+                world.set_playfield_bounds_for_test(Some(
                     crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
                         16, 0, 0, 1, 1,
                     ),
-                );
+                ));
             }
             world.session.set_binary_frame_for_test(100);
             world.main_rng = SimRng::new(7).into();
@@ -3892,7 +3908,7 @@ mod tests {
                 },
                 setter: {
                     let loco = victim.locomotor.as_ref().unwrap();
-                    let path = &victim.navigation.path_runtime;
+                    let path = victim.navigation.path_runtime();
                     let coord = |value: Option<crate::sim::components::DriveCoord>| {
                         value.map_or([0, 0, 0], |v| [v.x + 1280, v.y + 1280, v.z])
                     };
@@ -3905,8 +3921,8 @@ mod tests {
                     serde_json::json!({
                         "nav": nav, "aux": if victim.navigation.nav_com_aux().is_none() { 0 } else { 123 },
                         "destination": coord(loco.walk_destination()), "head": coord(loco.step_head()),
-                        "queue": victim.navigation.path_replay.directions().iter().map(|&v| if v == 255 { -1 } else { i32::from(v) }).collect::<Vec<_>>(),
-                        "reference": victim.navigation.path_replay.reference_cell(),
+                        "queue": victim.navigation.path_replay().directions().iter().map(|&v| if v == 255 { -1 } else { i32::from(v) }).collect::<Vec<_>>(),
+                        "reference": victim.navigation.path_replay().reference_cell(),
                         "queued_mission": victim.mission.queued().raw(),
                         "facing": u32::from(victim.body_facing.destination()) * 65537,
                         "moving": u8::from(loco.walk_is_moving().unwrap()), "powered": u8::from(loco.is_powered()),
@@ -4222,14 +4238,14 @@ mod tests {
         let mut air = GameEntity::test_default(10, "AIR", "Americans", 5, 5);
         air.set_category_for_test(EntityCategory::Aircraft);
         air.lifecycle.set_in_limbo_for_test(false);
-        air.lifecycle.set_cell_marked(true);
+        air.lifecycle.set_cell_marked_for_test(true);
         air.position.set_sub_x_for_test(CELL_CENTER_LEPTON);
         air.position.set_sub_y_for_test(CELL_CENTER_LEPTON);
         let mut air_locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
             rules.object("AIR").expect("air type"),
             0,
         );
-        air_locomotor.set_layer(MovementLayer::Air);
+        air_locomotor.set_layer_for_test(MovementLayer::Air);
         air.locomotor = Some(air_locomotor);
         air.position.set_exact_z_leptons_for_test(Some(1));
         air = air

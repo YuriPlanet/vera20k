@@ -118,7 +118,7 @@ fn piece_palette(
         return (0, 1, PaletteLight::plain(53, brightness));
     };
     let scheme = house_colors
-        .get(sim.interner.resolve(owner))
+        .get(sim.interner().resolve(owner))
         .copied()
         .unwrap_or(NO_REMAP);
     (
@@ -148,7 +148,7 @@ pub(crate) fn build_voxel_anim_instances(
         return;
     };
     let sim = &rt.simulation;
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = sim.resolved_terrain() else {
         return;
     };
     if sim.voxel_anims().is_empty() {

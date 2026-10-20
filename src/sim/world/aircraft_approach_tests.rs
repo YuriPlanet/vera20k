@@ -32,7 +32,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         true,
     );
     sim.substrate.entities.insert(manager);
-    sim.substrate.next_stable_object_id = 1000;
+    sim.set_next_stable_object_id_for_test(1000);
     sim.initialize_airstrike(999, &manager_rules);
     let flh = input.get("flh").cloned().unwrap_or(json!([0, 0, 0]));
     let elite = input.get("elite_flh").unwrap_or(&flh);
@@ -49,7 +49,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     // The oracle's target mark is Object+0x74, which IsHighFlying reads.
     let marked = input["target_marked"].as_bool().unwrap_or(true);
     let target = sim.substrate.entities.get_mut(2).unwrap();
-    target.lifecycle.set_cell_marked(marked);
+    target.lifecycle.set_cell_marked_for_test(marked);
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     let state = input["state"].as_u64().unwrap_or(3) as u8;
     entity.mission.set_handler_state(u32::from(state));
@@ -66,7 +66,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let loco = entity.locomotor.as_mut().unwrap();
     loco.fly_runtime_mut()
         .unwrap()
-        .set_current_speed(SimFixed::from_num(input["speed"].as_f64().unwrap_or(1.0)));
+        .set_current_speed_for_test(SimFixed::from_num(input["speed"].as_f64().unwrap_or(1.0)));
     let mut fly = serde_json::to_value(loco.fly_runtime().unwrap()).unwrap();
     fly["moving"] = json!(input["moving"].as_bool().unwrap_or(true));
     *loco.fly_runtime_mut().unwrap() = serde_json::from_value(fly).unwrap();

@@ -1,0 +1,95 @@
+{
+  "rows": [
+    {
+      "condition_red_bits": "3fd0000000000000",
+      "damage": 328,
+      "health": 750,
+      "strength": 750
+    },
+    {
+      "condition_red_bits": "3fd0000000000000",
+      "damage": 328,
+      "health": 422,
+      "strength": 750
+    },
+    {
+      "condition_red_bits": "3fd0000000000000",
+      "damage": 307,
+      "health": 400,
+      "strength": 750
+    },
+    {
+      "condition_red_bits": "3fd0000000000000",
+      "damage": 95,
+      "health": 188,
+      "strength": 750
+    },
+    {
+      "condition_red_bits": "3fd0000000000000",
+      "damage": null,
+      "health": 187,
+      "strength": 750
+    },
+    {
+      "condition_red_bits": "3fd3333333333333",
+      "damage": 424,
+      "health": 1000,
+      "strength": 1000
+    },
+    {
+      "condition_red_bits": "3fd3333333333333",
+      "damage": 424,
+      "health": 999,
+      "strength": 1000
+    },
+    {
+      "condition_red_bits": "3fd51eb851eb851f",
+      "damage": 375,
+      "health": 900,
+      "strength": 900
+    },
+    {
+      "condition_red_bits": "3fb999999999999a",
+      "damage": 3,
+      "health": 7,
+      "strength": 7
+    },
+    {
+      "condition_red_bits": "3fb999999999999a",
+      "damage": 3,
+      "health": 5,
+      "strength": 7
+    },
+    {
+      "condition_red_bits": "3fe0000000000000",
+      "damage": 112,
+      "health": 300,
+      "strength": 300
+    },
+    {
+      "condition_red_bits": "0000000000000000",
+      "damage": 1,
+      "health": 1,
+      "strength": 750
+    },
+    {
+      "condition_red_bits": "3ff0000000000000",
+      "damage": null,
+      "health": 750,
+      "strength": 750
+    },
+    {
+      "condition_red_bits": "3fd0000000000000",
+      "damage": 0,
+      "health": 100,
+      "strength": 0
+    },
+    {
+      "condition_red_bits": "3fd0000000000000",
+      "damage": 939524095,
+      "health": 2147483647,
+      "strength": 2147483647
+    }
+  ],
+  "schema_version": 1
+}

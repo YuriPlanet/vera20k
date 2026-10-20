@@ -52,6 +52,10 @@ const CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE: &str = "campaign-all1-first-live-fram
 const CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE: &str = "campaign-sov1-first-live-frame";
 const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN: &str = "campaign-all1-abort-return";
 const CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN: &str = "campaign-sov1-abort-return";
+const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART_SHOWN: &str = "campaign-all1-abort-restart-shown";
+const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART: &str = "campaign-all1-abort-restart";
+const CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT: &str = "campaign-all1-defeat-replay-prompt";
+const CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES: &str = "campaign-all1-defeat-replay-yes";
 const CHECKPOINT_CAMPAIGN_SOV1_OPENING_LOCKED: &str = "campaign-sov1-opening-locked";
 const CHECKPOINT_CAMPAIGN_SOV1_OPENING_PAN: &str = "campaign-sov1-opening-pan";
 const CHECKPOINT_CAMPAIGN_SOV1_OPENING_FLASH: &str = "campaign-sov1-opening-flash";
@@ -161,6 +165,7 @@ const CHECKPOINT_SKIRMISH_0X6B_EJECT_BOX: &str = "skirmish-0x6b-eject-box";
 const CHECKPOINT_SKIRMISH_AFTER_QUIT: &str = "skirmish-after-quit";
 const CHECKPOINT_SKIRMISH_DEFEAT_SCORE: &str = "skirmish-defeat-score";
 const CHECKPOINT_SKIRMISH_DEFEAT_CONTINUE: &str = "skirmish-defeat-continue";
+const CHECKPOINT_SKIRMISH_DIPLOMACY: &str = "skirmish-diplomacy";
 const CHECKPOINT_SCORE_0X108_STEADY: &str = "score-0x108-steady";
 const CHECKPOINT_CAMPAIGN_SCORE_0X103_STEADY: &str = "campaign-score-0x103-steady";
 const CHECKPOINT_CAMPAIGN_SCORE_0X103_ANIMATION_SEQUENCE: &str =
@@ -229,6 +234,9 @@ pub enum ShellCaptureCheckpoint {
     /// First installed campaign, then physical Escape/B5 Abort/B6 Leave and
     /// ordinary queued EXIT/audio teardown, read back on the settled main menu.
     CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide),
+    /// First installed ALL01, then B6 with Restart, B6 Restart into the
+    /// restarted mission, or a forced loss to its `TXT_TO_REPLAY` box (and Yes).
+    CampaignRestart(movies::RestartTarget),
     /// An authored campaign opening (SOV01, or ALL01 for the in-lock load),
     /// through the normal loader and exact production sim/app steps. These
     /// receipts are integration observations.
@@ -330,6 +338,7 @@ pub enum ShellCaptureCheckpoint {
     SkirmishDefeatScore,
     /// The same, then Continue: the new `0x102`, settled.
     SkirmishDefeatContinue,
+    SkirmishDiplomacy,
     /// The score dialog `0x108` with the retail comparison game's values,
     /// settled.
     Score0x108Steady,
@@ -500,6 +509,7 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_SKIRMISH_AFTER_QUIT => Ok(Self::SkirmishAfterQuit),
             CHECKPOINT_SKIRMISH_DEFEAT_SCORE => Ok(Self::SkirmishDefeatScore),
             CHECKPOINT_SKIRMISH_DEFEAT_CONTINUE => Ok(Self::SkirmishDefeatContinue),
+            CHECKPOINT_SKIRMISH_DIPLOMACY => Ok(Self::SkirmishDiplomacy),
             CHECKPOINT_SCORE_0X108_STEADY => Ok(Self::Score0x108Steady),
             CHECKPOINT_CAMPAIGN_SCORE_0X103_STEADY => Ok(Self::CampaignScore0x103Steady),
             CHECKPOINT_CAMPAIGN_SCORE_0X103_ANIMATION_SEQUENCE => {
@@ -536,6 +546,18 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN => Ok(Self::CampaignAbortReturn(
                 crate::ui::campaign_shell::CampaignSide::Soviet,
             )),
+            CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART_SHOWN => {
+                Ok(Self::CampaignRestart(movies::RestartTarget::AbortShown))
+            }
+            CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART => {
+                Ok(Self::CampaignRestart(movies::RestartTarget::AbortRestarted))
+            }
+            CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT => {
+                Ok(Self::CampaignRestart(movies::RestartTarget::DefeatPrompt))
+            }
+            CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES => {
+                Ok(Self::CampaignRestart(movies::RestartTarget::DefeatReplayed))
+            }
             CHECKPOINT_CAMPAIGN_SOV1_OPENING_LOCKED => {
                 Ok(Self::CampaignOpening(movies::OpeningTarget::Locked))
             }
@@ -630,6 +652,18 @@ impl ShellCaptureCheckpoint {
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN
             }
+            Self::CampaignRestart(movies::RestartTarget::AbortShown) => {
+                CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART_SHOWN
+            }
+            Self::CampaignRestart(movies::RestartTarget::AbortRestarted) => {
+                CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatPrompt) => {
+                CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReplayed) => {
+                CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES
+            }
             Self::CampaignOpening(movies::OpeningTarget::Locked) => {
                 CHECKPOINT_CAMPAIGN_SOV1_OPENING_LOCKED
             }
@@ -718,6 +752,7 @@ impl ShellCaptureCheckpoint {
             Self::SkirmishAfterQuit => CHECKPOINT_SKIRMISH_AFTER_QUIT,
             Self::SkirmishDefeatScore => CHECKPOINT_SKIRMISH_DEFEAT_SCORE,
             Self::SkirmishDefeatContinue => CHECKPOINT_SKIRMISH_DEFEAT_CONTINUE,
+            Self::SkirmishDiplomacy => CHECKPOINT_SKIRMISH_DIPLOMACY,
             Self::Score0x108Steady => CHECKPOINT_SCORE_0X108_STEADY,
             Self::CampaignScore0x103Steady => CHECKPOINT_CAMPAIGN_SCORE_0X103_STEADY,
             Self::CampaignScore0x103AnimationSequence => {
@@ -775,6 +810,10 @@ impl ShellCaptureCheckpoint {
             Self::CampaignAbortReturn(side) => movies::MoviesTarget::CampaignStart {
                 side,
                 target: movies::CampaignStartTarget::AbortReturn,
+            },
+            Self::CampaignRestart(target) => movies::MoviesTarget::CampaignStart {
+                side: crate::ui::campaign_shell::CampaignSide::Allied,
+                target: movies::CampaignStartTarget::Restart(target),
             },
             Self::CampaignOpening(target) => movies::MoviesTarget::CampaignStart {
                 side: target.side(),
@@ -1275,6 +1314,9 @@ impl ShellCaptureSession {
             ShellCaptureCheckpoint::SkirmishDefeatContinue => Some(
                 skirmish::SkirmishCapture::loading(skirmish::LoadingTarget::DefeatContinue),
             ),
+            ShellCaptureCheckpoint::SkirmishDiplomacy => Some(skirmish::SkirmishCapture::loading(
+                skirmish::LoadingTarget::Diplomacy,
+            )),
             ShellCaptureCheckpoint::Skirmish0x102Entry(tick) => {
                 Some(skirmish::SkirmishCapture::entry(tick))
             }
@@ -2321,6 +2363,40 @@ mod tests {
                 movies::MoviesTarget::CampaignStart {
                     side: Soviet,
                     target: movies::CampaignStartTarget::AbortReturn,
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART_SHOWN,
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(movies::RestartTarget::AbortShown),
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART,
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::AbortRestarted,
+                    ),
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT,
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatPrompt,
+                    ),
+                },
+            ),
+            (
+                CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES,
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReplayed,
+                    ),
                 },
             ),
             (

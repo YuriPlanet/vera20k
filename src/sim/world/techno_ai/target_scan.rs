@@ -554,7 +554,7 @@ fn fire_subject<'a>(
         world: sim,
         rules,
         overlay_registry,
-        fog: Some(sim.fog.fire_view(&sim.house_alliances)),
+        fog: Some(sim.fog.fire_view(sim.house_alliances.as_map())),
         firer,
         obj,
         target,
@@ -604,7 +604,7 @@ pub(super) fn select_weapon(
         sim,
         &sim.interner,
         cells.as_ref(),
-        Some(&sim.house_alliances),
+        Some(sim.house_alliances.as_map()),
     )
     .unwrap_or(0)
 }
@@ -895,7 +895,7 @@ impl Simulation {
             crate::sim::combat::line_of_fire::LineOfFireInputs {
                 overlay_grid: self.overlay_grid.as_ref(),
                 overlay_registry,
-                alliances: Some(&self.house_alliances),
+                alliances: Some(self.house_alliances.as_map()),
             },
             Some(self),
             scan_coord,
@@ -1031,7 +1031,7 @@ mod tests {
                 world: &sim,
                 rules,
                 overlay_registry: Some(&registry),
-                fog: Some(sim.fog.fire_view(&sim.house_alliances)),
+                fog: Some(sim.fog.fire_view(sim.house_alliances.as_map())),
                 firer: actor,
                 obj: rules.object("E1").unwrap(),
                 target: Some(TargetKind::Entity(victim)),

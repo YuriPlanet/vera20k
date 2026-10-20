@@ -43,7 +43,7 @@ fn next_object(
                 entity,
                 sim.entities(),
                 rules,
-                Some(&sim.interner),
+                Some(sim.interner()),
             )
             && sim.object_is_selectable(id, rules)
     };
@@ -134,10 +134,10 @@ fn navigation_owner_controlled(
     sim: &crate::sim::world::Simulation,
     owner: crate::sim::intern::InternedId,
 ) -> bool {
-    if sim.session.game_mode_nonzero() {
+    if sim.session().game_mode_nonzero() {
         sim.house_is_human_player(owner)
     } else {
-        sim.houses
+        sim.houses()
             .get(&owner)
             .is_some_and(|house| house.player_control())
     }
@@ -185,14 +185,14 @@ fn combatant_selection(
         sim.entities().get(*id).is_some_and(|entity| {
             entity.category() != EntityCategory::Structure
                 && sim
-                    .interner
+                    .interner()
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.is_selectable_combatant)
                 && crate::app::input::entity_pick::selection_dynamic_prefix(
                     entity,
                     sim.entities(),
                     Some(rules),
-                    Some(&sim.interner),
+                    Some(sim.interner()),
                 )
                 && sim.object_is_selectable(*id, Some(rules))
         })
@@ -396,7 +396,7 @@ fn entity_navigation_category(
     let entity = sim.entities().get(id)?;
     match kind {
         CategoryNavigationKind::Health => {
-            let object = sim.interner.object_type(entity.type_ref(), rules)?;
+            let object = sim.interner().object_type(entity.type_ref(), rules)?;
             Some(health_category(
                 entity.health.current(),
                 object.strength,
@@ -560,7 +560,7 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         .filter_map(|id| sim.entities().get(*id))
         .filter_map(|entity| {
             let rules = state.rules()?;
-            let object = sim.interner.object_type(entity.type_ref(), rules)?;
+            let object = sim.interner().object_type(entity.type_ref(), rules)?;
             Some(sim.cost_of(entity.owner(), object, rules))
         })
         .fold(0_i32, |total, cost| total.wrapping_add(cost));
@@ -737,10 +737,10 @@ mod tests {
         .unwrap();
         for conceal in [false, true] {
             let mut sim = Simulation::new();
-            let owner = sim.interner.intern("Americans");
-            let type_id = sim.interner.intern("MTNK");
+            let owner = sim.intern("Americans");
+            let type_id = sim.intern("MTNK");
             for id in [10, 20, 30] {
-                sim.entities_mut()
+                sim.entities_mut_for_test()
                     .insert(GameEntity::new_at_frame_zero_for_test(
                         id,
                         2,
@@ -785,7 +785,7 @@ mod tests {
             input.type_select.across_map = true;
             input.selection_order = vec![20];
             // Deselect and its normal app reconciliation have no expiry fact.
-            sim.entities_mut()
+            sim.entities_mut_for_test()
                 .get_mut(20)
                 .unwrap()
                 .selection

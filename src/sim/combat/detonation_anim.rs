@@ -25,7 +25,7 @@ fn cell_at(world: &Simulation, coord: ProjectileCoord) -> CellRef<'_> {
 
 pub(crate) fn land_at(world: &Simulation, coord: ProjectileCoord) -> i32 {
     match cell_at(world, coord) {
-        CellRef::Real(cell) => i32::from(cell.land_type()),
+        CellRef::Real(cell) => i32::from(cell.land_type),
         CellRef::Dummy { cell } => cell.land_type(),
     }
 }
@@ -323,7 +323,7 @@ mod tests {
             }
             world.interner = crate::sim::intern::test_interner();
             let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
-            let cell = terrain.cell_mut(10, 20).unwrap();
+            let cell = terrain.cell_mut_for_test(10, 20).unwrap();
             cell.level = input["level"].as_u64().unwrap() as u8;
             cell.land_type = input["land"].as_i64().unwrap() as u8;
             cell.bridge_facts.raw_flags = input["flags"].as_u64().unwrap() as u32;
@@ -463,7 +463,7 @@ mod tests {
             let name = input["name"].as_str().unwrap();
             let mut world = Simulation::with_seed(31);
             let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
-            let cell = terrain.cell_mut(10, 20).unwrap();
+            let cell = terrain.cell_mut_for_test(10, 20).unwrap();
             cell.level = input["level"].as_u64().unwrap() as u8;
             cell.land_type = input["land"].as_i64().unwrap() as u8;
             cell.bridge_facts.raw_flags = input["flags"].as_u64().unwrap() as u32;

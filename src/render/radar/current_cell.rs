@@ -49,8 +49,8 @@ impl<'a> CurrentRadarCellAuthority<'a> {
     /// Production presentation wiring after the restored simulation commits.
     pub(crate) fn from_runtime(runtime: &'a SimRuntime) -> Self {
         Self::new(
-            runtime.simulation.resolved_terrain.as_ref(),
-            runtime.simulation.overlay_grid.as_ref(),
+            runtime.simulation.resolved_terrain(),
+            runtime.simulation.overlay_grid(),
             Some(&runtime.resources.overlay_registry),
             Some(&runtime.resources.rules),
         )
@@ -104,44 +104,29 @@ impl<'a> CurrentRadarCellAuthority<'a> {
         // high-bridge overlay authority.
         let structural_bridge_present =
             resolved_cell.is_some_and(|cell| cell.bridge_facts.has_structural_bridge());
-        // High walkers keep their current Cell+0x44 identity only in CellClass.
-        // OverlayGrid intentionally mirrors low surfaces, so consulting it
-        // after the live structural bit clears can revive stale 0xCD after a
-        // restored 0xE7/0xE8 collapse. The high-family slots 47E040 stamps
-        // structural, or marks destroyed (0x400) when it clears the deck, own
-        // that identity; a family-only auxiliary stamp such as ExtraDir6 keeps
-        // neither bit and continues through the live OverlayGrid path.
-        let high_walker_identity = resolved_cell.filter(|cell| {
+        // The high-family slots 47E040 stamps structural, or marks destroyed
+        // (0x400) when it clears the deck, read their Cell+0x44 identity with
+        // data 0; a family-only auxiliary stamp such as ExtraDir6 keeps
+        // neither bit and reads the identity with its data.
+        let high_walker = resolved_cell.is_some_and(|cell| {
             cell.bridge_facts.family != crate::map::bridge_facts::BridgeStampFamily::None
                 && cell.bridge_facts.raw_flags
                     & (crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
                         | crate::map::bridge_facts::BRIDGE_FLAG_DESTROYED_OR_RAMP)
                     != 0
         });
-        // Constructor5FC380 stamps structural side cells with Cell+44=-1;
-        // bridge_constructor.json cases8..11 retain these original outputs.
-        // GetRadarColor47C060's bit100 branch precedes its overlay branch and
-        // cannot be vetoed by absent sprite data or runtime damage state.
-        let overlay = if let Some(cell) = high_walker_identity {
-            // Native -1 is Rust None.
-            cell.bridge_facts.overlay_id.map(|overlay_id| {
-                minimap_overlay_datum(rx, ry, overlay_id, 0, self.overlay_registry, self.rules)
+        // Constructor5FC380 stamps structural side cells with Cell+44=-1
+        // (native -1 is Rust None); bridge_constructor.json cases8..11 retain
+        // these original outputs. GetRadarColor47C060's bit100 branch precedes
+        // its overlay branch and cannot be vetoed by absent sprite data or
+        // runtime damage state.
+        let overlay = self.overlay_grid.and_then(|grid| {
+            let cell = grid.cell(rx, ry);
+            let data = if high_walker { 0 } else { cell.overlay_data };
+            cell.overlay_id.map(|overlay_id| {
+                minimap_overlay_datum(rx, ry, overlay_id, data, self.overlay_registry, self.rules)
             })
-        } else {
-            self.overlay_grid.and_then(|grid| {
-                let cell = grid.cell(rx, ry);
-                cell.overlay_id.map(|overlay_id| {
-                    minimap_overlay_datum(
-                        rx,
-                        ry,
-                        overlay_id,
-                        cell.overlay_data,
-                        self.overlay_registry,
-                        self.rules,
-                    )
-                })
-            })
-        };
+        });
         current_cell_radar_source(
             terrain_object_present,
             structural_bridge_present,

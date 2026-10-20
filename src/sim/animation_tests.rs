@@ -1399,7 +1399,7 @@ fn unit_body_counter_matches_original_foot_cadence() {
             entity
                 .position
                 .set_exact_z_leptons_for_test(Some(integer("height", 0)));
-            entity.locomotor.as_mut().unwrap().set_layer(layer);
+            entity.locomotor.as_mut().unwrap().set_layer_for_test(layer);
             if let Some(flags) = input["flags"].as_array() {
                 entity.set_unit_simple_deploy_for_test(
                     flags[0].as_u64().unwrap() != 0,
@@ -1485,10 +1485,11 @@ fn foot_body_counter_matches_original_concrete_classes() {
                 entity.lifecycle.set_in_limbo_for_test(false);
                 let mut loco = LocomotorState::for_test_kind(kind);
                 match kind {
-                    LocomotorKind::Fly => loco
-                        .fly_runtime_mut()
-                        .unwrap()
-                        .set_current_speed(SimFixed::from_bits(integer("current_speed_q16", 0))),
+                    LocomotorKind::Fly => {
+                        loco.fly_runtime_mut().unwrap().set_current_speed_for_test(
+                            SimFixed::from_bits(integer("current_speed_q16", 0)),
+                        )
+                    }
                     LocomotorKind::Walk => {
                         let v = input["head"].as_array().unwrap();
                         let head = DriveCoord {

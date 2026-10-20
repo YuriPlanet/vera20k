@@ -227,8 +227,8 @@ fn retail_hills_engineer_cliff_start_is_rejected() {
     let header = &scenario.map.header;
     let output = json!({
         "schema_version":1,"native_size":[header.width,header.height],
-        "width":scenario.sim().zone_grid.as_ref().unwrap().width,
-        "height":scenario.sim().zone_grid.as_ref().unwrap().height,
+        "width":scenario.sim().zone_grid.as_ref().unwrap().width(),
+        "height":scenario.sim().zone_grid.as_ref().unwrap().height(),
         "local_size":[header.local_left,header.local_top,header.local_width,header.local_height],
         "map_hash":format!("{:016x}",scenario.map.ini.content_hash()),
         "rules_hash":format!("{:016x}",scenario.runtime.resources.rules.simulation_config_hash()),
@@ -497,7 +497,10 @@ fn assert_repaired_hills_authorities(sim: &Simulation, engineer: u64, hut: u64) 
     );
     // Original constructor25 writes raw100/state9 on non-anchor side cells
     // while leaving their own overlay at -1; only the center carries25.
-    assert_eq!(cell.bridge_facts.overlay_id, None);
+    assert_eq!(
+        sim.overlay_grid.as_ref().unwrap().cell(64, 69).overlay_id,
+        None
+    );
     assert!(
         sim.entities().get(engineer).is_none(),
         "Engineer retired after repair"

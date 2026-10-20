@@ -537,14 +537,34 @@ fn mission_factory_unload(
                     now,
                     &LiveReadyInputProvider { rules },
                 );
+                use crate::rules::locomotor_type::LocomotorKind;
+                let active = sim
+                    .substrate
+                    .entities
+                    .get(product)
+                    .and_then(|unit| unit.locomotor.as_ref())
+                    .map(|loco| loco.active_kind());
+                //44DED8..44DF1A dispatch on the active locomotor's CLSID.
+                //44DF72..44DFA4: a Drive product runs track 0x42 out of the
+                //bay. 44DFAD..44E163: a Teleport one (the Chrono Miner; no
+                //retail type names TS Tunnel, 44DEEA's other arm) first takes
+                //a Drive piggyback over its Teleport, the Unit setter's own
+                //install, then runs the same track. Native ends a carried
+                //piggyback when Is_Piggybacking (IPiggyback vt+0x1C) holds,
+                //where the shared install asks Is_Ok_To_End; a product fresh
+                //from the factory carries none. The no-IPiggyback C4 arm
+                //(44E165) is dead: Drive implements it.
+                if active == Some(LocomotorKind::Teleport)
+                    && let Some(unit) = sim.substrate.entities.get_mut(product)
+                {
+                    crate::sim::movement::locomotor_owner::begin_drive_for_teleporter(unit, now);
+                }
                 let drive = sim
                     .substrate
                     .entities
                     .get(product)
                     .and_then(|unit| unit.locomotor.as_ref())
-                    .is_some_and(|loco| {
-                        loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
-                    });
+                    .is_some_and(|loco| loco.active_kind() == LocomotorKind::Drive);
                 if drive {
                     sim.force_track(
                         product,
@@ -555,10 +575,7 @@ fn mission_factory_unload(
                         ctx.effects,
                     );
                 } else {
-                    //44DF1C's normal non-Drive cell setter is represented.
-                    //Teleport (and the dormant TS Tunnel) take 44DFAD's
-                    //piggyback swap and lifetime cleanup, a separate retained
-                    //locomotor mechanism.
+                    //44DF1C: any other locomotor takes the Cell beyond the bay.
                     let cell = crate::sim::movement::war_factory_exit_cell(location);
                     sim.set_unit_destination(
                         product,

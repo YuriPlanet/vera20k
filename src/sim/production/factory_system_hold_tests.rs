@@ -311,7 +311,7 @@ impl PaidHead {
                 ))
             }
             "original_start_next_queued" => {
-                let next_id = sim.substrate.next_stable_object_id;
+                let next_id = sim.next_stable_object_id();
                 factory_lifecycle::start_next_queued(
                     sim,
                     rules,
@@ -359,7 +359,7 @@ impl PaidHead {
             );
             assert_eq!(self.head(), phase["before"]["factory"], "{label} before");
             let before_rng = self.rng();
-            let before_id = self.runtime.simulation.substrate.next_stable_object_id;
+            let before_id = self.runtime.simulation.next_stable_object_id();
             let held_before = self
                 .runtime
                 .simulation
@@ -389,7 +389,7 @@ impl PaidHead {
                 "{label} held identity",
             );
             assert_eq!(
-                sim.substrate.next_stable_object_id - before_id,
+                sim.next_stable_object_id() - before_id,
                 phase["identity_delta"].as_u64().unwrap(),
                 "{label} constructor identity count",
             );

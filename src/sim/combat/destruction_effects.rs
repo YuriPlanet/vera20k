@@ -20,8 +20,10 @@
 //! fire anims are UnInit), 5 (`0x00441702`, a computer house's
 //! `RevealToAll=` building releases the sight it showed the current house), 7
 //! (`0x0044177E`, the centre scorch/crater mark), 8 (`0x004418EC`, one
-//! `Explosion=` anim per foundation cell) and 13 (`0x00441CAC`, one
-//! `DestroyAnim=` anim at the origin cell's corner).
+//! `Explosion=` anim per foundation cell), 12 (`0x00441C43`, the death fuse
+//! that decides whether the building outlives its killing blow), 13
+//! (`0x00441CAC`, one `DestroyAnim=` anim at the origin cell's corner) and the
+//! NoSurvivor write before SpawnSurvivors (`0x00441F0B`).
 //!
 //! Original constructor/Logic-before-crew execution:
 //! `tools/spatial_oracle/building_death_anims.py` (joined fatal lifecycle),
@@ -44,13 +46,11 @@
 //!   once more (`0x007461D1`, the Jumpjet's 0x117C notice), outside any
 //!   receiver transaction: [`Simulation::unit_death_explosion`] builds
 //!   each anim right after its pick (`sim::world::crash`).
-//! - The other `Death_Explosion` callers are not wired:
-//!   - The crush of a Unit victim (`0x007418E5` -> `vt+0x170` =
-//!     `0x00746D60`: Death_Explosion, then the capture release `0x00710460`).
-//!     VERA's crush teardown (`movement_tick`) draws no pick and plays no
-//!     anim. Trigger: the Battle Fortress, stock's only `OmniCrusher=`,
-//!     crushing any vehicle but the five `OmniCrushResistant=` types.
-//!   - The `DeathFrames=` completion (`0x00736381`), dead on stock.
+//! - The crush of a Unit victim (`0x007418E5` -> `vt+0x170` = `0x00746D60`)
+//!   calls it too, from `Simulation::per_cell_process`: the Battle Fortress,
+//!   stock's only `OmniCrusher=`, crushing a vehicle.
+//! - The `DeathFrames=` completion (`0x00736381`), dead on stock, is not
+//!   wired.
 //! - DestroyAnim's palette (TechnoType `+0xDF0`/`+0xDD0` -> anim
 //!   `+0xD4`/`+0xDC`) is presentation and not carried.
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
@@ -59,8 +59,7 @@
 //!   `Explodes=yes`, `0x00441A90..0x00441AC2`; no stock overlay has it), 10
 //!   (stored-ore spill; YR never fills building storage), 11 (ShakeScreen, a
 //!   bare `RET`), 14 (`DestroyParticleSystems=` smoke; no stock user). Step 6
-//!   (BuildingDieSound) plays from the Techno death sounds; step 12 (the zero
-//!   death timer of `Explodes=`/Selling) is a `crew_survival` residual.
+//!   (BuildingDieSound) plays from the Techno death sounds.
 //! - Ordinary ground weapon-fire ammo debits remain separate. The shared Ammo
 //!   owner retains constructor and chrono reinforcement writes, which the
 //!   `Death_Explosion` last-entry override reads. No stock `Explodes=` vehicle
@@ -338,7 +337,7 @@ impl Simulation {
             && self.resolved_terrain.as_ref().is_some_and(|terrain| {
                 terrain
                     .cell(entity.position.rx(), entity.position.ry())
-                    .is_some_and(|cell| cell.land_type() == LandType::Water.as_index())
+                    .is_some_and(|cell| cell.land_type == LandType::Water.as_index())
             })
             && entity.teleport_state().is_none()
     }
@@ -434,12 +433,14 @@ impl Simulation {
     /// `BuildingClass::DestructionEffects @ 0x004415F0` from its entry to its
     /// SpawnSurvivors call: the damage fires go out, the centre mark is
     /// committed through `commit_smudge`, each foundation cell (in the
-    /// `vt+0x108(0)` list order) gets an `Explosion=` anim and the origin
-    /// corner a `DestroyAnim=` anim.
-    pub(crate) fn building_destruction_anims(
+    /// `vt+0x108(0)` list order) gets an `Explosion=` anim, the death fuse is
+    /// armed, the origin corner gets a `DestroyAnim=` anim and the killing
+    /// call's `ignore_defenses` becomes NoSurvivor.
+    pub(crate) fn building_destruction_effects(
         &mut self,
         rules: &RuleSet,
         building_id: u64,
+        ignore_defenses: bool,
         anims: &mut Vec<ExplosionEffect>,
         mut commit_smudge: impl FnMut(&mut Simulation, SmudgeSpawnRequest),
     ) {
@@ -461,6 +462,8 @@ impl Simulation {
         );
         let location = position_world_coord(&entity.position);
         let owner = entity.owner();
+        let selling =
+            entity.mission.effective().known() == Some(crate::sim::mission::MissionType::Selling);
 
         // 5. `0x00441702..0x0044172F`: a computer house's `RevealToAll=`
         // building releases its sight for the current house
@@ -508,6 +511,26 @@ impl Simulation {
             }
         }
 
+        // 12. `0x00441C3D..0x00441CA9`: the fuse (`+0x528`) restarts at the
+        // frame, 0 long for an `Explodes=` type (TechnoType `+0xD15`) or a
+        // building whose Get_Mission (vt+0x184, current else queued) is
+        // Selling (0x13), else 8. ReceiveDamage then UnInits only a building
+        // whose fuse has time left (`0x0044266B..0x00442690`); the others stay
+        // alive at Health 0 until their Update retires them
+        // (`0x00440072..0x004400F1`), their StageClass clock stopped: Rate 0
+        // and a zero timer from the frame, Value kept (`0x00441C8F..0x00441CA9`).
+        let outlives = object.explodes || selling;
+        let frame = self.session.binary_frame() as i32;
+        if let Some(building) = self.substrate.entities.get_mut(building_id) {
+            building
+                .pending_c4_detonation
+                .arm_destruction(frame, if outlives { 0 } else { 8 });
+            if outlives {
+                let value = building.native_stage().value();
+                building.restart_native_stage(value, frame, 0);
+            }
+        }
+
         // 13. `0x00441CAC..0x00441D64`: the pick is drawn even when the entry
         // is empty; the coordinate is vt+0xAC (`0x00459EF0`, Location minus
         // 0x80 on X and Y).
@@ -535,6 +558,11 @@ impl Simulation {
                     0,
                 ),
             );
+        }
+        // `0x00441EFC..0x00441F0B`: after the Health 0 write (`0x00441F00`),
+        // the killing call's IgnoreDefenses becomes NoSurvivor.
+        if ignore_defenses && let Some(building) = self.substrate.entities.get_mut(building_id) {
+            building.no_survivor.mark();
         }
     }
 }

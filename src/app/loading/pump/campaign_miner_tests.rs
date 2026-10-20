@@ -125,7 +125,7 @@ fn load_campaign(
 /// Drive real frames until the map-authored Harvest mission has dispatched.
 fn dispatch(runtime: &mut crate::sim::runtime::SimRuntime, miner: u64) -> Option<(u16, u16)> {
     use crate::sim::components::NavTargetRef;
-    runtime.simulation.session.set_started(true);
+    runtime.simulation.session.publish_started();
     for _ in 0..8 {
         runtime
             .advance_frame(

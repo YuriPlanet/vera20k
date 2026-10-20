@@ -159,6 +159,9 @@ pub enum BuildingPieceKind {
     Body,
     Shadow,
     Bib,
+    /// A war factory's `UnderDoorAnim=` and its shadow, drawn after the bib
+    /// (`BuildingClass::DrawIt @ 0x0043D8EE`).
+    UnderDoor,
     PoweredOrActiveOverlay,
     SplitBack,
     SplitFront,
@@ -269,8 +272,9 @@ fn building_piece_order(kind: BuildingPieceKind) -> u8 {
         BuildingPieceKind::Body => 2,
         BuildingPieceKind::Shadow => 3,
         BuildingPieceKind::Bib => 4,
-        BuildingPieceKind::PoweredOrActiveOverlay => 5,
-        BuildingPieceKind::SplitFront => 6,
+        BuildingPieceKind::UnderDoor => 5,
+        BuildingPieceKind::PoweredOrActiveOverlay => 6,
+        BuildingPieceKind::SplitFront => 7,
     }
 }
 

@@ -75,10 +75,13 @@ fn retail_grizzly_forcefire_freezes_the_native_cell_aim() {
         let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         for (x, y) in [(10, 16), (10, 20)] {
-            terrain.cell_mut(x, y).unwrap().level = 2;
+            terrain.cell_mut_for_test(x, y).unwrap().level = 2;
         }
-        terrain.cell_mut(10, 20).unwrap().bridge_facts.raw_flags =
-            row["input"]["flags"].as_u64().unwrap() as u32;
+        terrain
+            .cell_mut_for_test(10, 20)
+            .unwrap()
+            .bridge_facts
+            .raw_flags = row["input"]["flags"].as_u64().unwrap() as u32;
         let grizzly = sim
             .spawn_object("MTNK", "Americans", 10, 16, 128, &rules)
             .expect("retail Grizzly");

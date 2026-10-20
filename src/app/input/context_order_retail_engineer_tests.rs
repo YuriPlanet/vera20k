@@ -66,7 +66,7 @@ fn building_orders(
     let owner = sim.entities().get(engineer).unwrap().owner();
     let envelopes = commands
         .into_iter()
-        .map(|payload| CommandEnvelope::new(owner, sim.session.tick(), payload))
+        .map(|payload| CommandEnvelope::new(owner, sim.session().tick(), payload))
         .map(|envelope| {
             crate::app::input::commands::roundtrip_ordinary_local_megamission(sim, envelope)
                 .unwrap()
@@ -107,7 +107,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
     let before = &row["arrivals"][0]["before"]["building"];
     let after = &row["arrivals"][0]["after"]["building"];
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house().unwrap();
+    let owner = runtime.simulation.session().current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let rules = &runtime.resources.rules;
     assert_eq!(rules.object("GAPOWR").unwrap().strength, 750);
@@ -123,8 +123,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         .expect("retained ordinary construction production placement site");
     runtime
         .simulation
-        .substrate
-        .entities
+        .entities_mut_for_test()
         .get_mut(plant)
         .unwrap()
         .finish_building_construction_for_test();
@@ -138,8 +137,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
     );
     let plant_entity = runtime
         .simulation
-        .substrate
-        .entities
+        .entities_mut_for_test()
         .get_mut(plant)
         .unwrap();
     plant_entity
@@ -172,7 +170,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         .unwrap();
     let mut envelopes = vec![CommandEnvelope::new(
         owner,
-        runtime.simulation.session.tick(),
+        runtime.simulation.session().tick(),
         Command::ToggleRepair { entity_id: plant },
     )];
     envelopes.extend(building_orders(
@@ -209,14 +207,14 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         let plant_entity = runtime.simulation.entities().get(plant).unwrap();
         if trace_path.is_some() {
             trace.push(json!({
-                "frame": runtime.simulation.session.binary_frame(),
+                "frame": runtime.simulation.session().binary_frame(),
                 "plant": plant_entity,
                 "engineer": runtime.simulation.entities().get(engineer),
-                "power": runtime.simulation.power_states.get(&owner),
+                "power": runtime.simulation.power_states().get(&owner),
             }));
         }
         if plant_entity.health.current() == after["actual_hp"].as_i64().unwrap() as i32 {
-            healed_frame.get_or_insert(runtime.simulation.session.binary_frame());
+            healed_frame.get_or_insert(runtime.simulation.session().binary_frame());
         }
         if healed_frame.is_some() && !runtime.simulation.entities().contains(engineer) {
             break;
@@ -257,7 +255,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
             .resolve(runtime.simulation.anim(healthy_slot).unwrap().type_id()),
         after["slots"][0]["type_name"].as_str().unwrap()
     );
-    assert!(runtime.simulation.power_states[&owner].total_output() >= 200);
+    assert!(runtime.simulation.power_states()[&owner].total_output() >= 200);
     let second = runtime
         .simulation
         .spawn_object("ENGINEER", &owner_name, 30, 90, 0, &runtime.resources.rules)

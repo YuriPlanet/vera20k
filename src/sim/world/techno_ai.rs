@@ -470,7 +470,7 @@ impl Simulation {
             let occupancy = &self.substrate.occupancy;
             let entities = &self.substrate.entities;
             let interner = &self.interner;
-            let house_alliances = &self.house_alliances;
+            let house_alliances = self.house_alliances.as_map();
             let collision_world = super::projectile_collision::ProjectileCollisionWorld {
                 terrain,
                 dummy: &shared_cell_dummy,
@@ -870,17 +870,24 @@ fn techno_ai_shell(
             // and BEFORE delayed fire/paid repair. Engineer701410 itself
             // deliberately does not invalidate the House.
             sim.sample_building_health_for_house_update(id);
-            // Building440072..4400F1 also retires a zero-HP map building that
-            // never entered ReceiveDamage (SOV01's collapsed CASANF10). Its
-            // constructor's shared C4 timer has duration0. Preserve an armed
-            // timer through its existing owner, then Limbo -> SpawnSurvivors
-            // -> UnInit -> AfterDestruction, without inventing a fatal hit.
+            // Building440072..4400F1 retires a building at Health 0 once its
+            // shared C4/death fuse has run out: one that outlived its killing
+            // blow (an `Explodes=` type or one dying while Selling, whose
+            // DestructionEffects armed a zero fuse, `0x00441C43`) and a zero-HP
+            // map building that never entered ReceiveDamage (SOV01's collapsed
+            // CASANF10; its constructor's fuse has duration0). An armed fuse
+            // with time left holds it. Then Limbo -> SpawnSurvivors (a second
+            // round for the former, under the NoSurvivor its killing blow
+            // left) -> UnInit -> AfterDestruction, without inventing a fatal
+            // hit. Its Logic visit reaches here: Update leaves earlier only
+            // for a warp (`0x0043FD14`, `0x0043FD26`) or a cleared IsAlive
+            // (`0x0043FE63`), and Techno AI's self-heal skips Health 0
+            // (`0x0070BE80`).
             // Steam gamemd3e81a617..08600 control: object_health.py
             // --building-zero-health and building_zero_health.{json,meta.json}.
             // This caller draws no RNG and writes no timer. Anim retirement,
             // Limbo/detach, survivor draws/smudges and rubble stay with their
-            // existing owners. Damage-driven delayed destruction still follows
-            // the retained terminal-lifetime policy above.
+            // existing owners.
             if sim
                 .substrate
                 .entities
@@ -900,13 +907,11 @@ fn techno_ai_shell(
                     let context = super::UninitContext::new(Some(rules), ctx.overlay_registry)
                         .with_effects(ctx.effects);
                     sim.techno_limbo_with_context(id, context);
-                    // The no-survivor byte is constructor-clear on this entry;
-                    // damage-driven terminal objects were handled above.
+                    // `0x004400CB..0x004400D4`: SpawnSurvivors(C4AppliedBy).
                     sim.spawn_building_survivors(
                         rules,
                         ctx.overlay_registry,
                         id,
-                        false,
                         |sim, (cell_rx, cell_ry)| {
                             sim.commit_smudge_request_inline(
                                 rules,
@@ -1289,7 +1294,7 @@ fn drop_unsensed_cloaked_target_step(
     }
     let target_cell = (target.position.rx(), target.position.ry());
     if crate::map::houses::are_houses_friendly(
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         &owner_str,
         sim.interner.resolve(target.owner()),
     ) {
@@ -1699,7 +1704,7 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         return;
     };
     if !combat_weapon::is_ally_by_object(
-        Some(&sim.house_alliances),
+        Some(sim.house_alliances.as_map()),
         &sim.interner,
         house,
         target.owner(),
@@ -1880,7 +1885,7 @@ fn screen_visual_character(
     use crate::sim::combat::combat_weapon::is_ally_by_object;
     let viewer = sim.session.current_house();
     let owner = entity.owner();
-    let allied = |a, b| is_ally_by_object(Some(&sim.house_alliances), &sim.interner, a, b);
+    let allied = |a, b| is_ally_by_object(Some(sim.house_alliances.as_map()), &sim.interner, a, b);
     let invisible = sim
         .interner
         .object_type(entity.type_ref(), rules)
@@ -1959,7 +1964,7 @@ fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         };
         sim.substrate.entities.get(target_id).is_some_and(|object| {
             combat_weapon::is_ally_by_object(
-                Some(&sim.house_alliances),
+                Some(sim.house_alliances.as_map()),
                 &sim.interner,
                 entity.owner(),
                 object.owner(),
@@ -2204,8 +2209,23 @@ mod tests {
         };
         let mut rules = fixture.rules;
         assert_eq!(rules.general.behind.as_deref(), Some("BEHIND"));
-        // The fixture binds no SHPs; a stand-in frame count binds BEHIND.
-        rules.bind_anim_frame_count_for_test("BEHIND", 19);
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        // Use the loader's actual root list and physical SHP. A stand-in count
+        // concealed the missing Behind root and let this test pass without art.
+        let roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
+        rules.bind_anim_class_assets(&roots, &assets, "tem", "TEMPERATE");
+        assert_eq!(
+            rules
+                .art()
+                .anim_runtime_config("BEHIND")
+                .unwrap()
+                .raw_shp_frame_count,
+            Some(18),
+            "the retail marker must bind before Techno AI can construct it"
+        );
         assert!(
             rules
                 .object("MTNK")
@@ -3712,9 +3732,9 @@ mod tests {
             actor.mission_leaf.set_foot_firing_sequence(1);
             actor
                 .navigation
-                .path_replay
+                .path_replay_mut()
                 .set_directions_for_test(vec![0, 1, 2]);
-            actor.navigation.path_replay.set_cursor(0);
+            actor.navigation.path_replay_mut().set_cursor_for_test(0);
             if allied {
                 allied_target_drop_step(&mut sim, 1, &rules);
             } else {
@@ -3735,11 +3755,11 @@ mod tests {
             assert!(
                 actor
                     .navigation
-                    .path_replay
+                    .path_replay()
                     .remaining_directions()
                     .is_empty()
             );
-            assert_eq!(&actor.navigation.path_replay.directions()[1..], &[1, 2]);
+            assert_eq!(&actor.navigation.path_replay().directions()[1..], &[1, 2]);
         }
     }
 

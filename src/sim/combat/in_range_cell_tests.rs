@@ -60,7 +60,7 @@ fn placed(id: u64, xyz: [i32; 3], marked: bool, on_bridge: bool) -> GameEntity {
         .position
         .set_sub_y_for_test(SimFixed::from_num(y % 256));
     entity.position.set_exact_z_leptons_for_test(Some(z));
-    entity.lifecycle.set_cell_marked(marked);
+    entity.lifecycle.set_cell_marked_for_test(marked);
     entity.set_on_bridge(on_bridge);
     entity
 }
@@ -104,7 +104,7 @@ fn original_fv_range_uses_live_dummy_ground_and_source_bridge_queries() {
         let input = row.input;
         let [mx, my] = input.mapped_source.xy.map(|value| value as u16);
         let mut terrain = flat_terrain(43, 43);
-        let real = terrain.cell_mut(mx, my).unwrap();
+        let real = terrain.cell_mut_for_test(mx, my).unwrap();
         real.level = input.mapped_source.level;
         real.bridge_facts.raw_flags = input.mapped_source.flags;
         terrain.test_set_native_allocated_cells(&[(mx, my)]);
@@ -221,7 +221,7 @@ fn original_fv_cell_range_matches_bridge_states_and_boundaries() {
                 cell["coord"][1].as_u64().unwrap() as u16,
             );
             allocated.push(xy);
-            let out = terrain.cell_mut(xy.0, xy.1).unwrap();
+            let out = terrain.cell_mut_for_test(xy.0, xy.1).unwrap();
             out.level = cell["level"].as_u64().unwrap() as u8;
             out.slope_type = cell["slope"].as_u64().unwrap() as u8;
             out.final_tile_index = cell["tile"].as_i64().unwrap() as i32;
@@ -237,7 +237,7 @@ fn original_fv_cell_range_matches_bridge_states_and_boundaries() {
         // The legacy render/placement deck bit must not replace Cell+50's
         // WaterSet gate or Cell+140's structural flag in either query domain.
         terrain
-            .cell_mut(target_xy.0, target_xy.1)
+            .cell_mut_for_test(target_xy.0, target_xy.1)
             .unwrap()
             .has_bridge_deck = true;
         let target = TargetKind::Cell(target_xy.0, target_xy.1);

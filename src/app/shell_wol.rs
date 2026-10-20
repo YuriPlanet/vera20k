@@ -14,6 +14,7 @@
 
 pub(crate) mod lobby;
 mod login;
+pub(crate) mod options;
 mod service;
 mod test_service;
 
@@ -35,6 +36,47 @@ pub(crate) fn poll(state: &mut AppState) -> Option<std::time::Instant> {
     .into_iter()
     .flatten()
     .min()
+}
+
+/// `0x0077DED0`, called only at `WOL_Main` entry (`0x0077B307`): the
+/// nine `[WOnline]` values from RA2MD.INI, then `[MultiPlayer] ObserverMode`
+/// (`0x005EE190`). The profile holds what RA2MD.INI says, so the chat
+/// filter toggles of the last visit revert here.
+pub(crate) fn read_wol_settings(state: &mut AppState) {
+    state.frontend.wol_preferences = state.persistence.options_profile.wol_preferences;
+    state
+        .frontend
+        .multiplayer_shell_runtime
+        .reload_observer_mode();
+}
+
+/// `0x0077E110`: at `WOL_Main` entry (`0x0077B31D`, whose music half runs
+/// inside `enter_wol_lobby_music`), at every mode-loop pass (`0x0077B402`)
+/// and after WOL Options closes. `0x005EE350(0)` re-applies the observer
+/// toggle to the open `0x116`/`0x113`/`0xBB`; at these points none is open
+/// (a returning `0x113` is rebuilt from the toggle), so it is not run.
+pub(crate) fn apply_wol_preferences(state: &mut AppState) {
+    send_wol_preferences(state);
+    let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+    let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
+    state.audio.apply_wol_lobby_music_rule(lobby_music, now_ms);
+}
+
+/// `0x0077E110`'s first half: with the WOLAPI object it sends the language
+/// filter (API+0x7C) and then find/page (API+0x68), whose results are
+/// ignored.
+fn send_wol_preferences(state: &mut AppState) {
+    let live = state.frontend.wol_preferences;
+    if state.frontend.wol.as_ref().is_some_and(|visit| visit.api) {
+        service::request(state, WolServiceRequest::SetLangFilter(live.lang_filter));
+        service::request(
+            state,
+            WolServiceRequest::SetFindPage {
+                find: live.allow_find,
+                page: live.allow_page,
+            },
+        );
+    }
 }
 
 use super::{App, AppState};
@@ -69,6 +111,9 @@ pub(crate) enum WolPage {
     },
     /// The custom lobby `0x113` (its runner belongs to the lobby chain).
     Lobby,
+    /// WOL Options `0x2BC` (and its Sound Options `0xD6`) over the hidden
+    /// lobby.
+    Options(Box<options::WolOptionsPage>),
 }
 
 /// What follows a WOL message box.
@@ -90,6 +135,9 @@ pub(crate) struct WolVisit {
     mode: Option<WolMode>,
     /// Login category `[0xB73678]`: set once the login flow returned 1.
     authenticated: bool,
+    /// `[0xAC116C]`: the WOLAPI object exists. Created by `0x00786390`
+    /// and released only when the visit ends (`0x0077B532` -> `0x00786080`).
+    api: bool,
     pub(crate) page: WolPage,
     /// The status help the welcome's last hit test wrote.
     pub(crate) status_help: Option<&'static str>,
@@ -123,6 +171,7 @@ impl WolVisit {
             saved_shuffle,
             mode: None,
             authenticated: false,
+            api: false,
             page: WolPage::Welcome,
             status_help: None,
             servers: Vec::new(),
@@ -218,6 +267,25 @@ pub(crate) fn open_lobby(state: &mut AppState, postmatch: bool) {
     lobby::open(state, postmatch);
 }
 
+/// PrepareSession state 0x11 runs `WOL_Main` again. Its game-start exit
+/// (`0x0077B5B5`) kept the WOLAPI object and left the shuffle flag forced
+/// on, so this entry saves the flag as it is now. The settings re-read,
+/// the entry apply (`0x0077B31D`, which now has the WOLAPI object), the
+/// mode-loop apply (`0x0077B402`) and the lobby runner with postmatch set
+/// (`0x0077B44B`) follow.
+pub(crate) fn reenter_after_match(state: &mut AppState) {
+    read_wol_settings(state);
+    let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+    let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
+    let saved_shuffle = state.audio.enter_wol_lobby_music(lobby_music, now_ms);
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.saved_shuffle = saved_shuffle;
+    }
+    send_wol_preferences(state);
+    apply_wol_preferences(state);
+    open_lobby(state, true);
+}
+
 impl App {
     /// State 2 (`0x0052DD57`) then `WOL_Main`: the lobby music takes over
     /// (`0x0077B2D7..0x0077B31D`) and `0x10E` is created after the empty
@@ -228,14 +296,17 @@ impl App {
         // The message boxes paint from the skirmish chrome atlas.
         let _ = Self::ensure_skirmish_shell_chrome(state);
         Self::ensure_wol_welcome_art(state);
+        read_wol_settings(state);
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        let lobby_music = state.persistence.options_profile.wol_lobby_music != 0;
+        let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
         let saved_shuffle = state.audio.enter_wol_lobby_music(lobby_music, now_ms);
         let mut visit = WolVisit::open(saved_shuffle);
         if state.persistence.options_profile.wol_test_service {
             visit.provider = WolProvider::TestService;
         }
         state.frontend.wol = Some(visit);
+        // The first mode-loop pass (0x0077B402) applies again.
+        apply_wol_preferences(state);
         state.frontend.shell_route = ShellRoute::Wol;
         state
             .frontend
@@ -347,6 +418,14 @@ impl App {
             .is_some_and(|visit| matches!(visit.page, WolPage::Login(_)))
     }
 
+    fn wol_page_is_options(state: &AppState) -> bool {
+        state
+            .frontend
+            .wol
+            .as_ref()
+            .is_some_and(|visit| matches!(visit.page, WolPage::Options(_)))
+    }
+
     fn wol_page_is_lobby(state: &AppState) -> bool {
         state
             .frontend
@@ -356,6 +435,10 @@ impl App {
     }
 
     pub(super) fn handle_wol_mouse_move(state: &mut AppState) {
+        if Self::wol_page_is_options(state) {
+            options::cursor_moved(state);
+            return;
+        }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
             lobby::cursor_moved(state);
             return;
@@ -387,6 +470,10 @@ impl App {
     }
 
     pub(super) fn handle_wol_mouse_down(state: &mut AppState) {
+        if Self::wol_page_is_options(state) {
+            options::mouse(state, true);
+            return;
+        }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
             lobby::mouse(state, true);
             return;
@@ -415,6 +502,10 @@ impl App {
     }
 
     pub(super) fn handle_wol_mouse_up(state: &mut AppState) {
+        if Self::wol_page_is_options(state) {
+            options::mouse(state, false);
+            return;
+        }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
             lobby::mouse(state, false);
             return;
@@ -499,6 +590,8 @@ impl App {
         visit.mode = None;
         visit.status_help = None;
         visit.page = WolPage::Welcome;
+        // The mode-loop pass (0x0077B402) before the welcome runs.
+        apply_wol_preferences(state);
         state.frontend.wol_login_art = None;
         state.frontend.shell_route = ShellRoute::Wol;
         Self::ensure_wol_welcome_art(state);
@@ -520,6 +613,8 @@ impl App {
         state.frontend.wol_welcome_art = None;
         state.frontend.wol_login_art = None;
         state.frontend.wol_lobby_art = None;
+        state.frontend.wol_options_art = None;
+        state.frontend.wol_sound_options_art = None;
         state.frontend.shell_route = ShellRoute::MainMenu;
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);

@@ -223,7 +223,7 @@ fn overlapping_stock_fields_preserve_serialized_bits_hash_and_decay() {
                 frame,
                 &rules.radiation,
                 scene.resolved_terrain.as_ref(),
-                &mut Vec::new(),
+                &mut crate::sim::light_sources::LightingSources::default(),
             );
         }
         assert_eq!(

@@ -110,7 +110,7 @@ struct FreshCall<'a> {
 fn path_word(entity: &GameEntity, index: usize) -> Option<u8> {
     entity
         .navigation
-        .path_replay
+        .path_replay()
         .remaining_directions()
         .get(index)
         .copied()
@@ -247,9 +247,9 @@ impl Simulation {
             .get_mut(id)
             .expect("same NavCom trim owner")
             .navigation
-            .path_replay;
+            .path_replay_mut();
         let slot = usize::from(queue.cursor()) + cells as usize;
-        queue.set_direction(slot, u8::MAX);
+        queue.terminate_at(slot);
         true
     }
 
@@ -266,7 +266,7 @@ impl Simulation {
         //4B281C..4B2845: the Foot+640 exact-zero wait.
         if !actor
             .navigation
-            .path_runtime
+            .path_runtime()
             .movement_timer()
             .expired(frame)
         {
@@ -315,7 +315,7 @@ impl Simulation {
             call.id,
             destination,
             urgency,
-            self.playfield_bounds,
+            self.playfield_bounds(),
         )
         .ok_or_else(|| "retired Drive/Ship Find_Path requester".into())
     }
@@ -452,7 +452,7 @@ impl Simulation {
                 );
                 //4B3C67..4B3C81: code != 7 retires the selector.
                 if let Some(actor) = self.substrate.entities.get_mut(id) {
-                    actor.navigation.path_runtime.clear_scold_latch();
+                    actor.navigation.path_runtime_mut().clear_scold_latch();
                 }
                 self.track_retire_selector(id);
                 Ok(false)
@@ -516,7 +516,7 @@ impl Simulation {
     fn track_first_rejected_tail(&mut self, id: u64) {
         self.clear_track_head_of(id);
         if let Some(actor) = self.substrate.entities.get_mut(id) {
-            actor.navigation.path_runtime.clear_scold_latch();
+            actor.navigation.path_runtime_mut().clear_scold_latch();
         }
         self.track_retire_selector(id);
     }
@@ -532,12 +532,9 @@ impl Simulation {
             .entities
             .get_mut(id)
             .ok_or("retired Drive/Ship code-2 owner")?;
-        let runtime = &mut actor.navigation.path_runtime;
+        let runtime = actor.navigation.path_runtime_mut();
         //4B3656..4B368D: the latch arms the blockage timer once.
-        if !runtime.path_blocked() {
-            runtime.set_path_blocked(true);
-            runtime.start_blocked(frame, rules.general.blockage_path_delay_ticks);
-        }
+        runtime.latch_blockage(frame, rules.general.blockage_path_delay_ticks);
         //4B3690..4B36B6: while the movement timer runs, the rejected tail.
         if !runtime.movement_timer().expired(frame as i32) {
             self.track_first_rejected_tail(id);
@@ -574,7 +571,7 @@ impl Simulation {
             if let Some(actor) = self.substrate.entities.get_mut(id) {
                 actor
                     .navigation
-                    .path_runtime
+                    .path_runtime_mut()
                     .start_movement(frame, rules.general.path_delay_ticks());
             }
             return Ok(false);
@@ -886,20 +883,16 @@ impl Simulation {
         //4B460C..4B4659: +63C = -1 (the shift's terminator), +558 = the
         //candidate's cell, Foot+68A = 0, class +5C = 0, then the head clears.
         let reference = candidate.map_or((0, 0), coord_cell);
-        actor.navigation.path_runtime.clear_scold_latch();
+        actor.navigation.path_runtime_mut().clear_scold_latch();
         clear_track_head(actor);
         let Some(candidate) = candidate else {
-            actor
-                .navigation
-                .path_replay
-                .set_reference_cell(Some(reference));
+            actor.navigation.path_replay_mut().rebase(reference);
             return self.track_finalize_stop(id);
         };
-        super::path_markers::accept_path_replay(
-            &mut actor.navigation.path_replay,
-            reference,
-            consumed,
-        );
+        actor
+            .navigation
+            .path_replay_mut()
+            .accept(reference, consumed);
         //4B46C3..4B46D7: install the selector and head (+63 = 1).
         if let Some(loco) = actor.locomotor.as_mut() {
             super::track_head::accept_fresh_progress(loco, turn_index);
@@ -1029,6 +1022,7 @@ impl Simulation {
         else {
             return;
         };
+        let terrain_speed = self.terrain_speed_config().clone();
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
         };
@@ -1037,7 +1031,7 @@ impl Simulation {
             strength,
             rules,
             terrain,
-            &self.terrain_speed_config,
+            &terrain_speed,
             (cell.0 as u16, cell.1 as u16),
             road,
         );
@@ -1081,7 +1075,7 @@ impl Simulation {
     fn expire_movement_timer(&mut self, id: u64) {
         let frame = self.session.binary_frame();
         if let Some(actor) = self.substrate.entities.get_mut(id) {
-            actor.navigation.path_runtime.start_movement(frame, 0);
+            actor.navigation.path_runtime_mut().start_movement(frame, 0);
         }
     }
 
@@ -1302,7 +1296,7 @@ impl Simulation {
                 };
                 //4B3B52..4B3B62: the mover's House asks about the object.
                 if crate::map::houses::is_allied_with(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     self.interner.resolve(actor.owner()),
                     self.interner.resolve(target.owner()),
                 ) {
@@ -1495,7 +1489,7 @@ mod tests {
         // native save timing. Native load resets Scenario RNG, so these two
         // continuations assert the loop outcome, not matching clocks/hashes.
         let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
-        let speed_config = sim.terrain_speed_config.clone();
+        let speed_config = sim.terrain_speed_config().clone();
         let bytes =
             crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "Terrain blocker interrupt", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)

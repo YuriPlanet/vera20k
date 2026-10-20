@@ -49,18 +49,19 @@ fn world(rules: &RuleSet, input: &Value) -> Simulation {
         .collect();
     let mut terrain = ResolvedTerrainGrid::from_cells(64, 64, cells);
     let anchor = terrain.native_cell_identity((9, 20));
-    terrain.cell_mut(9, 20).unwrap().bridge_facts.overlay_id =
-        Some(input["anchor_overlay"].as_u64().unwrap() as u8);
     // The oracle supplies false at the bridge driver boundary. Use the live
     // driver's no-transition state here, without a test hook or bridge mutation.
     // The wooden fallback has no anchor span and likewise returns no change.
     // This fixture compares admission/continuation, not valid bridge topology.
-    terrain.write_native_cell_state(anchor, 255);
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(64, 64);
+    let anchor_overlay = overlays.cell_mut_for_test(9, 20);
+    anchor_overlay.overlay_id = Some(input["anchor_overlay"].as_u64().unwrap() as u8);
+    anchor_overlay.overlay_data = 255;
     for y in 17..24 {
         for x in 7..14 {
             if (x, y) == (10, 20) || (input["bridge_patch"].as_bool().unwrap() && (x, y) != (9, 20))
             {
-                let cell = terrain.cell_mut(x, y).unwrap();
+                let cell = terrain.cell_mut_for_test(x, y).unwrap();
                 cell.bridge_facts.raw_flags = input["flags"].as_u64().unwrap() as u32;
                 cell.bridge_facts.native_anchor = Some(anchor);
             }
@@ -76,6 +77,7 @@ fn world(rules: &RuleSet, input: &Value) -> Simulation {
     sim.resolve_type_handles(rules);
     sim.install_resolved_terrain_for_new_map(terrain);
     sim.bridge_state = Some(bridges);
+    sim.overlay_grid = Some(overlays);
     sim.session
         .set_no_damage_for_test(input["no_damage"].as_bool().unwrap());
     sim
@@ -138,7 +140,7 @@ fn ordinary_bridge_continuation_precedes_cluster_rng_like_native() {
                 )
             })
             .collect();
-        assert_eq!(sim.tactical_dirty_cells, dirty, "{name}");
+        assert_eq!(sim.dirty_cells.tactical_for_test(), dirty, "{name}");
         let rng = sim.scenario_rng.logical_view();
         assert_eq!(
             serde_json::json!([rng.index_a, rng.index_b]),
@@ -221,7 +223,7 @@ fn nested_death_bridge_continuation_finishes_before_parent_area_returns() {
             units.push(id);
         }
         sim.scenario_rng = SimRng::new(native["seed"].as_u64().unwrap());
-        sim.tactical_dirty_cells.clear();
+        sim.dirty_cells.clear_tactical_for_test();
         let warhead = sim.interner.intern("WH");
         let hit = EntityDamageEvent::area(units[0], 100, 0, RAD_NO_ATTACKER, None, warhead);
         let mut run = world_receiver::ReceiverRun::default();
@@ -237,7 +239,11 @@ fn nested_death_bridge_continuation_finishes_before_parent_area_returns() {
         assert!(!effects.bridge_state_changed);
         // INNER's signed -1 packet still draws first and cannot pass. OUTER
         // then compares the second native result:29000 fails,31000 succeeds.
-        assert_eq!(sim.tactical_dirty_cells, expected_dirty, "{outer_damage}");
+        assert_eq!(
+            sim.dirty_cells.tactical_for_test(),
+            expected_dirty,
+            "{outer_damage}"
+        );
         let rng = sim.scenario_rng.logical_view();
         assert_eq!(
             serde_json::json!([rng.index_a, rng.index_b]),

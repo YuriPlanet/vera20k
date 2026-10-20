@@ -294,7 +294,7 @@ pub(crate) fn start(
         let house = sim.houses.order()[index];
         if let Some(owner) = owner
             && crate::map::houses::is_allied_with(
-                &sim.house_alliances,
+                sim.house_alliances.as_map(),
                 sim.interner.resolve(owner),
                 sim.interner.resolve(house),
             )
@@ -705,11 +705,11 @@ pub(super) fn ground_strike(
         .superweapon_rng()
         .next_range_i32_inclusive(DEBRIS_COUNT.0, DEBRIS_COUNT.1);
     for _ in 0..count {
-        let last = sim.metallic_debris.len() as i32 - 1;
+        let last = sim.metallic_debris().len() as i32 - 1;
         let pick = sim.superweapon_rng().next_range_i32_inclusive(0, last);
         let Some(&debris) = usize::try_from(pick)
             .ok()
-            .and_then(|pick| sim.metallic_debris.get(pick))
+            .and_then(|pick| sim.metallic_debris().get(pick))
         else {
             continue;
         };

@@ -59,7 +59,7 @@ impl Simulation {
         //vector uses &7 at75B5A7; an empty (-1) word therefore selects NW.
         let direction = actor
             .navigation
-            .path_replay
+            .path_replay()
             .remaining_directions()
             .first()
             .map_or(-1, |direction| i32::from(*direction));
@@ -146,7 +146,7 @@ impl Simulation {
             } else {
                 //75BCC0..75BCD5: failed subcell selection only zeros speed.
                 actor.foot_speed.set_speed_fraction(SIM_ZERO);
-                actor.navigation.path_runtime.clear_scold_latch();
+                actor.navigation.path_runtime_mut().clear_scold_latch();
             }
             return Ok(None);
         }
@@ -180,8 +180,8 @@ impl Simulation {
                     .get_mut(id)
                     .ok_or("retired Walk gate owner")?
                     .navigation
-                    .path_runtime
-                    .set_retries_left(crate::sim::components::FootPathRuntime::RETRY_RELOAD);
+                    .path_runtime_mut()
+                    .reload_retries();
                 Ok(None)
             }
             4 | 5 => {
@@ -214,7 +214,7 @@ impl Simulation {
                     .get_mut(id)
                     .ok_or("Walk stop owner retired during its callback")?;
                 //75BB84/75BB90: both override/Stop exits clear the byte.
-                actor.navigation.path_runtime.clear_scold_latch();
+                actor.navigation.path_runtime_mut().clear_scold_latch();
                 Ok(None)
             }
             6 => {
@@ -328,7 +328,7 @@ impl Simulation {
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         actor
             .navigation
-            .path_runtime
+            .path_runtime_mut()
             .start_movement(self.session.binary_frame(), 0);
         Ok(Some(request.into_path_request(destination, 0)))
     }
@@ -350,7 +350,7 @@ impl Simulation {
             .get_mut(id)
             .ok_or("retired Walk code2 owner")?;
         let Some(urgency) = walk_code2_gate(
-            &mut actor.navigation.path_runtime,
+            actor.navigation.path_runtime_mut(),
             frame,
             rules.general.blockage_path_delay_ticks,
         ) else {
@@ -375,7 +375,7 @@ impl Simulation {
             .get_mut(id)
             .ok_or("Walk code2 owner retired during Find_Path")?
             .navigation
-            .path_runtime
+            .path_runtime_mut()
             .start_movement(frame, rules.general.path_delay_ticks());
         if found == FindPathResult::Failed {
             //75B9B9 reads the live destination; the failed core's+500
@@ -481,7 +481,7 @@ impl Simulation {
                     .get(blocker)
                     .ok_or("retired Walk blocker")?;
                 if crate::map::houses::is_allied_with(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     self.interner.resolve(actor.owner()),
                     self.interner.resolve(other.owner()),
                 ) {
@@ -574,7 +574,7 @@ impl Simulation {
             .get(id)
             .ok_or("retired Walk short-path receiver")?;
         if actor.category() == EntityCategory::Infantry
-            && actor.navigation.path_replay.remaining_directions().len() < 4
+            && actor.navigation.path_replay().remaining_directions().len() < 4
             && self
                 .interner
                 .object_type(actor.type_ref(), rules)
@@ -597,10 +597,7 @@ fn walk_code2_gate(
     frame: u32,
     blockage_delay: i32,
 ) -> Option<u8> {
-    if !runtime.path_blocked() {
-        runtime.set_path_blocked(true);
-        runtime.start_blocked(frame, blockage_delay);
-    }
+    runtime.latch_blockage(frame, blockage_delay);
     if !runtime.movement_timer().expired(frame as i32) {
         return None;
     }
@@ -698,7 +695,7 @@ mod tests {
             let b = |key: &str| case[key].as_bool().unwrap();
             let frame = n("frame");
             let mut runtime = crate::sim::components::FootPathRuntime::default();
-            runtime.set_path_blocked(b("already_blocked"));
+            runtime.set_path_blocked_for_test(b("already_blocked"));
             runtime.set_blocked_timer_for_test(CdTimer::from_raw(
                 n("grace_start"),
                 n("grace_duration"),

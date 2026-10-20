@@ -166,8 +166,14 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
         crate::sim::arena_fixture::flat_arena(&mut sim, rules);
         for (index, name) in ["Americans", "Russians"].into_iter().enumerate() {
             let owner = sim.intern(name);
-            sim.houses
-                .register(HouseState::new(owner, index as u8, None, true, 0, 10));
+            sim.houses_mut_for_test().register(HouseState::new(
+                owner,
+                index as u8,
+                None,
+                true,
+                0,
+                10,
+            ));
         }
         let source = sim
             .spawn_object("MTNK", "Americans", 10, 10, 0, rules)
@@ -179,7 +185,7 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
         // FireAt's explicit argument does not install TarCom. The cannon's
         // launch aim70BCB0 reads that retained target independently.
         assert!(crate::sim::combat::install_entity_attack_target_for_test(
-            sim.entities_mut(),
+            sim.entities_mut_for_test(),
             source,
             target,
         ));
@@ -187,7 +193,7 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
         let before = sim.rng_state();
         let mut bolts = ElectricBolts::default();
         bolts.create(ElectricBoltBirth {
-            frame: sim.session.binary_frame() as i32,
+            frame: sim.session().binary_frame() as i32,
             from: coord(&birth["source"]),
             to: coord(&birth["target"]),
             z_adjust: int(&birth["z_adjust"]),
@@ -227,7 +233,7 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
 
         // Actual FireAt6FE55D -> CreateBullet46B050 -> Abstract410230 owns
         // this preincrement. This is a real retail shell, not an ID probe.
-        assert!(sim.projectiles.is_empty());
+        assert!(sim.projectiles().is_empty());
         sim.commit_fire_visit(
             FireVisit::Direct {
                 id: source,
@@ -238,8 +244,8 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
             None,
             crate::sim::world::FrameEffects::default(),
         );
-        assert_eq!(sim.projectiles.len(), 1, "retail MTNK emitted its shell");
-        let (_, bullet) = sim.projectiles.iter().next().unwrap();
+        assert_eq!(sim.projectiles().len(), 1, "retail MTNK emitted its shell");
+        let (_, bullet) = sim.projectiles().iter().next().unwrap();
         assert_eq!(bullet.source_id(), source);
         assert_eq!(bullet.native_unique_id(), cursor.wrapping_add(1) as i32);
         outcomes.push((after.main, bullet.native_unique_id(), bullet.id()));

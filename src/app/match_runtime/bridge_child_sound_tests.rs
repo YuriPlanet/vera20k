@@ -96,7 +96,7 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
             .unwrap();
         rules.bind_anim_frame_count_for_test(name, frames as i32);
         let mut sim = Simulation::new();
-        let type_id = sim.interner.intern(name);
+        let type_id = sim.intern(name);
         let id = sim
             .spawn_combat_explosion_anim(
                 &rules,
@@ -112,15 +112,15 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
         // Exercise natural expiry; this test does not certify the native
         // child's entire timer/Middle/Scenario RNG trajectory.
         for frame in 0..100 {
-            sim.session.set_binary_frame_for_test(frame);
+            sim.session_mut_for_test().set_binary_frame_for_test(frame);
             sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
-            if sim.substrate.pending_delete.contains_object(&id) {
+            if sim.pending_delete().contains_object(&id) {
                 break;
             }
         }
-        assert!(sim.substrate.pending_delete.contains_object(&id), "{name}");
+        assert!(sim.pending_delete().contains_object(&id), "{name}");
         assert!(!sim.anim(id).unwrap().in_logic_vector(), "{name}");
-        let events = std::mem::take(&mut sim.sound_events);
+        let events = std::mem::take(sim.sound_events_mut_for_test());
         let mut output = SoundEventQueue::default();
         dispatch_sim_sound_events(events, &sim, &rules, None, &mut |_| true, &mut output);
         let events = output.drain();

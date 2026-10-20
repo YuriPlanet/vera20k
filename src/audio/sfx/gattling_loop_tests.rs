@@ -825,7 +825,12 @@ fn start_sim_ring(
     boundary: &Value,
     entry: &SoundEntry,
 ) -> HeadlessOutput {
-    assert_main(&sim.main_rng, row, &boundary["before"], "before ring start");
+    assert_main(
+        sim.main_rng(),
+        row,
+        &boundary["before"],
+        "before ring start",
+    );
     let retained = sim.presentation_main_draws();
     let mut draws = PlaybackDraws::new(move |low, high| retained.ranged(low, high));
     let shifts = PlayShifts::draw(entry, &mut draws);
@@ -869,9 +874,9 @@ fn start_sim_ring(
         compact_slots,
         names: entry.sounds.clone(),
     };
-    output.assert_fill(&sim.main_rng, row, fill);
+    output.assert_fill(sim.main_rng(), row, fill);
     assert!(output.pull_quarter() > 0, "retained actual attack PCM");
-    assert_main(&sim.main_rng, row, &boundary["after"], "after ring start");
+    assert_main(sim.main_rng(), row, &boundary["after"], "after ring start");
     output
 }
 
@@ -918,7 +923,7 @@ impl crate::sim::world::SoundBoundary for RecordingBoundary<'_> {
             }
             self.calls.set(self.calls.get() + 1);
             assert_main(
-                &sim.main_rng,
+                sim.main_rng(),
                 self.row,
                 &self.boundary["before"],
                 "native Stop/Release before later Main report",
@@ -928,7 +933,7 @@ impl crate::sim::world::SoundBoundary for RecordingBoundary<'_> {
                 // Original Update70E000 reaches Release406060 before clearing
                 // the report latch or subtracting RateDown from the value.
                 let before = &self.boundary["before"]["gattling"];
-                let state = sim.substrate.entities.get(self.entity).unwrap().gattling;
+                let state = sim.entities().get(self.entity).unwrap().gattling;
                 assert_eq!(i64::from(state.stage()), before["stage"].as_i64().unwrap());
                 assert_eq!(i64::from(state.value()), before["value"].as_i64().unwrap());
                 assert_eq!(state.report_latch(), before["latch"].as_i64().unwrap() != 0);
@@ -951,7 +956,7 @@ impl crate::sim::world::SoundBoundary for RecordingBoundary<'_> {
                 );
             }
             assert_main(
-                &sim.main_rng,
+                sim.main_rng(),
                 self.row,
                 &self.boundary["before"],
                 "control has no Main draw",
@@ -983,19 +988,21 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
         .unwrap();
     let owner = gattling_sound_owner(id);
     let initial = recorded_boundary(row, "original_admitted_Unit_fire_tail");
-    sim.main_rng = SimRng::from_native_state_hex_for_test(main_hex(row, &initial["before"])).into();
-    sim.substrate.entities.get_mut(id).unwrap().gattling = GattlingState::from_fields(0, 0, false);
+    *sim.main_rng_mut_for_test() =
+        SimRng::from_native_state_hex_for_test(main_hex(row, &initial["before"])).into();
+    sim.entities_mut_for_test().get_mut(id).unwrap().gattling =
+        GattlingState::from_fields(0, 0, false);
     let (_, raw) = trace_draws(|| sim.gattling_increase(id, rules, 1, FrameEffects::default()));
     assert_eq!(raw.len(), 1);
     assert_eq!(raw[0]["value"], initial["requests"][0]["result"]);
     assert_main(
-        &sim.main_rng,
+        sim.main_rng(),
         row,
         &initial["after"],
         "initial production report",
     );
     let initial_reports: Vec<_> = sim
-        .sound_events
+        .sound_events()
         .iter()
         .filter(|event| matches!(event, SimSoundEvent::GattlingLoop { .. }))
         .collect();
@@ -1028,14 +1035,14 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
         "original retained latch crosses no new report"
     );
     assert_main(
-        &sim.main_rng,
+        sim.main_rng(),
         row,
         &threshold["after"],
         "threshold component",
     );
     let transition = recorded_boundary(row, "original_Unit_tail_hard_stage_transition");
     let native_transition_facts = native_gattling_sound_facts(row, transition);
-    let transition_prefix = sim.sound_events.len();
+    let transition_prefix = sim.sound_events().len();
     let hard = RecordingBoundary {
         delivered: std::cell::Cell::new(transition_prefix),
         calls: std::cell::Cell::new(0),
@@ -1059,13 +1066,13 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
     assert_eq!(raw.len(), 1);
     assert_eq!(raw[0]["value"], transition["requests"][0]["result"]);
     assert_main(
-        &sim.main_rng,
+        sim.main_rng(),
         row,
         &transition["after"],
         "production stage1 report",
     );
     assert_eq!(
-        sim.sound_events[transition_prefix..]
+        sim.sound_events()[transition_prefix..]
             .iter()
             .map(|event| match event {
                 SimSoundEvent::GattlingLoopStop { owner: stopped } => {
@@ -1087,7 +1094,7 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
         native_transition_facts,
         "native Stop/Stop/Loop2 order after the retained prefix"
     );
-    let state = sim.substrate.entities.get(id).unwrap().gattling;
+    let state = sim.entities().get(id).unwrap().gattling;
     assert_eq!(
         i64::from(state.stage()),
         transition["after"]["gattling"]["stage"].as_i64().unwrap()
@@ -1113,7 +1120,7 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
     );
     let release = recorded_boundary(row, "original_Unit_no_target_soft_release");
     let soft = RecordingBoundary {
-        delivered: std::cell::Cell::new(sim.sound_events.len()),
+        delivered: std::cell::Cell::new(sim.sound_events().len()),
         calls: std::cell::Cell::new(0),
         source: std::cell::RefCell::new(new),
         owner,
@@ -1134,12 +1141,12 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
     );
     assert!(raw.is_empty());
     assert_main(
-        &sim.main_rng,
+        sim.main_rng(),
         row,
         &release["after"],
         "production soft release",
     );
-    let state = sim.substrate.entities.get(id).unwrap().gattling;
+    let state = sim.entities().get(id).unwrap().gattling;
     let after = &release["after"]["gattling"];
     assert_eq!(i64::from(state.stage()), after["stage"].as_i64().unwrap());
     assert_eq!(i64::from(state.value()), after["value"].as_i64().unwrap());
@@ -1164,12 +1171,12 @@ fn production_limbo_preserves_frame_sound_scope_without_local_rules() {
         .spawn_object("YTNK", "Americans", 13, 14, 0, rules)
         .unwrap();
     let before = &release["before"]["gattling"];
-    sim.substrate.entities.get_mut(id).unwrap().gattling = GattlingState::from_fields(
+    sim.entities_mut_for_test().get_mut(id).unwrap().gattling = GattlingState::from_fields(
         before["stage"].as_i64().unwrap() as i32,
         before["value"].as_i64().unwrap() as i32,
         before["latch"].as_i64().unwrap() != 0,
     );
-    sim.main_rng =
+    *sim.main_rng_mut_for_test() =
         SimRng::from_native_state_hex_for_test(main_hex(row, &playback["before"])).into();
     let source = start_sim_ring(
         &sim,
@@ -1178,7 +1185,7 @@ fn production_limbo_preserves_frame_sound_scope_without_local_rules() {
         registry.get("GattlingGunAttackLoop2").unwrap(),
     );
     let boundary = RecordingBoundary {
-        delivered: std::cell::Cell::new(sim.sound_events.len()),
+        delivered: std::cell::Cell::new(sim.sound_events().len()),
         calls: std::cell::Cell::new(0),
         source: std::cell::RefCell::new(source),
         owner: gattling_sound_owner(id),
@@ -1198,7 +1205,7 @@ fn production_limbo_preserves_frame_sound_scope_without_local_rules() {
     assert_eq!(outcome, ConcealOutcome::Concealed);
     assert!(raw.is_empty());
     assert_eq!(boundary.calls.get(), 1);
-    let entity = sim.substrate.entities.get(id).unwrap();
+    let entity = sim.entities().get(id).unwrap();
     assert!(entity.lifecycle.in_limbo());
     assert!(!entity.gattling.report_latch());
     assert_eq!(

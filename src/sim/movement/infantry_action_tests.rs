@@ -216,7 +216,7 @@ fn rocketeer(input: &Value) -> (Simulation, RuleSet, u64) {
     entity.lifecycle.set_in_limbo_for_test(false);
     // jumpjet_infantry_actions.Actions supplies OWNER+74=1; Do_Action's
     // Object5F6B90 height predicate requires this independently of XYZ.
-    entity.lifecycle.set_cell_marked(true);
+    entity.lifecycle.set_cell_marked_for_test(true);
     entity
         .health
         .set_for_test(input["health"].as_i64().unwrap_or(125) as _);
@@ -657,7 +657,7 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
             .unwrap();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
         actor.lifecycle.set_in_limbo_for_test(false);
-        actor.lifecycle.set_cell_marked(true);
+        actor.lifecycle.set_cell_marked_for_test(true);
         actor.health.set_for_test(125);
         actor.position.set_exact_z_leptons_for_test(Some(0));
         actor

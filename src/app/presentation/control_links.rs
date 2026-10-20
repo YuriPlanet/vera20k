@@ -39,7 +39,7 @@ pub(crate) fn prepare(
     for (controller, (_, after_entity)) in managers {
         for link in sim.capture_link_coordinates(controller, rules) {
             let color = colors
-                .get(sim.interner.resolve(link.owner))
+                .get(sim.interner().resolve(link.owner))
                 .copied()
                 .unwrap_or(NO_REMAP);
             let rgb =

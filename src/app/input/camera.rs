@@ -1175,7 +1175,9 @@ fn keyboard_scroll_distance(state: &AppState) -> f32 {
             .sim_runtime
             .as_ref()
             .map(|rt| &rt.simulation)
-            .map_or(0u32, |sim| u32::from(sim.fog.width().max(sim.fog.height())));
+            .map_or(0u32, |sim| {
+                u32::from(sim.fog().width().max(sim.fog().height()))
+            });
         (cells << KEY_SCROLL_CTRL_CELL_SHIFT) as f32
     } else {
         KEY_SCROLL_DISTANCE
@@ -1189,7 +1191,7 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
         .match_state
         .sim_runtime
         .as_ref()
-        .is_some_and(|runtime| runtime.simulation.session.input_locked())
+        .is_some_and(|runtime| runtime.simulation.session().input_locked())
     {
         return;
     }
@@ -1243,7 +1245,7 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
         .match_state
         .sim_runtime
         .as_ref()
-        .is_some_and(|runtime| runtime.simulation.session.input_locked())
+        .is_some_and(|runtime| runtime.simulation.session().input_locked())
     {
         return (0.0, 0.0);
     }
@@ -1339,7 +1341,7 @@ pub(crate) fn advance_camera_ai(state: &mut AppState, mouse: (f32, f32), frame: 
             .match_state
             .sim_runtime
             .as_ref()
-            .is_some_and(|runtime| runtime.simulation.session.started()),
+            .is_some_and(|runtime| runtime.simulation.session().started()),
         // The ordinary app currently admits the offline session route with
         // native replay flags0. Native playback bit2 is covered by the shared
         // owner controls; a production playback host remains a separate gap.
@@ -1758,8 +1760,7 @@ fn entity_lepton_coord(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
 ) -> (i32, i32, i32) {
-    let coord =
-        crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain.as_ref());
+    let coord = crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain());
     (coord.x, coord.y, coord.z)
 }
 

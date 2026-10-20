@@ -143,7 +143,7 @@ fn counted_logic_tag_emits_pause_requests_in_authored_order() {
         None,
     );
     sim.classify_map_triggers(None);
-    sim.session.set_started(true);
+    sim.session.publish_started();
     let effects = sim.advance_triggers(None, None, FrameEffects::default());
     assert_eq!(
         effects,
@@ -229,7 +229,7 @@ fn scenario_services_replay_between_production_frames() {
             let mut sim = Simulation::with_seed(0);
             sim.initialize_trigger_definitions(&map, &Default::default(), None, None);
             sim.classify_map_triggers(None);
-            sim.session.set_started(true);
+            sim.session.publish_started();
             sim.hash_state_every(std::num::NonZeroU64::MIN);
             SimRuntime::from_simulation(sim)
         };

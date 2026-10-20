@@ -60,7 +60,7 @@ fn the_launch_matches_native() {
         if row["bridge"] == true {
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(target.0, target.1).unwrap();
-            terrain.cells[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+            terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         }
         let sw_type = charge_super(&mut sim, owner, REVEAL);
         let charged = row["charged"] == true;
@@ -140,17 +140,17 @@ fn a_launch_maps_the_native_cells_for_its_house_and_allies() {
     assert_eq!(rules.general.psychic_reveal_radius, 15);
     let target = (75, 50);
     let (rules, mut sim, americans) = world_with(rules, 128, &[(target, 4)]);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 50,
         off_fc: -128,
         off_100: -128,
         off_104: 256,
         off_108: 256,
-    });
-    sim.playfield_size_height = Some(50);
+    }));
+    sim.set_playfield_size_height_for_test(Some(50));
     let russians = sim.interner.intern("Russians");
     let yuri = sim.interner.intern("YuriCountry");
-    sim.house_alliances = [
+    *sim.house_alliances_mut_for_test() = [
         ("AMERICANS".to_string(), ["RUSSIANS".to_string()].into()),
         ("YURICOUNTRY".to_string(), ["AMERICANS".to_string()].into()),
     ]

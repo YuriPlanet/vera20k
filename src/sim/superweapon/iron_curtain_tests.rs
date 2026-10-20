@@ -69,7 +69,7 @@ fn waypoint_curtain_uses_ground_spread_order_including_warped_foot() {
         let (rules, mut sim, _) = world_with(rules(""), 64, &[((40, 40), 2)]);
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         let index = terrain.index(40, 40).unwrap();
-        terrain.cells[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+        terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         let offsets = [
             (0, 0),
             (1, -1),
@@ -324,7 +324,7 @@ fn the_launch_matches_native() {
             let (x, y) = at(bridge);
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(x as u16, y as u16).unwrap();
-            terrain.cells[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+            terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
         }
 
         // Prepended in reverse, each list ends in the row's order; a building

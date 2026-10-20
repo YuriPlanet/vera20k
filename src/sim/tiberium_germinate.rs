@@ -102,7 +102,7 @@ pub fn run_generated_final_cell_attributes(
             continue;
         };
         // Direct `CellClass+0x11E` write: no runtime dirtiness on a fresh load.
-        overlay_grid.cell_mut(rx, ry).overlay_data = density;
+        overlay_grid.write_cell_data(rx, ry, density);
         receipt.germinated_cells += 1;
         receipt.tiberium_value_total = receipt.tiberium_value_total.wrapping_add(value);
     }
@@ -310,7 +310,7 @@ mod tests {
         let mut grid = painted_grid();
         // Painted 0 qualifies for growth (below MaxDensity - 1) and not for
         // spread; the interior germinates to 11, which would invert both.
-        grid.cell_mut(7, 7).overlay_data = 0;
+        grid.cell_mut_for_test(7, 7).overlay_data = 0;
         let scenario_before = sim.scenario_rng.state();
         let main_before = sim.main_rng.state();
         let basic = BasicSection::default();

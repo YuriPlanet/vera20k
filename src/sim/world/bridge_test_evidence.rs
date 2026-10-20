@@ -12,13 +12,13 @@ pub(super) fn navigation_snapshot(
 ) -> Value {
     let zones = sim.zone_grid.as_ref().unwrap();
     let mut copied = zones.clone();
-    let base = copied.base_topology_mut();
+    let base = copied.base_topology_mut_for_test();
     let terrain = sim.resolved_terrain.as_ref().unwrap();
     let bridges = sim.bridge_state.as_ref().unwrap();
     let hierarchy = zones
         .hierarchy_for(crate::rules::locomotor_type::MovementZone::Normal)
         .unwrap();
-    let side = usize::from(zones.width) + 1;
+    let side = usize::from(zones.width()) + 1;
     let graphs: Vec<_> = (0..3)
         .map(|level| {
             let graph = hierarchy.level(level).unwrap();
@@ -34,8 +34,8 @@ pub(super) fn navigation_snapshot(
                     .collect();
             let padding: Vec<_> = (0..side * side)
                 .filter(|index| {
-                    index % side >= usize::from(zones.width)
-                        || index / side >= usize::from(zones.height)
+                    index % side >= usize::from(zones.width())
+                        || index / side >= usize::from(zones.height())
                 })
                 .map(|index| graph.native_padding_zone(index))
                 .collect();
@@ -58,24 +58,24 @@ pub(super) fn navigation_snapshot(
     }
     let cells: Vec<_> = points.into_iter().filter_map(|(x,y)| {
         let c = terrain.cell(x,y)?;
-        let index = usize::from(y) * usize::from(zones.width) + usize::from(x);
-        let cluster = *base.zone_ids.get(index)?;
+        let index = usize::from(y) * usize::from(zones.width()) + usize::from(x);
+        let cluster = *base.zone_ids().get(index)?;
         Some(json!({
             "coord": [x,y], "level": c.level, "slope": c.slope_type,
             "zone_type": c.zone_type, "land": c.land_type,
             "tile": c.final_tile_index, "subtile": c.final_sub_tile,
             "bridge_flags": c.bridge_facts.raw_flags,
-            "overlay": c.bridge_facts.overlay_id,
-            "cached_class": base.movement_classes[index], "cached_height": base.levels[index],
-            "base_id": cluster, "raw_row7": base.raw_zone_ids_by_row[7].get(usize::from(cluster)),
+            "overlay": sim.overlay_grid.as_ref().unwrap().cell(x, y).overlay_id,
+            "cached_class": base.movement_classes()[index], "cached_height": base.levels()[index],
+            "base_id": cluster, "raw_row7": base.raw_zone_ids_by_row()[7].get(usize::from(cluster)),
         }))
     }).collect();
     json!({
         "name": name,
         "origin": {"boundary":name,"tick":sim.session.tick(),"binary_frame":sim.session.binary_frame()},
-        "width": zones.width, "height": zones.height,
-        "native_size": base.native_bridge_source_size,
-        "classes": base.movement_classes, "levels": base.levels, "records": records,
+        "width": zones.width(), "height": zones.height(),
+        "native_size": base.native_bridge_source_size(),
+        "classes": base.movement_classes(), "levels": base.levels(), "records": records,
         "graphs": graphs,
         "live_cell_levels": terrain.cells().iter().map(|cell| cell.level).collect::<Vec<_>>(),
         "live_cell_slopes": terrain.cells().iter().map(|cell| cell.slope_type).collect::<Vec<_>>(),
@@ -84,8 +84,8 @@ pub(super) fn navigation_snapshot(
         }).collect::<Vec<_>>(),
         "records_match_bridge_authority": zones.bridge_records() == bridges.endpoint_records(),
         "bridge_authority_records": bridges.endpoint_records(),
-        "rust": {"base_ids":base.zone_ids,"raw_rows":base.raw_zone_ids_by_row,
-            "zone_count":base.raw_zone_ids_by_row[0].len().saturating_sub(1)},
+        "rust": {"base_ids":base.zone_ids(),"raw_rows":base.raw_zone_ids_by_row(),
+            "zone_count":base.raw_zone_ids_by_row()[0].len().saturating_sub(1)},
         "cells": cells,
         "dummy": format!("{:?}", terrain.shared_cell_dummy().snapshot()),
     })
@@ -295,25 +295,11 @@ pub fn visit_starting_mtnk_concrete_attack(
                     (live.overlay_id, live.overlay_data),
                     (Some(stages[phase]), data)
                 );
-                // Ordinary bridge publication mirrors identity synchronously
-                // into Terrain and OverlayGrid; it deliberately bypasses the
-                // generic placement dirty/upsert channel. The retained index
-                // remains an anchor whose bridge identity resolves live.
-                let terrain = scene
-                    .sim()
-                    .resolved_terrain
-                    .as_ref()
-                    .unwrap()
-                    .cell(x, 54)
-                    .unwrap();
-                assert_eq!(
-                    (
-                        terrain.bridge_facts.overlay_id,
-                        terrain.bridge_facts.state_byte
-                    ),
-                    (Some(stages[phase]), data)
-                );
-                assert!(scene.sim().radar_terrain_dirty_cells.contains(&(x, 54)));
+                // Ordinary bridge publication writes the identity
+                // synchronously and deliberately bypasses the generic
+                // placement dirty/upsert channel. The retained index remains
+                // an anchor whose bridge identity resolves live.
+                assert!(scene.sim().dirty_cells.radar().contains(&(x, 54)));
                 assert!(
                     !output.overlay_removals.contains(&(x, 54)),
                     "collapsed232 is retained empty art"
@@ -463,6 +449,14 @@ pub fn visit_retail_high_bridge_stages(
             .unwrap()
             .bridge_facts
     };
+    let live = |scene: &HeadlessScenario, point: (u16, u16)| {
+        *scene
+            .sim()
+            .overlay_grid
+            .as_ref()
+            .unwrap()
+            .cell(point.0, point.1)
+    };
     let loaded_target = facts(&scene, target);
     assert!(loaded_target.has_structural_bridge());
     let anchor = loaded_target.anchor.expect("loaded bridge anchor").anchor;
@@ -470,9 +464,9 @@ pub fn visit_retail_high_bridge_stages(
         anchor, expected_anchor,
         "{kind:?}: physical anchor relation"
     );
-    let loaded_anchor = facts(&scene, anchor);
-    assert_eq!(loaded_anchor.overlay_id, Some(overlay), "{kind:?}");
-    assert!(matches!(loaded_anchor.state_byte, 0..=5 | 9..=14));
+    let loaded_anchor = (facts(&scene, anchor), live(&scene, anchor));
+    assert_eq!(loaded_anchor.1.overlay_id, Some(overlay), "{kind:?}");
+    assert!(matches!(loaded_anchor.1.overlay_data, 0..=5 | 9..=14));
     visit("loaded", &scene);
 
     // Keep the real RNG/admission/publication callbacks. Observe transitions
@@ -485,8 +479,8 @@ pub fn visit_retail_high_bridge_stages(
         if !facts(&scene, target).has_structural_bridge() {
             break;
         }
-        let damaged_anchor = facts(&scene, anchor);
-        if !saw_damage && matches!(damaged_anchor.state_byte, 6 | 15) {
+        let damaged_anchor = (facts(&scene, anchor), live(&scene, anchor));
+        if !saw_damage && matches!(damaged_anchor.1.overlay_data, 6 | 15) {
             assert_ne!(
                 damaged_anchor, loaded_anchor,
                 "receiver must publish damage"
@@ -508,7 +502,7 @@ pub fn visit_retail_high_bridge_stages(
 
     repair_ordinary_bridge(&mut scene, hut, start, &mut ordinary_repair_orders);
     assert!(facts(&scene, target).has_structural_bridge());
-    assert_eq!(facts(&scene, anchor).overlay_id, Some(overlay), "{kind:?}");
+    assert_eq!(live(&scene, anchor).overlay_id, Some(overlay), "{kind:?}");
     visit("repaired", &scene);
 }
 
@@ -724,7 +718,12 @@ fn assert_repaired_ground_row(
             .cell(x, y)
             .unwrap();
         assert!(
-            c.bridge_facts
+            scene
+                .sim()
+                .overlay_grid
+                .as_ref()
+                .unwrap()
+                .cell(x, y)
                 .overlay_id
                 .is_some_and(|id| overlays.contains(&id))
         );

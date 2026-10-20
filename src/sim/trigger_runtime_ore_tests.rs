@@ -229,9 +229,9 @@ fn retail_layered_centre_removal_keeps_neighbors_and_uses_existing_spread_radar_
     let type_id = rules.tiberium_types.id_by_name("Riparius").unwrap();
     sim.ore_growth_state
         .mark_native_spread_bitmap_for_tests(type_id.0 as usize, center);
-    sim.radar_terrain_dirty_cells.clear();
-    sim.tactical_dirty_cells.clear();
-    let generation = sim.radar_terrain_dirty_generation;
+    sim.dirty_cells.clear_radar_for_test();
+    sim.dirty_cells.clear_tactical_for_test();
+    let generation = sim.dirty_cells.radar_generation();
     // Basic growth is disabled, but reduction and its SpecialFlags spread
     // registration retain their own native paths.
     assert!(run(
@@ -254,9 +254,9 @@ fn retail_layered_centre_removal_keeps_neighbors_and_uses_existing_spread_radar_
             .iter()
             .all(|cell| state.spread_bitmap.contains(cell))
     );
-    assert!(sim.radar_terrain_dirty_cells.contains(&center));
-    assert_eq!(sim.radar_terrain_dirty_generation, generation + 1);
-    assert!(sim.tactical_dirty_cells.contains(&center));
+    assert!(sim.dirty_cells.radar().contains(&center));
+    assert_eq!(sim.dirty_cells.radar_generation(), generation + 1);
+    assert!(sim.dirty_cells.tactical_for_test().contains(&center));
 }
 
 #[test]
@@ -311,7 +311,7 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
     );
     sim.classify_map_triggers(None);
     waypoints(&mut sim, &[(0, (8, 9)), (1, (8, 8))]);
-    sim.session.set_started(true);
+    sim.session.publish_started();
     sim.advance_triggers(Some(&rules), Some(registry), FrameEffects::default());
     assert!(!sim.ore_growth_config.grows());
     assert!(sim.trigger_runtime.logic_tags.is_empty());
@@ -357,7 +357,7 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
     assert!(!restored.ore_growth_config.grows());
     assert!(!restored.ore_growth_config.spreads());
     assert!(restored.ore_growth_config.tiberium_grows_flag());
-    restored.session.set_started(true);
+    restored.session.publish_started();
     assert!(run(&mut restored, &action(86, "257", "A"), None, None));
     let current_frame = restored.session.binary_frame() as i32;
     let frame = restored

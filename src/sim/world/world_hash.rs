@@ -96,7 +96,10 @@ mod retained_cell_hash_tests {
         );
         let terrain = sim.resolved_terrain.as_mut().expect("installed map");
         terrain.test_set_native_allocated_cells(&[(0, 0), (1, 0)]);
-        let anchor = &mut terrain.cell_mut(1, 0).expect("the cell").bridge_facts;
+        let anchor = &mut terrain
+            .cell_mut_for_test(1, 0)
+            .expect("the cell")
+            .bridge_facts;
         anchor.native_anchor = None;
         assert!(
             !coordinate_hashes(&sim),
@@ -236,7 +239,7 @@ mod locomotor_field_hash_tests {
         let mutations: [Mutation; 6] = [
             ("kind", |l| l.set_kind_for_test(LocomotorKind::Walk)),
             ("powered", |l| l.set_powered_for_test(false)),
-            ("layer", |l| l.set_layer(MovementLayer::Bridge)),
+            ("layer", |l| l.set_layer_for_test(MovementLayer::Bridge)),
             ("balloon_hover", |l| l.set_balloon_hover_for_test(true)),
             ("speed_type", |l| {
                 l.set_speed_type_for_test(SpeedType::Wheel)
@@ -1242,7 +1245,7 @@ impl Simulation {
     /// as its digest from [`Self::fog_digests`].
     fn hash_fog_and_alliances(&self, fog_digests: &[u64], hasher: &mut impl Hasher) {
         self.fog.hash_state(fog_digests, hasher);
-        for (owner, allies) in &self.house_alliances {
+        for (owner, allies) in self.house_alliances.as_map() {
             owner.hash(hasher);
             for ally in allies {
                 ally.hash(hasher);
@@ -1539,6 +1542,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         // survivor roll and skips the engineer roll at death.
         0x6e3_u32.hash(hasher);
     }
+    if entity.no_survivor.is_set() {
+        // Building+6E0 (CRC `0x00454407`): no survivor leaves the building
+        // that outlived its killing blow.
+        0x6e0_u32.hash(hasher);
+    }
     if let Some(production) = entity.secret_lab_fallback() {
         b"building-secret-production-v382".hash(hasher);
         production.hash(hasher);
@@ -1774,7 +1782,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         // Preserve schema160's original four-field order. Deriving
         // the fold from the expanded struct would alter every prior
         // projection, including constructor-default Foot states.
-        let path = &entity.navigation.path_runtime;
+        let path = entity.navigation.path_runtime();
         path.movement_timer().hash(hasher);
         path.blocked_timer().hash(hasher);
         path.path_blocked().hash(hasher);
@@ -1799,8 +1807,8 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         b"techno-spatial-threat-v1".hash(hasher);
         value.hash(hasher);
     }
-    entity.navigation.neighbor_state.hash(hasher);
-    entity.navigation.path_replay.hash(hasher);
+    entity.navigation.neighbor_state().hash(hasher);
+    entity.navigation.path_replay().hash(hasher);
     entity.navigation.nav_com_aux().hash(hasher);
     entity.navigation.nav_com().hash(hasher);
     entity.navigation.suspended_nav_com().hash(hasher);
@@ -2561,7 +2569,7 @@ mod lifecycle_hash_tests {
             assert_entity_mutation_changes_hash(|entity| {
                 entity
                     .lifecycle
-                    .set_cell_marked(!entity.lifecycle.cell_marked());
+                    .set_cell_marked_for_test(!entity.lifecycle.cell_marked());
             });
             assert_entity_mutation_changes_hash(|entity| {
                 entity.death.set_dying_for_test(!entity.death.is_dying());
@@ -3825,14 +3833,14 @@ mod infantry_hash_tests {
         let mut retained = FootPathRuntime::at_frame(0);
         retained.set_movement_timer_for_test(CdTimer::from_raw(-1, -7));
         retained.set_blocked_timer_for_test(CdTimer::from_raw(i32::MAX - 2, 31));
-        retained.set_path_blocked(true);
-        retained.set_retries_left(u32::MAX);
+        retained.set_path_blocked_for_test(true);
+        retained.set_retries_left_for_test(u32::MAX);
         sim.substrate
             .entities
             .get_mut(1)
             .unwrap()
             .navigation
-            .path_runtime = retained;
+            .set_path_runtime_for_test(retained);
         assert_ne!(sim.state_hash(), before);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "foot-path", 0);
         let loaded = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -3840,7 +3848,7 @@ mod infantry_hash_tests {
             .sim;
         let actor = loaded.entities().get(1).unwrap();
         assert!(crate::sim::movement::motion_query::is_moving(&actor) != Some(true));
-        assert_eq!(actor.navigation.path_runtime, retained);
+        assert_eq!(actor.navigation.path_runtime().clone(), retained);
     }
 
     #[test]
@@ -3987,7 +3995,7 @@ mod infantry_hash_tests {
         // isolates persistence, not the intentionally changed RNG future.
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let actor = hash_entity(&mut sim, EntityCategory::Infantry);
-        assert_eq!(actor.navigation.path_runtime.scold_latch_raw(), 0);
+        assert_eq!(actor.navigation.path_runtime().scold_latch_raw(), 0);
         sim.substrate.entities.insert(actor);
         let clear_hash = sim.state_hash();
         let mut retained_hashes = vec![clear_hash];
@@ -4002,7 +4010,7 @@ mod infantry_hash_tests {
                 .get_mut(1)
                 .unwrap()
                 .navigation
-                .path_runtime
+                .path_runtime_mut()
                 .set_scold_latch_for_test(raw);
             let current_hash = sim.state_hash();
             assert!(!retained_hashes.contains(&current_hash) || raw == 0);
@@ -4015,17 +4023,17 @@ mod infantry_hash_tests {
             let actor = restored.substrate.entities.get(1).unwrap();
             assert!(crate::sim::movement::motion_query::is_moving(&actor) != Some(true));
             assert_eq!(
-                u64::from(actor.navigation.path_runtime.scold_latch_raw()),
+                u64::from(actor.navigation.path_runtime().scold_latch_raw()),
                 row["after_original_noinit_constructor"].as_u64().unwrap()
             );
             assert_eq!(restored.state_hash(), current_hash);
-            let path = &mut restored
+            let path = restored
                 .substrate
                 .entities
                 .get_mut(1)
                 .unwrap()
                 .navigation
-                .path_runtime;
+                .path_runtime_mut();
             assert_eq!(path.clear_scold_latch(), raw != 0);
             assert_eq!(path.scold_latch_raw(), 0);
             assert!(!path.clear_scold_latch(), "a consumed latch stays clear");
@@ -4148,8 +4156,8 @@ mod rocking_hash_tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
         let type_id = sim.interner.intern("HTNK");
-        let id = sim.substrate.next_stable_object_id;
-        sim.substrate.next_stable_object_id += 1;
+        let id = sim.next_stable_object_id();
+        sim.set_next_stable_object_id_for_test(sim.next_stable_object_id() + 1);
         let e = GameEntity::new_at_frame_zero_for_test(
             id,
             10,
@@ -4209,8 +4217,8 @@ mod c4_hash_tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
         let type_id = sim.interner.intern("GHOST");
-        let id = sim.substrate.next_stable_object_id;
-        sim.substrate.next_stable_object_id += 1;
+        let id = sim.next_stable_object_id();
+        sim.set_next_stable_object_id_for_test(sim.next_stable_object_id() + 1);
         let e = GameEntity::new_at_frame_zero_for_test(
             id,
             10,
@@ -4357,10 +4365,10 @@ mod bridge161_hash_projection_tests {
         };
         match payload {
             LocomotorRuntimePayload::Walk(state) => match field {
-                0 => state.set_head(Some(coord)),
-                1 => state.set_destination(Some(coord)),
-                2 => state.set_moving(true),
-                3 => state.set_animation_moving(true),
+                0 => state.set_head_for_test(Some(coord)),
+                1 => state.set_destination_for_test(Some(coord)),
+                2 => state.set_moving_for_test(true),
+                3 => state.set_animation_moving_for_test(true),
                 _ => unreachable!(),
             },
             LocomotorRuntimePayload::Hover(state) => state.set_head(Some(coord)),
@@ -4371,7 +4379,7 @@ mod bridge161_hash_projection_tests {
                     2 => state.clone().with_phase_for_test(2),
                     3 => {
                         let mut flight = state.flight();
-                        flight.set_target_height(7);
+                        flight.set_target_height_for_test(7);
                         state.clone().with_flight_for_test(flight)
                     }
                     4 => {

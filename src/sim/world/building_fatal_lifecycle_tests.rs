@@ -192,7 +192,7 @@ impl Fixture {
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             for y in 0..terrain.height() {
                 for x in 0..terrain.width() {
-                    let cell = terrain.cell_mut(x, y).unwrap();
+                    let cell = terrain.cell_mut_for_test(x, y).unwrap();
                     cell.final_tile_index = 0;
                     cell.accepts_smudge =
                         crate::map::resolved_terrain::current_tile_permissions(&lookup, 0).0;
@@ -960,7 +960,7 @@ impl Fixture {
                 .take_while(|word| *word != u8::MAX)
                 .collect();
             assert_eq!(
-                actual.navigation.path_replay.remaining_directions(),
+                actual.navigation.path_replay().remaining_directions(),
                 native_path,
                 "{boundary}: retained native path head"
             );

@@ -264,7 +264,7 @@ impl Simulation {
                                 entity
                                     .foot_speed
                                     .set_speed_fraction(crate::util::fixed_math::SIM_ZERO);
-                                entity.set_ion_blast_lift(
+                                entity.lift_by_ion_blast(
                                     (spiral_point(i32::from(sample)).1 as i8).wrapping_mul(2),
                                 );
                             }

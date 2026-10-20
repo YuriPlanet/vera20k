@@ -27,6 +27,7 @@ impl LivePublication<'_> {
         crate::sim::world::navigation::NavigationCaches {
             zones: &mut sim.zone_grid,
             path: &mut sim.path_grid,
+            overlays: sim.overlay_grid.as_ref(),
             playfield_bounds: sim.playfield_bounds,
         }
         .publish_current_path_cell(
@@ -240,6 +241,7 @@ impl IsoTileFloodHost for LiveTileFlood<'_, '_> {
         crate::sim::world::navigation::NavigationCaches {
             zones: &mut sim.zone_grid,
             path: &mut sim.path_grid,
+            overlays: sim.overlay_grid.as_ref(),
             playfield_bounds: sim.playfield_bounds,
         }
         .publish_recalculated_cell(

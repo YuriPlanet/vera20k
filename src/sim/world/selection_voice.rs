@@ -174,7 +174,7 @@ impl Simulation {
             self,
             &self.interner,
             cells.as_ref(),
-            Some(&self.house_alliances),
+            Some(self.house_alliances.as_map()),
         )?;
         // GetWeapon(-1) returns a NULL slot, which7090C0 dereferences before
         // any voice or draw. A valid slot containing a NULL weapon is distinct

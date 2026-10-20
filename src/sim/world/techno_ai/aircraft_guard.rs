@@ -119,7 +119,7 @@ impl Simulation {
             }
             let owner = unit.owner();
             if crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &self.interner,
                 house,
                 owner,

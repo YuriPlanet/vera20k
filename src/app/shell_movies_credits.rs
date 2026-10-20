@@ -376,6 +376,9 @@ impl App {
             MovieReturn::CampaignVictory(victory) => {
                 Self::advance_campaign_victory(state, *victory);
             }
+            MovieReturn::CampaignDefeat(defeat) => {
+                Self::open_campaign_replay_prompt(state, *defeat);
+            }
         }
     }
 

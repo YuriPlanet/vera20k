@@ -92,7 +92,7 @@ fn native_fixture(input: &Value, before: &Value) -> (Simulation, RuleSet, u64) {
     entity.position.set_exact_z_leptons_for_test(Some(height));
     let locomotor = entity.locomotor.as_mut().expect("production Jumpjet");
     if height > 0 {
-        locomotor.set_layer(crate::sim::movement::locomotor::MovementLayer::Air);
+        locomotor.set_layer_for_test(crate::sim::movement::locomotor::MovementLayer::Air);
     }
     if input.get("start").is_some() || input.get("count").is_some() {
         // The signed/overflow corpus supplies raw native AnimType fields, some
@@ -212,7 +212,7 @@ fn updater_reads_the_height_on_any_layer() {
             .locomotor
             .as_mut()
             .unwrap()
-            .set_layer(crate::sim::movement::locomotor::MovementLayer::Ground);
+            .set_layer_for_test(crate::sim::movement::locomotor::MovementLayer::Ground);
         let deploying = row["input"]["entry"].as_u64().unwrap_or(0x739ac0) != 0x739cd0;
         sim.update_unit_simple_deploy(
             id,

@@ -13,10 +13,10 @@ use serde_json::Value;
 const ORE: (u16, u16) = (123, 33);
 
 fn ordinary_frame(scene: &mut HeadlessScenario, payload: Option<Command>) {
-    let owner = scene.sim().session.current_house().unwrap();
+    let owner = scene.sim().session().current_house().unwrap();
     let commands: Vec<_> = payload
         .into_iter()
-        .map(|payload| CommandEnvelope::new(owner, scene.sim().session.tick(), payload))
+        .map(|payload| CommandEnvelope::new(owner, scene.sim().session().tick(), payload))
         .collect();
     scene
         .runtime
@@ -30,14 +30,14 @@ fn ordinary_frame(scene: &mut HeadlessScenario, payload: Option<Command>) {
 }
 
 fn one_owned(scene: &HeadlessScenario, name: &str) -> u64 {
-    let owner = scene.sim().session.current_house().unwrap();
+    let owner = scene.sim().session().current_house().unwrap();
     let ids: Vec<_> = scene
         .sim()
         .entities()
         .iter_sorted()
         .filter_map(|(id, entity)| {
             (entity.owner() == owner
-                && scene.sim().interner.resolve(entity.type_ref()) == name
+                && scene.sim().interner().resolve(entity.type_ref()) == name
                 && !entity.lifecycle.in_limbo())
             .then_some(id)
         })
@@ -77,7 +77,7 @@ fn paid_soviet_opening(root: &std::path::Path) -> HeadlessScenario {
                     _ => "NARADR",
                 };
                 Some(Command::QueueProduction {
-                    type_id: scene.sim().interner.get(name).unwrap(),
+                    type_id: scene.sim().interner().get(name).unwrap(),
                 })
             }
             1100 | 2800 | 4000 => {
@@ -86,8 +86,8 @@ fn paid_soviet_opening(root: &std::path::Path) -> HeadlessScenario {
                     2800 => ("NAREFN", 112, 35),
                     _ => ("NARADR", 110, 37),
                 };
-                let owner = scene.sim().session.current_house().unwrap();
-                let type_id = scene.sim().interner.get(name).unwrap();
+                let owner = scene.sim().session().current_house().unwrap();
+                let type_id = scene.sim().interner().get(name).unwrap();
                 assert!(
                     crate::sim::production::ready_building_entity_for_owner(
                         scene.sim(),
@@ -110,11 +110,11 @@ fn paid_soviet_opening(root: &std::path::Path) -> HeadlessScenario {
     for name in ["NACNST", "NAPOWR", "NAREFN", "NARADR", "HARV"] {
         one_owned(&scene, name);
     }
-    let owner = scene.sim().session.current_house().unwrap();
+    let owner = scene.sim().session().current_house().unwrap();
     assert!(crate::sim::radar::has_radar_for_owner(
         scene.sim(),
         &scene.runtime.resources.rules,
-        scene.sim().interner.resolve(owner),
+        scene.sim().interner().resolve(owner),
     ));
     scene
 }

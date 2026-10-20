@@ -167,14 +167,14 @@ fn fixture_world(
         )
     }));
     let span = i32::from(FIXTURE_MAP);
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
         base: size.0,
         off_fc: -span,
         off_100: -span,
         off_104: span * 2,
         off_108: span * 2,
-    });
-    sim.playfield_size_height = Some(size.1);
+    }));
+    sim.set_playfield_size_height_for_test(Some(size.1));
     let terrain_key: Vec<_> = specs
         .iter()
         .map(|(at, spec)| (*at, spec.to_string()))
@@ -189,7 +189,7 @@ fn fixture_world(
         sim.houses.register(state);
         sim.power_states.insert(id, PowerState::settled_for_test());
         let bits = int(&house[0]);
-        let allies = sim.house_alliances.entry(name).or_default();
+        let allies = sim.house_alliances_mut_for_test().entry(name).or_default();
         for other in (0..31).filter(|other| bits & (1 << other) != 0) {
             allies.insert(format!("H{other}"));
         }
@@ -354,7 +354,7 @@ impl Calls {
             .collect();
         let lighting = sim
             .lighting_sources
-            .pending
+            .pending()
             .iter()
             .filter(|event| matches!(event, LightingEvent::Global { .. }))
             .count();
@@ -651,7 +651,7 @@ fn storm_strike_matches_native_rows() {
             &[serde_json::json!([1, false]), serde_json::json!([2, false])],
             Some(0),
         );
-        sim.metallic_debris = row["debris"]
+        *sim.metallic_debris_mut_for_test() = row["debris"]
             .as_array()
             .unwrap()
             .iter()
@@ -1055,7 +1055,6 @@ fn a_strikes_explosion_precedes_its_area_damage_on_ore() {
             .is_none(),
         "the explosion's crater met dense ore"
     );
-    assert!(sim.pending_smudge_requests.is_empty());
     // The bolt's type is the only draw.
     let mut expected = SimRng::new(1);
     let _ = expected.next_u32();
@@ -1124,7 +1123,7 @@ fn a_strike_destroying_a_wall_publishes_navigation_and_radar_inline() {
         crate::sim::pathfinding::zone_map::ZONE_INVALID
     );
     assert_eq!(
-        sim.radar_terrain_dirty_cells,
+        sim.dirty_cells.radar(),
         vec![
             (5, 5),
             (5, 3),
@@ -1141,9 +1140,9 @@ fn a_strike_destroying_a_wall_publishes_navigation_and_radar_inline() {
             (6, 5),
         ]
     );
-    assert_eq!(sim.radar_terrain_dirty_generation, 13);
+    assert_eq!(sim.dirty_cells.radar_generation(), 13);
     assert_eq!(
-        sim.tactical_dirty_cells,
+        sim.dirty_cells.tactical_for_test(),
         vec![
             (5, 5),
             (5, 3),
@@ -1193,7 +1192,7 @@ fn a_bridge_strike_hits_the_deck_only() {
             entity.position.set_z_for_test(4);
         }
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.lifecycle.set_cell_marked(true);
+        entity.lifecycle.set_cell_marked_for_test(true);
         sim.substrate.entities.insert(entity);
         sim.substrate
             .occupancy
@@ -1233,7 +1232,7 @@ fn a_strike_damages_a_building() {
         EntityCategory::Structure,
     );
     building.lifecycle.set_in_limbo_for_test(false);
-    building.lifecycle.set_cell_marked(true);
+    building.lifecycle.set_cell_marked_for_test(true);
     building.set_owner_for_test(sim.interner.intern("Soviet"));
     building.set_type_ref_for_test(sim.interner.intern("GAPOWR"));
     building.health = Health::new(150);

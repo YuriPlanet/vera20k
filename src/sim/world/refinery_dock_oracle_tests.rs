@@ -135,7 +135,7 @@ pub(super) fn world_with(
         .speed_costs;
     for y in 0..33 {
         for x in 0..33 {
-            let c = terrain.cell_mut(x, y).unwrap();
+            let c = terrain.cell_mut_for_test(x, y).unwrap();
             c.speed_costs = costs;
             c.base_speed_costs = costs;
         }
@@ -274,7 +274,7 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(spawn_x, spawn_y)
+            .cell_mut_for_test(spawn_x, spawn_y)
             .unwrap();
         let prior = cell.speed_costs;
         cell.speed_costs.wheel = Some(100);
@@ -286,7 +286,7 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
     sim.resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(spawn_x, spawn_y)
+        .cell_mut_for_test(spawn_x, spawn_y)
         .unwrap()
         .speed_costs = spawn_speed_costs;
     if relocate {
