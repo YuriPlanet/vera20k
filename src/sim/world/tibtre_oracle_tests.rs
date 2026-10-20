@@ -535,11 +535,11 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
         .overlay_data;
     assert!(s.sim.apply_command_with_overlays(
         "Americans",
-        &Command::HarvestCell {
-            entity_id: s.miner,
-            target_rx: at.0,
-            target_ry: at.1
-        },
+        &Command::clicked_mission(
+            s.miner,
+            crate::sim::mission::MissionType::Harvest,
+            crate::sim::combat::TargetKind::Cell(at.0, at.1)
+        ),
         Some(&s.rules),
         Some(registry()),
         crate::sim::world::FrameEffects::default()
@@ -587,10 +587,11 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
     let balance = s.sim.houses[&owner].economy().credits();
     assert!(s.sim.apply_command_with_overlays(
         "Americans",
-        &Command::MinerReturn {
-            entity_id: s.miner,
-            target_refinery_id: Some(s.refinery)
-        },
+        &Command::clicked_mission(
+            s.miner,
+            crate::sim::mission::MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(s.refinery)
+        ),
         Some(&s.rules),
         Some(registry()),
         crate::sim::world::FrameEffects::default()

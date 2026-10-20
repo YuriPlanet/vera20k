@@ -35,10 +35,11 @@ fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) 
         .unwrap();
     assert!(sim.apply_command(
         OWNER,
-        &Command::EnterTransport {
-            passenger_id: engineer,
-            transport_id: ifv,
-        },
+        &Command::clicked_mission(
+            engineer,
+            crate::sim::mission::MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(ifv)
+        ),
         Some(rules)
     ));
     let grid = sim.path_grid_snapshot().unwrap();

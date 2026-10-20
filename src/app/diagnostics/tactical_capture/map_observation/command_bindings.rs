@@ -231,12 +231,18 @@ fn substitute_symbols(
                         | "target_id"
                         | "engineer_id"
                         | "target_building_id"
-                        | "passenger_id"
                         | "transport_id"
-                        | "depot_id"
                 ) && argument.is_object()
                 {
                     *argument = bind(&pointer, actor_symbol(argument)?)?;
+                } else if variant == "MegaMission"
+                    && field == "destination"
+                    && let Some(entity) = argument
+                        .as_object_mut()
+                        .and_then(|destination| destination.get_mut("Entity"))
+                        .filter(|entity| entity.is_object())
+                {
+                    *entity = bind(&format!("{pointer}/Entity"), actor_symbol(entity)?)?;
                 } else if ((variant == "Select" && field == "entity_ids")
                     || (variant == "SetRally" && field == "producer_ids"))
                     && let Some(elements) = argument.as_array_mut()
@@ -473,6 +479,35 @@ mod tests {
             assert_eq!(bindings.len(), 1);
             assert_eq!(bindings[pointer]["stable_id"], 17);
         }
+    }
+
+    /// An Enter order's object rides the MEGAMISSION's Destination token, so
+    /// a selector there binds as an actor ID field does.
+    #[test]
+    fn a_megamission_destination_binds_an_actor_selector() {
+        let rules = rules();
+        let mut sim = Simulation::new();
+        sim.intern_rule_type_ids(&rules);
+        add_actor(&mut sim, 17, [10, 11]);
+        let payload = json!({"MegaMission": {"entity_id": 7, "mission": "Enter",
+            "target": null, "destination": {"Entity": {
+            "type_id": "MTNK", "owner": "Computer1"}}}});
+        let command = scheduled(payload.clone());
+        assert_eq!(command.symbolic_count(), 1);
+        assert_eq!(serde_json::to_value(&command).unwrap()["payload"], payload);
+        let (resolved, bindings) = command.resolve(&sim, &rules).unwrap();
+        assert_eq!(
+            resolved,
+            Command::clicked_mission(
+                7,
+                crate::sim::mission::MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(17),
+            )
+        );
+        assert_eq!(
+            bindings.unwrap()["/MegaMission/destination/Entity"]["stable_id"],
+            17
+        );
     }
 
     #[test]

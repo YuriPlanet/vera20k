@@ -989,11 +989,11 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
     let order = CommandEnvelope::new(
         owner,
         scene.sim().session().tick(),
-        Command::HarvestCell {
-            entity_id: miner,
-            target_rx: 123,
-            target_ry: 33,
-        },
+        Command::clicked_mission(
+            miner,
+            crate::sim::mission::MissionType::Harvest,
+            crate::sim::combat::TargetKind::Cell(123, 33),
+        ),
     );
     let mut seen = std::collections::BTreeSet::new();
     let mut zero_cargo = None;

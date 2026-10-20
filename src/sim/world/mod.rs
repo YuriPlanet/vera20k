@@ -3586,6 +3586,28 @@ impl Simulation {
             .cell_mut_for_test(rx, ry)
     }
 
+    /// One overlay placed for a fixture with the Land, blocking and Zone it
+    /// projects onto the Cell ([`recalc_overlay_passability`]), over an empty
+    /// grid sized to the terrain when none is installed yet.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn place_overlay_for_test(
+        &mut self,
+        cell: (u16, u16),
+        overlay_id: u8,
+        data: u8,
+        registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    ) {
+        let terrain = self
+            .resolved_terrain
+            .as_mut()
+            .expect("an overlay fixture needs terrain");
+        let grid = self
+            .overlay_grid
+            .get_or_insert_with(|| OverlayGrid::new(terrain.width(), terrain.height()));
+        grid.place_overlay(cell.0, cell.1, overlay_id, data);
+        recalc_overlay_passability(grid, terrain, registry, cell.0, cell.1);
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn houses_mut_for_test(&mut self) -> &mut crate::sim::houses::Houses {
         &mut self.houses

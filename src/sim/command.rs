@@ -797,43 +797,12 @@ pub enum Command {
     SellBuilding { entity_id: u64 },
     /// Toggle repair mode on a building (spend credits to heal over time).
     ToggleRepair { entity_id: u64 },
-    /// A miner clicked onto a friendly refinery: the native Enter order
-    /// (`UnitClass::What_Action` `0x0073FD50`, `FootClass::ClickedAction`
-    /// `0x004D74E0`), whose Unit destination arms dock or queue it.
-    MinerReturn {
-        entity_id: u64,
-        /// The clicked refinery. A command without one is refused; the
-        /// option keeps the saved command encoding.
-        target_refinery_id: Option<u64>,
-    },
-    /// Send a unit to a repair depot for repairs.
-    /// The unit pathfinds to the depot, docks, and auto-repairs until full HP or out of credits.
-    RepairAtDepot { entity_id: u64, depot_id: u64 },
-    /// Enter7: order an infantry/vehicle into a friendly transport or absorber.
-    /// Occupier garrison clicks use CaptureBuilding (Capture8).
-    EnterTransport {
-        passenger_id: u64,
-        transport_id: u64,
-    },
-    /// Order a bunkerable vehicle into a friendly `Bunker=yes` building (tank
-    /// bunker). The unit pathfinds to the bunker cell; the install machine takes
-    /// over on arrival (turn → slide onto the cell → turn south → hide). Gating
-    /// happens in `world_commands`: own-owner, the bunker idle/empty, and the
-    /// unit admitted by `bunker_link::can_auto_deploy_here` (`0x0070FB50`).
-    EnterBunker { unit_id: u64, bunker_id: u64 },
     /// Eject the occupant of a friendly occupied tank bunker. Targets the bunker
     /// (the hidden occupant is not selectable in this slice); the occupant
     /// reappears on a passable cell SW of the bunker and drives out.
     EjectBunker { bunker_id: u64 },
     /// Order a transport or garrison to unload: the Unload mission of its class.
     UnloadPassengers { transport_id: u64 },
-    /// Direct a harvester to go harvest a specific ore cell.
-    /// The miner will path to the cell, then enter Harvest state on arrival.
-    HarvestCell {
-        entity_id: u64,
-        target_rx: u16,
-        target_ry: u16,
-    },
     /// The Capture click (action 9) of an Engineer, spy or occupier on a building:
     /// the infantryman walks in, and on arrival `InfantryClass::PerCellProcess`
     /// captures, repairs, infiltrates or garrisons it (`sim::movement::per_cell`).
@@ -965,6 +934,23 @@ pub enum Command {
 }
 
 impl Command {
+    /// The MEGAMISSION `FootClass::ClickedAction` sends with no Target and
+    /// `destination` as its Destination: Enter or Eaten on a clicked object
+    /// (`0x004D74E0`; a depot, refinery, bunker, transport or Grinder) and
+    /// Harvest on a clicked ore cell (`0x004D7D50` case 6).
+    pub fn clicked_mission(
+        entity_id: u64,
+        mission: crate::sim::mission::MissionType,
+        destination: crate::sim::combat::TargetKind,
+    ) -> Self {
+        Self::MegaMission {
+            entity_id,
+            mission,
+            target: None,
+            destination: Some(destination),
+        }
+    }
+
     /// Actor of an ordinary MegaMission DTO. Scheduling and PlanningMode
     /// cancellation share this classification; internal mission changes do not
     /// pass through it. Event4C72xx clears planning tokens before retasking.
@@ -975,15 +961,10 @@ impl Command {
             | Self::AttackMove { entity_id, .. }
             | Self::Guard { entity_id, .. }
             | Self::MegaMission { entity_id, .. }
-            | Self::MinerReturn { entity_id, .. }
-            | Self::RepairAtDepot { entity_id, .. }
-            | Self::HarvestCell { entity_id, .. }
             | Self::ToggleInfantryDeploy { entity_id } => Some(*entity_id),
             Self::Attack { attacker_id, .. }
             | Self::ForceAttackCell { attacker_id, .. }
             | Self::PlantC4 { attacker_id, .. } => Some(*attacker_id),
-            Self::EnterTransport { passenger_id, .. } => Some(*passenger_id),
-            Self::EnterBunker { unit_id, .. } => Some(*unit_id),
             Self::EjectBunker { bunker_id } => Some(*bunker_id),
             Self::UnloadPassengers { transport_id } => Some(*transport_id),
             Self::CaptureBuilding { engineer_id, .. } => Some(*engineer_id),

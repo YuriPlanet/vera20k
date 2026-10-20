@@ -431,7 +431,7 @@ fn unforced_cell_attack_feedback(
 }
 
 /// The cursor over a Cell with no object offered: the resolved object's
-/// What_Action on the Cell, then the harvest substitution for its Move.
+/// What_Action on the Cell, a Unit's harvest rungs included.
 fn empty_cell_feedback(
     state: &AppState,
     sim: &crate::sim::world::Simulation,
@@ -463,10 +463,11 @@ fn empty_cell_cursor(
     order_mode: crate::app::presentation::render::OrderMode,
 ) -> CursorFeedbackKind {
     use crate::sim::world::MoveAction;
-    match what_action_on_cell(sim, viewer, best_id, cell, modifier, rules, registry) {
+    let action = what_action_on_cell(sim, viewer, best_id, cell, modifier, rules, registry);
+    match action {
         MoveAction::None => return CursorFeedbackKind::Default,
         MoveAction::NoMove => return CursorFeedbackKind::Invalid,
-        MoveAction::Move => {}
+        MoveAction::Move | MoveAction::Harvest => {}
     }
 
     if modifier == super::context_order::OrderModifier::GuardArea
@@ -475,10 +476,10 @@ fn empty_cell_cursor(
     {
         return CursorFeedbackKind::GuardArea;
     }
-    // Ore/gem harvest hangs off the cell action: UnitClass only substitutes the
-    // harvest action when the base action came back Move over a Cell the
-    // viewer has mapped (`0x007405DB..0x007405E6`), and it tests the one
-    // resolved object's harvester flags, not the whole selection.
+    // The one resolved object's harvest rungs, not the whole selection's.
+    if action == MoveAction::Harvest {
+        return CursorFeedbackKind::Harvest;
+    }
     let shrouded =
         viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true));
     // Building447563..4475EE: an UndeploysInto resource gatherer/destination
@@ -502,24 +503,6 @@ fn empty_cell_cursor(
             })
         });
     if refinery_harvest {
-        return CursorFeedbackKind::Harvest;
-    }
-    let has_ore = !shrouded
-        && match (sim.overlay_grid(), registry, rules) {
-            (Some(grid), Some(registry), Some(rules)) if !rules.tiberium_types.is_empty() => {
-                crate::sim::tiberium::tiberium_cell_view(
-                    grid,
-                    registry,
-                    &rules.tiberium_types,
-                    cell,
-                )
-                .is_some()
-            }
-            _ => false,
-        };
-    if has_ore
-        && best_id.is_some_and(|id| sim.entities().get(id).is_some_and(|e| e.miner.is_some()))
-    {
         return CursorFeedbackKind::Harvest;
     }
     match order_mode {
@@ -2933,14 +2916,10 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         let owner = sim.interner().get("Local").unwrap();
         let miner = sim.spawn_object("HARV", "Local", 6, 4, 0, &rules).unwrap();
         sim.resolve_type_handles(&rules);
-        assert!(sim.entities().get(miner).unwrap().miner.is_some());
         let ore = registry.id_for_name("TIB01").unwrap();
         let (seen, hidden) = ((11, 5), (12, 5));
-        let grid = sim
-            .overlay_grid_mut_for_test()
-            .get_or_insert_with(|| crate::sim::overlay_grid::OverlayGrid::new(16, 16));
-        for (x, y) in [seen, hidden] {
-            grid.place_overlay(x, y, ore, 6);
+        for cell in [seen, hidden] {
+            sim.place_overlay_for_test(cell, ore, 6, &registry);
         }
         *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(16, 16);
         sim.fog_mut_for_test().reveal_cells_for_owner(

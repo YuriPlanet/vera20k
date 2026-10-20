@@ -233,19 +233,16 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
         path.commit();
     }
     let command = match kind {
-        "harvest" => Command::HarvestCell {
-            entity_id: actor,
-            target_rx: 18,
-            target_ry: 16,
-        },
-        "repair" => Command::RepairAtDepot {
-            entity_id: actor,
-            depot_id: target,
-        },
-        "board" => Command::EnterTransport {
-            passenger_id: actor,
-            transport_id: target,
-        },
+        "harvest" => Command::clicked_mission(
+            actor,
+            crate::sim::mission::MissionType::Harvest,
+            crate::sim::combat::TargetKind::Cell(18, 16),
+        ),
+        "repair" | "board" => Command::clicked_mission(
+            actor,
+            crate::sim::mission::MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(target),
+        ),
         _ => unreachable!(),
     };
     assert!(

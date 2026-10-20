@@ -868,7 +868,7 @@ fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
 /// idempotent). Once on Guard the Harvest handler is no longer dispatched;
 /// what brings a miner back is `UnitClass::Mission_Guard @ 0x00740810` (the
 /// chrono arms in `techno_ai/mission_handlers.rs`) or a player order
-/// (`Command::HarvestCell` / MEGAMISSION Enter, EventClass MEGAMISSION →
+/// (MEGAMISSION Harvest or Enter, EventClass MEGAMISSION →
 /// `Queue_Mission(mission, 0)` at `0x004C73B9`). A human war miner therefore
 /// parks on Guard until re-ordered. State 4 tests no owner, so a computer
 /// house's miner parks too. Mission_Guard's AI arm (`0x00740881..

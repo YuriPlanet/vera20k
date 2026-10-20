@@ -11,7 +11,6 @@ use std::collections::BTreeSet;
 
 use super::{SimSoundEvent, Simulation, SimulationWallRuntimeHost};
 use crate::map::entities::EntityCategory;
-use crate::map::houses::are_houses_friendly;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::canonical_cell_coord;
@@ -30,7 +29,6 @@ use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::overlay_grid::{
     OverlayRecalcOutcome, RecomputeResult, runtime_wall_cleanup_visit_at,
 };
-use crate::sim::passenger;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
@@ -336,59 +334,6 @@ impl Simulation {
                     target: MegaMissionTarget::Null,
                     mission: MissionType::Capture,
                     destination: token(Some(combat::TargetKind::Entity(target_building_id)))?,
-                },
-            ),
-            Command::EnterTransport {
-                passenger_id,
-                transport_id,
-            } => (
-                passenger_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Enter,
-                    destination: token(Some(combat::TargetKind::Entity(transport_id)))?,
-                },
-            ),
-            Command::EnterBunker { unit_id, bunker_id } => (
-                unit_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Enter,
-                    destination: token(Some(combat::TargetKind::Entity(bunker_id)))?,
-                },
-            ),
-            Command::RepairAtDepot {
-                entity_id,
-                depot_id,
-            } => (
-                entity_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Enter,
-                    destination: token(Some(combat::TargetKind::Entity(depot_id)))?,
-                },
-            ),
-            Command::MinerReturn {
-                entity_id,
-                target_refinery_id: Some(refinery_id),
-            } => (
-                entity_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Enter,
-                    destination: token(Some(combat::TargetKind::Entity(refinery_id)))?,
-                },
-            ),
-            Command::HarvestCell {
-                entity_id,
-                target_rx,
-                target_ry,
-            } => (
-                entity_id,
-                MegaMissionOrder::Mission {
-                    target: MegaMissionTarget::Null,
-                    mission: MissionType::Harvest,
-                    destination: token(Some(combat::TargetKind::Cell(target_rx, target_ry)))?,
                 },
             ),
             Command::UnloadPassengers { transport_id } => (
@@ -1729,167 +1674,6 @@ impl Simulation {
                     )
                 })
             }
-            Command::MinerReturn {
-                entity_id,
-                target_refinery_id,
-            } => {
-                // A miner clicked onto its refinery: `UnitClass::What_Action`
-                // asks the refinery CAN_LOAD (`0x0F`) and, answered ROGER,
-                // gives Enter (`0x0073FD50`). `FootClass::ClickedAction`'s
-                // Enter arm (`0x004D74E0`) sends the MEGAMISSION Enter with no
-                // Target and the refinery as Destination, as for a depot.
-                let Some(rules) = rules else { return false };
-                let Some(refinery_id) = *target_refinery_id else {
-                    return false;
-                };
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_some_and(|e| e.is_deployed())
-                {
-                    return false;
-                }
-                if !self.valid_explicit_miner_refinery(
-                    command_owner,
-                    *entity_id,
-                    refinery_id,
-                    rules,
-                ) {
-                    return false;
-                }
-                // Event4C747C: the Unit class setter with the refinery,
-                // whose Enter and Dock arms dock or queue the miner.
-                self.apply_megamission_command(
-                    *entity_id,
-                    MissionType::Enter,
-                    None,
-                    Some(combat::TargetKind::Entity(refinery_id)),
-                    Some(rules),
-                    overlay_registry,
-                    frame_effects,
-                )
-                .accepted()
-            }
-            Command::RepairAtDepot {
-                entity_id,
-                depot_id,
-            } => {
-                let Some(rules) = rules else { return false };
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_some_and(|e| e.is_deployed())
-                {
-                    return false;
-                }
-                // Validate depot exists, is friendly, and has UnitRepair=yes.
-                let depot_ok = self.substrate.entities.get(*depot_id).is_some_and(|depot| {
-                    command_owner.eq_ignore_ascii_case(self.interner.resolve(depot.owner()))
-                        && self
-                            .object_type(depot.type_ref(), rules)
-                            .is_some_and(|obj| obj.unit_repair)
-                });
-                if !depot_ok {
-                    return false;
-                }
-                // A damaged vehicle: the player's click issues the order only
-                // for Units (`input::context_order`), and the depot's CAN_LOAD
-                // refuses any sender but a Unit or an Aircraft (Building
-                // Receive_Radio 0x0F, UnitRepair arm).
-                let entity_ok = self.substrate.entities.get(*entity_id).is_some_and(|e| {
-                    e.category() == crate::map::entities::EntityCategory::Unit
-                        && self
-                            .object_type(e.type_ref(), rules)
-                            .is_some_and(|object| e.health.current() < object.strength)
-                        && !e.death.is_dying()
-                });
-                if !entity_ok {
-                    return false;
-                }
-                // Event4C747C: the Unit class setter with the depot, which
-                // owns depot admission and contact changes.
-                self.apply_megamission_command(
-                    *entity_id,
-                    MissionType::Enter,
-                    None,
-                    Some(combat::TargetKind::Entity(*depot_id)),
-                    Some(rules),
-                    overlay_registry,
-                    frame_effects,
-                )
-                .accepted()
-            }
-            Command::EnterTransport {
-                passenger_id,
-                transport_id,
-            } => {
-                let Some(rules) = rules else { return false };
-                if !self.entity_owned_by_id(command_owner, *passenger_id) {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*passenger_id)
-                    .is_some_and(|e| e.is_deployed())
-                {
-                    return false;
-                }
-                // Validate transport exists and has cargo capacity.
-                // CanBeOccupiedBy is also the cursor's garrison predicate,
-                // but that action sends Capture8, never this Enter7 payload
-                // (Infantry51E6A8 -> Foot4D7716).
-                let carrier = self.substrate.entities.get(*transport_id).is_some_and(|t| {
-                    t.passenger_role.cargo().is_some()
-                        && !(t.category() == crate::map::entities::EntityCategory::Structure
-                            && self
-                                .object_type(t.type_ref(), rules)
-                                .is_some_and(|object| object.can_be_occupied))
-                });
-                if !carrier {
-                    return false;
-                }
-                // Shared carrier admission owner (Unit0F and building Enter).
-                if !passenger::can_enter_transport(self, rules, *passenger_id, *transport_id) {
-                    return false;
-                }
-                // Infantry51F190 -> Foot4D76F8 ->6FFBE0 carries the clicked
-                // object as Destination for Enter7, as Unit738902 does
-                // (Steam gamemd): Enter7, NULL Target. Event4C747C hands it
-                // to the class setter, which samples its live +4C through the
-                // shared coordinate owner after its prelude
-                // (foot_navigation_coordinate corpus). An object without that
-                // coordinate refuses the order before it is queued.
-                if crate::sim::movement::nav_target_coordinate(
-                    crate::sim::components::NavTargetRef::object(*transport_id),
-                    Some(*passenger_id),
-                    self,
-                    self.resolved_terrain.as_ref(),
-                    Some((rules, &self.interner)),
-                )
-                .is_err()
-                {
-                    return false;
-                }
-                self.apply_megamission_command(
-                    *passenger_id,
-                    MissionType::Enter,
-                    None,
-                    Some(combat::TargetKind::Entity(*transport_id)),
-                    Some(rules),
-                    overlay_registry,
-                    frame_effects,
-                )
-                .accepted()
-            }
             Command::UnloadPassengers { transport_id } => {
                 if !self.entity_owned_by_id(command_owner, *transport_id) {
                     return false;
@@ -2021,41 +1805,6 @@ impl Simulation {
                     }
                     _ => false,
                 }
-            }
-            Command::HarvestCell {
-                entity_id,
-                target_rx,
-                target_ry,
-            } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_some_and(|e| e.is_deployed())
-                {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_none_or(|e| e.miner.is_none())
-                {
-                    return false;
-                }
-                self.apply_megamission_command(
-                    *entity_id,
-                    MissionType::Harvest,
-                    None,
-                    Some(combat::TargetKind::Cell(*target_rx, *target_ry)),
-                    rules,
-                    overlay_registry,
-                    frame_effects,
-                )
-                .accepted()
             }
             Command::PlantC4 {
                 attacker_id,
@@ -2263,39 +2012,6 @@ impl Simulation {
                     false,
                     Some(*selection),
                 )
-            }
-            Command::EnterBunker { unit_id, bunker_id } => {
-                let Some(rules) = rules else { return false };
-                if !self.entity_owned_by_id(command_owner, *unit_id) {
-                    return false;
-                }
-                if self
-                    .substrate
-                    .entities
-                    .get(*unit_id)
-                    .is_some_and(|e| e.is_deployed())
-                {
-                    return false;
-                }
-                // Target must be an own tank bunker (seeded `bunker_runtime`).
-                let is_bunker = self
-                    .substrate
-                    .entities
-                    .get(*bunker_id)
-                    .is_some_and(|b| b.bunker_runtime.is_some());
-                if !is_bunker || !self.entity_owned_by_id(command_owner, *bunker_id) {
-                    return false;
-                }
-                self.apply_megamission_command(
-                    *unit_id,
-                    MissionType::Enter,
-                    None,
-                    Some(combat::TargetKind::Entity(*bunker_id)),
-                    Some(rules),
-                    overlay_registry,
-                    frame_effects,
-                )
-                .accepted()
             }
             Command::EjectBunker { bunker_id } => {
                 let Some(rules) = rules else { return false };
@@ -2639,41 +2355,6 @@ impl Simulation {
         receiver.radio_contacts.slot(0) == Some(destination_id)
     }
 
-    /// Validate an explicit refinery selected by a player miner-return order.
-    /// VERA-only: re-checks at execution the refinery that `UnitClass::What_Action`'s CAN_LOAD
-    /// (`0x0F`, Enter at `0x0073FD50`) admitted at click, from the store and `Refinery=`/`Dock=`.
-    fn valid_explicit_miner_refinery(
-        &self,
-        command_owner: &str,
-        miner_id: u64,
-        refinery_id: u64,
-        rules: &RuleSet,
-    ) -> bool {
-        let Some(miner) = self.substrate.entities.get(miner_id) else {
-            return false;
-        };
-        if miner.miner.is_none() {
-            return false;
-        }
-        let harvester_type = self.interner.resolve(miner.type_ref());
-        let Some(refinery) = self.substrate.entities.get(refinery_id) else {
-            return false;
-        };
-        if refinery.category() != crate::map::entities::EntityCategory::Structure {
-            return false;
-        }
-        if refinery.health.current() == 0 || refinery.death.is_dying() || refinery.building_up() {
-            return false;
-        }
-        let refinery_owner = self.interner.resolve(refinery.owner());
-        if !are_houses_friendly(self.house_alliances.as_map(), command_owner, refinery_owner) {
-            return false;
-        }
-        let refinery_type = self.interner.resolve(refinery.type_ref());
-        rules.is_refinery_type(refinery_type)
-            && rules.harvester_can_dock_at(harvester_type, refinery_type)
-    }
-
     /// TargetClass `0x006E6E20`: what an event token resolves to. An object
     /// no longer present resolves to NULL; a Cell always resolves.
     pub(crate) fn resolve_event_token(
@@ -2737,8 +2418,9 @@ impl Simulation {
     /// `0x004C71F6..0x004C74BA`) and its one port. Move, Attack (Ctrl and
     /// Cell clicks included), attack-move (mission 29), Area Guard, a vehicle
     /// transport's Unload and Enter, Capture and Sabotage onto their object
-    /// and Harvest run here. EnterBunker uses its existing reservation adapter
-    /// within this owner; the native Unit setter's Bunker arm remains unported.
+    /// and Harvest run here. A tank bunker's Enter uses its existing
+    /// reservation adapter within this owner; the native Unit setter's Bunker
+    /// arm remains unported.
     /// A garrison's ordinary Unload (one command
     /// for the self-click and the deploy key's DEPLOY event) and the dormant
     /// aircraft Unload retain their adapters. In native order:
@@ -3240,10 +2922,7 @@ mod tests {
 
             let applied = sim.apply_command(
                 "Americans",
-                &Command::EnterBunker {
-                    unit_id: 1,
-                    bunker_id: 2,
-                },
+                &Command::clicked_mission(1, MissionType::Enter, combat::TargetKind::Entity(2)),
                 Some(&rules),
             );
 
@@ -3283,10 +2962,7 @@ mod tests {
             spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 13, 14);
             assert!(sim.apply_command(
                 "Americans",
-                &Command::EnterBunker {
-                    unit_id: 1,
-                    bunker_id: 3,
-                },
+                &Command::clicked_mission(1, MissionType::Enter, combat::TargetKind::Entity(3)),
                 Some(&rules),
             ));
             sim.substrate
@@ -3298,10 +2974,7 @@ mod tests {
 
             let applied = sim.apply_command(
                 "Americans",
-                &Command::EnterBunker {
-                    unit_id: 1,
-                    bunker_id: 2,
-                },
+                &Command::clicked_mission(1, MissionType::Enter, combat::TargetKind::Entity(2)),
                 Some(&rules),
             );
 
