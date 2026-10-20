@@ -5,6 +5,7 @@
 //! ruleset converts this processed output into gameplay definitions. Failed passes
 //! preserve already-constructed registry state rather than rolling back.
 
+use crate::rules::ares_prerequisites::GenericPrerequisites;
 use crate::rules::color_add::{ColorAddSelectors, ColorAddTable};
 use crate::rules::compatibility::RulesCompatibility;
 use crate::rules::crate_rules::CrateRules;
@@ -481,6 +482,14 @@ pub struct ProcessedRulesLayers {
 }
 
 impl ProcessedRulesLayers {
+    /// Ares definitions have the same retained process lifetime as Types.
+    pub(crate) fn ares_prerequisites(&self) -> Option<&GenericPrerequisites> {
+        self.native_type_construction_trace
+            .registry_state
+            .ares_prerequisites
+            .as_ref()
+    }
+
     /// Read-only projection of the retained registry's build capability.
     pub(crate) fn compatibility(&self) -> RulesCompatibility {
         self.native_type_construction_trace
@@ -528,6 +537,7 @@ impl ProcessedRulesLayers {
             ));
         }
         registry.validate_techno_type_order()?;
+        registry.validate_prerequisites()?;
         let families = &registry.families;
         let projectile_count = families
             .get(&RulesTypeFamily::Projectile)
@@ -1597,6 +1607,9 @@ impl NativeTypeConstructionTrace {
 pub(crate) struct NativeRulesRegistryState {
     /// Build capability is retained with the Rules owner, never selected by INI.
     compatibility: RulesCompatibility,
+    /// Ares Clear/AddDefaults rebuilds these at a destructive scenario reset;
+    /// ordinary Process passes and saves retain the reached list reads.
+    ares_prerequisites: Option<GenericPrerequisites>,
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
     /// TechnoTypeClass::Array A8EB04/countA8EB10. Each pair points to the
     /// existing family member; names alone cannot distinguish repeated native
@@ -1668,6 +1681,7 @@ impl Default for NativeRulesRegistryState {
         let general = crate::rules::ruleset::GeneralRules::default();
         Self {
             compatibility: RulesCompatibility::default(),
+            ares_prerequisites: crate::rules::ARES_ENABLED.then(GenericPrerequisites::default),
             families: HashMap::new(),
             techno_type_order: Vec::new(),
             tiberiums: Vec::new(),
@@ -1767,6 +1781,61 @@ impl NativeRulesRegistryState {
             return Err(RulesError::InvalidSavedState(
                 "global TechnoType order does not identify each live type exactly once",
             ));
+        }
+        Ok(())
+    }
+
+    fn validate_prerequisites(&self) -> Result<(), RulesError> {
+        if self.ares_prerequisites.is_some() != crate::rules::ARES_ENABLED {
+            return Err(RulesError::InvalidSavedState(
+                "saved prerequisite catalog does not match the compiled capability",
+            ));
+        }
+        let building_count = self
+            .families
+            .get(&RulesTypeFamily::Building)
+            .map_or(0, Vec::len);
+        let valid_entry = |entry: &Prerequisite| match *entry {
+            Prerequisite::Building(index) => {
+                usize::try_from(index).is_ok_and(|index| index < building_count)
+            }
+            Prerequisite::Group(_) => true,
+            Prerequisite::GenericGroup(index) => {
+                index >= 6
+                    && self
+                        .ares_prerequisites
+                        .as_ref()
+                        .is_some_and(|catalog| (index as usize) < catalog.groups().len())
+            }
+        };
+        if self.families.values().flatten().any(|member| {
+            member
+                .prerequisite
+                .iter()
+                .chain(&member.prerequisite_override)
+                .any(|entry| !valid_entry(entry))
+        }) {
+            return Err(RulesError::InvalidSavedState(
+                "prerequisite reference is outside its registry",
+            ));
+        }
+        if let Some(catalog) = &self.ares_prerequisites {
+            if PrerequisiteGroup::ALL.into_iter().any(|group| {
+                catalog
+                    .group(group.index())
+                    .is_none_or(|entry| entry.name() != group.token())
+            }) || catalog.groups().iter().any(|group| {
+                group.members().iter().any(|entry| !valid_entry(entry))
+                    || group.alternates().iter().any(|alternate| {
+                        !self.techno_type_states().any(|(category, id, _)| {
+                            category == alternate.category() && id == alternate.id()
+                        })
+                    })
+            }) {
+                return Err(RulesError::InvalidSavedState(
+                    "invalid retained generic prerequisite catalog",
+                ));
+            }
         }
         Ok(())
     }
@@ -2554,6 +2623,7 @@ impl ProcessedType {
 #[derive(Debug)]
 struct RulesPassProcessor {
     compatibility: RulesCompatibility,
+    ares_prerequisites: Option<GenericPrerequisites>,
     ordinary: Option<IniFile>,
     crate_rules: CrateRules,
     powerups: PowerupsAccumulator,
@@ -2617,6 +2687,7 @@ impl RulesPassProcessor {
     fn with_registry_state(registry_state: NativeRulesRegistryState) -> Self {
         Self {
             compatibility: registry_state.compatibility,
+            ares_prerequisites: registry_state.ares_prerequisites,
             families: registry_state.families,
             techno_type_order: registry_state.techno_type_order,
             tiberiums: registry_state.tiberiums,
@@ -3336,6 +3407,9 @@ impl RulesPassProcessor {
     /// lists (`0x0066E78C..0x0066EA6E`) before any of its own BuildingType
     /// allocations, each with its current list as the default.
     fn read_prerequisite_lists(&mut self, pass: &IniFile) {
+        // Ares leaves the native66E78C..66EA6E reads reached. Its later
+        // BeforeTypeData hook reads the separate generic catalog; do not
+        // replace these retained retail lists or their128-byte parser.
         let Some(general) = pass.section("General") else {
             return;
         };
@@ -3344,6 +3418,7 @@ impl RulesPassProcessor {
                 general.read_list(group.general_key(), 0x80),
                 &self.rules_prerequisite_lists[group.index()],
                 |name| self.building_index(name),
+                None,
             );
             self.rules_prerequisite_lists[group.index()] = parsed;
         }
@@ -3382,6 +3457,29 @@ impl RulesPassProcessor {
     }
 
     fn process_type_data(&mut self, pass: &IniFile, fixed_art: &IniFile) {
+        // Ares RulesClass_BeforeTypeData679A15 -> 1002AEF0. This is after
+        // registry allocation but before any TechnoType body in this pass.
+        // Move out and back while reading the existing registries; this is
+        // still the one retained catalog, not a merged-INI reconstruction.
+        #[cfg(feature = "ares")]
+        if let Some(mut catalog) = self.ares_prerequisites.take() {
+            catalog.apply_pass(
+                pass,
+                |name| self.building_index(name),
+                |name| {
+                    self.techno_type_order.iter().find_map(|&(family, index)| {
+                        let member = &self.families[&family][index];
+                        member.native_stored_id.eq_ignore_ascii_case(name).then(|| {
+                            (
+                                family.object_category().expect("live TechnoType"),
+                                member.native_stored_id.clone(),
+                            )
+                        })
+                    })
+                },
+            );
+            self.ares_prerequisites = Some(catalog);
+        }
         self.process_house_family(pass);
         self.process_super_weapon_family(pass);
         self.process_anim_family(fixed_art);
@@ -3682,15 +3780,22 @@ impl RulesPassProcessor {
                 // that can allocate a BuildingType, each with its current list
                 // as the default.
                 let member = &self.families[&family][index];
+                let prerequisite_capacity = if crate::rules::ARES_ENABLED {
+                    0x800
+                } else {
+                    0x80
+                };
                 let prerequisite = parse_prerequisites(
-                    raw.read_list("Prerequisite", 0x80),
+                    raw.read_list("Prerequisite", prerequisite_capacity),
                     &member.prerequisite,
                     |name| self.building_index(name),
+                    self.ares_prerequisites.as_ref(),
                 );
                 let prerequisite_override = parse_prerequisites(
-                    raw.read_list("PrerequisiteOverride", 0x80),
+                    raw.read_list("PrerequisiteOverride", prerequisite_capacity),
                     &member.prerequisite_override,
                     |name| self.building_index(name),
+                    self.ares_prerequisites.as_ref(),
                 );
                 let member = &mut self.families.get_mut(&family).unwrap()[index];
                 member.prerequisite = prerequisite;
@@ -4600,6 +4705,7 @@ impl RulesPassProcessor {
                 allocated_super_weapon_type_count,
                 registry_state: NativeRulesRegistryState {
                     compatibility: self.compatibility,
+                    ares_prerequisites: self.ares_prerequisites,
                     families: self.families,
                     techno_type_order: self.techno_type_order,
                     tiberiums: self.tiberiums,

@@ -20,6 +20,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
+use crate::rules::ares_prerequisites::{GenericPrerequisite, GenericPrerequisites};
 use crate::rules::combat_damage::CombatDamageDefaults;
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::error::RulesError;
@@ -4088,6 +4089,12 @@ pub struct RuleSet {
     /// [`PrerequisiteGroup::ALL`] order: an on-map building of any of them
     /// meets that group in CanBuild.
     prerequisite_lists: [Vec<Prerequisite>; 6],
+    /// Immutable gameplay projection of the retained Rules registry catalog.
+    ares_prerequisites: Option<GenericPrerequisites>,
+    /// Derived type-membership index for the lifecycle hooks; rebuilt together
+    /// with the RuleSet after every load/reset/pass. The catalog above is its
+    /// only source of truth. This cache is not serialized or hashed separately.
+    ares_prerequisite_alternates: HashSet<TypeHandle>,
     /// Rules-driven terrain land-type semantics keyed by TMP land byte.
     pub terrain_rules: TerrainRules,
     /// Native `[Tiberiums]` definitions in GameMD type order.
@@ -4316,6 +4323,20 @@ impl RuleSet {
         rules.general.prerequisite_proc_alternate =
             processed.prerequisite_proc_alternate().map(str::to_owned);
         rules.prerequisite_lists = processed.prerequisite_lists().clone();
+        rules.ares_prerequisites = processed.ares_prerequisites().cloned();
+        rules.ares_prerequisite_alternates = rules
+            .ares_prerequisites
+            .as_ref()
+            .into_iter()
+            .flat_map(|catalog| catalog.groups())
+            .flat_map(|group| group.alternates())
+            .filter_map(|alternate| {
+                rules
+                    .object_category_index
+                    .get(&(alternate.category(), alternate.id().to_ascii_uppercase()))
+                    .copied()
+            })
+            .collect();
         rules.general.building_types = processed.building_types().clone();
         let (lightning, weather_anim, nullify_anim, splash) = processed.select_anim_rules();
         rules.general.lightning_warhead = lightning.to_owned();
@@ -5338,6 +5359,8 @@ impl RuleSet {
             building_ids,
             factory_map,
             prerequisite_lists: Default::default(),
+            ares_prerequisites: None,
+            ares_prerequisite_alternates: HashSet::new(),
             terrain_rules,
             tiberium_types,
             terrain_object_types,
@@ -5760,6 +5783,8 @@ impl RuleSet {
         // the selected INIs contain no extension keys.
         b"rules-build-compatibility-v1".hash(&mut hasher);
         crate::rules::ARES_ENABLED.hash(&mut hasher);
+        // Equal flattened INIs may have different retained group lists.
+        self.ares_prerequisites.hash(&mut hasher);
         // UnitType747734 retains CarriesCrate across later absent/invalid
         // keys; equal current source text can still mean different cargo.
         self.object_list
@@ -6827,6 +6852,30 @@ impl RuleSet {
     /// `group`'s `[General] Prerequisite*` list.
     pub(crate) fn prerequisite_list(&self, group: PrerequisiteGroup) -> &[Prerequisite] {
         &self.prerequisite_lists[group.index()]
+    }
+
+    pub(crate) fn ares_prerequisite_group(
+        &self,
+        entry: Prerequisite,
+    ) -> Option<&GenericPrerequisite> {
+        self.ares_prerequisites
+            .as_ref()?
+            .group(entry.group_index()?)
+    }
+
+    /// Ares TechnoTypeExt::IsGenericPrerequisite1003DD00 and its six Foot
+    /// lifecycle callers1004E750..1004E8B9. For a normal fresh match Types
+    /// finish loading before these checks. Retain an immutable O(1) membership
+    /// projection, rather than scanning every group for each live object.
+    /// Original cache/live-reread limits: rules_oracle/ares_prerequisites.md.
+    pub(crate) fn is_ares_prerequisite_alternate(
+        &self,
+        category: ObjectCategory,
+        id: &str,
+    ) -> bool {
+        self.object_category_index
+            .get(&(category, id.to_ascii_uppercase()))
+            .is_some_and(|handle| self.ares_prerequisite_alternates.contains(handle))
     }
 
     /// Whether a structure type is marked as a refinery in rules.ini.

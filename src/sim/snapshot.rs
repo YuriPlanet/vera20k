@@ -1225,7 +1225,9 @@ use crate::util::save_codec;
 // upgrade objects no longer retain a competing authored-building identity.
 // 458 -> 459: retain the build's extension capability in Rules and the save
 // header; reject cross-capability saves before deserializing Simulation.
-const SNAPSHOT_VERSION: u32 = 459;
+// 459 -> 460: retained Ares generic prerequisite definitions and custom group
+// references in typed TechnoType prerequisites.
+const SNAPSHOT_VERSION: u32 = 460;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10238,6 +10240,7 @@ mod tests {
         // 456 -> 457: retained per-pass Warhead Verses table.
         // 457 -> 458: host-owned installed upgrades and shared type art.
         // 458 -> 459: the retained Rules/build extension capability.
-        assert_eq!(super::SNAPSHOT_VERSION, 459);
+        // 459 -> 460: retained generic prerequisite definitions.
+        assert_eq!(super::SNAPSHOT_VERSION, 460);
     }
 }

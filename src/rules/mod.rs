@@ -105,6 +105,7 @@
 pub mod airstrike;
 /// Whether this binary includes the supported Ares extensions. INIs cannot change it.
 pub const ARES_ENABLED: bool = cfg!(feature = "ares");
+pub(crate) mod ares_prerequisites;
 pub mod compatibility;
 pub mod animation_sequence;
 pub mod art_data;
