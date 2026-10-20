@@ -156,6 +156,13 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
                 return Some(CursorFeedbackKind::SuperWeaponTarget(CursorId::Default));
             }
         }
+        if !crate::app::input::commands::super_weapon_pointer_target_at_cursor_is_valid(
+            state, section,
+        ) {
+            return Some(CursorFeedbackKind::SuperWeaponTarget(
+                CursorId::NoForceShield,
+            ));
+        }
         let cursor_id = state
             .rules()
             .and_then(|r| r.super_weapon(section))
