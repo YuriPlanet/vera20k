@@ -304,6 +304,19 @@ pub(crate) fn ensure_movie_for_current_layout(
     }
     clear_ra2ts_movie_session(state);
 
+    #[cfg(target_os = "ios")]
+    if state.platform.capture_client_size.is_none() {
+        let movie = crate::render::werhd_menu_movie::MenuMovieSurface::branded(
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+        )?;
+        log::info!("Loaded branded menu loop from {}", movie.source_archive());
+        state.frontend.main_menu_movie = Some(movie);
+        state.frontend.main_menu_movie_identity = Some(requested_identity);
+        state.frontend.main_menu_movie_last_step = Instant::now();
+        return Ok(());
+    }
+
     let Some(assets) = state.process_assets.manager() else {
         state
             .frontend
@@ -336,6 +349,7 @@ pub(crate) fn ensure_movie_for_current_layout(
             return Ok(());
         }
     };
+    let movie = crate::render::werhd_menu_movie::MenuMovieSurface::from(movie);
     log::info!(
         "Loaded {asset_name} for main menu from {}",
         movie.source_archive()

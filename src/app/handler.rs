@@ -190,8 +190,14 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         #[cfg(target_os = "ios")]
         {
+            let was_suspended = self.ios_suspended;
             self.ios_suspended = false;
             if let Some(state) = self.state.as_mut() {
+                if was_suspended && state.platform.capture_client_size.is_none() {
+                    // Retain the displayed menu frame, but exclude the parked
+                    // UIKit interval from its next elapsed-time sample.
+                    state.frontend.main_menu_movie_last_step = Instant::now();
+                }
                 Self::set_window_hidden(state, false);
                 Self::set_window_active(state, true);
                 state.platform.window.request_redraw();
@@ -531,6 +537,16 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Focused(active) => {
+                #[cfg(target_os = "ios")]
+                if active
+                    && !state.platform.window_active
+                    && state.platform.capture_client_size.is_none()
+                {
+                    // A focus pause can occur without a UIKit suspend event.
+                    // Only the menu clock resets; movie frames and the
+                    // independent fullscreen/campaign player are untouched.
+                    state.frontend.main_menu_movie_last_step = Instant::now();
+                }
                 // The OS drops the cursor clip on alt-tab, so re-apply the
                 // player's confinement choice whenever the window returns.
                 if active {

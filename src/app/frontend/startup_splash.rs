@@ -133,6 +133,7 @@ impl StartupSplashPresentation {
         );
 
         let ([width, height], placement) = splash_placement(client_width, client_height);
+        #[cfg(not(target_os = "ios"))]
         let rgba = compose_startup_splash(
             assets,
             csf,
@@ -141,6 +142,22 @@ impl StartupSplashPresentation {
             height as usize,
             splash_art(ra2_look),
         )?;
+        #[cfg(target_os = "ios")]
+        let rgba = {
+            // The caller only constructs this splash for non-capture startup.
+            // Country-specific scenario loading remains in app::loading.
+            let _ = (assets, ra2_look);
+            let image = image::load_from_memory_with_format(
+                include_bytes!("../../../art/branding/werhd-loading.png"),
+                image::ImageFormat::Png,
+            )
+            .context("decode built-in WERHD startup loading image")?
+            .resize_exact(width, height, image::imageops::FilterType::Lanczos3)
+            .into_rgba8();
+            let mut rgba = image.into_raw();
+            paint_startup_text(&mut rgba, width as usize, height as usize, csf, font);
+            rgba
+        };
         let texture = batch.create_texture(gpu, &rgba, width, height);
         let instance = SpriteInstance {
             position: [placement.x as f32, placement.y as f32],
@@ -314,6 +331,18 @@ fn compose_startup_splash(
         );
     }
 
+    paint_startup_text(&mut canvas, client_width, client_height, csf, font);
+    Ok(canvas)
+}
+
+/// Artwork and legal/loading labels remain separate presentation layers.
+fn paint_startup_text(
+    canvas: &mut [u8],
+    client_width: usize,
+    client_height: usize,
+    csf: Option<&CsfFile>,
+    font: &FntFile,
+) {
     let copyright = csf_text(csf, COPYRIGHT_KEY, COPYRIGHT_FALLBACK);
     let brand = csf_text(csf, BRAND_KEY, BRAND_FALLBACK);
     let loading = csf_text(csf, LOADING_KEY, LOADING_FALLBACK);
@@ -324,7 +353,7 @@ fn compose_startup_splash(
     let second_bottom_y = first_bottom_y + 3 + font.cell_height as i32;
 
     draw_text(
-        &mut canvas,
+        canvas,
         client_width,
         client_height,
         font,
@@ -333,7 +362,7 @@ fn compose_startup_splash(
         first_bottom_y,
     );
     draw_text(
-        &mut canvas,
+        canvas,
         client_width,
         client_height,
         font,
@@ -341,17 +370,9 @@ fn compose_startup_splash(
         client_width as i32 - font.text_width(&brand) as i32 - 10,
         second_bottom_y,
     );
+    draw_text(canvas, client_width, client_height, font, &loading, 10, 10);
     draw_text(
-        &mut canvas,
-        client_width,
-        client_height,
-        font,
-        &loading,
-        10,
-        10,
-    );
-    draw_text(
-        &mut canvas,
+        canvas,
         client_width,
         client_height,
         font,
@@ -360,7 +381,7 @@ fn compose_startup_splash(
         first_bottom_y,
     );
     draw_text(
-        &mut canvas,
+        canvas,
         client_width,
         client_height,
         font,
@@ -368,8 +389,6 @@ fn compose_startup_splash(
         10,
         second_bottom_y,
     );
-
-    Ok(canvas)
 }
 
 fn centered_offset(client_extent: i32, art_extent: i32) -> i32 {

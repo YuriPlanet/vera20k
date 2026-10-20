@@ -263,7 +263,8 @@ impl App {
             })
         });
         if let Some(fnt) = startup_fnt.as_ref() {
-            bit_font = BitFont::from_fnt(&gpu.device, &gpu.queue, &batch_renderer, fnt);
+            bit_font =
+                BitFont::from_fnt_for_ui(&gpu.device, &gpu.queue, &batch_renderer, fnt, !capture);
         }
         let outcome_banner_art = startup_asset_manager.as_ref().and_then(|assets| {
             crate::app::presentation::outcome_banner::OutcomeBannerArt::build(

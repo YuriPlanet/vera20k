@@ -200,6 +200,19 @@ a second end cap. Shortcut icons, pages and the editor gear center vertically in
 the whole visible strip; their hit rectangles use that same center. Joystick,
 world-gesture and editor anchors stay independent of that bottom-button offset.
 
+### Typography and WERHD branding
+
+Interactive iOS text uses Fira Sans Condensed Medium with CoreText's Chinese
+Medium sans-serif fallback, matching WERHD's main 500-weight web font stack.
+The shared antialiased atlas retains the existing GAME.FNT widths, line height,
+spacing and wrapping. The font and its license are in `art/fonts`.
+
+The startup image and branded menu loop reuse the verified online WERHD assets.
+Their sources, hashes and lossless frame conversion are documented in
+`art/branding`. Country-specific loading screens and other full-screen movies
+keep their original sources. Desktop and retail captures retain the bitmap font
+and original artwork paths.
+
 Validate launch, visible menu, menu touch navigation, map load, and a rendered
 skirmish separately on the connected physical phone. Touch controls, playability,
 memory under a sustained battle, and suspend/resume are separate from this initial

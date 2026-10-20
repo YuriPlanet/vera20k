@@ -196,11 +196,12 @@ pub(crate) fn install_world_presentation(
     // GAME.FNT is process artwork, so retain the established process fallback
     // when optional font preparation did not produce a replacement.
     if let Some(ref fnt) = assets.fnt_file {
-        state.renderer.bit_font = crate::render::bit_font::BitFont::from_fnt(
+        state.renderer.bit_font = crate::render::bit_font::BitFont::from_fnt_for_ui(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
             &state.renderer.batch_renderer,
             fnt,
+            state.platform.capture_client_size.is_none(),
         );
     }
 

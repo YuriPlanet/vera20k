@@ -17,6 +17,10 @@ use crate::assets::fnt_file::{FntFile, FntGlyph};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::shell_text_reveal::{PathAReveal, encoded_unit_rgb};
 
+#[cfg(any(target_os = "ios", all(test, target_os = "macos")))]
+#[path = "bit_font_ios.rs"]
+mod ios;
+
 /// Hardcoded inter-glyph spacing.
 pub const CHAR_SPACING: u32 = 1;
 /// Tab stop width in pixels.
@@ -62,7 +66,7 @@ pub struct WrapLayout {
 }
 
 /// Immutable atlas observation; `source_identity == None` identifies the
-/// built-in 5x7 fallback (or a GPU-free synthetic test font).
+/// built-in 5x7 fallback, the iOS UI font, or a GPU-free synthetic test font.
 pub(crate) struct BitFontCaptureObservation<'a> {
     pub(crate) source_identity: Option<&'a crate::assets::fnt_file::FntSourceIdentity>,
     pub(crate) atlas_dimensions: Option<[u32; 2]>,
@@ -612,6 +616,42 @@ impl BitFont {
         batch: &BatchRenderer,
         fnt: &FntFile,
     ) -> Self {
+        Self::from_fnt_with_rasterizer(device, queue, batch, fnt, None)
+    }
+
+    /// The ordinary iOS UI uses the web client's Medium sans-serif faces while
+    /// retaining GAME.FNT's advances, line height, spacing and wrapping. A sealed
+    /// retail capture must pass `false`, so its atlas still identifies the exact
+    /// retail bytes. Other platforms keep the established bitmap font.
+    pub fn from_fnt_for_ui(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        fnt: &FntFile,
+        modern: bool,
+    ) -> Self {
+        #[cfg(target_os = "ios")]
+        if modern {
+            if let Some(mut rasterizer) = ios::Rasterizer::new(fnt.bitmap_rows) {
+                log::info!("iOS UI font faces: {:?}", rasterizer.face_names());
+                let mut draw = |cp, width| rasterizer.glyph(cp, width);
+                return Self::from_fnt_with_rasterizer(device, queue, batch, fnt, Some(&mut draw));
+            }
+            log::warn!("iOS UI font unavailable; retaining GAME.FNT glyphs");
+        }
+        #[cfg(not(target_os = "ios"))]
+        let _ = modern;
+        Self::from_fnt(device, queue, batch, fnt)
+    }
+
+    fn from_fnt_with_rasterizer(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        fnt: &FntFile,
+        mut rasterize: Option<&mut dyn FnMut(u16, u32) -> Option<Vec<u8>>>,
+    ) -> Self {
+        let modern = rasterize.is_some();
         let mut entries: Vec<(u16, &FntGlyph)> = Vec::new();
         for cp in PACKED_CODEPOINT_RANGE {
             if let Some(g) = fnt.glyph(cp) {
@@ -644,7 +684,7 @@ impl BitFont {
         }
 
         // Reserve a sentinel codepoint for the missing glyph that won't collide
-        // with the packed range. u16::MAX is well outside 0x20..0x180.
+        // with the packed range, whose end is exclusive.
         const MISSING_SENTINEL: u16 = u16::MAX;
         let mut all_entries: Vec<(u16, &FntGlyph)> = Vec::with_capacity(entries.len() + 1);
         for e in &entries {
@@ -685,21 +725,36 @@ impl BitFont {
         let atlas_h = cursor_y + row_h + pad * 2;
 
         let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
+        if modern {
+            // These are straight-alpha, white coverage masks. White padding
+            // keeps Linear sampling from introducing dark antialias fringes.
+            for pixel in rgba.chunks_exact_mut(4) {
+                pixel[..3].fill(255);
+            }
+        }
         let mut glyphs = HashMap::new();
         let mut missing_glyph = None;
 
         for (idx, (cp, g)) in all_entries.iter().enumerate() {
             let pl = &placements[idx];
+            // Rasterize one cell at a time: a second full CJK glyph collection
+            // would needlessly double transient font memory during map loads.
+            let replacement = if *cp != MISSING_SENTINEL {
+                rasterize.as_mut().and_then(|draw| draw(*cp, g.width))
+            } else {
+                None
+            };
+            let source = replacement.as_deref().unwrap_or(&g.rgba);
             for row in 0..row_h {
                 for col in 0..g.width {
                     let src = ((row * g.width + col) * 4) as usize;
-                    if src + 3 >= g.rgba.len() {
+                    if src + 3 >= source.len() {
                         continue;
                     }
                     let dst_x = pl.x + col;
                     let dst_y = pl.y + row;
                     let dst = ((dst_y * atlas_w + dst_x) * 4) as usize;
-                    rgba[dst..dst + 4].copy_from_slice(&g.rgba[src..src + 4]);
+                    rgba[dst..dst + 4].copy_from_slice(&source[src..src + 4]);
                 }
             }
             let entry = GlyphEntry {
@@ -721,22 +776,41 @@ impl BitFont {
             .glyph(0x20)
             .map(|g| g.width)
             .unwrap_or(DEFAULT_SPACE_WIDTH);
-        let atlas_texture =
-            batch.create_texture_on_device(device, queue, &rgba, atlas_w, atlas_h, None);
+        let atlas_texture = if modern {
+            // The binding retains the texture. This existing constructor lets
+            // only the antialiased UI font use Linear; retail art stays Nearest.
+            batch
+                .create_updatable_texture(
+                    device,
+                    queue,
+                    &rgba,
+                    atlas_w,
+                    atlas_h,
+                    wgpu::FilterMode::Linear,
+                )
+                .1
+        } else {
+            batch.create_texture_on_device(device, queue, &rgba, atlas_w, atlas_h, None)
+        };
         let darken_texture =
             batch.create_texture_on_device(device, queue, &[0u8, 0, 0, DARKEN_ALPHA], 1, 1, None);
 
         log::info!(
-            "BitFont atlas: {}x{} px, {} glyphs (+missing={}), space_width={}",
+            "BitFont atlas: {}x{} px, {} glyphs (+missing={}), space_width={}, modern={}",
             atlas_w,
             atlas_h,
             glyphs.len(),
             missing_glyph.is_some(),
-            space_width
+            space_width,
+            modern,
         );
 
         Self {
-            source_identity: fnt.source_identity().cloned(),
+            source_identity: if modern {
+                None
+            } else {
+                fnt.source_identity().cloned()
+            },
             atlas_texture: Some(atlas_texture),
             glyphs,
             missing_glyph,

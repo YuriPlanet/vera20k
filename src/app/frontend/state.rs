@@ -41,7 +41,7 @@ pub(crate) struct FrontendState {
     pub(crate) shell_controller: crate::ui::shell::controller::DialogController,
     pub(crate) main_menu_shell_chrome:
         Option<crate::render::main_menu_shell_chrome::MainMenuShellChromeAtlas>,
-    pub(crate) main_menu_movie: Option<crate::render::bink_movie::BinkMovieSurface>,
+    pub(crate) main_menu_movie: Option<crate::render::werhd_menu_movie::MenuMovieSurface>,
     pub(crate) main_menu_movie_identity:
         Option<crate::app::frontend::main_menu_shell_render::Ra2tsMovieSessionIdentity>,
     pub(crate) main_menu_movie_last_step: Instant,
