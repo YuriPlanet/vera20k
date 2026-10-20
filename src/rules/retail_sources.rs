@@ -155,9 +155,9 @@ pub struct RetailRulesSources {
 
 impl RetailRulesSources {
     pub fn select(assets: &AssetManager) -> Result<Self, String> {
-        let rulesmd = select_ini(assets, "rulesmd.ini")?;
+        let rulesmd = select_ini(assets, assets.ini_roots().rules())?;
         let langrule = select_ini(assets, "langrule.ini").ok();
-        let artmd = select_ini(assets, "artmd.ini")?;
+        let artmd = select_ini(assets, assets.ini_roots().art())?;
         Ok(Self {
             rulesmd,
             langrule,
@@ -172,12 +172,16 @@ impl RetailRulesSources {
         sounds: Arc<SoundRegistry>,
         eva: Arc<EvaRegistry>,
     ) -> Result<NativeRulesProcessOwner, String> {
-        NativeRulesProcessOwner::from_cold_start_sources(
+        NativeRulesProcessOwner::from_named_cold_start_sources(
             self.rulesmd.ini,
             self.langrule.map(|source| source.ini),
             self.artmd.ini,
             sounds,
             eva,
+            [
+                self.rulesmd.source.logical_name,
+                self.artmd.source.logical_name,
+            ],
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))
     }
@@ -247,6 +251,10 @@ pub fn load_startup_rules(
         .map_err(|error| log::warn!("{error}"))
         .ok()
 }
+
+#[cfg(test)]
+#[path = "ini_root_tests.rs"]
+mod ini_root_tests;
 
 #[cfg(test)]
 mod tests {

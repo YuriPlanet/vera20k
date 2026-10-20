@@ -16,6 +16,7 @@ pub mod fixed_math;
 pub mod flh_transform;
 pub mod fnv;
 pub mod ini_writer;
+pub mod ini_roots;
 pub mod lcw;
 pub mod legacy_crt_rng;
 pub mod lepton;

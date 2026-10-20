@@ -1,4 +1,4 @@
 /**
- * Schema mirror of `src/sim/telemetry.rs` (v26); keep both in step.
+ * Schema mirror of `src/sim/telemetry.rs` (v28); keep both in step.
  */
-export const SCHEMA_VERSION = 26;
+export const SCHEMA_VERSION = 28;

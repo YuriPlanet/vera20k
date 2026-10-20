@@ -401,11 +401,20 @@
      opaque, which is what separates the map from that backdrop. */
   #map-stage { position: relative; flex: 1; min-height: 0; }
   #map3d { width: 100%; height: 100%; display: block; border-radius: var(--radius-s); }
+  /* Soft stage edge: the camera frames the action, so the map's outer grid is
+     mostly off-screen; this keeps the remaining rim from reading as a hard
+     diamond against the panel. Below the callouts and controls. */
+  .map-vignette {
+    position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    border-radius: var(--radius-s);
+    background: radial-gradient(ellipse 92% 82% at 50% 48%,
+      rgba(4, 8, 18, 0) 46%, rgba(4, 8, 18, 0.38) 80%, rgba(4, 8, 18, 0.66) 100%);
+  }
 
   /* World-anchored chips. Each one is positioned with its own origin at the cell
      it names, so the box · stem · foot stack grows upward from that point and the
      leader line is the stem — nothing has to be measured after layout. */
-  #map-callouts { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  #map-callouts { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
   .map-callout {
     --tint: var(--cyan);
     position: absolute;
@@ -435,7 +444,7 @@
     background: var(--tint); box-shadow: 0 0 9px var(--tint);
   }
   .map-zoom {
-    position: absolute; right: 10px; top: 50%; translate: 0 -50%;
+    position: absolute; right: 10px; top: 50%; translate: 0 -50%; z-index: 3;
     display: flex; flex-direction: column; border-radius: 11px; overflow: hidden;
     background: rgba(10, 16, 38, 0.6);
     border: 1px solid rgba(255, 255, 255, 0.13);
@@ -449,6 +458,18 @@
   }
   .map-zoom-btn:last-child { border-bottom: 0; }
   .map-zoom-btn:hover { color: #ffffff; background: rgba(255, 255, 255, 0.1); }
+  /* Hover chip: the entity under the pointer, as a compact label near the
+     cursor. `pointer-events: none` keeps the canvas draggable through it. */
+  .map-tip {
+    position: absolute; z-index: 4; pointer-events: none;
+    padding: 3px 8px; border-radius: 8px; white-space: nowrap;
+    background: rgba(10, 16, 38, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    backdrop-filter: blur(12px) saturate(160%);
+    color: #eaf2ff; font-size: 10.5px; font-variant-numeric: tabular-nums;
+    box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.9);
+  }
   /* The house colour key floats on the scene's near corner rather than taking a
      row under it. It stays a key of houses — the reference art's pill tallies
      categories, which is a different fact and is already on the population panel. */

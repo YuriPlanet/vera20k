@@ -22,8 +22,14 @@ Strength=250
   their lists are not concatenated.
 - Include keys sort by signed decimal integer, then ordinal key for ties.
   Nonnumeric or out-of-range keys sort as `i32::MAX`.
-- Nested includes expand first. Later includes override earlier ones, and the
-  current document overrides all included content through the existing INI merge.
+- For Ares `[#include]`, the current document is applied before its included
+  files. Descendants override their including document, and later includes
+  override earlier ones. This follows the [official Ares example](https://ares-developers.github.io/Ares-docs/new/misc/include.html):
+  root `[E1] Strength=200` plus included `Strength=300` results in `300`.
+- `[$Include]` retains mono's separate current-document-wins policy: expand
+  descendants first, then apply the current document. I have not established
+  executable Phobos equivalence for that policy. Ares evidence does not define
+  the semantics of this other directive or of `$Inherits`.
 - Inheritance runs after the complete Include expansion. `$Inherits=A,B` copies
   only missing keys: child-authored values win, then the first supplying parent.
   Parent section names remain case-sensitive. Directive keys are not inherited.
@@ -111,3 +117,9 @@ discarding their owned candidate. Mono's separate multi-root catalog selection
 and whole-definition AI replacement policy are not copied over VERA's existing
 native AI readers. The reference and authored Rust tests establish a bounded
 implementation contract, not executable Ares/Phobos equivalence.
+
+I corrected Ares `[#include]` conflict precedence against its official
+documentation instead of copying mono's current-file-wins policy. The other
+directive policies, bounded traversal, root-relative lookup and raw metadata
+reader boundaries are unchanged. The documented example and nested-conflict
+regressions are Rust checks against that specification, not an Ares DLL run.

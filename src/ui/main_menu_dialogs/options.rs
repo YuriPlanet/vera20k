@@ -349,9 +349,10 @@ pub(crate) enum LauncherCheckboxId {
     /// splash, drawn before any menu, at the next launch.
     ///
     /// User-set scope: this box switches only those two. Every other shell
-    /// screen follows gamemd's ordinary asset lookup, and the Skirmish and WOL
-    /// setup backgrounds keep their fixed RA2 art (see
-    /// `render::skirmish_shell_chrome`), whatever the box says. Widening it needs the user's explicit request.
+    /// screen follows gamemd's ordinary asset lookup, and the Skirmish, LAN and
+    /// WOL setup backgrounds keep their fixed RA2 art (see
+    /// `render::skirmish_shell_chrome`), whatever the box says. Widening it
+    /// needs the user's explicit request.
     YrOriginalStyle,
     /// VERA's own box: Shift + left click on a mobile build cameo queues
     /// several copies instead of gamemd's one. It applies at once.

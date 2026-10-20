@@ -16,7 +16,8 @@ presentation state rather than adding interpolation components to simulation.
   `RenderInterpolation=no` in `[VERA]` of the active writable `RA2MD.INI` profile.
   Options acceptance and normal exit save the choice; a map load keeps it.
 - Press **Ctrl+Alt+I** in a match to toggle
-  immediately; the FPS overlay displays `INTERP ON` or `INTERP OFF`.
+  immediately; the FPS overlay displays `INTERP ON` or `INTERP OFF`. The overlay
+  is hidden by default: press **Ctrl+Alt+F** on any screen to show or hide it.
   `INTERP BYPASS` means requested but bypassed (pause, exact capture, or unlimited
   speed). In particular, turn game speed down from unlimited before comparing.
 - Set `VERA20K_RENDER_INTERPOLATION=0` or `1` before launching to override the

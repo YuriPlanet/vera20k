@@ -34,6 +34,53 @@ impl RectPx {
     pub fn contains(self, x: i32, y: i32) -> bool {
         x >= self.x && y >= self.y && x < self.x + self.w && y < self.y + self.h
     }
+
+    /// The parts of this rect the overlays leave visible. Each overlay hides
+    /// the area it covers; the pieces do not overlap, and an empty result means
+    /// the overlays cover the whole rect.
+    pub fn outside(self, overlays: &[RectPx]) -> Vec<RectPx> {
+        let mut pieces = vec![self];
+        for overlay in overlays {
+            if overlay.w <= 0 || overlay.h <= 0 {
+                continue;
+            }
+            let mut next = Vec::with_capacity(pieces.len() + 2);
+            for piece in pieces {
+                let left = piece.x.max(overlay.x);
+                let top = piece.y.max(overlay.y);
+                let right = (piece.x + piece.w).min(overlay.x + overlay.w);
+                let bottom = (piece.y + piece.h).min(overlay.y + overlay.h);
+                if left >= right || top >= bottom {
+                    next.push(piece);
+                    continue;
+                }
+                if top > piece.y {
+                    next.push(RectPx::new(piece.x, piece.y, piece.w, top - piece.y));
+                }
+                if bottom < piece.y + piece.h {
+                    next.push(RectPx::new(
+                        piece.x,
+                        bottom,
+                        piece.w,
+                        piece.y + piece.h - bottom,
+                    ));
+                }
+                if left > piece.x {
+                    next.push(RectPx::new(piece.x, top, left - piece.x, bottom - top));
+                }
+                if right < piece.x + piece.w {
+                    next.push(RectPx::new(
+                        right,
+                        top,
+                        piece.x + piece.w - right,
+                        bottom - top,
+                    ));
+                }
+            }
+            pieces = next;
+        }
+        pieces
+    }
 }
 
 // --- DLU base metrics (MS Sans Serif 8pt) ---

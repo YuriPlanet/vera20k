@@ -1336,13 +1336,12 @@ fn ensure_session_job_asset_manager(
                 );
             }
             process_assets.note_lease_ended_without_return();
-            AssetManager::new(
+            process_assets.reconstruct_manager(
                 session
                     .job
                     .ra2_dir
                     .as_deref()
                     .expect("RA2 directory was initialized above"),
-                process_assets.media_archive_mode(),
             )?
         };
         session.job.asset_manager = Some(asset_manager);
