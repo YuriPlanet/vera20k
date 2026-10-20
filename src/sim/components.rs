@@ -345,7 +345,10 @@ impl FootPathQueue {
 
     /// The queue `FootClass::Find_Path @ 0x004D3920` installs from a found
     /// route (`0x004D393A..0x004D4003`): the directions from `reference`
-    /// through `path` from `first_destination` on, unconsumed.
+    /// through `path` from `first_destination` on, unconsumed. The ordinary
+    /// zero-prefix copy at `0x004D3E82..0x004D3EA1` takes at most 24 words;
+    /// tube jumps count as one word. The Vec's end represents a short
+    /// route's terminator without retaining unused native backing words.
     pub(crate) fn install(
         &mut self,
         reference: (u16, u16),
@@ -354,7 +357,7 @@ impl FootPathQueue {
     ) {
         let mut from = (reference.0 as i16, reference.1 as i16);
         self.directions.clear();
-        for &destination in path.iter().skip(first_destination) {
+        for &destination in path.iter().skip(first_destination).take(24) {
             self.directions.push(direction_from_step(from, destination));
             from = (destination.0 as i16, destination.1 as i16);
         }
