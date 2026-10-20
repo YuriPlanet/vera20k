@@ -1084,14 +1084,14 @@ mod tests {
             }
         }
         assert_eq!(state.shell_checkbox_label(id), RENDER_INTERPOLATION_LABEL);
-        assert!(state.shell_checkbox_checked(id));
-        state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
         assert!(!state.shell_checkbox_checked(id));
+        state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+        assert!(state.shell_checkbox_checked(id));
         assert_eq!(
             state.drain_output().events,
             [
                 LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
-                LauncherOptionsEvent::RenderInterpolationChanged(false),
+                LauncherOptionsEvent::RenderInterpolationChanged(true),
             ]
         );
     }

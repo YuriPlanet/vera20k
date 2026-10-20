@@ -443,7 +443,7 @@ impl Default for LauncherOptionsValues {
             full_screen: false,
             original_shape: false,
             yr_original_style: false,
-            render_interpolation: true,
+            render_interpolation: false,
             shift_queue: false,
             wol_test_service: false,
             sidebar: SidebarSize::Normal,

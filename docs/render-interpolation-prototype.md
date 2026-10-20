@@ -9,7 +9,8 @@ presentation state rather than adding interpolation components to simulation.
 
 ## A/B controls
 
-- Enabled by default in this prototype. The main menu's **Options** page has a
+- Off by default, so new profiles draw the original tick-stepped motion. The
+  main menu's **Options** page has a
   **Render Interpolation** checkbox, using the same preview/profile transaction
   as VERA's other extra options. It is saved as `RenderInterpolation=yes` or
   `RenderInterpolation=no` in `[VERA]` of the active writable `RA2MD.INI` profile.

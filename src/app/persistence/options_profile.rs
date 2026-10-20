@@ -123,8 +123,9 @@ pub(crate) struct RetailOptionsProfile {
     /// Red Alert 2's. Only those two read it; see
     /// [`LauncherCheckboxId::YrOriginalStyle`](crate::ui::main_menu_dialogs::options::LauncherCheckboxId::YrOriginalStyle).
     pub(crate) yr_original_style: bool,
-    /// `[VERA] RenderInterpolation=`: client-only motion smoothing. This
-    /// prototype defaults on; it never changes the simulation rate or saves.
+    /// `[VERA] RenderInterpolation=`: client-only motion smoothing. Off by
+    /// default, so new profiles draw the original tick-stepped motion; it never
+    /// changes the simulation rate or saves.
     pub(crate) render_interpolation: bool,
     /// `[VERA] ShiftQueue=`: whether a Shift-click on a mobile strip queues
     /// [`Self::shift_queue_count`] builds: the Options page's Shift-Click
@@ -197,7 +198,7 @@ impl Default for RetailOptionsProfile {
             original_shape: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             yr_original_style: false,
-            render_interpolation: true,
+            render_interpolation: false,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             wol_test_service: false,
@@ -1344,7 +1345,7 @@ mod tests {
     fn render_interpolation_preference_uses_the_existing_vera_profile_transaction() {
         let startup = RetailStartupOptions::default();
         assert!(
-            load_snapshot(&startup, b"")
+            !load_snapshot(&startup, b"")
                 .retained_profile
                 .render_interpolation
         );
