@@ -165,7 +165,7 @@ impl StartupSplashPresentation {
         let rgba = {
             // The caller only constructs this splash for non-capture startup.
             // Country-specific scenario loading remains in app::loading.
-            let _ = (assets, ra2_look);
+            let _ = (assets, yr_original_style);
             compose_branded_startup_splash(csf, font, width, height)?
         };
         let texture = batch.create_texture(gpu, &rgba, width, height);
