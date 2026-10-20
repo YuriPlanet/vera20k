@@ -108,6 +108,8 @@ impl App {
         // match running behind other windows instead. The gate sits at the
         // call site, not inside the runtime, so a focus edge never re-anchors
         // the frame pacer on its own.
+        #[cfg(target_os = "ios")]
+        crate::app::ios_controls::service(state);
         if simulation_allowed
             && matches!(state.frontend.screen, GameScreen::InGame)
             && !state.platform.focus_freeze_active()
@@ -667,6 +669,8 @@ impl App {
                 }
             }
         }
+        #[cfg(target_os = "ios")]
+        crate::app::ios_hud_render::render(state, &mut encoder, &view);
         Self::show_os_cursor_only_without_game_cursor(state, game_render_output.is_some());
 
         let entry_sequence_identity = match shell_capture.as_deref_mut() {

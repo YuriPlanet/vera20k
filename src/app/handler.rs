@@ -269,6 +269,9 @@ impl ApplicationHandler for App {
             }
             if matches!(&event, WindowEvent::Focused(false)) {
                 self.ios_touch.reset();
+                if let Some(state) = self.state.as_mut() {
+                    crate::app::ios_controls::reset(state);
+                }
             }
             if self.shell_capture.is_none()
                 && self.tactical_capture.is_none()
@@ -277,6 +280,14 @@ impl ApplicationHandler for App {
                 if self.state.is_none() {
                     self.ios_touch.reset();
                     return;
+                }
+                if let Some(state) = self.state.as_mut() {
+                    if crate::app::ios_controls::enabled(state) {
+                        self.ios_touch.reset();
+                        crate::app::ios_controls::handle_touch(state, *touch);
+                        return;
+                    }
+                    crate::app::ios_controls::reset(state);
                 }
                 let translated = self.ios_touch.translate(*touch);
                 if touch.phase == winit::event::TouchPhase::Cancelled
@@ -500,6 +511,8 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::Resized(size) => {
+                #[cfg(target_os = "ios")]
+                crate::app::ios_controls::reset(state);
                 // A zero dimension is how Windows reports a minimise — that
                 // backend never sends `Occluded` — so the hidden flag is
                 // derived here as well as from the occlusion event below.

@@ -12,6 +12,8 @@ use crate::render::gpu::GpuContext;
 pub(crate) struct RendererState {
     pub(crate) gpu: GpuContext,
     pub(crate) batch_renderer: BatchRenderer,
+    #[cfg(target_os = "ios")]
+    pub(super) ios_hud: Option<crate::app::ios_hud_render::IosHudArt>,
     pub(crate) terrain_draw_renderer: crate::render::terrain_draw::TerrainDrawRenderer,
     pub(crate) combat_light_renderer: crate::render::combat_light::CombatLightRenderer,
     /// Reusable GPU instance buffers — avoids per-frame GPU buffer allocation.

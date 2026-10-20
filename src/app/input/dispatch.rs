@@ -598,7 +598,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
 /// one it cancels; VERA models the two it has (a targeting/placement cursor and
 /// the repair/sell cursor). The final rung — clear the selection — is retail
 /// behaviour, not a VERA deviation.
-fn right_click_cancel_ladder(state: &mut AppState) {
+pub(crate) fn right_click_cancel_ladder(state: &mut AppState) {
     if state.match_state.input.cancel_building_placement() {
         return;
     }
@@ -1982,11 +1982,24 @@ impl KeyModifiers {
 }
 
 pub(crate) fn is_shift_held(state: &AppState) -> bool {
-    state.match_state.input.hotkey_modifiers.shift_key()
+    state.match_state.input.hotkey_modifiers.shift_key() || touch_order_modifiers(state).1
 }
 
 pub(crate) fn is_ctrl_held(state: &AppState) -> bool {
-    state.match_state.input.hotkey_modifiers.control_key()
+    state.match_state.input.hotkey_modifiers.control_key() || touch_order_modifiers(state).0
+}
+
+fn touch_order_modifiers(state: &AppState) -> (bool, bool) {
+    #[cfg(any(target_os = "ios", test))]
+    {
+        let controls = &state.match_state.input.ios_controls;
+        controls.order_modifiers()
+    }
+    #[cfg(not(any(target_os = "ios", test)))]
+    {
+        let _ = state;
+        (false, false)
+    }
 }
 
 /// Return `true` if either Alt key is currently held.

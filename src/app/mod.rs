@@ -49,6 +49,19 @@ pub(crate) mod input;
 pub mod ios_runtime;
 #[cfg(any(target_os = "ios", test))]
 mod ios_touch;
+#[cfg(any(target_os = "ios", test))]
+#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+mod ios_battle_touch;
+#[cfg(any(target_os = "ios", test))]
+#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+mod ios_shortcuts;
+#[cfg(any(target_os = "ios", test))]
+#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+mod ios_controls;
+#[cfg(target_os = "ios")]
+mod ios_hud_render;
+#[cfg(target_os = "ios")]
+mod ios_unit_tags;
 pub(crate) mod loading;
 pub(crate) mod match_audio;
 pub mod match_bootstrap;

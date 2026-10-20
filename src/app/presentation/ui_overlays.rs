@@ -131,7 +131,7 @@ fn health_strip_visibility(
 
 /// Retained Display membership and the shared tactical draw admission.
 /// Return the already derived observer facts for native Extras queries.
-fn admitted_techno_observer(
+pub(crate) fn admitted_techno_observer(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
     local_owner: Option<&str>,

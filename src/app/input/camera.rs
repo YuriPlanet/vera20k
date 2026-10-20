@@ -1241,6 +1241,11 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
 /// committing the view. Main_Tick calls input before logic (0x55D8AB); captured
 /// right drag and uncaptured edge/coast are mutually exclusive in 0x692F30.
 pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
+    // A touch cursor stays at its last position after lifting. It must never
+    // keep mouse edge/coast scrolling alive behind the joystick/pan owner.
+    if cfg!(target_os = "ios") {
+        return (0.0, 0.0);
+    }
     if state
         .match_state
         .sim_runtime
@@ -1303,6 +1308,26 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
         );
     }
     right_drag
+}
+
+#[cfg(any(target_os = "ios", test))]
+#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+pub(crate) fn request_touch_scroll(state: &mut AppState, world_delta: (f32, f32)) {
+    if state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .is_some_and(|runtime| runtime.simulation.session().input_locked())
+        || !world_delta.0.is_finite()
+        || !world_delta.1.is_finite()
+    {
+        return;
+    }
+    state
+        .match_state
+        .input
+        .pending_camera_scroll
+        .request(world_delta);
 }
 
 /// Tactical__AI commits the accumulated request before follow (0x6D26F9),

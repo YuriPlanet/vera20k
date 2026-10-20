@@ -58,7 +58,7 @@ Simulator acceptance establishes that the menu and map work in the Mac's iPhone
 runtime. Physical-iPhone installation, memory use, touch behavior, and stability
 remain separate checks.
 
-### Local acceptance, 2026-10-20
+### Initial menu-and-map acceptance, 2026-10-20
 
 The release build was installed in the dedicated `VERA20k iOS Mini` simulator
 (iPhone 16 Pro, iOS 26.5). The normal route through the main menu, Single Player,
@@ -132,11 +132,51 @@ Reinstalling refreshes the bundle path without overwriting existing settings or
 saves. The packager never rewrites the source retail directory.
 
 The phone uses its actual screen bounds in landscape, a 2x rendering scale and
-an 8192 texture-edge ceiling. Single-finger taps and drags feed the existing left
-mouse-button owners. Secondary contacts are ignored; cancelled contacts release
-without accepting a shell click. Full RTS touch gestures and hardware-keyboard
-modifier fidelity remain outside this minimum version. Suspension parks rendering
-and uses the existing focus-loss pause and audio policy.
+an 8192 texture-edge ceiling. Menus retain ordinary single-finger pointer
+navigation. Suspension parks rendering and uses the existing focus-loss pause
+and audio policy. Hardware-keyboard modifier fidelity remains a separate check.
+
+## Landscape battle controls
+
+The battle HUD follows WERHD's landscape gesture semantics, using the existing
+VERA pointer, command, selection, and camera owners:
+
+- The joystick scrolls the view, with a 0.12 dead zone and 32-point thumb travel.
+  Lifting the finger stops scrolling. It never orders units to move.
+- The three keys around it are attack move (route/crosshair), force attack
+  (lightning/crosshair), and cancel (X). Hold one while tapping the battlefield
+  with another finger; releasing clears the mode. They are not sticky toggles.
+- A stationary battlefield hold of at least 500 ms issues a Ctrl force-attack
+  click on release. Moving more than 7 points on either axis makes a box drag.
+- A short two-finger battlefield tap cancels through the normal right-click
+  cancellation ladder. Two-finger movement crossing 28 points drags the view
+  with the fingers; it neither cancels nor commits the abandoned first tap.
+- UI, shortcut, and joystick contacts do not join battlefield finger pairs.
+  A cancelled gesture or lost focus aborts the current pointer capture.
+
+The original bottom command strip is replaced by an icon shortcut bar; the right
+production sidebar remains visible and interactive. The fixed gear opens its
+editor. Select a current icon, use left/right to reorder or the trash icon to
+remove it, and tap an available icon with a plus badge to add it. Arrows page the
+current slots and available catalogue independently. The checkmark saves, X
+discards the draft, and the curved arrow restores defaults in the draft. A failed
+save preserves the draft and marks the save control red. Tapping the gear again
+also discards the unsaved editor draft.
+
+The default bar contains teams 1/2, same-type selection, deploy, guard, stop,
+and planning mode. Hold a team icon to assign the selected units; tap to recall
+it. Team icons use one, two, or three dots. Up to sixteen distinct shortcuts can
+be saved. The catalogue also offers home, army selection, latest radar event,
+scatter, next unit, target modes, name/base-price labels, repair, sell, and the
+in-game menu. Narrow bars page while keeping the gear reachable.
+
+Preferences are stored atomically as `touch-shortcuts.json` in the writable
+runtime directory. Reinstalling the app preserves them. Touch targets and artwork
+use physical window coordinates independently of the game zoom; map vectors are
+converted through the existing zoom and camera clamp.
+
+The original generated PNG, grid order, and built-in imagegen prompt are in
+[`art/mobile`](../art/mobile/README.md). No retail artwork is replaced.
 
 Validate launch, visible menu, menu touch navigation, map load, and a rendered
 skirmish separately on the connected physical phone. Touch controls, playability,

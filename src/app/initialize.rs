@@ -721,6 +721,8 @@ impl App {
             renderer: crate::app::renderer_state::RendererState {
                 gpu,
                 batch_renderer,
+                #[cfg(target_os = "ios")]
+                ios_hud: None,
                 combat_light_renderer,
                 terrain_draw_renderer,
                 instance_pool: crate::render::batch::InstanceBufferPool::new(),
@@ -759,6 +761,8 @@ impl App {
         // even without a music device. The profile keeps native negative values
         // for round-trip; physical output owners provide the safe gain clamp.
         apply_startup_audio_profile(&state.persistence.options_profile, &mut state.audio);
+        #[cfg(target_os = "ios")]
+        crate::app::ios_controls::initialize(&mut state);
         Self::sync_zoom_pass(&mut state);
         #[cfg(feature = "telemetry-dashboard")]
         attach_dashboard(&mut state);
