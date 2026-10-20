@@ -49,6 +49,8 @@ use crate::sim::intern::StringInterner;
 use crate::sim::miner::MinerConfig;
 use crate::sim::mission::MissionType;
 use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::FrameChannel;
+use crate::sim::world::SimSoundEvent;
 
 /// Non-rules world context the mission handler bodies dispatched from the
 /// host need (overlay types and per-tick config the spine already owns;
@@ -1068,8 +1070,14 @@ fn techno_ai_shell(
 /// `owner == g_PlayerPtr` in a skirmish). The flash's existing signed dword
 /// counter is stepped later by4CC770 at6FAC4D, through flash_step; a
 /// newly promoted object's timer therefore loses one on this same visit.
-fn veterancy_promotion_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+fn veterancy_promotion_step(
+    interner: &mut StringInterner,
+    substrate: &mut ObjectSubstrate,
+    sound_events: &mut FrameChannel<SimSoundEvent>,
+    id: u64,
+    rules: &RuleSet,
+) {
+    let Some(entity) = substrate.entities.get_mut(id) else {
         return;
     };
     let Some(promotion) = entity
@@ -1088,8 +1096,8 @@ fn veterancy_promotion_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
             rules.general.upgrade_veteran_sound.as_deref()
         }
     };
-    let sound_id = sound.map(|name| sim.interner.intern(name));
-    sim.sound_events.emit(super::SimSoundEvent::UnitPromoted {
+    let sound_id = sound.map(|name| interner.intern(name));
+    sound_events.emit(super::SimSoundEvent::UnitPromoted {
         owner,
         sound_id,
         rx,
@@ -1402,7 +1410,13 @@ fn techno_common_steps(
     if let Some(sample) = turret_rotate_sample {
         sim.visit_turret_rotate_sound(id, sample, rules, effects);
     }
-    veterancy_promotion_step(sim, id, rules);
+    veterancy_promotion_step(
+        &mut sim.interner,
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        id,
+        rules,
+    );
     crate::sim::credit_income::drain_common_step(sim, id, rules);
     // Techno6FA224..6FA244: only a valid loaded main VXL reaches
     // RockingUpdate70B570 and its immediate Alive guard. This precedes
@@ -5373,6 +5387,76 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         assert!(sim.particle_systems().get(system_id).unwrap().in_limbo());
         sim.process_pending_delete();
         assert!(sim.particle_systems().get(system_id).is_none());
+    }
+
+    /// The reach block (`0x006FAB74`) sends a Foot holding an out-of-zone
+    /// Target to Approach, which has no unarmed exit: GetWeaponRange answers
+    /// 0 (`0x007012C0`), CanFireAt is false (`0x006F7237`), the Attack
+    /// mission passes the drop arms (`0x004D5716..0x004D57E4`), the search
+    /// runs no ring and the exhausted arm (`0x004D68E7..0x004D6A58`) drops
+    /// the Target (`0x004D69FB`) while setting the passable cell nearest it
+    /// in the mover's zone as its destination. The block then ends on the new
+    /// NavCom; its own CanFireAt drop (`0x006FABB2`) stays for an Approach
+    /// that leaves the Target in place.
+    #[test]
+    fn an_unarmed_mover_in_the_reach_block_drops_its_target_and_walks_toward_it() {
+        let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = fixture.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x6FAB74);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        // A water column splits the arena's ground zones.
+        crate::sim::arena_fixture::flood(
+            &mut sim,
+            &rules,
+            32,
+            (0..32).flat_map(|y| (16..19).map(move |x| (x, y))),
+        );
+        let mcv = sim
+            .spawn_object("SMCV", "Americans", 10, 16, 0, &rules)
+            .expect("retail SMCV spawns");
+        let tank = sim
+            .spawn_object("MTNK", "Russians", 24, 16, 0, &rules)
+            .expect("retail MTNK spawns");
+        sim.assign_target_represented(
+            mcv,
+            Some(TargetKind::Entity(tank)),
+            Some(&rules),
+            None,
+            FrameEffects::default(),
+        )
+        .expect("the target assigns");
+        sim.substrate
+            .entities
+            .get_mut(mcv)
+            .unwrap()
+            .mission
+            .set_current_for_test(MissionId::from_known(MissionType::Attack), 0);
+        assert_eq!(
+            sim.foot_is_in_same_zone_as(mcv, TargetKind::Entity(tank), &rules),
+            Ok(false),
+            "the water wall puts the tank out of the MCV's zone"
+        );
+        target_reach_step(&mut sim, mcv, &rules, None, FrameEffects::default());
+        let entity = sim.substrate.entities.get(mcv).unwrap();
+        assert_eq!(
+            entity.attack_target.target(),
+            None,
+            "the exhausted arm dropped the Target"
+        );
+        let NavTargetRef::Cell { rx, .. } = entity
+            .navigation
+            .nav_com()
+            .expect("the destination is the passable cell nearest the tank")
+        else {
+            unreachable!("the exhausted arm sets a Cell destination")
+        };
+        assert!(
+            rx < 16,
+            "the destination lies in the mover's zone (rx {rx})"
+        );
     }
 }
 

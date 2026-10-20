@@ -63,6 +63,7 @@ use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 use super::ResourceType;
+use crate::sim::rng::SimRng;
 
 /// The type whose model a harvester shows while its unload latch
 /// (Unit+0x6D1) is set: the type's `UnloadingClass=`, which raising the latch
@@ -139,12 +140,12 @@ pub(crate) fn mission_unload(
             crate::sim::world::building_anim::start_refinery_unload(sim, rules, building);
         }
         set_status(&mut sim.substrate, id, UNLOAD_DUMPING);
-        return epilogue(sim, rules, id);
+        return epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id);
     }
     match entity.mission.handler_state() {
         UNLOAD_DUMPING => unload_dumping(sim, rules, id, effects),
         UNLOAD_FINISHING => unload_finishing(sim, rules, id, effects),
-        _ => epilogue(sim, rules, id),
+        _ => epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id),
     }
 }
 
@@ -167,7 +168,7 @@ fn unload_dumping(
             now,
             &LiveReadyInputProvider { rules },
         );
-        return epilogue(sim, rules, id);
+        return epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id);
     };
     let stage = sim
         .substrate
@@ -260,7 +261,7 @@ fn unload_finishing(
             let _ = sim.substrate.mission_commence_exact(id, now);
         }
     }
-    epilogue(sim, rules, id)
+    epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
 }
 
 /// Unit `Per_Cell_Process(2)` after Ready/Commence (`0x0073ACD7..0x0073AD48`)
@@ -431,14 +432,13 @@ fn set_status(substrate: &mut ObjectSubstrate, id: u64, status: u32) {
     }
 }
 
-fn epilogue(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
-    Simulation::mission_rate_epilogue_for(
-        &mut sim.scenario_rng,
-        &sim.substrate,
-        rules,
-        id,
-        MissionType::Unload,
-    )
+fn epilogue(
+    scenario_rng: &mut SimRng,
+    substrate: &ObjectSubstrate,
+    rules: &RuleSet,
+    id: u64,
+) -> i32 {
+    Simulation::mission_rate_epilogue_for(scenario_rng, substrate, rules, id, MissionType::Unload)
 }
 
 /// `FindFirstUsedSlot` (`0x006C9820`) and `RemoveAmount` (`0x006C96B0`) on

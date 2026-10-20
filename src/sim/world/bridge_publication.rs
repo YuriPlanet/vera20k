@@ -316,7 +316,11 @@ impl BridgePublicationHost for LivePublication<'_> {
         rim_publication::update(self, coord, family);
     }
     fn zones(&mut self, query: CellCoord) {
-        let _ = invalidate_bridge_zones(self.sim, query);
+        let _ = invalidate_bridge_zones(
+            &self.sim.resolved_terrain,
+            &mut self.sim.bridge_state,
+            query,
+        );
         publish_bridge_navigation(self.sim, self.rules);
     }
     fn tile(&self, cell: Cell) -> i32 {

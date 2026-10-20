@@ -40,7 +40,6 @@ use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
-#[cfg(any(test, feature = "test-support"))]
 use crate::sim::bridge_state::BridgeRuntimeState;
 use crate::sim::bridge_state::ramp_repair::{self, Family as HutBridgeFamily};
 use crate::sim::bridge_state::{Axis, BridgeDamageEvent, DispatchPath};
@@ -812,9 +811,12 @@ pub(super) fn kill_ground_occupants_at(
 /// MapClass::InvalidateBridgeZones (`0x0056DAE0`) on the live record owner.
 /// Returns whether a record deactivated (the native RebuildZoneConnectivity
 /// `0x0056C510` request).
-pub(crate) fn invalidate_bridge_zones(sim: &mut Simulation, query: (i16, i16)) -> bool {
-    let (Some(bridges), Some(terrain)) = (sim.bridge_state.as_mut(), sim.resolved_terrain.as_ref())
-    else {
+pub(crate) fn invalidate_bridge_zones(
+    resolved_terrain: &Option<ResolvedTerrainGrid>,
+    bridge_state: &mut Option<BridgeRuntimeState>,
+    query: (i16, i16),
+) -> bool {
+    let (Some(bridges), Some(terrain)) = (bridge_state.as_mut(), resolved_terrain.as_ref()) else {
         return false;
     };
     bridges.invalidate_bridge_zones(terrain, query)

@@ -275,6 +275,14 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
+        // The harvest_attack_return corpus substitutes the Approach vcall
+        // itself with a declared RET4 (`APPROACH_SEAM`); a replayed row takes
+        // that declared answer here, ahead of the head and the body, without
+        // touching the Target or the destination. Inactive outside a replay.
+        #[cfg(test)]
+        if super::approach_oracle_seam::take_approach_return().is_some() {
+            return;
+        }
         if self.approach_unit_head(id, rules, registry, frame_effects)
             || self.approach_infantry_deployed(id, rules, registry, frame_effects)
             || !self.owns_foot_approach(id, rules)
@@ -415,21 +423,14 @@ impl Simulation {
     /// has no port (`fire_error_world` records the same gap). Effect: none in
     /// retail.
     ///
-    /// RESIDUAL: a mover whose selected slot is empty returns at once. Native
-    /// has no such exit: GetWeaponRange answers 0 (`0x007012C0`), CanFireAt
-    /// false (`0x006F7237`), the search runs no ring, and the exhausted arm
-    /// drops the Target and sets the passable cell nearest it
-    /// (`0x004D68E7..0x004D6A58`). Trigger: a mover with an empty slot
-    /// holding a Target on Attack, Hunt or Area Guard, or sent here by the
-    /// reach block. Retail's slotless movers (the Chrono Miner, an MCV) take
+    /// An empty selected slot keeps the body, as native: GetWeaponRange
+    /// answers 0 (`0x007012C0`), In_Range answers false before any query
+    /// (`0x006F7242`), the drop arms (`0x004D5716..0x004D57E4`) still decide,
+    /// and a search they admit runs its rings from the foundation-extended
+    /// radius with every In_Range candidate test false. The exhausted arm
+    /// (`0x004D68E7..0x004D6A58`) drops the Target and sets the passable cell
+    /// nearest it. Retail's slotless movers (the Chrono Miner, an MCV) take
     /// no attack order; engineers, spies and the War Miner carry a weapon.
-    /// Effect: it keeps the Target and stands where native lets it go and
-    /// walks beside it; after the reach block, the block's CanFireAt drops it
-    /// with no destination. Kept because the `harvest_attack_return` corpus
-    /// replays a declared Approach seam that this exit stands in for, and
-    /// two fixtures hold unarmed movers on Attack
-    /// (`the_team_attacks_the_building_its_first_member_finds`, the spy
-    /// holding a dying building, whose stale Target Approach still reads).
     pub(crate) fn approach_foot_target(
         &mut self,
         id: u64,
@@ -452,12 +453,12 @@ impl Simulation {
             .object_type(actor.type_ref(), rules)
             .ok_or("Approach requires mover type")?;
         //4D56CA..4D56F8: SelectWeapon, then GetWeaponRange (vt+0x168) of its
-        // index. An empty slot returns here (RESIDUAL above).
-        let Some((index, Some(selected))) = self.foot_target_weapon(actor, object, target, rules)
-        else {
+        // index. An empty slot keeps the body (`0x007012C0` answers 0); only
+        // a target the selection cannot resolve ends it here.
+        let Some((index, selected)) = self.foot_target_weapon(actor, object, target, rules) else {
             return Ok(None);
         };
-        let weapon = selected.weapon;
+        let weapon = selected.map(|selected| selected.weapon);
         let terrain = self
             .resolved_terrain
             .as_ref()
@@ -481,8 +482,11 @@ impl Simulation {
             overlay_registry: registry,
             alliances: Some(self.house_alliances.as_map()),
         };
-        let can_fire = if let Some(identity) = identity {
-            in_range::cell_target_in_range(
+        let can_fire = match (weapon, identity) {
+            //0x006F7242: In_Range answers false ahead of any map query when
+            //GetWeapon gave no weapon (an empty slot), so CanFireAt is false.
+            (None, _) => false,
+            (Some(weapon), Some(identity)) => in_range::cell_target_in_range(
                 actor,
                 identity,
                 weapon,
@@ -491,9 +495,8 @@ impl Simulation {
                 terrain,
                 &los,
             )
-            .ok_or("Approach CanFireAt coordinate failed")?
-        } else {
-            combat::can_fire_at_target_in_query(
+            .ok_or("Approach CanFireAt coordinate failed")?,
+            (Some(_), None) => combat::can_fire_at_target_in_query(
                 self,
                 rules,
                 &self.interner,
@@ -503,7 +506,7 @@ impl Simulation {
                 Some(self.house_alliances.as_map()),
                 &los,
                 Some(&target),
-            )
+            ),
         };
         let mission = actor.mission.current().known();
         let human = self
@@ -514,6 +517,9 @@ impl Simulation {
             && actor.drain.target().is_none()
             && actor.bunker.link().installed_in().is_none()
             && !actor.passenger_role.in_open_transport();
+        //4D5716..4D57E4: the drop arms ahead of the search. A Sticky mission,
+        // or a mover that may not approach off Attack, a human's Area Guard or
+        // a computer's Hunt, clears the Target and the destination.
         if !can_fire
             && (mission == Some(MissionType::Sticky)
                 || !may_approach
@@ -1029,12 +1035,14 @@ impl Simulation {
     /// `0x004D6550`) or, for a CloseRange= mover (`close_range_target`, the
     /// Target's coordinate), an XY distance to the Target under 307.2
     /// (`0x007E9230`; `0x004D61A4..0x004D625C`, `0x004D64C0..0x004D6580`).
+    /// No weapon (an empty slot) fails the In_Range half at its
+    /// `0x006F7242` test; the CloseRange half never asks the weapon.
     fn approach_accepts(
         &self,
         id: u64,
         point: DriveCoord,
         target: &TargetKind,
-        weapon: &crate::rules::weapon_type::WeaponType,
+        weapon: Option<&crate::rules::weapon_type::WeaponType>,
         close_range_target: Option<DriveCoord>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
@@ -1049,21 +1057,23 @@ impl Simulation {
                 .as_ref()
                 .ok_or("Approach requires map cells")?,
         );
-        let in_range = in_range::compute_in_range_in_query(
-            actor,
-            (i64::from(point.x), i64::from(point.y), i64::from(point.z)),
-            target,
-            weapon,
-            rules,
-            &self.interner,
-            self,
-            &cells,
-            &combat::line_of_fire::LineOfFireInputs {
-                overlay_grid: self.overlay_grid.as_ref(),
-                overlay_registry: registry,
-                alliances: Some(self.house_alliances.as_map()),
-            },
-        );
+        let in_range = weapon.is_some_and(|weapon| {
+            in_range::compute_in_range_in_query(
+                actor,
+                (i64::from(point.x), i64::from(point.y), i64::from(point.z)),
+                target,
+                weapon,
+                rules,
+                &self.interner,
+                self,
+                &cells,
+                &combat::line_of_fire::LineOfFireInputs {
+                    overlay_grid: self.overlay_grid.as_ref(),
+                    overlay_registry: registry,
+                    alliances: Some(self.house_alliances.as_map()),
+                },
+            )
+        });
         // The ftol'd distance is an integer: under 307.2 is at most 307.
         Ok(in_range
             || close_range_target.is_some_and(|target| {

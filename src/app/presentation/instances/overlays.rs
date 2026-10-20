@@ -1080,6 +1080,47 @@ fn native_terrain_instances(
     })
 }
 
+/// Sample the upstream polygon without rebuilding its native shape. History
+/// uses world-projected points, so camera movement never becomes wave motion.
+fn sample_weapon_wave_draw(
+    mut draw: crate::render::wave_geometry::WaveDraw,
+    id: u64,
+    cache: &crate::app::presentation::interpolation::RenderInterpolation,
+    frame: u32,
+    camera: [i32; 2],
+) -> crate::render::wave_geometry::WaveDraw {
+    use crate::app::presentation::interpolation::{PointKind, PointPose};
+    use crate::render::wave_geometry::WavePolygon;
+    let sample = |index, p: [i32; 2]| {
+        let [x, y, _] = cache
+            .sample_draw_point(
+                PointKind::Wave(index),
+                id,
+                PointPose::new([p[0], p[1], 0], 0, None),
+                frame,
+            )
+            .coord;
+        [x - camera[0], y - camera[1]]
+    };
+    let points: &mut [[i32; 2]] = match &mut draw.polygon {
+        WavePolygon::Magnetic(points) => points,
+        WavePolygon::Sonic(points) => points,
+    };
+    for (i, p) in points.iter_mut().enumerate() {
+        *p = sample(i as u8, *p);
+    }
+    draw.source_point = sample(6, draw.source_point);
+    draw.source_z = cache
+        .sample_draw_point(
+            PointKind::Wave(7),
+            id,
+            PointPose::new([0, 0, draw.source_z], 0, None),
+            frame,
+        )
+        .coord[2];
+    draw
+}
+
 /// Attach native Sonic/magnetic destination edits to retained Display parents.
 pub(crate) fn build_weapon_wave_instances(
     state: &AppState,
@@ -1103,43 +1144,10 @@ pub(crate) fn build_weapon_wave_instances(
     ]
     .map(|value| value.floor() as i32);
     let cache = &state.match_state.match_presentation.interpolation;
-    let sample = |id, index, p: [i32; 2]| {
-        use crate::app::presentation::interpolation::{PointKind, PointPose};
-        let [x, y, _] = cache
-            .sample_draw_point(
-                PointKind::Wave(index),
-                id,
-                PointPose::new([p[0], p[1], 0], 0, None),
-                sim.session().binary_frame(),
-            )
-            .coord;
-        [x, y]
-    };
-    for (id, mut draw) in
+    for (id, draw) in
         crate::app::presentation::fire_effects::build_weapon_wave_draws(sim, observer, [0, 0])
     {
-        use crate::render::wave_geometry::WavePolygon;
-        let points: &mut [[i32; 2]] = match &mut draw.polygon {
-            WavePolygon::Magnetic(points) => points,
-            WavePolygon::Sonic(points) => points,
-        };
-        for (i, p) in points.iter_mut().enumerate() {
-            let p0 = sample(id, i as u8, *p);
-            *p = [p0[0] - camera[0], p0[1] - camera[1]];
-        }
-        let p = sample(id, 6, draw.source_point);
-        draw.source_point = [p[0] - camera[0], p[1] - camera[1]];
-        {
-            use crate::app::presentation::interpolation::{PointKind, PointPose};
-            draw.source_z = cache
-                .sample_draw_point(
-                    PointKind::Wave(7),
-                    id,
-                    PointPose::new([0, 0, draw.source_z], 0, None),
-                    sim.session().binary_frame(),
-                )
-                .coord[2];
-        }
+        let draw = sample_weapon_wave_draw(draw, id, cache, sim.session().binary_frame(), camera);
         use crate::app::presentation::render::draw_plan_lowering::{
             ObjectBodyDraw, PlannedObjectInstance,
         };
@@ -1337,6 +1345,67 @@ mod terrain_render_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn render_interpolation_preserves_both_native_wave_shapes_and_camera_independence() {
+        use crate::app::presentation::interpolation::RenderInterpolation;
+        use crate::render::wave_geometry::{WaveClipPath, WaveDraw, WavePolygon};
+        use crate::sim::world::Simulation;
+        let six = [
+            [100, 200],
+            [104, 198],
+            [112, 206],
+            [110, 208],
+            [106, 210],
+            [102, 205],
+        ];
+        for polygon in [
+            WavePolygon::Magnetic(std::array::from_fn(|i| six[i])),
+            WavePolygon::Sonic(six),
+        ] {
+            let old = WaveDraw {
+                polygon,
+                source_point: [101, 201],
+                source_z: 0,
+                phase: 3,
+                direction: 2,
+                clip_path: WaveClipPath::Fast,
+            };
+            let mut sim = Simulation::new();
+            sim.session_mut_for_test().set_binary_frame_for_test(1);
+            let mut cache = RenderInterpolation::new(true);
+            cache.observe(&sim, 0, Some(32.), false);
+            super::sample_weapon_wave_draw(old, 7, &cache, 1, [7, 11]);
+            let mut current = old;
+            let points: &mut [[i32; 2]] = match &mut current.polygon {
+                WavePolygon::Magnetic(points) => points,
+                WavePolygon::Sonic(points) => points,
+            };
+            for point in points {
+                point[0] += 12;
+                point[1] += 8;
+            }
+            current.source_point = [113, 209];
+            current.source_z = 104;
+            current.phase = 4;
+            sim.session_mut_for_test().set_binary_frame_for_test(2);
+            cache.observe(&sim, 32, Some(32.), false);
+            super::sample_weapon_wave_draw(current, 7, &cache, 2, [30, -4]);
+            cache.observe(&sim, 48, Some(32.), false);
+            let mid = super::sample_weapon_wave_draw(current, 7, &cache, 2, [30, -4]);
+            for (actual, previous) in mid.polygon.points().iter().zip(old.polygon.points()) {
+                assert_eq!(*actual, [previous[0] + 6 - 30, previous[1] + 4 + 4]);
+            }
+            assert_eq!(mid.source_point, [101 + 6 - 30, 201 + 4 + 4]);
+            assert_eq!(mid.source_z, 52);
+            assert_eq!(mid.phase, 4, "native lifetime is not interpolated");
+            assert_eq!(mid.direction, current.direction);
+            assert_eq!(mid.clip_path, current.clip_path);
+            cache.set_enabled(false);
+            let exact = super::sample_weapon_wave_draw(current, 7, &cache, 2, [0, 0]);
+            assert_eq!(exact, current, "OFF must preserve native geometry exactly");
+        }
+    }
+
     /// The sprite is projected from the anim's exact Z. Half a level up lands
     /// between the two level rows; the old level-byte projection drew it on the
     /// lower row, and drew a 104-frame level-1 coordinate on row 0.

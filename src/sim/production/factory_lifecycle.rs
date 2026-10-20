@@ -23,8 +23,10 @@ use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
 use crate::sim::movement::ground_pose::Position;
 use crate::sim::production::ProductionState;
+use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::LifecycleOutput;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// An admitted HouseAbandon4FAA10 keeps this registry identity through
@@ -155,7 +157,14 @@ pub fn enqueue_by_type(
             held_start,
             money,
         );
-        publish_cameo_factory_link(sim, owner_id, category, type_interned);
+        publish_cameo_factory_link(
+            &sim.production,
+            &sim.session,
+            &mut sim.lifecycle_outputs,
+            owner_id,
+            category,
+            type_interned,
+        );
         return true;
     }
     let enqueue_order = sim.production.next_enqueue_order();
@@ -260,7 +269,14 @@ pub(super) fn start_active_production(
         .factories_mut()
         .resume(holder, time_to_build, frame, held_start, money);
     if let FactoryHolder::House(owner, category) = holder {
-        publish_cameo_factory_link(sim, owner, category, type_id);
+        publish_cameo_factory_link(
+            &sim.production,
+            &sim.session,
+            &mut sim.lifecycle_outputs,
+            owner,
+            category,
+            type_id,
+        );
     }
     Some(stable_id)
 }
@@ -269,16 +285,18 @@ pub(super) fn start_active_production(
 /// Queued/refused StartProduction never constructs here; same-type resume
 /// explicitly publishes the same link. Registry identity stays authoritative.
 fn publish_cameo_factory_link(
-    sim: &mut Simulation,
+    production: &ProductionState,
+    session: &ScenarioSession,
+    lifecycle_outputs: &mut FrameChannel<LifecycleOutput>,
     owner: InternedId,
     category: ProductionCategory,
     type_id: InternedId,
 ) {
-    if sim.session.current_house() != Some(owner) {
+    if session.current_house() != Some(owner) {
         return;
     }
-    if let Some(factory) = sim.production.factories().view(owner, category) {
-        sim.lifecycle_outputs.emit(
+    if let Some(factory) = production.factories().view(owner, category) {
+        lifecycle_outputs.emit(
             crate::sim::world::LifecycleOutput::ProductionFactoryLinked {
                 owner,
                 type_id,

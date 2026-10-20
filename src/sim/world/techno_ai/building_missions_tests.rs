@@ -867,18 +867,12 @@ fn retail_building_mission_inputs() {
 /// placed first, so the spot is one a vehicle's Unlimbo admits. Americans and
 /// Russians are both human (no AI orders) and allied with the map's own
 /// `Player` house, as in `combat::open_topped_fire_tests`.
-pub(super) fn retail_dustbowl_defence(
-    kind: &str,
-    owner: &str,
-    enemy: &str,
-    mcv: &str,
-    west: u16,
-) -> (
-    crate::headless_scenario::HeadlessScenario,
-    u64,
-    u64,
-    (u16, u16),
-) {
+/// Retail Dustbowl with the `Player`-allied human houses the fight fixtures
+/// use (see `combat::open_topped_fire_tests`), each registered the way the
+/// native House array holds one: a name FromName50C170 can read plus array
+/// membership, so the snapshot401 admission (d11222e2c) accepts this state on
+/// restore.
+fn retail_dustbowl_scenario() -> crate::headless_scenario::HeadlessScenario {
     let dir = std::env::var("RA2_DIR")
         .ok()
         .filter(|path| !path.trim().is_empty())
@@ -892,15 +886,10 @@ pub(super) fn retail_dustbowl_defence(
     let mut scenario =
         crate::headless_scenario::load(&dir, "Dustbowl.mmx", 0x00C0_FFEE).expect("Dustbowl loads");
     let crate::sim::runtime::SimRuntime {
-        simulation: sim,
-        resources,
+        simulation: sim, ..
     } = &mut scenario.runtime;
-    let rules = &resources.rules;
     for (name, side) in [("Americans", 0), ("Russians", 1)] {
         let house = sim.interner.intern(name);
-        // Register each extra House the way the native House array holds one:
-        // a name FromName50C170 can read plus array membership, so the
-        // snapshot401 admission (d11222e2c) accepts this state on restore.
         sim.houses.get_or_register_for_test(house, || {
             let mut state =
                 crate::sim::house_state::HouseState::new(house, side, None, true, 10_000, 10);
@@ -908,6 +897,27 @@ pub(super) fn retail_dustbowl_defence(
             state
         });
     }
+    scenario
+}
+
+pub(super) fn retail_dustbowl_defence(
+    kind: &str,
+    owner: &str,
+    enemy: &str,
+    mcv: &str,
+    west: u16,
+) -> (
+    crate::headless_scenario::HeadlessScenario,
+    u64,
+    u64,
+    (u16, u16),
+) {
+    let mut scenario = retail_dustbowl_scenario();
+    let crate::sim::runtime::SimRuntime {
+        simulation: sim,
+        resources,
+    } = &mut scenario.runtime;
+    let rules = &resources.rules;
     let (defence, truck, x, y) = (40..100_u16)
         .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
         .find_map(|(x, y)| {
@@ -916,16 +926,44 @@ pub(super) fn retail_dustbowl_defence(
             let level = terrain.cell(x, y)?.level;
             let open = (x - west..=x + 20).all(|cx| {
                 (y - 1..=y + 1).all(|cy| {
+                    // Dustbowl's ore fields sit on this open ground. A
+                    // building's Unlimbo admission (Is_Clear_To_Build
+                    // `0x0047C620`, through overlay_admits) refuses every
+                    // overlay cell a wall tower or laser fence does not own,
+                    // and a Foot receiver's +1AC needs the live overlay table
+                    // for any overlay cell at all. The arena keeps to ground
+                    // no overlay occupies so the defence, its supporters and
+                    // the enemy MCV all stand on their requested cells.
                     terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
                         && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
+                        && sim
+                            .overlay_grid
+                            .as_ref()
+                            .is_some_and(|grid| grid.cell(cx, cy).overlay_id.is_none())
                 })
             });
             if !open {
                 return None;
             }
-            let truck = sim.spawn_object(mcv, enemy, x + 5, y, 0, rules)?;
+            let truck = sim.spawn_object_with_overlay_registry(
+                mcv,
+                enemy,
+                x + 5,
+                y,
+                0,
+                rules,
+                &resources.overlay_registry,
+            )?;
             let defence = sim
-                .spawn_object(kind, owner, x, y, 0, rules)
+                .spawn_object_with_overlay_registry(
+                    kind,
+                    owner,
+                    x,
+                    y,
+                    0,
+                    rules,
+                    &resources.overlay_registry,
+                )
                 .expect("the defence stands where the MCV does");
             Some((defence, truck, x, y))
         })
@@ -934,7 +972,17 @@ pub(super) fn retail_dustbowl_defence(
         (20..120_u16)
             .flat_map(|py| (20..120_u16).map(move |px| (px, py)))
             .filter(|&(px, py)| px.abs_diff(x).max(py.abs_diff(y)) >= 24)
-            .find_map(|(px, py)| sim.spawn_object(plant, house, px, py, 0, rules))
+            .find_map(|(px, py)| {
+                sim.spawn_object_with_overlay_registry(
+                    plant,
+                    house,
+                    px,
+                    py,
+                    0,
+                    rules,
+                    &resources.overlay_registry,
+                )
+            })
             .unwrap_or_else(|| panic!("room for {plant}"));
     }
     for (house, ally) in [
@@ -977,8 +1025,19 @@ fn retail_spawn(
         simulation: sim,
         resources,
     } = &mut scenario.runtime;
+    // The live overlay table goes with every retail spawn: a Foot receiver's
+    // +1AC hard-fails on any overlay cell without it (the same boundary the
+    // bridge lifecycle evidence uses for its Engineer).
     let id = sim
-        .spawn_object(kind, owner, cell.0, cell.1, 0, &resources.rules)
+        .spawn_object_with_overlay_registry(
+            kind,
+            owner,
+            cell.0,
+            cell.1,
+            0,
+            &resources.rules,
+            &resources.overlay_registry,
+        )
         .expect("spawns");
     sim.resolve_type_handles(&resources.rules);
     id
@@ -1042,12 +1101,21 @@ fn retail_defence_guards_attacks_and_returns(
         )
     };
     {
+        // The ordinary successful Building Unlimbo path commences Guard
+        // before it returns: Unlimbo calls Idle(1,1) (`0x006F6E2A`), whose
+        // build-up-bypass flag (`0x00A8ED6B`; natively only the random map
+        // generator sets it, and VERA's `with_buildup_bypass` spawn stands in
+        // for it) takes the Idle arm and queues Guard (`0x0044D6DC..0x0044D6F1`);
+        // the ready byte `+0x6DD` is already written (`0x004467C9`), so the
+        // common caller's Ready ask (`0x006F6E3B`) Commences (`0x006F6E49`)
+        // inside the same Unlimbo. Native instruction reading on issue
+        // #1511; the spawn returns with Guard current and the queue empty.
         let placed = scenario.sim().substrate.entities.get(defence).unwrap();
-        assert_eq!(placed.mission.current(), MissionId::NONE);
         assert_eq!(
-            placed.mission.queued(),
+            placed.mission.current(),
             MissionId::from_known(MissionType::Guard)
         );
+        assert_eq!(placed.mission.queued(), MissionId::NONE);
     }
     retail_frame(&mut scenario, Vec::new());
     assert_eq!(mission(&scenario).0, Some(MissionType::Guard));
@@ -1250,7 +1318,15 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
             .flat_map(|py| (20..120_u16).map(move |px| (px, py)))
             .filter(|&(px, py)| px.abs_diff(x).max(py.abs_diff(y)) >= 30)
             .find_map(|(px, py)| {
-                sim.spawn_object("GAPOWR", "Americans", px, py, 0, &resources.rules)
+                sim.spawn_object_with_overlay_registry(
+                    "GAPOWR",
+                    "Americans",
+                    px,
+                    py,
+                    0,
+                    &resources.rules,
+                    &resources.overlay_registry,
+                )
             })
             .expect("room for a second GAPOWR");
         sim.resolve_type_handles(&resources.rules);
@@ -1389,4 +1465,104 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
         "a supporter after its master beams 27 frames after its recruitment"
     );
     assert_eq!(shot, Some((second + 1 + 27, 480)));
+}
+
+/// The ore-field spawn admission gates the Dustbowl fixtures stand on, at the
+/// exact cells issue #1114's trace pinned: (69,40) and (69,41) are
+/// Tiberium-land tiles (`Foot=90%`, `Track=70%` retail) carrying an ore
+/// overlay, while the open Rough ground east of the field at (76,40) carries
+/// none.
+///
+/// - A building's Unlimbo refuses the ore cell even with the live overlay
+///   table: `Is_Clear_To_Build @ 0x0047C620` (through `overlay_admits`)
+///   admits an overlay cell only to a wall tower on its own wall or a laser
+///   fence on ore. A defence standing on ore is refused natively too, which
+///   is why the fight arena keeps to overlay-free ground.
+/// - A Foot receiver's `+1AC` needs the live overlay table to resolve any
+///   overlay cell at all, so the registry-less convenience boundary refuses
+///   the ore cell (the documented boundary the bridge lifecycle evidence
+///   spawns its Engineer around); through the live table the ore is no wall
+///   or crate and the Tiberium land row admits infantry and vehicles.
+#[test]
+#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+fn retail_dustbowl_ore_cell_spawn_admission_matches_native_gates() {
+    let mut scenario = retail_dustbowl_scenario();
+    let crate::sim::runtime::SimRuntime {
+        simulation: sim,
+        resources,
+    } = &mut scenario.runtime;
+    let rules = &resources.rules;
+    let ore = sim
+        .overlay_grid
+        .as_ref()
+        .expect("retail load resolves overlays");
+    for (x, y) in [(69u16, 40u16), (69, 41)] {
+        assert!(
+            ore.cell(x, y).overlay_id.is_some(),
+            "({x},{y}) carries the ore overlay the trace pinned"
+        );
+    }
+    assert!(
+        ore.cell(76, 40).overlay_id.is_none(),
+        "the open ground east of the field carries no overlay"
+    );
+
+    // A defence refuses the ore cell through the live overlay table.
+    assert!(
+        sim.spawn_object_with_overlay_registry(
+            "GAPILL",
+            "Americans",
+            69,
+            40,
+            0,
+            rules,
+            &resources.overlay_registry,
+        )
+        .is_none(),
+        "Is_Clear_To_Build refuses a building on an ore overlay"
+    );
+
+    // Through the live table the ore cell admits infantry and vehicles, and
+    // the infantryman stands on his requested cell.
+    let engineer = sim
+        .spawn_object_with_overlay_registry(
+            "E2",
+            "Americans",
+            69,
+            40,
+            0,
+            rules,
+            &resources.overlay_registry,
+        )
+        .expect("ore admits infantry through the live overlay table");
+    let placed = sim.substrate.entities.get(engineer).unwrap();
+    assert_eq!((placed.position.rx(), placed.position.ry()), (69, 40));
+    assert!(
+        sim.spawn_object_with_overlay_registry(
+            "SMCV",
+            "Russians",
+            69,
+            41,
+            0,
+            rules,
+            &resources.overlay_registry,
+        )
+        .is_some(),
+        "ore admits vehicles through the live overlay table"
+    );
+
+    // On the overlay-free ground both classes stand.
+    assert!(
+        sim.spawn_object_with_overlay_registry(
+            "GAPILL",
+            "Americans",
+            76,
+            40,
+            0,
+            rules,
+            &resources.overlay_registry,
+        )
+        .is_some(),
+        "overlay-free Rough ground admits a building"
+    );
 }

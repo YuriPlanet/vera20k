@@ -28,12 +28,15 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::NavTargetRef;
 use crate::sim::docking::bunker_install::BunkerState;
+use crate::sim::house_diplomacy::HouseAlliances;
+use crate::sim::intern::StringInterner;
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::ScatterFlags;
 use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse, transmit};
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::world::LifecycleTestEvent;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// The hull facing a Unit turns to on PREPARE_TO_DOCK (`0x007376E6`): east.
@@ -1981,7 +1984,13 @@ fn radio_receive(
     msg: RadioMessage,
 ) -> RadioResponse {
     match msg {
-        RadioMessage::Hello => radio_hello(sim, receiver, sender),
+        RadioMessage::Hello => radio_hello(
+            &sim.interner,
+            &sim.house_alliances,
+            &mut sim.substrate,
+            receiver,
+            sender,
+        ),
         RadioMessage::AnimStop => {
             #[cfg(any(test, feature = "test-support"))]
             let sender_state = sender
@@ -2043,13 +2052,19 @@ fn radio_receive(
 /// both directions); an existing link answers ROGER; otherwise the first null
 /// slot takes the sender, and a saturated receiver answers NEGATORY without
 /// evicting.
-fn radio_hello(sim: &mut Simulation, receiver: u64, sender: Option<u64>) -> RadioResponse {
+fn radio_hello(
+    interner: &StringInterner,
+    house_alliances: &HouseAlliances,
+    substrate: &mut ObjectSubstrate,
+    receiver: u64,
+    sender: Option<u64>,
+) -> RadioResponse {
     let Some(from) = sender else {
         return RadioResponse::None;
     };
     let (Some(this), Some(other)) = (
-        sim.substrate.entities.get(receiver),
-        sim.substrate.entities.get(from),
+        substrate.entities.get(receiver),
+        substrate.entities.get(from),
     ) else {
         return RadioResponse::None;
     };
@@ -2058,8 +2073,8 @@ fn radio_hello(sim: &mut Simulation, receiver: u64, sender: Option<u64>) -> Radi
     }
     let ally = |asker, other| {
         crate::sim::combat::combat_weapon::is_ally_by_object(
-            Some(sim.house_alliances.as_map()),
-            &sim.interner,
+            Some(house_alliances.as_map()),
+            interner,
             asker,
             other,
         )
@@ -2067,7 +2082,7 @@ fn radio_hello(sim: &mut Simulation, receiver: u64, sender: Option<u64>) -> Radi
     if !ally(other.owner(), this.owner()) || !ally(this.owner(), other.owner()) {
         return RadioResponse::Negatory;
     }
-    let Some(this) = sim.substrate.entities.get_mut(receiver) else {
+    let Some(this) = substrate.entities.get_mut(receiver) else {
         return RadioResponse::None;
     };
     match this.radio_contacts.insert(from) {

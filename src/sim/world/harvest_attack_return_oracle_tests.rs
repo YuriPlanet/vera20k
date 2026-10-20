@@ -4,9 +4,11 @@
 //! Commands, expiry, idle, Stage and promotion call their production owners.
 //!
 //! Native packet: tools/spatial_oracle/harvest_attack_return.{json,md}; the
-//! live-target Approach is an explicit external return seam. The fixture's
-//! unarmed targets and stationary source reproduce its no-navigation answer;
-//! actual shooting/death is connected separately by harvest_field_cycle_tests.
+//! live-target Approach is an explicit external return seam, replayed through
+//! `movement::approach_oracle_seam` on the Approach owner. The fixture's
+//! unarmed targets and stationary source hold no navigation state the seam
+//! would hide; actual shooting/death is connected separately by
+//! harvest_field_cycle_tests.
 //! Compare every represented step's mission/cursor, MegaMission, dispatch and
 //! passive timer, Target, NavCom, archive, latch, Stage, cargo/ore, spread and
 //! full Scenario RNG.
@@ -384,6 +386,22 @@ impl Replay {
                 "{context}: ReadyToCommence"
             ),
             "dispatch" => {
+                // The packet's dispatch harness intercepts the live-target
+                // Approach vcall with a declared RET4 (one
+                // `supplied_approach_return` event per interception); arm the
+                // same declared answers on the Approach owner for this step,
+                // and require every one of them consumed.
+                let declared: Vec<i32> = step["events"]
+                    .as_array()
+                    .map(|events| {
+                        events
+                            .iter()
+                            .filter(|event| event["kind"] == "supplied_approach_return")
+                            .map(|event| int(&event["returned_eax"]))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                crate::sim::movement::approach_oracle_seam::install_approach_returns(&declared);
                 let config = crate::sim::miner::MinerConfig::from_rules(&s.rules);
                 super::dispatch_foot_mission(
                     &mut s.sim,
@@ -394,6 +412,11 @@ impl Replay {
                         overlay_registry: Some(registry()),
                         ..Default::default()
                     },
+                );
+                assert_eq!(
+                    crate::sim::movement::approach_oracle_seam::finish_approach_returns(),
+                    0,
+                    "{context}: every declared Approach answer consumed"
                 );
             }
             "post_foot_ai" => crate::sim::miner::miner_system::unit_ai_clear_harvesting(

@@ -557,7 +557,13 @@ pub(crate) fn pickup_crate(
                 );
             }
             POWERUP_SPEED => {
-                if super::speed::apply_speed_crate(sim, center, radius, magnitude) {
+                if super::speed::apply_speed_crate(
+                    &mut sim.substrate,
+                    &sim.houses,
+                    center,
+                    radius,
+                    magnitude,
+                ) {
                     // `0x00483072`: any recipient whose house has
                     // `PlayerControl` announces.
                     let owners: Vec<InternedId> = sim

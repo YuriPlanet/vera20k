@@ -29,6 +29,7 @@ use crate::util::direction::DIRECTION_DELTAS;
 use crate::sim::intern::InternedId;
 
 use crate::sim::movement::ground_pose::{object_get_coords, object_world_z_leptons};
+use crate::sim::rng::SimRng;
 use crate::sim::world::ObjectSubstrate;
 use crate::util::native_x87::{X87Chop53, sqrt_approx_f32};
 
@@ -107,10 +108,15 @@ pub(super) const DISPATCH_NEXT_FRAME: i32 = 1;
 /// on every dispatch, the search state whenever the miner is left driving
 /// (an archive or scan-hit destination, or one it already held), and any
 /// cursor outside the native handler's switch.
-pub(super) fn arm_rate_epilogue(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapshot) {
+pub(super) fn arm_rate_epilogue(
+    scenario_rng: &mut SimRng,
+    substrate: &ObjectSubstrate,
+    rules: &RuleSet,
+    snap: &mut MinerSnapshot,
+) {
     snap.dispatch_delay = Simulation::mission_rate_epilogue_for(
-        &mut sim.scenario_rng,
-        &sim.substrate,
+        scenario_rng,
+        substrate,
         rules,
         snap.entity_id,
         crate::sim::mission::MissionType::Harvest,
@@ -328,14 +334,14 @@ pub(super) fn process_miner(
         // dispatch leaves through the default Rate epilogue.
         MinerState::ReturnToRefinery => {
             handle_return(sim, rules, snap, frame_effects);
-            arm_rate_epilogue(sim, rules, snap);
+            arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
         }
         MinerState::Dock => handle_handoff(sim, snap),
         MinerState::WaitNoOre => {
             if handle_going_to_idle(sim, rules, overlay_registry, snap, frame_effects) {
                 // Native state 4 has no `return 1` exit: every dispatch falls
                 // into the default Rate epilogue (`0x0073EF97`).
-                arm_rate_epilogue(sim, rules, snap);
+                arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
             }
         }
     }
@@ -466,7 +472,7 @@ fn harvest_looking(
         };
         assign_archive_destination(sim, rules, id, archive, overlay_registry, frame_effects);
     }
-    arm_rate_epilogue(sim, rules, snap);
+    arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
 }
 
 /// The state-0 no-ore return (`return 0x69` at `0x0073E91C`): frames until

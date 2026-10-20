@@ -991,7 +991,12 @@ pub(crate) fn commit_entities(
                     )
                 });
             if surfaced.is_some_and(|result| result.play_sound) && sound_enabled {
-                emit_configured_cloak_sound(world, target_id, rules);
+                emit_configured_cloak_sound(
+                    &world.substrate,
+                    &mut world.sound_events,
+                    target_id,
+                    rules,
+                );
             }
         }
 

@@ -59,8 +59,10 @@ mod view_admission_tests;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::intern::InternedId;
+use crate::sim::intern::StringInterner;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::native_x87::{NativeF32Bits, X87Chop53, X87Ordering};
 
@@ -200,18 +202,18 @@ pub(super) fn spawn_super_anim(
 /// (`0x004DEAF8..0x004DEB2B`) does neither. `None` for an object without a
 /// type.
 fn strength_receiver_event(
-    sim: &mut Simulation,
+    interner: &mut StringInterner,
+    substrate: &ObjectSubstrate,
     rules: &RuleSet,
     id: u64,
     warhead: &str,
     house: Option<InternedId>,
     ignore_defenses: bool,
 ) -> Option<crate::sim::combat::EntityDamageEvent> {
-    let strength = sim
-        .substrate
+    let strength = substrate
         .entities
         .get(id)
-        .and_then(|entity| sim.interner.object_type(entity.type_ref(), rules))
+        .and_then(|entity| interner.object_type(entity.type_ref(), rules))
         .map(|object| object.strength)?;
     Some(crate::sim::combat::EntityDamageEvent::direct_receiver(
         id,
@@ -219,7 +221,7 @@ fn strength_receiver_event(
         0,
         crate::sim::combat::RAD_NO_ATTACKER,
         house,
-        sim.interner.intern(warhead),
+        interner.intern(warhead),
         crate::sim::combat::ReceiverCallFlags {
             ignore_defenses,
             arg6: false,

@@ -181,7 +181,8 @@ pub(crate) fn launch(
                 continue;
             }
             if let Some(event) = super::strength_receiver_event(
-                sim,
+                &mut sim.interner,
+                &sim.substrate,
                 rules,
                 id,
                 &general.mutate_warhead,

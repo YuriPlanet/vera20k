@@ -9,6 +9,8 @@ use super::world_receiver::{
 use super::world_receiver::{commit_projectile_detonations_inline, radiation_enabled};
 use super::*;
 use crate::sim::houses::Houses;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::FrameChannel;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::techno_ai_cloak::emit_configured_cloak_sound;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -367,7 +369,15 @@ fn admit_attacker_fire<'r>(
                 let mut in_range = false;
                 subject(&*world, &mut |s| in_range = s.in_range());
                 if in_range {
-                    uncloak_to_fire(world, rules, obj, snap.stable_id, sound_enabled);
+                    uncloak_to_fire(
+                        &world.session,
+                        &mut world.substrate,
+                        &mut world.sound_events,
+                        rules,
+                        obj,
+                        snap.stable_id,
+                        sound_enabled,
+                    );
                 }
             }
             // Case 6 (`0x00737054`): a CANT shot clears a spawner's targets
@@ -408,7 +418,15 @@ fn admit_attacker_fire<'r>(
                         }
                     }
                     fire_error::FireError::Cloaked => {
-                        uncloak_to_fire(world, rules, obj, snap.stable_id, sound_enabled);
+                        uncloak_to_fire(
+                            &world.session,
+                            &mut world.substrate,
+                            &mut world.sound_events,
+                            rules,
+                            obj,
+                            snap.stable_id,
+                            sound_enabled,
+                        );
                     }
                     _ => {}
                 }
@@ -628,23 +646,32 @@ pub(crate) fn start_uncloaking_to_fire(world: &mut Simulation, rules: &RuleSet, 
     else {
         return;
     };
-    uncloak_to_fire(world, rules, obj, id, sound_enabled);
+    uncloak_to_fire(
+        &world.session,
+        &mut world.substrate,
+        &mut world.sound_events,
+        rules,
+        obj,
+        id,
+        sound_enabled,
+    );
 }
 
 /// `TechnoClass::Uncloak` (vt+0x45C, `0x007036C0`) with its sound, each
 /// class's CLOAKED (9) arm.
 fn uncloak_to_fire(
-    world: &mut Simulation,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    sound_events: &mut FrameChannel<SimSoundEvent>,
     rules: &RuleSet,
     obj: &ObjectType,
     id: u64,
     sound_enabled: bool,
 ) {
-    let binary_frame = world.session.binary_frame();
+    let binary_frame = session.binary_frame();
     // `UnitClass::Fire_At_Target @ 0x00736DF0` case 9 invokes virtual
     // `StartUncloaking +0x45C @ 0x007036C0` after rechecking CanFireAt.
-    let start = world
-        .substrate
+    let start = substrate
         .entities
         .get_mut(id)
         .and_then(|entity| entity.cloak.as_mut())
@@ -657,7 +684,7 @@ fn uncloak_to_fire(
             )
         });
     if start.is_some_and(|result| result.play_sound) && sound_enabled {
-        emit_configured_cloak_sound(world, id, rules);
+        emit_configured_cloak_sound(substrate, sound_events, id, rules);
     }
 }
 

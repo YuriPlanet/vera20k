@@ -545,7 +545,16 @@ impl StrikeHost for CombatStrike<'_, '_, '_> {
 
     fn uncloak(&mut self) {
         let sound = sound_enabled(self.world);
-        uncloak_to_fire(self.world, self.rules, self.obj, self.id(), sound);
+        let id = self.id();
+        uncloak_to_fire(
+            &self.world.session,
+            &mut self.world.substrate,
+            &mut self.world.sound_events,
+            self.rules,
+            self.obj,
+            id,
+            sound,
+        );
     }
 
     fn epilogue(&mut self) -> i32 {

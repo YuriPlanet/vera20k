@@ -10,6 +10,9 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::util::direction::DIRECTION_DELTAS;
 
 use super::{FrameEffects, Simulation};
+use crate::sim::world::FrameChannel;
+use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::SimSoundEvent;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct SensorCloakReevaluation {
@@ -332,7 +335,7 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
         // sensor-count resident callback `0x006F4EB0`, argument zero.
         .map(|cloak| cloak.start_cloaking(facts.current_frame, facts.cloaking_speed, false));
     if start.is_some_and(|start| start.play_sound) {
-        emit_configured_cloak_sound(sim, id, rules);
+        emit_configured_cloak_sound(&sim.substrate, &mut sim.sound_events, id, rules);
     }
     for &targeter_id in &reassigned_targeters {
         let _ = sim.assign_target_represented(
@@ -510,7 +513,7 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
             cloak.start_uncloaking(now, cloaking_speed, rules.general.cloaking_stages, false)
         });
     if surfaced.is_some_and(|result| result.play_sound) {
-        emit_configured_cloak_sound(sim, id, rules);
+        emit_configured_cloak_sound(&sim.substrate, &mut sim.sound_events, id, rules);
     }
     surfaced.is_some_and(|result| result.transitioned)
 }
@@ -519,18 +522,22 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
 /// 0x007036C0` when their suppression argument is zero: `[AudioVisual]
 /// CloakSound=` (`Rules+0x6A0`) through `VocClass::PlayAt @ 0x007509E0` at
 /// the object's coordinate. Every cloak transition's sound goes through here.
-pub(crate) fn emit_configured_cloak_sound(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+pub(crate) fn emit_configured_cloak_sound(
+    substrate: &ObjectSubstrate,
+    sound_events: &mut FrameChannel<SimSoundEvent>,
+    id: u64,
+    rules: &RuleSet,
+) {
     let Some(sound_name) = rules.general.cloak_sound.as_deref() else {
         return;
     };
-    let Some(position) = sim.substrate.entities.get(id).map(|entity| entity.position) else {
+    let Some(position) = substrate.entities.get(id).map(|entity| entity.position) else {
         return;
     };
-    sim.sound_events
-        .emit(crate::sim::world::SimSoundEvent::cloak_sound(
-            sound_name.to_owned(),
-            &position,
-        ));
+    sound_events.emit(crate::sim::world::SimSoundEvent::cloak_sound(
+        sound_name.to_owned(),
+        &position,
+    ));
 }
 
 fn health_strictly_above_condition_red(
@@ -668,7 +675,7 @@ pub(super) fn tick_stock_cloak_producer(
         }
     }
     if result.is_some_and(|result| result.play_cloak_sound) {
-        emit_configured_cloak_sound(sim, id, rules);
+        emit_configured_cloak_sound(&sim.substrate, &mut sim.sound_events, id, rules);
     }
 }
 

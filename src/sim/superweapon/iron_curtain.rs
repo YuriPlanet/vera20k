@@ -354,7 +354,8 @@ fn receive_strength_as_c4(
     frame_effects: FrameEffects<'_>,
 ) {
     let Some(event) = super::strength_receiver_event(
-        sim,
+        &mut sim.interner,
+        &sim.substrate,
         rules,
         id,
         &rules.bridge_warheads.c4_name,
