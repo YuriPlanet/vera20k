@@ -60,16 +60,15 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
     assert_eq!(bridges.endpoint_records().len(), 1);
     let make_sim = || {
         let mut sim = load_fixture_simulation(false);
-        sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+        *sim.overlay_grid_mut_for_test() = Some(OverlayGrid::new(32, 32));
         sim.install_resolved_terrain_for_new_map(template.clone());
-        sim.bridge_state = Some(bridges.clone());
+        *sim.bridge_state_mut_for_test() = Some(bridges.clone());
         assert!(sim.rebuild_dynamic_navigation(&rules));
         sim
     };
     let connected = |sim: &Simulation| {
         let h = sim
-            .zone_grid
-            .as_ref()
+            .zone_grid()
             .unwrap()
             .hierarchy_for(MovementZone::Normal)
             .unwrap();
@@ -107,7 +106,7 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
     // A malformed presentation owner fails after map/hierarchy preparation.
     // FootLoad now correctly resets transient audio state, so it cannot be
     // used as a fabricated late sound-identity failure.
-    let missing_owner = failing.interner.intern("MISSING");
+    let missing_owner = failing.intern("MISSING");
     let sidebar = crate::sim::snapshot::SavedSidebarOrder::new(
         missing_owner,
         std::array::from_fn(|_| Vec::new()),
@@ -188,8 +187,5 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
     assert_eq!((live.snapshot(), live.overlay_identity_state()), expected);
     assert_eq!(live.raw_tube_index(), -1);
     assert!(!connected(&runtime.simulation));
-    assert_eq!(
-        runtime.simulation.substrate.base_reservations.dummy_mask(),
-        0
-    );
+    assert_eq!(runtime.simulation.base_reservations().dummy_mask(), 0);
 }

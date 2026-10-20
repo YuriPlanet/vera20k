@@ -777,13 +777,13 @@ mod retail_construction_tests {
             );
         }
 
-        // The same pair on the multiplayer Queue_AI route: both instances
-        // store an identical retail sync checksum every frame.
+        // The same pair as a LAN session, whose GameMode takes the multiplayer
+        // Queue_AI route: both instances store an identical retail sync
+        // checksum every frame.
         for scenario in [&mut a, &mut b] {
-            scenario
-                .runtime
-                .simulation
-                .set_command_queue_route(crate::sim::world::CommandQueueRoute::Multiplayer);
+            let session = &mut scenario.runtime.simulation.session;
+            session.set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+            session.install_network_timing(10);
         }
         for tick in 0..60u32 {
             let [checksum_a, checksum_b] = [&mut a, &mut b].map(|scenario| {

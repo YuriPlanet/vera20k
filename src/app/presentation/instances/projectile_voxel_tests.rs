@@ -95,21 +95,19 @@ pub(crate) fn launched_stock_submarine_torpedo(
         .spawn_object("LCRF", "Russians", 16, 10, 0, &rules)
         .expect("hostile stock landing craft enters through legal Water Unlimbo");
     if elite {
-        sim.substrate
-            .entities
+        sim.entities_mut_for_test()
             .get_mut(source)
             .unwrap()
             .veterancy
             .set_elite();
     }
-    let owner = sim.substrate.entities.get(source).unwrap().owner();
-    let target_owner = sim.substrate.entities.get(target).unwrap().owner();
-    assert!(sim.houses.get(&owner).unwrap().is_human());
+    let owner = sim.entities().get(source).unwrap().owner();
+    let target_owner = sim.entities().get(target).unwrap().owner();
+    assert!(sim.houses().get(&owner).unwrap().is_human());
     assert_ne!(owner, target_owner);
     for cell in [(10, 10), (16, 10)] {
         assert!(
-            sim.resolved_terrain
-                .as_ref()
+            sim.resolved_terrain()
                 .unwrap()
                 .cell(cell.0, cell.1)
                 .unwrap()
@@ -118,9 +116,11 @@ pub(crate) fn launched_stock_submarine_torpedo(
         );
     }
     // Supplied scene visibility; no target, mission, timer or cloak override.
-    sim.fog.mark_visible_for_owner(owner, 16, 10);
-    sim.fog.mark_visible_for_owner(target_owner, 10, 10);
-    sim.session.set_current_house_for_test(Some(owner));
+    sim.fog_mut_for_test().mark_visible_for_owner(owner, 16, 10);
+    sim.fog_mut_for_test()
+        .mark_visible_for_owner(target_owner, 10, 10);
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
     sim.queue_command(CommandEnvelope::new(
         owner,
         1,
@@ -149,19 +149,19 @@ pub(crate) fn launched_stock_submarine_torpedo(
         else {
             continue;
         };
-        assert_eq!(sim.interner.resolve(shot.weapon_id), weapon_name);
+        assert_eq!(sim.interner().resolve(shot.weapon_id), weapon_name);
         assert_eq!(shot.weapon_slot, WeaponSlot::Primary);
         assert_eq!(shot.target, TargetKind::Entity(target));
-        assert!(sim.substrate.entities.get(source).unwrap().health.current() > 0);
-        assert!(sim.substrate.entities.get(target).unwrap().health.current() > 0);
+        assert!(sim.entities().get(source).unwrap().health.current() > 0);
+        assert!(sim.entities().get(target).unwrap().health.current() > 0);
         let (&id, bullet) = sim
-            .projectiles
+            .projectiles()
             .iter()
             .find(|(_, bullet)| bullet.source_id() == source)
             .expect("real SubTorpedo FireAt admits a live Bullet before impact");
         assert_eq!(bullet.payload().installed_weapon(), Some(shot.weapon_id));
         assert_eq!(
-            sim.interner
+            sim.interner()
                 .resolve(bullet.payload().projectile_type().unwrap()),
             "Torpedo"
         );
@@ -184,7 +184,7 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
         return;
     };
     let kind = rules.projectile("Torpedo").unwrap();
-    let bullet = sim.projectiles.get(id).unwrap();
+    let bullet = sim.projectiles().get(id).unwrap();
     let order = NativeDisplayOrder::from_display(sim.display_layers());
     let parent = order
         .object_draw(id, crate::render::tactical_draw_plan::SpriteEncoding::Voxel)
@@ -221,7 +221,7 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
         "Torpedo",
         HouseColorIndex(8),
         None,
-        sim.resolved_terrain.as_ref().unwrap(),
+        sim.resolved_terrain().unwrap(),
         [x - 400.0, y - 300.0],
         [800.0, 600.0],
         DepthAxis::NONE,
@@ -268,7 +268,7 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
             crate::sim::world::FrameEffects::default(),
         )
         .expect("ordinary torpedo flight/impact frame");
-        if sim.projectiles.get(id).is_none() {
+        if sim.projectiles().get(id).is_none() {
             assert!(
                 NativeDisplayOrder::from_display(sim.display_layers())
                     .object_draw(id, crate::render::tactical_draw_plan::SpriteEncoding::Voxel)
@@ -315,16 +315,16 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
         assert_eq!(kind.voxel_image_load(), Some("ZBOMB"));
         assert_eq!(kind.color_scheme(), 1);
         let (mut sim, id) = admitted_kirov_bomb(rules, weapon_name);
-        let position = sim.projectiles.get(id).unwrap().position();
+        let position = sim.projectiles().get(id).unwrap().position();
         let order = NativeDisplayOrder::from_display(sim.display_layers());
         let (x, y) = absolute_leptons_to_screen(position.x, position.y, position.z);
         let object = projectile_draw_instance(
-            sim.projectiles.get(id).unwrap(),
+            sim.projectiles().get(id).unwrap(),
             kind,
             type_id,
             HouseColorIndex(0),
             None,
-            sim.resolved_terrain.as_ref().unwrap(),
+            sim.resolved_terrain().unwrap(),
             [x - 400.0, y - 300.0],
             [800.0, 600.0],
             DepthAxis::NONE,
@@ -377,7 +377,7 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
             .find(|shot| shot["weapon"] == weapon_name)
             .unwrap();
         for frame in 1..=8 {
-            sim.session.set_binary_frame_for_test(frame);
+            sim.session_mut_for_test().set_binary_frame_for_test(frame);
             sim.visit_combat_tail(id, rules, None, crate::sim::world::FrameEffects::default());
             if let Some(expected) = shot["frames"]
                 .as_array()
@@ -385,7 +385,7 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
                 .iter()
                 .find(|row| row["frame"] == frame)
             {
-                let bullet = sim.projectiles.get(id).unwrap();
+                let bullet = sim.projectiles().get(id).unwrap();
                 assert_eq!(
                     [
                         bullet.position().x,
@@ -413,12 +413,12 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
         let removed = NativeDisplayOrder::from_display(sim.display_layers());
         assert!(
             projectile_draw_instance(
-                sim.projectiles.get(id).unwrap(),
+                sim.projectiles().get(id).unwrap(),
                 kind,
                 type_id,
                 HouseColorIndex(0),
                 None,
-                sim.resolved_terrain.as_ref().unwrap(),
+                sim.resolved_terrain().unwrap(),
                 [x - 400.0, y - 300.0],
                 [800.0, 600.0],
                 DepthAxis::NONE,
@@ -428,7 +428,7 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
             .is_none()
         );
         sim.flush_pending_delete();
-        assert!(sim.projectiles.get(id).is_none());
+        assert!(sim.projectiles().get(id).is_none());
     }
 }
 
@@ -469,11 +469,11 @@ pub(crate) fn admitted_kirov_bomb(
     ));
     let payload = ProjectilePayload::new(
         weapon.damage,
-        sim.interner.intern(weapon.warhead.as_deref().unwrap()),
-        Some(sim.interner.intern(weapon.projectile.as_deref().unwrap())),
+        sim.intern(weapon.warhead.as_deref().unwrap()),
+        Some(sim.intern(weapon.projectile.as_deref().unwrap())),
         weapon.bright,
     )
-    .with_installed_weapon(Some(sim.interner.intern(weapon_name)));
+    .with_installed_weapon(Some(sim.intern(weapon_name)));
     let id = sim.allocate_stable_id();
     let velocity = ProjectileVelocity::from_native(std::array::from_fn(|i| {
         crate::util::native_x87::NativeF64Bits::from_bits(

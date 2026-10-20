@@ -16,9 +16,10 @@ fn vectors() -> &'static serde_json::Value {
 
 fn runtime(direction: u8) -> SimRuntime {
     let mut sim = Simulation::new();
-    sim.session.set_map_name_for_test("BRIDGE-CLICK.MAP".into());
-    sim.session.set_map_width_for_test(32);
-    sim.session.set_map_height_for_test(32);
+    sim.session_mut_for_test()
+        .set_map_name_for_test("BRIDGE-CLICK.MAP".into());
+    sim.session_mut_for_test().set_map_width_for_test(32);
+    sim.session_mut_for_test().set_map_height_for_test(32);
     let cells = (0..32)
         .flat_map(|y| {
             (0..32).map(move |x| {
@@ -29,7 +30,7 @@ fn runtime(direction: u8) -> SimRuntime {
         })
         .collect();
     sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(32, 32, cells));
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid_mut_for_test() = Some(OverlayGrid::new(32, 32));
     sim.apply_runtime_bridge_mark_stamp(
         BridgeFlagStamp::new((16, 16), direction, true),
         if direction == 0 {
@@ -38,7 +39,7 @@ fn runtime(direction: u8) -> SimRuntime {
             BridgeStampFamily::Nwse
         },
     );
-    let template = sim.resolved_terrain.clone().unwrap();
+    let template = sim.resolved_terrain().cloned().unwrap();
     let mut runtime = SimRuntime::from_simulation(sim);
     runtime.resources.terrain_template = Some(template);
     runtime

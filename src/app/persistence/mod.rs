@@ -206,7 +206,7 @@ impl PreparedLoad {
             bytes,
             expected_map_hash,
             rules.simulation_config_hash(),
-            current_simulation.session.map_name(),
+            current_simulation.session().map_name(),
         )?;
         let terrain_template = terrain_template
             .cloned()
@@ -217,7 +217,7 @@ impl PreparedLoad {
             crate::sim::world::SnapshotProcessState::Live(current_simulation),
             rules,
             terrain_template,
-            current_simulation.terrain_speed_config.clone(),
+            current_simulation.terrain_speed_config().clone(),
             overlay_registry.ok_or(PreparedLoadError::MissingOverlayRegistry)?,
             None,
         )
@@ -307,7 +307,7 @@ impl PreparedLoad {
         self.simulation.install_fresh_process_main(process_main);
         // Original successful LoadGame67E6C4 publishes A8ED5C=1 after the
         // fallible content/read tail. Failed preparation never changes it.
-        self.simulation.session.publish_started();
+        self.simulation.publish_scenario_started();
         (
             self.simulation,
             CommittedLoadPresentation {
@@ -326,7 +326,7 @@ impl PreparedLoad {
     ) -> CommittedLoadPresentation {
         let (simulation, presentation) = self.into_committed(
             runtime.simulation.effective_shared_cell_dummy(),
-            &runtime.simulation.main_rng,
+            runtime.simulation.main_rng(),
         );
         runtime.replace_simulation(simulation);
         presentation
@@ -687,8 +687,8 @@ mod tests {
                 pixel_conversion_bounds: Default::default(),
                 version: 1,
                 tick_hz: 15,
-                seed: simulation.session.seed(),
-                map_name: simulation.session.map_name().to_owned(),
+                seed: simulation.session().seed(),
+                map_name: simulation.session().map_name().to_owned(),
                 rules_hash: rules.simulation_config_hash(),
             });
             replay.record_tick(1, Vec::new(), Some(simulation.state_hash()));
@@ -795,9 +795,9 @@ mod tests {
     pub(super) fn load_fixture_simulation(with_overlay_grid: bool) -> Simulation {
         let mut simulation = Simulation::with_seed(u64::from(LOAD_FIXTURE_SEED));
         simulation
-            .session
+            .session_mut_for_test()
             .set_map_name_for_test(LOAD_FIXTURE_MAP_NAME.to_string());
-        simulation.overlay_grid = with_overlay_grid.then(|| OverlayGrid::new(0, 0));
+        *simulation.overlay_grid_mut_for_test() = with_overlay_grid.then(|| OverlayGrid::new(0, 0));
         simulation
     }
 
@@ -860,7 +860,7 @@ mod tests {
     fn snapshot(description: &str, save_timestamp: u64) -> Vec<u8> {
         let mut simulation = Simulation::new();
         simulation
-            .session
+            .session_mut_for_test()
             .set_map_name_for_test("POLICY.MAP".to_string());
         GameSnapshot::save_validated(&simulation, 1, 2, description, save_timestamp)
     }
@@ -895,7 +895,7 @@ mod tests {
             .expect("write bad-byte transaction fixture");
 
         let mut invalid_identity = load_fixture_simulation(true);
-        invalid_identity.substrate.next_stable_object_id = 0;
+        *invalid_identity.next_stable_object_id_mut_for_test() = 0;
         let invalid_identity_path = repository
             .write_named(
                 "invalid-identity.bin",
@@ -1013,10 +1013,14 @@ mod tests {
         let directory = isolated_directory("load-transaction-startup");
         let repository = SaveRepository::at(&directory);
         let mut saved = load_fixture_simulation(true);
-        saved.substrate.base_reservations.reserve(None, 3, 4, 2);
-        saved.substrate.base_reservations.reserve(None, -1, 0, 5);
         saved
-            .session
+            .base_reservations_mut_for_test()
+            .reserve(None, 3, 4, 2);
+        saved
+            .base_reservations_mut_for_test()
+            .reserve(None, -1, 0, 5);
+        saved
+            .session_mut_for_test()
             .install_waypoints(&std::collections::HashMap::from([(
                 701,
                 crate::map::waypoints::Waypoint {
@@ -1049,16 +1053,12 @@ mod tests {
         let live_dummy = state.runtime.simulation.effective_shared_cell_dummy();
         assert_eq!(live_dummy.snapshot().coord, (7, 9));
         assert_eq!(
-            prepared
-                .simulation
-                .substrate
-                .base_reservations
-                .raw_mask(None, 3, 4),
+            prepared.simulation.base_reservations().raw_mask(None, 3, 4),
             1 << 2,
             "candidate preparation restores real reservation authority verbatim"
         );
         assert_eq!(
-            prepared.simulation.substrate.base_reservations.dummy_mask(),
+            prepared.simulation.base_reservations().dummy_mask(),
             0,
             "raw snapshot decode reconstructs the process-global dummy cleared"
         );
@@ -1072,7 +1072,7 @@ mod tests {
         );
         assert!(runtime.resources.terrain_template.is_some());
         assert_eq!(
-            runtime.simulation.session.waypoint_cell(701),
+            runtime.simulation.session().waypoint_cell(701),
             Some((122, 135))
         );
         let simulation = &mut runtime.simulation;
@@ -1089,26 +1089,25 @@ mod tests {
             "successful load publishes the prepared post-Resize dummy fields"
         );
         assert_eq!(
-            simulation.substrate.base_reservations.raw_mask(None, 3, 4),
+            simulation.base_reservations().raw_mask(None, 3, 4),
             1 << 2,
             "the narrow dummy reconstruction leaves real reservation state untouched"
         );
-        assert_eq!(simulation.substrate.base_reservations.dummy_mask(), 0);
+        assert_eq!(simulation.base_reservations().dummy_mask(), 0);
 
         let accepted_hash = simulation.state_hash();
         simulation
-            .substrate
-            .base_reservations
+            .base_reservations_mut_for_test()
             .reserve(None, -1, 0, 6);
         assert_ne!(simulation.state_hash(), accepted_hash);
         simulation.reconstruct_cellclass_dummy_for_map_resize();
-        assert_eq!(simulation.substrate.base_reservations.dummy_mask(), 0);
+        assert_eq!(simulation.base_reservations().dummy_mask(), 0);
         assert_eq!(
             simulation.state_hash(),
             accepted_hash,
             "with the shared dummy already zero, reconstruction removes only the hashed stale mask"
         );
-        let tick_before = runtime.simulation.session.tick();
+        let tick_before = runtime.simulation.session().tick();
         runtime
             .advance_frame(
                 &[],
@@ -1117,7 +1116,7 @@ mod tests {
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
-        assert_eq!(runtime.simulation.session.tick(), tick_before + 1);
+        assert_eq!(runtime.simulation.session().tick(), tick_before + 1);
         assert_eq!(state.startup, startup_before);
         assert!(state.startup.admits_exact_step());
         std::fs::remove_dir_all(directory).expect("remove startup fixture directory");
@@ -1140,8 +1139,8 @@ mod tests {
             Some(&roster_ini),
         );
         crate::sim::scenario_bootstrap::initialize_campaign_current_house(&mut saved, &roster_ini);
-        let saved_owner = saved.interner.get("SavedPlayer").unwrap();
-        let outgoing_owner = saved.interner.get("OutgoingPlayer").unwrap();
+        let saved_owner = saved.interner().get("SavedPlayer").unwrap();
+        let outgoing_owner = saved.interner().get("OutgoingPlayer").unwrap();
         let directory = isolated_directory("current-house-full-load");
         let repository = SaveRepository::at(&directory);
         let path = repository
@@ -1158,8 +1157,8 @@ mod tests {
             &mut current,
             &IniFile::from_str("[Basic]\nPlayer=OutgoingPlayer\n"),
         );
-        assert_eq!(current.session.current_house(), Some(outgoing_owner));
-        assert!(!current.houses[&saved_owner].is_human());
+        assert_eq!(current.session().current_house(), Some(outgoing_owner));
+        assert!(!current.houses()[&saved_owner].is_human());
         let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(current);
         runtime.resources.rules = rules;
         runtime.resources.overlay_registry = registry;
@@ -1176,25 +1175,25 @@ mod tests {
         )
         .expect("repository transaction prepares saved House identity");
         assert_eq!(
-            runtime.simulation.session.current_house(),
+            runtime.simulation.session().current_house(),
             Some(outgoing_owner)
         );
         assert_eq!(runtime.simulation.state_hash(), outgoing_hash);
         assert_eq!(runtime.simulation.rng_state(), outgoing_rng);
         assert_eq!(
-            prepared.simulation.session.current_house(),
+            prepared.simulation.session().current_house(),
             Some(saved_owner)
         );
         let _ = prepared.commit_into(&mut runtime);
         assert_eq!(
-            runtime.simulation.session.current_house(),
+            runtime.simulation.session().current_house(),
             Some(saved_owner)
         );
-        assert!(runtime.simulation.houses[&saved_owner].is_human());
-        assert!(runtime.simulation.houses[&saved_owner].player_control());
-        assert!(!runtime.simulation.houses[&outgoing_owner].is_human());
-        assert!(!runtime.simulation.houses[&outgoing_owner].player_control());
-        let tick = runtime.simulation.session.tick();
+        assert!(runtime.simulation.houses()[&saved_owner].is_human());
+        assert!(runtime.simulation.houses()[&saved_owner].player_control());
+        assert!(!runtime.simulation.houses()[&outgoing_owner].is_human());
+        assert!(!runtime.simulation.houses()[&outgoing_owner].player_control());
+        let tick = runtime.simulation.session().tick();
         runtime
             .advance_frame(
                 &[],
@@ -1203,9 +1202,9 @@ mod tests {
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("restored current-house frame");
-        assert_eq!(runtime.simulation.session.tick(), tick + 1);
+        assert_eq!(runtime.simulation.session().tick(), tick + 1);
         assert_eq!(
-            runtime.simulation.session.current_house(),
+            runtime.simulation.session().current_house(),
             Some(saved_owner)
         );
         std::fs::remove_dir_all(directory).expect("remove House load fixture");
@@ -1229,10 +1228,10 @@ mod tests {
                 &rules,
                 &launch,
             );
-            let selected = saved.interner.get("Player").unwrap();
-            let neutral = saved.interner.get("Neutral").unwrap();
-            let ai = saved.interner.get("Computer1").unwrap();
-            assert_eq!(saved.session.current_house(), Some(selected));
+            let selected = saved.interner().get("Player").unwrap();
+            let neutral = saved.interner().get("Neutral").unwrap();
+            let ai = saved.interner().get("Computer1").unwrap();
+            assert_eq!(saved.session().current_house(), Some(selected));
             assert_ne!(selected, neutral);
             assert_ne!(selected, ai);
             let bytes = snapshot_bytes(&saved, &rules);
@@ -1240,7 +1239,9 @@ mod tests {
                 .write_named(&format!("collision-{case_index}.bin"), &bytes)
                 .unwrap();
             let mut outgoing = GameSnapshot::load(&bytes).unwrap().sim;
-            outgoing.session.set_current_house_for_test(Some(ai));
+            outgoing
+                .session_mut_for_test()
+                .set_current_house_for_test(Some(ai));
             let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(outgoing);
             runtime.resources.rules = load_fixture_rules();
             runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
@@ -1254,16 +1255,16 @@ mod tests {
                 &path,
             )
             .expect("collision-free saved House identity prepares");
-            assert_eq!(runtime.simulation.session.current_house(), Some(ai));
+            assert_eq!(runtime.simulation.session().current_house(), Some(ai));
             let _ = prepared.commit_into(&mut runtime);
-            assert_eq!(runtime.simulation.session.current_house(), Some(selected));
+            assert_eq!(runtime.simulation.session().current_house(), Some(selected));
             assert!(
-                runtime.simulation.houses[&selected].is_human()
-                    && runtime.simulation.houses[&selected].player_control()
+                runtime.simulation.houses()[&selected].is_human()
+                    && runtime.simulation.houses()[&selected].player_control()
             );
-            assert!(!runtime.simulation.houses[&neutral].is_human());
-            assert!(!runtime.simulation.houses[&ai].is_human());
-            let tick = runtime.simulation.session.tick();
+            assert!(!runtime.simulation.houses()[&neutral].is_human());
+            assert!(!runtime.simulation.houses()[&ai].is_human());
+            let tick = runtime.simulation.session().tick();
             runtime
                 .advance_frame(
                     &[],
@@ -1272,8 +1273,8 @@ mod tests {
                     crate::sim::world::FrameEffects::default(),
                 )
                 .expect("restored collision-safe current-house frame");
-            assert_eq!(runtime.simulation.session.tick(), tick + 1);
-            assert_eq!(runtime.simulation.session.current_house(), Some(selected));
+            assert_eq!(runtime.simulation.session().tick(), tick + 1);
+            assert_eq!(runtime.simulation.session().current_house(), Some(selected));
             assert_eq!(launch.session().local_player().name, handle);
         }
         std::fs::remove_dir_all(directory).expect("remove collision load fixture");
@@ -1298,7 +1299,7 @@ mod tests {
         runtime_actual.radar_left = [31, 32, 33];
 
         let mut saved = load_fixture_simulation(false);
-        saved.overlay_grid = Some(OverlayGrid::new(1, 1));
+        *saved.overlay_grid_mut_for_test() = Some(OverlayGrid::new(1, 1));
         saved.install_resolved_terrain_for_new_map(translated_template.clone());
         saved
             .dynamic_terrain_cells_mut_for_test()
@@ -1306,7 +1307,7 @@ mod tests {
         let bytes = snapshot_bytes(&saved, &rules);
 
         let mut current = load_fixture_simulation(false);
-        current.overlay_grid = Some(OverlayGrid::new(1, 1));
+        *current.overlay_grid_mut_for_test() = Some(OverlayGrid::new(1, 1));
         let restored = PreparedLoad::prepare_candidate(
             &bytes,
             Some(&current),
@@ -1319,8 +1320,7 @@ mod tests {
         .simulation;
 
         let restored_cell = restored
-            .resolved_terrain
-            .as_ref()
+            .resolved_terrain()
             .and_then(|terrain| terrain.cell(0, 0))
             .expect("restored dynamic terrain cell");
         assert_eq!(
@@ -1402,7 +1402,7 @@ mod tests {
         let repository = SaveRepository::at(&directory);
         let mut simulation = Simulation::new();
         simulation
-            .session
+            .session_mut_for_test()
             .set_map_name_for_test("OFFICIAL.MAP".to_string());
         let bytes = GameSnapshot::save_validated(&simulation, 1, 2, "Northern ridge", 3);
 

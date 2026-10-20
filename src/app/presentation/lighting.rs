@@ -53,7 +53,7 @@ pub(crate) fn body_extra_light(
             rules.general.extra_aircraft_light,
             crate::sim::movement::air_movement::current_fly_height(entity, terrain),
             crate::sim::superweapon::lightning_storm::raging(sim),
-            &sim.session.lighting(),
+            &sim.session().lighting(),
         ),
         _ => 0,
     }
@@ -173,7 +173,7 @@ pub(crate) fn techno_effect_light(
         entity,
         tint,
         light,
-        sim.session.binary_frame(),
+        sim.session().binary_frame(),
         sim.airstrike_tint_active(entity.stable_id()),
     )
 }
@@ -212,7 +212,7 @@ pub(crate) fn building_anim_light(
             building,
             tint,
             light,
-            sim.session.binary_frame().wrapping_sub(1),
+            sim.session().binary_frame().wrapping_sub(1),
             sim.airstrike_tint_active(building.stable_id()),
         )
     };
@@ -389,7 +389,7 @@ pub(crate) fn shp_colour_word(
         curtain.kind() == crate::sim::superweapon::invulnerability::InvulnKind::ForceShield
             && crate::sim::superweapon::invulnerability::is_invulnerable(
                 Some(curtain),
-                sim.session.binary_frame(),
+                sim.session().binary_frame(),
             )
     });
     let marked = entity.has_airstrike_marker();
@@ -468,7 +468,7 @@ impl MatchLighting {
             let view = derive_lighting_view(&self.config, Some(sim), detail_level);
             self.grid = build_lighting_grid_from_view(terrain, &view);
             self.profile = view.profile;
-            self.scenario = Some(*sim.session.lighting());
+            self.scenario = Some(*sim.session().lighting());
             (self.buildings, self.radiation) = source_maps(sim);
         }
     }
@@ -613,24 +613,24 @@ impl MatchLighting {
             }
         }
         let cell_profile = sim.lighting_cell_profile();
-        if self.scenario != Some(*sim.session.lighting()) {
+        if self.scenario != Some(*sim.session().lighting()) {
             events.push(LightingEvent::Global {
-                state: *sim.session.lighting(),
+                state: *sim.session().lighting(),
                 cell_profile,
                 // Target/timer/normal-ambient writes do not retint palettes.
                 // An explicit profile selection's ordered event owns that
                 // operation; retain the compatibility fallback for a newly
                 // installed or externally supplied profile.
                 palette: if self.scenario.as_ref().is_some_and(|previous| {
-                    previous.selected_profile() == sim.session.lighting().selected_profile()
+                    previous.selected_profile() == sim.session().lighting().selected_profile()
                 }) {
                     PaletteUpdate::Preserve
                 } else {
-                    PaletteUpdate::from_scenario(&sim.session.lighting())
+                    PaletteUpdate::from_scenario(&sim.session().lighting())
                 },
                 constructor_rgb: sim.palette_constructor_rgb(),
             });
-        } else if self.profile != scenario_profile(&sim.session.lighting(), cell_profile)
+        } else if self.profile != scenario_profile(&sim.session().lighting(), cell_profile)
             || self.grid.constructor_alternate_rgb() != sim.palette_constructor_rgb()
         {
             events.push(LightingEvent::RelightProfile {
@@ -662,8 +662,8 @@ fn queue_area(
 
 fn source_maps(sim: &Simulation) -> (BTreeMap<u64, PointLight>, BTreeMap<(u16, u16), PointLight>) {
     (
-        sim.lighting_sources.buildings().clone(),
-        sim.radiation
+        sim.lighting_sources().buildings().clone(),
+        sim.radiation()
             .sites()
             .filter_map(|site| site.light_source().map(|source| (site.center(), source)))
             .collect(),
@@ -710,14 +710,14 @@ pub(crate) fn derive_lighting_view(
 ) -> DerivedLightingView {
     let profile = simulation.map_or_else(
         || lighting::normal_profile_units(lighting_config).into(),
-        |sim| scenario_profile(&sim.session.lighting(), sim.lighting_cell_profile()),
+        |sim| scenario_profile(&sim.session().lighting(), sim.lighting_cell_profile()),
     );
-    let alternate_rgb = simulation.and_then(|sim| sim.session.lighting().alternate_rgb());
+    let alternate_rgb = simulation.and_then(|sim| sim.session().lighting().alternate_rgb());
 
     let building_lights = collect_live_building_lights(simulation, detail_level);
     let radiation_lights = simulation
         .map(|sim| {
-            sim.radiation
+            sim.radiation()
                 .sites()
                 .filter_map(|site| site.light_source())
                 .collect::<Vec<_>>()
@@ -774,7 +774,7 @@ fn collect_live_building_lights(
     let Some(sim) = simulation else {
         return Vec::new();
     };
-    sim.lighting_sources
+    sim.lighting_sources()
         .buildings()
         .values()
         .filter(|source| source.active && source.detail && detail_level >= 2)

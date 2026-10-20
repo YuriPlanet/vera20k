@@ -62,7 +62,7 @@ pub(crate) fn commit_prepared_load(
         .as_ref()
         .expect("prepared saved game installs a runtime")
         .simulation
-        .session
+        .session()
         .game_mode();
     state
         .match_state
@@ -94,9 +94,9 @@ pub(crate) fn commit_prepared_load(
         .view()
         .resolved_terrain()
         .expect("prepared saved game installs resolved terrain");
-    let theater_name = runtime.simulation.session.theater().to_owned();
+    let theater_name = runtime.simulation.session().theater().to_owned();
     let theater_ext = crate::app::loading::init_helpers::theater_ext_for(&theater_name).to_owned();
-    let binary_frame = runtime.simulation.session.binary_frame();
+    let binary_frame = runtime.simulation.session().binary_frame();
     let map = crate::app::loading::transitions::MapPresentationInputs {
         basic: committed.map.basic().clone(),
         ranking: committed.map.ranking().clone(),

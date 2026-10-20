@@ -437,6 +437,7 @@ mod tests {
             buildup: None,
             foundation: None,
             bib_shape: None,
+            factory_door: Default::default(),
             palette: None,
             sequence: None,
             crawls: false,

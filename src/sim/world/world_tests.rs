@@ -1506,12 +1506,13 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
         "a cell adjacent only to the sold source proves that source was not decremented"
     );
     assert_eq!(
-        sim.tactical_dirty_cells,
+        sim.dirty_cells.tactical_for_test(),
         vec![(4, 3), (5, 4), (4, 5), (3, 4), (4, 4)]
     );
-    assert_eq!(sim.radar_terrain_dirty_cells, sim.tactical_dirty_cells);
+    assert_eq!(sim.dirty_cells.radar(), sim.dirty_cells.tactical_for_test());
     assert_eq!(
-        sim.radar_terrain_dirty_generation, 5,
+        sim.dirty_cells.radar_generation(),
+        5,
         "sale publishes each first-unique cleanup radar call before recompute; the sold-cell tail is a duplicate"
     );
     assert!(
@@ -1711,8 +1712,8 @@ fn wall_sale_cleanup_reaches_fixed_stride_alias_and_reverses_that_source_only() 
         expected.as_slice(),
         "sale keeps the sold aliasing source but reverses the cleanup-removed aliased source"
     );
-    assert!(sim.tactical_dirty_cells.contains(&(511, 0)));
-    assert!(sim.radar_terrain_dirty_cells.contains(&(511, 0)));
+    assert!(sim.dirty_cells.tactical_for_test().contains(&(511, 0)));
+    assert!(sim.dirty_cells.radar().contains(&(511, 0)));
 }
 
 #[test]
@@ -2108,7 +2109,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         None
     );
     assert_eq!(
-        fatal.radar_terrain_dirty_cells,
+        fatal.dirty_cells.radar(),
         vec![
             (8, 5),
             (8, 3),
@@ -2179,7 +2180,7 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
             .overlay_id,
         Some(0)
     );
-    assert!(boundary.radar_terrain_dirty_cells.is_empty());
+    assert!(boundary.dirty_cells.radar().is_empty());
     assert_eq!(boundary_rng, SimRng::new(1).state());
 }
 
@@ -4660,7 +4661,7 @@ fn test_bridge_walker_collapses_full_3_cell_strip_on_single_hit() {
     assert_eq!(changed, native["result"]["returned"].as_u64() == Some(1));
     assert_concrete_damage_result(&sim, &native);
     for x in 16..=18 {
-        assert!(sim.radar_terrain_dirty_cells.contains(&(x, 15)));
+        assert!(sim.dirty_cells.radar().contains(&(x, 15)));
     }
 }
 
@@ -9049,31 +9050,22 @@ fn a_group_spread_asks_infantry_with_a_flagged_targets_deck_height() {
     assert_eq!(targets, [(20, 20), (20, 20)]);
 }
 
-/// The radar-terrain batch de-duplicates through its derived index, rebuilt
-/// whenever another writer appended or the batch was acknowledged: a cell the
-/// wall writer appended is not appended again, and an acknowledged cell
-/// re-arms.
+/// The radar-terrain batch de-duplicates across marks, the generation moves
+/// only when a cell is new, and an acknowledged cell re-arms.
 #[test]
-fn radar_terrain_dirty_marks_deduplicate_across_other_writers_and_clears() {
+fn radar_terrain_dirty_marks_deduplicate_and_clear() {
     let mut sim = Simulation::new();
-    sim.mark_radar_terrain_dirty_cells([(1, 1), (2, 2), (1, 1)]);
-    assert_eq!(sim.radar_terrain_dirty_cells, [(1, 1), (2, 2)]);
-    let generation = sim.radar_terrain_dirty_generation;
-    sim.mark_radar_terrain_dirty_cells([(2, 2)]);
-    assert_eq!(sim.radar_terrain_dirty_generation, generation);
-    mark_wall_radar_dirty_cell(
-        &mut sim.radar_terrain_dirty_cells,
-        &mut sim.radar_terrain_dirty_generation,
-        (3, 3),
-    );
-    sim.mark_radar_terrain_dirty_cells([(3, 3), (4, 4)]);
-    assert_eq!(
-        sim.radar_terrain_dirty_cells,
-        [(1, 1), (2, 2), (3, 3), (4, 4)]
-    );
-    assert!(sim.acknowledge_radar_terrain_dirty(sim.radar_terrain_dirty_generation));
-    sim.mark_radar_terrain_dirty_cells([(1, 1)]);
-    assert_eq!(sim.radar_terrain_dirty_cells, [(1, 1)]);
+    sim.dirty_cells.mark_radar([(1, 1), (2, 2), (1, 1)]);
+    assert_eq!(sim.dirty_cells.radar(), [(1, 1), (2, 2)]);
+    let generation = sim.dirty_cells.radar_generation();
+    sim.dirty_cells.mark_radar([(2, 2)]);
+    assert_eq!(sim.dirty_cells.radar_generation(), generation);
+    sim.dirty_cells.mark_radar([(3, 3)]);
+    sim.dirty_cells.mark_radar([(3, 3), (4, 4)]);
+    assert_eq!(sim.dirty_cells.radar(), [(1, 1), (2, 2), (3, 3), (4, 4)]);
+    assert!(sim.acknowledge_radar_terrain_dirty(sim.dirty_cells.radar_generation()));
+    sim.dirty_cells.mark_radar([(1, 1)]);
+    assert_eq!(sim.dirty_cells.radar(), [(1, 1)]);
 }
 
 /// `BuildingClass::ChangeOwner` takes along a `WeaponsFactory=` building's

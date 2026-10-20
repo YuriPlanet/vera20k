@@ -257,8 +257,8 @@ fn simulation_fixture_for_type(
         20,
         EntityCategory::Structure,
     );
-    entity.set_type_ref_for_test(sim.interner.intern(type_name));
-    entity.set_owner_for_test(sim.interner.intern(owner));
+    entity.set_type_ref_for_test(sim.intern(type_name));
+    entity.set_owner_for_test(sim.intern(owner));
     entity
         .selection
         .set_selected_for_test(input["selected"].as_bool().unwrap_or(true));
@@ -276,7 +276,7 @@ fn simulation_fixture_for_type(
             let mut target =
                 GameEntity::test_default(target_id, "MTNK", owner, tx as u16, ty as u16);
             target.position.put_location(DriveCoord { x, y, z });
-            sim.entities_mut().insert(target);
+            sim.entities_mut_for_test().insert(target);
             entity.set_archive_target(Some(TargetKind::Entity(target_id)));
         } else {
             entity.set_archive_target(Some(TargetKind::Cell(tx as u16, ty as u16)));
@@ -297,7 +297,7 @@ fn simulation_fixture_for_type(
             &row["source_coords"]
         };
         assert_eq!([coords.x, coords.y, coords.z], point::<3>(expected));
-        sim.entities_mut().insert(factory);
+        sim.entities_mut_for_test().insert(factory);
     }
     let width = u16::try_from(tx + 1).unwrap().max(32);
     let height = u16::try_from(ty + 1).unwrap().max(32);
@@ -311,9 +311,9 @@ fn simulation_fixture_for_type(
     target.level = input["level"].as_u64().unwrap_or(0) as u8;
     target.slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
     target.has_bridge_deck = input["flags"].as_u64().unwrap_or(0) & 256 != 0;
-    sim.resolved_terrain =
+    *sim.resolved_terrain_mut_for_test() =
         Some(ResolvedTerrainGrid::from_cells(width, height, cells).test_mark_decks_structural());
-    sim.session
+    sim.session_mut_for_test()
         .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(0) as u32);
     sim
 }
@@ -472,11 +472,11 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
 fn presentation_target_query_does_not_stamp_simulation_dummy_cell() {
     let row = &rally_native()["producer_cases"][0];
     let (mut sim, rules) = simulation_fixture(row);
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(10)
         .unwrap()
         .set_archive_target(Some(TargetKind::Cell(u16::MAX, u16::MAX)));
-    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    let terrain = sim.resolved_terrain().unwrap();
     let canonical = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
     let before = canonical.dummy().snapshot().coord;
     let _ = build_factory_rally_line_instances(
@@ -795,7 +795,7 @@ fn production_rally_workload_timing() {
         let mut template = sim.entities().get(10).unwrap().clone();
         if mobile {
             template.set_category_for_test(EntityCategory::Unit);
-            template.set_type_ref_for_test(sim.interner.intern("MTNK"));
+            template.set_type_ref_for_test(sim.intern("MTNK"));
         }
         template.selection.set_selected_for_test(!pending);
         let ledger: Vec<_> = (10..10 + count as u64).collect();
@@ -808,11 +808,11 @@ fn production_rally_workload_timing() {
             entity
                 .position
                 .set_ry_for_test(entity.position.ry() + (id % 5) as u16);
-            sim.entities_mut().insert(entity);
+            sim.entities_mut_for_test().insert(entity);
         }
         let mut samples = Vec::new();
         for sample in 0..22 {
-            sim.session.set_binary_frame_for_test(sample);
+            sim.session_mut_for_test().set_binary_frame_for_test(sample);
             let begin = Instant::now();
             let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
                 Some(&sim),
@@ -894,12 +894,12 @@ fn production_rally_workload_timing() {
                 y: source.y + 8 * (((id - 1) / 32) % 32) as i32,
                 z: source.z,
             });
-            sim.entities_mut().insert(entity);
+            sim.entities_mut_for_test().insert(entity);
         }
         let mut samples = Vec::new();
         for sample in 0..22 {
             let frame = 100 + sample;
-            sim.session.set_binary_frame_for_test(frame);
+            sim.session_mut_for_test().set_binary_frame_for_test(frame);
             line_state.start_timer(if active {
                 frame
             } else {

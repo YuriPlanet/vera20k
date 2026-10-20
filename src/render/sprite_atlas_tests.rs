@@ -433,7 +433,7 @@ fn retail_gapowr_atlas_registers_native_embedded_shadow_frames() {
         &cell_drawers,
         Some(&theater.iso_palette),
         None,
-        Some(&scenario.runtime.simulation.interner),
+        Some(scenario.runtime.simulation.interner()),
     )
     .expect("the production object atlas builds from retail rules, ART, theater and SHPs");
     assert_eq!(sprites.object_shp_frame_count("GAPOWR"), Some(6));
@@ -1123,8 +1123,8 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
     let mut atlas = SpriteAtlas::new(Vec::new(), HashMap::new(), ShpPalettes::default());
     let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(3))]);
     assert!(atlas_covers_anim_remaps(Some(&atlas), &sim, &colors));
-    let house = sim.interner.intern("Americans");
-    let type_id = sim.interner.intern("DEPLOY");
+    let house = sim.intern("Americans");
+    let type_id = sim.intern("DEPLOY");
     let spawn = |sim: &mut Simulation| {
         sim.spawn_anim_object(
             &rules,
@@ -1154,7 +1154,7 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
         Some(AnimRemap::House(house))
     );
     assert_eq!(
-        anim_remap_color(sim.anim(deployed).unwrap(), &sim.interner, &colors),
+        anim_remap_color(sim.anim(deployed).unwrap(), sim.interner(), &colors),
         Some(HouseColorIndex(3))
     );
     let remaps = collect_anim_remap_base_keys(&sim, &colors);

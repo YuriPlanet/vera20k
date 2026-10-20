@@ -21,8 +21,8 @@
 //! are derived queries, never a second mode authority.
 //!
 //! The one GameMode branch inside the simulation frame, the `Queue_AI` route
-//! (`CommandQueueRoute`), is written into the simulation by the app before
-//! every admitted frame from this owner's mode.
+//! (`CommandQueueRoute`), reads the simulation's own saved mode, which the
+//! loader installs from this owner's mode.
 
 use crate::net::lockstep::MultiplayerChecksumHistory;
 use crate::skirmish_launch::{

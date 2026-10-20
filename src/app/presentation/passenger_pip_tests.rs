@@ -66,15 +66,15 @@ fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
         //actual native executions, including the Size>1 own/filler ordering.
         let empty = vec![0; rules.object(transport_type).unwrap().pip_max(rules) as usize];
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern(OWNER);
-        sim.houses
+        let owner = sim.intern(OWNER);
+        sim.houses_mut_for_test()
             .register(crate::sim::house_state::HouseState::new(
                 owner, 0, None, true, 0, 10,
             ));
         crate::sim::arena_fixture::flat_arena(&mut sim, rules);
         sim.intern_rule_type_ids(rules);
         sim.resolve_type_handles(rules);
-        sim.fog.reveal_all_for_owner(owner);
+        sim.fog_mut_for_test().reveal_all_for_owner(owner);
         let transport = sim
             .spawn_object(transport_type, OWNER, 16, 16, 64, rules)
             .unwrap();
@@ -228,8 +228,10 @@ fn fractional_passenger_pips_match_original_cargo_and_draw_controls() {
             "{}",
             control
         );
-        sim.entities_mut().get_mut(carrier).unwrap().passenger_role =
-            PassengerRole::transport(cargo);
+        sim.entities_mut_for_test()
+            .get_mut(carrier)
+            .unwrap()
+            .passenger_role = PassengerRole::transport(cargo);
         assert!(sim.apply_command(
             OWNER,
             &Command::Select {
@@ -279,7 +281,7 @@ fn shared_harvester_scale_matches_native_independent_ore_and_gem_counts() {
             continue;
         }
         crate::sim::arena_fixture::install_status_miner_cargo(
-            sim.entities_mut().get_mut(miner).unwrap(),
+            sim.entities_mut_for_test().get_mut(miner).unwrap(),
             rules.object("HARV").unwrap(),
             rules,
             actor["ore_bales"].as_u64().unwrap() as usize,

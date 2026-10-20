@@ -29,7 +29,7 @@ fn retail_plain_pavement_native_entry_draw_selection_and_snapshot() {
         })
     };
     let runtime = &mut scenario.runtime;
-    runtime.simulation.radar_terrain_dirty_cells.clear();
+    runtime.simulation.dirty_cells.clear_radar_for_test();
     let before_hash = runtime.simulation.state_hash();
     let mut live = LivePublication {
         frame_effects: crate::sim::world::FrameEffects::default(),
@@ -53,7 +53,7 @@ fn retail_plain_pavement_native_entry_draw_selection_and_snapshot() {
         })
         .collect();
     assert_eq!(expected_radar.len(), 15);
-    assert_eq!(live.sim.radar_terrain_dirty_cells, expected_radar);
+    assert_eq!(live.sim.dirty_cells.radar(), expected_radar);
     assert_ne!(
         live.sim.state_hash(),
         before_hash,
@@ -103,7 +103,7 @@ fn retail_plain_pavement_native_entry_draw_selection_and_snapshot() {
     // Core repetition and explicit clear use the original56E990 corpus. This
     // is not an assertion that the missing engineer fallback already works.
     for step in corpus["stock"]["steps"].as_array().unwrap().iter().skip(1) {
-        live.sim.radar_terrain_dirty_cells.clear();
+        live.sim.dirty_cells.clear_radar_for_test();
         live.pavement_at((66, 102), step["state"] == 1);
         for row in step["final"].as_array().unwrap() {
             let cell = live

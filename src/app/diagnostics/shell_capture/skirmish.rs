@@ -496,9 +496,9 @@ impl SkirmishCapture {
         let rules = state.rules()?;
         sim.entities()
             .values_sorted()
-            .filter(|entity| sim.interner.resolve(entity.owner()) == owner)
+            .filter(|entity| sim.interner().resolve(entity.owner()) == owner)
             .find(|entity| {
-                sim.interner
+                sim.interner()
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(&wanted)
             })

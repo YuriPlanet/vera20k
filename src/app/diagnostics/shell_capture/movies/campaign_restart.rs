@@ -62,21 +62,21 @@ impl Mission {
             .context("no live campaign runtime")?
             .simulation;
         Ok(Self {
-            map_name: sim.session.map_name().to_owned(),
+            map_name: sim.session().map_name().to_owned(),
             campaign_index: startup.campaign_index(),
             mission_counter: sim
-                .session
+                .session()
                 .campaign_mission_counter()
                 .context("runtime has no campaign mission counter")?,
-            seed: sim.session.seed(),
+            seed: sim.session().seed(),
             menu_difficulty: sim
-                .session
+                .session()
                 .campaign_house_difficulties()
                 .map(|(player, _)| player as i32),
             player_difficulty: sim
-                .session
+                .session()
                 .current_house()
-                .and_then(|player| sim.houses.get(&player))
+                .and_then(|player| sim.houses().get(&player))
                 .map(|house| house.difficulty() as i32),
         })
     }
@@ -151,7 +151,7 @@ impl RestartCapture {
         );
         route.push(
             json!({"frame": frame, "action": "TAction 68 Lose on the current House",
-            "tick": runtime.simulation.session.tick()}),
+            "tick": runtime.simulation.session().tick()}),
         );
         Ok(())
     }
@@ -287,7 +287,7 @@ impl RestartCapture {
                             .match_state
                             .sim_runtime
                             .as_ref()
-                            .is_some_and(|runtime| runtime.simulation.session.tick() == 0),
+                            .is_some_and(|runtime| runtime.simulation.session().tick() == 0),
                         "restarted first live frame passed tick zero"
                     );
                     route.push(

@@ -1155,11 +1155,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
         if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
             native_rules_owner.consume_outgoing_scenario_rules(
                 runtime.simulation.retire_object_type_tech_levels(),
-                runtime
-                    .simulation
-                    .session
-                    .lighting_mut()
-                    .retire_ambient_change_inputs(),
+                runtime.simulation.retire_ambient_change_inputs(),
             )?;
         }
         let load_result = {
@@ -2041,7 +2037,7 @@ fn apply_network_loading_disconnects(
                 .iter()
                 .find(|slot| slot.source_human_index == Some(index))
             && let Some(sim) = result.scenario.simulation.as_mut()
-            && let Some(owner) = sim.interner.get(&slot.owner_name)
+            && let Some(owner) = sim.interner().get(&slot.owner_name)
         {
             sim.flag_house_to_die(owner);
             disconnected.push((slot.owner_name.clone(), launch.humans[index].name.clone()));

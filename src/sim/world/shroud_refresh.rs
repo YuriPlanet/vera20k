@@ -781,7 +781,7 @@ impl Simulation {
                 (coord.0 as u16, coord.1 as u16)
             };
             if fresh {
-                self.mark_radar_terrain_dirty_cells([candidate]);
+                self.dirty_cells.mark_radar([candidate]);
             }
             #[cfg(any(test, feature = "test-support"))]
             REVEAL_CALLS.with_borrow_mut(|trace| {

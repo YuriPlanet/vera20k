@@ -17,36 +17,39 @@ fn rules_with_unspawned_types() -> RuleSet {
 fn restore_into_differently_interned_world(label: &str) -> crate::sim::runtime::SimRuntime {
     let rules = rules_with_unspawned_types();
     let mut saved = load_fixture_simulation(true);
-    let player = saved.interner.intern("Player");
+    let player = saved.intern("Player");
     assert_eq!(player.index(), 0);
     // Deliberately omit unspawned types, as the headless loader formerly did.
     for name in ["DEBRIS_B", "EXP_B", "SavedOnly", "EXP_A", "DEBRIS_A"] {
-        saved.interner.intern(name);
+        saved.intern(name);
     }
-    let saved_strings: Vec<_> = (0..saved.interner.len())
+    let saved_strings: Vec<_> = (0..saved.interner().len())
         .map(|index| {
             saved
-                .interner
+                .interner()
                 .resolve(crate::sim::intern::InternedId::from_index(index as u32))
                 .to_owned()
         })
         .collect();
     let mut current = load_fixture_simulation(true);
-    current.interner.intern("OutgoingOnly");
+    current.intern("OutgoingOnly");
     current.intern_rule_type_ids(&rules);
-    current.bridge_explosions = rules
+    *current.bridge_explosions_mut_for_test() = rules
         .bridge_rules
         .explosions
         .iter()
-        .map(|name| current.interner.intern(name))
+        .map(|name| current.intern(name))
         .collect();
-    current.metallic_debris = rules
+    *current.metallic_debris_mut_for_test() = rules
         .general
         .metallic_debris
         .iter()
-        .map(|name| current.interner.intern(name))
+        .map(|name| current.intern(name))
         .collect();
-    assert_ne!(current.interner.get("EXP_A"), saved.interner.get("EXP_A"));
+    assert_ne!(
+        current.interner().get("EXP_A"),
+        saved.interner().get("EXP_A")
+    );
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(current);
     runtime.resources.rules = rules;
     runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
@@ -73,13 +76,13 @@ fn restore_into_differently_interned_world(label: &str) -> crate::sim::runtime::
         assert_eq!(
             runtime
                 .simulation
-                .interner
+                .interner()
                 .resolve(crate::sim::intern::InternedId::from_index(index as u32)),
             name,
             "cache rebinding must preserve every saved identity"
         );
     }
-    assert!(runtime.simulation.interner.get("OutgoingOnly").is_none());
+    assert!(runtime.simulation.interner().get("OutgoingOnly").is_none());
     std::fs::remove_file(path).unwrap();
     std::fs::remove_dir(directory).unwrap();
     runtime
@@ -91,15 +94,15 @@ fn prepared_load_resolves_bridge_lists_against_saved_interner() {
     let sim = &runtime.simulation;
     let names = |ids: &[crate::sim::intern::InternedId]| {
         ids.iter()
-            .map(|id| sim.interner.try_resolve(*id))
+            .map(|id| sim.interner().try_resolve(*id))
             .collect::<Vec<_>>()
     };
     assert_eq!(
-        names(&sim.bridge_explosions),
+        names(sim.bridge_explosions()),
         [Some("EXP_A"), Some("EXP_B")]
     );
     assert_eq!(
-        names(&sim.metallic_debris),
+        names(sim.metallic_debris()),
         [Some("DEBRIS_A"), Some("DEBRIS_B")]
     );
 }
@@ -108,7 +111,7 @@ fn prepared_load_resolves_bridge_lists_against_saved_interner() {
 fn prepared_load_interns_unspawned_rule_types_before_building_handles() {
     let runtime = restore_into_differently_interned_world("unspawned-type-cache-restore");
     let sim = &runtime.simulation;
-    let player = sim.interner.get("Player").unwrap();
+    let player = sim.interner().get("Player").unwrap();
     for name in [
         "UNSPAWNED_INF",
         "UNSPAWNED_UNIT",
@@ -116,11 +119,11 @@ fn prepared_load_interns_unspawned_rule_types_before_building_handles() {
         "UNSPAWNED_BUILDING",
     ] {
         let id = sim
-            .interner
+            .interner()
             .get(name)
             .expect("unspawned rule type is interned");
         assert_ne!(id, player, "build options must not alias fallback ID zero");
-        assert_eq!(sim.interner.resolve(id), name);
+        assert_eq!(sim.interner().resolve(id), name);
         assert_eq!(
             sim.object_type(id, &runtime.resources.rules).unwrap().id,
             name

@@ -239,12 +239,12 @@ impl Probe {
                     &gpu.device,
                     &gpu.queue,
                     size,
-                    [scene.sim().fog.width(), scene.sim().fog.height()],
+                    [scene.sim().fog().width(), scene.sim().fog().height()],
                     frames,
                     [width, height],
                     crate::render::shroud_buffer::SHROUD_EDGE_LUT,
                 ),
-                scene.sim().session.current_house().unwrap(),
+                scene.sim().session().current_house().unwrap(),
             )
         });
         let shadow = native.then(|| {
@@ -267,7 +267,7 @@ impl Probe {
             let renderer = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
             (atlas, renderer)
         });
-        let terrain = scene.sim().resolved_terrain.as_ref().unwrap().clone();
+        let terrain = scene.sim().resolved_terrain().unwrap().clone();
         let mut lighting = MatchLighting::default();
         lighting.install(
             CellLightGrid::new(),
@@ -287,8 +287,7 @@ impl Probe {
         });
         let level = scene
             .sim()
-            .resolved_terrain
-            .as_ref()
+            .resolved_terrain()
             .unwrap()
             .cell(center.0, center.1)
             .unwrap()
@@ -351,7 +350,7 @@ impl Probe {
                 entries,
                 atlas: &self.atlas,
                 names: &self.names,
-                live_grid: scene.sim().overlay_grid.as_ref(),
+                live_grid: scene.sim().overlay_grid(),
                 registry: Some(&scene.runtime.resources.overlay_registry),
                 rules: None,
                 interner: None,
@@ -391,8 +390,8 @@ impl Probe {
             .collect();
         let mut cells = Vec::new();
         for x in center.0 - 1..=center.0 + 1 {
-            let live = sim.overlay_grid.as_ref().unwrap().cell(x, row);
-            let cell = sim.resolved_terrain.as_ref().unwrap().cell(x, row).unwrap();
+            let live = sim.overlay_grid().unwrap().cell(x, row);
+            let cell = sim.resolved_terrain().unwrap().cell(x, row).unwrap();
             assert_eq!(
                 (live.overlay_id, live.overlay_data),
                 (Some(id), (x + 1 - center.0) as u8),
@@ -499,9 +498,9 @@ impl Probe {
         }
 
         if phase == "loaded" {
-            let owner = sim.session.current_house().unwrap();
+            let owner = sim.session().current_house().unwrap();
             assert!(
-                !sim.fog.is_cell_revealed(owner, center.0, row),
+                !sim.fog().is_cell_revealed(owner, center.0, row),
                 "the physical bridge witness must begin with an unexplored anchor"
             );
         }
@@ -604,7 +603,7 @@ impl Probe {
             "rendering cannot mutate simulation"
         );
         let light = self.lighting.grid().cell_light_at((center.0, row)).unwrap();
-        let receipt = json!({"phase":phase,"row":row,"frame":sim.session.binary_frame(),
+        let receipt = json!({"phase":phase,"row":row,"frame":sim.session().binary_frame(),
             "overlay":id,"overlay_data":[0,1,2],"source":source,
             "source_bounds":[bounds.0,bounds.1,bounds.2,bounds.3],"cells":cells,
             "cell_light":{"rgb_key":light.rgb_key,"common_scalar":light.common_scalar},
@@ -719,18 +718,13 @@ impl Probe {
         );
         assert_eq!(entries.len(), 1);
         assert_eq!((entries[0].rx, entries[0].ry), coord);
-        let live = scene
-            .sim()
-            .overlay_grid
-            .as_ref()
-            .unwrap()
-            .cell(coord.0, coord.1);
+        let live = scene.sim().overlay_grid().unwrap().cell(coord.0, coord.1);
         assert_eq!(live.overlay_id.map(i64::from), input["overlay_id"].as_i64());
         assert_eq!(
             u64::from(live.overlay_data),
             input["state"].as_u64().unwrap()
         );
-        let terrain = scene.sim().resolved_terrain.as_ref().unwrap();
+        let terrain = scene.sim().resolved_terrain().unwrap();
         let cell = terrain.cell(coord.0, coord.1).unwrap();
         let native = &row["native_cell"];
         assert_eq!(
@@ -791,7 +785,7 @@ impl Probe {
         source.rebuild_if_needed(
             &self.gpu.device,
             &self.gpu.queue,
-            &scene.sim().fog,
+            scene.sim().fog(),
             *owner,
             view.camera_pos[0],
             view.camera_pos[1],
@@ -816,7 +810,7 @@ impl Probe {
             &self.shadow.as_ref().unwrap().0,
             &self.names,
             entries,
-            scene.sim().overlay_grid.as_ref(),
+            scene.sim().overlay_grid(),
             Some(&scene.runtime.resources.overlay_registry),
             None,
             view.world_origin_y,
@@ -1090,7 +1084,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
             .expect("production scenario bound rubble art");
         assert_eq!(art.shp.to_ascii_lowercase(), "cthse05.shp");
         Some(
-            sim.interner
+            sim.interner()
                 .get(building)
                 .expect("actual map building type"),
         )
@@ -1103,7 +1097,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
         assert_eq!(input["state"], 255);
         None
     };
-    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    let terrain = sim.resolved_terrain().unwrap();
     let entries: Vec<_> = (coord.1..=coord.1 + u16::from(is_rubble))
         .map(|ry| {
             let cell = terrain.cell(coord.0, ry).unwrap();
@@ -1221,7 +1215,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
                 live_grid: Some(&live_grid),
                 registry: Some(registry),
                 rules: Some(rules),
-                interner: Some(&sim.interner),
+                interner: Some(sim.interner()),
                 tiberium_types: Some(&rules.tiberium_types),
                 terrain: Some(terrain),
                 heights: &heights,
@@ -1244,7 +1238,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
             &entries,
             Some(&live_grid),
             Some(registry),
-            is_rubble.then_some((rules, &sim.interner)),
+            is_rubble.then_some((rules, sim.interner())),
             view.world_origin_y,
             view.world_height,
             view.camera_pos[0],

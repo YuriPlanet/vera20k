@@ -20,9 +20,10 @@ fn fixture() -> (Simulation, RuleSet, MatchInputState) {
     ))
     .unwrap();
     let mut sim = Simulation::new();
-    let owner = sim.interner.intern("local");
-    let type_ref = sim.interner.intern("UNIT");
-    sim.session.set_current_house_for_test(Some(owner));
+    let owner = sim.intern("local");
+    let type_ref = sim.intern("UNIT");
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
     for id in 1..=3 {
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             id,
@@ -41,7 +42,7 @@ fn fixture() -> (Simulation, RuleSet, MatchInputState) {
         entity.lifecycle.set_object_alive_for_test(true);
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.selection.set_selected_for_test(id != 2);
-        sim.entities_mut().insert(entity);
+        sim.entities_mut_for_test().insert(entity);
     }
     let mut input = MatchInputState::new(Default::default());
     input.selection_order = vec![3, 1];
@@ -137,7 +138,7 @@ fn pending_selection_survives_load_until_the_existing_queue_owner_drains_it() {
     let (mut sim, rules, mut input) = fixture();
     input.selection_order = vec![2, 1];
     input.selection_order_pending = true;
-    let owner = sim.session.current_house().unwrap();
+    let owner = sim.session().current_house().unwrap();
     sim.queue_command(CommandEnvelope::new(
         owner,
         2,
@@ -165,7 +166,7 @@ fn pending_selection_survives_load_until_the_existing_queue_owner_drains_it() {
     // Model the existing queue receiver draining/refusing this command. The
     // shared reconciliation closes pending mode against committed flags;
     // persistence itself neither applies selection nor invents admission.
-    sim.session.set_tick_for_test(1);
+    sim.session_mut_for_test().set_tick_for_test(1);
     assert_eq!(sim.take_due_commands().len(), 1);
     let saved = serialized_capture(&restored, &sim, &rules);
     assert!(!saved.selection_order_pending());
@@ -276,7 +277,7 @@ fn idle_saved_view_replaces_outgoing_building_placement_and_preview() {
     let (sim, rules, source) = fixture();
     let saved = serialized_capture(&source, &sim, &rules);
     let mut outgoing = MatchInputState::new(Default::default());
-    let owner = sim.session.current_house().unwrap();
+    let owner = sim.session().current_house().unwrap();
     assert!(outgoing.begin_building_placement("UNIT", 1, owner));
     outgoing.building_placement_preview = Some(crate::sim::production::BuildingPlacementPreview {
         rx: 10,
@@ -335,7 +336,7 @@ fn saved_superweapon_targeting_survives_roundtrip_without_charge_admission() {
 #[test]
 fn saved_placement_and_sell_mode_survive_roundtrip() {
     let (sim, rules, mut source) = fixture();
-    let owner = sim.session.current_house().unwrap();
+    let owner = sim.session().current_house().unwrap();
     assert!(source.begin_building_placement("UNIT", 1, owner));
     let saved = serialized_capture(&source, &sim, &rules);
     let mut outgoing = MatchInputState::new(Default::default());

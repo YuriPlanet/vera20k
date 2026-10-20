@@ -320,8 +320,7 @@ fn unit_z_adjust_in_runtime(
             Some(-3)
         } else if object.is_some_and(|o| o.harvester) {
             let cell = depth_cell(terrain, None, None, coord);
-            sim.substrate
-                .occupancy
+            sim.occupancy()
                 .first_building_on_layer(
                     cell.coord[0] as u16,
                     cell.coord[1] as u16,

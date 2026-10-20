@@ -379,7 +379,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     }
     state.match_state.sim_runtime = incoming.map(|(mut simulation, rules)| {
         simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
-        simulation.session.publish_started();
+        simulation.publish_scenario_started();
         simulation.batch_path_searches();
         simulation.batch_target_scans();
         crate::sim::runtime::SimRuntime {
@@ -648,8 +648,8 @@ mod game_speed_tests {
     #[test]
     fn loaded_lobby_speed_projection_includes_due_transition() {
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Local");
-        sim.houses
+        let owner = sim.intern("Local");
+        sim.houses_mut_for_test()
             .register(HouseState::new(owner, 0, None, true, 0, 10));
         sim.queue_command(CommandEnvelope::new(
             owner,

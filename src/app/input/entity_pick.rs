@@ -69,8 +69,8 @@ pub(crate) fn hover_target_at_point(
     height_map: &std::collections::BTreeMap<(u16, u16), u8>,
     bridge_cells: Option<&dyn TacticalBridgeLookup>,
 ) -> Option<HoverTargetKindWithId> {
-    let player = sim.interner.get(local_owner);
-    let fog = (!ignore_visibility).then_some(&sim.fog);
+    let player = sim.interner().get(local_owner);
+    let fog = (!ignore_visibility).then_some(sim.fog());
     let (rx, ry) = crate::app::match_runtime::sim_tick::world_point_to_cell(
         world_x,
         world_y,
@@ -83,7 +83,7 @@ pub(crate) fn hover_target_at_point(
         rx,
         ry,
         ignore_visibility,
-        sim.resolved_terrain.as_ref(),
+        sim.resolved_terrain(),
     ) == crate::app::presentation::instances::CellVisibilityState::Shrouded
     {
         return None;
@@ -94,8 +94,8 @@ pub(crate) fn hover_target_at_point(
             continue;
         }
         let is_structure = entity.category() == EntityCategory::Structure;
-        let type_str = sim.interner.resolve(entity.type_ref());
-        let owner_str = sim.interner.resolve(entity.owner());
+        let type_str = sim.interner().resolve(entity.type_ref());
+        let owner_str = sim.interner().resolve(entity.owner());
         let (sx, sy) = if is_structure {
             crate::render::locomotor_visual::screen_position(entity)
         } else {
@@ -127,7 +127,7 @@ pub(crate) fn hover_target_at_point(
         let dy = sy - world_y;
         let dist_sq = dx * dx + dy * dy;
         let is_friendly =
-            crate::map::houses::are_houses_friendly(&sim.house_alliances, local_owner, owner_str);
+            crate::map::houses::are_houses_friendly(sim.house_alliances(), local_owner, owner_str);
         let kind = if is_friendly {
             if is_structure {
                 HoverTargetKind::FriendlyStructure
@@ -1002,7 +1002,7 @@ pub(crate) fn is_local_player_selectable_object(
         && entity.in_playfield()
         && entity.category() != EntityCategory::Structure
         && entity.discovery.discovered_by_current_house()
-        && type_is_selectable(sim.interner.resolve(entity.type_ref()), rules)
+        && type_is_selectable(sim.interner().resolve(entity.type_ref()), rules)
         && sim.house_is_human_player(entity.owner())
 }
 
@@ -1259,14 +1259,16 @@ mod tests {
             (false, false, false, 0, true),
         ] {
             let mut sim = Simulation::new();
-            let viewer = sim.interner.intern("viewer");
-            let other = sim.interner.intern("other");
-            let typ = sim.interner.intern("HTNK");
-            sim.session.set_current_house_for_test(Some(viewer));
-            sim.fog = FogState::new(32, 32);
-            sim.fog.reveal_cells_for_owner(viewer, [(10, 10)]);
+            let viewer = sim.intern("viewer");
+            let other = sim.intern("other");
+            let typ = sim.intern("HTNK");
+            sim.session_mut_for_test()
+                .set_current_house_for_test(Some(viewer));
+            *sim.fog_mut_for_test() = FogState::new(32, 32);
+            sim.fog_mut_for_test()
+                .reveal_cells_for_owner(viewer, [(10, 10)]);
             if sensed {
-                sim.fog.increment_sensor_at(viewer, 10, 10);
+                sim.fog_mut_for_test().increment_sensor_at(viewer, 10, 10);
             }
             let owner = if same_owner { viewer } else { other };
             let mut entity = item83_entity(1, 10, 10, owner, typ, EntityCategory::Unit, false);
@@ -1278,7 +1280,7 @@ mod tests {
             entity.cloak = Some(cloak);
             let world =
                 crate::app::presentation::instances::interpolated_screen_position_entity(&entity);
-            sim.entities_mut().insert(entity);
+            sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
             let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
             let heights = std::collections::BTreeMap::new();
@@ -1287,7 +1289,7 @@ mod tests {
                 pick_entity_at_point(
                     sim.entities(),
                     &order,
-                    Some(&sim.fog),
+                    Some(sim.fog()),
                     Some("viewer"),
                     world.0,
                     world.1,
@@ -1296,7 +1298,7 @@ mod tests {
                     None,
                     &heights,
                     None,
-                    Some(&sim.interner),
+                    Some(sim.interner()),
                     None,
                 ),
                 expected,
@@ -1373,9 +1375,9 @@ mod tests {
             .find(|row| row["input"]["name"] == "same_raw_cell")
             .unwrap();
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        let tank_type = sim.interner.intern("LTNK");
-        let bunker_type = sim.interner.intern("NATBNK");
+        let owner = sim.intern("Americans");
+        let tank_type = sim.intern("LTNK");
+        let bunker_type = sim.intern("NATBNK");
         let mut at = |id, type_ref, category, coords: &serde_json::Value| {
             let xyz: [i32; 3] = std::array::from_fn(|i| coords[i].as_i64().unwrap() as i32);
             let mut entity = item83_entity(
@@ -1395,7 +1397,7 @@ mod tests {
                 .set_sub_y_for_test(SimFixed::from_num(xyz[1] % 256));
             entity.position.set_exact_z_leptons_for_test(Some(xyz[2]));
             entity.set_in_playfield(true);
-            sim.entities_mut().insert(entity);
+            sim.entities_mut_for_test().insert(entity);
         };
         at(
             2,
@@ -1415,12 +1417,12 @@ mod tests {
             EntityCategory::Unit,
             &serde_json::json!([4352, 2816, 312]),
         );
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(1)
             .unwrap()
             .bunker
             .set_bunker_link_for_test(BunkerLink::Installed(2));
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(2)
             .unwrap()
             .bunker
@@ -1439,8 +1441,8 @@ mod tests {
                 None,
                 &heights,
                 None,
-                Some(&sim.interner),
-                sim.resolved_terrain.as_ref(),
+                Some(sim.interner()),
+                sim.resolved_terrain(),
             )
         };
         // Original6D461A registers buildings before mobile drawing6D465F;
@@ -1451,7 +1453,8 @@ mod tests {
         let point =
             crate::render::locomotor_visual::screen_position(sim.entities().get(1).unwrap());
         assert_eq!(pick(&sim, point), Some(1));
-        sim.entities_mut().get_mut(1).unwrap().position = sim.entities().get(2).unwrap().position;
+        sim.entities_mut_for_test().get_mut(1).unwrap().position =
+            sim.entities().get(2).unwrap().position;
         let old_point =
             crate::render::locomotor_visual::screen_position(sim.entities().get(1).unwrap());
         assert_eq!(
@@ -1459,7 +1462,7 @@ mod tests {
             Some(2),
             "raw-location overlap reproduces the wrong pick"
         );
-        sim.entities_mut().get_mut(1).unwrap().position = native_position;
+        sim.entities_mut_for_test().get_mut(1).unwrap().position = native_position;
         let selection = compute_click_selection_snapshot_with_playfield(
             sim.entities(),
             &[2, 1],
@@ -1474,9 +1477,9 @@ mod tests {
             None,
             &heights,
             None,
-            Some(&sim.interner),
+            Some(sim.interner()),
             true,
-            sim.resolved_terrain.as_ref(),
+            sim.resolved_terrain(),
         )
         .unwrap();
         assert_eq!(selection.select, [1]);

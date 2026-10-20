@@ -92,7 +92,7 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
         .match_state
         .sim_runtime
         .as_ref()
-        .is_none_or(|rt| rt.simulation.session.game_mode_nonzero())
+        .is_none_or(|rt| rt.simulation.session().game_mode_nonzero())
     {
         return;
     }
@@ -397,7 +397,7 @@ mod tests {
         let controls = crate::test_fixture::json("tools/scenario_pause.json");
         for row in controls["radar_controls"].as_array().unwrap() {
             let mut sim = Simulation::with_seed(0);
-            sim.session.set_input_locked_for_test(true);
+            sim.session_mut_for_test().set_input_locked_for_test(true);
             if row["initial_hold"].as_bool().unwrap() {
                 sim.pause_scenario(0);
             }
@@ -447,14 +447,14 @@ mod tests {
                     "{step}"
                 );
                 assert_eq!(
-                    serde_json::to_value(&sim.session).unwrap()["scenario_pause"]["depth"],
+                    serde_json::to_value(sim.session()).unwrap()["scenario_pause"]["depth"],
                     step["depth"],
                     "{step}"
                 );
                 assert_eq!(serde_json::json!(events), step["events"], "{step}");
             }
             assert_eq!(
-                sim.session.scenario_paused(),
+                sim.session().scenario_paused(),
                 row["initial_hold"].as_bool().unwrap()
             );
         }

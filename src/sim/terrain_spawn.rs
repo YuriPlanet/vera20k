@@ -145,9 +145,7 @@ pub struct TerrainSpawnContext<'a> {
     pub ore_growth_state: Option<&'a mut OreGrowthState>,
     growth_enabled: bool,
     spread_enabled: bool,
-    pub radar_dirty_cells: Option<&'a mut Vec<(u16, u16)>>,
-    pub radar_dirty_generation: Option<&'a mut u64>,
-    pub tactical_dirty_cells: Option<&'a mut Vec<(u16, u16)>>,
+    pub dirty_cells: Option<&'a mut crate::sim::dirty_cells::DirtyCells>,
     pub binary_frame: u32,
     pub spawning_terrain_cells: Option<&'a BTreeSet<(u16, u16)>>,
     pub entities: Option<&'a EntityStore>,
@@ -171,9 +169,7 @@ impl<'a> TerrainSpawnContext<'a> {
             ore_growth_state: None,
             growth_enabled: true,
             spread_enabled: true,
-            radar_dirty_cells: None,
-            radar_dirty_generation: None,
-            tactical_dirty_cells: None,
+            dirty_cells: None,
             binary_frame: 0,
             spawning_terrain_cells: None,
             entities: None,
@@ -212,13 +208,9 @@ impl<'a> TerrainSpawnContext<'a> {
 
     pub fn with_dirty_tracking(
         mut self,
-        radar_dirty_cells: &'a mut Vec<(u16, u16)>,
-        radar_dirty_generation: &'a mut u64,
-        tactical_dirty_cells: &'a mut Vec<(u16, u16)>,
+        dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     ) -> Self {
-        self.radar_dirty_cells = Some(radar_dirty_cells);
-        self.radar_dirty_generation = Some(radar_dirty_generation);
-        self.tactical_dirty_cells = Some(tactical_dirty_cells);
+        self.dirty_cells = Some(dirty_cells);
         self
     }
 
@@ -327,9 +319,7 @@ fn tick_terrain_spawner_one_inner(
         binary_frame: ctx.binary_frame,
         growth_enabled: ctx.growth_enabled,
         spread_enabled: ctx.spread_enabled,
-        radar_dirty_cells: ctx.radar_dirty_cells.as_deref_mut(),
-        radar_dirty_generation: ctx.radar_dirty_generation.as_deref_mut(),
-        tactical_dirty_cells: ctx.tactical_dirty_cells.as_deref_mut(),
+        dirty_cells: ctx.dirty_cells.as_deref_mut(),
     };
     spread_tiberium(&mut placement, cell, true)
 }
@@ -386,11 +376,7 @@ pub(crate) fn tick_terrain_object_ai(
                 sim.ore_growth_config.grows(),
                 sim.ore_growth_config.spreads(),
             )
-            .with_dirty_tracking(
-                &mut sim.radar_terrain_dirty_cells,
-                &mut sim.radar_terrain_dirty_generation,
-                &mut sim.tactical_dirty_cells,
-            )
+            .with_dirty_tracking(&mut sim.dirty_cells)
             .with_spawning_terrain_cells(spawning_cells)
             .with_live_object_context(
                 &sim.substrate.entities,

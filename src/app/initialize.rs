@@ -915,7 +915,7 @@ mod tests {
                     .unwrap();
             assert_eq!(loaded.map.entities.len(), 19);
             assert_eq!(loaded.sim().entities().len(), 19, "no generated forces");
-            let owner = loaded.sim().interner.get("Americans").unwrap();
+            let owner = loaded.sim().interner().get("Americans").unwrap();
             let authored: Vec<_> = loaded
                 .sim()
                 .entities()
@@ -926,7 +926,7 @@ mod tests {
             assert_eq!(
                 loaded
                     .sim()
-                    .houses
+                    .houses()
                     .values()
                     .filter(|house| !house.multiplay_passive())
                     .count(),
@@ -970,7 +970,7 @@ mod tests {
                     );
                     assert!(!output.tick.terminal_score_finalized);
                     assert!(loaded.sim().ready_outcome_for_owner(owner).is_none());
-                    let house = &loaded.sim().houses[&owner];
+                    let house = &loaded.sim().houses()[&owner];
                     assert!(!house.has_won() && !house.has_lost() && !house.is_defeated());
                     assert!(
                         house.outcome().is_none(),
@@ -999,7 +999,7 @@ mod tests {
                     "Previous empty-opponent control: victory on production frame {frame}; 19 authored entities retained"
                 );
             } else {
-                assert_eq!(loaded.sim().session.tick(), 300);
+                assert_eq!(loaded.sim().session().tick(), 300);
                 assert_eq!(victory_edges, 0, "no phantom victory EVA");
                 let exit = crate::sim::command::CommandEnvelope::new(
                     owner,
@@ -1018,7 +1018,7 @@ mod tests {
                 assert_eq!(output.tick.executed_commands, 1);
                 assert!(!output.tick.frame_committed);
                 assert!(
-                    loaded.sim().quit_requested,
+                    loaded.sim().quit_requested(),
                     "the sandbox still accepts explicit exit"
                 );
                 assert!(loaded.sim().ready_outcome_for_owner(owner).is_none());

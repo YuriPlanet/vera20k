@@ -619,11 +619,11 @@ fn c4_on_cabhut_collapses_bridge_and_hut_survives() {
     // BR-16: the collapse must feed the minimap radar-dirty channel end-to-end
     // (the same channel the engineer-repair path uses).
     assert!(
-        !sim.radar_terrain_dirty_cells.is_empty(),
+        !sim.dirty_cells.radar().is_empty(),
         "bridge collapse must dirty minimap terrain cells"
     );
     assert!(
-        sim.radar_terrain_dirty_cells.contains(&(17, 15)),
+        sim.dirty_cells.radar().contains(&(17, 15)),
         "the collapsed concrete cell (17,15) must be radar-dirty"
     );
 

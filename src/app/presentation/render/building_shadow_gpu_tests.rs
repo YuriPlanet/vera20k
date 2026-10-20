@@ -39,7 +39,7 @@ fn retail_gapowr_embedded_shadow_uses_real_atlas_mask_and_native_leaf() {
     let owner_id =
         scene.add_human_house(owner_name, crate::skirmish_launch::LaunchCountry::America);
     let (map_width, map_height) = {
-        let terrain = scene.sim().resolved_terrain.as_ref().unwrap();
+        let terrain = scene.sim().resolved_terrain().unwrap();
         (
             u16::try_from(terrain.width()).expect("map width fits native cell"),
             u16::try_from(terrain.height()).expect("map height fits native cell"),
@@ -64,8 +64,8 @@ fn retail_gapowr_embedded_shadow_uses_real_atlas_mask_and_native_leaf() {
         .entities()
         .get(building_id)
         .expect("spawned GAPOWR entity");
-    let type_id = sim.interner.resolve(entity.type_ref());
-    let owner = sim.interner.resolve(entity.owner());
+    let type_id = sim.interner().resolve(entity.type_ref());
+    let owner = sim.interner().resolve(entity.owner());
     assert_eq!(type_id, "GAPOWR");
     assert_eq!(owner, owner_name);
     assert!(entity.lifecycle.object_alive());
@@ -134,7 +134,7 @@ fn retail_gapowr_embedded_shadow_uses_real_atlas_mask_and_native_leaf() {
         &HashSet::new(),
         None,
         None,
-        Some(&sim.interner),
+        Some(sim.interner()),
     )
     .expect("production atlas for retail scenario and spawned GAPOWR");
     assert_eq!(atlas.object_shp_frame_count(type_id), Some(6));
@@ -158,10 +158,10 @@ fn retail_gapowr_embedded_shadow_uses_real_atlas_mask_and_native_leaf() {
         owner_name,
         Some(owner_name),
         Some(owner_id),
-        &sim.fog,
-        &sim.house_alliances,
+        sim.fog(),
+        sim.house_alliances(),
         false,
-        sim.session.binary_frame(),
+        sim.session().binary_frame(),
         u32::from(house_color.0) + 1,
         observer,
     )

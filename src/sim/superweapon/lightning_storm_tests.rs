@@ -1124,7 +1124,7 @@ fn a_strike_destroying_a_wall_publishes_navigation_and_radar_inline() {
         crate::sim::pathfinding::zone_map::ZONE_INVALID
     );
     assert_eq!(
-        sim.radar_terrain_dirty_cells,
+        sim.dirty_cells.radar(),
         vec![
             (5, 5),
             (5, 3),
@@ -1141,9 +1141,9 @@ fn a_strike_destroying_a_wall_publishes_navigation_and_radar_inline() {
             (6, 5),
         ]
     );
-    assert_eq!(sim.radar_terrain_dirty_generation, 13);
+    assert_eq!(sim.dirty_cells.radar_generation(), 13);
     assert_eq!(
-        sim.tactical_dirty_cells,
+        sim.dirty_cells.tactical_for_test(),
         vec![
             (5, 5),
             (5, 3),

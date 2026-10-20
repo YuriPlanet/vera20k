@@ -190,7 +190,7 @@ pub(crate) fn build_bridge_body_instances(
     else {
         return;
     };
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = sim.resolved_terrain() else {
         return;
     };
     let Some(atlas) = state.match_state.match_presentation.bridge_atlas.as_ref() else {
@@ -386,7 +386,7 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
     else {
         return;
     };
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = sim.resolved_terrain() else {
         return;
     };
     let Some(atlas) = state.match_state.match_presentation.bridge_atlas.as_ref() else {
@@ -410,9 +410,9 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
         atlas,
         &state.match_state.match_presentation.overlay_names,
         state.match_state.match_presentation.overlays.as_slice(),
-        sim.overlay_grid.as_ref(),
+        sim.overlay_grid(),
         state.overlay_registry(),
-        state.rules().map(|rules| (rules, &sim.interner)),
+        state.rules().map(|rules| (rules, sim.interner())),
         origin_y,
         world_height,
         cam_x,

@@ -60,9 +60,14 @@ fn bound_saved_world(
         crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&processed, Some(&fixed_art));
     let mut simulation = super::super::tests::load_fixture_simulation(false);
     let terrain = {
-        let mut main_draw = || simulation.main_rng.next_u32();
+        let main_rng = simulation.main_rng().draws();
+        let mut main_draw = || main_rng.next_u32();
         let mut selector = cache.begin_load(&mut main_draw);
-        let mut fill_draw = |min, max| simulation.scenario_rng.next_range_u32_inclusive(min, max);
+        let mut fill_draw = |min, max| {
+            simulation
+                .scenario_rng_mut_for_test()
+                .next_range_u32_inclusive(min, max)
+        };
         ResolvedTerrainGrid::build_with_variant_selector(
             &map,
             Some(&theater),
@@ -114,22 +119,32 @@ fn bound_saved_world(
     // One video-owned and one ordinary trigger-owned untimed hold.
     simulation.pause_scenario(0);
     simulation.pause_scenario(0);
-    simulation.session.set_map_name_for_test(name.into());
-    simulation.session.install_waypoints(&map.waypoints);
     simulation
-        .session
+        .session_mut_for_test()
+        .set_map_name_for_test(name.into());
+    simulation
+        .session_mut_for_test()
+        .install_waypoints(&map.waypoints);
+    simulation
+        .session_mut_for_test()
         .set_theater_for_test(map.header.theater.clone());
-    simulation.session.set_map_width_for_test(terrain.width());
-    simulation.session.set_map_height_for_test(terrain.height());
-    simulation.session.set_tick_for_test(91);
-    simulation.session.set_binary_frame_for_test(92);
-    simulation.session.set_lighting_for_test(
+    simulation
+        .session_mut_for_test()
+        .set_map_width_for_test(terrain.width());
+    simulation
+        .session_mut_for_test()
+        .set_map_height_for_test(terrain.height());
+    simulation.session_mut_for_test().set_tick_for_test(91);
+    simulation
+        .session_mut_for_test()
+        .set_binary_frame_for_test(92);
+    simulation.session_mut_for_test().set_lighting_for_test(
         crate::sim::scenario_session::ScenarioLightingState::from_map(
             &crate::map::lighting::parse_lighting_profiles(&map.ini),
         ),
     );
     simulation.install_playfield_from_map_header(&map.header);
-    simulation.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
+    *simulation.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(
         terrain.width(),
         terrain.height(),
     ));
@@ -243,14 +258,14 @@ fn assert_incoming_resources(
     );
     let sim = &prepared.world.simulation;
     assert_eq!(
-        sim.session.map_name(),
-        incoming.simulation.session.map_name()
+        sim.session().map_name(),
+        incoming.simulation.session().map_name()
     );
-    assert_eq!(sim.session.theater(), "TEMPERATE");
-    assert_eq!(sim.session.tick(), incoming.simulation.session.tick());
+    assert_eq!(sim.session().theater(), "TEMPERATE");
+    assert_eq!(sim.session().tick(), incoming.simulation.session().tick());
     assert_eq!(
-        sim.session.binary_frame(),
-        incoming.simulation.session.binary_frame()
+        sim.session().binary_frame(),
+        incoming.simulation.session().binary_frame()
     );
     assert_eq!(
         sim.map_size_diamond(),
@@ -273,10 +288,10 @@ fn assert_incoming_resources(
             .is_empty()
     );
     assert_eq!(
-        sim.session.waypoint_cell(7),
-        incoming.simulation.session.waypoint_cell(7)
+        sim.session().waypoint_cell(7),
+        incoming.simulation.session().waypoint_cell(7)
     );
-    assert_ne!(sim.session.waypoint_cell(7), Some((0, 0)));
+    assert_ne!(sim.session().waypoint_cell(7), Some((0, 0)));
     assert_eq!(
         serde_json::to_value(&prepared.map).unwrap(),
         serde_json::to_value(map).unwrap()
@@ -304,7 +319,7 @@ fn assert_incoming_resources(
         .unwrap(),
         "asset rebinding preserves baseline terrain values",
     );
-    let live = sim.resolved_terrain.as_ref().unwrap();
+    let live = sim.resolved_terrain().unwrap();
     assert!(
         live.native_tmp_file_count(i32::from(prepared.theater.rmg_tiles.clear_tile.unwrap()))
             .is_some(),
@@ -312,14 +327,14 @@ fn assert_incoming_resources(
     );
     assert!(prepared.map.radar_pause_credit());
     let mut restored_session = Simulation::with_seed(0);
-    restored_session.session = sim.session.clone();
+    *restored_session.session_mut_for_test() = sim.session().clone();
     let release = crate::app::radar_movie::release_saved_scenario_hold(
         &mut restored_session,
         prepared.map.radar_pause_credit(),
     );
     assert!(release.is_empty());
     assert!(
-        restored_session.session.scenario_paused(),
+        restored_session.session().scenario_paused(),
         "unrelated trigger hold survives missing video retirement"
     );
     assert!(
@@ -327,7 +342,7 @@ fn assert_incoming_resources(
             .resume_scenario()
             .contains(&crate::sim::trigger_runtime::TriggerEffect::ScenarioResume)
     );
-    assert!(!restored_session.session.scenario_paused());
+    assert!(!restored_session.session().scenario_paused());
     assert_eq!(prepared.elapsed_clock.elapsed_seconds(LOAD_CLOCK_MS), 3);
     assert_eq!(
         prepared.elapsed_clock.elapsed_seconds(LOAD_CLOCK_MS + 960),
@@ -496,7 +511,7 @@ fn retail_saved_resources_prepare_cold() {
     assert_incoming_resources(&cold, &incoming, &map);
     assert_next_fill_uses_saved_theater_registry(&cold, &cold_cache);
     assert_eq!(
-        cold.world.simulation.main_rng.logical_state(),
+        cold.world.simulation.main_rng().logical_state(),
         SimRng::from_native_state_hex_for_test(native["after"]["main"].as_str().unwrap())
             .logical_state()
     );
@@ -574,13 +589,13 @@ fn retail_saved_resources_prepare_cross_map_and_roll_back_late_failure() {
         .simulation
         .initialize_random_number_system(0xA123_4567);
     for _ in 0..7 {
-        outgoing.simulation.main_rng.next_u32();
+        outgoing.simulation.main_rng().next_u32();
     }
     for _ in 0..11 {
-        outgoing.simulation.mapgen_rng.next_u32();
+        outgoing.simulation.mapgen_rng_mut_for_test().next_u32();
     }
     for _ in 0..13 {
-        outgoing.simulation.scenario_rng.next_u32();
+        outgoing.simulation.scenario_rng_mut_for_test().next_u32();
     }
     assert_eq!(
         outgoing.resources.rules.object("MTNK").unwrap().strength,
@@ -704,8 +719,8 @@ fn retail_saved_resources_prepare_cross_map_and_roll_back_late_failure() {
         SimRng::new(0).logical_state()
     );
     assert_eq!(
-        prepared.world.simulation.session.seed(),
-        outgoing.simulation.session.seed()
+        prepared.world.simulation.session().seed(),
+        outgoing.simulation.session().seed()
     );
     assert_eq!(
         prepared.tile_cache.selector().initialized_table(),

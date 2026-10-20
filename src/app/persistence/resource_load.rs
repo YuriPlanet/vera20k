@@ -109,15 +109,15 @@ impl PreparedSavedGame {
         saved.terrain().validate()?;
         if saved.terrain().dimensions()
             != (
-                snapshot.sim.session.map_width(),
-                snapshot.sim.session.map_height(),
+                snapshot.sim.session().map_width(),
+                snapshot.sim.session().map_height(),
             )
         {
             return Err(PreparedLoadError::Resources(
                 "saved terrain and scenario dimensions disagree".into(),
             ));
         }
-        let theater_name = snapshot.sim.session.theater().to_owned();
+        let theater_name = snapshot.sim.session().theater().to_owned();
         let theater = theater::load_theater(assets, &theater_name).ok_or_else(|| {
             PreparedLoadError::Resources(format!("cannot load theater {theater_name}"))
         })?;
@@ -254,11 +254,10 @@ impl PreparedSavedGame {
             ..
         } = &candidate;
         let rules = &resources.rules;
-        let theater_name = &world.simulation.session.theater();
+        let theater_name = &world.simulation.session().theater();
         let terrain = world
             .simulation
-            .resolved_terrain
-            .as_ref()
+            .resolved_terrain()
             .expect("prepared world terrain");
         let terrain_grid =
             build_terrain_grid_from_resolved(terrain, BridgeMiddleTiles::from_theater(theater));

@@ -164,8 +164,8 @@ fn compare_original_body_pixels(join_viewport: bool) {
     }
 
     let mut sim = Simulation::with_seed(31);
-    let owner = sim.interner.intern("PreparedHouse");
-    let type_id = sim.interner.intern("E1");
+    let owner = sim.intern("PreparedHouse");
+    let type_id = sim.intern("E1");
     let actor = &shared["actor"];
     let mut gi = GameEntity::new_at_frame_zero_for_test(
         1,
@@ -190,7 +190,7 @@ fn compare_original_body_pixels(join_viewport: bool) {
         .set_in_limbo_for_test(actor["limbo"].as_bool().unwrap());
     gi.lifecycle
         .set_object_alive_for_test(actor["alive"].as_bool().unwrap());
-    sim.entities_mut().insert(gi);
+    sim.entities_mut_for_test().insert(gi);
     sim.submit_object_display(1, DisplayLayer::GROUND, Some(&rules));
     let order = NativeDisplayOrder::from_display(sim.display_layers());
     let mut light_grid = CellLightGrid::new();
@@ -239,7 +239,7 @@ fn compare_original_body_pixels(join_viewport: bool) {
             &HashSet::new(),
             None,
             None,
-            Some(&sim.interner),
+            Some(sim.interner()),
         )
         .expect("physical E1/GI sprite atlas");
         let fog = ShroudBuffer::fixture(
@@ -301,7 +301,7 @@ fn compare_original_body_pixels(join_viewport: bool) {
                 ];
                 batch.write_camera(&gpu.queue, view);
             }
-            let gi = sim.entities_mut().get_mut(1).unwrap();
+            let gi = sim.entities_mut_for_test().get_mut(1).unwrap();
             gi.berserk
                 .set_active_for_test(input["berserk"].as_bool().unwrap());
             gi.body_facing = FacingClass::new(int(&input["facing"]) as u16, 0);
@@ -314,7 +314,7 @@ fn compare_original_body_pixels(join_viewport: bool) {
                 .unwrap();
             let frame = u16::try_from(animation::resolve_shp_frame(
                 record,
-                gi.body_facing_byte(sim.session.binary_frame()),
+                gi.body_facing_byte(sim.session().binary_frame()),
                 int(&actor["stage"]),
             ))
             .unwrap();

@@ -105,7 +105,7 @@ fn retained_bullet_geometry_and_read_only_live_bridge_probe_match_native() {
     for row in corpus["rows"].as_array().unwrap() {
         let mut sim = crate::sim::world::Simulation::with_seed(31);
         sim.install_resolved_terrain_for_new_map(grid(&row["input"]));
-        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        let terrain = sim.resolved_terrain().unwrap();
         terrain.shared_cell_dummy().stamp_coord(123, -44);
         let before = sim.state_hash();
         let dummy_before = terrain.shared_cell_dummy().snapshot();

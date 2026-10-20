@@ -30,7 +30,7 @@ pub(super) fn resident_seed(state: &AppState) -> u32 {
         .sim_runtime
         .as_ref()
         .map_or(state.frontend.startup_rng_seed, |runtime| {
-            runtime.simulation.session.seed() as u32
+            runtime.simulation.session().seed() as u32
         })
 }
 

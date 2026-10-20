@@ -43,16 +43,16 @@ pub(crate) fn observer_draw_context(
     local_owner_id: Option<InternedId>,
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> crate::render::draw_state::ObserverDrawContext {
-    let owner = sim.interner.resolve(entity.owner());
+    let owner = sim.interner().resolve(entity.owner());
     let allied = local_owner.is_some_and(|observer| {
-        crate::map::houses::is_allied_with(&sim.house_alliances, observer, owner)
+        crate::map::houses::is_allied_with(sim.house_alliances(), observer, owner)
     });
-    let object = rules.and_then(|r| sim.interner.object_type(entity.type_ref(), r));
+    let object = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
     let disguise_cell = entity
         .disguise
         .as_ref()
         .filter(|disguise| disguise.is_disguised())
-        .and(sim.resolved_terrain.as_ref())
+        .and(sim.resolved_terrain())
         .map(|terrain| {
             // Presentation queries isolate Dummy and never change lockstep state.
             let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
@@ -66,11 +66,11 @@ pub(crate) fn observer_draw_context(
         owner_is_allied: allied,
         owner_is_mutually_allied: allied
             && local_owner.is_some_and(|observer| {
-                crate::map::houses::is_allied_with(&sim.house_alliances, owner, observer)
+                crate::map::houses::is_allied_with(sim.house_alliances(), owner, observer)
             }),
         observer_present: local_owner_id.is_some(),
         detects_cloak: local_owner_id.is_some_and(|observer| {
-            sim.fog
+            sim.fog()
                 .has_sensor_for_house(observer, entity.position.rx(), entity.position.ry())
         }),
         cloaking_stages: rules.map_or_else(
@@ -81,13 +81,13 @@ pub(crate) fn observer_draw_context(
             obj.invisible
                 || (entity.category() == EntityCategory::Structure && obj.invisible_in_game)
         }),
-        is_campaign: !sim.session.game_mode_nonzero(),
+        is_campaign: !sim.session().game_mode_nonzero(),
         owner_is_current_player: sim.house_is_human_player(entity.owner()),
         disguise_cell_present: disguise_cell.is_some(),
         detects_disguise: local_owner_id
             .zip(disguise_cell)
             .is_some_and(|(observer, cell)| {
-                sim.fog
+                sim.fog()
                     .detects_disguise_for_house(observer, cell.0 as u16, cell.1 as u16)
             }),
         drawn_voxel: None,
@@ -201,16 +201,16 @@ fn tactical_bounded_entity_encounter_order(
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let local_owner_id = local_owner
         .as_deref()
-        .and_then(|owner| sim.interner.get(owner));
+        .and_then(|owner| sim.interner().get(owner));
 
     compose_tactical_screen_entity_encounter_order(
         sim,
         (min_x, min_y, max_x, max_y),
         local_owner.as_deref(),
         local_owner_id,
-        &sim.fog,
+        sim.fog(),
         state.match_state.sandbox_full_visibility,
-        sim.session.binary_frame(),
+        sim.session().binary_frame(),
         bulk_register_live_buildings,
         state.rules(),
     )
@@ -242,7 +242,7 @@ fn compose_tactical_screen_entity_encounter_order(
         .into_iter()
         .filter(|id| {
             sim.entities().get(*id).is_some_and(|entity| {
-                let owner = sim.interner.resolve(entity.owner());
+                let owner = sim.interner().resolve(entity.owner());
                 let admitted = if bulk_register_live_buildings
                     && entity.category() == EntityCategory::Structure
                 {
@@ -255,7 +255,7 @@ fn compose_tactical_screen_entity_encounter_order(
                         local_owner,
                         local_owner_id,
                         fog,
-                        &sim.house_alliances,
+                        sim.house_alliances(),
                         ignore_visibility,
                         current_frame,
                         0,
@@ -530,9 +530,9 @@ mod tests {
     #[test]
     fn item83_equal_tactical_keys_keep_live_registration_order() {
         let mut sim = crate::sim::world::Simulation::new();
-        sim.fog = FogState::new(32, 32);
-        let owner = sim.interner.intern("Americans");
-        let type_ref = sim.interner.intern("E1");
+        *sim.fog_mut_for_test() = FogState::new(32, 32);
+        let owner = sim.intern("Americans");
+        let type_ref = sim.intern("E1");
         // Stored entities use this Simulation's interner, not the separate
         // global test interner used by standalone rendering-only fixtures.
         let entity = |id| {
@@ -551,14 +551,14 @@ mod tests {
                 true,
             )
         };
-        sim.entities_mut().insert(entity(1));
-        sim.entities_mut().insert(entity(2));
-        sim.entities_mut()
+        sim.entities_mut_for_test().insert(entity(1));
+        sim.entities_mut_for_test().insert(entity(2));
+        sim.entities_mut_for_test()
             .get_mut(2)
             .unwrap()
             .lifecycle
             .set_in_limbo_for_test(true);
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(1)
             .unwrap()
             .lifecycle
@@ -567,7 +567,7 @@ mod tests {
         sim.reveal(1);
         sim.set_logic_order_for_test(vec![1, 2]);
         assert_eq!(tactical_entity_encounter_order(&sim), [2, 1]);
-        sim.entities_mut().insert(entity(3));
+        sim.entities_mut_for_test().insert(entity(3));
         sim.set_logic_order_for_test(vec![3, 1, 2]);
         assert_eq!(
             tactical_entity_encounter_order(&sim),
@@ -792,10 +792,10 @@ mod tests {
         use crate::sim::combat::Health;
 
         let mut sim = crate::sim::world::Simulation::new();
-        let local_owner = sim.interner.intern("Americans");
-        let enemy_owner = sim.interner.intern("Soviet");
-        let mobile_type = sim.interner.intern("E1");
-        let building_type = sim.interner.intern("NAPOWR");
+        let local_owner = sim.intern("Americans");
+        let enemy_owner = sim.intern("Soviet");
+        let mobile_type = sim.intern("E1");
+        let building_type = sim.intern("NAPOWR");
 
         let mut hidden_mobile = GameEntity::new_at_frame_zero_for_test(
             1,
@@ -829,9 +829,9 @@ mod tests {
         hidden_building.lifecycle.set_in_limbo_for_test(false);
         let mobile_anchor = interpolated_screen_position_entity(&hidden_mobile);
         let building_anchor = interpolated_screen_position_entity(&hidden_building);
-        sim.entities_mut().insert(hidden_mobile);
-        sim.entities_mut().insert(hidden_building);
-        sim.entities_mut()
+        sim.entities_mut_for_test().insert(hidden_mobile);
+        sim.entities_mut_for_test().insert(hidden_building);
+        sim.entities_mut_for_test()
             .get_mut(1)
             .unwrap()
             .lifecycle
@@ -849,7 +849,7 @@ mod tests {
             bounds,
             Some("Americans"),
             Some(local_owner),
-            &sim.fog,
+            sim.fog(),
             false,
             0,
             false,
@@ -860,7 +860,7 @@ mod tests {
             bounds,
             Some("Americans"),
             Some(local_owner),
-            &sim.fog,
+            sim.fog(),
             false,
             0,
             true,
@@ -882,7 +882,7 @@ mod tests {
             &preflight,
             &visible,
             &[],
-            Some((&sim.fog, &sim.house_alliances)),
+            Some((sim.fog(), sim.house_alliances())),
             Some("Americans"),
             building_anchor.0 - 1.0,
             building_anchor.1 - 1.0,
@@ -891,7 +891,7 @@ mod tests {
             false,
             None,
             None,
-            Some(&sim.interner),
+            Some(sim.interner()),
         )
         .expect("the hidden building must consume a non-Shift band release");
         assert!(building_box.clear);
@@ -906,7 +906,7 @@ mod tests {
                 &preflight,
                 &visible,
                 &[],
-                Some((&sim.fog, &sim.house_alliances)),
+                Some((sim.fog(), sim.house_alliances())),
                 Some("Americans"),
                 mobile_anchor.0 - 1.0,
                 mobile_anchor.1 - 1.0,
@@ -915,7 +915,7 @@ mod tests {
                 false,
                 None,
                 None,
-                Some(&sim.interner),
+                Some(sim.interner()),
             )
             .is_none(),
             "a shrouded mobile leaves the band truly empty for click fallback"
@@ -928,9 +928,9 @@ mod tests {
         use crate::sim::world::display_layers::DisplayLayer;
 
         let mut sim = Simulation::new();
-        sim.fog = FogState::new(64, 64);
-        let owner = sim.interner.intern("Americans");
-        let type_ref = sim.interner.intern("BEAG");
+        *sim.fog_mut_for_test() = FogState::new(64, 64);
+        let owner = sim.intern("Americans");
+        let type_ref = sim.intern("BEAG");
         let mut aircraft = GameEntity::new_at_frame_zero_for_test(
             1,
             40,
@@ -948,11 +948,11 @@ mod tests {
         aircraft.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
         aircraft.position.set_exact_z_leptons_for_test(Some(900));
         aircraft.lifecycle.set_in_limbo_for_test(true);
-        sim.entities_mut().insert(aircraft);
+        sim.entities_mut_for_test().insert(aircraft);
         sim.reveal(1);
         // A headless Reveal commits no exact Z; lift the aircraft back to 900
         // and resubmit its display, as a takeoff does.
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(1)
             .unwrap()
             .position
@@ -964,7 +964,7 @@ mod tests {
         // reached the ground, but the phase transaction has not resubmitted.
         // A fresh altitude classifier used to choose Ground and then lose the
         // body because NativeDisplayOrder correctly had no entry for this ID.
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(1)
             .unwrap()
             .position

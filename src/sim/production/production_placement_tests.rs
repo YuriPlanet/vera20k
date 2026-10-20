@@ -2037,9 +2037,7 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
         expected
     );
 
-    sim.tactical_dirty_cells.clear();
-    sim.radar_terrain_dirty_cells.clear();
-    sim.radar_terrain_dirty_generation = 0;
+    sim.dirty_cells = Default::default();
 
     let placed = place_building(
         &mut sim,
@@ -2114,7 +2112,8 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
         ]);
     }
     assert_eq!(
-        sim.tactical_dirty_cells, expected_tactical,
+        sim.dirty_cells.tactical_for_test(),
+        expected_tactical,
         "each clicked/filler Mark must finish its N/E/S/W/self tactical sequence before the next stamp"
     );
     for (rx, ry) in std::iter::once(origin).chain(expected.iter().copied()) {
@@ -2313,9 +2312,7 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
         .expect("construction yard listener")
         .attack_target
         .set_for_test(Some(TargetKind::Cell(13, 10)));
-    sim.tactical_dirty_cells.clear();
-    sim.radar_terrain_dirty_cells.clear();
-    sim.radar_terrain_dirty_generation = 0;
+    sim.dirty_cells = Default::default();
 
     let placed = place_building(
         &mut sim,
@@ -2361,10 +2358,11 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
     // existing N/E/S/W/self visits; radar belongs to connectivity only.
     let mut expected_tactical = vec![(12, 10)];
     expected_tactical.extend_from_slice(&expected_dirty);
-    assert_eq!(sim.tactical_dirty_cells, expected_tactical);
-    assert_eq!(sim.radar_terrain_dirty_cells, expected_dirty);
+    assert_eq!(sim.dirty_cells.tactical_for_test(), expected_tactical);
+    assert_eq!(sim.dirty_cells.radar(), expected_dirty);
     assert_eq!(
-        sim.radar_terrain_dirty_generation, 5,
+        sim.dirty_cells.radar_generation(),
+        5,
         "each first-unique native radar callback is published at its inline visit"
     );
     let live_path = sim

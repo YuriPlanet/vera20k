@@ -30,7 +30,7 @@ fn hut_hover(sim: &Simulation, engineer: u64, hut: u64) -> HoverTargetKindWithId
     let actor = sim.entities().get(engineer).unwrap();
     let target = sim.entities().get(hut).unwrap();
     let friendly = crate::map::houses::are_houses_friendly(
-        &sim.house_alliances,
+        sim.house_alliances(),
         sim.resolve(actor.owner()),
         sim.resolve(target.owner()),
     );
@@ -58,9 +58,9 @@ fn resolve_hut_orders(
     let before_hash = sim.state_hash();
     let before_actor = serde_json::to_value(sim.entities().get(engineer).unwrap()).unwrap();
     let before_rng = (
-        sim.scenario_rng.logical_state(),
-        sim.main_rng.logical_state(),
-        sim.mapgen_rng.logical_state(),
+        sim.scenario_rng().logical_state(),
+        sim.main_rng().logical_state(),
+        sim.mapgen_rng().logical_state(),
     );
     let best = select_best_for_action(
         sim,
@@ -170,7 +170,7 @@ fn resolve_hut_orders(
     // not the fixture's default supplied Capture(next tick) envelope.
     let mut envelopes: Vec<_> = commands
         .into_iter()
-        .map(|payload| CommandEnvelope::new(owner, sim.session.tick(), payload))
+        .map(|payload| CommandEnvelope::new(owner, sim.session().tick(), payload))
         .map(|envelope| {
             crate::app::input::commands::roundtrip_ordinary_local_megamission(sim, envelope)
                 .unwrap()
@@ -184,14 +184,14 @@ fn resolve_hut_orders(
     );
     assert_eq!(
         (
-            sim.scenario_rng.logical_state(),
-            sim.main_rng.logical_state(),
-            sim.mapgen_rng.logical_state(),
+            sim.scenario_rng().logical_state(),
+            sim.main_rng().logical_state(),
+            sim.mapgen_rng().logical_state(),
         ),
         before_rng
     );
     receipts.borrow_mut().push(json!({
-        "tick": sim.session.tick(), "binary_frame": sim.session.binary_frame(),
+        "tick": sim.session().tick(), "binary_frame": sim.session().binary_frame(),
         "engineer": engineer, "hut": hut,
         "hut_cell": [sim.entities().get(hut).unwrap().position.rx(), sim.entities().get(hut).unwrap().position.ry()],
         "native_action": action, "native_cursor_row": native_cursor_row,
@@ -209,7 +209,7 @@ fn probe_healthy_hut(
     receipts: &RefCell<Vec<Value>>,
 ) {
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house().unwrap();
+    let owner = runtime.simulation.session().current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let hut = runtime
         .simulation
@@ -316,7 +316,7 @@ fn retail_concrete_hut_input_reaches_engineer_entry_and_publication() {
         |phase, scene| {
             stages.borrow_mut().push(json!({
                 "phase": phase, "map_hash": scene.map.ini.content_hash(),
-                "tick": scene.sim().session.tick(), "frame": scene.sim().session.binary_frame(),
+                "tick": scene.sim().session().tick(), "frame": scene.sim().session().binary_frame(),
                 "state_hash": format!("{:016X}", scene.sim().state_hash()),
             }));
             if phase == "repaired" {
@@ -342,7 +342,7 @@ fn retail_wood_hut_input_reaches_engineer_entry_and_publication() {
         |phase, scene| {
             stages.borrow_mut().push(json!({
                 "phase": phase, "map_hash": scene.map.ini.content_hash(),
-                "tick": scene.sim().session.tick(), "frame": scene.sim().session.binary_frame(),
+                "tick": scene.sim().session().tick(), "frame": scene.sim().session().binary_frame(),
                 "state_hash": format!("{:016X}", scene.sim().state_hash()),
             }));
             if phase == "repaired" {

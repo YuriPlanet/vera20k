@@ -70,7 +70,7 @@ pub(crate) fn open(state: &mut AppState, request: DiplomacyRequest) {
         .match_state
         .sim_runtime
         .as_ref()
-        .and_then(|runtime| runtime.simulation.session.multiplayer_mode_class());
+        .and_then(|runtime| runtime.simulation.session().multiplayer_mode_class());
     match requested_state(request, state.match_state.session.mode(), mode_class) {
         RequestedState::Nothing => {}
         RequestedState::Diplomacy => {
@@ -119,27 +119,27 @@ pub(crate) fn resolve_rows(
         allies_header: false,
         chat_header: false,
     };
-    let order = sim.houses.order();
-    let Some(local) = sim.session.current_house() else {
+    let order = sim.houses().order();
+    let Some(local) = sim.session().current_house() else {
         return empty;
     };
-    let Some(player_index) = sim.houses.index_of(local) else {
+    let Some(player_index) = sim.houses().index_of(local) else {
         return empty;
     };
-    let observer = sim.session.observer_house();
+    let observer = sim.session().observer_house();
     let allied = |asker, other| {
         crate::sim::combat::combat_weapon::is_ally_by_object(
-            Some(&sim.house_alliances),
-            &sim.interner,
+            Some(sim.house_alliances()),
+            sim.interner(),
             asker,
             other,
         )
     };
     let multiplay = |house: InternedId| {
-        sim.houses
+        sim.houses()
             .get(&house)
             .and_then(|state| state.country())
-            .is_some_and(|country| rules.country_multiplay(sim.interner.resolve(country)))
+            .is_some_and(|country| rules.country_multiplay(sim.interner().resolve(country)))
     };
     // Init 0x00657E8B: the player's own slot shows House 0, row 0 the player.
     let house_for_row = |row: usize| match row {
@@ -152,7 +152,7 @@ pub(crate) fn resolve_rows(
     let mut chat_header = false;
     let rows = std::array::from_fn(|row| {
         let house = *order.get(house_for_row(row))?;
-        let state = sim.houses.get(&house)?;
+        let state = sim.houses().get(&house)?;
         // Init hides rows 1..=7 whose House type lacks Multiplay; 0x00658330
         // blanks row 0's texts for such a type.
         if !multiplay(house) {
@@ -205,7 +205,7 @@ pub(crate) fn resolve_rows(
         } else {
             state
                 .country()
-                .and_then(|country| rules.country_index(sim.interner.resolve(country)))
+                .and_then(|country| rules.country_index(sim.interner().resolve(country)))
                 .and_then(|index| {
                     crate::app::frontend::skirmish_shell_render::flag_pcx_for_side_item_data(
                         i32::from(index.0),

@@ -671,8 +671,8 @@ impl WolCapture {
                     .simulation;
                 ensure!(
                     state.match_state.session.mode() == SessionMode::Wol
-                        && sim.session.started()
-                        && sim.session.game_mode_nonzero(),
+                        && sim.session().started()
+                        && sim.session().game_mode_nonzero(),
                     "the WOL runtime was not admitted"
                 );
                 self.event(frame, "WOL match installed");
@@ -701,7 +701,7 @@ impl WolCapture {
                         .as_ref()
                         .context("EXIT runtime")?
                         .simulation;
-                    ensure!(sim.quit_requested, "the return began before EXIT ran");
+                    ensure!(sim.quit_requested(), "the return began before EXIT ran");
                     self.event(frame, "EXIT consumed");
                     self.exit_consumed = true;
                 }

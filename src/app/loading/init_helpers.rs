@@ -468,7 +468,7 @@ pub(crate) fn build_presentation_manifest(
             asset_manager,
             rules,
             None, // initial build — no existing cache
-            Some(&sim.interner),
+            Some(sim.interner()),
         )
     } else {
         None
@@ -480,8 +480,7 @@ pub(crate) fn build_presentation_manifest(
         anim_remap_keys.extend(startup_crate_anim_remap_keys(rules, overlay_registry));
     }
     let cell_drawer_type_ids: HashSet<String> = sim
-        .resolved_terrain
-        .as_ref()
+        .resolved_terrain()
         .into_iter()
         .flat_map(|terrain| terrain.tile_animations())
         .map(|anim| anim.anim_name.to_ascii_uppercase())
@@ -504,7 +503,7 @@ pub(crate) fn build_presentation_manifest(
             &cell_drawer_type_ids,
             theater_iso_palette,
             None, // initial build — no existing cache
-            Some(&sim.interner),
+            Some(sim.interner()),
         )
     });
     // Init_Game52BFCE..52C075 builds the global 53-row plain Convert
@@ -834,10 +833,10 @@ mod tests {
         rules.replace_art_registry_for_test(art);
 
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Neutral");
-        let type_ref = sim.interner.intern("MAP_OBJECT");
+        let owner = sim.intern("Neutral");
+        let type_ref = sim.intern("MAP_OBJECT");
         let map_object_id = sim.allocate_stable_id();
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .insert(GameEntity::new_at_frame_zero_for_test(
                 map_object_id,
                 1,
@@ -896,15 +895,15 @@ mod tests {
             assert!(anim.terrain_attached());
         }
         assert!(matches!(
-            sim.sound_events.as_slice(),
+            sim.sound_events(),
             [SimSoundEvent::AnimationStarted { anim_id, .. }] if *anim_id == ids[0]
         ));
-        assert_eq!(sim.sound_events.drain(..).count(), 1);
-        assert!(sim.sound_events.is_empty());
+        assert_eq!(sim.sound_events_mut_for_test().drain(..).count(), 1);
+        assert!(sim.sound_events().is_empty());
 
         // Native load resets Scenario RNG to Seed(0); isolate persistence of
         // the AnimStore and authoritative LogicVector registration order.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng_mut_for_test() = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
         let bytes =
             crate::util::save_codec::serialize(&sim).expect("serialize terrain AnimClass state");
@@ -915,7 +914,7 @@ mod tests {
         assert_eq!(restored.state_hash(), expected_hash);
         assert!(restored.anim(ids[0]).unwrap().use_cell_drawer());
         assert!(restored.anim(ids[0]).unwrap().terrain_attached());
-        assert!(restored.sound_events.is_empty());
+        assert!(restored.sound_events().is_empty());
     }
 
     fn overlay_registry_snapshot(

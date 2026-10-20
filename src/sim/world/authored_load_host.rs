@@ -156,9 +156,9 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         };
         match kind {
             MapLoadDirtyKind::BaseMarkTactical | MapLoadDirtyKind::WallTactical => {
-                self.sim.tactical_dirty_cells.push(coord);
+                self.sim.dirty_cells.mark_tactical(coord);
             }
-            MapLoadDirtyKind::WallRadar => self.sim.mark_radar_terrain_dirty_cells([coord]),
+            MapLoadDirtyKind::WallRadar => self.sim.dirty_cells.mark_radar([coord]),
         }
         Ok(())
     }

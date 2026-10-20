@@ -3039,9 +3039,7 @@ impl Simulation {
                     //literal Cell+11E write even when no overlay was installed.
                     grid.write_cell_data(self.resolved_terrain.as_mut(), cell.0, cell.1, density);
                 }
-                if !self.tactical_dirty_cells.contains(&cell) {
-                    self.tactical_dirty_cells.push(cell);
-                }
+                self.dirty_cells.mark_tactical_once(cell);
                 //Anim's ore arm does not call AddToGrowthQueue or radar6551C0.
             }
         }

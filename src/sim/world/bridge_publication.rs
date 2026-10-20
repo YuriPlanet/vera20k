@@ -272,8 +272,7 @@ impl BridgePublicationHost for LivePublication<'_> {
     }
     fn radar(&mut self, cell: Cell) {
         let (x, y) = self.coord(cell);
-        self.sim
-            .mark_radar_terrain_dirty_cells([(x as u16, y as u16)]);
+        self.sim.dirty_cells.mark_radar([(x as u16, y as u16)]);
     }
     fn perpendicular(
         &mut self,

@@ -56,9 +56,9 @@ fn fixture() -> Fixture {
     );
     let mut sim = Simulation::with_seed(1);
     let mut house = |name: &str, country: &str, human: bool| {
-        let name = sim.interner.intern(name);
-        let country = sim.interner.intern(country);
-        sim.houses
+        let name = sim.intern(name);
+        let country = sim.intern(country);
+        sim.houses_mut_for_test()
             .register(HouseState::new(name, 0, Some(country), human, 0, 10));
         name
     };
@@ -66,7 +66,8 @@ fn fixture() -> Fixture {
     let second_ai = house("Computer2", "Alliance", false);
     let player = house("Player", "Russians", true);
     house("Neutral", "Neutral", false);
-    sim.session.set_current_house_for_test(Some(player));
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(player));
     let colors = [("Computer1", 0), ("Computer2", 0), ("Player", 1)]
         .into_iter()
         .map(|(name, index)| (name.to_string(), HouseColorIndex(index)))
@@ -105,7 +106,7 @@ fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
 }
 
 fn ally(sim: &mut Simulation, asker: &str, other: &str) {
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry(asker.to_ascii_uppercase())
         .or_default()
         .insert(other.to_ascii_uppercase());
@@ -156,13 +157,13 @@ fn rows_colour_by_scheme_grey_when_defeated_and_count_kills() {
     let second_ai = fixture.second_ai;
     fixture
         .sim
-        .houses
+        .houses_mut_for_test()
         .get_mut(&second_ai)
         .unwrap()
         .set_is_defeated_for_test(true);
     fixture
         .sim
-        .houses
+        .houses_mut_for_test()
         .get_mut(&fixture.player)
         .unwrap()
         .set_stats_for_test(MatchStatistics::from_totals_for_test(3, 2, 0, 0, 0));
@@ -245,9 +246,9 @@ fn allies_column_follows_allies_allowed() {
 fn human_rows_enable_allies_until_the_local_player_is_inactive() {
     let mut fixture = fixture();
     let first_ai = fixture.first_ai;
-    let mut human = fixture.sim.houses.get(&first_ai).unwrap().clone();
+    let mut human = fixture.sim.houses().get(&first_ai).unwrap().clone();
     human.set_is_human_for_test(true);
-    fixture.sim.houses.replace_for_test(human);
+    fixture.sim.houses_mut_for_test().replace_for_test(human);
     let resolved = rows(&fixture, SKIRMISH);
     let row = resolved.rows[2].as_ref().unwrap();
     assert!(row.allies.unwrap().enabled);
@@ -330,7 +331,7 @@ fn retail_allies_allowed_layers_by_mode_and_rows_take_the_playable_countries() {
 fn state_machine_refuses_modals_once_the_local_house_is_flagged() {
     let mut fixture = fixture();
     let player = fixture.player;
-    let house = |fixture: &Fixture| fixture.sim.houses.get(&player).cloned();
+    let house = |fixture: &Fixture| fixture.sim.houses().get(&player).cloned();
     let live = house(&fixture);
     assert_eq!(
         App::state_machine_admission(true, true, live.as_ref()),

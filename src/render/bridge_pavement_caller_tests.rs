@@ -15,7 +15,7 @@ fn retail_pavement_live_damage_changes_actual_terrain_pixels() {
     let mut scenario = crate::headless_scenario::load(&root, &map, 0x0B21_D6E5)
         .expect("normal scenario construction with stock rules/art/terrain");
     let (rx, ry) = (66, 102);
-    let terrain = scenario.sim().resolved_terrain.as_ref().unwrap();
+    let terrain = scenario.sim().resolved_terrain().unwrap();
     let cell = terrain.cell(rx, ry).unwrap();
     let (tile_id, sub_tile) = terrain.presentation_tile(cell);
     assert_eq!((tile_id, sub_tile), (278, 7));
@@ -93,7 +93,7 @@ fn retail_pavement_live_damage_changes_actual_terrain_pixels() {
             tile.width as f32,
             tile.height as f32,
             Some(&uv),
-            sim.resolved_terrain.as_ref(),
+            sim.resolved_terrain(),
         );
         assert_eq!(*selected.borrow(), [expected]);
         assert_eq!(instances.normal.len(), 1);
@@ -107,7 +107,7 @@ fn retail_pavement_live_damage_changes_actual_terrain_pixels() {
     // The live pavement bit (56E990's +140 bit13) on this plain pavement
     // cell, which has no structural runtime entry.
     let set_pavement = |sim: &mut crate::sim::world::Simulation, damaged: bool| {
-        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        let terrain = sim.resolved_terrain_mut_for_test().as_mut().unwrap();
         let native = terrain.native_cell_identity((rx as i16, ry as i16));
         let flags = terrain.native_cell_flags(native) & !DAMAGED_PAVEMENT;
         terrain.write_pavement_flags(native, flags | if damaged { DAMAGED_PAVEMENT } else { 0 });

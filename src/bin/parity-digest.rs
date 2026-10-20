@@ -87,16 +87,16 @@ fn build_synthetic_simulation(seed: u32) -> Simulation {
     let mut sim = Simulation::with_seed(u64::from(seed));
 
     for (index, (owner, side)) in [("Americans", 0u8), ("Russians", 1u8)].iter().enumerate() {
-        let owner_id = sim.interner.intern(owner);
+        let owner_id = sim.intern(owner);
         let mut house = HouseState::new(owner_id, *side, None, index == 0, 10_000, 10);
         // The structures below are raw-inserted without lifecycle registration, so
         // the defeat scan would read both houses as owning nothing and resolve the
         // match on tick 1, freezing the committed-tick counter. Passive houses are
         // exempt from defeat evaluation, keeping every tick committable.
         house.make_multiplay_passive();
-        sim.houses.register(house);
+        sim.register_house(house);
 
-        let type_ref = sim.interner.intern("GACNST");
+        let type_ref = sim.intern("GACNST");
         let base_x = 10 + (index as u16) * 20;
         for slot in 0..3u16 {
             sim.insert_synthetic_techno_for_diagnostics(
@@ -138,8 +138,8 @@ fn main() -> Result<(), String> {
             let mut scenario = headless_scenario::load(ra2_dir, map, args.seed)?;
             println!(
                 "loaded {map} ({}x{}, theater {}) seed 0x{:08X}",
-                scenario.sim().session.map_width(),
-                scenario.sim().session.map_height(),
+                scenario.sim().session().map_width(),
+                scenario.sim().session().map_height(),
                 scenario.map.header.theater,
                 args.seed
             );

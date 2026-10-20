@@ -28,7 +28,7 @@ fn infantry_fixture() -> Option<Fixture> {
 }
 
 fn next_command(fixture: &Fixture, command: Command) -> CommandEnvelope {
-    CommandEnvelope::new(fixture.owner, fixture.sim.session.tick() + 1, command)
+    CommandEnvelope::new(fixture.owner, fixture.sim.session().tick() + 1, command)
 }
 
 fn native_e2_category_gates(phase_name: &str) -> Vec<ProductionCategory> {
@@ -67,9 +67,9 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
             return;
         };
         let owner = fixture.owner;
-        let e2 = fixture.sim.interner.get("E2").unwrap();
-        let baseline_money = fixture.sim.houses[&owner].economy().credits();
-        let baseline_spent = fixture.sim.houses[&owner].economy().spent_credits();
+        let e2 = fixture.sim.interner().get("E2").unwrap();
+        let baseline_money = fixture.sim.houses()[&owner].economy().credits();
+        let baseline_spent = fixture.sim.houses()[&owner].economy().spent_credits();
         let baseline_entities = fixture.sim.entities().len();
 
         let left = press_cameo(&mut fixture, "E2", SidebarTab::Infantry, CameoPress::Left);
@@ -81,7 +81,7 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
         assert!(
             fixture
                 .sim
-                .production
+                .production()
                 .factories()
                 .view(owner, ProductionCategory::Infantry)
                 .is_none()
@@ -134,7 +134,7 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
         consume_frame_outputs(&mut fixture, &frame, Some(owner));
         let factory = fixture
             .sim
-            .production
+            .production()
             .factories()
             .view(owner, ProductionCategory::Infantry)
             .unwrap();
@@ -158,11 +158,11 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
             native_e2_category_gates("receive_produce_then_suspend")
         );
         assert_eq!(
-            fixture.sim.houses[&owner].economy().credits(),
+            fixture.sim.houses()[&owner].economy().credits(),
             baseline_money
         );
         assert_eq!(
-            fixture.sim.houses[&owner].economy().spent_credits(),
+            fixture.sim.houses()[&owner].economy().spent_credits(),
             baseline_spent
         );
 
@@ -172,7 +172,7 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
         }
         let factory = fixture
             .sim
-            .production
+            .production()
             .factories()
             .view(owner, ProductionCategory::Infantry)
             .unwrap();
@@ -207,7 +207,7 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
         consume_frame_outputs(&mut fixture, &frame, Some(owner));
         let factory = fixture
             .sim
-            .production
+            .production()
             .factories()
             .view(owner, ProductionCategory::Infantry)
             .unwrap();
@@ -241,11 +241,11 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
             .sim
             .cost_of(owner, fixture.rules.object("E2").unwrap(), &fixture.rules);
         assert_eq!(
-            fixture.sim.houses[&owner].economy().spent_credits(),
+            fixture.sim.houses()[&owner].economy().spent_credits(),
             baseline_spent + cost
         );
         assert_eq!(
-            fixture.sim.houses[&owner].economy().credits(),
+            fixture.sim.houses()[&owner].economy().credits(),
             baseline_money - cost
         );
         assert!(
@@ -291,8 +291,8 @@ fn held_e2_resume_suppresses_a_vehicle_pending_request_before_dispatch() {
         return;
     };
     let owner = fixture.owner;
-    let e2 = fixture.sim.interner.get("E2").unwrap();
-    let htnk = fixture.sim.interner.get("HTNK").unwrap();
+    let e2 = fixture.sim.interner().get("E2").unwrap();
+    let htnk = fixture.sim.interner().get("HTNK").unwrap();
     for _ in 0..8 {
         let frame = advance_commands(&mut fixture, &[]);
         consume_frame_outputs(&mut fixture, &frame, Some(owner));
@@ -339,14 +339,14 @@ fn busy_infantry_left_and_queued_right_do_not_hold_the_current_head() {
         return;
     };
     let owner = fixture.owner;
-    let e2 = fixture.sim.interner.get("E2").unwrap();
-    let flakt = fixture.sim.interner.get("FLAKT").unwrap();
+    let e2 = fixture.sim.interner().get("E2").unwrap();
+    let flakt = fixture.sim.interner().get("FLAKT").unwrap();
     let command = next_command(&fixture, Command::QueueProduction { type_id: e2 });
     let frame = advance_commands(&mut fixture, &[command]);
     consume_frame_outputs(&mut fixture, &frame, Some(owner));
     let held = fixture
         .sim
-        .production
+        .production()
         .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap()
@@ -378,7 +378,7 @@ fn busy_infantry_left_and_queued_right_do_not_hold_the_current_head() {
     assert_eq!(right.eva, None);
     let factory = fixture
         .sim
-        .production
+        .production()
         .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap();
@@ -393,7 +393,7 @@ fn resumed_clock_queries_live_held_duration_even_with_a_zero_stored_rate() {
         return;
     };
     let owner = fixture.owner;
-    let e2 = fixture.sim.interner.get("E2").unwrap();
+    let e2 = fixture.sim.interner().get("E2").unwrap();
     let commands = [
         next_command(&fixture, Command::QueueProduction { type_id: e2 }),
         next_command(
@@ -405,8 +405,8 @@ fn resumed_clock_queries_live_held_duration_even_with_a_zero_stored_rate() {
     ];
     let frame = advance_commands(&mut fixture, &commands);
     consume_frame_outputs(&mut fixture, &frame, Some(owner));
-    let factories = fixture.sim.production.factories().clone();
-    let wallet = fixture.sim.houses[&owner].economy().clone();
+    let factories = fixture.sim.production().factories().clone();
+    let wallet = fixture.sim.houses()[&owner].economy().clone();
     let corpus = crate::test_fixture::json("tools/sidebar_oracle/pending_production.json");
     let mut compared = 0;
     for row in corpus["numeric_controls"].as_array().unwrap() {
@@ -426,7 +426,7 @@ fn resumed_clock_queries_live_held_duration_even_with_a_zero_stored_rate() {
         }
         let factory = fixture
             .sim
-            .production
+            .production()
             .factories()
             .view(owner, ProductionCategory::Infantry)
             .unwrap();
@@ -440,6 +440,6 @@ fn resumed_clock_queries_live_held_duration_even_with_a_zero_stored_rate() {
         compared += 1;
     }
     assert_eq!(compared, 3);
-    assert_eq!(*fixture.sim.production.factories(), factories);
-    assert_eq!(*fixture.sim.houses[&owner].economy(), wallet);
+    assert_eq!(*fixture.sim.production().factories(), factories);
+    assert_eq!(*fixture.sim.houses()[&owner].economy(), wallet);
 }

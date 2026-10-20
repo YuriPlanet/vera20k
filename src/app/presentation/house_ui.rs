@@ -44,7 +44,10 @@ impl<'a> HouseUiSources<'a> {
         country: Option<InternedId>,
         country_name: impl Fn(InternedId) -> Option<String>,
     ) -> String {
-        let is_human = sim.houses.get(&owner).is_some_and(|house| house.is_human());
+        let is_human = sim
+            .houses()
+            .get(&owner)
+            .is_some_and(|house| house.is_human());
         if !is_human {
             return self.computer.to_string();
         }
@@ -52,7 +55,7 @@ impl<'a> HouseUiSources<'a> {
             Some(handle) => handle.to_string(),
             None => country
                 .and_then(country_name)
-                .unwrap_or_else(|| sim.interner.resolve(owner).to_string()),
+                .unwrap_or_else(|| sim.interner().resolve(owner).to_string()),
         }
     }
 
@@ -60,7 +63,7 @@ impl<'a> HouseUiSources<'a> {
     pub(crate) fn text_rgb(&self, sim: &Simulation, owner: InternedId) -> [u8; 3] {
         let color = self
             .colors
-            .get(sim.interner.resolve(owner))
+            .get(sim.interner().resolve(owner))
             .copied()
             .unwrap_or(crate::rules::house_colors::NO_REMAP);
         crate::rules::house_colors::house_text_rgb(self.schemes, color)
@@ -84,7 +87,7 @@ pub(crate) fn country_display_name(
     sim: &Simulation,
     country: InternedId,
 ) -> Option<String> {
-    let country = sim.interner.resolve(country);
+    let country = sim.interner().resolve(country);
     let (ui_key, plain) = state
         .rules()
         .map(|rules| rules.country_display_name_sources(country))

@@ -272,7 +272,8 @@ impl OrdinaryBridgeHost for LiveOrdinary<'_, '_> {
     fn radar(&mut self, p: CellCoord) {
         self.live
             .sim
-            .mark_radar_terrain_dirty_cells([(p.0 as u16, p.1 as u16)]);
+            .dirty_cells
+            .mark_radar([(p.0 as u16, p.1 as u16)]);
     }
     fn recalc(&mut self, cell: Cell) -> Result<(), String> {
         self.live.recalc_cell(cell, -1)

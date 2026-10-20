@@ -347,14 +347,15 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
     launch.options.short_game = false;
     let mut scene =
         crate::headless_scenario::load_session(&root, "Hills.mmx", 0x1234_5678, launch).unwrap();
-    let owner = scene.sim().session.current_house().unwrap();
+    let owner = scene.sim().session().current_house().unwrap();
     let actor = |scene: &crate::headless_scenario::HeadlessScenario, name| {
         scene
             .sim()
             .entities()
             .iter_sorted()
             .find_map(|(id, entity)| {
-                (entity.owner() == owner && scene.sim().interner.resolve(entity.type_ref()) == name)
+                (entity.owner() == owner
+                    && scene.sim().interner().resolve(entity.type_ref()) == name)
                     .then_some(id)
             })
             .unwrap()
@@ -365,7 +366,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
                    command: Option<Command>| {
         let commands: Vec<_> = command
             .into_iter()
-            .map(|payload| CommandEnvelope::new(owner, scene.sim().session.tick(), payload))
+            .map(|payload| CommandEnvelope::new(owner, scene.sim().session().tick(), payload))
             .collect();
         scene
             .runtime
@@ -377,7 +378,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
             )
             .unwrap();
     };
-    let power = scene.sim().interner.get("GAPOWR").unwrap();
+    let power = scene.sim().interner().get("GAPOWR").unwrap();
     for step in 0..1100 {
         advance(
             &mut scene,
@@ -398,7 +399,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
     let yard = actor(&scene, "GACNST");
     let yard = scene.sim().entities().get(yard).unwrap();
     let (base_x, base_y) = (yard.position.rx(), yard.position.ry());
-    let terrain = scene.sim().resolved_terrain.as_ref().unwrap();
+    let terrain = scene.sim().resolved_terrain().unwrap();
     // Choose an experiment input through live loader facts and the real ready
     // placement query. This adds no placement policy or mutable game state.
     let mut candidates = Vec::new();
@@ -421,16 +422,14 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
                         .is_some()
                     && scene
                         .sim()
-                        .overlay_grid
-                        .as_ref()
+                        .overlay_grid()
                         .unwrap()
                         .cell(cell.rx, cell.ry)
                         .overlay_id
                         .is_none()
                     && scene
                         .sim()
-                        .smudge_grid
-                        .as_ref()
+                        .smudge_grid()
                         .unwrap()
                         .cell(cell.rx, cell.ry)
                         .type_id
@@ -490,7 +489,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
         !scene.sim().entities().contains(held),
         "actual fatal cleanup removes the paid building"
     );
-    let grid = scene.sim().smudge_grid.as_ref().unwrap();
+    let grid = scene.sim().smudge_grid().unwrap();
     let mark = *grid.cell(rx, ry);
     let mark_id = mark
         .type_id
@@ -551,7 +550,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
         crate::map::lighting::CellLightGrid::new(),
         crate::map::lighting::parse_lighting(&scene.map.ini),
         2,
-        Some((scene.sim().resolved_terrain.as_ref().unwrap(), scene.sim())),
+        Some((scene.sim().resolved_terrain().unwrap(), scene.sim())),
     );
     // Declared neutral-A viewport for the live producer, not a native whole-map
     // camera or a replacement for the actual App capture.
@@ -571,9 +570,9 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
             })
         };
         build_visible_instances(
-            scene.sim().smudge_grid.as_ref().unwrap(),
+            scene.sim().smudge_grid().unwrap(),
             &scene.runtime.resources.rules.smudge_types,
-            scene.sim().resolved_terrain.as_ref().unwrap(),
+            scene.sim().resolved_terrain().unwrap(),
             lights.grid(),
             &lookup,
             camera.camera_pos[0],
@@ -635,8 +634,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
     assert!(
         mark_cells.iter().all(|&(x, y)| scene
             .sim()
-            .smudge_grid
-            .as_ref()
+            .smudge_grid()
             .unwrap()
             .cell(x, y)
             .type_id

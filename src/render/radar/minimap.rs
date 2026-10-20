@@ -258,8 +258,7 @@ impl MinimapRenderer {
         }
 
         let action40_rebuild = self.installed_playfield_authority.is_some();
-        let resolved_terrain =
-            runtime.and_then(|runtime| runtime.simulation.resolved_terrain.as_ref());
+        let resolved_terrain = runtime.and_then(|runtime| runtime.simulation.resolved_terrain());
         let current_cell_authority = runtime.map(CurrentRadarCellAuthority::from_runtime);
         let projection = MinimapPlayfieldProjection::derive(
             grid,

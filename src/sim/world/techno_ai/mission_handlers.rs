@@ -1413,7 +1413,7 @@ fn evaluate_foot_hunt(
                 .get(id)
                 .is_some_and(|entity| sim.owner_is_human(entity.owner())))
     {
-        let _ = sim.infantry_idle_action(id, rules, ctx.effects);
+        let _ = sim.infantry_idle_action(id, rules, ctx.overlay_registry, ctx.effects);
     }
     MissionHandlerEvaluation::cadence(sim.mission_rate_epilogue_for(rules, id, MissionType::Hunt))
 }
@@ -2044,7 +2044,7 @@ pub(super) fn evaluate_foot_area_guard(
         .get(id)
         .is_some_and(|entity| entity.attack_target.target().is_none())
     {
-        let _ = sim.infantry_idle_action(id, rules, ctx.effects);
+        let _ = sim.infantry_idle_action(id, rules, ctx.overlay_registry, ctx.effects);
     }
     //4D6F38..4D701F re-reads TarCom after idle and queues before the cadence
     //draw. An acquired enemy already returned above.
@@ -2187,7 +2187,7 @@ pub(super) fn evaluate_foot_guard_cadence(
     } else if !sim.acquire_adjacent_tesla_coil(id, rules, ctx.overlay_registry, effects) {
         //4D51A6 /4D51D8: Unit's receiver is a false stub; Infantry's owner
         //decides actual admission.
-        let _ = sim.infantry_idle_action(id, rules, effects);
+        let _ = sim.infantry_idle_action(id, rules, ctx.overlay_registry, effects);
     }
     let queue = guard_queues_sabotage(sim, id, rules).then_some(MissionType::Sabotage);
     let rearm = sim.substrate.entities.get(id).map_or(0, |entity| {

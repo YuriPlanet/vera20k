@@ -140,14 +140,14 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
     };
     let sim = &runtime.simulation;
     let Some(outcome) = sim
-        .session
+        .session()
         .current_house()
-        .and_then(|house| sim.houses.get(&house))
+        .and_then(|house| sim.houses().get(&house))
         .and_then(|house| house.outcome())
     else {
         return Default::default();
     };
-    let (frame, label) = result_view(outcome.kind, !sim.session.game_mode_nonzero());
+    let (frame, label) = result_view(outcome.kind, !sim.session().game_mode_nonzero());
     let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
     let view = [width as i32, height as i32];
     let camera = [

@@ -246,7 +246,7 @@ pub(super) fn build_world_instances(
         let presentation = &state.match_state.match_presentation;
         let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
         let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
-            .and_then(|name| runtime.simulation.interner.get(&name));
+            .and_then(|name| runtime.simulation.interner().get(&name));
         instances::DisplayEffectInputs {
             sim: &runtime.simulation,
             rules: &runtime.resources.rules,
@@ -358,7 +358,7 @@ pub(super) fn build_world_instances(
                     ) {
                         let coord = crate::sim::movement::ground_pose::object_get_coords(
                             entity,
-                            sim.resolved_terrain.as_ref(),
+                            sim.resolved_terrain(),
                         );
                         let point = crate::util::lepton::absolute_leptons_to_screen(
                             coord.x, coord.y, coord.z,
@@ -454,7 +454,7 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
     let Some(overlay_registry) = state.overlay_registry() else {
         return Vec::new();
     };
-    let Some(overlays) = sim.overlay_grid.as_ref() else {
+    let Some(overlays) = sim.overlay_grid() else {
         return Vec::new();
     };
 
@@ -472,12 +472,12 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
 
     let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
     let local_owner_id = match (state.match_state.sandbox_full_visibility, &local_owner_name) {
-        (false, Some(owner)) => sim.interner.get(owner),
+        (false, Some(owner)) => sim.interner().get(owner),
         _ => None,
     };
 
     let input = SparkleInput {
-        clock_ms: sim.session.total_sim_ms(),
+        clock_ms: sim.session().total_sim_ms(),
         enable_extra_animations,
         local_owner_id,
         sandbox_full_visibility: state.match_state.sandbox_full_visibility,
@@ -485,7 +485,7 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
         overlays,
         overlay_registry,
         occupancy: sim.occupancy(),
-        fog: &sim.fog,
+        fog: sim.fog(),
         camera_x: state.match_state.input.camera_x,
         camera_y: state.match_state.input.camera_y,
         viewport_w: sw,
@@ -520,10 +520,10 @@ fn build_smudge_instances(state: &AppState, sw: f32, sh: f32) -> Vec<SpriteInsta
         (Some(s), Some(r)) => (s, r),
         _ => return Vec::new(),
     };
-    let Some(grid) = sim.smudge_grid.as_ref() else {
+    let Some(grid) = sim.smudge_grid() else {
         return Vec::new();
     };
-    let Some(resolved_terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(resolved_terrain) = sim.resolved_terrain() else {
         return Vec::new();
     };
     let Some(atlas) = state.match_state.match_presentation.overlay_atlas.as_ref() else {

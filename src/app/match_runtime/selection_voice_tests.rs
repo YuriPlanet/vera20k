@@ -40,7 +40,7 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
                 crate::rules::terrain_rules::LandType::Tiberium.as_index();
         }
         sim.install_resolved_terrain_for_new_map(terrain);
-        let entity = sim.entities_mut().get_mut(1).unwrap();
+        let entity = sim.entities_mut_for_test().get_mut(1).unwrap();
         if input["archive_cell"] == true {
             entity.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(10, 10)));
         }
@@ -50,8 +50,8 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
         let archive_before = entity.archive_target();
         let mission_before = save_codec::serialize(&entity.mission).unwrap();
         let main_before = sim.rng_views().main.native_state_hex();
-        let scenario_before = sim.scenario_rng.native_state_hex();
-        let mapgen_before = sim.mapgen_rng.native_state_hex();
+        let scenario_before = sim.scenario_rng().native_state_hex();
+        let mapgen_before = sim.mapgen_rng().native_state_hex();
         let mut queue = VoiceQueue::new();
         if let Some(prior) = input["pending"].as_str() {
             queue.queue(1, prior);
@@ -93,12 +93,12 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
             "{context}: Main"
         );
         assert_eq!(
-            sim.scenario_rng.native_state_hex(),
+            sim.scenario_rng().native_state_hex(),
             scenario_before,
             "{context}: Scenario"
         );
         assert_eq!(
-            sim.mapgen_rng.native_state_hex(),
+            sim.mapgen_rng().native_state_hex(),
             mapgen_before,
             "{context}: MapGen"
         );
@@ -152,7 +152,7 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
         1,
         crate::sim::world::FrameEffects::empty(),
     );
-    let requests = std::mem::take(&mut sim.sound_events);
+    let requests = std::mem::take(sim.sound_events_mut_for_test());
     sound_dispatch::dispatch_sim_sound_events(
         requests,
         &sim,
@@ -180,7 +180,7 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
         true,
     );
     assert!(sim.entities().get(1).is_none());
-    let destruction = std::mem::take(&mut sim.sound_events);
+    let destruction = std::mem::take(sim.sound_events_mut_for_test());
     sound_dispatch::dispatch_sim_sound_events(
         destruction,
         &sim,
@@ -238,16 +238,17 @@ fn simulation(
     passive: bool,
 ) -> Simulation {
     let mut sim = Simulation::with_seed(1234);
-    let local = sim.interner.intern("Local");
-    let owner = sim.interner.intern(owner_name);
-    let type_ref = sim.interner.intern(type_id);
+    let local = sim.intern("Local");
+    let owner = sim.intern(owner_name);
+    let type_ref = sim.intern(type_id);
     let mut house = HouseState::new(owner, 0, None, owner == local, 0, 10);
     house.set_multiplay_passive_for_test(passive);
-    sim.houses.register(house);
-    sim.session
+    sim.houses_mut_for_test().register(house);
+    sim.session_mut_for_test()
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.set_current_house_for_test(Some(local));
-    sim.entities_mut()
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(local));
+    sim.entities_mut_for_test()
         .insert(GameEntity::new_at_frame_zero_for_test(
             1,
             10,
@@ -282,16 +283,16 @@ fn select_wrapper_gates_precede_voice_draw_and_passive_queue_rejection_follows_i
         ("Other", true, false, false, false),
     ] {
         let mut sim = simulation("TANK", EntityCategory::Unit, owner, passive);
-        let before_sim = sim.scenario_rng.native_state_hex();
-        let before = sim.main_rng.native_state_hex();
+        let before_sim = sim.scenario_rng().native_state_hex();
+        let before = sim.main_rng().native_state_hex();
         let event = selection_voice_event(&mut sim, &rules, 1, enabled);
         assert_eq!(event.is_some(), queued, "{owner}/{passive}/{enabled}");
         assert_eq!(
-            before != sim.main_rng.native_state_hex(),
+            before != sim.main_rng().native_state_hex(),
             drew,
             "{owner}/{passive}/{enabled}"
         );
-        assert_eq!(sim.scenario_rng.native_state_hex(), before_sim);
+        assert_eq!(sim.scenario_rng().native_state_hex(), before_sim);
     }
 }
 
@@ -332,7 +333,7 @@ fn retail_normal_selection_reaches_fixed_voice_list_and_queue_without_an_audio_d
         let slots = history["voice_list"].as_array().unwrap();
         let mut sim = simulation(type_id, category, "Local", false);
         sim.initialize_random_number_system(1);
-        let before_sim = sim.scenario_rng.native_state_hex();
+        let before_sim = sim.scenario_rng().native_state_hex();
         let mut events = SoundEventQueue::new();
         let mut queue = VoiceQueue::new();
         for step in history["steps"].as_array().unwrap() {
@@ -362,10 +363,10 @@ fn retail_normal_selection_reaches_fixed_voice_list_and_queue_without_an_audio_d
             );
         }
         assert_eq!(
-            sim.main_rng.native_state_hex(),
+            sim.main_rng().native_state_hex(),
             history["rng_after_hex"]["main"].as_str().unwrap()
         );
-        assert_eq!(sim.scenario_rng.native_state_hex(), before_sim);
+        assert_eq!(sim.scenario_rng().native_state_hex(), before_sim);
     }
 }
 
@@ -394,7 +395,7 @@ fn prefixed_selection_fixture() -> (Simulation, RuleSet, serde_json::Value) {
         }
     }
     assert_eq!(
-        sim.main_rng.native_state_hex(),
+        sim.main_rng().native_state_hex(),
         history["rng_before_hex"]["main"].as_str().unwrap()
     );
     (sim, rules, history)
@@ -403,15 +404,15 @@ fn prefixed_selection_fixture() -> (Simulation, RuleSet, serde_json::Value) {
 #[test]
 fn selection_after_terrain_prefix_advances_existing_main_without_changing_lockstep_state() {
     let (mut sim, rules, history) = prefixed_selection_fixture();
-    let scenario_before = sim.scenario_rng.logical_state();
-    let mapgen_before = sim.mapgen_rng.logical_state();
+    let scenario_before = sim.scenario_rng().logical_state();
+    let mapgen_before = sim.mapgen_rng().logical_state();
     let hash_before = sim.state_hash();
     for step in history["steps"].as_array().unwrap() {
-        let main_before = sim.main_rng.logical_state();
+        let main_before = sim.main_rng().logical_state();
         let event = selection_voice_event(&mut sim, &rules, 1, true)
             .expect("successful normal selection requests its voice");
         assert_ne!(
-            sim.main_rng.logical_state(),
+            sim.main_rng().logical_state(),
             main_before,
             "VoiceSelect must consume the existing terrain-advanced Simulation Main cursor"
         );
@@ -419,17 +420,17 @@ fn selection_after_terrain_prefix_advances_existing_main_without_changing_lockst
             event.sound_id(),
             sound_name(step["voice_requests"][0]["sound_id"].as_i64().unwrap())
         );
-        assert_eq!(sim.scenario_rng.logical_state(), scenario_before);
-        assert_eq!(sim.mapgen_rng.logical_state(), mapgen_before);
+        assert_eq!(sim.scenario_rng().logical_state(), scenario_before);
+        assert_eq!(sim.mapgen_rng().logical_state(), mapgen_before);
         assert_eq!(sim.state_hash(), hash_before);
     }
     assert_eq!(
-        sim.main_rng.native_state_hex(),
+        sim.main_rng().native_state_hex(),
         history["rng_after_hex"]["main"].as_str().unwrap()
     );
     for expected in history["main_next_four"].as_array().unwrap() {
         assert_eq!(
-            u64::from(sim.main_rng.next_u32()),
+            u64::from(sim.main_rng().next_u32()),
             expected.as_u64().unwrap()
         );
     }
@@ -450,11 +451,12 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
     }
     let live_rng = sim.rng_state();
     let live_hash = sim.state_hash();
-    let mut restored = GameSnapshot::load_validated(&bytes, 0, rules_hash, sim.session.map_name())
-        .unwrap()
-        .sim;
+    let mut restored =
+        GameSnapshot::load_validated(&bytes, 0, rules_hash, sim.session().map_name())
+            .unwrap()
+            .sim;
     assert_ne!(
-        restored.main_rng.logical_state(),
+        restored.main_rng().logical_state(),
         live_rng.main,
         "snapshot bytes do not carry the process Main cursor"
     );
@@ -462,8 +464,8 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
     // It retains the current cursor, including voices after the saved frame;
     // Scenario's post-read reset remains independent of that continuation.
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
-    assert_eq!(restored.main_rng.logical_state(), live_rng.main);
-    assert_eq!(restored.mapgen_rng.logical_state(), live_rng.mapgen);
+    assert_eq!(restored.main_rng().logical_state(), live_rng.main);
+    assert_eq!(restored.mapgen_rng().logical_state(), live_rng.mapgen);
     assert_eq!(
         sim.rng_state(),
         live_rng,
@@ -471,8 +473,8 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
     );
     assert_eq!(sim.state_hash(), live_hash);
     sim = restored;
-    let scenario_before = sim.scenario_rng.logical_state();
-    let mapgen_before = sim.mapgen_rng.logical_state();
+    let scenario_before = sim.scenario_rng().logical_state();
+    let mapgen_before = sim.mapgen_rng().logical_state();
     let hash_before = sim.state_hash();
     for step in &steps[2..] {
         let event = selection_voice_event(&mut sim, &rules, 1, true).unwrap();
@@ -480,17 +482,17 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
             event.sound_id(),
             sound_name(step["voice_requests"][0]["sound_id"].as_i64().unwrap())
         );
-        assert_eq!(sim.scenario_rng.logical_state(), scenario_before);
-        assert_eq!(sim.mapgen_rng.logical_state(), mapgen_before);
+        assert_eq!(sim.scenario_rng().logical_state(), scenario_before);
+        assert_eq!(sim.mapgen_rng().logical_state(), mapgen_before);
         assert_eq!(sim.state_hash(), hash_before);
     }
     assert_eq!(
-        sim.main_rng.native_state_hex(),
+        sim.main_rng().native_state_hex(),
         history["rng_after_hex"]["main"].as_str().unwrap()
     );
     for expected in history["main_next_four"].as_array().unwrap() {
         assert_eq!(
-            u64::from(sim.main_rng.next_u32()),
+            u64::from(sim.main_rng().next_u32()),
             expected.as_u64().unwrap()
         );
     }

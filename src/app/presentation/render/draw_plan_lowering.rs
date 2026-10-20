@@ -930,8 +930,8 @@ mod tests {
             .find(|row| row["input"]["name"] == "one_adjacent_sort_pass_per_call")
             .unwrap();
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        let type_id = sim.interner.intern("E1");
+        let owner = sim.intern("Americans");
+        let type_id = sim.intern("E1");
         for (i, actor) in row["input"]["actors"]
             .as_array()
             .unwrap()
@@ -956,7 +956,7 @@ mod tests {
                 128 + actor["delta"][0].as_i64().unwrap(),
             ));
             entity.position.set_sub_y_for_test(SimFixed::from_num(128));
-            sim.entities_mut().insert(entity);
+            sim.entities_mut_for_test().insert(entity);
         }
         sim.set_logic_order_for_test(vec![4, 3, 2, 1]);
         for (step, observed) in row["input"]["steps"]
@@ -969,7 +969,7 @@ mod tests {
             match step["op"].as_str().unwrap() {
                 "submit" => sim.submit_object_display(id.unwrap(), DisplayLayer::GROUND, None),
                 "coordinates" => {
-                    let entity = sim.entities_mut().get_mut(id.unwrap()).unwrap();
+                    let entity = sim.entities_mut_for_test().get_mut(id.unwrap()).unwrap();
                     entity.position.set_sub_x_for_test(SimFixed::from_num(
                         step["xyz"][0].as_i64().unwrap() - 2560,
                     ));

@@ -53,8 +53,8 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
     let center = crate::util::lepton::absolute_leptons_to_screen(20 * 256 + 128, 20 * 256 + 128, 0);
     let health_fills = |name: &str, selected: bool| {
         let mut sim = Simulation::new();
-        let player = sim.interner.intern("Player");
-        let owner = sim.interner.intern("Enemy");
+        let player = sim.intern("Player");
+        let owner = sim.intern("Enemy");
         let object = rules.object(name).unwrap();
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             1,
@@ -64,7 +64,7 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
             0,
             owner,
             Health::new(object.strength),
-            sim.interner.intern(name),
+            sim.intern(name),
             EntityCategory::from(object.category),
             0,
             5,
@@ -75,9 +75,9 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
         let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
         disguise.acquire(0, None, None);
         entity.disguise = Some(disguise);
-        sim.fog = crate::sim::vision::FogState::new(64, 64);
-        sim.fog.reveal_all_for_owner(player);
-        sim.entities_mut().insert(entity);
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
+        sim.fog_mut_for_test().reveal_all_for_owner(player);
+        sim.entities_mut_for_test().insert(entity);
         sim.resubmit_entity_display_for_test(1);
         techno_extras_for_parent(
             &sim,
@@ -212,7 +212,7 @@ fn native_self_heal_draw_fault_order() {
             rules.general.self_heal_unit_frames = period;
         }
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Owner");
+        let owner = sim.intern("Owner");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
         let count = row["house_count"].as_i64().unwrap() as i32;
         crate::sim::arena_fixture::install_status_self_heal(
@@ -220,11 +220,11 @@ fn native_self_heal_draw_fault_order() {
             if infantry { count } else { 0 },
             if infantry { 0 } else { count },
         );
-        sim.houses.register(house);
-        sim.session
+        sim.houses_mut_for_test().register(house);
+        sim.session_mut_for_test()
             .set_binary_frame_for_test(row["binary_frame"].as_i64().unwrap() as u32);
         let object = rules.object(name).unwrap();
-        let type_ref = sim.interner.intern(name);
+        let type_ref = sim.intern(name);
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             1,
             10,
@@ -242,9 +242,9 @@ fn native_self_heal_draw_fault_order() {
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.selection.set_selected_for_test(true);
         entity.discovery.set_owned_by_current_house_for_test(true);
-        sim.fog = crate::sim::vision::FogState::new(64, 64);
-        sim.fog.reveal_all_for_owner(owner);
-        sim.entities_mut().insert(entity);
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
+        sim.fog_mut_for_test().reveal_all_for_owner(owner);
+        sim.entities_mut_for_test().insert(entity);
         sim.resubmit_entity_display_for_test(1);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             techno_extras_for_parent(
@@ -308,13 +308,13 @@ fn production_self_heal_status_workload_timing() {
     for count in [1usize, 32, 252] {
         for layout in ["dispersed", "overlap"] {
             let mut sim = Simulation::new();
-            let owner = sim.interner.intern("Owner");
-            let type_ref = sim.interner.intern("MTNK");
+            let owner = sim.intern("Owner");
+            let type_ref = sim.intern("MTNK");
             let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
             crate::sim::arena_fixture::install_status_self_heal(&mut house, 0, 1);
-            sim.houses.register(house);
-            sim.fog = crate::sim::vision::FogState::new(64, 64);
-            sim.fog.reveal_all_for_owner(owner);
+            sim.houses_mut_for_test().register(house);
+            *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
+            sim.fog_mut_for_test().reveal_all_for_owner(owner);
             let ids: Vec<_> = (1..=count as u64).collect();
             for (i, &id) in ids.iter().enumerate() {
                 let (x, y) = if layout == "overlap" {
@@ -339,12 +339,12 @@ fn production_self_heal_status_workload_timing() {
                 entity.lifecycle.set_in_limbo_for_test(false);
                 entity.discovery.set_owned_by_current_house_for_test(true);
                 entity.selection.set_selected_for_test(true);
-                sim.entities_mut().insert(entity);
+                sim.entities_mut_for_test().insert(entity);
                 sim.resubmit_entity_display_for_test(id);
             }
             let display = NativeDisplayOrder::new(&ids);
             for (phase, frame, selector) in [("ordinary", 6, 0), ("pulse", 5, 1)] {
-                sim.session.set_binary_frame_for_test(frame);
+                sim.session_mut_for_test().set_binary_frame_for_test(frame);
                 let parents = ids
                     .iter()
                     .map(|&id| {
@@ -642,25 +642,26 @@ fn native_building_status_labels(fixture: &'static str) {
             let mut sim = Simulation::new();
             sim.intern_rule_type_ids(rules);
             sim.resolve_type_handles(rules);
-            let owner = sim.interner.intern("Owner");
-            let ally = sim.interner.intern("Ally");
-            sim.session.set_game_mode(
+            let owner = sim.intern("Owner");
+            let ally = sim.intern("Ally");
+            sim.session_mut_for_test().set_game_mode(
                 crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
             );
-            sim.session.set_current_house_for_test(Some(owner));
+            sim.session_mut_for_test()
+                .set_current_house_for_test(Some(owner));
             for house in [owner, ally] {
-                sim.houses
+                sim.houses_mut_for_test()
                     .register(HouseState::new(house, 0, None, true, 0, 10));
             }
             if let Some(totals) = input["retained_house_power"].as_object() {
                 for (name, values) in totals {
                     // Native IHouse4F6A00/4F6A10 query these supplied retained
                     // slots. Drawing must not recompute them from the actors.
-                    let house = sim.interner.get(name).unwrap();
+                    let house = sim.interner().get(name).unwrap();
                     let mut power = crate::sim::power_system::PowerState::default();
                     power.set_total_output_for_test(values["output"].as_i64().unwrap() as i32);
                     power.set_total_drain_for_test(values["drain"].as_i64().unwrap() as i32);
-                    sim.power_states.insert(house, power);
+                    sim.power_states_mut_for_test().insert(house, power);
                 }
             }
             for (admitted, asker, other) in [
@@ -676,7 +677,7 @@ fn native_building_status_labels(fixture: &'static str) {
                 ),
             ] {
                 if admitted {
-                    sim.house_alliances
+                    sim.house_alliances_mut_for_test()
                         .entry(asker.to_owned())
                         .or_default()
                         .insert(other.to_owned());
@@ -696,7 +697,7 @@ fn native_building_status_labels(fixture: &'static str) {
                     crate::rules::foundation::foundation_dimensions(&object.foundation).0,
                     row["native_foundation_width"].as_u64().unwrap() as u16
                 );
-                let type_ref = sim.interner.intern(name);
+                let type_ref = sim.intern(name);
                 let actor_owner = if actor["owner"] == "Owner" {
                     owner
                 } else {
@@ -733,7 +734,7 @@ fn native_building_status_labels(fixture: &'static str) {
                 entity
                     .selection
                     .set_selected_for_test(actor["selected"].as_bool().unwrap());
-                sim.entities_mut().insert(entity);
+                sim.entities_mut_for_test().insert(entity);
                 sim.append_house_base_building_for_test(id);
                 if actor["primary"].as_bool().unwrap() {
                     assert!(sim.apply_command(
@@ -743,7 +744,7 @@ fn native_building_status_labels(fixture: &'static str) {
                     ));
                 }
                 assert_eq!(
-                    sim.production.is_primary_factory(id),
+                    sim.production().is_primary_factory(id),
                     actor["primary"].as_bool().unwrap()
                 );
                 if actor["body_opportunity"].as_bool().unwrap() {
@@ -1008,23 +1009,24 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     + crate::util::lepton::absolute_leptons_to_screen(0, 0, 0).1,
             ];
             let mut sim = Simulation::new();
-            sim.session.set_binary_frame_for_test(
+            sim.session_mut_for_test().set_binary_frame_for_test(
                 input["binary_frame"]
                     .as_i64()
                     .or(input["frame"].as_i64())
                     .or(row["frame"].as_i64())
                     .unwrap_or(0) as u32,
             );
-            sim.session.game_options_mut_for_test().game_speed = input["speed"]
+            sim.session_mut_for_test()
+                .game_options_mut_for_test()
+                .game_speed = input["speed"]
                 .as_i64()
                 .or(row["speed"].as_i64())
-                .unwrap_or(1)
-                as i32;
+                .unwrap_or(1) as i32;
             if native.get("health_palette").is_some() {
                 crate::sim::arena_fixture::flat_ground(&mut sim, rules);
             }
-            let owner = sim.interner.intern("Owner");
-            let enemy = sim.interner.intern("Enemy");
+            let owner = sim.intern("Owner");
+            let enemy = sim.intern("Enemy");
             if input.get("self_heal_infantry").is_some() || input.get("self_heal_units").is_some() {
                 let mut house =
                     crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
@@ -1033,23 +1035,24 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     input["self_heal_infantry"].as_i64().unwrap_or(0) as i32,
                     input["self_heal_units"].as_i64().unwrap_or(0) as i32,
                 );
-                sim.houses.register(house);
+                sim.houses_mut_for_test().register(house);
             }
-            sim.fog = crate::sim::vision::FogState::new(64, 64);
-            sim.fog.reveal_all_for_owner(owner);
+            *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
+            sim.fog_mut_for_test().reveal_all_for_owner(owner);
             if let Some(overrides) = input["cell_overrides"].as_array() {
                 // These controls declare the default for the whole native
                 // cell plane, then override raw and height-projected cells.
                 if let Some(bits) = input["cell_bits"].as_u64() {
                     for y in 0..64 {
                         for x in 0..64 {
-                            sim.fog.set_ground_bits_for_test(owner, x, y, bits as u8);
+                            sim.fog_mut_for_test()
+                                .set_ground_bits_for_test(owner, x, y, bits as u8);
                         }
                     }
                 }
                 for cell in overrides {
                     if let Some(level) = cell["level"].as_u64() {
-                        sim.resolved_terrain
+                        sim.resolved_terrain_mut_for_test()
                             .as_mut()
                             .unwrap()
                             .cell_mut_for_test(
@@ -1093,7 +1096,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                 let id = if index == 0 { 901 } else { 2 };
                 let name = actor["type_name"].as_str().unwrap_or(type_name);
                 let object = rules.object(name).expect("native actor type");
-                let type_ref = sim.interner.intern(name);
+                let type_ref = sim.intern(name);
                 let actor_category = EntityCategory::from(object.category);
                 row_has_building |= actor_category == EntityCategory::Structure;
                 let xyz: [i32; 3] =
@@ -1162,13 +1165,13 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                 }
                 let cell = ((xyz[0] / 256) as u16, (xyz[1] / 256) as u16);
                 if let Some(bits) = input["cell_bits"].as_u64() {
-                    sim.fog
+                    sim.fog_mut_for_test()
                         .set_ground_bits_for_test(owner, cell.0, cell.1, bits as u8);
                 }
                 if let Some(overrides) = input["cell_overrides"].as_array() {
                     for cell in overrides {
                         if let Some(bits) = cell["bits"].as_u64() {
-                            sim.fog.set_ground_bits_for_test(
+                            sim.fog_mut_for_test().set_ground_bits_for_test(
                                 owner,
                                 cell["cell"][0].as_u64().unwrap() as u16,
                                 cell["cell"][1].as_u64().unwrap() as u16,
@@ -1178,10 +1181,12 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     }
                 }
                 for _ in 0..actor["sensor_count"].as_u64().unwrap_or(0) {
-                    sim.fog.increment_sensor_at(owner, cell.0, cell.1);
+                    sim.fog_mut_for_test()
+                        .increment_sensor_at(owner, cell.0, cell.1);
                 }
                 for _ in 0..actor["disguise_detect_count"].as_u64().unwrap_or(0) {
-                    sim.fog.disguise_detect_add_at(owner, cell, 1);
+                    sim.fog_mut_for_test()
+                        .disguise_detect_add_at(owner, cell, 1);
                 }
                 entity.veterancy.set_raw_for_test(
                     crate::util::native_x87::NativeF32Bits::from_bits(
@@ -1190,7 +1195,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                 );
                 if let Some(states) = actor["node_states"].as_array() {
                     use crate::sim::spawn_manager::{SpawnManagerState, SpawnSlot, SpawnSlotState};
-                    let spawn_type = sim.interner.intern(object.spawns.as_deref().unwrap());
+                    let spawn_type = sim.intern(object.spawns.as_deref().unwrap());
                     let slots = states
                         .iter()
                         .enumerate()
@@ -1251,7 +1256,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                                 "admitted native reader state reaches the garrison consumer",
                             );
                         }
-                        let passenger_ref = sim.interner.intern(name);
+                        let passenger_ref = sim.intern(name);
                         let passenger_id = 1_000 + index as u64 * 100 + passenger_index as u64;
                         let passenger = GameEntity::new_at_frame_zero_for_test(
                             passenger_id,
@@ -1267,7 +1272,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             5,
                             false,
                         );
-                        sim.entities_mut().insert(passenger);
+                        sim.entities_mut_for_test().insert(passenger);
                         // Garrison rows supply a post-admission drawing hold;
                         // CanBeOccupiedBy uses MaxNumberOccupants rather than
                         // the transport SizeLimit gate. Transport and absorber
@@ -1296,7 +1301,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             .passengers()
                             .iter()
                             .map(|id| {
-                                sim.interner
+                                sim.interner()
                                     .resolve(sim.entities().get(*id).unwrap().type_ref())
                             })
                             .collect();
@@ -1375,7 +1380,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     );
                     assert_eq!(serde_json::json!(rgb), native_actor["house_rgb"]);
                 }
-                sim.entities_mut().insert(entity);
+                sim.entities_mut_for_test().insert(entity);
                 sim.resubmit_entity_display_for_test(id);
                 if let Some(start) = actor["bomb_start_frame"].as_i64() {
                     // Drawing-consumer prior established by native Attach.
@@ -1384,7 +1389,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     // is outside the supplied Display parents.
                     let planter = 90_000 + index as u64;
                     let ivan = rules.object("IVAN").expect("physical Crazy Ivan");
-                    let ivan_type = sim.interner.intern("IVAN");
+                    let ivan_type = sim.intern("IVAN");
                     let mut entity = GameEntity::new_at_frame_zero_for_test(
                         planter,
                         50,
@@ -1400,21 +1405,21 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         false,
                     );
                     entity.lifecycle.set_in_limbo_for_test(false);
-                    sim.entities_mut().insert(entity);
-                    if !sim.houses.contains_key(&owner) {
-                        sim.houses
-                            .register(crate::sim::house_state::HouseState::new(
-                                owner, 0, None, false, 0, 10,
-                            ));
+                    sim.entities_mut_for_test().insert(entity);
+                    if !sim.houses().contains_key(&owner) {
+                        sim.houses_mut_for_test().register(
+                            crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 10),
+                        );
                     }
-                    let frame = sim.session.binary_frame();
-                    sim.session.set_binary_frame_for_test(start as u32);
+                    let frame = sim.session().binary_frame();
+                    sim.session_mut_for_test()
+                        .set_binary_frame_for_test(start as u32);
                     sim.bomb_attach(planter, Some(id), rules);
                     sim.bomb_list_update(rules);
                     if actor["bomb_visible"].as_bool().unwrap_or(true) {
                         sim.bomb_list_update(rules);
                     }
-                    sim.session.set_binary_frame_for_test(frame);
+                    sim.session_mut_for_test().set_binary_frame_for_test(frame);
                     let record = sim
                         .bomb_observation(usize::MAX)
                         .records
@@ -1755,7 +1760,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                 if wrench_composed && actor["selected"] == true {
                     let center = crate::sim::movement::ground_pose::object_get_coords(
                         sim.entities().get(id).unwrap(),
-                        sim.resolved_terrain.as_ref(),
+                        sim.resolved_terrain(),
                     );
                     // Native6F53F5..542B uses87F6C4/index15 on these
                     // non-submerged parents. The existing bracket corpus pins

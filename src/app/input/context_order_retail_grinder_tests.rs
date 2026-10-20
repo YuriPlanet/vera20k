@@ -13,13 +13,13 @@ use crate::sim::world::Simulation;
 fn arena(rules: &RuleSet) -> Simulation {
     let mut sim = Simulation::new();
     for (name, side) in [("Americans", 0), ("Russians", 1)] {
-        let owner = sim.interner.intern(name);
-        sim.houses
+        let owner = sim.intern(name);
+        sim.houses_mut_for_test()
             .register(HouseState::new(owner, side, None, true, 0, 10));
     }
-    sim.session
-        .set_current_house_for_test(sim.interner.get("Americans"));
-    sim.session
+    let house = sim.interner().get("Americans");
+    sim.session_mut_for_test().set_current_house_for_test(house);
+    sim.session_mut_for_test()
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     sim.intern_rule_type_ids(rules);
@@ -32,7 +32,7 @@ fn scene(rules: &RuleSet, grinder_house: &str) -> (Simulation, u64, u64, u64) {
     let mut sim = arena(rules);
     if grinder_house != "Americans" {
         for (from, to) in [("AMERICANS", "RUSSIANS"), ("RUSSIANS", "AMERICANS")] {
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .entry(from.into())
                 .or_default()
                 .insert(to.into());
@@ -141,8 +141,8 @@ fn a_players_vehicle_and_rifleman_grind_at_their_own_grinder() {
     assert!(selected.is_empty());
     assert_eq!(orders, [eaten(tank, grinder), eaten(gi, grinder)]);
 
-    let owner = sim.interner.get("Americans").unwrap();
-    let credits = sim.houses[&owner].economy().credits();
+    let owner = sim.interner().get("Americans").unwrap();
+    let credits = sim.houses()[&owner].economy().credits();
     for order in &orders {
         assert!(sim.apply_command("Americans", order, Some(rules)));
     }
@@ -154,7 +154,10 @@ fn a_players_vehicle_and_rifleman_grind_at_their_own_grinder() {
     }
     assert!(sim.entities().get(tank).is_none(), "the Grizzly is ground");
     assert!(sim.entities().get(gi).is_none(), "the GI is ground");
-    assert!(sim.houses[&owner].economy().credits() > credits, "refunded");
+    assert!(
+        sim.houses()[&owner].economy().credits() > credits,
+        "refunded"
+    );
 }
 
 /// Over an ally's Grinder an armed player's object has base action 0, not

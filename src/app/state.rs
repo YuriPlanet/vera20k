@@ -332,7 +332,7 @@ mod main_draw_tests {
         let mapgen = installed.rng_state().mapgen;
         let mut reference = SimRng::new(42);
         for _ in 0..7 {
-            assert_eq!(installed.main_rng.next_u32(), reference.next_u32());
+            assert_eq!(installed.main_rng().next_u32(), reference.next_u32());
         }
         installed.install_fresh_process_main(&frontend);
         assert_eq!(frontend.logical_state(), reference.logical_state());
@@ -351,7 +351,7 @@ mod main_draw_tests {
         // A later fresh scenario reuses that same process cell again.
         let mut replacement = Simulation::with_seed(99);
         let mut next_reference = SimRng::new(99);
-        assert_eq!(replacement.main_rng.next_u32(), next_reference.next_u32());
+        assert_eq!(replacement.main_rng().next_u32(), next_reference.next_u32());
         replacement.install_fresh_process_main(&frontend);
         drop(installed);
         assert_eq!(retained.next_u32(), next_reference.next_u32());

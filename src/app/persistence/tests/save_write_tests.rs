@@ -17,7 +17,7 @@ fn fixture(label: &str) -> SaveRepository {
 fn snapshot(description: &str, timestamp: u64) -> Vec<u8> {
     let mut simulation = Simulation::new();
     simulation
-        .session
+        .session_mut_for_test()
         .set_map_name_for_test("OVERWRITE.MAP".into());
     GameSnapshot::save_validated(&simulation, 1, 2, description, timestamp)
 }

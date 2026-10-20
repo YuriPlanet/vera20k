@@ -438,16 +438,16 @@ pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
     let simulation = &runtime.simulation;
     let local_side = state.match_state.local_player_owner().and_then(|owner| {
         crate::sim::house_state::house_state_for_owner(
-            &simulation.houses,
+            simulation.houses(),
             owner,
-            &simulation.interner,
+            simulation.interner(),
         )
         .map(|house| i32::from(house.side_index()))
     });
     state.audio.theme.begin_scenario(
         ThemeAllowContext {
             local_side,
-            campaign_scenario: simulation.session.campaign_mission_counter(),
+            campaign_scenario: simulation.session().campaign_mission_counter(),
         },
         |name| {
             runtime

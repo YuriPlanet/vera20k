@@ -38,7 +38,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         .find(|entity| {
             scenario
                 .sim()
-                .interner
+                .interner()
                 .resolve(entity.type_ref())
                 .eq_ignore_ascii_case("GALITE")
                 && (entity.position.rx(), entity.position.ry()) == (53, 113)
@@ -54,7 +54,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
     assert_eq!(stock.building_light().intensity_units(), 200);
     // Headless construction retains the actual resolved world but omits the
     // app-only immutable template. Snapshot that same terrain for this view.
-    let terrain_snapshot = scenario.sim().resolved_terrain.as_ref().unwrap().clone();
+    let terrain_snapshot = scenario.sim().resolved_terrain().unwrap().clone();
     let terrain = &terrain_snapshot;
     let cell = terrain.cell(rx, ry).expect("lamp has real terrain");
     let (tile_id, sub_tile) = terrain.presentation_tile(cell);
@@ -143,7 +143,11 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         crate::map::entities::EntityCategory::Structure,
         crate::sim::world::UninitContext::with_rules(rules),
     );
-    let events = scenario.runtime.simulation.lighting_sources.take_pending();
+    let events = scenario
+        .runtime
+        .simulation
+        .lighting_sources_mut_for_test()
+        .take_pending();
     lighting.apply_events(terrain, &events);
     lighting.refresh(terrain, &scenario.runtime.simulation, 2);
     let dark_scalar = lighting

@@ -391,7 +391,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                             let fog_ref = if state.match_state.sandbox_full_visibility {
                                 None
                             } else {
-                                Some(&sim.fog)
+                                Some(sim.fog())
                             };
                             if held_type_select {
                                 let picked = pick_entity_at_point(
@@ -403,11 +403,11 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                     world_y,
                                     CLICK_SELECT_RADIUS,
                                     state.rules(),
-                                    Some(&sim.houses),
+                                    Some(sim.houses()),
                                     state.height_map(),
                                     crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
-                                    Some(&sim.interner),
-                                    sim.resolved_terrain.as_ref(),
+                                    Some(sim.interner()),
+                                    sim.resolved_terrain(),
                                 );
                                 queued_selection = if let Some(clicked_id) = picked {
                                     Some(compute_type_select_click_mutation_with_playfield(
@@ -418,8 +418,8 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                         shift,
                                         preferred_local_owner_name(state).as_deref(),
                                         state.rules(),
-                                        Some(&sim.interner),
-                                        sim.playfield_bounds.is_some(),
+                                        Some(sim.interner()),
+                                        sim.playfield_bounds().is_some(),
                                     ))
                                 } else {
                                     compute_click_selection_snapshot_with_playfield(
@@ -433,14 +433,14 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                         CLICK_SELECT_RADIUS,
                                         shift,
                                         state.rules(),
-                                        Some(&sim.houses),
+                                        Some(sim.houses()),
                                         state.height_map(),
                                         crate::app::match_runtime::sim_tick::tactical_bridge_cells(
                                             sim,
                                         ),
-                                        Some(&sim.interner),
-                                        sim.playfield_bounds.is_some(),
-                                        sim.resolved_terrain.as_ref(),
+                                        Some(sim.interner()),
+                                        sim.playfield_bounds().is_some(),
+                                        sim.resolved_terrain(),
                                     )
                                 };
                                 held_type_select_batch = true;
@@ -456,12 +456,12 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                     CLICK_SELECT_RADIUS,
                                     shift,
                                     state.rules(),
-                                    Some(&sim.houses),
+                                    Some(sim.houses()),
                                     state.height_map(),
                                     crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
-                                    Some(&sim.interner),
-                                    sim.playfield_bounds.is_some(),
-                                    sim.resolved_terrain.as_ref(),
+                                    Some(sim.interner()),
+                                    sim.playfield_bounds().is_some(),
+                                    sim.resolved_terrain(),
                                 );
                             }
                         }
@@ -469,7 +469,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                             let fog_ref = if state.match_state.sandbox_full_visibility {
                                 None
                             } else {
-                                Some((&sim.fog, &sim.house_alliances))
+                                Some((sim.fog(), sim.house_alliances()))
                             };
                             let z = state.match_state.input.zoom_level;
                             let (min_x, min_y, max_x, max_y) = (
@@ -493,8 +493,8 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                         max_y,
                                         shift,
                                         state.rules(),
-                                        Some(&sim.interner),
-                                        sim.playfield_bounds.is_some(),
+                                        Some(sim.interner()),
+                                        sim.playfield_bounds().is_some(),
                                     ));
                                 held_type_select_batch = true;
                             } else {
@@ -514,9 +514,9 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                                     max_y,
                                     shift,
                                     state.rules(),
-                                    Some(&sim.houses),
-                                    Some(&sim.interner),
-                                    sim.playfield_bounds.is_some(),
+                                    Some(sim.houses()),
+                                    Some(sim.interner()),
+                                    sim.playfield_bounds().is_some(),
                                 );
                             }
                         }
@@ -662,7 +662,7 @@ fn band_caught_drawn_object(
     let fog_ref = if state.match_state.sandbox_full_visibility {
         None
     } else {
-        Some((&sim.fog, &sim.house_alliances))
+        Some((sim.fog(), sim.house_alliances()))
     };
     crate::app::input::entity_pick::band_rect_contains_drawn_object(
         sim.entities(),
@@ -673,7 +673,7 @@ fn band_caught_drawn_object(
         min_y / z + state.match_state.input.camera_y,
         max_x / z + state.match_state.input.camera_x,
         max_y / z + state.match_state.input.camera_y,
-        Some(&sim.interner),
+        Some(sim.interner()),
     )
 }
 
@@ -906,7 +906,7 @@ fn local_interned(state: &AppState, type_id: &str) -> Option<crate::sim::intern:
         .match_state
         .sim_runtime
         .as_ref()
-        .and_then(|rt| rt.simulation.interner.get(type_id))
+        .and_then(|rt| rt.simulation.interner().get(type_id))
 }
 
 /// Speak an app-local EVA line (`VoxClass::PlayEVA(name, -1)` inside a click
@@ -953,7 +953,7 @@ fn sidebar_cameo_press(
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_factory(sim, sim.interner.get(&owner)?, type_iid?)
+            .cameo_factory(sim, sim.interner().get(&owner)?, type_iid?)
             .map(|factory| {
                 (
                     factory.cameo_state(),
@@ -999,7 +999,7 @@ fn sidebar_cameo_press(
             .sim_runtime
             .as_ref()?
             .simulation
-            .interner
+            .interner()
             .get(&name)
     });
     if let (Some(runtime), Some(owner), Some(type_id)) =
@@ -1045,7 +1045,7 @@ fn sidebar_cameo_press(
                 let runtime = state.match_state.sim_runtime.as_ref()?;
                 let sim = &runtime.simulation;
                 let rules = &runtime.resources.rules;
-                let owner_id = sim.interner.get(&owner)?;
+                let owner_id = sim.interner().get(&owner)?;
                 // Select6AB2CC reads this linked Factory's actual product;
                 // an older cameo can still refer to a rearmed Factory.
                 let (held_type, held) = linked_factory?.1?;
@@ -1053,7 +1053,7 @@ fn sidebar_cameo_press(
                     owner,
                     owner_id,
                     held,
-                    sim.interner.resolve(held_type).to_string(),
+                    sim.interner().resolve(held_type).to_string(),
                     sim.entities().get(held)?.category() == EntityCategory::Structure,
                     crate::sim::production::object_find_factory(sim, rules, held, false, false),
                 ))
@@ -1126,8 +1126,8 @@ pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) 
                 let runtime = state.match_state.sim_runtime.as_ref()?;
                 let sim = &runtime.simulation;
                 let rules = &runtime.resources.rules;
-                let owner = sim.interner.get(&preferred_local_owner_name(state)?)?;
-                let type_id = sim.interner.get(&section)?;
+                let owner = sim.interner().get(&preferred_local_owner_name(state)?)?;
+                let type_id = sim.interner().get(&section)?;
                 let view = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner)
                     .into_iter()
                     .find(|view| view.type_id == type_id)?;
@@ -1233,7 +1233,7 @@ pub(crate) fn report_black_cell_causes(state: &mut AppState) {
             .sim_runtime
             .as_ref()
             .map(|rt| &rt.simulation)?
-            .interner
+            .interner()
             .get(&name)
     });
     let fog = match (
@@ -1245,7 +1245,7 @@ pub(crate) fn report_black_cell_causes(state: &mut AppState) {
         owner,
     ) {
         _ if state.match_state.sandbox_full_visibility => None,
-        (Some(sim), Some(id)) => Some((id, &sim.fog)),
+        (Some(sim), Some(id)) => Some((id, sim.fog())),
         _ => None,
     };
 
@@ -1492,7 +1492,7 @@ fn execute_type_select_tap(state: &mut AppState) {
             state.match_state.input.selection_order_pending,
         );
         let fog = (!state.match_state.sandbox_full_visibility)
-            .then_some((&sim.fog, &sim.house_alliances));
+            .then_some((sim.fog(), sim.house_alliances()));
         compute_type_select_tap_with_playfield(
             sim.entities(),
             &screen_order,
@@ -1501,9 +1501,9 @@ fn execute_type_select_tap(state: &mut AppState) {
             fog,
             preferred_local_owner_name(state).as_deref(),
             state.rules(),
-            Some(&sim.interner),
+            Some(sim.interner()),
             state.match_state.input.type_select.across_map,
-            sim.playfield_bounds.is_some(),
+            sim.playfield_bounds().is_some(),
         )
     };
     let outcome = result.outcome;
@@ -1606,7 +1606,7 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
         };
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
-        let Some(owner_id) = sim.interner.get(&owner_name) else {
+        let Some(owner_id) = sim.interner().get(&owner_name) else {
             return;
         };
         crate::sim::production::ready_buildings_for_owner(sim, rules, &owner_name)
@@ -1626,7 +1626,7 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
                 Some((
                     owner_id,
                     held,
-                    sim.interner.resolve(ready.type_id).to_string(),
+                    sim.interner().resolve(ready.type_id).to_string(),
                 ))
             })
     };
@@ -2297,7 +2297,7 @@ fn insert_selected_id(
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) {
     let positive_damage_primary = sim.entities().get(id).is_some_and(|entity| {
-        let type_id = sim.interner.resolve(entity.type_ref());
+        let type_id = sim.interner().resolve(entity.type_ref());
         rules
             .and_then(|rules| rules.object(type_id))
             .and_then(|object| object.primary())
@@ -2379,10 +2379,10 @@ mod item83_selection_order_tests {
             (50, "PLAIN", true),
         ] {
             let mut entity = GameEntity::test_default(id, type_name, "Americans", 10, 20);
-            entity.set_type_ref_for_test(sim.interner.intern(type_name));
-            entity.set_owner_for_test(sim.interner.intern("Americans"));
+            entity.set_type_ref_for_test(sim.intern(type_name));
+            entity.set_owner_for_test(sim.intern("Americans"));
             entity.selection.set_selected_for_test(selected);
-            sim.entities_mut().insert(entity);
+            sim.entities_mut_for_test().insert(entity);
         }
         (sim, rules)
     }
@@ -2429,14 +2429,15 @@ mod item83_selection_order_tests {
         )
         .expect("item83 voice rules");
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        sim.session.set_game_mode(
+        let owner = sim.intern("Americans");
+        sim.session_mut_for_test().set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.set_current_house_for_test(Some(owner));
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
         for (id, type_name) in [(1, "E1"), (2, "E2")] {
-            let type_ref = sim.interner.intern(type_name);
-            sim.entities_mut()
+            let type_ref = sim.intern(type_name);
+            sim.entities_mut_for_test()
                 .insert(GameEntity::new_at_frame_zero_for_test(
                     id,
                     10 + id as u16,
@@ -2524,9 +2525,9 @@ mod item83_selection_order_tests {
         use super::{SelectionMutation, SelectionVoicePolicy, resolve_selection_mutation};
         use crate::sim::command::Command;
         let mut sim = Simulation::new();
-        let local = sim.interner.intern("Local");
-        let kind = sim.interner.intern("TESTUNIT");
-        sim.houses
+        let local = sim.intern("Local");
+        let kind = sim.intern("TESTUNIT");
+        sim.houses_mut_for_test()
             .register(crate::sim::house_state::HouseState::new(
                 local, 0, None, false, 0, 10,
             ));
@@ -2546,7 +2547,7 @@ mod item83_selection_order_tests {
                 false,
             );
             entity.lifecycle.set_in_limbo_for_test(false);
-            sim.substrate.entities.insert(entity);
+            sim.entities_mut_for_test().insert(entity);
         }
         // Same-frame planned moves to one cell share the tail node.
         for id in [42, 43] {
@@ -2756,10 +2757,10 @@ fn queue_scatter_orders(
     if selected.is_empty() {
         return Vec::new();
     }
-    let Some(owner) = sim.session.current_house() else {
+    let Some(owner) = sim.session().current_house() else {
         return Vec::new();
     };
-    let owner = sim.interner.resolve(owner).to_owned();
+    let owner = sim.interner().resolve(owner).to_owned();
     for &entity_id in selected {
         let Some(payload) = sim.scatter_key_command(entity_id, rules) else {
             continue;
@@ -2801,10 +2802,10 @@ fn queue_area_guard_orders(
     if selected.is_empty() {
         return sounds;
     }
-    let Some(owner) = sim.session.current_house() else {
+    let Some(owner) = sim.session().current_house() else {
         return sounds;
     };
-    let owner = sim.interner.resolve(owner).to_owned();
+    let owner = sim.interner().resolve(owner).to_owned();
     for &entity_id in selected {
         let Some(payload) = sim.area_guard_key_command(entity_id, rules) else {
             continue;
@@ -2860,7 +2861,7 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
     }
     let owner: String = preferred_local_owner(state).unwrap_or_else(|| "Americans".to_string());
     // Collect commands first to avoid borrow conflict with schedule_command.
-    let local_owner = sim.interner.get(&owner);
+    let local_owner = sim.interner().get(&owner);
     let commands = deploy_key_commands(sim, state.rules(), &selected_ids, local_owner);
     // Selection730AF0 sends DEPLOY9 through Techno6FFE00. During
     // Planning Mode that reaches639FD0 and the NoDeploy refusal at638238,
@@ -2953,7 +2954,7 @@ fn deployer_is_deployed(
     id: u64,
 ) -> Option<bool> {
     let entity = sim.entities().get(id)?;
-    let object = sim.interner.object_type(entity.type_ref(), rules?)?;
+    let object = sim.interner().object_type(entity.type_ref(), rules?)?;
     match entity.category() {
         EntityCategory::Infantry if object.deployer => Some(entity.infantry_deploy_doing()),
         EntityCategory::Unit if object.is_simple_deployer => Some(
@@ -2978,7 +2979,7 @@ fn deploy_key_command(
     local_owner: Option<crate::sim::intern::InternedId>,
 ) -> Option<Command> {
     let entity = sim.entities().get(entity_id)?;
-    let obj = rules.and_then(|rules| sim.interner.object_type(entity.type_ref(), rules));
+    let obj = rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
     match entity.category() {
         // Absorbers and garrisons share unload admission.
         EntityCategory::Structure => {
@@ -3314,7 +3315,7 @@ fn apply_selection_action_line_policy(state: &mut AppState, policy: SelectionAct
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation)
-        .map(|sim| sim.session.binary_frame())
+        .map(|sim| sim.session().binary_frame())
     else {
         return;
     };
@@ -3356,8 +3357,7 @@ fn jump_camera_to_base(state: &mut AppState) {
     let coord = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
         let cells = runtime
             .simulation
-            .resolved_terrain
-            .as_ref()
+            .resolved_terrain()
             .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
         state.rules().and_then(|rules| {
             runtime
@@ -3381,11 +3381,11 @@ mod deploy_key_tests {
     /// and activity tests can admit the fixture's objects.
     fn player_sim() -> Simulation {
         let mut sim = Simulation::new();
-        sim.session.set_game_mode(
+        sim.session_mut_for_test().set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session
-            .set_current_house_for_test(Some(sim.interner.intern("Americans")));
+        let house = Some(sim.intern("Americans"));
+        sim.session_mut_for_test().set_current_house_for_test(house);
         sim
     }
 
@@ -3414,42 +3414,42 @@ mod deploy_key_tests {
         let infantry = spawn("GI");
         let mut cargo = PassengerCargo::new(5, 0.0);
         cargo.board_forced_chain(&[(999, 1.0)]);
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(transport)
             .unwrap()
             .passenger_role = PassengerRole::transport(cargo);
 
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), heli, sim.session.current_house()),
+            deploy_key_command(&sim, Some(&rules), heli, sim.session().current_house()),
             Some(Command::DeployMcv { entity_id: heli })
         );
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), transport, sim.session.current_house()),
+            deploy_key_command(&sim, Some(&rules), transport, sim.session().current_house()),
             Some(Command::UnloadPassengers {
                 transport_id: transport
             })
         );
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), infantry, sim.session.current_house()),
+            deploy_key_command(&sim, Some(&rules), infantry, sim.session().current_house()),
             Some(Command::ToggleInfantryDeploy {
                 entity_id: infantry
             })
         );
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), aircraft, sim.session.current_house()),
+            deploy_key_command(&sim, Some(&rules), aircraft, sim.session().current_house()),
             None
         );
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), plain, sim.session.current_house()),
+            deploy_key_command(&sim, Some(&rules), plain, sim.session().current_house()),
             None
         );
         // A `DeployFire=` Unit takes the DEPLOY event (Mission_Unload's
         // deploy-fire arm, `0x0073DCD3`).
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), firer, sim.session.current_house()),
+            deploy_key_command(&sim, Some(&rules), firer, sim.session().current_house()),
             Some(Command::DeployMcv { entity_id: firer })
         );
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(heli)
             .unwrap()
             .low_bridge_tube_state = Some(
@@ -3461,7 +3461,7 @@ mod deploy_key_tests {
         );
         // CanDeploySlashUnload refuses a unit in a tube (`0x00700E59`).
         assert!(
-            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house())
+            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session().current_house())
                 .is_empty()
         );
     }
@@ -3481,7 +3481,7 @@ mod deploy_key_tests {
             .spawn_object("YARD", "Americans", 10, 10, 0, &rules)
             .expect("the yard builds");
         assert!(
-            deploy_key_commands(&sim, Some(&rules), &[yard], sim.session.current_house())
+            deploy_key_commands(&sim, Some(&rules), &[yard], sim.session().current_house())
                 .is_empty()
         );
     }
@@ -3499,11 +3499,18 @@ mod deploy_key_tests {
             .expect("Bio Reactor builds");
         let mut cargo = PassengerCargo::new(5, 0.0);
         cargo.board_forced_chain(&[(99, 1.0)]);
-        sim.entities_mut().get_mut(reactor).unwrap().passenger_role =
-            PassengerRole::transport(cargo);
+        sim.entities_mut_for_test()
+            .get_mut(reactor)
+            .unwrap()
+            .passenger_role = PassengerRole::transport(cargo);
 
         assert_eq!(
-            deploy_key_commands(&sim, Some(&rules), &[reactor], sim.session.current_house()),
+            deploy_key_commands(
+                &sim,
+                Some(&rules),
+                &[reactor],
+                sim.session().current_house()
+            ),
             [Command::UnloadPassengers {
                 transport_id: reactor
             }]
@@ -3523,16 +3530,16 @@ mod deploy_key_tests {
             .spawn_object_limbo_at_height("HELI", "Americans", 10, 10, 0, 0, &rules)
             .expect("the deploy key fixture builds");
         assert_eq!(
-            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house()),
+            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session().current_house()),
             [Command::DeployMcv { entity_id: heli }]
         );
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(heli)
             .unwrap()
             .berserk
             .set_active_for_test(true);
         assert!(
-            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house())
+            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session().current_house())
                 .is_empty()
         );
     }
@@ -3557,17 +3564,17 @@ mod deploy_key_tests {
                 &sim,
                 Some(&rules),
                 &[heli, theirs],
-                sim.session.current_house()
+                sim.session().current_house()
             ),
             [Command::DeployMcv { entity_id: heli }]
         );
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(heli)
             .unwrap()
             .deactivated
             .set_for_test(true);
         assert!(
-            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house())
+            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session().current_house())
                 .is_empty()
         );
     }
@@ -3587,20 +3594,20 @@ mod deploy_key_tests {
                 .expect("the deploy key fixture builds")
         };
         let (standing, deployed, gassed) = (spawn(3), spawn(4), spawn(5));
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(deployed)
             .unwrap()
             .mission_leaf
             .set_infantry_doing_verified(28)
             .unwrap();
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(gassed)
             .unwrap()
             .berserk
             .set_active_for_test(true);
         let toggle = |entity_id| Command::ToggleInfantryDeploy { entity_id };
         let commands = |selection: &[u64]| {
-            deploy_key_commands(&sim, Some(&rules), selection, sim.session.current_house())
+            deploy_key_commands(&sim, Some(&rules), selection, sim.session().current_house())
         };
         assert_eq!(commands(&[deployed]), [toggle(deployed)]);
         assert_eq!(commands(&[deployed, standing]), [toggle(standing)]);
@@ -3624,12 +3631,12 @@ mod deploy_key_tests {
             (true, false, false),
             (true, false, true),
         ] {
-            sim.entities_mut()
+            sim.entities_mut_for_test()
                 .get_mut(id)
                 .unwrap()
                 .set_unit_simple_deploy_for_test(deployed, begin, reverse);
             assert_eq!(
-                deploy_key_command(&sim, Some(rules), id, sim.session.current_house()),
+                deploy_key_command(&sim, Some(rules), id, sim.session().current_house()),
                 Some(Command::DeployMcv { entity_id: id }),
             );
         }
@@ -3822,10 +3829,10 @@ mod control_group_tests {
         is_human: bool,
         player_control: bool,
     ) -> crate::sim::intern::InternedId {
-        let id = sim.interner.intern(name);
+        let id = sim.intern(name);
         let mut house = crate::sim::house_state::HouseState::new(id, 0, None, is_human, 0, 10);
         house.set_player_control_for_test(player_control);
-        sim.houses.register(house);
+        sim.houses_mut_for_test().register(house);
         id
     }
 
@@ -3834,7 +3841,7 @@ mod control_group_tests {
         stable_id: u64,
         owner: crate::sim::intern::InternedId,
     ) {
-        let type_ref = sim.interner.intern("MTNK");
+        let type_ref = sim.intern("MTNK");
         let entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
             stable_id,
             10,
@@ -3849,7 +3856,7 @@ mod control_group_tests {
             5,
             false,
         );
-        sim.entities_mut().insert(entity);
+        sim.entities_mut_for_test().insert(entity);
     }
 
     #[test]
@@ -3860,7 +3867,7 @@ mod control_group_tests {
         let local = house(&mut sim, "Local", false, true);
         let ai = house(&mut sim, "AI", false, false);
         let human_only = house(&mut sim, "HumanOnly", true, false);
-        let missing_house = sim.interner.intern("MissingHouse");
+        let missing_house = sim.intern("MissingHouse");
         for (stable_id, owner) in [
             (1, local),
             (2, local),
@@ -3934,10 +3941,11 @@ mod control_group_tests {
             group_entity(&mut sim, 1, local);
             group_entity(&mut sim, 2, ai);
             group_entity(&mut sim, 3, human_only);
-            sim.session.set_game_mode(
+            sim.session_mut_for_test().set_game_mode(
                 crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(multiplayer),
             );
-            sim.session.set_current_house_for_test(Some(local));
+            sim.session_mut_for_test()
+                .set_current_house_for_test(Some(local));
             let mut groups = vec![Vec::new(); 10];
             groups[1] = vec![1, 2, 3, 99];
             groups[2] = vec![4];
@@ -3981,25 +3989,26 @@ mod control_group_tests {
                 house(&mut sim, "CurrentHouse", false, false),
                 house(&mut sim, "OtherHouse", false, false),
             ];
-            sim.session.set_game_mode(
+            sim.session_mut_for_test().set_game_mode(
                 crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
                     input["mode"].as_u64().unwrap() != 0,
                 ),
             );
-            sim.session.set_current_house_for_test(Some(owners[0]));
+            sim.session_mut_for_test()
+                .set_current_house_for_test(Some(owners[0]));
             let actors = input["actors"].as_array().unwrap();
             let mut groups = vec![Vec::new(); 10];
             let mut selected = Vec::new();
             for (index, actor) in actors.iter().enumerate() {
                 let id = index as u64 + 1;
                 let owner = owners[actor["owner"].as_u64().unwrap() as usize];
-                sim.houses
+                sim.houses_mut_for_test()
                     .get_mut(&owner)
                     .unwrap()
                     .set_player_control_for_test(actor["player_control"].as_bool().unwrap());
                 group_entity(&mut sim, id, owner);
                 let is_selected = actor["selected"].as_bool().unwrap();
-                sim.entities_mut()
+                sim.entities_mut_for_test()
                     .get_mut(id)
                     .unwrap()
                     .selection
@@ -4084,10 +4093,11 @@ mod control_group_tests {
         let other_human = house(&mut sim, "OtherHuman", true, true);
         group_entity(&mut sim, 10, local);
         group_entity(&mut sim, 11, other_human);
-        sim.session.set_game_mode(
+        sim.session_mut_for_test().set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.set_current_house_for_test(Some(local));
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
 
         assert_eq!(
             live_group_members(Some(&sim), &[10, 11]),
@@ -4104,8 +4114,8 @@ mod control_group_tests {
         use crate::sim::world::Simulation;
 
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        let building_type = sim.interner.intern("YAPOWR");
+        let owner = sim.intern("Americans");
+        let building_type = sim.intern("YAPOWR");
         let mut building = GameEntity::new_at_frame_zero_for_test(
             27,
             12,
@@ -4121,7 +4131,7 @@ mod control_group_tests {
             false,
         );
         building.selection.set_selected_for_test(true);
-        sim.entities_mut().insert(building);
+        sim.entities_mut_for_test().insert(building);
         assert!(matches!(
             sim.reveal(27),
             crate::sim::world::RevealOutcome::Revealed { .. }
@@ -4164,7 +4174,7 @@ mod control_group_tests {
         use crate::sim::world::Simulation;
 
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
+        let owner = sim.intern("Americans");
         let mut aircraft = GameEntity::new_at_frame_zero_for_test(
             27,
             12,
@@ -4173,7 +4183,7 @@ mod control_group_tests {
             0,
             owner,
             Health::new(100),
-            sim.interner.intern("ORCA"),
+            sim.intern("ORCA"),
             EntityCategory::Aircraft,
             0,
             5,
@@ -4181,7 +4191,7 @@ mod control_group_tests {
         );
         aircraft.position.set_exact_z_leptons_for_test(Some(0));
         aircraft.selection.set_selected_for_test(true);
-        sim.entities_mut().insert(aircraft);
+        sim.entities_mut_for_test().insert(aircraft);
         assert!(matches!(
             sim.reveal(27),
             crate::sim::world::RevealOutcome::Revealed { .. }
@@ -4242,7 +4252,10 @@ mod control_group_tests {
         let ground_text_position = selected_ground.text[0].position;
 
         {
-            let aircraft = sim.entities_mut().get_mut(27).expect("retained ORCA");
+            let aircraft = sim
+                .entities_mut_for_test()
+                .get_mut(27)
+                .expect("retained ORCA");
             aircraft.selection.set_selected_for_test(false);
             aircraft.position.set_exact_z_leptons_for_test(Some(1500));
         }
@@ -4279,14 +4292,14 @@ mod control_group_tests {
         );
         assert_eq!(render(&sim, &groups, Some(27))[&27].text.len(), 1);
 
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(27)
             .expect("retained ORCA")
             .selection
             .set_selected_for_test(false);
         assert!(render(&sim, &groups, None).is_empty());
         assign_control_group(&mut groups, registered_slot("TeamCreate_10"), Vec::new());
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(27)
             .expect("retained ORCA")
             .selection
@@ -4302,10 +4315,10 @@ mod control_group_tests {
         use crate::sim::world::Simulation;
 
         let mut sim = Simulation::new();
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
-        let current_house = sim.interner.intern("Americans");
-        let allied_house = sim.interner.intern("French");
-        let gap_house = sim.interner.intern("Russians");
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+        let current_house = sim.intern("Americans");
+        let allied_house = sim.intern("French");
+        let gap_house = sim.intern("Russians");
         let alliances = crate::map::houses::HouseAllianceMap::from([
             (
                 "AMERICANS".to_owned(),
@@ -4316,7 +4329,7 @@ mod control_group_tests {
                 std::collections::BTreeSet::from(["AMERICANS".to_owned()]),
             ),
         ]);
-        sim.house_alliances = alliances;
+        *sim.house_alliances_mut_for_test() = alliances;
 
         // Body/status admission is the fixture subject. Supply no sustained
         // sight source: mark_visible below intentionally tests transient
@@ -4329,7 +4342,7 @@ mod control_group_tests {
             0,
             allied_house,
             Health::new(1000),
-            sim.interner.intern("YAPOWR"),
+            sim.intern("YAPOWR"),
             EntityCategory::Structure,
             0,
             0,
@@ -4339,7 +4352,7 @@ mod control_group_tests {
             .type_facts
             .set_foundation_for_test("2x2".to_owned());
         building.selection.set_selected_for_test(true);
-        sim.entities_mut().insert(building);
+        sim.entities_mut_for_test().insert(building);
         assert!(matches!(
             sim.reveal(27),
             crate::sim::world::RevealOutcome::Revealed { .. }
@@ -4376,13 +4389,14 @@ mod control_group_tests {
             )
         }
         assert!(labels(&sim, &groups, current_house, None, false).is_empty());
-        sim.fog.mark_visible_for_owner(current_house, 12, 10);
+        sim.fog_mut_for_test()
+            .mark_visible_for_owner(current_house, 12, 10);
         assert_eq!(
             labels(&sim, &groups, current_house, None, false),
             vec![(27, '1')]
         );
 
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(27)
             .expect("retained building")
             .selection
@@ -4393,11 +4407,13 @@ mod control_group_tests {
             vec![(27, '1')]
         );
 
+        let (alliances, interner) = (sim.house_alliances().clone(), sim.interner().clone());
+
         crate::sim::vision::apply_gap_generators(
-            &mut sim.fog,
-            &sim.house_alliances,
+            sim.fog_mut_for_test(),
+            &alliances,
             &[(gap_house, 12, 10, 5)],
-            &sim.interner,
+            &interner,
         );
         assert!(labels(&sim, &groups, current_house, Some(27), false).is_empty());
         assert_eq!(
@@ -4405,7 +4421,7 @@ mod control_group_tests {
             vec![(27, '1')]
         );
 
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(27)
             .expect("retained building")
             .selection
@@ -4419,7 +4435,7 @@ mod control_group_tests {
         assert!(labels(&sim, &groups, current_house, None, true).is_empty());
 
         assign_control_group(&mut groups, 1, vec![27]);
-        sim.entities_mut().remove(27);
+        sim.entities_mut_for_test().remove(27);
         assert!(labels(&sim, &groups, current_house, None, true).is_empty());
     }
 
@@ -4431,9 +4447,9 @@ mod control_group_tests {
         use crate::sim::world::Simulation;
 
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        let enemy_owner = sim.interner.intern("Russians");
-        let unit_type = sim.interner.intern("MTNK");
+        let owner = sim.intern("Americans");
+        let enemy_owner = sim.intern("Russians");
+        let unit_type = sim.intern("MTNK");
         let mut unit = GameEntity::new_at_frame_zero_for_test(
             17,
             10,
@@ -4449,7 +4465,7 @@ mod control_group_tests {
             false,
         );
         unit.selection.set_selected_for_test(true);
-        sim.entities_mut().insert(unit);
+        sim.entities_mut_for_test().insert(unit);
         assert!(matches!(
             sim.reveal(17),
             crate::sim::world::RevealOutcome::Revealed { .. }
@@ -4468,7 +4484,7 @@ mod control_group_tests {
             5,
             false,
         );
-        sim.entities_mut().insert(unselected_unit);
+        sim.entities_mut_for_test().insert(unselected_unit);
         assert!(matches!(
             sim.reveal(18),
             crate::sim::world::RevealOutcome::Revealed { .. }
@@ -4488,7 +4504,7 @@ mod control_group_tests {
             false,
         );
         enemy.selection.set_selected_for_test(true);
-        sim.entities_mut().insert(enemy);
+        sim.entities_mut_for_test().insert(enemy);
         assert!(matches!(
             sim.reveal(19),
             crate::sim::world::RevealOutcome::Revealed { .. }
@@ -4496,7 +4512,7 @@ mod control_group_tests {
         // The native pip tail admits non-allies only through Techno+0x210.
         // That bit is not modeled; a shroud-revealed enemy still does not take
         // the common CurrentPlayer-allied path implemented here.
-        sim.fog.mark_visible_for_owner(owner, 12, 10);
+        sim.fog_mut_for_test().mark_visible_for_owner(owner, 12, 10);
         let display_order =
             crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
         for id in [17, 18, 19] {
@@ -4641,7 +4657,7 @@ mod control_group_tests {
         assert!(no_group_overlay.is_empty());
 
         assign_control_group(&mut groups, 0, vec![17]);
-        sim.entities_mut().remove(17);
+        sim.entities_mut_for_test().remove(17);
         assert!(
             crate::app::presentation::ui_overlays::control_group_status_labels(
                 &sim,
@@ -4697,10 +4713,10 @@ mod control_group_tests {
         }
 
         let mut sim = Simulation::new();
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
-        let current_house = sim.interner.intern("Americans");
-        let ally = sim.interner.intern("French");
-        let gap_owner = sim.interner.intern("Russians");
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+        let current_house = sim.intern("Americans");
+        let ally = sim.intern("French");
+        let gap_owner = sim.intern("Russians");
         let allies = crate::map::houses::HouseAllianceMap::from([
             (
                 "AMERICANS".to_owned(),
@@ -4711,7 +4727,7 @@ mod control_group_tests {
                 std::collections::BTreeSet::from(["AMERICANS".to_owned()]),
             ),
         ]);
-        sim.house_alliances = allies;
+        *sim.house_alliances_mut_for_test() = allies;
 
         // Body/status admission is the fixture subject. Supply no sustained
         // sight source: mark_visible below intentionally tests transient
@@ -4724,14 +4740,14 @@ mod control_group_tests {
             0,
             ally,
             Health::new(100),
-            sim.interner.intern("MTNK"),
+            sim.intern("MTNK"),
             EntityCategory::Unit,
             0,
             0,
             false,
         );
         unit.selection.set_selected_for_test(true);
-        sim.entities_mut().insert(unit);
+        sim.entities_mut_for_test().insert(unit);
         assert!(matches!(
             sim.reveal(80),
             crate::sim::world::RevealOutcome::Revealed { .. }
@@ -4754,18 +4770,21 @@ mod control_group_tests {
             "sandbox does not change the represented body/pip relationship policy"
         );
 
-        sim.fog.mark_visible_for_owner(current_house, 10, 10);
-        assert!(sim.fog.is_cell_revealed(current_house, 10, 10));
+        sim.fog_mut_for_test()
+            .mark_visible_for_owner(current_house, 10, 10);
+        assert!(sim.fog().is_cell_revealed(current_house, 10, 10));
         assert_eq!(labels(&sim, &groups, current_house, false), vec![(80, '1')]);
 
+        let (alliances, interner) = (sim.house_alliances().clone(), sim.interner().clone());
+
         crate::sim::vision::apply_gap_generators(
-            &mut sim.fog,
-            &sim.house_alliances,
+            sim.fog_mut_for_test(),
+            &alliances,
             &[(gap_owner, 10, 10, 5)],
-            &sim.interner,
+            &interner,
         );
-        assert!(sim.fog.is_cell_gap_covered(current_house, 10, 10));
-        assert!(!sim.fog.is_cell_revealed(current_house, 10, 10));
+        assert!(sim.fog().is_cell_gap_covered(current_house, 10, 10));
+        assert!(!sim.fog().is_cell_revealed(current_house, 10, 10));
         assert_eq!(
             labels(&sim, &groups, current_house, false),
             vec![(80, '1')],
@@ -4900,7 +4919,7 @@ mod control_group_tests {
             let native_y = native_caller_point[1].as_i64().expect("caller y") as f32;
 
             let mut sim = Simulation::new();
-            let owner = sim.interner.intern("Americans");
+            let owner = sim.intern("Americans");
             let category = match kind {
                 0xF => EntityCategory::Infantry,
                 2 => EntityCategory::Aircraft,
@@ -4921,7 +4940,7 @@ mod control_group_tests {
                 0,
                 owner,
                 Health::new(100),
-                sim.interner.intern(type_name),
+                sim.intern(type_name),
                 category,
                 0,
                 5,
@@ -4933,7 +4952,7 @@ mod control_group_tests {
                     .set_foundation_for_test(foundation.to_owned());
             }
             entity.selection.set_selected_for_test(true);
-            sim.entities_mut().insert(entity);
+            sim.entities_mut_for_test().insert(entity);
             assert!(matches!(
                 sim.reveal(1),
                 crate::sim::world::RevealOutcome::Revealed { .. }
@@ -4955,7 +4974,7 @@ mod control_group_tests {
 
             let coord = crate::sim::movement::ground_pose::object_get_coords(
                 sim.entities().get(1).expect("retained live entity"),
-                sim.resolved_terrain.as_ref(),
+                sim.resolved_terrain(),
             );
             let anchor = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
             // Align the actual GetCoords/integer-projection caller prior to

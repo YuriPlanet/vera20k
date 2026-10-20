@@ -114,9 +114,9 @@ fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
 fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
     let mut sim = Simulation::new();
-    sim.session.set_tick_for_test(17);
-    let local = sim.interner.intern("Local");
-    let remote = sim.interner.intern("Remote");
+    sim.session_mut_for_test().set_tick_for_test(17);
+    let local = sim.intern("Local");
+    let remote = sim.intern("Remote");
     let before_main = sim.rng_views().main.native_state_hex();
     let repaired = |owner, rx| SimSoundEvent::UnitRepaired {
         owner,
@@ -163,7 +163,7 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
         &rules,
         Some("LOCAL"),
         &mut |request| {
-            admitted.push((sim.session.tick(), request.rx));
+            admitted.push((sim.session().tick(), request.rx));
             true
         },
         &mut output,
@@ -172,7 +172,7 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
     assert_eq!(output.drain().len(), 1);
 
     // A later frame starts a new borrowed scope, with no retained frontier.
-    sim.session.set_tick_for_test(18);
+    sim.session_mut_for_test().set_tick_for_test(18);
     {
         let mut admit_radar = |request: RadarEventRequest, tick, _: &RuleSet| {
             admitted.push((tick, request.rx));

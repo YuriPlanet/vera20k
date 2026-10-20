@@ -335,10 +335,10 @@ fn item83_band_selection_is_exact_local_even_for_a_discovered_nonlocal_unit() {
 #[test]
 fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
     let mut sim = Simulation::new();
-    let americans_id = sim.interner.intern("Americans");
-    let soviet_id = sim.interner.intern("Soviet");
-    let gapowr_id = sim.interner.intern("GAPOWR");
-    let e1_id = sim.interner.intern("E1");
+    let americans_id = sim.intern("Americans");
+    let soviet_id = sim.intern("Soviet");
+    let gapowr_id = sim.intern("GAPOWR");
+    let e1_id = sim.intern("E1");
 
     // Hover coordinates come from the drawn position, which is the cell
     // centre — the point `screen_to_iso` resolves back to the right cell.
@@ -357,7 +357,7 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
         false,
     );
     friendly.lifecycle.set_in_limbo_for_test(false);
-    sim.entities_mut().insert(friendly);
+    sim.entities_mut_for_test().insert(friendly);
     let (friendly_sx, friendly_sy) =
         crate::render::locomotor_visual::screen_position(sim.entities().get(10).expect("friendly"));
 
@@ -376,7 +376,7 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
         false,
     );
     enemy.lifecycle.set_in_limbo_for_test(false);
-    sim.entities_mut().insert(enemy);
+    sim.entities_mut_for_test().insert(enemy);
     let (enemy_sx, enemy_sy) =
         crate::render::locomotor_visual::screen_position(sim.entities().get(11).expect("enemy"));
     // Provide empty height maps — structure picking now uses foundation-based hit testing.
@@ -387,7 +387,8 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
     for (x, y) in [(friendly_sx, friendly_sy), (enemy_sx, enemy_sy)] {
         let (rx, ry) =
             crate::app::match_runtime::sim_tick::world_point_to_cell(x, y, &empty_heights, None);
-        sim.fog.mark_visible_for_owner(americans_id, rx, ry);
+        sim.fog_mut_for_test()
+            .mark_visible_for_owner(americans_id, rx, ry);
     }
     let friendly_hover = hover_target_at_point(
         &sim,

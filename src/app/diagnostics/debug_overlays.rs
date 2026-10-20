@@ -97,7 +97,7 @@ pub(crate) fn build_terrain_cost_overlay_instances(
         return Vec::new();
     };
     let speed_type = resolve_debug_speed_type(state);
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = sim.resolved_terrain() else {
         log::warn!("Terrain cost overlay: no resolved terrain");
         return Vec::new();
     };

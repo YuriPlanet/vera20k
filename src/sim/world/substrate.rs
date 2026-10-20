@@ -342,7 +342,7 @@ pub struct ObjectSubstrate {
     /// Monotonic per-instance id source (never reused). Each spawned entity
     /// draws the next value; a stale reference degrades to `None` rather than
     /// aliasing a reused slot.
-    pub next_stable_object_id: u64,
+    pub(crate) next_stable_object_id: u64,
     /// Monotonic source for the independently ordered AirTracker. Cell lists
     /// keep their own insertion order. See `EnterOrderCounter`.
     pub(crate) next_air_tracker_order: EnterOrderCounter,
@@ -356,7 +356,7 @@ pub struct ObjectSubstrate {
     /// Actual CellClass-style memberships/order, preserved across save/restore.
     /// Cell483C10/4839F0 saves and swizzles its ground/deck heads; rebuilding
     /// from current locomotor phase or terrain cannot recover those histories.
-    pub occupancy: OccupancyGrid,
+    pub(crate) occupancy: OccupancyGrid,
     /// Authoritative raw CellClass occupation bytes. These destructive
     /// OR/AND-not bytes are serialized verbatim and are never rebuilt from
     /// entity lists.
@@ -371,18 +371,18 @@ pub struct ObjectSubstrate {
     /// object each cell holds. Serialized verbatim: a hovering Jumpjet's claim
     /// is not reconstructible from its position or locomotor phase.
     #[serde(default)]
-    pub air_slots: AirSlotGrid,
+    pub(crate) air_slots: AirSlotGrid,
     /// Authoritative CellClass `+0xDC` per-house Building base reservations,
     /// including the single shared dummy CellClass mask.
     #[serde(default)]
-    pub base_reservations: CellReservationGrid,
+    pub(crate) base_reservations: CellReservationGrid,
     /// Plain-struct entity storage (dense, in stable_id order, + infantry registry).
     /// The authoritative object store — serialized verbatim (NOT skipped).
-    pub entities: EntityStore,
+    pub(crate) entities: EntityStore,
     /// Separate AnimClass registry sharing the global object ID namespace and
     /// LogicVector with entities.
     #[serde(default)]
-    pub anims: AnimStore,
+    pub(crate) anims: AnimStore,
     /// `VoxelAnimClass` registry — the flying VXL debris a death throws. Shares
     /// the global object-ID namespace and the LogicVector with entities and
     /// anims, exactly as native's `VoxelAnimClass::Constructor` does through
@@ -401,7 +401,7 @@ pub struct ObjectSubstrate {
     /// lifecycle facts describe dead/limbo/cell/logic state. Serialized verbatim;
     /// the state hash folds queue identities in insertion order.
     #[serde(default)]
-    pub pending_delete: DeferredDeleteQueue,
+    pub(crate) pending_delete: DeferredDeleteQueue,
 }
 
 impl ObjectSubstrate {

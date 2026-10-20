@@ -200,7 +200,9 @@ pub fn current_fly_height(
     queried_flight_height(entity, cells.as_ref())
 }
 
-fn queried_flight_height(
+/// [`current_fly_height`] through the caller's cell query. A draw passes its
+/// isolated query, so a miss stamps its own dummy, not the simulation's.
+pub fn queried_flight_height(
     entity: &crate::sim::game_entity::GameEntity,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> i32 {

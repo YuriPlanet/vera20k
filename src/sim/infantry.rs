@@ -18,11 +18,10 @@
 //!   and therefore client-dependent, which is exactly why it cannot sit on the
 //!   lockstep stream. Not drawn here, so it cannot disturb the scenario cursor.
 //!   Needs the audio seam. Frequency: roughly one idle turn in nine, audio only.
-//! - Idle NULL-source Scatter (`51D0D0`) on roll8 for COW/AI Fraidycat still
-//!   returns a logged residual below. It can consume additional Scenario
-//!   draws and alter navigation before the mission's cadence draw. The fear
-//!   receiver calls the existing NULL Scatter owner; its complete Fraidycat
-//!   transaction remains separately bounded by that owner's evidence.
+//! - The idle NULL-source Scatter (`51D0D0`, from the panic and roll-8 arms)
+//!   drops the owner's bridge-state answer: none of the three native callers
+//!   reads the idle result, and a Guard/AreaGuard/Hunt civilian's first Walk
+//!   Process has no Enter mission to change bridge state with.
 //!
 //! The actor-local fear receiver executes at InfantryAI51BF0B after Process.
 //! It reads NavCom and the actual locomotor motion query independently.
@@ -575,6 +574,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(actor) = self.substrate.entities.get(id) else {
@@ -609,10 +609,17 @@ impl crate::sim::world::Simulation {
                 let _accepted = self.infantry_do_action(id, action, false, rules, effects)?;
             }
             IdleTurn::NullSourceScatter => {
-                // The existing damage Scatter owner accepts a real source;
-                // native idle passes NullCoordA8F200, forced1, no-Kick0. Its
-                // additional navigation/RNG path remains a separate mechanism.
-                log::debug!("infantry {id} idle NULL-source Scatter is not represented");
+                // vt+0x174 Scatter(NullCoord 0xA8F200, forced 1, no-kidding
+                // 0): the panic arm 0x0051CE60..0x0051CE76 and the roll-8 arm
+                // 0x0051D049.
+                self.scatter(
+                    id,
+                    None,
+                    crate::sim::movement::ScatterFlags::new(true, false),
+                    rules,
+                    registry,
+                    effects,
+                )?;
             }
             IdleTurn::Spent => {}
         }
@@ -623,7 +630,8 @@ impl crate::sim::world::Simulation {
 /// Test compatibility for old logic-vector fixtures. Production mission
 /// callers use the synchronous object receiver above. This adapter keeps only
 /// outer AI/logic-vector gates and delegates every idle decision to its owner;
-/// returned fidgets require the real Do_Action receiver to enact them.
+/// returned fidgets require the real Do_Action receiver to enact them. It
+/// drops a NULL-source Scatter turn, which production enacts.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn tick_idle_actions(
     entities: &mut crate::sim::entity_store::EntityStore,
@@ -1200,6 +1208,75 @@ mod tests {
         Some(rules)
     }
 
+    /// A frightened computer-owned civilian's idle turn scatters it from no
+    /// source (`0x0051CE60..0x0051CE76`, vtable `+0x174` with NullCoord,
+    /// forced 1, no-kidding 0): after the idle wait draw, the Scatter draws
+    /// and the civilian heads for a nearby cell at once. A human's
+    /// civilian takes neither arm.
+    #[test]
+    fn a_frightened_computer_civilian_scatters_on_its_idle_turn() {
+        use crate::sim::components::NavTargetRef;
+        use crate::sim::movement::infantry_action::DO_READY;
+        let Some(rules) = retail_e1_rules() else {
+            return;
+        };
+        assert!(rules.object("CIV1").unwrap().fraidycat);
+        let run = |owner: &str| {
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x51CE60);
+            let civilian = sim
+                .spawn_object("CIV1", owner, 10, 10, 0, &rules)
+                .expect("CIV1 spawns");
+            let frame = sim.session.binary_frame();
+            let actor = sim.substrate.entities.get_mut(civilian).unwrap();
+            actor
+                .mission_leaf
+                .set_infantry_doing_verified(DO_READY)
+                .unwrap();
+            let infantry = actor.infantry.as_mut().unwrap();
+            infantry.set_fear_level_for_test(IDLE_PANIC_FEAR + 1);
+            // The idle timer is due.
+            infantry.idle_action_timer = crate::sim::mission::MissionTimer::armed(frame, 0);
+            // The panic arm's own draw is the idle wait.
+            let mut replay = sim.scenario_rng.clone();
+            let ((), wait) = crate::sim::rng::trace_draws(|| {
+                replay.next_range_u32_inclusive(0, IDLE_WAIT_FRACTION_MAX);
+            });
+            let (admitted, draws) = crate::sim::rng::trace_draws(|| {
+                sim.infantry_idle_action(
+                    civilian,
+                    &rules,
+                    None,
+                    crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap()
+            });
+            let nav = sim
+                .substrate
+                .entities
+                .get(civilian)
+                .unwrap()
+                .navigation
+                .nav_com();
+            // Traced draws carry their call site, so compare the stream words.
+            let word =
+                |draw: &serde_json::Value| (draw["before_indices"].clone(), draw["value"].clone());
+            let scatter_draws =
+                (draws.first().map(word) == wait.first().map(word)).then(|| draws.len() - 1);
+            (admitted, scatter_draws, nav)
+        };
+        let (admitted, scatter_draws, nav) = run("Russians");
+        assert!(admitted);
+        assert!(
+            scatter_draws.is_some_and(|draws| draws > 0),
+            "the idle wait, then the Scatter's draws: {scatter_draws:?}"
+        );
+        let Some(NavTargetRef::Cell { rx, ry }) = nav else {
+            panic!("no scatter destination: {nav:?}");
+        };
+        assert!((rx, ry) != (10, 10) && rx.abs_diff(10) <= 1 && ry.abs_diff(10) <= 1);
+        assert_eq!(run("Americans").2, None);
+    }
+
     /// Full original51CDB0 + actual75AB30 + original51D6F0 on the physical
     /// E1/GISequence. Native reader66B3EA processes stock AudioVisual .15.
     /// Supplied ready/action/nav/target/timer controls isolate receiver
@@ -1333,8 +1410,13 @@ mod tests {
             let nav_before = actor.navigation.nav_com();
             sim.substrate.entities.insert(actor);
             let (admitted, draws) = trace_draws(|| {
-                sim.infantry_idle_action(1, &rules, crate::sim::world::FrameEffects::default())
-                    .unwrap()
+                sim.infantry_idle_action(
+                    1,
+                    &rules,
+                    None,
+                    crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap()
             });
             assert_eq!(admitted, row["returned_al"] != 0, "{name} return AL");
             let actor = sim.substrate.entities.get(1).unwrap();

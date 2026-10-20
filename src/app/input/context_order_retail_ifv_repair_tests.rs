@@ -14,18 +14,18 @@ const OWNER: &str = "Americans";
 fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) {
     let mut sim = Simulation::new();
     for (name, side) in [(OWNER, 0), ("Russians", 1)] {
-        let owner = sim.interner.intern(name);
-        sim.houses
+        let owner = sim.intern(name);
+        sim.houses_mut_for_test()
             .register(HouseState::new(owner, side, None, true, 0, 10));
     }
-    sim.session
-        .set_current_house_for_test(sim.interner.get(OWNER));
+    let house = sim.interner().get(OWNER);
+    sim.session_mut_for_test().set_current_house_for_test(house);
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     // The arena supplies terrain/navigation. Real Spark ground-contact
     // queries also need the map's mutable overlay owner, even on clear cells.
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
-        sim.session.map_width(),
-        sim.session.map_height(),
+    *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(
+        sim.session().map_width(),
+        sim.session().map_height(),
     ));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
@@ -63,7 +63,7 @@ fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) 
             == Some(ifv)
     );
     let tank = sim.spawn_object("MTNK", OWNER, 17, 16, 64, rules).unwrap();
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(tank)
         .unwrap()
         .health
@@ -80,7 +80,7 @@ fn repair_ifv(rules: &RuleSet) -> (Simulation, u64, u64) {
             rules.object("FV").unwrap(),
             sim.entities(),
             rules,
-            &sim.interner,
+            sim.interner(),
         ),
         -50
     );
@@ -192,7 +192,7 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
     let rules = &retail.rules;
     let (mut sim, ifv, tank) = repair_ifv(rules);
     let already_sent = repair_click(&sim, rules, ifv, tank);
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(ifv)
         .unwrap()
         .berserk
@@ -403,7 +403,7 @@ fn retail_far_repair_click_drives_into_range_and_heals_without_ctrl() {
     let rules = &retail.rules;
     let (mut sim, ifv, _) = repair_ifv(rules);
     let far = sim.spawn_object("MTNK", OWNER, 25, 16, 64, rules).unwrap();
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(far)
         .unwrap()
         .health
@@ -493,9 +493,9 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
         sim.unit_repair_action(ifv, ifv, owner, rules),
         Some(UnitRepairAction::Select)
     );
-    let wrong_owner = sim.interner.get("Russians").unwrap();
+    let wrong_owner = sim.interner().get("Russians").unwrap();
     assert_eq!(sim.unit_repair_action(ifv, tank, wrong_owner, rules), None);
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(tank)
         .unwrap()
         .health
@@ -515,7 +515,7 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
         .commands
         .is_empty()
     );
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(tank)
         .unwrap()
         .health
@@ -523,7 +523,7 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
     let enemy = sim
         .spawn_object("MTNK", "Russians", 23, 16, 64, rules)
         .unwrap();
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(enemy)
         .unwrap()
         .health
@@ -551,7 +551,7 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
     assert!(
         matches!(move_dispatch.commands[0], Command::Move { entity_id, .. } if entity_id == ifv)
     );
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry(OWNER.to_ascii_uppercase())
         .or_default()
         .insert("RUSSIANS".to_string());
@@ -583,7 +583,7 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
     let rules = &retail.rules;
     let (mut sim, ifv, tank) = repair_ifv(rules);
     let command = repair_click(&sim, rules, ifv, tank);
-    sim.entities_mut()
+    sim.entities_mut_for_test()
         .get_mut(tank)
         .unwrap()
         .health
@@ -651,9 +651,10 @@ fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
     )
     .unwrap();
     let mut sim = Simulation::new();
-    let owner = sim.interner.intern(OWNER);
-    sim.session.set_current_house_for_test(Some(owner));
-    sim.houses
+    let owner = sim.intern(OWNER);
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    sim.houses_mut_for_test()
         .register(HouseState::new(owner, 0, None, true, 0, 10));
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     sim.intern_rule_type_ids(&rules);
@@ -671,7 +672,7 @@ fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
         let target = sim
             .spawn_object(kind, OWNER, cell.0, cell.1, 64, &rules)
             .unwrap();
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(target)
             .unwrap()
             .health

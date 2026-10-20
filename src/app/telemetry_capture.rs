@@ -102,7 +102,7 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
     }
     let speed = runtime
         .simulation
-        .session
+        .session()
         .game_options()
         .game_speed
         .clamp(0, 6) as u8;
@@ -291,8 +291,7 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
     let cursor_walkable = path_grid.map(|grid| grid.is_walkable(cursor_rx, cursor_ry));
 
     let land_rows = sim
-        .resolved_terrain
-        .as_ref()
+        .resolved_terrain()
         .and_then(|terrain| terrain.cell(cursor_rx, cursor_ry))
         .map(|cell| {
             [
@@ -322,12 +321,12 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
         }
         entities_at_cursor.push(EntityDesc {
             type_name: bounded_text(
-                sim.interner.resolve(entity.type_ref()),
+                sim.interner().resolve(entity.type_ref()),
                 TELEMETRY_MAX_NAME_BYTES,
             ),
             category: category_label(entity.category()).to_string(),
             owner: bounded_text(
-                sim.interner.resolve(entity.owner()),
+                sim.interner().resolve(entity.owner()),
                 TELEMETRY_MAX_NAME_BYTES,
             ),
             hp: entity.health.current(),
@@ -340,7 +339,7 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
                 continue;
             }
             let foundation = sim
-                .interner
+                .interner()
                 .object_type(entity.type_ref(), rules)
                 .map(|obj| obj.foundation.clone())
                 .unwrap_or_else(|| "1x1".to_string());
@@ -354,14 +353,14 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
                 footprint = Some(format!(
                     "{} ({}) @ ({},{}) {}",
                     bounded_text(
-                        sim.interner.resolve(entity.type_ref()),
+                        sim.interner().resolve(entity.type_ref()),
                         TELEMETRY_MAX_NAME_BYTES
                     ),
                     bounded_text(&foundation, TELEMETRY_MAX_NAME_BYTES),
                     ex,
                     ey,
                     bounded_text(
-                        sim.interner.resolve(entity.owner()),
+                        sim.interner().resolve(entity.owner()),
                         TELEMETRY_MAX_NAME_BYTES
                     )
                 ));
@@ -426,8 +425,8 @@ mod tests {
     #[test]
     fn selection_capture_is_bounded_and_does_not_change_the_world() {
         let mut sim = Simulation::with_seed(44);
-        let owner = sim.interner.intern("Americans");
-        let kind = sim.interner.intern(&"é<&\"".repeat(300));
+        let owner = sim.intern("Americans");
+        let kind = sim.intern(&"é<&\"".repeat(300));
         for _ in 0..MAX_SELECTED + 4 {
             let id = sim.insert_synthetic_techno_for_diagnostics(
                 5,
@@ -442,7 +441,7 @@ mod tests {
                 1,
                 true,
             );
-            sim.entities_mut()
+            sim.entities_mut_for_test()
                 .get_mut(id)
                 .unwrap()
                 .selection
@@ -479,7 +478,7 @@ fn entity_max_hp(
 ) -> i32 {
     state
         .rules()
-        .and_then(|rules| sim.interner.object_type(entity.type_ref(), rules))
+        .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
         .map_or(0, |obj| obj.strength)
 }
 
@@ -538,7 +537,7 @@ fn capture_selected(
     SelectedDebug {
         stable_id: entity.stable_id(),
         type_name: bounded_text(
-            sim.interner.resolve(entity.type_ref()),
+            sim.interner().resolve(entity.type_ref()),
             TELEMETRY_MAX_NAME_BYTES,
         ),
         cell: (entity.position.rx(), entity.position.ry()),

@@ -576,9 +576,9 @@ fn cancelled_successor_engineers_finish_their_heads_without_repeating_the_repair
             "live vector removal skips only the immediate successor"
         );
         assert_eq!(repair_sounds(&sim), [true]);
-        assert!(sim.radar_terrain_dirty_generation > 0);
+        assert!(sim.dirty_cells.radar_generation() > 0);
         for p in [(17, 14), (17, 15), (17, 16)] {
-            assert!(sim.radar_terrain_dirty_cells.contains(&p));
+            assert!(sim.dirty_cells.radar().contains(&p));
         }
         if !separated {
             repair_frame(&mut sim, &rules, &registry);

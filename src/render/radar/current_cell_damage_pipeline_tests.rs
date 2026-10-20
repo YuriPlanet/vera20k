@@ -96,8 +96,8 @@ fn simulation_fixture() -> (Simulation, crate::map::terrain::TerrainGrid) {
     );
 
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(terrain);
-    sim.bridge_state = Some(bridge_state);
+    *sim.resolved_terrain_mut_for_test() = Some(terrain);
+    *sim.bridge_state_mut_for_test() = Some(bridge_state);
     (sim, grid)
 }
 
@@ -124,13 +124,13 @@ fn gsi_04_01_bridge_collapse_publishes_variant_preorder_before_setter_radar() {
     assert!(collapsed, "Ion retries the state machine through collapse");
     // Native56E990 publishes three per-cell radar callbacks before four
     // setter callbacks; each newly dirty coordinate advances the generation.
-    assert_eq!(sim.radar_terrain_dirty_generation, 7);
+    assert_eq!(sim.radar_terrain_dirty_generation(), 7);
     assert_eq!(
-        sim.radar_terrain_dirty_cells,
+        sim.radar_terrain_dirty_cells(),
         [FLOOD.as_slice(), &[CENTER, (25, 24), (25, 23), (25, 26)]].concat(),
     );
-    let mut unique = sim.radar_terrain_dirty_cells.clone();
+    let mut unique = sim.radar_terrain_dirty_cells().to_vec();
     unique.sort_unstable();
     unique.dedup();
-    assert_eq!(unique.len(), sim.radar_terrain_dirty_cells.len());
+    assert_eq!(unique.len(), sim.radar_terrain_dirty_cells().len());
 }

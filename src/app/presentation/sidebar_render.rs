@@ -161,7 +161,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
             production::active_producer_for_owner_category(sim, rules, &owner_name, category)
         })
         .collect::<Vec<_>>();
-        let owner_iid = sim.interner.get(&owner_name).unwrap_or_default();
+        let owner_iid = sim.interner().get(&owner_name).unwrap_or_default();
         let sw_views = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner_iid);
         let (power_produced, power_drained) =
             production::power_balance_for_owner(sim, rules, &owner_name);
@@ -191,7 +191,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .as_ref()
         .expect("sidebar runtime")
         .simulation;
-    let owner = sim.interner.get(&owner_name).unwrap_or_default();
+    let owner = sim.interner().get(&owner_name).unwrap_or_default();
     let seed_additions = state
         .match_state
         .match_presentation
@@ -219,7 +219,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .set_cameo_frame(sim.session.binary_frame() as i32);
+        .set_cameo_frame(sim.session().binary_frame() as i32);
     state
         .match_state
         .match_presentation
@@ -310,7 +310,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
             .sim_runtime
             .as_ref()
             .map(|rt| &rt.simulation)
-            .map(|sim| &sim.interner),
+            .map(|sim| sim.interner()),
         &sw_views,
         &state.match_state.match_presentation.sidebar_gadget_state,
         repair_btn_size,
@@ -345,7 +345,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
             .match_state
             .sim_runtime
             .as_ref()
-            .and_then(|rt| rt.simulation.houses.get(&owner));
+            .and_then(|rt| rt.simulation.houses().get(&owner));
         let rules = state.rules();
         for item in &mut view.items {
             item.alt_cameo = house.is_some_and(|house| {
@@ -363,7 +363,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         let armed_building = armed_entry
             .as_ref()
             .and_then(sidebar::ArmedSidebarEntry::as_building_placement)
-            .and_then(|name| sim.interner.get(name));
+            .and_then(|name| sim.interner().get(name));
         state
             .match_state
             .match_presentation
@@ -398,7 +398,7 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
         .match_state
         .sim_runtime
         .as_ref()
-        .is_none_or(|runtime| runtime.simulation.session.current_house().is_none())
+        .is_none_or(|runtime| runtime.simulation.session().current_house().is_none())
     {
         return;
     }
@@ -408,13 +408,13 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
         return;
     };
     let sim = &runtime.simulation;
-    let owner = sim.interner.get(&owner_name).unwrap_or_default();
+    let owner = sim.interner().get(&owner_name).unwrap_or_default();
     let armed_building = match_state
         .input
         .targeting_mode
         .as_ref()
         .and_then(crate::app::types::TargetingMode::as_building_placement)
-        .and_then(|name| sim.interner.get(name));
+        .and_then(|name| sim.interner().get(name));
     match_state
         .match_presentation
         .sidebar_projection
@@ -769,9 +769,9 @@ pub(crate) fn sidebar_theme_for_owner(
 ) -> Option<crate::render::sidebar_chrome::SidebarTheme> {
     let simulation = simulation?;
     let live_house = crate::sim::house_state::house_state_for_owner(
-        &simulation.houses,
+        simulation.houses(),
         owner,
-        &simulation.interner,
+        simulation.interner(),
     )?;
     match live_house.side_index() {
         0 => Some(crate::render::sidebar_chrome::SidebarTheme::Allied),
@@ -901,10 +901,11 @@ mod tests {
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         let owner = sim.intern("Americans");
-        sim.houses
+        sim.houses_mut_for_test()
             .register(HouseState::new(owner, 0, None, true, 1000, 10));
-        sim.session.set_current_house_for_test(Some(owner));
-        let infantry = sim.interner.get("E1").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        let infantry = sim.interner().get("E1").unwrap();
         let cameo = Cameo {
             id: CameoId::Object(infantry),
             tab: SidebarTab::Infantry,

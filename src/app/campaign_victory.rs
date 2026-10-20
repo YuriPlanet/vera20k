@@ -194,7 +194,7 @@ impl App {
         let campaign = state.match_state.startup.installed_campaign()?;
         let runtime = state.match_state.sim_runtime.as_ref()?;
         let sim = &runtime.simulation;
-        let owner = sim.session.current_house()?;
+        let owner = sim.session().current_house()?;
         let won = sim.ready_outcome_for_owner(owner).is_some_and(|outcome| {
             outcome.kind == crate::sim::house_state::HouseOutcomeKind::Victory
         });
@@ -226,7 +226,7 @@ impl App {
                         .map_err(|error| log::warn!("MapSelect: {error}"))
                         .ok()
                 });
-                let side = crate::sim::house_state::house_state_for_owner_id(&sim.houses, owner)
+                let side = crate::sim::house_state::house_state_for_owner_id(sim.houses(), owner)
                     .and_then(|house| {
                         runtime
                             .resources
@@ -235,7 +235,7 @@ impl App {
                                 u8::try_from(house.side_index()).ok()?,
                             ))
                     });
-                let current = sim.session.map_name();
+                let current = sim.session().map_name();
                 let scenario = match map_select(
                     mapsel.as_ref().map(|selected| &selected.ini),
                     side,
@@ -251,13 +251,13 @@ impl App {
                         None
                     }
                 };
-                match (scenario, sim.session.campaign_mission_counter()) {
+                match (scenario, sim.session().campaign_mission_counter()) {
                     (Some(scenario), Some(counter)) => {
                         VictoryEnd::NextMission(Box::new(campaign.next_mission(
                             scenario,
                             counter + 1,
                             state.persistence.options_profile.difficulty,
-                            sim.session.game_options().game_speed,
+                            sim.session().game_options().game_speed,
                             sim.save_campaign_carry_over(),
                             &mut crate::app::match_bootstrap::OrdinaryMatchSeedClock,
                         )))

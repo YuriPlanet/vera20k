@@ -66,8 +66,8 @@ fn runtime() -> SimRuntime {
 }
 
 fn entity(runtime: &mut SimRuntime, name: &str, category: EntityCategory) -> GameEntity {
-    let owner = runtime.simulation.interner.intern("OWNER");
-    let type_ref = runtime.simulation.interner.intern(name);
+    let owner = runtime.simulation.intern("OWNER");
+    let type_ref = runtime.simulation.intern(name);
     GameEntity::new_at_frame_zero_for_test(
         1,
         2,
@@ -87,7 +87,7 @@ fn entity(runtime: &mut SimRuntime, name: &str, category: EntityCategory) -> Gam
 fn set_live_level(runtime: &mut SimRuntime, coord: (u16, u16), level: u8) {
     runtime
         .simulation
-        .resolved_terrain
+        .resolved_terrain_mut_for_test()
         .as_mut()
         .unwrap()
         .cell_mut_for_test(coord.0, coord.1)
@@ -129,7 +129,7 @@ fn fixed_slot_alias_and_missing_cells_leave_the_shared_simulation_dummy_unchange
     let mut runtime = runtime();
     let mut tank = entity(&mut runtime, "TANK", EntityCategory::Unit);
     set_live_level(&mut runtime, (0, 2), 5);
-    let terrain = runtime.simulation.resolved_terrain.as_ref().unwrap();
+    let terrain = runtime.simulation.resolved_terrain().unwrap();
     let dummy = terrain.shared_cell_dummy();
     dummy.stamp_coord(91, -17);
     dummy.set_level_slope(-7, 0);
@@ -169,7 +169,7 @@ fn composite_split_uses_live_raw_bridge_terms_and_native_on_bridge() {
     assert!(!evaluate(&runtime, &tank));
     runtime
         .simulation
-        .resolved_terrain
+        .resolved_terrain_mut_for_test()
         .as_mut()
         .unwrap()
         .cell_mut_for_test(2, 2)
@@ -188,7 +188,7 @@ fn composite_split_uses_live_raw_bridge_terms_and_native_on_bridge() {
             // Synthetic grid base is -1: 5 - (-1) + 1 = native column tile 7.
             runtime
                 .simulation
-                .resolved_terrain
+                .resolved_terrain_mut_for_test()
                 .as_mut()
                 .unwrap()
                 .cell_mut_for_test(x, y)
@@ -202,7 +202,7 @@ fn composite_split_uses_live_raw_bridge_terms_and_native_on_bridge() {
         for &(x, y) in cells {
             runtime
                 .simulation
-                .resolved_terrain
+                .resolved_terrain_mut_for_test()
                 .as_mut()
                 .unwrap()
                 .cell_mut_for_test(x, y)
@@ -220,7 +220,7 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
     let mut tank = entity(&mut runtime, "TANK", EntityCategory::Unit);
     let mut factory = entity(&mut runtime, "FACTORY", EntityCategory::Structure);
     factory.set_stable_id_for_test(17);
-    runtime.simulation.entities_mut().insert(factory);
+    runtime.simulation.entities_mut_for_test().insert(factory);
     let evaluate =
         |rt: &SimRuntime, e: &GameEntity| unit_bridge_split_in_runtime(Some(rt), e, true);
     tank.radio_contacts.insert(17);
@@ -242,14 +242,14 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
     );
     runtime
         .simulation
-        .entities_mut()
+        .entities_mut_for_test()
         .get_mut(17)
         .unwrap()
         .set_category_for_test(EntityCategory::Unit);
     assert!(!evaluate(&runtime, &tank));
     runtime
         .simulation
-        .entities_mut()
+        .entities_mut_for_test()
         .get_mut(17)
         .unwrap()
         .set_category_for_test(EntityCategory::Structure);

@@ -377,7 +377,7 @@ impl SidebarProjectionState {
                     item.enabled = views
                         .iter()
                         .find(|sw| {
-                            sim.interner
+                            sim.interner()
                                 .resolve(sw.type_id)
                                 .eq_ignore_ascii_case(section)
                         })
@@ -385,9 +385,10 @@ impl SidebarProjectionState {
                 }
                 continue;
             }
-            let (Some(type_id), Some(object)) =
-                (sim.interner.get(&item.type_id), rules.object(&item.type_id))
-            else {
+            let (Some(type_id), Some(object)) = (
+                sim.interner().get(&item.type_id),
+                rules.object(&item.type_id),
+            ) else {
                 continue;
             };
             let tab = crate::ui::sidebar::SidebarTab::for_category(
@@ -447,7 +448,7 @@ impl SidebarProjectionState {
                     .flatten()
                     .any(|id| *id == CameoId::Object(*type_id))
                 && sim
-                    .production
+                    .production()
                     .factories()
                     .view(owner, link.category)
                     .is_some_and(|factory| factory.construction_order() == link.construction_order)
@@ -460,7 +461,7 @@ impl SidebarProjectionState {
             ProductionCategory::Aircraft,
             ProductionCategory::Ship,
         ] {
-            let Some(factory) = sim.production.factories().view(owner, category) else {
+            let Some(factory) = sim.production().factories().view(owner, category) else {
                 continue;
             };
             if let Some(object) = factory.object
@@ -492,7 +493,7 @@ impl SidebarProjectionState {
             .factory_links
             .get(&type_id)
             .filter(|link| link.owner == owner)?;
-        let factory = sim.production.factories().view(owner, link.category)?;
+        let factory = sim.production().factories().view(owner, link.category)?;
         (factory.construction_order() == link.construction_order).then_some(factory)
     }
 
@@ -615,7 +616,7 @@ impl SidebarProjectionState {
         if *local != owner {
             return;
         }
-        let Some(object) = sim.interner.object_type(type_id, rules) else {
+        let Some(object) = sim.interner().object_type(type_id, rules) else {
             return;
         };
         let category = crate::sim::production::category_for_object(object);
@@ -629,11 +630,11 @@ impl SidebarProjectionState {
         {
             return;
         }
-        let frame = sim.session.binary_frame() as i32;
+        let frame = sim.session().binary_frame() as i32;
         // The synchronized-command owner retains negotiated ahead timing.
         // Native A8B550 producer equivalence outside this current input
         // domain remains bounded by the pending-production evidence.
-        let max_ahead = sim.input_delay_ticks as i32;
+        let max_ahead = sim.input_delay_ticks() as i32;
         let linked = self.cameo_factory(sim, owner, type_id);
         match click.order {
             Some(CameoOrder::Suspend) if linked.is_none() => {
@@ -654,7 +655,7 @@ impl SidebarProjectionState {
                     ))
                 } else {
                     let busy = sim
-                        .production
+                        .production()
                         .factories()
                         .view(owner, category)
                         .is_some_and(|factory| {
@@ -667,8 +668,10 @@ impl SidebarProjectionState {
                     }
                     self.set_prediction_category(category, object.naval, true);
                     let cost = sim.cost_of(owner, object, rules);
-                    let available =
-                        crate::sim::production::credits_for_owner(sim, sim.interner.resolve(owner));
+                    let available = crate::sim::production::credits_for_owner(
+                        sim,
+                        sim.interner().resolve(owner),
+                    );
                     if available >= pending_production_affordability(cost, max_ahead)
                         && crate::sim::production::find_factory(
                             sim, rules, owner, object, true, false, false,
@@ -753,7 +756,7 @@ impl SidebarProjectionState {
             .collect();
         let strips = &mut self.cameos.as_mut().unwrap().1;
         for (id, stopped) in states {
-            strips.advance_request(id, sim.session.binary_frame() as i32, stopped);
+            strips.advance_request(id, sim.session().binary_frame() as i32, stopped);
         }
     }
 
@@ -916,14 +919,14 @@ pub(crate) fn cameo_candidates(
         if !candidates
             .iter()
             .any(|entry| entry.id == CameoId::Object(item.type_id))
-            && let Some(kind) = sim.interner.object_type(item.type_id, rules)
+            && let Some(kind) = sim.interner().object_type(item.type_id, rules)
             && let Some(entry) = object(item.type_id, true, sim.cost_of(owner, kind, rules))
         {
             candidates.push(entry);
         }
     }
     let mut supers: Vec<_> = supers.iter().collect();
-    supers.sort_by_key(|item| rules.super_weapon_index(sim.interner.resolve(item.type_id)));
+    supers.sort_by_key(|item| rules.super_weapon_index(sim.interner().resolve(item.type_id)));
     candidates.extend(
         supers
             .into_iter()
@@ -944,11 +947,11 @@ fn object_cameo(
 ) -> Option<Cameo> {
     use crate::rules::object_type::ObjectCategory;
     use crate::ui::sidebar::SidebarTab;
-    let object = rules.object(sim.interner.try_resolve(id)?)?;
+    let object = rules.object(sim.interner().try_resolve(id)?)?;
     let side = sim
-        .houses
+        .houses()
         .get(&owner)
-        .and_then(|house| rules.country_side_index(sim.interner.resolve(house.house_type_id())))
+        .and_then(|house| rules.country_side_index(sim.interner().resolve(house.house_type_id())))
         .map(|side| i32::from(side.0));
     let vehicle = matches!(
         object.category,
@@ -975,7 +978,7 @@ fn super_cameo(
     csf: Option<&crate::assets::csf_file::CsfFile>,
     id: InternedId,
 ) -> Option<Cameo> {
-    let kind = rules.super_weapon(sim.interner.try_resolve(id)?)?;
+    let kind = rules.super_weapon(sim.interner().try_resolve(id)?)?;
     Some(Cameo {
         id: CameoId::SuperWeapon(id),
         tab: crate::ui::sidebar::SidebarTab::Defense,
@@ -1009,7 +1012,7 @@ pub(crate) fn prepare_saved_order(
         return Err("saved sidebar has duplicate prediction categories".into());
     }
     let (owner, saved_strips, scroll_rows) = saved.into_parts();
-    if sim.session.current_house() != Some(owner) || !sim.houses.contains_key(&owner) {
+    if sim.session().current_house() != Some(owner) || !sim.houses().contains_key(&owner) {
         return Err("saved sidebar owner differs from the loaded current house".into());
     }
     let mut seen = std::collections::HashSet::new();
@@ -1049,7 +1052,7 @@ pub(crate) fn prepare_saved_order(
             }
             let item = match id {
                 CameoId::Object(type_id) => sim
-                    .interner
+                    .interner()
                     .try_resolve(type_id)
                     .and_then(|name| rules.object(name))
                     .and_then(|kind| {
@@ -1076,7 +1079,7 @@ pub(crate) fn prepare_saved_order(
     }
     let mut strips = CameoStrips::from_retained(strips, scroll_rows);
     strips.restore_flash(flash_deadlines, redraw_until);
-    strips.restore_requests(request_states, sim.session.binary_frame() as i32);
+    strips.restore_requests(request_states, sim.session().binary_frame() as i32);
     Ok(Some(PreparedSidebarOrder {
         owner,
         strips,
@@ -1113,12 +1116,13 @@ mod tests {
         sim.resolve_type_handles(&rules);
         let owner = sim.intern("Russians");
         let other_owner = sim.intern("Americans");
-        sim.houses
+        sim.houses_mut_for_test()
             .register(crate::sim::house_state::HouseState::new(
                 owner, 1, None, true, 50_000, 10,
             ));
-        sim.session.set_current_house_for_test(Some(owner));
-        let e2 = sim.interner.get("E2").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        let e2 = sim.interner().get("E2").unwrap();
         let mut projection = SidebarProjectionState::default();
         let cameo = Cameo {
             id: CameoId::Object(e2),

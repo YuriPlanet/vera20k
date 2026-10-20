@@ -1319,7 +1319,7 @@ fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
         visit_retail_high_bridge_stages(kind, |phase, scene| {
             let sim = scene.sim();
             let before = sim.state_hash();
-            let terrain = sim.resolved_terrain.as_ref().unwrap();
+            let terrain = sim.resolved_terrain().unwrap();
             let mut instances = Vec::new();
             build_bridge_shadow_instances_inner(
                 terrain,
@@ -1402,7 +1402,7 @@ fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
                 "flags":c.bridge_facts.raw_flags})
                 })
                 .collect();
-            let receipt = serde_json::json!({"scene":label,"phase":phase,"frame":sim.session.binary_frame(),
+            let receipt = serde_json::json!({"scene":label,"phase":phase,"frame":sim.session().binary_frame(),
             "state_hash":format!("{before:016x}"),"cells":cells,"instances":instances.len(),
             "instance_sha256":sha256_hex(bytemuck::cast_slice(&instances)),
             "changed_pixels":changed,"color_sha256":sha256_hex(&output[0]),

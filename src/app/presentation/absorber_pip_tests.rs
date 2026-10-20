@@ -11,9 +11,9 @@ fn frames(sim: &Simulation, rules: &RuleSet, reactor: u64, hover: Option<u64>) -
     let entity = sim.entities().get(reactor).unwrap();
     let before = (
         sim.state_hash(),
-        sim.main_rng.native_state_hex(),
-        sim.scenario_rng.native_state_hex(),
-        sim.mapgen_rng.native_state_hex(),
+        sim.main_rng().native_state_hex(),
+        sim.scenario_rng().native_state_hex(),
+        sim.mapgen_rng().native_state_hex(),
         entity
             .passenger_role
             .cargo()
@@ -27,9 +27,9 @@ fn frames(sim: &Simulation, rules: &RuleSet, reactor: u64, hover: Option<u64>) -
         before,
         (
             sim.state_hash(),
-            sim.main_rng.native_state_hex(),
-            sim.scenario_rng.native_state_hex(),
-            sim.mapgen_rng.native_state_hex(),
+            sim.main_rng().native_state_hex(),
+            sim.scenario_rng().native_state_hex(),
+            sim.mapgen_rng().native_state_hex(),
             entity
                 .passenger_role
                 .cargo()
@@ -111,16 +111,16 @@ fn stock_bio_reactor_pips_follow_boarding_cargo_head_departure_and_selection() {
     let mut sim = Simulation::with_seed(1);
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     for (name, human) in [(OWNER, true), ("Americans", false)] {
-        let owner = sim.interner.intern(name);
-        sim.houses
+        let owner = sim.intern(name);
+        sim.houses_mut_for_test()
             .register(crate::sim::house_state::HouseState::new(
                 owner, 0, None, human, 0, 10,
             ));
     }
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    let owner = sim.interner.get(OWNER).unwrap();
-    sim.fog.reveal_all_for_owner(owner);
+    let owner = sim.interner().get(OWNER).unwrap();
+    sim.fog_mut_for_test().reveal_all_for_owner(owner);
     let reactor = sim
         .spawn_object("YAPOWR", OWNER, 16, 16, 64, rules)
         .unwrap();
@@ -208,7 +208,7 @@ fn stock_bio_reactor_pips_follow_boarding_cargo_head_departure_and_selection() {
             .passengers()
             .iter()
             .map(|id| {
-                sim.interner
+                sim.interner()
                     .resolve(sim.entities().get(*id).unwrap().type_ref())
             })
             .collect();

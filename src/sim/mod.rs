@@ -57,6 +57,7 @@ pub mod telemetry;
 pub mod cheats;
 #[cfg(feature = "debug-tools")]
 pub mod debug_event_log;
+pub mod dirty_cells;
 pub mod entity_store;
 pub(crate) mod estimated_health;
 pub(crate) mod flashing;

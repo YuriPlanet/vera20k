@@ -228,7 +228,7 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
     };
     use crate::rules::ini_parser::IniFile;
     use crate::sim::combat::TargetKind;
-    use crate::sim::world::{CommandQueueRoute, FrameEffects, TickLane};
+    use crate::sim::world::{FrameEffects, TickLane};
 
     const FRAMES: u32 = 150;
 
@@ -295,7 +295,13 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
         let actor = sim.spawn_object("E1", "Local", 10, 10, 0, &rules).unwrap();
         let guard = sim.spawn_object("E1", "Local", 10, 12, 0, &rules).unwrap();
         let enemy = sim.spawn_object("E1", "Enemy", 18, 10, 0, &rules).unwrap();
-        sim.set_command_queue_route(CommandQueueRoute::Multiplayer);
+        // A LAN session takes the multiplayer Queue_AI route. As a whole
+        // network session it has admitted timing, and ShortGame is off so these
+        // building-less houses are not blown up before the first order.
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+        sim.session.install_network_timing(10);
+        sim.session.game_options_mut_for_test().short_game = false;
         (sim, rules, actor, guard, enemy)
     }
 

@@ -13,7 +13,7 @@ impl App {
             .map(|simulation| {
                 (
                     simulation.clone_scenario_rng(),
-                    simulation.session.start_header(),
+                    simulation.session().start_header(),
                 )
             });
         if let Some((gameplay_rng, start_header)) = gameplay_rng
@@ -32,7 +32,6 @@ impl App {
             // its retained Scenario mission counter resets to the ctor's 1.
             runtime
                 .simulation
-                .session
                 .reset_campaign_mission_counter_on_shell_exit();
         }
         Self::retire_running_scenario(state);
@@ -57,7 +56,7 @@ impl App {
             // it at686424. The runtime may remain retained, but Tag
             // destruction must see a stopped session.
             // Source: original gamemd.exe instructions, SHA2561cdd1180..84298c.
-            runtime.simulation.session.retire_started();
+            runtime.simulation.retire_scenario_started();
         }
         state.match_state.scenario_restart_requested = false;
         state.match_state.debug_pause = false;
@@ -102,7 +101,7 @@ impl App {
             .sim_runtime
             .as_ref()
             .map_or(state.persistence.options_profile.game_speed, |runtime| {
-                runtime.simulation.session.game_options().game_speed
+                runtime.simulation.session().game_options().game_speed
             });
         Some(campaign.restart(
             state.persistence.options_profile.difficulty,
@@ -179,7 +178,7 @@ impl App {
         };
         crate::app::input::commands::preferred_local_owner(state)
             .as_deref()
-            .and_then(|owner| sim.interner.get(owner))
+            .and_then(|owner| sim.interner().get(owner))
             .is_some_and(|owner| sim.ready_outcome_for_owner(owner).is_some())
     }
 
@@ -396,9 +395,9 @@ impl App {
             state.match_state.session.mode().is_nonzero(),
             state.match_state.match_presentation.modal_latch,
             sim.and_then(|sim| {
-                sim.session
+                sim.session()
                     .current_house()
-                    .and_then(|house| sim.houses.get(&house))
+                    .and_then(|house| sim.houses().get(&house))
             }),
         );
         if let Some(latch) = latch {
@@ -494,7 +493,7 @@ impl App {
                 .sim_runtime
                 .as_ref()
                 .map(|rt| &rt.simulation)
-                .and_then(|sim| sim.interner.get(owner))
+                .and_then(|sim| sim.interner().get(owner))
         });
         let local_outcome_exit_ready = Self::local_outcome_exit_ready(state);
         let executed_owner = state

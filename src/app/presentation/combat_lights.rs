@@ -592,7 +592,7 @@ mod tests {
             let impact = CombatLightRequest::Impact {
                 target_id: None,
                 damage: call["damage"].as_i64().unwrap() as i32,
-                warhead_ref: sim.interner.intern(call["warhead"].as_str().unwrap()),
+                warhead_ref: sim.intern(call["warhead"].as_str().unwrap()),
                 coord: ProjectileCoord::new(
                     call["arguments"][0].as_i64().unwrap() as i32,
                     call["arguments"][1].as_i64().unwrap() as i32,
@@ -605,7 +605,7 @@ mod tests {
                 materialize_combat_lights(
                     vec![impact],
                     Some(&rules),
-                    &sim.interner,
+                    sim.interner(),
                     2,
                     &mut detail_with_frame_rate(60),
                 )
@@ -631,7 +631,7 @@ mod tests {
             let request = CombatLightRequest::Impact {
                 target_id: None,
                 damage: input["damage"].as_i64().unwrap() as i32,
-                warhead_ref: sim.interner.intern("WH"),
+                warhead_ref: sim.intern("WH"),
                 coord: ProjectileCoord::new(0, 0, 0),
                 force_create: input["force"] != 0,
                 flags: input["flags"].as_u64().unwrap() as u32,
@@ -639,7 +639,7 @@ mod tests {
             let lights = materialize_combat_lights(
                 vec![request],
                 Some(&rules),
-                &sim.interner,
+                sim.interner(),
                 input["detail"].as_u64().unwrap() as u32,
                 &mut detail,
             );
@@ -670,7 +670,7 @@ mod tests {
         let request = CombatLightRequest::Impact {
             target_id: None,
             damage: input["damage"].as_i64().unwrap() as i32,
-            warhead_ref: sim.interner.intern("WH"),
+            warhead_ref: sim.intern("WH"),
             coord: ProjectileCoord::new(0, 0, 0),
             force_create: input["force"] != 0,
             flags: input["flags"].as_u64().unwrap() as u32,
@@ -679,7 +679,7 @@ mod tests {
             materialize_combat_lights(
                 vec![request],
                 Some(&rules),
-                &sim.interner,
+                sim.interner(),
                 input["detail"].as_u64().unwrap() as u32,
                 &mut detail,
             )

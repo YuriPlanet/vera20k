@@ -33,7 +33,7 @@ fn weapon_report_sounds(sim: &Simulation, events: &[SimFireEvent]) -> Vec<GameSo
                 coord.y.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16,
             );
             Some(GameSoundEvent::WeaponFired {
-                sound_id: sim.interner.resolve(report_id).to_string(),
+                sound_id: sim.interner().resolve(report_id).to_string(),
                 source: Some(SoundSource::new(screen, cell)),
             })
         })
@@ -44,7 +44,7 @@ pub(crate) fn build_weapon_wave_visuals(
     sim: &Simulation,
     observer: Option<crate::sim::intern::InternedId>,
 ) -> Vec<WeaponWaveVisual> {
-    sim.waves
+    sim.waves()
         .iter()
         .filter_map(|(_, wave)| {
             let polygon = wave.sonic_draw_polygon([0, 0])?;
@@ -82,9 +82,9 @@ fn weapon_wave_visible(
         return false;
     };
     wave.visible_through_fog(
-        sim.session.game_options().fog_of_war,
-        !sim.fog.is_cell_revealed(observer, sx, sy),
-        !sim.fog.is_cell_revealed(observer, tx, ty),
+        sim.session().game_options().fog_of_war,
+        !sim.fog().is_cell_revealed(observer, sx, sy),
+        !sim.fog().is_cell_revealed(observer, tx, ty),
     )
 }
 
@@ -98,7 +98,7 @@ pub(crate) fn build_magnetic_wave_draws(
 ) -> Vec<(u64, crate::render::wave_geometry::MagneticWaveDraw)> {
     use crate::render::wave_geometry::{MagneticClipPath, MagneticWaveDraw};
 
-    sim.waves
+    sim.waves()
         .iter()
         .filter_map(|(&id, wave)| {
             let geometry = wave.magnetic_draw_geometry(camera)?;
@@ -224,11 +224,14 @@ mod tests {
             let facing = fire_coord::building_direction_to(
                 &sim,
                 rules,
-                sim.substrate.entities.get(gun).unwrap(),
+                sim.entities().get(gun).unwrap(),
                 TargetKind::Entity(target),
             )
             .unwrap();
-            sim.substrate.entities.get_mut(gun).unwrap().body_facing = FacingClass::new(facing, 0);
+            sim.entities_mut_for_test()
+                .get_mut(gun)
+                .unwrap()
+                .body_facing = FacingClass::new(facing, 0);
             sim.assign_target_represented(
                 gun,
                 Some(TargetKind::Entity(target)),
@@ -238,12 +241,12 @@ mod tests {
             )
             .unwrap();
             for _ in 0..300 {
-                sim.fire_events.clear();
+                sim.fire_events_mut_for_test().clear();
                 let before: std::collections::BTreeSet<_> =
-                    sim.projectiles.iter().map(|(&id, _)| id).collect();
+                    sim.projectiles().iter().map(|(&id, _)| id).collect();
                 sim.advance_tick(&[], Some(rules), None, None, 67);
                 let Some(event) = sim
-                    .fire_events
+                    .fire_events()
                     .iter()
                     .find(|event| event.attacker_id == gun)
                 else {
@@ -251,22 +254,20 @@ mod tests {
                 };
                 let event = event.clone();
                 let shell = sim
-                    .projectiles
+                    .projectiles()
                     .iter()
                     .find(|(id, projectile)| projectile.source_id() == gun && !before.contains(id))
                     .unwrap_or_else(|| panic!(
                         "a real Grand Cannon shell: frame={} shot={event:?} live_bullets={:?} target_health={:?}",
-                        sim.session.binary_frame(),
-                        sim.projectiles.iter().collect::<Vec<_>>(),
-                        sim.substrate.entities.get(target).map(|entity| entity.health)
+                        sim.session().binary_frame(),
+                        sim.projectiles().iter().collect::<Vec<_>>(),
+                        sim.entities().get(target).map(|entity| entity.health)
                     ))
                     .1;
                 assert_eq!(shell.launch_origin(), event.fire_coord);
                 let flash_type = event.muzzle_anim.expect("stock weapon selects a flash");
                 let (flash_id, flash) = sim
-                    .substrate
-                    .anims
-                    .iter()
+                    .anims()
                     .find(|(_, anim)| anim.type_id() == flash_type)
                     .expect("the real muzzle AnimClass exists");
                 assert_eq!(
@@ -295,7 +296,7 @@ mod tests {
                     [GameSoundEvent::WeaponFired { sound_id, source }] => {
                         assert_eq!(
                             sound_id,
-                            sim.interner.resolve(event.report_sound_id.unwrap())
+                            sim.interner().resolve(event.report_sound_id.unwrap())
                         );
                         assert_eq!(*source, Some(expected_source));
                     }

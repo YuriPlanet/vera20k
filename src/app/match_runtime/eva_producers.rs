@@ -569,22 +569,25 @@ mod tests {
         let mut sim = Simulation::with_seed(0x4F93_E000);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.session.set_game_mode(
+        sim.session_mut_for_test().set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.game_options_mut_for_test().short_game = false;
+        sim.session_mut_for_test()
+            .game_options_mut_for_test()
+            .short_game = false;
         let local = sim.intern("YuriCountry");
         let enemy = sim.intern("Americans");
         for owner in [local, enemy] {
             let side = rules
-                .country_side_index(sim.interner.resolve(owner))
+                .country_side_index(sim.interner().resolve(owner))
                 .expect("the stock country has a Side")
                 .0;
             let mut house = HouseState::new(owner, side, Some(owner), true, 50_000, 10);
-            house.project_country_mults(&rules, &sim.interner);
-            sim.houses.register(house);
+            house.project_country_mults(&rules, sim.interner());
+            sim.houses_mut_for_test().register(house);
         }
-        sim.session.set_current_house_for_test(Some(local));
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         // A stock deployed Slave Miner packs up when its short scan finds
         // no ore (SlaveManager6B0062). Supply map-like ore east of the
@@ -596,15 +599,17 @@ mod tests {
             for rx in 23..=25 {
                 ore.place_overlay(rx, ry, ore_id, 11);
                 ore.recalculate_runtime_cell(
-                    sim.resolved_terrain.as_mut().expect("arena terrain"),
+                    sim.resolved_terrain_mut_for_test()
+                        .as_mut()
+                        .expect("arena terrain"),
                     &overlays,
                     (rx, ry),
                 );
             }
         }
-        sim.overlay_grid = Some(ore);
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
-        sim.fog.reveal_all_for_owner(local);
+        *sim.overlay_grid_mut_for_test() = Some(ore);
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+        sim.fog_mut_for_test().reveal_all_for_owner(local);
         for (kind, rx) in [("YACNST", 4), ("YAPOWR", 12)] {
             sim.spawn_object_at_height(kind, "YuriCountry", rx, 4, 0, 0, &rules)
                 .unwrap_or_else(|| panic!("healthy stock base prerequisite {kind}"));
@@ -695,7 +700,7 @@ mod tests {
             );
             let attack = CommandEnvelope::new(
                 enemy,
-                runtime.simulation.session.tick() + 1,
+                runtime.simulation.session().tick() + 1,
                 Command::Attack {
                     attacker_id: attacker,
                     target_id: target,
@@ -813,7 +818,7 @@ mod tests {
             }
             runtime.simulation.queue_command(CommandEnvelope::new(
                 enemy,
-                runtime.simulation.session.tick() + 1,
+                runtime.simulation.session().tick() + 1,
                 Command::Stop {
                     entity_id: attacker,
                 },

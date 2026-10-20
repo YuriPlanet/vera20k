@@ -36,8 +36,8 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
     });
     let owners = scenes.each_ref().map(|scene| {
         let sim = scene.sim();
-        let owner = sim.session.current_house().unwrap();
-        (owner, sim.interner.resolve(owner).to_owned())
+        let owner = sim.session().current_house().unwrap();
+        (owner, sim.interner().resolve(owner).to_owned())
     });
     let mut inputs = std::array::from_fn::<_, 2, _>(|_| {
         MatchInputState::new(HotkeyBindings::reload_from_ini_bytes(Some(
@@ -50,7 +50,7 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
             .entities()
             .values()
             .find(|entity| {
-                entity.owner() == *owner && sim.interner.resolve(entity.type_ref()) == "SMCV"
+                entity.owner() == *owner && sim.interner().resolve(entity.type_ref()) == "SMCV"
             })
             .unwrap()
             .stable_id();
@@ -58,7 +58,7 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
             scene.runtime.resources.rules.general.maximum_cheer_rate(),
             300
         );
-        assert!(!sim.local_player_defeated() && !sim.session.input_locked());
+        assert!(!sim.local_player_defeated() && !sim.session().input_locked());
         assert!(
             schedule_command_in_sim(sim, name, Command::DeployMcv { entity_id: mcv }).is_some()
         );
@@ -73,7 +73,7 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
                     .values()
                     .filter(|entity| {
                         entity.owner() == owners[index].0
-                            && sim.interner.resolve(entity.type_ref()) == "NACNST"
+                            && sim.interner().resolve(entity.type_ref()) == "NACNST"
                     })
                     .collect();
                 assert_eq!(
@@ -108,18 +108,18 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
                 .unwrap();
         }
         if scenes[0].sim().local_player_defeated() {
-            loss_frame = Some(scenes[0].sim().session.binary_frame());
+            loss_frame = Some(scenes[0].sim().session().binary_frame());
             break;
         }
     }
     let loss_frame = loss_frame.expect("ordinary last-yard sale must reach MPlayer_Defeated");
     assert!(!scenes[1].sim().local_player_defeated());
-    let local = &scenes[0].sim().houses[&owners[0].0];
+    let local = &scenes[0].sim().houses()[&owners[0].0];
     assert!(local.has_lost() && !local.outcome().unwrap().exit_ready);
     for (scene, input) in scenes.iter().zip(&inputs) {
-        assert_eq!(scene.sim().session.binary_frame(), loss_frame);
+        assert_eq!(scene.sim().session().binary_frame(), loss_frame);
         assert!(
-            !scene.sim().session.input_locked(),
+            !scene.sim().session().input_locked(),
             "offline loss does not cinematic-lock"
         );
         assert!(scene.sim().pending_command_snapshot().is_empty());

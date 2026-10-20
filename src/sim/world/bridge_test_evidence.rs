@@ -313,7 +313,7 @@ pub fn visit_starting_mtnk_concrete_attack(
                     ),
                     (Some(stages[phase]), data)
                 );
-                assert!(scene.sim().radar_terrain_dirty_cells.contains(&(x, 54)));
+                assert!(scene.sim().dirty_cells.radar().contains(&(x, 54)));
                 assert!(
                     !output.overlay_removals.contains(&(x, 54)),
                     "collapsed232 is retained empty art"

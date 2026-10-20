@@ -458,7 +458,7 @@ pub(crate) fn render_game(
         .as_ref()
         .map(|runtime| runtime.view().simulation());
     let segments = presentation.line_trails.composite(|id| {
-        sim.and_then(|sim| sim.projectiles.get(id))
+        sim.and_then(|sim| sim.projectiles().get(id))
             .map(|bullet| bullet.position())
     });
     let frame_rate = presentation.detail.borrow().frame_rate();

@@ -866,7 +866,7 @@ fn gsi_04_12_generated_prefix_uses_accepted_staging_once() {
     );
     assert_eq!(
         staged_sim
-            .session
+            .session()
             .mp_start_waypoints()
             .iter()
             .map(|(&index, &(rx, ry))| (index as u8, rx, ry))
@@ -1924,8 +1924,8 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
         &rules,
         &descriptor,
     );
-    let local = sim.interner.get("Player").unwrap();
-    let peer = sim.interner.get("Remote").unwrap();
+    let local = sim.interner().get("Player").unwrap();
+    let peer = sim.interner().get("Remote").unwrap();
     let mut session = MatchSession::default();
     session.enter_network(SessionMode::Lan, NetworkReturnContext::LanLobby);
     session.accept_network_setup(launch, true, Some(7)).unwrap();
@@ -1947,12 +1947,39 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
         2
     );
     let sim = result.scenario.simulation.as_ref().unwrap();
-    assert!(sim.houses[&peer].is_to_die());
-    assert!(!sim.houses[&local].is_to_die());
-    assert_eq!(sim.session.current_house(), Some(local));
+    assert!(sim.houses()[&peer].is_to_die());
+    assert!(!sim.houses()[&local].is_to_die());
+    assert_eq!(sim.session().current_house(), Some(local));
     assert!(apply_network_loading_disconnects(&mut session, &mut result, &[1]).is_empty());
 }
 
 #[cfg(target_os = "linux")]
 #[path = "campaign_miner_tests.rs"]
 mod campaign_miner;
+
+#[test]
+fn a_network_start_installs_its_mode_and_timing_into_the_scenario() {
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
+    let mut session = MatchSession::default();
+    session.enter_network(SessionMode::Lan, NetworkReturnContext::LanLobby);
+    session
+        .accept_network_setup(test_launch_session(LaunchCountry::America), true, Some(7))
+        .unwrap();
+    session.set_network_start_seed(77).unwrap();
+    session.prepare_network_timing(2, || 0).unwrap();
+    let startup = session.freeze_network_start(77).unwrap();
+    let crate::app::match_bootstrap::LoadingStartup::Network(accepted) = &startup else {
+        panic!("a frozen network start");
+    };
+    let mut sim = crate::sim::world::Simulation::new();
+    crate::app::loading::init::install_startup_session_mode(&mut sim, &startup);
+    assert_eq!(sim.session().game_mode(), SessionMode::Lan);
+    assert_eq!(
+        sim.session().network_max_ahead_frames(),
+        Some(accepted.max_ahead_frames())
+    );
+    assert_eq!(
+        sim.session().game_mode().command_queue_route(),
+        crate::sim::world::CommandQueueRoute::Multiplayer
+    );
+}

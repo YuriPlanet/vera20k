@@ -130,8 +130,8 @@ fn build_world(seed: u32, per_category: u16, structures: u16) -> Simulation {
             ..Default::default()
         },
     );
-    let width = sim.session.map_width();
-    let height = sim.session.map_height();
+    let width = sim.session().map_width();
+    let height = sim.session().map_height();
     let homes = [
         (10u16, 10u16),
         (width.saturating_sub(30), height.saturating_sub(30)),
@@ -146,17 +146,17 @@ fn build_world(seed: u32, per_category: u16, structures: u16) -> Simulation {
     };
 
     for (index, (owner_name, side)) in [("Americans", 0u8), ("Russians", 1u8)].iter().enumerate() {
-        let owner = sim.interner.intern(owner_name);
+        let owner = sim.intern(owner_name);
         let mut house = HouseState::new(owner, *side, None, index == 0, 10_000, 10);
         // Raw-inserted entities would otherwise resolve the match on tick 1.
         house.make_multiplay_passive();
-        sim.houses.register(house);
+        sim.register_house(house);
 
         let (hx, hy) = homes[index];
-        let type_ref = sim.interner.intern("GACNST");
-        let infantry_ref = sim.interner.intern("E1");
-        let vehicle_ref = sim.interner.intern("HARV");
-        let aircraft_ref = sim.interner.intern("MIG");
+        let type_ref = sim.intern("GACNST");
+        let infantry_ref = sim.intern("E1");
+        let vehicle_ref = sim.intern("HARV");
+        let aircraft_ref = sim.intern("MIG");
 
         for slot in 0..structures {
             sim.insert_synthetic_techno_for_diagnostics(
@@ -209,14 +209,14 @@ fn build_world(seed: u32, per_category: u16, structures: u16) -> Simulation {
 /// The synthetic entities are lifecycle-free diagnostic inserts: the movement
 /// system never touches them (they are not in the logic vector), so issuing
 /// real move commands does nothing — the startup probe proved that with
-/// 0/732 movers. This stroll therefore writes positions directly through
-/// `Position::put_location`, the same public setter the placement paths use.
+/// 0/732 movers. This stroll therefore places them through
+/// `Simulation::place_synthetic_for_diagnostics`, which moves only such inserts.
 /// It is demo animation, not simulation: the real engine moves entities
 /// through the locomotor and command path, and the dashboard renders whatever
 /// the sim says either way.
 fn stroll(sim: &mut Simulation, tick: u64, targets: &mut HashMap<u64, (f32, f32)>) {
-    let width = u32::from(sim.session.map_width());
-    let height = u32::from(sim.session.map_height());
+    let width = u32::from(sim.session().map_width());
+    let height = u32::from(sim.session().map_height());
     if width == 0 || height == 0 {
         return;
     }
@@ -235,15 +235,21 @@ fn stroll(sim: &mut Simulation, tick: u64, targets: &mut HashMap<u64, (f32, f32)
             (next_random() % height) as f32 + 0.5,
         )
     };
-    for entity in sim.entities_mut().values_mut() {
-        if entity.category() == EntityCategory::Structure {
-            continue;
-        }
-        let id = entity.stable_id();
+    let walkers: Vec<(u64, f32, f32)> = sim
+        .entities()
+        .values()
+        .filter(|entity| entity.category() != EntityCategory::Structure)
+        .map(|entity| {
+            let position = &entity.position;
+            (
+                entity.stable_id(),
+                f32::from(position.rx()) + position.sub_x().to_num::<f32>() / 256.0,
+                f32::from(position.ry()) + position.sub_y().to_num::<f32>() / 256.0,
+            )
+        })
+        .collect();
+    for (id, cur_x, cur_y) in walkers {
         let target = targets.entry(id).or_insert_with(&mut fresh_target);
-        let position = &mut entity.position;
-        let cur_x = f32::from(position.rx()) + position.sub_x().to_num::<f32>() / 256.0;
-        let cur_y = f32::from(position.ry()) + position.sub_y().to_num::<f32>() / 256.0;
         let (dx, dy) = (target.0 - cur_x, target.1 - cur_y);
         let distance = (dx * dx + dy * dy).sqrt();
         let (next_x, next_y) = if distance <= STROLL_STEP {
@@ -255,11 +261,14 @@ fn stroll(sim: &mut Simulation, tick: u64, targets: &mut HashMap<u64, (f32, f32)
                 cur_y + dy / distance * STROLL_STEP,
             )
         };
-        position.put_location(DriveCoord {
-            x: (next_x * 256.0) as i32,
-            y: (next_y * 256.0) as i32,
-            z: 0,
-        });
+        sim.place_synthetic_for_diagnostics(
+            id,
+            DriveCoord {
+                x: (next_x * 256.0) as i32,
+                y: (next_y * 256.0) as i32,
+                z: 0,
+            },
+        );
     }
 }
 

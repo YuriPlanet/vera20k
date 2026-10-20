@@ -2488,8 +2488,8 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     let normal = zones.map_for(MovementZone::Normal).expect("normal zone");
     assert_eq!(normal.zone_at(50, 50, MovementLayer::Ground), ZONE_INVALID);
     assert_ne!(normal.zone_at(85, 85, MovementLayer::Ground), ZONE_INVALID);
-    assert!(sim.radar_terrain_dirty_cells.is_empty());
-    assert_eq!(sim.radar_terrain_dirty_generation, 0);
+    assert!(sim.dirty_cells.radar().is_empty());
+    assert_eq!(sim.dirty_cells.radar_generation(), 0);
     assert_eq!(sim.playfield_revision, 1);
     assert_eq!(tick.state_hash, Some(sim.state_hash()));
 
@@ -2499,7 +2499,7 @@ fn trigger_action_40_normalizes_and_refreshes_authority_same_frame() {
     assert_eq!(sim.playfield_revision, 2);
     assert!(sim.change_visible_map_area([4, 40, 54, 12], None));
     assert_eq!(sim.playfield_revision, 3);
-    assert!(sim.radar_terrain_dirty_cells.is_empty());
+    assert!(sim.dirty_cells.radar().is_empty());
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "all06umd.map", 0);
     let restored = GameSnapshot::load(&bytes)

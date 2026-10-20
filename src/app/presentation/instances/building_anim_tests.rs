@@ -78,10 +78,10 @@ fn fixture(building_name: &str, damaged: bool) -> (Simulation, RuleSet, u64, Spr
         60,
         EntityCategory::Structure,
     );
-    building.set_type_ref_for_test(sim.interner.intern(building_name));
-    building.set_owner_for_test(sim.interner.intern("A"));
+    building.set_type_ref_for_test(sim.intern(building_name));
+    building.set_owner_for_test(sim.intern("A"));
     building.health.set_for_test(if damaged { 40 } else { 100 });
-    sim.substrate.entities.insert(building);
+    sim.entities_mut_for_test().insert(building);
     let slots: &[u8] = if building_name == "NATBNK" {
         &[10, 11]
     } else {
@@ -110,7 +110,7 @@ fn emit(
         atlas,
         rules.art(),
         Some(rules),
-        sim.interner.resolve(building.type_ref()),
+        sim.interner().resolve(building.type_ref()),
         HouseColorIndex(1),
         [1.0; 3],
         crate::render::palette_light::PaletteLight::default(),
@@ -176,7 +176,7 @@ fn bunker_slot_emitter_interleaves_front_and_back_around_the_unit() {
                 ObjectTexture::ShpPage(10)
             ]
         );
-        let hidden = sim.substrate.anims.get_mut(front).unwrap();
+        let hidden = sim.anims_mut_for_test().get_mut(front).unwrap();
         hidden.draw_runtime_mut_for_test().hidden = true;
         let remaining = emit(&sim, &rules, building, &atlas, &order);
         assert_eq!(
@@ -242,7 +242,7 @@ fn bunker_migration_keeps_active_anim_offsets_start_and_independent_membership()
         assert_eq!(before[0].pieces[0].instance.source_palette, 1);
         // The retained Anim coordinate is the owner. A changed body coordinate
         // cannot silently recalculate its child's location in presentation.
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .get_mut(building)
             .unwrap()
             .position

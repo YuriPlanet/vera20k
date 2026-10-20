@@ -460,7 +460,7 @@ fn cinematic_focus_matches_native_frame_gates_projection_cleanup_and_restored_st
                         1.0,
                     );
                     let mut sim = crate::sim::world::Simulation::new();
-                    sim.session.set_binary_frame_for_test(frame);
+                    sim.session_mut_for_test().set_binary_frame_for_test(frame);
                     let bytes = GameSnapshot::save_validated_with_presentation(
                         &sim,
                         0,
@@ -476,7 +476,7 @@ fn cinematic_focus_matches_native_frame_gates_projection_cleanup_and_restored_st
                     let snapshot = GameSnapshot::load(&bytes).unwrap();
                     let restored = snapshot.tactical_view().unwrap();
                     super::validate_saved_tactical_view(restored).unwrap();
-                    assert_eq!(snapshot.sim.session.binary_frame(), frame);
+                    assert_eq!(snapshot.sim.session().binary_frame(), frame);
                     if let Some(rect) = step.get("local_size") {
                         let mut geometry = sequence.clone();
                         geometry.local_size = serde_json::from_value(rect.clone()).unwrap();

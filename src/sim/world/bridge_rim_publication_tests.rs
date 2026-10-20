@@ -142,7 +142,7 @@ fn bridge_rim_stock_damage_events_match_original_body_perpendicular_and_cleanup(
                             .unwrap()
                             .level,
                     );
-            sim.radar_terrain_dirty_cells.clear();
+            sim.dirty_cells.clear_radar_for_test();
             let collapsed = apply_bridge_damage_events_with_overlay_registry(
                 &mut sim,
                 &rules,
@@ -179,9 +179,11 @@ fn bridge_rim_stock_damage_events_match_original_body_perpendicular_and_cleanup(
                 }
             }
             assert_eq!(
-                sim.radar_terrain_dirty_cells, radar,
+                sim.dirty_cells.radar(),
+                radar,
                 "{} hit{} radar",
-                case["name"], hit["input"]
+                case["name"],
+                hit["input"]
             );
             for change in hit["changes"].as_array().unwrap() {
                 let coord: (u16, u16) =

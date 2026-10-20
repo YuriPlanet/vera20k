@@ -31,7 +31,7 @@ pub(super) fn build(
         return (out, highlights);
     };
     let sim = &rt.simulation;
-    let Some(viewer) = sim.session.current_house() else {
+    let Some(viewer) = sim.session().current_house() else {
         return (out, highlights);
     };
     let graph = sim.planning_draw_graph(
@@ -42,7 +42,7 @@ pub(super) fn build(
     );
     let phase = ((crate::app::input::tooltips::now_ms(state) as i32).wrapping_neg() >> 5) & 15;
     let color = |owner, bright| {
-        let name = sim.interner.resolve(owner);
+        let name = sim.interner().resolve(owner);
         let index = state
             .match_state
             .match_presentation

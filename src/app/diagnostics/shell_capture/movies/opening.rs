@@ -118,7 +118,7 @@ impl OpeningCapture {
             .as_ref()
             .context("campaign opening has no installed runtime")?
             .simulation;
-        let locked = sim.session.input_locked();
+        let locked = sim.session().input_locked();
         let view = camera::saved_tactical_view(state);
         Ok(self.saw_lock
             && match self.target {
@@ -136,7 +136,7 @@ impl OpeningCapture {
                 OpeningTarget::LoadUnlockedWhileLocked => {
                     self.load_while_locked.is_some() && self.steps_after_load >= STEPS_AFTER_LOAD
                 }
-                OpeningTarget::AlliedTick(tick) => sim.session.tick() == tick,
+                OpeningTarget::AlliedTick(tick) => sim.session().tick() == tick,
             })
     }
 
@@ -390,7 +390,7 @@ fn installed_frame(state: &AppState) -> Result<(u64, u32)> {
         .as_ref()
         .context("load left no installed runtime")?
         .simulation
-        .session;
+        .session();
     Ok((session.tick(), session.binary_frame()))
 }
 
@@ -407,16 +407,15 @@ fn opening_observation(state: &AppState) -> Result<Value> {
         .context("opening observation has no runtime")?
         .simulation;
     let viewer = crate::app::input::commands::preferred_local_owner_name(state)
-        .and_then(|name| sim.interner.get(&name));
+        .and_then(|name| sim.interner().get(&name));
     // Read the same CellClass shroud owner as world drawing. Diagnostic misses
     // retain a separate Dummy, so observing a capture never changes the sim.
     let cells = sim
-        .resolved_terrain
-        .as_ref()
+        .resolved_terrain()
         .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
     let cell_shrouded = |cell| {
         viewer.zip(cells.as_ref()).map(|(viewer, cells)| {
-            crate::sim::vision::cell_is_shrouded(&sim.fog, cells, viewer, cell)
+            crate::sim::vision::cell_is_shrouded(sim.fog(), cells, viewer, cell)
         })
     };
     let mut active_types = std::collections::BTreeMap::<String, usize>::new();
@@ -428,7 +427,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
         .iter_sorted()
         .filter(|(_, entity)| entity.is_active())
     {
-        let name = sim.interner.resolve(entity.type_ref()).to_owned();
+        let name = sim.interner().resolve(entity.type_ref()).to_owned();
         *active_types.entry(name.clone()).or_default() += 1;
         if entity.category() == crate::map::entities::EntityCategory::Aircraft {
             aircraft.push(json!({
@@ -447,7 +446,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
             // frames; this must never substitute a receiver or recalculate power.
             building_receivers.push(json!({
                 "id": entity.stable_id(), "type": name,
-                "owner": sim.interner.resolve(entity.owner()),
+                "owner": sim.interner().resolve(entity.owner()),
                 "cell": [entity.position.rx(), entity.position.ry()],
                 "health": entity.health.current(),
                 "estimated_health": entity.estimated_health.get(),
@@ -459,11 +458,11 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                         let id = (*id)?;
                         let anim = sim.anim(id)?;
                         Some(json!({"slot": slot, "id": id,
-                            "type": sim.interner.resolve(anim.type_id()),
+                            "type": sim.interner().resolve(anim.type_id()),
                             "frame": anim.runtime().current_frame,
                             "paused": anim.runtime().paused}))
                     }).collect::<Vec<_>>(),
-                "house_power": sim.power_states.get(&entity.owner()).map(|power| json!({
+                "house_power": sim.power_states().get(&entity.owner()).map(|power| json!({
                     "output": power.total_output(), "drain": power.total_drain(),
                     "low_power": power.is_low_power(),
                 })),
@@ -483,19 +482,19 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                 crate::util::lepton::lepton_to_cell_packed(anim.world_coord().x) as u16,
                 crate::util::lepton::lepton_to_cell_packed(anim.world_coord().y) as u16,
             );
-            json!({"id": id, "type": sim.interner.resolve(anim.type_id()),
+            json!({"id": id, "type": sim.interner().resolve(anim.type_id()),
             "coord": [anim.world_coord().x, anim.world_coord().y, anim.world_coord().z],
             "z_adjust": anim.z_adjust(), "cell": cell,
             "cell_shrouded": cell_shrouded(cell)})
         })
         .collect::<Vec<_>>();
     let teams = sim
-        .team_script_vm
+        .team_script_vm()
         .teams_in_order()
         .map(|team| {
             json!({
-                "id": team.id(), "type": team.team_type_id().map(|id| sim.interner.resolve(id)),
-                "script": sim.interner.resolve(team.script_id()), "cursor": team.cursor(),
+                "id": team.id(), "type": team.team_type_id().map(|id| sim.interner().resolve(id)),
+                "script": sim.interner().resolve(team.script_id()), "cursor": team.cursor(),
                 "members": team.members().collect::<Vec<_>>(),
             })
         })
@@ -504,18 +503,18 @@ fn opening_observation(state: &AppState) -> Result<Value> {
         .map(|message| json!({"text": message.text, "rgb": message.rgb, "deadline_ms": message.deadline_ms}))
         .collect::<Vec<_>>();
     Ok(json!({
-        "tick": sim.session.tick(), "binary_frame": sim.session.binary_frame(),
-        "input_locked": sim.session.input_locked(),
+        "tick": sim.session().tick(), "binary_frame": sim.session().binary_frame(),
+        "input_locked": sim.session().input_locked(),
         "cursor_depth": state.match_state.input.cursor_visibility.level(),
         "camera": camera::saved_tactical_view(state),
         "camera_origin": [state.match_state.input.camera_x, state.match_state.input.camera_y],
-        "fog_viewer": viewer.map(|viewer| sim.interner.resolve(viewer)),
+        "fog_viewer": viewer.map(|viewer| sim.interner().resolve(viewer)),
         "active_types": active_types, "flashing": flashing, "no_effects_anims": markers,
         "building_receivers": building_receivers, "aircraft": aircraft,
         "super_timers": state.rules().map(|rules|
             crate::sim::superweapon::super_timer_views(sim, rules).into_iter().map(|view|
-                json!({"owner": sim.interner.resolve(view.owner()),
-                    "type": sim.interner.resolve(view.sw_type()),
+                json!({"owner": sim.interner().resolve(view.owner()),
+                    "type": sim.interner().resolve(view.sw_type()),
                     "remaining": view.frames_left(), "held": view.on_hold(),
                     "recharge": view.recharge_frames(), "place": view.place()}))
                 .collect::<Vec<_>>()).unwrap_or_default(),

@@ -29,24 +29,24 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
     assert!(!fixture.rules.object("E2").unwrap().dont_score);
     // The empty overlay authority is supplied just as in the parent's saved
     // HOLD arena. Loading reconstructs it through the shared map owner.
-    fixture.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
-        fixture.sim.session.map_width(),
-        fixture.sim.session.map_height(),
+    *fixture.sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(
+        fixture.sim.session().map_width(),
+        fixture.sim.session().map_height(),
     ));
     fixture
         .sim
-        .session
+        .session_mut_for_test()
         .set_map_name_for_test("PRODUCED-LIMIT.MAP".into());
     let owner = fixture.owner;
-    let e2 = fixture.sim.interner.get("E2").unwrap();
+    let e2 = fixture.sim.interner().get("E2").unwrap();
     for _ in 0..8 {
         let frame = advance_commands(&mut fixture, &[]);
         consume_frame_outputs(&mut fixture, &frame, Some(owner));
     }
     let initial_entities = fixture.sim.entities().len();
-    let initial_credits = fixture.sim.houses[&owner].economy().credits();
-    let initial_spent = fixture.sim.houses[&owner].economy().spent_credits();
-    let initial_built = fixture.sim.houses[&owner].stats().built();
+    let initial_credits = fixture.sim.houses()[&owner].economy().credits();
+    let initial_spent = fixture.sim.houses()[&owner].economy().spent_credits();
+    let initial_built = fixture.sim.houses()[&owner].stats().built();
     let cost = fixture
         .sim
         .cost_of(owner, fixture.rules.object("E2").unwrap(), &fixture.rules);
@@ -66,7 +66,7 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
     consume_frame_outputs(&mut fixture, &frame, Some(owner));
     let held_id = fixture
         .sim
-        .production
+        .production()
         .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap()
@@ -91,15 +91,15 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
     }
     assert!(delivered, "the first real paid E2 reaches its normal exit");
     assert_eq!(
-        fixture.sim.houses[&owner].stats().built(),
+        fixture.sim.houses()[&owner].stats().built(),
         initial_built + 1
     );
     assert_eq!(
-        fixture.sim.houses[&owner].economy().credits(),
+        fixture.sim.houses()[&owner].economy().credits(),
         initial_credits - cost
     );
     assert_eq!(
-        fixture.sim.houses[&owner].economy().spent_credits(),
+        fixture.sim.houses()[&owner].economy().spent_credits(),
         initial_spent + cost
     );
     // Human delivery records after this frame's House rung. Record4FB804
@@ -113,7 +113,7 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
 
     for loaded in [false, true] {
         if loaded {
-            fixture.sim.session.publish_started();
+            fixture.sim.publish_scenario_started();
             roundtrip_fixture_save(&mut fixture, "paid-e2-produced-limit");
         }
         let sidebar = refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
@@ -137,7 +137,7 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
         // passes through the existing command queue and real House receiver;
         // no app-side BuildLimit check or direct factory mutation is supplied.
         assert!(fixture.sim.pending_command_snapshot().is_empty());
-        let issue_tick = fixture.sim.session.tick();
+        let issue_tick = fixture.sim.session().tick();
         assert_eq!(
             crate::app::input::commands::schedule_command_in_sim(
                 &mut fixture.sim,
@@ -170,15 +170,15 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
             let delivered = fixture.sim.entities().get(held_id).unwrap();
             assert!(delivered.is_alive() && !delivered.in_limbo());
             assert_eq!(
-                fixture.sim.houses[&owner].stats().built(),
+                fixture.sim.houses()[&owner].stats().built(),
                 initial_built + 1
             );
             assert_eq!(
-                fixture.sim.houses[&owner].economy().credits(),
+                fixture.sim.houses()[&owner].economy().credits(),
                 initial_credits - cost
             );
             assert_eq!(
-                fixture.sim.houses[&owner].economy().spent_credits(),
+                fixture.sim.houses()[&owner].economy().spent_credits(),
                 initial_spent + cost
             );
         }

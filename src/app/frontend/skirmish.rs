@@ -350,66 +350,74 @@ mod tests {
     #[test]
     fn gsi_04_18_shroud_no_reveals_only_the_local_human_plane_without_sight_or_rng() {
         let mut sim = Simulation::with_seed(0x418);
-        sim.fog.set_width_for_test(8);
-        sim.fog.set_height_for_test(6);
-        sim.session.game_options_mut_for_test().shroud = false;
-        let local = sim.interner.intern("Player");
-        let ai = sim.interner.intern("Computer");
-        sim.houses
+        sim.fog_mut_for_test().set_width_for_test(8);
+        sim.fog_mut_for_test().set_height_for_test(6);
+        sim.session_mut_for_test()
+            .game_options_mut_for_test()
+            .shroud = false;
+        let local = sim.intern("Player");
+        let ai = sim.intern("Computer");
+        sim.houses_mut_for_test()
             .register(HouseState::new(local, 0, None, true, 10_000, 10));
-        sim.houses
+        sim.houses_mut_for_test()
             .register(HouseState::new(ai, 1, None, false, 10_000, 10));
-        let plane = crate::sim::vision::OwnerVisibility::new(sim.fog.width(), sim.fog.height());
-        sim.fog.by_owner_mut_for_test().insert(ai, plane);
-        sim.session.set_current_house_for_test(Some(local));
-        let scenario_rng_before = sim.scenario_rng.state();
-        let main_rng_before = sim.main_rng.state();
+        let plane = crate::sim::vision::OwnerVisibility::new(sim.fog().width(), sim.fog().height());
+        sim.fog_mut_for_test()
+            .by_owner_mut_for_test()
+            .insert(ai, plane);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
+        let scenario_rng_before = sim.scenario_rng().state();
+        let main_rng_before = sim.main_rng().state();
 
         apply_launch_shroud_option(&mut sim, crate::sim::world::UninitContext::new(None, None));
 
         for (rx, ry) in [(0, 0), (7, 0), (0, 5), (7, 5), (3, 2)] {
-            assert!(sim.fog.is_cell_revealed(local, rx, ry));
-            assert!(!sim.fog.is_cell_visible(local, rx, ry));
-            assert!(!sim.fog.is_cell_revealed(ai, rx, ry));
+            assert!(sim.fog().is_cell_revealed(local, rx, ry));
+            assert!(!sim.fog().is_cell_visible(local, rx, ry));
+            assert!(!sim.fog().is_cell_revealed(ai, rx, ry));
         }
-        assert!(!sim.houses[&local].map_is_clear());
-        assert!(!sim.houses[&ai].map_is_clear());
-        assert_eq!(sim.scenario_rng.state(), scenario_rng_before);
-        assert_eq!(sim.main_rng.state(), main_rng_before);
+        assert!(!sim.houses()[&local].map_is_clear());
+        assert!(!sim.houses()[&ai].map_is_clear());
+        assert_eq!(sim.scenario_rng().state(), scenario_rng_before);
+        assert_eq!(sim.main_rng().state(), main_rng_before);
     }
 
     #[test]
     fn gsi_04_18_shroud_yes_and_a_missing_current_house_stay_unexplored() {
         let mut shrouded = Simulation::with_seed(0x418);
-        shrouded.fog.set_width_for_test(8);
-        shrouded.fog.set_height_for_test(6);
-        let human = shrouded.interner.intern("Player");
+        shrouded.fog_mut_for_test().set_width_for_test(8);
+        shrouded.fog_mut_for_test().set_height_for_test(6);
+        let human = shrouded.intern("Player");
         shrouded
-            .houses
+            .houses_mut_for_test()
             .register(HouseState::new(human, 0, None, true, 10_000, 10));
         let context = crate::sim::world::UninitContext::new(None, None);
         apply_launch_shroud_option(&mut shrouded, context);
-        assert!(!shrouded.fog.is_cell_revealed(human, 7, 5));
+        assert!(!shrouded.fog().is_cell_revealed(human, 7, 5));
 
         // RevealEntireMap(NULL) reveals to PlayerPtr alone.
-        shrouded.session.game_options_mut_for_test().shroud = false;
+        shrouded
+            .session_mut_for_test()
+            .game_options_mut_for_test()
+            .shroud = false;
         apply_launch_shroud_option(&mut shrouded, context);
-        assert!(!shrouded.fog.is_cell_revealed(human, 7, 5));
-        assert!(!shrouded.fog.whole_map_revealed_for_owner(human));
+        assert!(!shrouded.fog().is_cell_revealed(human, 7, 5));
+        assert!(!shrouded.fog().whole_map_revealed_for_owner(human));
     }
 
     #[test]
     fn gsi_04_18_explicit_launch_applies_shroud_no_with_bases_off() {
         let mut sim = Simulation::with_seed(0x418);
         // The map's Size 64x64 diamond spans rx and ry 1..=127.
-        sim.fog.set_width_for_test(128);
-        sim.fog.set_height_for_test(128);
+        sim.fog_mut_for_test().set_width_for_test(128);
+        sim.fog_mut_for_test().set_height_for_test(128);
         let mut session = test_session();
         session.options.shroud = false;
         session.options.bases = false;
         session.options.unit_count = 0;
         let terrain = test_terrain(128, 128);
-        sim.resolved_terrain = Some(terrain.clone());
+        *sim.resolved_terrain_mut_for_test() = Some(terrain.clone());
         let starts = test_launch_starts();
         let map = test_map_with_starts(&starts);
 
@@ -423,21 +431,21 @@ mod tests {
         );
 
         assert_eq!(result.spawned_mcvs, 0);
-        let local = sim.interner.get("Player").expect("local house");
-        let ai = sim.interner.get("Computer1").expect("AI house");
+        let local = sim.interner().get("Player").expect("local house");
+        let ai = sim.interner().get("Computer1").expect("AI house");
         // The diamond's four corners and centre.
         for (rx, ry) in [(1, 64), (64, 1), (127, 64), (64, 127), (64, 64)] {
-            assert!(sim.fog.is_cell_revealed(local, rx, ry));
-            assert!(!sim.fog.is_cell_visible(local, rx, ry));
-            assert!(!sim.fog.is_cell_revealed(ai, rx, ry));
+            assert!(sim.fog().is_cell_revealed(local, rx, ry));
+            assert!(!sim.fog().is_cell_visible(local, rx, ry));
+            assert!(!sim.fog().is_cell_revealed(ai, rx, ry));
         }
         for (rx, ry) in [(0, 0), (127, 0), (0, 127), (127, 127)] {
             assert!(
-                !sim.fog.is_cell_revealed(local, rx, ry),
+                !sim.fog().is_cell_revealed(local, rx, ry),
                 "the CellIterator never walks storage outside the Size diamond"
             );
         }
-        assert!(!sim.houses[&local].map_is_clear());
+        assert!(!sim.houses()[&local].map_is_clear());
     }
 
     fn test_battle_mode() -> SkirmishLaunchMode {
@@ -626,8 +634,8 @@ mod tests {
         map.header.local_width = 76;
         map.header.local_height = 48;
         sim.install_playfield_from_map_header(&map.header);
-        sim.session.set_map_width_for_test(138);
-        sim.session.set_map_height_for_test(138);
+        sim.session_mut_for_test().set_map_width_for_test(138);
+        sim.session_mut_for_test().set_map_height_for_test(138);
     }
 
     fn test_launch_starts() -> [Waypoint; 4] {
@@ -684,7 +692,7 @@ mod tests {
 
     fn entity_position_for_owner(sim: &Simulation, owner: &str) -> Option<(u16, u16)> {
         sim.entities().values().find_map(|entity| {
-            (sim.interner.resolve(entity.owner()) == owner)
+            (sim.interner().resolve(entity.owner()) == owner)
                 .then_some((entity.position.rx(), entity.position.ry()))
         })
     }
@@ -1002,8 +1010,8 @@ mod tests {
         let gather = |frame| {
             let mut sim = Simulation::new();
             sim.install_playfield_from_map_header(&map.header);
-            sim.session.set_binary_frame_for_test(frame);
-            sim.scenario_rng = SimRng::new(9);
+            sim.session_mut_for_test().set_binary_frame_for_test(frame);
+            *sim.scenario_rng_mut_for_test() = SimRng::new(9);
             sim.gather_native_start_positions(&map.waypoints, 2, &terrain, bounds)[1]
         };
 
@@ -1119,9 +1127,9 @@ mod tests {
                 ..Default::default()
             });
         // This synthetic fixture omits the production native Rules prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids_mut_for_test() =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
-        let mut expected_rng = sim.scenario_rng.clone();
+        let mut expected_rng = sim.scenario_rng().clone();
         let _ = expected_rng.next_range_u32_inclusive(0, 0xffff);
 
         apply_pre_fill_scenario_prefix_launch_session(
@@ -1135,15 +1143,15 @@ mod tests {
         );
 
         assert_eq!(
-            crate::sim::house_state::house_state_for_owner(&sim.houses, "Player", &sim.interner)
+            crate::sim::house_state::house_state_for_owner(sim.houses(), "Player", sim.interner())
                 .and_then(|house| house.base_center()),
             Some((authored.rx, authored.ry))
         );
         assert_eq!(
             crate::sim::house_state::house_state_for_owner(
-                &sim.houses,
+                sim.houses(),
                 "Computer1",
-                &sim.interner,
+                sim.interner(),
             )
             .and_then(|house| house.base_center()),
             Some((
@@ -1152,7 +1160,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            sim.scenario_rng.logical_state(),
+            sim.scenario_rng().logical_state(),
             expected_rng.logical_state()
         );
     }
@@ -1171,15 +1179,15 @@ mod tests {
         );
 
         let order: Vec<_> = sim
-            .houses
+            .houses()
             .order()
             .iter()
-            .map(|id| sim.interner.resolve(*id))
+            .map(|id| sim.interner().resolve(*id))
             .collect();
         assert_eq!(order, ["Player", "Computer1", "Neutral", "Special"]);
-        assert_eq!(sim.houses.len(), 4);
+        assert_eq!(sim.houses().len(), 4);
         let current_iq = |owner: &str| {
-            crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
+            crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
                 .map(|house| house.current_iq())
         };
         assert_eq!(current_iq("Player"), Some(0));
@@ -1211,13 +1219,16 @@ mod tests {
         );
 
         for owner in ["Player", "Computer1", "Neutral", "Special"] {
-            let id = sim.interner.get(owner).expect("launch house");
-            let mut types: Vec<&str> = sim.super_weapons.get(&id).map_or_else(Vec::new, |supers| {
-                supers
-                    .keys()
-                    .map(|&type_id| sim.interner.resolve(type_id))
-                    .collect()
-            });
+            let id = sim.interner().get(owner).expect("launch house");
+            let mut types: Vec<&str> =
+                sim.super_weapons()
+                    .get(&id)
+                    .map_or_else(Vec::new, |supers| {
+                        supers
+                            .keys()
+                            .map(|&type_id| sim.interner().resolve(type_id))
+                            .collect()
+                    });
             types.sort_unstable();
             assert_eq!(types, ["NukeSpecial", "ParaDropSpecial"], "{owner}");
         }
@@ -1288,12 +1299,12 @@ mod tests {
 
         assert_eq!(spawned, 1);
         let computer = sim
-            .interner
+            .interner()
             .get("Computer1")
             .expect("pre-created first AI house");
-        assert_eq!(sim.houses[&computer].tracking().buildings(), 1);
+        assert_eq!(sim.houses()[&computer].tracking().buildings(), 1);
         assert_eq!(
-            sim.substrate.base_reservations.raw_mask(None, 28, 38),
+            sim.base_reservations().raw_mask(None, 28, 38),
             2,
             "Reveal writes the participant's house-index bit without a repair pass"
         );
@@ -1320,7 +1331,7 @@ mod tests {
             });
         }
         let mut sim = Simulation::new();
-        sim.session.set_game_options_for_test(
+        sim.session_mut_for_test().set_game_options_for_test(
             session
                 .options
                 .to_game_options(session.opponents.len() as i32),
@@ -1330,26 +1341,26 @@ mod tests {
         populate_launch_houses(&mut sim, &normalized_launch_slots(&session), &rules);
         populate_special_houses(&mut sim, &HouseRoster::default(), &rules);
 
-        let passive_ai = sim.interner.get("Computer2").expect("passive AI");
-        sim.houses
+        let passive_ai = sim.interner().get("Computer2").expect("passive AI");
+        sim.houses_mut_for_test()
             .get_mut(&passive_ai)
             .expect("passive AI house")
             .set_multiplay_passive_for_test(true);
         for owner in ["Neutral", "Special"] {
-            let owner = sim.interner.get(owner).expect("special house");
-            sim.houses
+            let owner = sim.interner().get(owner).expect("special house");
+            sim.houses_mut_for_test()
                 .get_mut(&owner)
                 .expect("special HouseState")
                 .set_multiplay_passive_for_test(true);
         }
-        let observer = sim.interner.intern("Observer");
-        sim.houses
+        let observer = sim.intern("Observer");
+        sim.houses_mut_for_test()
             .register(HouseState::new(observer, 0, None, false, 10_000, 10));
 
         apply_skirmish_ai_opening_credits(&mut sim, &rules);
 
         let credits = |owner: &str| {
-            crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
+            crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
                 .map(|house| house.economy().credits())
         };
         assert_eq!(credits("Player"), Some(10_000));
@@ -1375,15 +1386,15 @@ mod tests {
         let mut session = test_session();
         session.opponents[0].difficulty = AiDifficulty::Hard;
         let mut sim = Simulation::new();
-        sim.session.set_game_options_for_test(
+        sim.session_mut_for_test().set_game_options_for_test(
             session
                 .options
                 .to_game_options(session.opponents.len() as i32),
         );
         let mut rules = test_standard_launch_rules();
         populate_launch_houses(&mut sim, &normalized_launch_slots(&session), &rules);
-        let ai = sim.interner.get("Computer1").expect("AI house");
-        sim.houses
+        let ai = sim.interner().get("Computer1").expect("AI house");
+        sim.houses_mut_for_test()
             .get_mut(&ai)
             .expect("AI house")
             .economy_mut_for_test()
@@ -1391,12 +1402,12 @@ mod tests {
 
         rules.general.multiplayer_ai_cm = Vec::new();
         apply_skirmish_ai_opening_credits(&mut sim, &rules);
-        assert_eq!(sim.houses[&ai].economy().credits(), 12_345);
+        assert_eq!(sim.houses()[&ai].economy().credits(), 12_345);
 
         // 7 * 0.01 * 12345 = 864.15... -> 864 under chop.
         rules.general.multiplayer_ai_cm = vec![7, 0, 0];
         apply_skirmish_ai_opening_credits(&mut sim, &rules);
-        assert_eq!(sim.houses[&ai].economy().credits(), 12_345 + 864);
+        assert_eq!(sim.houses()[&ai].economy().credits(), 12_345 + 864);
     }
 
     #[test]
@@ -1530,7 +1541,7 @@ mod tests {
     #[test]
     fn gsi_04_16_standard_ai_explicit_start_reserves_before_auto_human() {
         let mut sim = Simulation::new();
-        sim.scenario_rng = SimRng::new(8);
+        *sim.scenario_rng_mut_for_test() = SimRng::new(8);
         let mut session = test_session();
         session.local_slot_mut().start_position = LaunchStartPosition::Auto;
         session.opponents[0].start_position = LaunchStartPosition::Position(0);
@@ -1541,7 +1552,7 @@ mod tests {
         let map = test_map_with_starts(starts);
         let terrain = test_terrain(64, 64);
         let rules = test_standard_launch_rules();
-        let mut expected_rng = sim.scenario_rng.clone();
+        let mut expected_rng = sim.scenario_rng().clone();
         // The full explicit table is already occupied before the House pass.
         // The Auto human therefore selects farthest with no draw, and the AI
         // later honors its explicit entry. Only the selected-mode tail draw
@@ -1560,33 +1571,33 @@ mod tests {
         assert_eq!(result.active_slots, 2);
         assert_eq!(result.spawned_mcvs, 0);
         assert_eq!(
-            crate::sim::house_state::house_state_for_owner(&sim.houses, "Player", &sim.interner)
+            crate::sim::house_state::house_state_for_owner(sim.houses(), "Player", sim.interner())
                 .and_then(|house| house.base_center()),
             Some((30, 10)),
             "the Auto human takes the first farthest free tie, not the AI reservation"
         );
         assert_eq!(
             crate::sim::house_state::house_state_for_owner(
-                &sim.houses,
+                sim.houses(),
                 "Computer1",
-                &sim.interner,
+                sim.interner(),
             )
             .and_then(|house| house.base_center()),
             Some((10, 10)),
             "standard Battle honors the AI's preassigned table entry"
         );
         let table_owner = |start_idx| {
-            sim.session
+            sim.session()
                 .start_slot_houses()
                 .get(&start_idx)
-                .map(|owner| sim.interner.resolve(*owner))
+                .map(|owner| sim.interner().resolve(*owner))
         };
         assert_eq!(table_owner(0), Some("Computer1"));
         assert_eq!(table_owner(1), Some("Player"));
         assert_eq!(table_owner(2), None);
-        assert_eq!(sim.session.start_slot_houses().len(), 2);
+        assert_eq!(sim.session().start_slot_houses().len(), 2);
         assert_eq!(
-            sim.scenario_rng.logical_state(),
+            sim.scenario_rng().logical_state(),
             expected_rng.logical_state()
         );
     }
@@ -1643,7 +1654,7 @@ mod tests {
         };
         let mut sim = bootstrap_rng.into_simulation(&descriptor);
         // This synthetic fixture omits the production native Rules prefix.
-        sim.native_unique_ids =
+        *sim.native_unique_ids_mut_for_test() =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
         let mut expected_rng = SimRng::new(u64::from(launch_seed));
         for _ in 0..8 {
@@ -1651,7 +1662,7 @@ mod tests {
                 .next_range_u32_inclusive(HOUSE_CONSTRUCTOR_TIMER_MIN, HOUSE_CONSTRUCTOR_TIMER_MAX);
         }
         assert_eq!(
-            sim.scenario_rng.logical_state(),
+            sim.scenario_rng().logical_state(),
             expected_rng.logical_state(),
             "one human, one AI, Neutral, and Special burn twice before loading"
         );
@@ -1667,10 +1678,10 @@ mod tests {
         );
         assert_eq!(result.active_slots, 2);
         let table_owner = |start_idx| {
-            sim.session
+            sim.session()
                 .start_slot_houses()
                 .get(&start_idx)
-                .map(|owner| sim.interner.resolve(*owner))
+                .map(|owner| sim.interner().resolve(*owner))
         };
         for assignment in &loading_assignments {
             let expected_owner = match assignment.participant {
@@ -1687,14 +1698,14 @@ mod tests {
         }
         assert_eq!(table_owner(0), Some("Computer1"));
         assert_eq!(table_owner(3), Some("Player"));
-        assert_eq!(sim.session.start_slot_houses().len(), 2);
+        assert_eq!(sim.session().start_slot_houses().len(), 2);
 
         // Auto local with an explicit AI reservation uses the farthest selector
         // without an assignment draw. Applying the stored plan must not replay
         // constructor or assignment RNG; only the starting-force tail remains.
         let _ = expected_rng.next_range_u32_inclusive(0, 0xffff);
         assert_eq!(
-            sim.scenario_rng.logical_state(),
+            sim.scenario_rng().logical_state(),
             expected_rng.logical_state()
         );
     }
@@ -1909,7 +1920,7 @@ mod tests {
         let starts = test_launch_starts();
         let map = test_map_with_starts(&starts);
         let rules = test_standard_launch_rules();
-        let mut expected_scenario = sim.scenario_rng.clone();
+        let mut expected_scenario = sim.scenario_rng().clone();
         let _ = expected_scenario.next_range_u32_inclusive(0, 0xffff);
 
         let result = apply_explicit_skirmish_launch_session(
@@ -1958,7 +1969,7 @@ mod tests {
             entity.veterancy.rank() == 200 && entity.veterancy.raw().bits() == 0x4000_0000
         }));
         assert!(sim.entities().values().all(|entity| {
-            let expected = if sim.interner.resolve(entity.owner()) == "Player" {
+            let expected = if sim.interner().resolve(entity.owner()) == "Player" {
                 MissionType::Guard
             } else {
                 MissionType::AreaGuard
@@ -1989,11 +2000,11 @@ mod tests {
 
         assert_eq!(result.spawned_mcvs, 2);
         assert_eq!(
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
             Some(PlayfieldBounds::from_map_header(&map.header)),
             "direct pre-funnel launch must install normalized MapClass fields"
         );
-        assert_eq!(sim.session.game_options().unit_count, 0);
+        assert_eq!(sim.session().game_options().unit_count, 0);
         assert_eq!(sim.entities().len(), 2);
     }
 
@@ -2029,7 +2040,7 @@ mod tests {
         );
         sim.spawn_object("AMCV", "Neutral", 100, 75, STARTING_MCV_FACING, &rules)
             .expect("authored start blocker");
-        let mut expected_rng = sim.scenario_rng.clone();
+        let mut expected_rng = sim.scenario_rng().clone();
         // TechnoClass::TechnoClass @ 0x006F2B90 consumes its raw Scenario
         // word at 0x006F3254 before Try_Unlimbo chooses a fallback spoke.
         let _ = expected_rng.next_u32();
@@ -2059,13 +2070,13 @@ mod tests {
             "the valid southwest spoke stays outside the old LocalSize box instead of clamping to (77,51)"
         );
         assert_eq!(
-            crate::sim::house_state::house_state_for_owner(&sim.houses, "Player", &sim.interner)
+            crate::sim::house_state::house_state_for_owner(sim.houses(), "Player", sim.interner())
                 .and_then(|house| house.base_center()),
             Some((100, 75)),
             "fallback placement must not rewrite the assigned base center"
         );
         assert_eq!(
-            sim.scenario_rng.logical_state(),
+            sim.scenario_rng().logical_state(),
             expected_rng.logical_state()
         );
     }
@@ -2112,19 +2123,20 @@ mod tests {
     fn skirmish_start_unit_blocked_placement_stops_after_twenty_failures() {
         let mut sim = Simulation::new();
         let session = test_session();
-        sim.session
+        sim.session_mut_for_test()
             .set_game_options_for_test(session.options.to_game_options(0));
         let all_slots = normalized_launch_slots(&session);
         let slots = &all_slots[..1];
         let rules = test_starting_unit_rules();
         populate_launch_houses(&mut sim, slots, &rules);
-        crate::sim::house_state::house_state_for_owner_mut(
-            &mut sim.houses,
-            &slots[0].owner_name,
-            &sim.interner,
-        )
-        .expect("launch house")
-        .set_base_center_for_test(Some((32, 32)));
+        let owner = sim
+            .interner()
+            .get(&slots[0].owner_name)
+            .expect("launch owner");
+        sim.houses_mut_for_test()
+            .get_mut(&owner)
+            .expect("launch house")
+            .set_base_center_for_test(Some((32, 32)));
 
         let mut terrain = test_terrain(64, 64);
         for ry in 0..terrain.height() {
@@ -2136,7 +2148,7 @@ mod tests {
             }
         }
         let bounds = NativeStartBounds::from_session(&sim, &terrain);
-        let mut expected_rng = sim.scenario_rng.clone();
+        let mut expected_rng = sim.scenario_rng().clone();
         assert_eq!(STARTING_EXTRA_UNIT_MAX_PLACEMENT_FAILURES, 20);
         for _ in 0..20 {
             // The only eligible vehicle has a one-entry pool. RandomRanged(0,0)
@@ -2194,12 +2206,12 @@ mod tests {
         let player_units = sim
             .entities()
             .values()
-            .filter(|entity| sim.interner.resolve(entity.owner()) == "Player")
+            .filter(|entity| sim.interner().resolve(entity.owner()) == "Player")
             .count();
         let ai_units = sim
             .entities()
             .values()
-            .filter(|entity| sim.interner.resolve(entity.owner()) == "Computer1")
+            .filter(|entity| sim.interner().resolve(entity.owner()) == "Computer1")
             .count();
         assert_eq!(player_units, 5);
         assert_eq!(ai_units, 4);
@@ -2209,7 +2221,7 @@ mod tests {
         // Player spends 3xMTNK + E1 = 600 (remainder < 0, nothing credited);
         // Computer1 has no infantry, stops at 3xHTNK = 300 and is credited 34.
         let credits = |owner: &str| {
-            crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
+            crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
                 .map(|house| house.economy().credits())
         };
         assert_eq!(credits("Player"), Some(10_000));
@@ -2251,7 +2263,7 @@ mod tests {
         assert_eq!(result.spawned_mcvs, 2);
         assert_eq!(sim.entities().len(), 8);
         let credits = |owner: &str| {
-            crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
+            crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
                 .map(|house| house.economy().credits())
         };
         assert_eq!(credits("Player"), Some(10_000));
@@ -2286,7 +2298,7 @@ mod tests {
         apply_skirmish_ai_opening_credits(&mut sim, &rules);
 
         let credits = |owner: &str| {
-            crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner)
+            crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
                 .map(|house| house.economy().credits())
         };
         assert_eq!(credits("Player"), Some(10_000));
@@ -2323,7 +2335,7 @@ mod tests {
                 ..ai_template.clone()
             })
             .collect();
-        let mut expected_rng = sim.scenario_rng.clone();
+        let mut expected_rng = sim.scenario_rng().clone();
         // MultiplayerGameMode__Create_Starting_Base_Unit @ 0x005D7030
         // constructs all eight MCVs, and TechnoClass::TechnoClass @ 0x006F2B90
         // consumes each raw Scenario word at 0x006F3254 before exact unlimbo.
@@ -2349,7 +2361,7 @@ mod tests {
             .values()
             .map(|entity| {
                 (
-                    sim.interner.resolve(entity.owner()).to_string(),
+                    sim.interner().resolve(entity.owner()).to_string(),
                     (entity.position.rx(), entity.position.ry()),
                 )
             })
@@ -2372,14 +2384,14 @@ mod tests {
         );
         for (owner, expected_cell) in &expected_cells {
             assert_eq!(
-                crate::sim::house_state::house_state_for_owner(&sim.houses, owner, &sim.interner,)
+                crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner(),)
                     .and_then(|house| house.base_center()),
                 Some(*expected_cell),
                 "{owner} must retain its authored base center"
             );
         }
         assert_eq!(
-            sim.scenario_rng.logical_state(),
+            sim.scenario_rng().logical_state(),
             expected_rng.logical_state(),
             "exact placement consumes constructor words plus the final synchronization draw, with no fallback draws"
         );
@@ -2427,9 +2439,10 @@ mod tests {
             session.options.bases = true;
             session.options.unit_count = 0;
             let mut sim = Simulation::new();
-            sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
-                row["initial_rng_hex"].as_str().unwrap(),
-            );
+            *sim.scenario_rng_mut_for_test() =
+                crate::sim::rng::SimRng::from_native_state_hex_for_test(
+                    row["initial_rng_hex"].as_str().unwrap(),
+                );
             let terrain = test_terrain(64, 64);
             let map = test_map_with_starts(&test_launch_starts());
             let result = apply_explicit_skirmish_launch_session(
@@ -2444,7 +2457,7 @@ mod tests {
             assert!(sim.entities().is_empty());
             assert_eq!(result.local_owner.as_deref(), Some("Player"));
             assert_eq!(
-                sim.scenario_rng.native_state_hex(),
+                sim.scenario_rng().native_state_hex(),
                 row["force_tail_rng_hex"].as_str().unwrap()
             );
         }
