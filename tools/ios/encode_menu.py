@@ -1,4 +1,4 @@
-"""Losslessly package the existing branded MP4 as streamed PNG/XOR frames.
+"""Losslessly package the approved branded menu video as PNG/XOR frames.
 
 Requires ffmpeg, Pillow and numpy. This only converts the playback format: no
 cropping, retiming, resizing or visual editing is performed. Every restored RGBA

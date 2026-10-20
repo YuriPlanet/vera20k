@@ -155,7 +155,16 @@ impl StartupSplashPresentation {
             .resize_exact(width, height, image::imageops::FilterType::Lanczos3)
             .into_rgba8();
             let mut rgba = image.into_raw();
-            paint_startup_text(&mut rgba, width as usize, height as usize, csf, font);
+            // Keep the approved crest clear; the lower-left area sits above
+            // the two existing legal lines and away from the corner wordmark.
+            paint_startup_text(
+                &mut rgba,
+                width as usize,
+                height as usize,
+                csf,
+                font,
+                [10, height as i32 - 62],
+            );
             rgba
         };
         let texture = batch.create_texture(gpu, &rgba, width, height);
@@ -331,7 +340,14 @@ fn compose_startup_splash(
         );
     }
 
-    paint_startup_text(&mut canvas, client_width, client_height, csf, font);
+    paint_startup_text(
+        &mut canvas,
+        client_width,
+        client_height,
+        csf,
+        font,
+        [10, 10],
+    );
     Ok(canvas)
 }
 
@@ -342,6 +358,7 @@ fn paint_startup_text(
     client_height: usize,
     csf: Option<&CsfFile>,
     font: &FntFile,
+    loading_origin: [i32; 2],
 ) {
     let copyright = csf_text(csf, COPYRIGHT_KEY, COPYRIGHT_FALLBACK);
     let brand = csf_text(csf, BRAND_KEY, BRAND_FALLBACK);
@@ -370,7 +387,15 @@ fn paint_startup_text(
         client_width as i32 - font.text_width(&brand) as i32 - 10,
         second_bottom_y,
     );
-    draw_text(canvas, client_width, client_height, font, &loading, 10, 10);
+    draw_text(
+        canvas,
+        client_width,
+        client_height,
+        font,
+        &loading,
+        loading_origin[0],
+        loading_origin[1],
+    );
     draw_text(
         canvas,
         client_width,

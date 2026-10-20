@@ -207,9 +207,12 @@ Medium sans-serif fallback, matching WERHD's main 500-weight web font stack.
 The shared antialiased atlas retains the existing GAME.FNT widths, line height,
 spacing and wrapping. The font and its license are in `art/fonts`.
 
-The startup image and branded menu loop reuse the verified online WERHD assets.
-Their sources, hashes and lossless frame conversion are documented in
-`art/branding`. Country-specific loading screens and other full-screen movies
+The startup image uses the approved yellow milk-frog artwork with the original
+Yuri low-angle composition and silver 王二火大 crest. The menu preserves the
+original Yuri movie with that crest overlaid. Their sources, hashes and lossless
+frame conversion are documented in `art/branding`. The startup loading label sits
+at the lower left above the legal notices, clear of both logos.
+Country-specific loading screens and other full-screen movies
 keep their original sources. Desktop and retail captures retain the bitmap font
 and original artwork paths.
 

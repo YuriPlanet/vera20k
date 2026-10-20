@@ -1,5 +1,5 @@
 //! The menu loop's presentation source. Retail/capture keeps the original
-//! Bink surface; interactive iOS uses the site's branded menu movie, losslessly
+//! Bink surface; interactive iOS uses the approved branded menu movie, losslessly
 //! stored as indexed PNG keyframes and XOR deltas. This is deliberately not a
 //! source for the campaign/fullscreen movie player.
 
