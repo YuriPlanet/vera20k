@@ -17,6 +17,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::mission::MissionType;
@@ -129,16 +130,16 @@ fn produce_cash_fires(timer: CdTimer, frame: u32) -> bool {
 
 /// [`Economy::add_credits`](crate::sim::economy::Economy::add_credits) on
 /// `owner`'s wallet (`HouseClass::Add_Credits @ 0x004F9950`).
-pub fn add_credits(sim: &mut Simulation, owner: InternedId, amount: i32) {
-    if let Some(house) = sim.houses.get_mut(&owner) {
+pub fn add_credits(houses: &mut Houses, owner: InternedId, amount: i32) {
+    if let Some(house) = houses.get_mut(&owner) {
         house.economy_mut().add_credits(amount);
     }
 }
 
 /// [`Economy::spend_money`](crate::sim::economy::Economy::spend_money) on
 /// `owner`'s wallet (`HouseClass::Spend_Money @ 0x004F9790`).
-pub(crate) fn spend_money(sim: &mut Simulation, owner: InternedId, amount: i32) {
-    if let Some(house) = sim.houses.get_mut(&owner) {
+pub(crate) fn spend_money(houses: &mut Houses, owner: InternedId, amount: i32) {
+    if let Some(house) = houses.get_mut(&owner) {
         house.economy_mut().spend_money(amount);
     }
 }
@@ -191,7 +192,7 @@ pub(crate) fn produce_cash_on_owner_change(
     let startup = obj.produce_cash_startup;
     let delay = obj.produce_cash_delay;
     let frame = sim.session.binary_frame();
-    add_credits(sim, new_owner, startup);
+    add_credits(&mut sim.houses, new_owner, startup);
     if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
         entity.produce_cash.arm(frame, delay);
     }
@@ -256,9 +257,9 @@ pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
         return;
     }
     if amount > 0 {
-        add_credits(sim, owner, amount);
+        add_credits(&mut sim.houses, owner, amount);
     } else {
-        spend_money(sim, owner, amount.wrapping_neg());
+        spend_money(&mut sim.houses, owner, amount.wrapping_neg());
     }
 }
 
@@ -509,8 +510,8 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
             if available < amount {
                 amount = available;
             }
-            spend_money(sim, victim_owner, amount);
-            add_credits(sim, drainer_owner, amount);
+            spend_money(&mut sim.houses, victim_owner, amount);
+            add_credits(&mut sim.houses, drainer_owner, amount);
         }
     }
 
@@ -893,6 +894,7 @@ mod tests {
             (false, -1, 5, true),
         ] {
             sim.power_states
+                .map_mut_for_test()
                 .entry(owner)
                 .or_default()
                 .start_blackout(0, if outage { 1000 } else { 0 });

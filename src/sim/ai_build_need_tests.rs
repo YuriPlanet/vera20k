@@ -267,12 +267,13 @@ fn another_houses_refinery_building_up_first_holds_the_need() {
             .register(HouseState::new(name, 0, Some(country), false, 0, 10));
         let other = |sim: &mut Simulation| {
             let id = spawn(sim, &rules, "REFN", "Other", (30, 30));
-            sim.mission_assign_exact(
-                id,
-                MissionId::from_known(MissionType::Construction),
-                sim.session.binary_frame(),
-            )
-            .unwrap();
+            sim.substrate
+                .mission_assign_exact(
+                    id,
+                    MissionId::from_known(MissionType::Construction),
+                    sim.session.binary_frame(),
+                )
+                .unwrap();
         };
         if first {
             other(&mut sim);

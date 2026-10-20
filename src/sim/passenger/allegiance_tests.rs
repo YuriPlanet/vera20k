@@ -159,7 +159,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
         .set_for_test(integer(&input["current_hp"]));
     sim.set_building_anim_slot(id, 3, false, false, 0, &rules)
         .unwrap();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     (sim, rules, id, houses)
 }
 
@@ -399,7 +399,7 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
     let old_anim = sim
         .set_building_anim_slot(id, 3, false, false, 0, &rules)
         .unwrap();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
 
     let building = sim.substrate.entities.get(id).unwrap();

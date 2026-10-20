@@ -54,6 +54,29 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
         automatic: bool,
     ) -> bool {
+        self.fire_super_weapon_selected(
+            rules,
+            owner,
+            sw_type_id,
+            cell,
+            overlay_registry,
+            frame_effects,
+            automatic,
+            None,
+        )
+    }
+
+    pub(crate) fn fire_super_weapon_selected(
+        &mut self,
+        rules: &RuleSet,
+        owner: InternedId,
+        sw_type_id: InternedId,
+        cell: (u16, u16),
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+        automatic: bool,
+        selection: Option<super::PaidSuperWeaponSelection>,
+    ) -> bool {
         #[cfg(any(test, feature = "test-support"))]
         super::ai_fire::observe(super::ai_fire::AiFireEvent::Fire(sw_type_id, cell));
         let Some(sw) = rules.super_weapon(self.interner.resolve(sw_type_id)) else {
@@ -61,6 +84,25 @@ impl Simulation {
         };
         if super_instance(self, owner, sw_type_id).is_none() {
             return false;
+        }
+        // Burn a well-formed explicit source request's ID even if admission
+        // later refuses (e.g. funds changed while queued). Otherwise an old
+        // cancel/final for that refused request could match a future retry.
+        // This is sequence metadata only: no wallet, charge or pair is touched.
+        let requested_source = selection.filter(|_| sw.pre_click && !sw.post_click);
+        if let Some(request) = requested_source {
+            let Some(next) = self.next_paid_super_weapon_selection(rules, owner, sw_type_id) else {
+                return false;
+            };
+            if request.source != next.source
+                || request.destination != next.destination
+                || request.sequence < next.sequence
+            {
+                return false;
+            }
+            super_instance(self, owner, sw_type_id)
+                .expect("retained source")
+                .paid_sequence = request.sequence;
         }
         // Optional extension preflight precedes paired-Super writes, effects,
         // defense alerts and charge consumption. Stock-only commands retain
@@ -80,25 +122,67 @@ impl Simulation {
         }
         let paired = sw
             .post_click
-            .then(|| pre_dependent(self, rules, sw))
-            .flatten();
-        // Paid two-stage powers need an authoritative, saved one-use selection
-        // transaction. Native readiness alone is not such a token: PreClick
-        // becomes ready again on its next House update. Keep those optional
-        // configurations inert, including a free destination of a paid source.
-        if !super::money::configuration_supported(sw)
-            || paired.is_some_and(|(_, source)| source.money_amount != 0)
+            .then(|| super::pre_dependent(rules, sw))
+            .flatten()
+            .and_then(|(name, pre)| Some((self.interner.get(name)?, pre)));
+        let paid_source = super::two_stage::destination_for_source(self, rules, sw_type_id, sw);
+        let paid_final = paired.filter(|_| super::paid_pair_source(rules, sw).is_some());
+        if paid_source.is_none()
+            && paid_final.is_none()
+            && !super::money::configuration_supported(sw)
         {
             return false;
         }
+        if let Some((source, source_sw)) = paid_final {
+            let Some(ticket) = selection else {
+                return false;
+            };
+            if ticket.source != source
+                || ticket.destination != sw_type_id
+                || self.paid_super_weapon_selection(owner) != Some(ticket)
+                || !source_sw.pre_click
+                || source_sw.post_click
+            {
+                return false;
+            }
+            if !super::two_stage::source_available(self, rules, owner, source, source_sw) {
+                self.cancel_paid_super_weapon_selection(rules, owner, ticket);
+                return false;
+            }
+        } else if selection.is_some() && paid_source.is_none() {
+            return false;
+        }
+        let source_ticket = if paid_source.is_some() {
+            if !super::two_stage::source_available(self, rules, owner, sw_type_id, sw) {
+                return false;
+            }
+            let ticket = requested_source
+                .or_else(|| self.next_paid_super_weapon_selection(rules, owner, sw_type_id));
+            let Some(ticket) = ticket else {
+                return false;
+            };
+            Some(ticket)
+        } else {
+            None
+        };
+        // PostClick takes SOURCE settings (Ares SWTypeExt::Launch), even when
+        // the destination has a different fee or grant. No second wallet exists.
+        let payment = paid_final.unwrap_or((sw_type_id, sw));
+        let guarded = paid_source.is_some() || paid_final.is_some() || sw.money_amount != 0;
         // Explicit extension only: all admission precedes paired-Super writes.
         // Stock zero-cost Fire_SW retains its native refused-click tail.
-        if sw.money_amount != 0
-            && (!super::money::valid_target(self, sw, cell)
-                || !click_fire_admission(self, owner, sw_type_id, sw)
-                || !super::money::admit(self, owner, sw_type_id, sw))
+        if guarded
+            && (!(if paid_source.is_some() || paid_final.is_some() {
+                super::targeting::on_map(self, cell)
+            } else {
+                super::money::valid_target(self, sw, cell)
+            }) || !click_fire_admission(self, owner, sw_type_id, sw)
+                || !super::money::admit(self, owner, payment.0, payment.1))
         {
             return false;
+        }
+        if paid_source.is_some() {
+            self.retire_paid_selections(rules, owner);
         }
         if let Some((pre_type, _)) = paired {
             let Some(pre) = super_instance(self, owner, pre_type) else {
@@ -118,8 +202,28 @@ impl Simulation {
             cell,
             overlay_registry,
             frame_effects,
+            if paid_source.is_some() {
+                None
+            } else {
+                Some(payment)
+            },
+            paid_source.is_some(),
         );
+        if !called_launch && guarded {
+            return false;
+        }
+        if let Some(ticket) = source_ticket {
+            let instance = super_instance(self, owner, sw_type_id).expect("retained source");
+            instance.paid_sequence = ticket.sequence;
+            instance.paid_selection = Some(ticket);
+        }
         if let Some((pre_type, pre_sw)) = paired {
+            if paid_final.is_some() {
+                let frame = self.session.binary_frame();
+                let source = super_instance(self, owner, pre_type).expect("retained paired source");
+                source.paid_selection = None;
+                source.finish_click_fire(pre_sw, frame);
+            }
             // `0x004FAEA6..0x004FAEC1`.
             super_instance(self, owner, pre_type)
                 .expect("retained paired Super")
@@ -129,6 +233,9 @@ impl Simulation {
             super_instance(self, owner, pre_type)
                 .expect("retained paired Super")
                 .stop_preclick(pre_sw, frame);
+        }
+        if called_launch && paid_source.is_none() && paid_final.is_none() {
+            self.retire_paid_selections(rules, owner);
         }
         // `0x004FAEC6..0x004FAEF2`: every house, last to first.
         let houses: Vec<InternedId> = self.houses.order().iter().rev().copied().collect();
@@ -157,6 +264,8 @@ fn click_fire(
     cell: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
+    payment: Option<(InternedId, &SuperWeaponType)>,
+    selecting_paid_source: bool,
 ) -> bool {
     // Paid launches passed this same owner before the outer transaction writes.
     if sw.money_amount == 0 && !click_fire_admission(sim, owner, sw_type_id, sw) {
@@ -167,7 +276,10 @@ fn click_fire(
     {
         return false;
     }
-    if sw.money_amount != 0 && !super::money::transact(sim, owner, sw_type_id, sw) {
+    if let Some((money_type, money_sw)) = payment
+        && money_sw.money_amount != 0
+        && !super::money::transact(sim, owner, money_type, money_sw)
+    {
         return false;
     }
     launch(
@@ -187,12 +299,13 @@ fn click_fire(
         sim.release_super_anim(owner, sw_type_id);
     }
     let frame = sim.session.binary_frame();
-    if let Some(instance) = sim
-        .super_weapons
-        .get_mut(&owner)
-        .and_then(|weapons| weapons.get_mut(&sw_type_id))
-    {
-        instance.finish_click_fire(sw, frame);
+    if let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type_id) {
+        if selecting_paid_source {
+            // Selection neither consumes a one-time grant nor starts recharge.
+            instance.is_ready = false;
+        } else {
+            instance.finish_click_fire(sw, frame);
+        }
     }
     true
 }
@@ -216,12 +329,12 @@ fn click_fire_admission(
     }
     if sw.kind == SuperWeaponKind::LightningStorm && super::lightning_storm::has_deferment(sim) {
         sim.sound_events
-            .push(SimSoundEvent::LightningStormRefused { owner });
+            .emit(SimSoundEvent::LightningStormRefused { owner });
         return false;
     }
     if sw.kind == SuperWeaponKind::PsychicDominator && super::psychic_dominator::active(sim) {
         sim.sound_events
-            .push(SimSoundEvent::PsychicDominatorRefused { owner });
+            .emit(SimSoundEvent::PsychicDominatorRefused { owner });
         return false;
     }
     true
@@ -356,21 +469,7 @@ fn super_instance(
     owner: InternedId,
     sw_type: InternedId,
 ) -> Option<&mut super::SuperWeaponInstance> {
-    sim.super_weapons.get_mut(&owner)?.get_mut(&sw_type)
-}
-
-/// The Super Fire_SW pairs a `PostClick=` type with: the `[SuperWeaponTypes]`
-/// entry at its `PreDependent=` index (`HouseClass+0x258` indexed by
-/// `Type+0xF0`, `0x004FAE6C..0x004FAE7E`).
-fn pre_dependent<'r>(
-    sim: &Simulation,
-    rules: &'r RuleSet,
-    sw: &SuperWeaponType,
-) -> Option<(InternedId, &'r SuperWeaponType)> {
-    let name = rules
-        .super_weapon_order
-        .get(usize::try_from(sw.pre_dependent).ok()?)?;
-    Some((sim.interner.get(name)?, rules.super_weapon(name)?))
+    sim.super_weapons.instance_mut(&owner, &sw_type)
 }
 
 /// `HouseClass @ 0x004FAF00` for `house`, given the fired Super's type and

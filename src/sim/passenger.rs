@@ -16,8 +16,9 @@
 //! ## The way aboard: RNG draws, timer writes and detaches
 //! An Enter order, team script action 14 and the Bio Reactor seek all take
 //! this one route; each step lists what it writes.
-//! - Order admission ([`can_enter_transport`]): the click's alliance test and
-//!   the carrier's CAN_LOAD, sending nothing; no writes.
+//! - Order admission: the click's passenger rows
+//!   ([`crate::sim::world::Simulation::entry_click_action`]), which ask the
+//!   carrier's CAN_LOAD and send nothing; no writes.
 //! - The Infantry setter's Enter radio arm (`0x0051AC51..0x0051AD0F`): a
 //!   busy Unit or Building becomes his pending entry (`+0x500`), his
 //!   ArchiveTarget is cleared and Foot's setter takes NULL; a free Techno
@@ -590,12 +591,14 @@ impl PassengerRole {
     }
 }
 
-/// The shared order/UI admission adapter, the click's ENTER
-/// (`InfantryClass::What_Action_OnObject` `0x0051ED10..0x0051EE3B`): the
-/// passenger's house allied with the carrier's, then the carrier's CAN_LOAD
+/// The admission of a garrison order and of the typed
+/// [`crate::sim::command::Command::EnterTransport`] (#2242): a
+/// `CanBeOccupied=` building asks its CanBeOccupiedBy owner; any other
+/// carrier needs `Passengers=` above 0, the passenger's house allied with the
+/// carrier's, and the carrier's CAN_LOAD
 /// ([`crate::sim::radio::receive::can_load_query`], each class receiver's
-/// answer), whose ROGER is ENTER. Building garrison admission keeps its
-/// existing CanBeOccupiedBy owner.
+/// answer) ROGER. The click and cursor ask the full passenger rows instead
+/// ([`crate::sim::world::Simulation::entry_click_action`]).
 pub fn can_enter_transport(
     sim: &Simulation,
     rules: &RuleSet,
@@ -627,11 +630,8 @@ pub fn can_enter_transport(
             sim,
         );
     }
-    // Infantry51ED10 asks the actor's alliance before issuing the radio; the
-    // receiver then asks its own (Building 0x0043C2D0, Unit 0x00737430).
-    // Only a carrier whose type has `Passengers=` above 0 (`+0x5E0`,
-    // `0x0051ED7C..0x0051ED96`) is asked: a Grinder answers ROGER but carries
-    // no one.
+    // The receiver asks its own alliance too (Building 0x0043C2D0, Unit
+    // 0x00737430). A Grinder answers ROGER but carries no one.
     transport_obj.passengers > 0
         && crate::sim::combat::combat_weapon::is_ally_by_object(
             Some(sim.house_alliances.as_map()),
@@ -899,12 +899,12 @@ pub(crate) fn board_passenger(
     // the per-type count; the post-Limbo tail removes the old `+0x2F4`
     // contribution and clears `+0x438`.
     if absorber_entry {
-        sim.set_infantry_absorber_entry(pax_id, true);
+        sim.substrate.set_infantry_absorber_entry(pax_id, true);
     }
     let context = UninitContext::new(Some(rules), registry).with_effects(effects);
     if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
         if absorber_entry {
-            sim.set_infantry_absorber_entry(pax_id, false);
+            sim.substrate.set_infantry_absorber_entry(pax_id, false);
         }
         return false;
     }
@@ -984,7 +984,7 @@ pub(crate) fn board_passenger(
         {
             let coordinate =
                 crate::sim::movement::ground_pose::position_world_coord(&transport.position);
-            sim.sound_events.push(SimSoundEvent::VocAtCoord {
+            sim.sound_events.emit(SimSoundEvent::VocAtCoord {
                 sound_id,
                 coordinate,
                 flags: 0,
@@ -993,7 +993,7 @@ pub(crate) fn board_passenger(
         }
     }
     if let Some((sound_id, coordinate)) = bio_reactor_entry_sound {
-        sim.sound_events.push(SimSoundEvent::voc_at_world_coord(
+        sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
             sound_id,
             crate::sim::anim_class::AnimWorldCoord {
                 x: coordinate.x,
@@ -1099,9 +1099,9 @@ pub fn add_garrison_occupant(
     if count == 1 {
         let _ = sim.mark_entity_refresh(building_id);
         sim.sound_events
-            .push(SimSoundEvent::StructureGarrisoned { owner });
+            .emit(SimSoundEvent::StructureGarrisoned { owner });
         sim.sound_events
-            .push(SimSoundEvent::BuildingGarrisonedSfx { owner, rx, ry });
+            .emit(SimSoundEvent::BuildingGarrisonedSfx { owner, rx, ry });
     }
     if sim.houses.get(&owner).is_some_and(|house| house.is_human())
         && let Some(pax) = sim.substrate.entities.get_mut(pax_id)
@@ -1133,7 +1133,7 @@ fn receive_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_
         .rearm_timer
         .remaining(sim.session.binary_frame() as i32)
         != 0;
-    if sim.temporal_receive_gunner(transport_id, pax_id) {
+    if sim.substrate.temporal_receive_gunner(transport_id, pax_id) {
         if let Some(transport) = sim.substrate.entities.get_mut(transport_id) {
             transport.set_gunner_weapon(7, object);
         }
@@ -1402,10 +1402,10 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
             //configured sound plays even if the following radar event fails.
             if let Some(sound_id) = rules.general.building_abandoned_sound.clone() {
                 sim.sound_events
-                    .push(SimSoundEvent::VocCentered { sound_id });
+                    .emit(SimSoundEvent::VocCentered { sound_id });
             }
             let building = sim.substrate.entities.get(building_id).unwrap();
-            sim.sound_events.push(SimSoundEvent::StructureAbandoned {
+            sim.sound_events.emit(SimSoundEvent::StructureAbandoned {
                 owner: current_owner,
                 radar: crate::sim::radar::RadarEventRequest::new(
                     crate::sim::radar::RadarEventType::StructureAbandoned,

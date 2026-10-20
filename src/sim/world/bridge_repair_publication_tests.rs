@@ -466,14 +466,15 @@ pub(in crate::sim::world) fn ready_engineer(
         .spawn_object("ENGINEER", "Americans", 15, 15, 0, rules)
         .unwrap();
     accept_destination(sim, id, rules);
-    sim.mission_assign_exact(
-        id,
-        crate::sim::mission::MissionId::from_known(
-            crate::rules::mission_data::MissionType::Capture,
-        ),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            id,
+            crate::sim::mission::MissionId::from_known(
+                crate::rules::mission_data::MissionType::Capture,
+            ),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
     let e = sim.substrate.entities.get_mut(id).unwrap();
     e.navigation
         .set_nav_com_for_test(Some(NavTargetRef::Object { id: hut }));

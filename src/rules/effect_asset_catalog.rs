@@ -278,6 +278,10 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // `[General] WarpOut=`: the teleport locomotor constructs it at both ends
     // of a relocation (`sim::movement::teleport_movement`).
     insert(&rules.general.warp_out.name);
+    // `[General] MoveFlash=`: the marker a Move click on a Cell constructs
+    // there (`FootClass::ClickedAction_Cell`, `0x004D7F8A`;
+    // `Simulation::spawn_move_flash`).
+    insert(&rules.general.move_flash.name);
     // `SuperClass::Launch` invoke animations (`sim::superweapon`).
     insert(&rules.general.iron_curtain_invoke_anim);
     insert(&rules.general.force_shield_invoke_anim);

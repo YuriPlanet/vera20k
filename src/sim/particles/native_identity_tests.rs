@@ -268,18 +268,25 @@ fn stored_system_and_child_native_ids_each_affect_authoritative_hash() {
     system
         .particles
         .push(Particle::test_fixture(ParticleTypeId(0), IVec3::ZERO));
-    sim.particle_systems_mut().insert(system);
+    sim.substrate.particle_systems.insert(system);
     let original = sim.state_hash();
-    sim.particle_systems_mut()
+    sim.substrate
+        .particle_systems
         .get_mut(id)
         .unwrap()
         .native_unique_id = 17;
     assert_ne!(sim.state_hash(), original);
-    sim.particle_systems_mut()
+    sim.substrate
+        .particle_systems
         .get_mut(id)
         .unwrap()
         .native_unique_id = 0;
     assert_eq!(sim.state_hash(), original);
-    sim.particle_systems_mut().get_mut(id).unwrap().particles[0].native_unique_id = 17;
+    sim.substrate
+        .particle_systems
+        .get_mut(id)
+        .unwrap()
+        .particles[0]
+        .native_unique_id = 17;
     assert_ne!(sim.state_hash(), original);
 }

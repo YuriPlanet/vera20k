@@ -757,7 +757,7 @@ pub(crate) fn accept_network_loading_progress(
     source_index: usize,
     percent: i32,
 ) -> bool {
-    if !state.match_state.session.mode().is_network()
+    if !state.match_state.session_mode().is_network()
         || !state
             .match_state
             .session

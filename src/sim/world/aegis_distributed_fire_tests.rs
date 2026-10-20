@@ -235,6 +235,7 @@ fn distributed_explicit_attack_retains_target_and_elite_burst() {
         let target = TargetKind::Entity(scene.targets[0]);
         scene
             .sim
+            .substrate
             .mission_assign_exact(scene.aegis, MissionId::from_known(MissionType::Attack), 0)
             .unwrap();
         scene
@@ -542,7 +543,7 @@ fn distributed_scan_preserves_retained_bucket_order_across_reentry_and_movement(
         scan(&mut scene),
         [TargetKind::Entity(a), TargetKind::Entity(b)]
     );
-    scene.sim.aircraft_tracker_remove(a);
+    scene.sim.substrate.aircraft_tracker_remove(a);
     scene.sim.aircraft_tracker_add(a);
     assert_eq!(
         scan(&mut scene),
@@ -613,7 +614,8 @@ fn distributed_failed_fireat_remembers_argument_but_unit_attack_bypasses_tail() 
             .spawn_object("MTNK", "Russians", 13, 20, 0, &rules)
             .unwrap();
         if attack {
-            sim.mission_assign_exact(tank, MissionId::from_known(MissionType::Attack), 0)
+            sim.substrate
+                .mission_assign_exact(tank, MissionId::from_known(MissionType::Attack), 0)
                 .unwrap();
         }
         assert_eq!(
@@ -686,7 +688,8 @@ fn distributed_building_attack_takes_the_common_history_tail() {
         .spawn_object("E1", "Russians", 12, 20, 0, &rules)
         .unwrap();
     sim.resolve_type_handles(&rules);
-    sim.mission_assign_exact(pillbox, MissionId::from_known(MissionType::Attack), 0)
+    sim.substrate
+        .mission_assign_exact(pillbox, MissionId::from_known(MissionType::Attack), 0)
         .unwrap();
     sim.assign_target_represented(
         pillbox,

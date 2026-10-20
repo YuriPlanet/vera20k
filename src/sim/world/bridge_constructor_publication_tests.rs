@@ -361,14 +361,15 @@ fn constructor_side_admission_matches_original_foot_receiver() {
         actor.set_on_bridge(native["on_bridge"].as_bool().unwrap());
         actor.set_in_playfield(native["in_playfield"].as_bool().unwrap());
         sim.substrate.entities.insert(actor);
-        sim.mission_assign_exact(
-            id,
-            crate::sim::mission::MissionId::from_raw(
-                native["current_mission"].as_i64().unwrap() as i32
-            ),
-            sim.session.binary_frame(),
-        )
-        .unwrap();
+        sim.substrate
+            .mission_assign_exact(
+                id,
+                crate::sim::mission::MissionId::from_raw(
+                    native["current_mission"].as_i64().unwrap() as i32,
+                ),
+                sim.session.binary_frame(),
+            )
+            .unwrap();
         assert_eq!(native["queued_mission"], -1);
         assert_eq!(native["speed_type"], 0);
         let query = &row["native_entry_arguments"][0];

@@ -216,6 +216,11 @@ pub struct TeamTypeIniMetadata {
     /// actions 46 and 47 look for, take only the house's current enemy's.
     #[serde(default)]
     only_target_house_enemy: bool,
+    /// `Loadable=` (`+0xA4`, ReadBool at `0x006F115F`, constructor 0 at
+    /// `0x006F070B`): a member is a carrier the player's infantry may board
+    /// (`0x0051EDD8..0x0051EDED`). No retail TeamType sets it.
+    #[serde(default)]
+    loadable: bool,
     pub source: TeamAiDefinitionSource,
 }
 
@@ -257,6 +262,7 @@ impl Default for TeamTypeIniMetadata {
             mind_control_decision: 0,
             droppod: false,
             only_target_house_enemy: false,
+            loadable: false,
             source: TeamAiDefinitionSource::FixedAimd,
         }
     }
@@ -1107,6 +1113,18 @@ impl TeamScriptVm {
             .and_then(|team| team.team_type_id)
             .and_then(|id| self.team_type_ini.get(&id))
             .is_some_and(|metadata| metadata.avoid_threats)
+    }
+
+    /// Infantry51EDD8's Team+24 -> TeamType+A4 gate: whether the team
+    /// `entity_id` belongs to has a `Loadable=` TeamType, `None` outside a
+    /// team.
+    pub(crate) fn member_team_loadable(&self, entity_id: u64) -> Option<bool> {
+        self.member_team
+            .get(&entity_id)
+            .and_then(|id| self.teams.get(id))
+            .and_then(|team| team.team_type_id)
+            .and_then(|id| self.team_type_ini.get(&id))
+            .map(|metadata| metadata.loadable)
     }
 
     /// The TeamType's `TransportsReturnOnUnload=` (`+0xF4`), false for a

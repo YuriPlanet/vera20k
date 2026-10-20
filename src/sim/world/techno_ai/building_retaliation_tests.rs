@@ -148,7 +148,9 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, u64, Option<u64>) {
         let mut power_state = crate::sim::power_system::PowerState::default();
         power_state.set_total_drain_for_test(100);
         power_state.set_is_low_power_for_test(true);
-        sim.power_states.insert(owner, power_state);
+        sim.power_states
+            .map_mut_for_test()
+            .insert(owner, power_state);
     }
     sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
     let entity = sim.substrate.entities.get_mut(building).unwrap();

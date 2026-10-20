@@ -36,7 +36,7 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
         assert_eq!(sim.substrate.spotlights.get(id).unwrap().coord, before);
         assert!(sim.building_spotlight(id, &rules).is_some());
         // Invalid authored motion must not bypass ordinary orphan cleanup.
-        sim.spotlights_pointer_expired(p);
+        sim.substrate.spotlights_pointer_expired(p);
         sim.visit_spotlight(id, &rules, UninitContext::new(Some(&rules), None));
         assert!(
             sim.substrate

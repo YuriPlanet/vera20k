@@ -549,8 +549,11 @@ impl StrikeHost for CombatStrike<'_, '_, '_> {
     }
 
     fn epilogue(&mut self) -> i32 {
-        self.world
-            .mission_rate_epilogue(self.rules, crate::sim::mission::MissionType::Attack)
+        crate::sim::mission::authority::rate_epilogue(
+            self.rules,
+            crate::sim::mission::MissionType::Attack,
+            &mut self.world.scenario_rng,
+        )
     }
 
     fn ammo(&mut self) -> i32 {

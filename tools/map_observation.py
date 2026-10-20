@@ -89,7 +89,7 @@ ORDER_VARIANTS = frozenset(('Select', 'Move', 'Stop', 'Attack', 'Guard',
                             'LaunchSuperWeapon', 'TogglePrimaryFactory'))
 PRODUCTION_VARIANTS = frozenset(('QueueProduction', 'PlaceReadyBuilding'))
 EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe_types',
-                              'observe_projectiles', 'observe_anim_types', 'observe_action_line_inputs',
+                              'observe_projectiles', 'observe_waves', 'observe_anim_types', 'observe_action_line_inputs',
                               'observe_disguise_inputs', 'observe_lasers', 'observe_electric_bolts',
                               'observe_radiation_beams',
                               'observe_electric_bolt_steps', 'observe_bombs', 'observe_temporal',
@@ -614,8 +614,9 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
             if not name or name in selected_types:
                 raise ValidationError('profile.observe_types has an empty or duplicate type')
             selected_types.add(name)
-    if 'observe_projectiles' in profile and type(profile['observe_projectiles']) is not bool:
-        raise ValidationError('profile.observe_projectiles must be a boolean')
+    for key in ('observe_projectiles', 'observe_waves'):
+        if key in profile and type(profile[key]) is not bool:
+            raise ValidationError(f'profile.{key} must be a boolean')
     if 'observe_anim_types' in profile:
         names = require_array(profile['observe_anim_types'], 'profile.observe_anim_types')
         if not 1 <= len(names) <= 256:
@@ -2649,15 +2650,18 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
 
 
 def _observes_effects(profile: Mapping[str, Any]) -> bool:
-    return profile.get('observe_projectiles', False) or 'observe_anim_types' in profile
+    return (profile.get('observe_projectiles', False) or profile.get('observe_waves', False)
+            or 'observe_anim_types' in profile)
 
 
 def _effects(value: Any, profile: Mapping[str, Any], label: str) -> int:
     effects = require_object(value, label)
     with_projectiles = profile.get('observe_projectiles', False)
     with_anims = 'observe_anim_types' in profile
+    with_waves = profile.get('observe_waves', False)
     require_exact_keys(effects, ('scenario_rng_cursor',
                                 *(('projectiles',) if with_projectiles else ()),
+                                *(('waves',) if with_waves else ()),
                                 *(('animations',) if with_anims else ())), label)
     cursor = require_array(effects['scenario_rng_cursor'], f'{label}.scenario_rng_cursor')
     if len(cursor) != 2:
@@ -2666,7 +2670,7 @@ def _effects(value: Any, profile: Mapping[str, Any], label: str) -> int:
         _bounded_int(number, f'{label}.scenario_rng_cursor[{index}]', 0, 249)
     anim_types = {name.translate(ASCII_UPPER) for name in profile.get('observe_anim_types', [])}
     samples = 1
-    for kind in ('projectiles', 'animations'):
+    for kind in ('projectiles', 'animations', 'waves'):
         if kind not in effects:
             continue
         rows = require_array(effects[kind], f'{label}.{kind}')
@@ -2677,6 +2681,35 @@ def _effects(value: Any, profile: Mapping[str, Any], label: str) -> int:
         for index, value in enumerate(rows):
             row_label = f'{label}.{kind}[{index}]'
             row = require_object(value, row_label)
+            if kind == 'waves':
+                require_exact_keys(row, ('stable_id', 'wave_type', 'owner_id', 'in_logic_vector',
+                                         'lifetime', 'active_geometry', 'decaying', 'direction_octant',
+                                         'source_leptons', 'target_leptons', 'sonic_polygon'), row_label)
+                identity = _bounded_int(row['stable_id'], f'{row_label}.stable_id', 1, (1 << 64) - 1)
+                if identity <= previous:
+                    raise ValidationError(f'{row_label}.stable_id is repeated or out of order')
+                previous = identity
+                _bounded_int(row['wave_type'], f'{row_label}.wave_type', 0, 255)
+                if row['owner_id'] is not None:
+                    _bounded_int(row['owner_id'], f'{row_label}.owner_id', 1, (1 << 64) - 1)
+                for field in ('lifetime', 'direction_octant'):
+                    _bounded_int(row[field], f'{row_label}.{field}', -(1 << 31), (1 << 31) - 1)
+                for field in ('source_leptons', 'target_leptons'):
+                    _coordinate(row[field], f'{row_label}.{field}', leptons=True)
+                for field in ('in_logic_vector', 'active_geometry', 'decaying'):
+                    if type(row[field]) is not bool:
+                        raise ValidationError(f'{row_label}.{field} must be a boolean')
+                if row['sonic_polygon'] is not None:
+                    polygon = require_array(row['sonic_polygon'], f'{row_label}.sonic_polygon')
+                    if len(polygon) != 6:
+                        raise ValidationError(f'{row_label}.sonic_polygon must have six points')
+                    for point in polygon:
+                        values = require_array(point, f'{row_label}.sonic_polygon point')
+                        if len(values) != 2:
+                            raise ValidationError(f'{row_label}.sonic_polygon point must have two coordinates')
+                        for value in values:
+                            _bounded_int(value, f'{row_label}.sonic_polygon coordinate', -(1 << 31), (1 << 31) - 1)
+                continue
             common = ('stable_id', 'native_id', 'type_id', 'physical_leptons', 'in_logic_vector')
             fields = (('weapon', 'source_id', 'awaiting_anim', 'visual_frame', 'visual_countdown')
                       if kind == 'projectiles' else

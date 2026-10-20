@@ -46,6 +46,7 @@ CTOR, UPDATE, AI, DRAW, MAGNETIC, NONMAGNETIC = (
     0x75E950, 0x762AF0, 0x760F50, 0x75F9F0, 0x762070, 0x761640)
 PIXEL, TABLE_INIT, ZERO_COORD, OFFSETS, Z_BUFFER = (
     0x760190, 0x75F020, 0x75E8F0, 0x75F140, 0x7BD130)
+SONIC_PIXEL = 0x75EDF0
 VECTOR, MAGNETIC_TABLE, DISTANCE_TABLE, BRIGHTNESS = (
     0xA8EC38, 0xB45E68, 0xB4669C, 0xB46648)
 MAGNETIC_END, SONIC_TABLE, SONIC_END, DISTANCE_END = (
@@ -73,9 +74,15 @@ COMPARES = {
     0x760638: ('fallback', UC_X86_REG_EAX, UC_X86_REG_ECX),
     0x7607DE: ('fast', UC_X86_REG_ECX, UC_X86_REG_EAX),
     0x76093D: ('fallback', UC_X86_REG_EAX, UC_X86_REG_ECX),
+    0x75FC95: ('fast', UC_X86_REG_EBX, UC_X86_REG_ECX),
+    0x75FDE8: ('fallback', UC_X86_REG_EAX, UC_X86_REG_ECX),
+    0x75FF8E: ('fast', UC_X86_REG_ECX, UC_X86_REG_EAX),
+    0x7600ED: ('fallback', UC_X86_REG_EAX, UC_X86_REG_ECX),
 }
 CLIP_BRANCHES = {0x76043D: 'fast', 0x760557: 'fallback',
-                 0x7606FC: 'fast', 0x760853: 'fallback'}
+                 0x7606FC: 'fast', 0x760853: 'fallback',
+                 0x75FBED: 'fast', 0x75FD07: 'fallback',
+                 0x75FEAC: 'fast', 0x760003: 'fallback'}
 CALLS = {
     CTOR: ('constructor', 5, 20), UPDATE: ('update', 0, 0),
     AI: ('ai', 0, 0), 0x6F3AD0: ('unit_flh', 5, 20),
@@ -424,7 +431,9 @@ class WaveMachine(prism.LaserPixels):
     def read32(self, p):
         return u32(self.u, p)
 
-    def __init__(self, donor, case=None):
+    def __init__(self, donor, case=None, *, table_timeout_us=60_000_000,
+                 call_timeout_us=10_000_000):
+        self.call_timeout_us = call_timeout_us
         self.measuring, self.phase = False, 'surface_setup'
         super().__init__(dict(case or {}, size=(80, 80), seed=31))
         u = self.u
@@ -526,7 +535,7 @@ class WaveMachine(prism.LaserPixels):
         for address in self.wave_startup:
             assert 0x75E740 <= address <= 0x75E930
             self.invoke(address, 0)
-        self.invoke(TABLE_INIT, 0, instruction_limit=15_000_000, timeout_us=60_000_000)
+        self.invoke(TABLE_INIT, 0, instruction_limit=15_000_000, timeout_us=table_timeout_us)
         self.tables = self.table_outputs()
         self.phase = 'setup'
         self.trace = electric.RngTrace(u, self.scenario, 31)
@@ -687,7 +696,7 @@ class WaveMachine(prism.LaserPixels):
                 candidate_z=candidate, stored_z=u16(u, ptr), z_pointer=ptr)
             self.comparisons.append(self.last_compare)
             self.current_draw['clip_paths'].add(path)
-        if pc == PIXEL:
+        if pc in (PIXEL, SONIC_PIXEL):
             x, offset_x, abs_y, dest = ints(u, sp + 4, 4)
             index = (dest - rally.PIXELS) // 2
             assert rally.PIXELS <= dest < rally.PIXELS + self.pixel_bytes
@@ -695,34 +704,38 @@ class WaveMachine(prism.LaserPixels):
             self.current_operation = dict(point=[index % self.surface.size[0], index // self.surface.size[0]],
                 native_x=x, draw_offset_x=offset_x, abs_y=abs_y,
                 destination_word_before=u16(u, dest), **self.last_compare)
+            if pc == SONIC_PIXEL:
+                self.current_operation['wave_type'] = 0
             self.operations.append(self.current_operation)
         if self.current_operation is not None:
             row = self.current_operation
-            if pc == 0x7601C7:
+            if pc in (0x7601C7, 0x75EE2E):
                 index = u.reg_read(UC_X86_REG_EDX)
                 address = (DISTANCE_TABLE + index * 2) & 0xFFFFFFFF
                 row.update(distance_index=index, distance_address=hex(address),
                     distance_value=u16(u, address), distance_in_domain=index < 90000)
-            elif pc == 0x7601D1:
+            elif pc in (0x7601D1, 0x75EE3C):
                 index = u.reg_read(UC_X86_REG_EAX)
-                address = (MAGNETIC_TABLE + index * 2) & 0xFFFFFFFF
+                sonic = pc == 0x75EE3C
+                address = ((SONIC_TABLE if sonic else MAGNETIC_TABLE) + index * 2) & 0xFFFFFFFF
                 row.update(sine_index=index, sine_address=hex(address),
-                    sine_value=struct.unpack('<h', u.mem_read(address, 2))[0],
-                    sine_in_magnetic_domain=index < 496)
-            elif pc == 0x7601E8:
+                    sine_value=struct.unpack('<h', u.mem_read(address, 2))[0])
+                row['sine_in_sonic_domain' if sonic else 'sine_in_magnetic_domain'] = index < (500 if sonic else 496)
+            elif pc in (0x7601E8, 0x75EE49):
                 row['displacement_index'] = u.reg_read(UC_X86_REG_EAX)
-            elif pc == 0x7601F4:
+            elif pc in (0x7601F4, 0x75EE50):
                 index = u.reg_read(UC_X86_REG_EAX)
                 row['brightness'] = signed(u32(u, BRIGHTNESS + index * 4))
-            elif pc == 0x7601FB:
-                dest, offset = u.reg_read(UC_X86_REG_EBX), signed(u.reg_read(UC_X86_REG_ECX))
+            elif pc in (0x7601FB, 0x75EE57):
+                dest = u.reg_read(UC_X86_REG_EDI if pc == 0x75EE57 else UC_X86_REG_EBX)
+                offset = signed(u.reg_read(UC_X86_REG_ECX))
                 address = dest + offset * 2
                 index = (address - rally.PIXELS) // 2
                 row.update(source_linear_index=index, source_word=u16(u, address),
                     source=[index % self.surface.size[0], index // self.surface.size[0]],
                     source_in_plane=0 <= index < self.pixel_bytes // 2)
-            elif pc == 0x7602D0:
-                row['destination_word'] = u.reg_read(UC_X86_REG_EDI) & 0xFFFF
+            elif pc in (0x7602D0, 0x75EF19):
+                row['destination_word'] = u.reg_read(UC_X86_REG_ESI if pc == 0x75EF19 else UC_X86_REG_EDI) & 0xFFFF
                 self.current_operation = None
 
     def checked(self, entry, obj, args=(), *, limit=2_000_000):
@@ -733,7 +746,8 @@ class WaveMachine(prism.LaserPixels):
         context = dict(component='magnetic_wave', case=dict(self.current_case),
             entry=hex(entry), object=hex(obj), args=[hex(value & 0xFFFFFFFF) for value in args])
         try:
-            value = self.invoke(entry, obj, args, instruction_limit=limit, context=context)
+            value = self.invoke(entry, obj, args, instruction_limit=limit,
+                                timeout_us=self.call_timeout_us, context=context)
         except native.NativeExecutionError as error:
             # Keep the shared runner's diagnostics/report intact, and make the
             # exact caller visible even when no failure directory is requested.
@@ -1021,11 +1035,11 @@ class WaveMachine(prism.LaserPixels):
         u.mem_write(rally.TACTICAL + 0xB0, words(0, 0))
         for p in pointers:
             wave_type, first, second = self.geometry_arguments[p]
-            assert wave_type == 3
+            assert wave_type in (0, 3)
             a, b = self.alloc(12), self.alloc(12)
             u.mem_write(a, words(*first))
             u.mem_write(b, words(*second))
-            self.checked(MAGNETIC, p, (a, b))
+            self.checked(MAGNETIC if wave_type == 3 else NONMAGNETIC, p, (a, b))
         points = [point for p in pointers for point in wave_state(u, p)['polygon']]
         if points:
             xs, ys = zip(*points)
@@ -1035,16 +1049,16 @@ class WaveMachine(prism.LaserPixels):
             camera = [0, 0]
         u.mem_write(rally.TACTICAL + 0xB0, words(*camera))
         for p in pointers:
-            _, first, second = self.geometry_arguments[p]
+            wave_type, first, second = self.geometry_arguments[p]
             a, b = self.alloc(12), self.alloc(12)
             u.mem_write(a, words(*first))
             u.mem_write(b, words(*second))
-            self.checked(MAGNETIC, p, (a, b))
+            self.checked(MAGNETIC if wave_type == 3 else NONMAGNETIC, p, (a, b))
         return camera
 
     def raster(self, pointers, *, name, format='rgb565', ring_rows=0,
                alpha='mixed', z_words=None, clip=None):
-        self.current_case = dict(name=name, wave_type=3,
+        self.current_case = dict(name=name, wave_type=self.read32(pointers[0] + 0xB0),
             raw_geometry=[self.geometry_arguments[p] for p in pointers])
         u, (w, h) = self.u, self.surface.size
         if format not in ('rgb565', 'rgb555'):
@@ -1129,7 +1143,7 @@ class WaveMachine(prism.LaserPixels):
         self.operations, self.comparisons, self.draws = [], [], []
         for p in pointers:
             before = wave_state(u, p)
-            assert before['wave_type'] == 3
+            assert before['wave_type'] in (0, 3)
             polygon = before['polygon']
             # Original geometry was re-executed with the camera input above;
             # no translated polygon/span output is synthesized by Python.
@@ -1142,6 +1156,8 @@ class WaveMachine(prism.LaserPixels):
                 direction=before['direction'], spans=dict(top=0, rows=[]),
                 native_polygon=polygon, native_source_point=before['source_point'],
                 caller_point=point, draw_offset=[0, 0], clip_paths=set())
+            if before['wave_type'] == 0:
+                self.current_draw['wave_type'] = 0
             self.draws.append(self.current_draw)
             self.phase = 'raster'
             self.checked(DRAW, p, (point_ptr, bounds_ptr), limit=3_000_000)
@@ -1170,7 +1186,7 @@ class WaveMachine(prism.LaserPixels):
             sine_index_min=min((row['sine_index'] for row in operations), default=None),
             sine_index_max=max((row['sine_index'] for row in operations), default=None),
             adjacent_reads=sorted({(row['sine_address'], row['sine_value']) for row in operations
-                                   if not row['sine_in_magnetic_domain']}),
+                                   if not row.get('sine_in_magnetic_domain', row.get('sine_in_sonic_domain', False))}),
             distance_escapes=[row for row in footprint if not 0 <= row['distance_index'] < 90000],
             source_escapes=[row for row in operations if not row['source_in_plane']])
 
@@ -1443,10 +1459,112 @@ def metadata():
             object_destructor=0x5F3B80))
 
 
-if __name__ == '__main__':
+def consumed_sonic_raster(row):
+    """Keep observed memory-domain escapes explicit, rather than clamping them.
+
+    An out-of-plane source in a small supplied BSurface is a refusal control,
+    not a claim about pixels outside an actual game framebuffer allocation.
+    """
+    result = consumed_raster(row)
+    result['source_domain'] = ('supported' if all(op['source_in_plane']
+        for op in row['operations']) else 'out_of_plane')
+    return result
+
+
+def sonic_generate():
+    """Whole original type0 raster on declared component surfaces and phases.
+
+    Reuse the native reader/actor/surface/table owner. The donor actor shells
+    are TELE/MTNK setup, not a claim of a legal Dolphin shot; the production
+    Dolphin caller must be validated separately.
+    """
+    root = assets_root()
+    donor = UnitInputs(root, RETAINED_MAP)
+    # Dense per-pixel trace callbacks can exceed the legacy host deadline
+    # under concurrent builds. Keep every emulated instruction bound intact.
+    machine = WaveMachine(donor, table_timeout_us=300_000_000,
+                          call_timeout_us=120_000_000)
+    print('Original Sonic table/surface startup finished', flush=True)
+    rows, directions, pointers = [], set(), []
+    for case in geometry_cases():
+        if not case['name'].startswith(('raw_octant_', 'intermediate_raw_octant_')):
+            continue
+        p, initial = machine.construct(0, case['source'], case['target'], name=case['name'])
+        assert initial is not None
+        direction = wave_state(machine.u, p)['direction']
+        if direction in directions:
+            continue
+        directions.add(direction)
+        pointers.append(p)
+        row = machine.raster([p], name='sonic_' + case['name'])
+        rows.append(consumed_sonic_raster(row))
+        print(case['name'], 'native direction', direction,
+              'changed pixels', len(row['after']['pixels']), flush=True)
+    assert directions == set(range(8)), directions
+    p = pointers[0]
+    # Phase values are declared draw inputs, never simulated timing results.
+    # The retained native constructor supplied phase100 in the rows above.
+    for phase in (80, 40, 1, 0):
+        machine.u.mem_write(p + 0x130, words(phase))
+        rows.append(consumed_sonic_raster(machine.raster([p], name=f'sonic_phase_{phase}')))
+    machine.u.mem_write(p + 0x130, words(100))
+    rows.append(consumed_sonic_raster(machine.raster([p], name='sonic_rgb555', format='rgb555')))
+    rows.append(consumed_sonic_raster(machine.raster([p], name='sonic_clipped', clip=[25, 21, 30, 35])))
+    rows.append(consumed_sonic_raster(machine.raster([p], name='sonic_ring', ring_rows=79)))
+    open_row = machine.raster([p], name='sonic_depth_open')
+    w, h = open_row['input']['size']
+    depth = [65535] * (w * h)
+    for i, operation in enumerate(open_row['operations']):
+        x, y = operation['point']
+        # Independent native candidate words feed equal/below/above controls.
+        depth[y * w + x] = max(0, min(65535, operation['candidate_z'] + (i % 3) - 1))
+    rows.append(consumed_sonic_raster(machine.raster([p], name='sonic_mixed_depth', z_words=depth)))
+    rows.append(consumed_sonic_raster(machine.raster([p], name='sonic_zero_alpha', alpha='black')))
+    rows.append(consumed_sonic_raster(machine.raster(pointers[:2], name='sonic_ordered_overlap')))
+    case = next(c for c in geometry_cases() if c['name'] == 'intermediate_raw_octant_1')
+    cropped, initial = machine.construct(0, case['source'], case['target'], name='sonic_valid_direction5')
+    assert initial is not None and wave_state(machine.u, cropped)['direction'] == 5
+    rows.append(consumed_sonic_raster(machine.raster([cropped],
+        name='sonic_direction5_supported_crop', clip=[3, 3, 74, 69])))
+    machine.check()
+    print('Original Sonic raster controls:', len(rows), flush=True)
+    return dict(tables=machine.tables, raster_rows=rows)
+
+
+def sonic_metadata():
+    result = native.provenance(
+        scope='Original type0 Sonic DrawIt/DrawSonic/pixel, native tables, integer spans, displaced packed pixels and depth/clipping/order controls',
+        assumptions=[
+            'The existing magnetic_wave UnitInputs/WaveMachine owns the original retail readers, native Unit/Drive shells, sparse constructed cells, tables, projection and memory surfaces. The donor TELE/MTNK shells admit an explicitly requested type0 Wave constructor, not a legal Dolphin FireAt or a physical water-map startup.',
+            'Whole original75F9F0->75FA90->63F080/63F2E0->75EDF0 executes unchanged. Native geometry, phase100 constructor, spans, traversal, displaced reads, colors and stores are observed. Additional phases80/40/1/0, crop rectangles, RGB565/RGB555, A/Z patterns and Z ring offsets are explicit component inputs, not inferred gameplay timing.',
+            'Whole75F020 and the existing startup sequence generate all lookup values. No host trigonometry, distance, color or raster algorithm supplies expected pixels. All eight directions come from observed native constructor results. Mixed-Z inputs use independently observed native candidate words.',
+            'The small full-surface direction5 control observes a displaced read beyond the supplied RGB plane; it is an explicit unsupported-domain refusal control, not a GPU pixel promise or a real-game out-of-allocation value. A same-direction cropped control retains valid samples for GPU comparison.',
+            'Sonic draws are checked for unchanged original code/vtables, guarded RGB allocation, unchanged A/Z and unchanged complete RNG continuation. Wave state/draw preparation and selected platform seams retain the existing owner boundaries. Full Sonic AI/damage, simulation scheduling, shroud admission, retail firing and GPU composition require separate connected validation.',
+        ],
+        substitutions=[
+            'Only the existing declared cached INI, allocator/CRT/TLS, Unit shell and BSurface/Z memory transports. No Sonic instruction, vtable, constructor, geometry, table, depth decision, pixel sample or packed output is replaced.',
+        ],
+        entry_points=dict(constructor=CTOR, geometry=NONMAGNETIC, draw=DRAW,
+            sonic_draw=0x75FA90, pixel=SONIC_PIXEL, spans=0x63F080,
+            span_edge=0x63F2E0, tables=TABLE_INIT, offsets=OFFSETS,
+            z_get_buffer=Z_BUFFER))
+    return result
+
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    sonic = '--sonic' in args
+    if sonic:
+        args.remove('--sonic')
     sources = {name: Path(module.__file__) for name, module in sorted(sys.modules.items())
                if name.startswith('tools.') and getattr(module, '__file__', None)
                and str(module.__file__).endswith('.py')}
     sources.update(producer=Path(__file__), retained_map=RETAINED_MAP)
-    native.finish_vectors(generate, HERE / 'magnetic_wave.json', provenance=metadata,
-                          source_paths=sources)
+    native.finish_vectors(sonic_generate if sonic else generate,
+                          HERE / ('sonic_wave.json' if sonic else 'magnetic_wave.json'),
+                          provenance=sonic_metadata if sonic else metadata,
+                          source_paths=sources, argv=args)
+
+
+if __name__ == '__main__':
+    main()

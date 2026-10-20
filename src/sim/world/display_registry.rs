@@ -171,7 +171,7 @@ impl GroundSortKeys for GroundSortView<'_> {
 impl Simulation {
     pub fn submit_object_display(&mut self, id: u64, layer: DisplayLayer, rules: Option<&RuleSet>) {
         if layer == DisplayLayer::GROUND {
-            self.forget_changed_ground_keys(rules);
+            self.substrate.forget_changed_ground_keys(rules);
         }
         let view = GroundSortView {
             entities: &self.substrate.entities,
@@ -182,26 +182,6 @@ impl Simulation {
             rules,
         };
         self.substrate.display.submit(id, Some(layer), &view);
-    }
-
-    /// Forget the kept Ground keys whose inputs the entity and anim stores
-    /// handed out mutably since the last Ground scan, and all of them when
-    /// the rules differ from those they were read under.
-    fn forget_changed_ground_keys(&mut self, rules: Option<&RuleSet>) {
-        let context = ReadContext {
-            rules: rules.map(RuleSet::serial),
-        };
-        let entities = self
-            .substrate
-            .entities
-            .take_touched(crate::sim::entity_store::TouchReader::GroundKeys);
-        let anims = self
-            .substrate
-            .anims
-            .take_touched(crate::sim::anim_class::AnimTouchReader::GroundKeys);
-        self.substrate
-            .display
-            .forget_changed_ground_keys(context, [entities, anims]);
     }
 
     pub(super) fn submit_entity_display(
@@ -267,7 +247,7 @@ impl Simulation {
     }
 
     pub(super) fn sort_display_ground(&mut self, rules: Option<&RuleSet>) {
-        self.forget_changed_ground_keys(rules);
+        self.substrate.forget_changed_ground_keys(rules);
         let view = GroundSortView {
             entities: &self.substrate.entities,
             anims: &self.substrate.anims,
@@ -277,6 +257,25 @@ impl Simulation {
             rules,
         };
         self.substrate.display.sort_ground_pass(&view);
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// Forget the kept Ground keys whose inputs the entity and anim stores
+    /// handed out mutably since the last Ground scan, and all of them when
+    /// the rules differ from those they were read under.
+    fn forget_changed_ground_keys(&mut self, rules: Option<&RuleSet>) {
+        let context = ReadContext {
+            rules: rules.map(RuleSet::serial),
+        };
+        let entities = self
+            .entities
+            .take_touched(crate::sim::entity_store::TouchReader::GroundKeys);
+        let anims = self
+            .anims
+            .take_touched(crate::sim::anim_class::AnimTouchReader::GroundKeys);
+        self.display
+            .forget_changed_ground_keys(context, [entities, anims]);
     }
 }
 
@@ -332,7 +331,7 @@ mod tests {
                 expected,
                 "{name}"
             );
-            sim.entities_mut().insert(entity);
+            sim.substrate.entities.insert(entity);
             sim.submit_object_display(id, DisplayLayer::GROUND, Some(&rules));
         }
         assert_eq!(
@@ -487,7 +486,7 @@ mod tests {
             );
             entity.position.set_sub_x_for_test(SimFixed::from_num(128));
             entity.position.set_sub_y_for_test(SimFixed::from_num(128));
-            sim.entities_mut().insert(entity);
+            sim.substrate.entities.insert(entity);
             sim.submit_object_display(id, DisplayLayer::GROUND, Some(&rules));
             units.push(id);
         }

@@ -654,6 +654,32 @@ queued/head voice actions, physical sample/finite PCM and event/channel
 retirement. Loading and service can advance Main before the order, so a launch
 seed alone does not determine which entry a multi-entry list chooses.
 
+The [Dolphin Sonic profile](map_observation.sonic-wave.example.json) uses a
+stock DLPH, enemy CARRIER and a distant enemy survivor. Extract the physical
+`multimd.mix/XMP03T4.MAP` with the existing asset tools, then generate the scene:
+
+```sh
+python tools/render_depth_fixture.py /absolute/ordinary-dolphin-sonic.map \
+  --sonic-wave /absolute/XMP03T4.MAP
+```
+
+This copies the supplied map's terrain/scenery/lighting/waypoints and authors
+only the scene actors/Houses. It changes no unit, weapon or Wave fields. The
+fixed naval cells `(106,118)` and `(108,118)` must be admitted by the production
+loader; copied pack bytes alone are not proof of water or a successful shot.
+The optional `observe_waves` reads the existing Wave owner and its derived Sonic
+polygon, without advancing lifetime or RNG. `observe_projectiles` and the existing
+`observe_bombs` fire-state view retain the real shot and rearm timer.
+Set the profile's selected map to the result. The example waits before ordinary
+Attack so the stock DLPH completes its initial cloaking transition, then issues
+Stop while a shot can still be live. That initial transition's existing
+`Detach_All(false)` can otherwise interrupt a wave by clearing its owner. No
+cloaking or weapon field is overridden. Inspect the actual firing, persistent
+body, interrupted fade and cleanup, and retain endpoints at the observed steps. The real GPU readbacks exercise the
+shared retained Display destination pass, while the original pixel controls
+are the separate bounded comparison in `magnetic_wave.py --sonic`. Neither
+establishes original full-match/pixel equivalence for the retail scene.
+
 The [Terror Drone firing profile](map_observation.drone-fire.example.json)
 orders a retail DRON to jump a sleeping enemy tank, then a local tank to fire
 SonicZap at the host, then issues Stop to the released DRON. Generate its scene with

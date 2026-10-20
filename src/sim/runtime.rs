@@ -544,7 +544,8 @@ pub fn spawn_terrain_tile_animations(
                 )
             });
         assert!(
-            sim.set_terrain_anim_z_adjust_after_construction(id, tile.z_adjust),
+            sim.substrate
+                .set_terrain_anim_z_adjust_after_construction(id, tile.z_adjust),
             "terrain animation {id} disappeared before its producer ZAdjust write"
         );
         spawned.push(id);

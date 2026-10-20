@@ -76,6 +76,7 @@ use crate::sim::movement::{ground_pose, walk_head};
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::passenger::PassengerRole;
 use crate::sim::passenger::{DepartureFailure, DepartureRoute, depart_cargo_head};
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{
     FrameEffects, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, SimSoundEvent,
     Simulation, UninitContext,
@@ -168,7 +169,7 @@ pub(crate) fn drop_payload(
         DepartureRoute::Paradrop,
         |sim, passenger| {
             head = Some(passenger);
-            let ammo = add_ammo(sim, id, -1);
+            let ammo = add_ammo(&mut sim.substrate, id, -1);
             let landing = drop_passenger(sim, rules, registry, id, passenger, ammo, effects)?;
             land_tail(sim, rules, id, passenger, landing, effects);
             Ok(())
@@ -184,15 +185,15 @@ pub(crate) fn drop_payload(
             observe(Observed::Conceal(passenger));
         }
         sim.techno_clear_discovery_on_conceal(passenger);
-        add_ammo(sim, id, 1);
+        add_ammo(&mut sim.substrate, id, 1);
     }
 }
 
 /// Adds `delta` to the plane's Ammo (`+0x2FC`, a signed int that wraps) and
 /// returns the new count. `AircraftClass::Drop_Payload` (`0x00415C60`) takes
 /// one at `0x00415C7D..0x00415C8D` and gives it back at `0x00415EC7`.
-fn add_ammo(sim: &mut Simulation, id: u64, delta: i32) -> i32 {
-    sim.substrate
+fn add_ammo(substrate: &mut ObjectSubstrate, id: u64, delta: i32) -> i32 {
+    substrate
         .entities
         .get_mut(id)
         .and_then(|plane| plane.ammo_mut())
@@ -474,7 +475,7 @@ fn land_tail(
         let location = ground_pose::object_location(plane_entity, sim.resolved_terrain.as_ref());
         observe(Observed::PlayAt([location.x, location.y, location.z]));
     }
-    sim.sound_events.push(SimSoundEvent::ChuteSound {
+    sim.sound_events.emit(SimSoundEvent::ChuteSound {
         rx: plane_entity.position.rx(),
         ry: plane_entity.position.ry(),
     });

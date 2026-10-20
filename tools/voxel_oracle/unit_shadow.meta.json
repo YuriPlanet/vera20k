@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Unit Jumpjet Kirov draw anchor, shadow suffix/gates/cache-key/mask offsets and stencil",
+  "assumptions": [
+    "original Unit/UnitType vtables, Jumpjet constructor; supplied post-construction XYZ/facings/type/lifecycle bytes",
+    "Unit73B0B0/Object projection produces the ordinary anchor; UnitDrawIt body-offset6B4 and parachute424 remain zero",
+    "interior73C1D2 begins after body composition with supplied body frame and a declared mask surface identity",
+    "patterned generated body is an explicit surface input, not a native Kirov composition proof",
+    "retail Kirov stencils cover unmasked controls; physical VXL/HVA hashes and half viewer are pinned",
+    "no RNG state changes, timer writes or detach calls in measured shadow boundaries; full flight/scene excluded"
+  ],
+  "substitutions": [
+    "Unit caller stops at final stencil output; no native call or instruction is replaced",
+    "shared raster file vtable IO and mapped heap allocation; generated body surface bytes supplied"
+  ],
+  "entry_points": {
+    "unit_draw": "0x0073B0B0",
+    "unit_shadow_suffix": "0x0073C1D2",
+    "jumpjet_ctor": "0x0054AC40",
+    "base_shadow_matrix": "0x0055A7D0",
+    "base_shadow_point": "0x0055A8C0",
+    "high_flying": "0x005F6B90",
+    "foot_shadow": "0x004DB0D0",
+    "techno_shadow": "0x00706BD0",
+    "quad": "0x00753F90",
+    "crop": "0x00754510"
+  },
+  "replay_command": "python -m tools.voxel_oracle.aircraft_shadow --unit",
+  "payload_sha256": "68d83dea2fbf16d6931fb8b67493c10e4e099f901b5dc73ddd501997b9f33462"
+}

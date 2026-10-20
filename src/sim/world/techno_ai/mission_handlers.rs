@@ -6,7 +6,7 @@
 use super::{Simulation, can_acquire_target};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::{EntityReadyInputProvider, rate_epilogue};
 use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
 use crate::sim::world::FrameEffects;
 use crate::util::direction::DIRECTION_DELTAS;
@@ -234,10 +234,10 @@ pub(crate) fn dispatch_foot_mission(
                 }
             }
             if input.moving_or_queued {
-                MissionHandlerEvaluation::cadence(jittered_mission_cadence(
-                    sim,
+                MissionHandlerEvaluation::cadence(rate_epilogue(
                     rules,
                     MissionType::Move,
+                    &mut sim.scenario_rng,
                 ))
             } else if input.category == EntityCategory::Unit {
                 // Foot4D4242 calls Unit738970(0,1), then returns1. Use the
@@ -321,7 +321,7 @@ pub(crate) fn dispatch_foot_mission(
             // after the draw would both reorder the state writes and move the
             // scenario-stream position for anything the scan itself consumes.
             let queue = infantry_deployed_attack_reacquire(sim, id, rules, input, ctx);
-            let delay = jittered_mission_cadence(sim, rules, MissionType::Attack);
+            let delay = rate_epilogue(rules, MissionType::Attack, &mut sim.scenario_rng);
             MissionHandlerEvaluation { delay, queue }
         }
         (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Attack)) => {
@@ -388,7 +388,7 @@ pub(crate) fn dispatch_foot_mission(
                     None
                 }
             };
-            let cadence = jittered_mission_cadence(sim, rules, MissionType::Attack);
+            let cadence = rate_epilogue(rules, MissionType::Attack, &mut sim.scenario_rng);
             let delay = if foot_dispatch_in_cadence_band(sim, rules, id) {
                 cadence / 2
             } else {
@@ -548,8 +548,11 @@ pub(crate) fn dispatch_foot_mission(
             // control table on `[this+0xAC]`, the object's OWN committed
             // selector — so the shim re-arms a Guard man at `[Guard] Rate` and
             // an Area Guard man at `[Area Guard] Rate`.
-            let delay =
-                jittered_mission_cadence(sim, rules, input.mission.unwrap_or(MissionType::Guard));
+            let delay = rate_epilogue(
+                rules,
+                input.mission.unwrap_or(MissionType::Guard),
+                &mut sim.scenario_rng,
+            );
             MissionHandlerEvaluation { delay, queue }
         }
         // Infantry51F6E0 precedes the FootUnload4DA2B0 fallback. The
@@ -647,7 +650,7 @@ pub(crate) fn dispatch_foot_mission(
                 // `Queue_Mission(0x10, 0)` at `0x00740A19`, then the Guard
                 // epilogue `0x00740A1F`.
                 MissionHandlerEvaluation::queue(
-                    jittered_mission_cadence(sim, rules, mission),
+                    rate_epilogue(rules, mission, &mut sim.scenario_rng),
                     MissionType::Unload,
                 )
             } else {
@@ -997,7 +1000,7 @@ fn infantry_automatic_guard_delay(
         .expect("Guard Stop retains its Infantry receiver")
         .mission_leaf
         .set_infantry_pending_deploy(1);
-    jittered_mission_cadence(sim, rules, mission)
+    rate_epilogue(rules, mission, &mut sim.scenario_rng)
 }
 
 /// Scalar native-policy fixtures use the same selector as the concrete idle
@@ -1526,7 +1529,7 @@ fn hunt_infantry_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: super:
         &crate::sim::mission::authority::LiveReadyInputProvider { rules },
     );
     if sim.mission_ready_to_commence(id, rules) {
-        let _ = sim.mission_commence_exact(id, now);
+        let _ = sim.substrate.mission_commence_exact(id, now);
     }
 }
 
@@ -1602,7 +1605,11 @@ fn infantry_computer_capture(
             ctx.effects,
         );
         let now = sim.session.binary_frame();
-        let _ = sim.mission_assign_exact(id, MissionId::from_known(MissionType::Capture), now);
+        let _ = sim.substrate.mission_assign_exact(
+            id,
+            MissionId::from_known(MissionType::Capture),
+            now,
+        );
     }
     MissionHandlerEvaluation::cadence(1)
 }
@@ -1723,7 +1730,9 @@ fn evaluate_foot_rescue(
             sim.session.binary_frame(),
             &EntityReadyInputProvider,
         );
-        let _ = sim.mission_commence_exact(id, sim.session.binary_frame());
+        let _ = sim
+            .substrate
+            .mission_commence_exact(id, sim.session.binary_frame());
     } else if state == 0 && actor.attack_target.target().is_none() {
         if actor.archive_target().is_none() {
             let post = foot_physical_cell_target(sim, id);
@@ -1827,7 +1836,7 @@ fn evaluate_foot_rescue(
         .get(id)
         .and_then(|actor| actor.mission.current().known())
         .unwrap_or(MissionType::Rescue);
-    MissionHandlerEvaluation::cadence(jittered_mission_cadence(sim, rules, mission))
+    MissionHandlerEvaluation::cadence(rate_epilogue(rules, mission, &mut sim.scenario_rng))
 }
 
 /// Where Area Guard's Retaliate_And_Scan looks for an object holding no
@@ -1957,7 +1966,7 @@ pub(super) fn evaluate_foot_area_guard(
             now,
             &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
-        let _ = sim.mission_commence_exact(id, now);
+        let _ = sim.substrate.mission_commence_exact(id, now);
         return MissionHandlerEvaluation::cadence(
             sim.scenario_rng.next_range_u32_inclusive(1, 10) as i32 + 1,
         );
@@ -2214,7 +2223,7 @@ pub(super) fn evaluate_foot_guard_cadence(
         return MissionHandlerEvaluation { delay: 0, queue };
     }
     MissionHandlerEvaluation {
-        delay: jittered_mission_cadence(sim, rules, mission),
+        delay: rate_epilogue(rules, mission, &mut sim.scenario_rng),
         queue,
     }
 }
@@ -2453,11 +2462,6 @@ pub(super) fn base_mission_handler_delay(
 #[inline]
 fn mission_cadence(rules: &RuleSet, mission: MissionType) -> i32 {
     rules.mission_control.rate_frames(mission)
-}
-
-#[inline]
-fn jittered_mission_cadence(sim: &mut Simulation, rules: &RuleSet, mission: MissionType) -> i32 {
-    sim.mission_rate_epilogue(rules, mission)
 }
 
 /// Whether this dispatch takes the shortened cadence — `FootClass::Mission_Attack`'s

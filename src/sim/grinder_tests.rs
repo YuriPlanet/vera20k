@@ -750,7 +750,7 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
     sim.attach_object_trigger_tag(grinder, Some("OWNER_TAG"));
     sim.attach_object_trigger_tag(civ, Some("DONE_TAG"));
     sim.clear_tag_dispatch_trace_for_test();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.main_rng = crate::sim::rng::MainRng::new(60);
     let mut expected = crate::sim::rng::SimRng::new(60);
     let voice = ["VoiceA", "VoiceB"][(expected.next_u32() % 2) as usize];

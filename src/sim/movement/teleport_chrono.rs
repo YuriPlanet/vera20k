@@ -225,18 +225,6 @@ fn foot(category: EntityCategory) -> bool {
 }
 
 impl Simulation {
-    /// The warp of the Teleport running this Process, which the Unit
-    /// setter may have suspended under a Drive by now.
-    fn chrono_warp_mut(&mut self, id: u64) -> Option<&mut ChronoWarp> {
-        self.substrate
-            .entities
-            .get_mut(id)?
-            .locomotor
-            .as_mut()?
-            .warp_teleport_mut()?
-            .chrono_mut()
-    }
-
     /// Object `+0x90`.
     fn chrono_owner_alive(&self, id: u64) -> bool {
         self.substrate
@@ -277,14 +265,14 @@ impl Simulation {
             return Ok(false);
         }
         if warp.state() == 0 && warp.pending_state() != 0 {
-            if let Some(active) = self.chrono_warp_mut(id) {
+            if let Some(active) = self.substrate.chrono_warp_mut(id) {
                 active.set_state(warp.pending_state());
             }
             return Ok(false);
         }
         match warp.state() {
             0 => {
-                if let Some(warp) = self.chrono_warp_mut(id) {
+                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_bytes(true, true, false);
                     warp.start_timer(frame, CHRONO_WARP_OUT_FRAMES);
                     warp.set_state(1);
@@ -304,7 +292,7 @@ impl Simulation {
                         locomotor.store_ground_layer(false);
                     }
                 }
-                if let Some(warp) = self.chrono_warp_mut(id) {
+                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_bytes(false, false, true);
                 }
                 let landed = self.chrono_update_position(
@@ -315,7 +303,7 @@ impl Simulation {
                     registry,
                     ctx.effects,
                 );
-                if let Some(warp) = self.chrono_warp_mut(id) {
+                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_state(if landed { 4 } else { 3 });
                 }
             }
@@ -328,7 +316,7 @@ impl Simulation {
                     registry,
                     ctx.effects,
                 );
-                if landed && let Some(warp) = self.chrono_warp_mut(id) {
+                if landed && let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_state(4);
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -345,7 +333,7 @@ impl Simulation {
                     ctx.effects,
                 );
                 self.chrono_settle(id, rules, registry, ctx.effects);
-                if let Some(warp) = self.chrono_warp_mut(id) {
+                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_state(5);
                 }
             }
@@ -380,16 +368,16 @@ impl Simulation {
                     .entities
                     .get(id)
                     .map_or(0, |entity| entity.chrono_warp_delay());
-                if let Some(warp) = self.chrono_warp_mut(id) {
+                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.start_timer(frame, delay);
                 }
                 self.teleport_warp_out(id, rules);
-                if let Some(warp) = self.chrono_warp_mut(id) {
+                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_state(6);
                 }
             }
             7 => {
-                if let Some(warp) = self.chrono_warp_mut(id) {
+                if let Some(warp) = self.substrate.chrono_warp_mut(id) {
                     warp.set_warping_in(false);
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -720,7 +708,7 @@ impl Simulation {
             y: to.y.wrapping_add(coord.y.wrapping_sub(from.y)),
             z: to.z.wrapping_add(coord.z.wrapping_sub(from.z)),
         };
-        if let Some(warp) = self.chrono_warp_mut(id) {
+        if let Some(warp) = self.substrate.chrono_warp_mut(id) {
             warp.set_destination(destination);
         }
     }
@@ -856,5 +844,18 @@ impl Simulation {
             return;
         };
         self.free_slaves(id, killer, house, rules, registry, effects);
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// The warp of the Teleport running this Process, which the Unit
+    /// setter may have suspended under a Drive by now.
+    fn chrono_warp_mut(&mut self, id: u64) -> Option<&mut ChronoWarp> {
+        self.entities
+            .get_mut(id)?
+            .locomotor
+            .as_mut()?
+            .warp_teleport_mut()?
+            .chrono_mut()
     }
 }

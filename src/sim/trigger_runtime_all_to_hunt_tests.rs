@@ -426,7 +426,8 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
     // ordinary armed route. This is Rust integration, not a native full map.
     for &id in &actors {
         assert!(
-            sim.mission_commence_exact(id, sim.session.binary_frame())
+            sim.substrate
+                .mission_commence_exact(id, sim.session.binary_frame())
                 .unwrap()
         );
     }

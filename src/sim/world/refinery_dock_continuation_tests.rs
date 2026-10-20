@@ -142,7 +142,7 @@ fn fixture(row: &Value) -> Scene {
         s.other,
         crate::sim::house_tracking::HouseTracking::remove_tracking,
     );
-    s.sim.leave_house_base_lists(s.other, owner);
+    s.sim.houses.leave_house_base_lists(s.other, owner);
     for y in 20..23 {
         for x in 20..24 {
             s.sim.substrate.occupancy.remove(x, y, s.other);
@@ -433,7 +433,10 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 .get_mut(s.miner)
                 .unwrap()
                 .tick_native_stage(now as i32);
-            crate::sim::miner::miner_system::unit_ai_clear_harvesting(&mut s.sim, s.miner);
+            crate::sim::miner::miner_system::unit_ai_clear_harvesting(
+                &mut s.sim.substrate,
+                s.miner,
+            );
         }
         "enter" => assert_eq!(
             crate::sim::mission::enter::mission_enter(
@@ -728,6 +731,7 @@ fn independent_pending_entry_survives_save_load_and_changes_the_state_hash() {
         .unwrap()
         .mark_live_contact_with(s.miner);
     s.sim
+        .substrate
         .mission_assign_exact(
             s.refinery,
             MissionId::from_known(crate::sim::mission::MissionType::Repair),

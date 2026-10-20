@@ -2751,7 +2751,7 @@ fn lifecycle_authority_second_reveal_is_idempotent() {
         }
     );
     let first_position = sim.substrate.entities.get(1).unwrap().position;
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     sim.lifecycle_test_events.clear();
 
     assert_eq!(
@@ -2787,11 +2787,11 @@ fn lifecycle_authority_conceal_without_dirty_eligibility_still_clears_drawn_stat
     let mut sim = Simulation::new();
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     let _ = sim.reveal(1);
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
 
     let _ = sim.object_conceal(1);
     assert_eq!(
-        sim.lifecycle_outputs,
+        sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
             LifecycleOutput::DisplayRemove { stable_id: 1 },
@@ -2813,11 +2813,11 @@ fn lifecycle_authority_conceal_dirty_eligibility_emits_dirty_before_drawn_clear(
         .removal_facts
         .set_dirty_rect_eligible_for_test(true);
     let _ = sim.reveal(1);
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
 
     let _ = sim.object_conceal(1);
     assert_eq!(
-        sim.lifecycle_outputs,
+        sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
             LifecycleOutput::DisplayRemove { stable_id: 1 },
@@ -3622,12 +3622,13 @@ fn occupier_capture_retains_live_non_selling_nav_target() {
     insert_entity(&mut sim, 1, EntityCategory::Infantry);
     insert_entity(&mut sim, 2, EntityCategory::Structure);
     let _ = sim.try_reveal_entity(2, request(9, 11, PlacementEvidence::MarkSucceeded));
-    sim.mission_assign_exact(
-        1,
-        MissionId::from_known(MissionType::Capture),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            1,
+            MissionId::from_known(MissionType::Capture),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
 
     let listener = sim.substrate.entities.get_mut(1).unwrap();
     listener.removal_facts.set_occupier_for_test(true);
@@ -3665,18 +3666,20 @@ fn selling_target_disables_occupier_capture_nav_retention() {
     insert_entity(&mut sim, 1, EntityCategory::Infantry);
     insert_entity(&mut sim, 2, EntityCategory::Structure);
     let _ = sim.try_reveal_entity(2, request(9, 11, PlacementEvidence::MarkSucceeded));
-    sim.mission_assign_exact(
-        1,
-        MissionId::from_known(MissionType::Capture),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
-    sim.mission_assign_exact(
-        2,
-        MissionId::from_known(MissionType::Selling),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            1,
+            MissionId::from_known(MissionType::Capture),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            2,
+            MissionId::from_known(MissionType::Selling),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
 
     let listener = sim.substrate.entities.get_mut(1).unwrap();
     listener.removal_facts.set_occupier_for_test(true);

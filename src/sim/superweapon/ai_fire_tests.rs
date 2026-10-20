@@ -518,6 +518,7 @@ fn the_try_fire_arms_match_native() {
             let mut instance = SuperWeaponInstance::new(id, computer, 0);
             instance.is_ready = flag(&kind[1]);
             sim.super_weapons
+                .map_mut_for_test()
                 .entry(computer)
                 .or_default()
                 .insert(id, instance);
@@ -1044,6 +1045,7 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
     instance.charge_duration = 9000;
     instance.is_ready = true;
     sim.super_weapons
+        .map_mut_for_test()
         .entry(americans)
         .or_default()
         .insert(sw_type, instance);

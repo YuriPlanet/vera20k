@@ -1964,6 +1964,7 @@ fn turning_unload_uses_the_turret_latch_and_native_cadence() {
         fx.board(carrier, 2);
         fx.sim.session.set_binary_frame_for_test(100);
         fx.sim
+            .substrate
             .mission_assign_exact(carrier, MissionId::from_known(MissionType::Unload), 100)
             .unwrap();
         let entity = fx.sim.substrate.entities.get_mut(carrier).unwrap();
@@ -2085,7 +2086,7 @@ fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
     fx.sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     // Foot Load also clears the move-sound countdown, including idle Feet.
     for id in fx.sim.substrate.entities.keys_sorted() {
-        fx.sim.restore_move_sound_state_after_load(id);
+        fx.sim.substrate.restore_move_sound_state_after_load(id);
     }
     assert_eq!(
         restored.state_hash(),

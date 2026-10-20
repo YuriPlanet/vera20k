@@ -535,7 +535,7 @@ fn eject_head_passenger(
 
             if let Some(sound) = leave_sound {
                 let sound_id = sim.interner.intern(&sound);
-                sim.sound_events.push(SimSoundEvent::LeaveTransport {
+                sim.sound_events.emit(SimSoundEvent::LeaveTransport {
                     sound_id,
                     rx: base.0,
                     ry: base.1,
@@ -722,7 +722,7 @@ pub(crate) fn building_mission_unload_absorber(
                     )
                 });
                 if let Some(coordinate) = coordinate {
-                    sim.sound_events.push(SimSoundEvent::voc_at_world_coord(
+                    sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
                         sound.clone(),
                         crate::sim::anim_class::AnimWorldCoord {
                             x: coordinate.x,

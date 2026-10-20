@@ -186,7 +186,7 @@ impl Simulation {
             if !armed {
                 // The prior rotating visit cleared the latch, even without playback.
                 // Release any source and re-arm for the next rotating visit.
-                self.sound_events.push(SimSoundEvent::ObjectSoundReleased {
+                self.sound_events.emit(SimSoundEvent::ObjectSoundReleased {
                     owner: turret_rotate_sound_owner(id),
                 });
                 effects.flush_sound(self, Some(rules));
@@ -214,14 +214,14 @@ impl Simulation {
             .object_type(entity.type_ref(), rules)
             .and_then(|object| object.turret_rotate_sound.clone());
         let world = Self::movement_sound_world(entity);
-        self.sound_events.push(SimSoundEvent::AnimationStopped {
+        self.sound_events.emit(SimSoundEvent::AnimationStopped {
             anim_id: owner,
             stop_sound_id: None,
             world,
         });
         effects.flush_sound(self, Some(rules));
         if let Some(sound_id) = sound_id {
-            self.sound_events.push(SimSoundEvent::AnimationStarted {
+            self.sound_events.emit(SimSoundEvent::AnimationStarted {
                 anim_id: owner,
                 sound_id,
                 world,
@@ -247,7 +247,7 @@ impl Simulation {
         if !self.turret_rotate_loop_live(id) {
             return;
         }
-        self.sound_events.push(SimSoundEvent::ObjectSoundReleased {
+        self.sound_events.emit(SimSoundEvent::ObjectSoundReleased {
             owner: turret_rotate_sound_owner(id),
         });
         effects.flush_sound(self, rules);

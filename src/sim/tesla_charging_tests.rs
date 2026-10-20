@@ -29,7 +29,9 @@ impl Fixture {
                 .unwrap()
         });
         let owner = sim.interner.intern("Americans");
-        sim.power_states.insert(owner, PowerState::default());
+        sim.power_states
+            .map_mut_for_test()
+            .insert(owner, PowerState::default());
         Some(Self {
             sim,
             rules,
@@ -220,7 +222,7 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
     // The complete detonation still runs its existing animation tail. Only
     // ElectricAssault's list refresh itself must leave RNG untouched.
     let rng = f.sim.scenario_rng.logical_state();
-    f.sim.electric_assault_detonation(a, Some(f.coil));
+    f.sim.substrate.electric_assault_detonation(a, Some(f.coil));
     assert_eq!(f.sim.scenario_rng.logical_state(), rng);
     assert_eq!(f.sim.substrate.entities.get(a).unwrap().rearm_timer, rearm);
 

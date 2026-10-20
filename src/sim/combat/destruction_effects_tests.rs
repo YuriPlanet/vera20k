@@ -1519,7 +1519,7 @@ fn a_power_plant_killed_while_selling_outlives_the_blow_until_its_update() {
         return;
     };
     let now = sim.session.binary_frame();
-    sim.mission_assign_exact(
+    sim.substrate.mission_assign_exact(
         plant,
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Selling),
         now,

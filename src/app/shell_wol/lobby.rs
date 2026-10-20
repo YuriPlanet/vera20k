@@ -289,10 +289,10 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         return;
     };
     if state.match_state.session.network_return_context().is_none() {
-        state.match_state.session.enter_network(
-            crate::app::match_runtime::session::SessionMode::Wol,
-            crate::app::match_runtime::session::NetworkReturnContext::Wol,
-        );
+        state
+            .match_state
+            .session
+            .enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
     }
     visit.page = WolPage::Lobby;
     state.frontend.wol_login_art = None;

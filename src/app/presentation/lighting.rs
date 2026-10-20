@@ -4,7 +4,7 @@
 use crate::map::lighting::{
     self, CellLightGrid, CellRelightProfile, LightingConfig, LightingProfileUnits, PointLight,
 };
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
 
@@ -28,30 +28,85 @@ pub(crate) fn body_palette_light(
 }
 
 /// The light a Techno's body draw adds to its cell's intensity:
-/// ExtraUnitLight= for a unit (UnitClass::DrawIt `0x0073D0C3`),
+/// UnitClass::DrawIt's bridge/side-cell arm and ExtraUnitLight=,
 /// ExtraInfantryLight= for infantry (`0x00518F90`), [`aircraft_extra_light`]
 /// for an aircraft, and none for a building's voxel turret.
 ///
-/// RESIDUAL (YuriPlanet/vera20k#1215): UnitClass::DrawIt's arms ahead of
-/// its extra. On a bridge it adds four of the lighting profile's Level
-/// (`0x0073CFA7..0x0073D073`), and on a cell whose `+0x140` holds 0x10000 a
-/// unit that is not high-flying takes 500 off (`0x0073D078..0x0073D0BB`).
-/// Trigger: a vehicle on a bridge deck or on such a cell, at every crossing.
-/// Effect: VERA draws it four Levels darker (128 at Level=.032) or 500
-/// brighter. Downstream: presentation only.
+/// The caller supplies its frame's isolated query; drawing never stamps the
+/// simulation's shared fallback Cell. Native controls: tools/unit_light.json.
 pub(crate) fn body_extra_light(
     entity: &crate::sim::game_entity::GameEntity,
     rules: &RuleSet,
     sim: &Simulation,
-    terrain: Option<&ResolvedTerrainGrid>,
+    cells: Option<&NativeCellQuery<'_>>,
 ) -> i32 {
     use crate::map::entities::EntityCategory;
     match entity.category() {
-        EntityCategory::Unit => rules.general.extra_unit_light,
+        EntityCategory::Unit => {
+            use crate::map::bridge_facts::{
+                BRIDGE_FLAG_DIRECTION_ZERO, BRIDGE_FLAG_EXTRA_SIDE, BRIDGE_FLAG_STRUCTURAL,
+            };
+            use crate::sim::movement::{air_movement, ground_pose};
+
+            let extra = rules.general.extra_unit_light;
+            let Some(cells) = cells else {
+                return extra;
+            };
+            // Unit73CF1D retains Object41BEA0's packed cell before the
+            // GetHeight73CF74 and world-coordinate lookup73CFA0. Keep the
+            // two query forms distinct, including their signed narrowing.
+            let [x, y] = ground_pose::position_world_xy(&entity.position);
+            let packed = (
+                crate::util::lepton::lepton_to_cell_packed(x),
+                crate::util::lepton::lepton_to_cell_packed(y),
+            );
+            let height = air_movement::queried_flight_height(entity, Some(cells));
+            let current = cells.lookup_world(x, y);
+            let flags = cells.flags(current);
+            let above_deck = if entity.on_bridge() {
+                height >= 0
+            } else {
+                height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+            };
+            if above_deck && flags & BRIDGE_FLAG_STRUCTURAL != 0 {
+                // Cell481810 chooses just one neighbor: direction0 when
+                // bit800 is set, otherwise6. Failure never tries the other.
+                let direction = if flags & BRIDGE_FLAG_DIRECTION_ZERO != 0 {
+                    0
+                } else {
+                    6
+                };
+                let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[direction];
+                let (cx, cy) = cells.coord(current);
+                let neighbor =
+                    cells.lookup((cx.wrapping_add(dx as i16), cy.wrapping_add(dy as i16)));
+                if cells.flags(neighbor) & BRIDGE_FLAG_STRUCTURAL != 0 {
+                    //73D00E..73D076 has the same Ion/Dominator/Nuke/Normal
+                    //precedence as cell relighting, including Dominator fade
+                    //back. This arm skips the side-cell subtraction entirely.
+                    let level = sim
+                        .session()
+                        .lighting()
+                        .profile(sim.lighting_cell_profile())
+                        .level_units;
+                    return extra.wrapping_add(level.wrapping_mul(4));
+                }
+            }
+            //73D078..73D0BB asks high-flight only on a flagged side cell.
+            //Unit's actual vt54/4DE620 forwards to the common Object owner.
+            let draw_cell = cells.lookup(packed);
+            if cells.flags(draw_cell) & BRIDGE_FLAG_EXTRA_SIDE != 0
+                && !air_movement::is_high_flying_in_query(entity, cells, None)
+            {
+                extra.wrapping_sub(500)
+            } else {
+                extra
+            }
+        }
         EntityCategory::Infantry => rules.general.extra_infantry_light,
         EntityCategory::Aircraft => aircraft_extra_light(
             rules.general.extra_aircraft_light,
-            crate::sim::movement::air_movement::current_fly_height(entity, terrain),
+            crate::sim::movement::air_movement::queried_flight_height(entity, cells),
             crate::sim::superweapon::lightning_storm::raging(sim),
             &sim.session().lighting(),
         ),
@@ -789,6 +844,10 @@ mod curtain_tint_tests;
 #[cfg(test)]
 #[path = "lighting_tint_tests.rs"]
 mod tint_tests;
+
+#[cfg(test)]
+#[path = "unit_light_tests.rs"]
+mod unit_light_tests;
 
 #[cfg(test)]
 mod palette_producer_tests {

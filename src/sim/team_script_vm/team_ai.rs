@@ -734,7 +734,8 @@ impl Simulation {
             .get(&team_id)
             .and_then(|team| team.zone);
         if self.team_member_distance(entity, zone) <= self.team_stray(team_id, rules) {
-            self.team_set_member_initiated(team_id, member);
+            self.team_script_vm
+                .team_set_member_initiated(team_id, member);
             return false;
         }
         if entity.navigation.nav_com().is_none() {
@@ -752,17 +753,6 @@ impl Simulation {
             .get(&team_id)
             .and_then(|team| team.members.iter().find(|record| record.id == member))
             .is_some_and(|record| record.initiated)
-    }
-
-    pub(super) fn team_set_member_initiated(&mut self, team_id: u64, member: u64) {
-        if let Some(record) = self
-            .team_script_vm
-            .teams
-            .get_mut(&team_id)
-            .and_then(|team| team.members.iter_mut().find(|record| record.id == member))
-        {
-            record.initiated = true;
-        }
     }
 
     /// `TeamClass::Get_Stray @ 0x006F03B0` (which `Regroup`, `Coordinate_Move`
@@ -832,6 +822,18 @@ impl Simulation {
         target
             .and_then(|target| self.object_distance_to(member.stable_id(), target.target_kind()))
             .unwrap_or(0)
+    }
+}
+
+impl crate::sim::team_script_vm::TeamScriptVm {
+    pub(super) fn team_set_member_initiated(&mut self, team_id: u64, member: u64) {
+        if let Some(record) = self
+            .teams
+            .get_mut(&team_id)
+            .and_then(|team| team.members.iter_mut().find(|record| record.id == member))
+        {
+            record.initiated = true;
+        }
     }
 }
 

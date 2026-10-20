@@ -540,17 +540,9 @@ pub(crate) fn rate_epilogue(
 }
 
 impl Simulation {
-    /// [`rate_epilogue`] on the Scenario stream.
-    pub(crate) fn mission_rate_epilogue(
-        &mut self,
-        rules: &RuleSet,
-        mission: super::MissionType,
-    ) -> i32 {
-        rate_epilogue(rules, mission, &mut self.scenario_rng)
-    }
-
-    /// [`Self::mission_rate_epilogue`] on `receiver`'s current mission as the
-    /// handler leaves it (`dispatched` when the object is gone or holds none).
+    /// [`rate_epilogue`] on the Scenario stream for `receiver`'s current
+    /// mission as the handler leaves it (`dispatched` when the object is gone
+    /// or holds none).
     pub(crate) fn mission_rate_epilogue_for(
         &mut self,
         rules: &RuleSet,
@@ -563,40 +555,7 @@ impl Simulation {
             .get(receiver)
             .and_then(|entity| entity.mission.current().known())
             .unwrap_or(dispatched);
-        self.mission_rate_epilogue(rules, current)
-    }
-
-    /// `AircraftClass::Assign_Mission @ 0x0041B9F0`'s filter, then
-    /// `MissionClass::Assign_Mission @ 0x005B2FD0`.
-    pub(crate) fn mission_assign_exact(
-        &mut self,
-        receiver: u64,
-        requested: MissionId,
-        now: u32,
-    ) -> Result<(), MissionAuthorityError> {
-        let entity = self
-            .substrate
-            .entities
-            .get_mut(receiver)
-            .ok_or(MissionAuthorityError::MissingReceiver(receiver))?;
-        if !aircraft_allows(entity, requested) {
-            return Ok(());
-        }
-        verb::assign_base(&mut entity.mission, requested, now);
-        Ok(())
-    }
-
-    pub(crate) fn mission_commence_exact(
-        &mut self,
-        receiver: u64,
-        now: u32,
-    ) -> Result<bool, MissionAuthorityError> {
-        let entity = self
-            .substrate
-            .entities
-            .get_mut(receiver)
-            .ok_or(MissionAuthorityError::MissingReceiver(receiver))?;
-        Ok(commence_entity_mission(entity, now))
+        rate_epilogue(rules, current, &mut self.scenario_rng)
     }
 
     /// Host-time queued-mission promotion at the per-object AI position.
@@ -928,45 +887,6 @@ impl Simulation {
         Ok(())
     }
 
-    /// A building's ready check in its Update (`0x0043FE27..0x0043FE54`
-    /// before the Techno AI, which also needs BState out of 0, and
-    /// `0x0043FF91..0x0043FFB4` after it): with `+0x6DD` set
-    /// (Ready_To_Commence, building vt+0x200 = `0x00454250`), a successful
-    /// Commence clears the byte. Commence fails with nothing queued and then
-    /// leaves it set.
-    pub(crate) fn mission_building_ready_commence(
-        &mut self,
-        receiver: u64,
-        now: u32,
-    ) -> Result<bool, MissionAuthorityError> {
-        let ready = {
-            let entity = self
-                .substrate
-                .entities
-                .get(receiver)
-                .ok_or(MissionAuthorityError::MissingReceiver(receiver))?;
-            let leaf = entity
-                .mission_leaf
-                .as_building()
-                .ok_or(ReadyUnavailable::WorldLookup)?;
-            building_ready_to_commence(BuildingReadyView { leaf })?
-        };
-        if !ready {
-            return Ok(false);
-        }
-
-        let entity = self
-            .substrate
-            .entities
-            .get_mut(receiver)
-            .expect("building-ready receiver remains present");
-        if !commence_entity_mission(entity, now) {
-            return Ok(false);
-        }
-        entity.mission_leaf.set_building_ready_latch(0);
-        Ok(true)
-    }
-
     /// Original Foot4D8F40 -> Techno7013A0 -> Mission5B3650, then the
     /// concrete Target7013CB and Destination4D8F6D. Refused setters retain
     /// their native partial effects; they do not undo the prior override.
@@ -1085,6 +1005,74 @@ impl Simulation {
     }
 }
 
+impl crate::sim::world::ObjectSubstrate {
+    /// `AircraftClass::Assign_Mission @ 0x0041B9F0`'s filter, then
+    /// `MissionClass::Assign_Mission @ 0x005B2FD0`.
+    pub(crate) fn mission_assign_exact(
+        &mut self,
+        receiver: u64,
+        requested: MissionId,
+        now: u32,
+    ) -> Result<(), MissionAuthorityError> {
+        let entity = self
+            .entities
+            .get_mut(receiver)
+            .ok_or(MissionAuthorityError::MissingReceiver(receiver))?;
+        if !aircraft_allows(entity, requested) {
+            return Ok(());
+        }
+        verb::assign_base(&mut entity.mission, requested, now);
+        Ok(())
+    }
+    pub(crate) fn mission_commence_exact(
+        &mut self,
+        receiver: u64,
+        now: u32,
+    ) -> Result<bool, MissionAuthorityError> {
+        let entity = self
+            .entities
+            .get_mut(receiver)
+            .ok_or(MissionAuthorityError::MissingReceiver(receiver))?;
+        Ok(commence_entity_mission(entity, now))
+    }
+    /// A building's ready check in its Update (`0x0043FE27..0x0043FE54`
+    /// before the Techno AI, which also needs BState out of 0, and
+    /// `0x0043FF91..0x0043FFB4` after it): with `+0x6DD` set
+    /// (Ready_To_Commence, building vt+0x200 = `0x00454250`), a successful
+    /// Commence clears the byte. Commence fails with nothing queued and then
+    /// leaves it set.
+    pub(crate) fn mission_building_ready_commence(
+        &mut self,
+        receiver: u64,
+        now: u32,
+    ) -> Result<bool, MissionAuthorityError> {
+        let ready = {
+            let entity = self
+                .entities
+                .get(receiver)
+                .ok_or(MissionAuthorityError::MissingReceiver(receiver))?;
+            let leaf = entity
+                .mission_leaf
+                .as_building()
+                .ok_or(ReadyUnavailable::WorldLookup)?;
+            building_ready_to_commence(BuildingReadyView { leaf })?
+        };
+        if !ready {
+            return Ok(false);
+        }
+
+        let entity = self
+            .entities
+            .get_mut(receiver)
+            .expect("building-ready receiver remains present");
+        if !commence_entity_mission(entity, now) {
+            return Ok(false);
+        }
+        entity.mission_leaf.set_building_ready_latch(0);
+        Ok(true)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
@@ -1197,10 +1185,13 @@ mod tests {
         let before = aircraft.mission;
         let mut sim = sim_with(aircraft);
 
-        sim.mission_assign_exact(1, MissionId::NONE, 10).unwrap();
+        sim.substrate
+            .mission_assign_exact(1, MissionId::NONE, 10)
+            .unwrap();
         assert_eq!(sim.substrate.entities.get(1).unwrap().mission, before);
 
-        sim.mission_assign_exact(1, MissionId::from_raw(0x1a), 10)
+        sim.substrate
+            .mission_assign_exact(1, MissionId::from_raw(0x1a), 10)
             .unwrap();
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().mission.current(),
@@ -1212,11 +1203,11 @@ mod tests {
     fn mission_authority_assign_preserves_base_guard_and_raw_ids() {
         let mut sim = sim_with(entity(EntityCategory::Unit, MissionId::from_raw(28)));
         let before = sim.substrate.entities.get(1).unwrap().mission;
-        sim.mission_assign_exact(1, GUARD, 10).unwrap();
+        sim.substrate.mission_assign_exact(1, GUARD, 10).unwrap();
         assert_eq!(sim.substrate.entities.get(1).unwrap().mission, before);
 
         let unknown = MissionId::from_raw(0x1234_5678);
-        sim.mission_assign_exact(1, unknown, 11).unwrap();
+        sim.substrate.mission_assign_exact(1, unknown, 11).unwrap();
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().mission.current(),
             unknown
@@ -1378,7 +1369,7 @@ mod tests {
         aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
         let mut sim = sim_with(aircraft);
 
-        assert!(!sim.mission_commence_exact(1, 10).unwrap());
+        assert!(!sim.substrate.mission_commence_exact(1, 10).unwrap());
         assert_eq!(
             sim.substrate
                 .entities
@@ -2032,7 +2023,7 @@ mod tests {
         );
         let readiness = TestReadyProvider::ready(false);
 
-        sim.mission_assign_exact(1, ATTACK, 1).unwrap();
+        sim.substrate.mission_assign_exact(1, ATTACK, 1).unwrap();
         sim.mission_queue_exact(1, MOVE, 1, 2, &readiness).unwrap();
         let after = (
             sim.scenario_rng.state(),
@@ -2099,7 +2090,11 @@ mod tests {
         building.mission_leaf = MissionLeafState::building_raw_for_test(1);
         let mut sim = sim_with(building);
 
-        assert!(!sim.mission_building_ready_commence(1, 10).unwrap());
+        assert!(
+            !sim.substrate
+                .mission_building_ready_commence(1, 10)
+                .unwrap()
+        );
         assert_eq!(
             sim.substrate
                 .entities
@@ -2129,7 +2124,11 @@ mod tests {
         });
         let mut sim = sim_with(building);
 
-        assert!(sim.mission_building_ready_commence(1, 10).unwrap());
+        assert!(
+            sim.substrate
+                .mission_building_ready_commence(1, 10)
+                .unwrap()
+        );
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(entity.mission.current(), MOVE);
         assert_eq!(entity.mission_leaf.as_building().unwrap().ready_latch(), 0);

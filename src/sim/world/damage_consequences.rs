@@ -193,7 +193,7 @@ impl DamageConsequences {
         }
         world
             .combat_light_requests
-            .append(&mut effects.combat_light_requests);
+            .emit_all(effects.combat_light_requests.drain(..));
         // RevealOnFire only lifts the shooter's shroud above. gamemd reaches
         // `CreateRadarEvent @ 0x0065FA70` from no weapon-fire path: its 24
         // constant-type call sites never pass type 0 (the 25th,
@@ -201,10 +201,10 @@ impl DamageConsequences {
         // in `BulletClass::AI` (`0x00467EA7`) is the silent type 13 of the
         // `NUKE` payload (`sim::superweapon::nuke::impact`).
         if let DamageDelivery::Ordinary { fire_events, .. } = delivery {
-            world.fire_events.extend(fire_events);
+            world.fire_events.emit_all(fire_events);
         }
         for (die_sound_id, rx, ry) in effects.death_sounds.drain(..) {
-            world.sound_events.push(SimSoundEvent::EntityDied {
+            world.sound_events.emit(SimSoundEvent::EntityDied {
                 die_sound_id,
                 rx,
                 ry,

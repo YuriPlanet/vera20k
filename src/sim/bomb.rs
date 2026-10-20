@@ -430,7 +430,7 @@ impl Simulation {
         // 0x00438FD7..0x0043901D: BombAttachSound at the target, only for the
         // player who owns the planter (+0x21C).
         if let Some(sound_id) = rules.general.bomb_attach_sound.clone() {
-            self.sound_events.push(SimSoundEvent::VocAt {
+            self.sound_events.emit(SimSoundEvent::VocAt {
                 sound_id,
                 audible_to: Some([planter_house, planter_house]),
                 rx: position.rx(),

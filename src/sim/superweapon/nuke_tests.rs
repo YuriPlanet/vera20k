@@ -226,7 +226,7 @@ fn impact_effects_match_native() {
         sim.session
             .set_lighting_for_test(ScenarioLightingState::default());
         sim.lighting_sources.take_pending();
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let anims_before: Vec<AnimId> = sim.substrate.anims.iter().map(|(&id, _)| id).collect();
         let waits = int(&row["waits"]) != 0;
         // The bullet's side of the block (on its clamped Location, which
@@ -590,6 +590,7 @@ fn the_launch_matches_native() {
         };
         let sw_type = super::chronosphere_tests::charge_super(&mut sim, owner, "NukeSpecial");
         sim.super_weapons
+            .map_mut_for_test()
             .get_mut(&owner)
             .unwrap()
             .get_mut(&sw_type)
@@ -794,6 +795,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
     instance.charge_duration = 9000;
     instance.is_ready = true;
     sim.super_weapons
+        .map_mut_for_test()
         .entry(russians)
         .or_default()
         .insert(sw_type, instance);
@@ -890,7 +892,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
     // marks the cell, and the warhead waits on NUKEBALL before it
     // detonates.
     let tank_health = sim.substrate.entities.get(tank).unwrap().health.current();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     run_until(&mut sim, &rules, 3000, |sim| {
         sim.projectiles
             .get(warhead)
@@ -1132,7 +1134,7 @@ fn nuke_awaited_anim_retirement_routes_release_before_next_bullet_visit() {
             .set_for_test(Some(crate::sim::combat::TargetKind::Entity(ball)));
         let rng = serde_json::to_value(&sim.scenario_rng).unwrap();
         let before = sim.projectiles.get(id).unwrap().clone();
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         match route {
             "Destroy" => {
                 sim.destroy_anim(ball, &rules);

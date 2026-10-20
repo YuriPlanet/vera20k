@@ -40,7 +40,9 @@ fn damaged_tank(
     let tank = spawn(sim, rules, kind, owner, cell.0, cell.1);
     let strength = rules.object(kind).unwrap().strength;
     let now = sim.session.binary_frame();
-    let _ = sim.mission_assign_exact(tank, MissionId::from_known(mission), now);
+    let _ = sim
+        .substrate
+        .mission_assign_exact(tank, MissionId::from_known(mission), now);
     sim.substrate
         .entities
         .get_mut(tank)

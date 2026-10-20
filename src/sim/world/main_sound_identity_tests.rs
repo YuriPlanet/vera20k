@@ -183,7 +183,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
         (&mut quiet, quiet_gun, quiet_target),
         (&mut serviced, serviced_gun, serviced_target),
     ] {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.commit_fire_visit(
             FireVisit::Direct {
                 id: gun,

@@ -445,7 +445,9 @@ fn set_target_matches_the_original() {
             let mut power_state = crate::sim::power_system::PowerState::default();
             power_state.set_total_drain_for_test(100);
             power_state.set_is_low_power_for_test(true);
-            sim.power_states.insert(owner, power_state);
+            sim.power_states
+                .map_mut_for_test()
+                .insert(owner, power_state);
         }
         let requested = (input["args"][0] != 0).then_some(TargetKind::Entity(target));
         sim.assign_target_represented(
@@ -718,7 +720,7 @@ fn building_dispatch_cadence_matches_the_original() {
                     },
                 ));
             }
-            sim.fire_events.clear();
+            sim.fire_events.clear_for_test();
             sim.advance_tick(&commands, Some(&rules), None, None, 67);
             assert_eq!(u64::from(sim.session.binary_frame() - start), k, "{name}");
 

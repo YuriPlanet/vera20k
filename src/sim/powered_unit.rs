@@ -207,7 +207,7 @@ impl Simulation {
         if self.for_each_powered_unit(owner, unit_type, |sim, id| {
             sim.techno_reactivate(id, rules, effects);
         }) {
-            self.sound_events.push(SimSoundEvent::HouseEva {
+            self.sound_events.emit(SimSoundEvent::HouseEva {
                 owner,
                 event: EVA_ROBOT_TANKS_BACK_ONLINE,
             });
@@ -235,7 +235,7 @@ impl Simulation {
         if self.for_each_powered_unit(owner, unit_type, |sim, id| {
             sim.techno_deactivate(id, rules, effects);
         }) {
-            self.sound_events.push(SimSoundEvent::HouseEva {
+            self.sound_events.emit(SimSoundEvent::HouseEva {
                 owner,
                 event: EVA_ROBOT_TANKS_OFFLINE,
             });
@@ -367,7 +367,7 @@ impl Simulation {
             }
         {
             self.sound_events
-                .push(SimSoundEvent::voc_at(sound, &entity.position));
+                .emit(SimSoundEvent::voc_at(sound, &entity.position));
         }
         self.substrate
             .entities

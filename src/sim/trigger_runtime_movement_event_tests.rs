@@ -433,12 +433,13 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
         .unwrap();
     install(&mut sim, &rules, "1,0,-1");
     sim.attach_object_trigger_tag(reactor, Some("MOVETAG"));
-    sim.mission_assign_exact(
-        infantry,
-        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Enter),
-        0,
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            infantry,
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Enter),
+            0,
+        )
+        .unwrap();
     // The Infantry setter's Enter arm HELLOs the reactor (`0x0051ACD4`).
     let _ = sim.assign_destination_represented(
         infantry,

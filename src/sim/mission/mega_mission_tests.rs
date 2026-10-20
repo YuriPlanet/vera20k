@@ -303,7 +303,7 @@ fn mega_mission_bodies_match_the_original_rows() {
                     continue;
                 }
                 match entry {
-                    "clear" => sim.foot_clear_all_tarcom(OWNER),
+                    "clear" => sim.substrate.foot_clear_all_tarcom(OWNER),
                     "has_saved_mission" | "is_attack_move" => assert_eq!(
                         sim.mega_mission(OWNER).is_attack_move(),
                         answer != 0,

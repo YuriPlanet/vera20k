@@ -860,7 +860,7 @@ fn drop_payload_matches_native() {
             })
             .collect();
         sim.session.set_binary_frame_for_test(4321);
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
 
         let can_enter = int(&row["can_enter"]) as u8;
         let (observed, records) = observe(can_enter, || {
@@ -1097,7 +1097,7 @@ fn fly_out(
     };
     let mut frames = 0;
     while sim.substrate.entities.contains(plane) || busy(sim) {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         step(sim, rules);
         frames += 1;
         chutes += chute_sounds(sim).len();

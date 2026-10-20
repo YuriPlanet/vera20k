@@ -91,7 +91,7 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
                 if !self.execute_world_callbacks {
                     return;
                 }
-                self.world.begin_receiver_kill_record(id);
+                self.world.substrate.begin_receiver_kill_record(id);
                 //5F5772..579A: the supplied source-House ABI pointer stays
                 //fixed, but comparison against the source Techno's Owner is live.
                 let attacker = self.event.attacker_id;

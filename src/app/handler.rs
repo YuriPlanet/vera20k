@@ -875,6 +875,7 @@ impl ApplicationHandler for App {
                                 location: event.location,
                                 state: event.state,
                                 repeat: event.repeat,
+                                text: event.text.as_deref(),
                             },
                             paused_at_event,
                         );

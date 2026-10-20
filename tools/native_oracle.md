@@ -598,3 +598,24 @@ The historical animation-only Mark seam remains its default. Display submission
 ignores that result. Screen rectangle/dirty outputs remain supplied. This is a
 bounded native comparison, not a complete scenario/House/Unit initialization,
 rendering, audio playback or whole crate-function equivalence proof.
+
+### Sonic Wave packed-surface controls
+
+The existing Wave runtime/pixel owner also replays Sonic type0 controls:
+
+```sh
+RA2_DIR=/path/to/retail \
+VERA20K_PROJECTILE_RENDER_ASSETS=/path/to/extracted/rules-art-mode \
+PYTHONPATH=.:tools/spatial_oracle \
+python -m tools.procedural_drawing_oracle.magnetic_wave --sonic --check
+```
+
+The consumed `sonic_wave.json`/sidecar retains original DrawIt75F9F0 →
+DrawSonic75FA90 → Pixel75EDF0, the initialized tables, integer spans, displaced
+RGB565/RGB555 stores, declared phase/clip/depth/A controls and ordered overlap.
+Its actor shells are the existing TELE/MTNK component setup; it does not claim
+a legal Dolphin FireAt, full Sonic AI/damage or original scene pixels. The
+small full-surface direction5 input reaches outside its supplied RGB allocation
+and is an explicit domain-refusal control. A valid cropped control retains that
+direction for GPU comparison; no out-of-allocation color is a GPU promise.
+The production Dolphin route uses the separate map-observation recipe.

@@ -450,7 +450,7 @@ fn stock_opening_matches_original_building_and_same_pass_anim_visits() {
         for frame in row["frames"].as_array().unwrap() {
             let now = frame["frame"].as_u64().unwrap() as u32;
             sim.session.set_binary_frame_for_test(now);
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
             let (_, draws) = trace_draws(|| {
                 sim.for_each_live_object(|sim, stable_id| {
                     if sim.anim(stable_id).is_some() {

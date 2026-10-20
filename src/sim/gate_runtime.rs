@@ -88,7 +88,9 @@ pub(crate) fn request_gate_open_for_cell(
             {
                 let now = sim.session.binary_frame();
                 let readiness = LiveReadyInputProvider { rules };
-                let _ = sim.mission_assign_exact(candidate_id, MissionId::NONE, now);
+                let _ = sim
+                    .substrate
+                    .mission_assign_exact(candidate_id, MissionId::NONE, now);
                 let _ = sim.mission_queue_exact(
                     candidate_id,
                     MissionId::from_known(MissionType::Open),
@@ -96,7 +98,7 @@ pub(crate) fn request_gate_open_for_cell(
                     now,
                     &readiness,
                 );
-                let _ = sim.mission_commence_exact(candidate_id, now);
+                let _ = sim.substrate.mission_commence_exact(candidate_id, now);
                 return false;
             }
             return candidate.is_open_gate();
@@ -517,7 +519,8 @@ mod tests {
         let setup = json!({"input": row["input"], "initial": {"hold": [100,180,180]}});
         let (mut sim, rules) = native_fixture(&setup);
         sim.building_enter_idle_mode(GATE, false, Some(&rules));
-        sim.mission_assign_exact(GATE, MissionId::from_known(MissionType::Guard), 100)
+        sim.substrate
+            .mission_assign_exact(GATE, MissionId::from_known(MissionType::Guard), 100)
             .unwrap();
         sim.substrate
             .entities

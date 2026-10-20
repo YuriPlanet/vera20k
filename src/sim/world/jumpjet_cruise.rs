@@ -116,7 +116,9 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.owner().lifecycle.cell_marked()
     }
     fn replace_marked_byte(&mut self, marked: bool) -> bool {
-        self.sim.replace_foot_marked_byte(self.stable_id, marked)
+        self.sim
+            .substrate
+            .replace_foot_marked_byte(self.stable_id, marked)
     }
     /// `Object+0x9C`, Location.
     fn location(&self) -> [i32; 3] {
@@ -317,10 +319,12 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.sim.aircraft_tracker_update_cell(self.stable_id, cell);
     }
     fn claim_air_slot_at(&mut self, cell: (i16, i16)) {
-        self.sim.set_cell_air_slot(cell, Some(self.stable_id));
+        self.sim
+            .substrate
+            .set_cell_air_slot(cell, Some(self.stable_id));
     }
     fn release_air_slot_at(&mut self, cell: (i16, i16)) {
-        self.sim.set_cell_air_slot(cell, None);
+        self.sim.substrate.set_cell_air_slot(cell, None);
     }
     fn set_destination_cell(&mut self, cell: (i16, i16), runtime: &mut JumpjetRuntime) {
         let id = self.stable_id;
@@ -478,7 +482,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         if self.holds_air_slot_at(here) {
             self.release_air_slot_at(here);
         }
-        self.sim.aircraft_tracker_remove(id);
+        self.sim.substrate.aircraft_tracker_remove(id);
         true
     }
     fn finish_touchdown(&mut self, runtime: &mut JumpjetRuntime) {
@@ -1249,7 +1253,7 @@ mod tests {
     fn re_opening_a_cruise_drops_a_drifted_slot() {
         let mut sim = hovering_jumpjet(0x40);
         // The owner holds (13,10) but sits at (10,10) — the drift case.
-        assert!(sim.set_cell_air_slot((13, 10), Some(1)));
+        assert!(sim.substrate.set_cell_air_slot((13, 10), Some(1)));
         let actor = sim.substrate.entities.get_mut(1).unwrap();
         *actor = actor.clone().with_air_tracker_cell_for_test((13, 10));
         {
@@ -1892,7 +1896,8 @@ mod tests {
                 .expect("Kirov spawns");
             sim.resolve_type_handles(&resources.rules);
             let now = sim.session.binary_frame();
-            sim.mission_assign_exact(kirov, MissionId::from_known(MissionType::Hunt), now)
+            sim.substrate
+                .mission_assign_exact(kirov, MissionId::from_known(MissionType::Hunt), now)
                 .unwrap();
             (kirov, plant)
         };

@@ -415,6 +415,7 @@ mod tests {
             .runtime_mut_for_test()
             .frame_timer = CdTimer::started(0, 3);
         sim.power_states
+            .map_mut_for_test()
             .entry(owner)
             .or_default()
             .set_total_drain_for_test(100);
@@ -675,7 +676,11 @@ mod tests {
                 .building_last_operational
                 .set_for_test(i["old"].as_bool().unwrap());
             let owner = entity.owner();
-            let state = sim.power_states.entry(owner).or_default();
+            let state = sim
+                .power_states
+                .map_mut_for_test()
+                .entry(owner)
+                .or_default();
             state.set_total_output_for_test(i["output"].as_i64().unwrap() as i32);
             state.set_total_drain_for_test(100);
             state.set_is_low_power_for_test(state.total_output() < 100);

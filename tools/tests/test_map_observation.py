@@ -139,6 +139,8 @@ class MapObservationTests(unittest.TestCase):
                 effects = {'scenario_rng_cursor': [0, 103]}
                 if self.profile.get('observe_projectiles', False):
                     effects['projectiles'] = []
+                if self.profile.get('observe_waves', False):
+                    effects['waves'] = []
                 if 'observe_anim_types' in self.profile:
                     effects['animations'] = []
                 frames[-1]['effects'] = deepcopy(self.effect_frames.get(step, effects))
@@ -413,6 +415,30 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(frames[3]['effects'],
                          {'scenario_rng_cursor': [0, 103], 'projectiles': [], 'animations': []})
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+
+    def test_wave_observations_retain_lifetime_and_refuse_malformed_snapshots(self):
+        self.profile.update(schema_version=observation.PROFILE_V2, observe_waves=True)
+        self.profile_path.write_text(json.dumps(self.profile))
+        row = {'stable_id': 31, 'wave_type': 0, 'owner_id': 1, 'in_logic_vector': True,
+               'lifetime': 95, 'active_geometry': True, 'decaying': False,
+               'direction_octant': 3, 'source_leptons': [100, 200, -5],
+               'target_leptons': [700, 200, 0], 'sonic_polygon': [[-1, 2]] * 6}
+        self.effect_frames = {1: {'scenario_rng_cursor': [0, 103], 'waves': [row]}}
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        frames = report['capture']['observations']['frames']
+        self.assertEqual(frames[1]['effects']['waves'], [row])
+        self.assertEqual(frames[2]['effects']['waves'], [])
+        for mutation in (lambda x: x.update(lifetime=True),
+                         lambda x: x.update(sonic_polygon=[[0, 1]] * 5),
+                         lambda x: x.update(active_geometry=1)):
+            bad = deepcopy(row); mutation(bad)
+            with self.assertRaises(ValidationError):
+                observation._effects({'scenario_rng_cursor': [0, 103], 'waves': [bad]}, self.profile, 'bad')
+        with self.assertRaises(ValidationError):
+            observation._effects({'scenario_rng_cursor': [0, 103], 'waves': [row, row]}, self.profile, 'bad')
+        with self.assertRaises(ValidationError):
+            observation._profile_extensions(dict(self.profile, observe_waves=1))
 
     def test_effect_profile_requires_explicit_typed_bounded_filters(self):
         modern = dict(self.profile, schema_version=observation.PROFILE_V2)

@@ -180,7 +180,9 @@ impl Simulation {
             && !in_phase
             && rules.is_some_and(|rules| self.mission_ready_to_commence(id, rules))
         {
-            let _ = self.mission_commence_exact(id, self.session.binary_frame());
+            let _ = self
+                .substrate
+                .mission_commence_exact(id, self.session.binary_frame());
         }
         if self.fly_update_flight_motion(id, rules, registry, frame_effects) {
             stats.impact = true;
@@ -265,7 +267,7 @@ impl Simulation {
         if self.fly_crash_fall(id, rules, registry, frame_effects) {
             return true;
         }
-        self.fly_guard_to_move(id);
+        self.substrate.fly_guard_to_move(id);
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
@@ -274,32 +276,6 @@ impl Simulation {
         }
         self.fly_flight_step(id, rules, registry, frame_effects);
         false
-    }
-
-    /// `0x004CD9C8..0x004CDA02`: `Queue_Mission(Move, 0)` (vt+0x1E8) for a
-    /// living owner with a NavCom (`+0x5A4`) whose mission (vt+0x184) is
-    /// Guard with nothing queued (`+0xB4`), unless the Fly is AirportBound.
-    fn fly_guard_to_move(&mut self, id: u64) {
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
-            return;
-        };
-        let airport_bound = entity
-            .locomotor
-            .as_ref()
-            .and_then(|locomotor| locomotor.fly_runtime())
-            .is_none_or(|state| state.airport_bound());
-        if entity.health.current() <= 0
-            || entity.navigation.nav_com().is_none()
-            || entity.mission.effective() != MissionId::from_known(MissionType::Guard)
-            || entity.mission.queued() != MissionId::NONE
-            || airport_bound
-        {
-            return;
-        }
-        crate::sim::mission::authority::queue_entity_mission_deferred(
-            entity,
-            MissionId::from_known(MissionType::Move),
-        );
     }
 
     /// UpdateFlightMotion past its Is_Moving gate (`0x004CDA16..0x004CE4A2`),
@@ -833,5 +809,33 @@ impl Simulation {
         self.team_script_vm.mark_member_team_leaving_map(id);
         self.techno_death_stun(id, context);
         self.uninit_with_context(id, context);
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// `0x004CD9C8..0x004CDA02`: `Queue_Mission(Move, 0)` (vt+0x1E8) for a
+    /// living owner with a NavCom (`+0x5A4`) whose mission (vt+0x184) is
+    /// Guard with nothing queued (`+0xB4`), unless the Fly is AirportBound.
+    fn fly_guard_to_move(&mut self, id: u64) {
+        let Some(entity) = self.entities.get_mut(id) else {
+            return;
+        };
+        let airport_bound = entity
+            .locomotor
+            .as_ref()
+            .and_then(|locomotor| locomotor.fly_runtime())
+            .is_none_or(|state| state.airport_bound());
+        if entity.health.current() <= 0
+            || entity.navigation.nav_com().is_none()
+            || entity.mission.effective() != MissionId::from_known(MissionType::Guard)
+            || entity.mission.queued() != MissionId::NONE
+            || airport_bound
+        {
+            return;
+        }
+        crate::sim::mission::authority::queue_entity_mission_deferred(
+            entity,
+            MissionId::from_known(MissionType::Move),
+        );
     }
 }

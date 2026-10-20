@@ -18,7 +18,9 @@ use crate::sim::combat::veterancy;
 use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::ground_pose::position_world_coord;
+use crate::sim::rng::SimRng;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 use crate::sim::world::display_layers::DisplayLayer;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits, distance_3d_leptons};
@@ -87,14 +89,18 @@ impl CrateMultipliers {
 
 /// Ground-layer objects within `radius` of `center`, in layer order, with the
 /// native `Sqrt_Approx`/`ftol` distance and strict `<` (`0x00482E38..0x00482E51`).
-fn ground_members_in_radius(sim: &Simulation, center: DriveCoord, radius: i32) -> Vec<u64> {
-    sim.substrate
+fn ground_members_in_radius(
+    substrate: &ObjectSubstrate,
+    center: DriveCoord,
+    radius: i32,
+) -> Vec<u64> {
+    substrate
         .display
         .members(DisplayLayer::GROUND)
         .iter()
         .copied()
         .filter(|&id| {
-            sim.substrate.entities.get(id).is_some_and(|entity| {
+            substrate.entities.get(id).is_some_and(|entity| {
                 let position = position_world_coord(&entity.position);
                 distance_3d_leptons(
                     [center.x, center.y, center.z],
@@ -111,15 +117,15 @@ fn ground_members_in_radius(sim: &Simulation, center: DriveCoord, radius: i32) -
 /// objects, in native visit order; the arm announces when one of them is the
 /// local player (`vt+0x3C` then `0x0050B6F0`, `0x00482E7F..0x00482E8D`).
 pub(super) fn apply_multiplier_crate(
-    sim: &mut Simulation,
+    substrate: &mut ObjectSubstrate,
     center: DriveCoord,
     radius: i32,
     magnitude: NativeF64Bits,
     which: Multiplier,
 ) -> Vec<InternedId> {
     let mut changed_owners = Vec::new();
-    for id in ground_members_in_radius(sim, center, radius) {
-        let Some(entity) = sim.substrate.entities.get_mut(id) else {
+    for id in ground_members_in_radius(substrate, center, radius) {
+        let Some(entity) = substrate.entities.get_mut(id) else {
             continue;
         };
         let slot = match which {
@@ -165,7 +171,7 @@ pub(super) fn apply_veteran_crate(
     if !ordered_less(0.0, magnitude) {
         return;
     }
-    for id in ground_members_in_radius(sim, center, radius) {
+    for id in ground_members_in_radius(&sim.substrate, center, radius) {
         let Some(entity) = sim.substrate.entities.get(id) else {
             continue;
         };
@@ -253,7 +259,7 @@ pub(super) fn apply_heal_base_crate(
 /// set, otherwise `RandomRanged(ftol(magnitude), ftol(magnitude) + 900)` on
 /// the Scenario RNG. `HouseClass::Add_Credits @ 0x004F9950` then adds it.
 pub(super) fn money_crate_amount(
-    sim: &mut Simulation,
+    scenario_rng: &mut SimRng,
     solo_money: i32,
     magnitude: NativeF64Bits,
 ) -> i32 {
@@ -262,8 +268,7 @@ pub(super) fn money_crate_amount(
     }
     let base =
         crate::util::native_x87::X87Chop53::ftol_f64_low_masked(f64::from_bits(magnitude.bits()));
-    sim.scenario_rng
-        .next_range_i32_inclusive(base, base.wrapping_add(900))
+    scenario_rng.next_range_i32_inclusive(base, base.wrapping_add(900))
 }
 
 /// What the Unit arm `0x00482041..0x00482461` did.

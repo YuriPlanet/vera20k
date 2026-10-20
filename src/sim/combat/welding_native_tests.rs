@@ -462,7 +462,8 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
             // Original62FE90 does not read the removal-control argument.
             // Broadcast integration (both controls) also has lifecycle tests.
             assert!(
-                sim.particle_systems_mut()
+                sim.substrate
+                    .particle_systems
                     .pointer_expired(id, roles[input["expired"].as_str().unwrap()])
             );
             assert_eq!(
@@ -833,7 +834,8 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
     assert!(sim.display_layers().layer_of(child_id).is_some());
     let queues = sim.substrate.pending_delete.object_ids().to_vec();
     assert!(
-        sim.particle_systems_mut()
+        sim.substrate
+            .particle_systems
             .pointer_expired(system_id, child_id)
     );
     assert_eq!(

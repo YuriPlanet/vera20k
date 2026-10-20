@@ -38,20 +38,6 @@ impl ParasiteState {
 }
 
 impl Simulation {
-    /// PointerExpired62A484..62A490, reached by Anim's dedicated subscribers.
-    pub(crate) fn parasite_anim_pointer_expired(&mut self, owner: u64, expired: u64) {
-        if let Some(state) = self
-            .substrate
-            .entities
-            .get_mut(owner)
-            .and_then(|entity| entity.parasite.class_mut())
-            && state.grapple.anim == Some(expired)
-        {
-            state.grapple.anim = None;
-            state.grapple.invalidated = true;
-        }
-    }
-
     /// Shared AttachTo/ExitUnit/grapple cleanup. Delete broadcasts expiry before
     /// the held pointer and invalidation latch clear (62A7E0..62A84B).
     pub(crate) fn reset_parasite_grapple(&mut self, owner: u64, rules: Option<&RuleSet>) {
@@ -203,7 +189,7 @@ impl Simulation {
             .phase;
         match phase {
             0 => {
-                self.write_grapple_roll(victim, SimFixed::ZERO);
+                self.substrate.write_grapple_roll(victim, SimFixed::ZERO);
                 let name = crate::rules::effect_asset_catalog::SQUID_GRAPPLE_ANIM;
                 // Lookup-only427CB0, not a factory creating an unknown type.
                 let anim = if rules.anim_type_names.contains(name) {
@@ -260,10 +246,11 @@ impl Simulation {
                     .class()
                     .unwrap()
                     .grapple;
-                self.write_grapple_roll(victim, grapple_roll(state.stage, phase == 2));
+                self.substrate
+                    .write_grapple_roll(victim, grapple_roll(state.stage, phase == 2));
             }
             4 => {
-                self.write_grapple_roll(victim, SimFixed::ZERO);
+                self.substrate.write_grapple_roll(victim, SimFixed::ZERO);
                 self.grapple_splashes(victim, origin, rules);
                 if warhead.culling && self.grapple_cull_admitted(owner, victim, rules) {
                     self.grapple_cull(owner, victim, rules, effects);
@@ -322,7 +309,7 @@ impl Simulation {
                     .and_then(|terrain| terrain.cell(target.position.rx(), target.position.ry()))
             {
                 let frame = self.anim(anim).unwrap().runtime().current_frame;
-                self.set_anim_frame_and_z_adjust(
+                self.substrate.set_anim_frame_and_z_adjust(
                     anim,
                     frame,
                     crate::map::lighting::cell_ground_z_adjust(
@@ -331,18 +318,6 @@ impl Simulation {
                     ),
                 );
             }
-        }
-    }
-
-    fn write_grapple_roll(&mut self, victim: u64, angle: SimFixed) {
-        if let Some(entity) = self.substrate.entities.get_mut(victim) {
-            // Native Techno6F2EB0..6F2EC2 initializes these inline fields to zero.
-            // Rust stores them sparsely until a producer first writes them;
-            // an ordinary admitted ship has no crash-created component yet.
-            entity
-                .rocking
-                .get_or_insert_with(Default::default)
-                .set_angle_sideways(angle);
         }
     }
 
@@ -483,6 +458,32 @@ impl Simulation {
         self.reset_parasite_grapple(owner, Some(rules));
         if let Some(source) = self.substrate.entities.get_mut(owner) {
             source.parasite.end_paralysis(self.session.binary_frame());
+        }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// PointerExpired62A484..62A490, reached by Anim's dedicated subscribers.
+    pub(crate) fn parasite_anim_pointer_expired(&mut self, owner: u64, expired: u64) {
+        if let Some(state) = self
+            .entities
+            .get_mut(owner)
+            .and_then(|entity| entity.parasite.class_mut())
+            && state.grapple.anim == Some(expired)
+        {
+            state.grapple.anim = None;
+            state.grapple.invalidated = true;
+        }
+    }
+    fn write_grapple_roll(&mut self, victim: u64, angle: SimFixed) {
+        if let Some(entity) = self.entities.get_mut(victim) {
+            // Native Techno6F2EB0..6F2EC2 initializes these inline fields to zero.
+            // Rust stores them sparsely until a producer first writes them;
+            // an ordinary admitted ship has no crash-created component yet.
+            entity
+                .rocking
+                .get_or_insert_with(Default::default)
+                .set_angle_sideways(angle);
         }
     }
 }

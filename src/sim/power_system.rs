@@ -314,6 +314,65 @@ impl PowerState {
     }
 }
 
+/// Every House's power state. Native HouseClass holds these fields inline, so
+/// a House's entry comes into being with its first power event and is never
+/// removed; a House without one reads as a fresh `PowerState`. Entries change
+/// only through `PowerState`'s operations.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct PowerStates {
+    by_house: BTreeMap<InternedId, PowerState>,
+}
+
+impl PowerStates {
+    pub(crate) fn get(&self, house: &InternedId) -> Option<&PowerState> {
+        self.by_house.get(house)
+    }
+
+    pub(crate) fn get_mut(&mut self, house: &InternedId) -> Option<&mut PowerState> {
+        self.by_house.get_mut(house)
+    }
+
+    /// The House's power state, created fresh on its first use.
+    pub(crate) fn house_mut(&mut self, house: InternedId) -> &mut PowerState {
+        self.by_house.entry(house).or_default()
+    }
+
+    pub(crate) fn iter(&self) -> std::collections::btree_map::Iter<'_, InternedId, PowerState> {
+        self.by_house.iter()
+    }
+
+    #[cfg(feature = "debug-tools")]
+    pub(crate) fn iter_mut(
+        &mut self,
+    ) -> std::collections::btree_map::IterMut<'_, InternedId, PowerState> {
+        self.by_house.iter_mut()
+    }
+
+    /// Read view for the queries that take the House-keyed map.
+    pub(crate) fn as_map(&self) -> &BTreeMap<InternedId, PowerState> {
+        &self.by_house
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn map_mut_for_test(&mut self) -> &mut BTreeMap<InternedId, PowerState> {
+        &mut self.by_house
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn from_map_for_test(by_house: BTreeMap<InternedId, PowerState>) -> Self {
+        Self { by_house }
+    }
+}
+
+impl std::ops::Index<&InternedId> for PowerStates {
+    type Output = PowerState;
+
+    fn index(&self, house: &InternedId) -> &PowerState {
+        &self.by_house[house]
+    }
+}
+
 /// `HouseClass @ 0x004FCE30`: the house's power ratio, left on the x87 stack.
 /// Output at least drain, or no drain, gives 1.0; no output gives 0.0;
 /// otherwise output / drain (FILD / FIDIV).
@@ -495,8 +554,8 @@ fn recalculate_power_for_owner(
 /// bytes and ordered building list. Kernel fixtures explicitly invalidate
 /// every assessment because they mutate EntityStore without lifecycle calls.
 #[cfg(any(test, feature = "test-support"))]
-pub fn tick_power_states(
-    power_states: &mut BTreeMap<InternedId, PowerState>,
+pub(crate) fn tick_power_states(
+    power_states: &mut PowerStates,
     entities: &mut EntityStore,
     rules: &RuleSet,
     interner: &crate::sim::intern::StringInterner,
@@ -505,7 +564,7 @@ pub fn tick_power_states(
     // House state outlives its last contributing building. Revisit retained
     // owners too: an empty contribution set must clear totals and keep the
     // existing blackout/transition clock advancing after Unmark or removal.
-    let mut owners: Vec<InternedId> = power_states.keys().copied().collect();
+    let mut owners: Vec<InternedId> = power_states.as_map().keys().copied().collect();
     owners.extend(
         entities
             .values()
@@ -516,7 +575,7 @@ pub fn tick_power_states(
     owners.dedup();
 
     for &owner_id in &owners {
-        let state = power_states.entry(owner_id).or_default();
+        let state = power_states.house_mut(owner_id);
         state.invalidate(true);
         assess_house_power(state, entities, rules, owner_id, interner, binary_frame);
         let buildings: Vec<u64> = entities
@@ -738,7 +797,8 @@ mod tests {
                 .set_cell_marked_for_test(row["marked"].as_bool().unwrap());
             let mut entities = EntityStore::default();
             entities.insert(entity);
-            let mut states = BTreeMap::from([(owner, PowerState::default())]);
+            let mut states =
+                PowerStates::from_map_for_test(BTreeMap::from([(owner, PowerState::default())]));
             tick_power_states(&mut states, &mut entities, &rules, &interner, 0);
             assert_eq!(
                 states[&owner].total_output,
@@ -936,7 +996,7 @@ BuildSpeed=0.02
             }
             let owner = intern::test_intern("Owner");
             let interner = test_interner();
-            let mut states = BTreeMap::new();
+            let mut states = PowerStates::default();
             tick_power_states(&mut states, &mut store, &rules, &interner, 0);
             let state = &states[&owner];
             assert_eq!(
@@ -1020,7 +1080,7 @@ BuildSpeed=0.02
                 total_drain: input["prior_drain"].as_i64().unwrap() as i32,
                 ..Default::default()
             };
-            let mut states = BTreeMap::from([(owner, state)]);
+            let mut states = PowerStates::from_map_for_test(BTreeMap::from([(owner, state)]));
             tick_power_states(&mut states, &mut store, &rules, &test_interner(), 0);
             assert_eq!(
                 (states[&owner].total_output, states[&owner].total_drain),
@@ -1041,8 +1101,8 @@ BuildSpeed=0.02
 
         let interner = test_interner();
         let allies = intern::test_intern("Allies");
-        let mut states: BTreeMap<InternedId, PowerState> = BTreeMap::new();
-        states.entry(allies).or_default().start_blackout(0, 5);
+        let mut states = PowerStates::default();
+        states.house_mut(allies).start_blackout(0, 5);
 
         // House4F844B..4F84EA resets at exactly one remaining frame.
         // Assessments before that boundary preserve the original start/delay.

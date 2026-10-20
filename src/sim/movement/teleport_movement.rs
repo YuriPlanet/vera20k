@@ -64,7 +64,7 @@ impl crate::sim::world::Simulation {
         if let Some(name) = name {
             let sound_id = self.interner.intern(&name);
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::ChronoTeleport { sound_id, rx, ry });
+                .emit(crate::sim::world::SimSoundEvent::ChronoTeleport { sound_id, rx, ry });
         }
     }
 
@@ -677,7 +677,8 @@ impl crate::sim::world::Simulation {
             // existing Mission authority; a queued Attack can become current
             // here after51AA40's earlier current-mission Stop decision.
             if self.mission_ready_to_commence(id, rules) {
-                self.mission_commence_exact(id, self.session.binary_frame())
+                self.substrate
+                    .mission_commence_exact(id, self.session.binary_frame())
                     .map_err(|error| format!("Teleport resolver Commence: {error}"))?;
             }
             // 718CA0..718DE3: Enter/Eaten/Capture/Patrol permit preferred

@@ -225,7 +225,7 @@ impl Simulation {
                         .and_then(|entity| self.object_type(entity.type_ref(), rules))
                         .is_some_and(|object| object.passengers > 0);
                 if !carries {
-                    self.team_member_clear_archive_target(member);
+                    self.substrate.team_member_clear_archive_target(member);
                 }
             }
             if (cursor as u32) >= count {
@@ -979,7 +979,7 @@ impl Simulation {
             {
                 continue;
             }
-            self.team_member_clear_archive_target(member);
+            self.substrate.team_member_clear_archive_target(member);
             self.team_member_queue_mission_id(member, MissionId::from_raw(mission), rules);
             self.team_member_clear_target(member, rules);
             self.team_member_set_destination(member, None, rules, registry, frame_effects);
@@ -1248,7 +1248,7 @@ impl Simulation {
                 self.team_member_set_destination(member, archive, rules, registry, frame_effects);
                 self.team_member_queue_mission(member, MissionType::Move, rules);
                 self.team_member_commence(member, rules);
-                self.team_member_clear_archive_target(member);
+                self.substrate.team_member_clear_archive_target(member);
             } else if (transport && matches!(argument, 2 | 3))
                 || (!transport && matches!(argument, 1 | 3))
             {

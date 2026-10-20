@@ -58,6 +58,7 @@ fn fixture(extra: &str, owner_name: &str) -> (Simulation, RuleSet, InternedId, I
     instance.charge_start_tick = sim.session.binary_frame() as i32;
     instance.charge_duration = 900;
     sim.super_weapons
+        .map_mut_for_test()
         .entry(owner)
         .or_default()
         .insert(sw_type, instance);
@@ -170,6 +171,7 @@ fn generic_warhead_source_destruction_keeps_single_charge_cleanup() {
         );
         let source = sim.houses[&owner].base_projection().buildings()[0];
         sim.super_weapons
+            .map_mut_for_test()
             .get_mut(&owner)
             .unwrap()
             .get_mut(&sw_type)
@@ -262,6 +264,7 @@ fn generic_warhead_range_requires_the_existing_provider_prerequisites() {
     );
     // A trigger may grant a one-time Super independently of building grants.
     sim.super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&sw_type)
@@ -356,6 +359,7 @@ fn mono_generic_warhead_target_gate_does_not_override_payload_house_filter() {
 fn ares_generic_warhead_one_time_consumption_survives_snapshot() {
     let (mut sim, rules, owner, sw_type, _) = fixture("", "Russians");
     sim.super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&sw_type)

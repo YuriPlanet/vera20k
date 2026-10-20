@@ -182,10 +182,6 @@ impl Simulation {
         self.substrate.entities.get(id).and_then(runtime)
     }
 
-    fn hover_mut(&mut self, id: u64) -> Option<&mut HoverRuntime> {
-        self.substrate.entities.get_mut(id).and_then(runtime_mut)
-    }
-
     fn hover_alive(&self, id: u64) -> bool {
         self.substrate
             .entities
@@ -204,23 +200,6 @@ impl Simulation {
             .map(|e| ground_pose::position_world_coord(&e.position))
     }
 
-    /// `Set_Speed` (Foot vt+0x544, SetSpeedFraction 0x004D3710).
-    fn hover_set_speed(&mut self, id: u64, full: bool) {
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity
-                .foot_speed
-                .set_speed_fraction(if full { SIM_ONE } else { SIM_ZERO });
-        }
-    }
-
-    /// The zeroed request/current pair and `Set_Speed(0)`.
-    fn hover_halt(&mut self, id: u64) {
-        if let Some(hover) = self.hover_mut(id) {
-            hover.zero_speeds();
-        }
-        self.hover_set_speed(id, false);
-    }
-
     /// `0x005152D7..0x0051531E` and its twin `0x0051541F..0x0051546D`: the
     /// Foot's path head (+0x5E0 = -1), the dummy head, `SetDestination(NULL,
     /// 1)`, the four zeroed speeds and `SetSpeedFraction(0.0)`.
@@ -232,7 +211,7 @@ impl Simulation {
             }
         }
         self.set_unit_null_destination(id, Some(rules), None, effects);
-        self.hover_halt(id);
+        self.substrate.hover_halt(id);
     }
 
     /// `Power_Off` 0x00516BF0, Hover's override of ILocomotion+0x5C: a
@@ -259,7 +238,7 @@ impl Simulation {
         if powered && !settled {
             let steps = self.scenario_rng.next_range_i32_inclusive(20, 30);
             let negate = self.scenario_rng.next_range_i32_inclusive(0, 99) < 50;
-            let hover = self.hover_mut(id).expect("same Hover Foot");
+            let hover = self.substrate.hover_mut(id).expect("same Hover Foot");
             hover.shove_turning = true;
             hover.shove_steps = if negate { steps.wrapping_neg() } else { steps };
         }
@@ -279,7 +258,11 @@ impl Simulation {
 
     /// `if (head) { Unit vt+0xF4(head); head = null; }`.
     fn hover_release_head(&mut self, id: u64) {
-        if let Some(head) = self.hover_mut(id).and_then(|hover| hover.head.take()) {
+        if let Some(head) = self
+            .substrate
+            .hover_mut(id)
+            .and_then(|hover| hover.head.take())
+        {
             self.track_raw_mark_at(head, false);
         }
     }
@@ -373,10 +356,10 @@ impl Simulation {
                 .hover(id)
                 .and_then(|hover| hover.head)
                 .is_none_or(|head| coord_cell(head) == coord_cell(start));
-            if let Some(hover) = self.hover_mut(id) {
+            if let Some(hover) = self.substrate.hover_mut(id) {
                 hover.speed_request = crate::util::native_x87::NativeF64Bits::ONE;
             }
-            self.hover_set_speed(id, true);
+            self.substrate.hover_set_speed(id, true);
             self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
             if at_head_cell {
                 self.hover_process_movement(id, true, rules, registry, out, effects)?;
@@ -491,10 +474,10 @@ impl Simulation {
                 return Ok(Arrival::Return);
             }
             self.set_unit_null_destination(id, Some(rules), None, effects);
-            self.hover_halt(id);
+            self.substrate.hover_halt(id);
         } else if code != 0 {
             //514982..5149EA.
-            self.hover_halt(id);
+            self.substrate.hover_halt(id);
             self.hover_release_head(id);
             return Ok(Arrival::Tail);
         }
@@ -718,7 +701,7 @@ impl Simulation {
         let Some(head) = hover.head else {
             //5162BA..516309: moving with no head asks for one.
             if hover.is_moving() {
-                self.hover_set_speed(id, true);
+                self.substrate.hover_set_speed(id, true);
                 self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
                 self.hover_process_movement(id, true, rules, registry, out, effects)?;
             }
@@ -776,7 +759,7 @@ impl Simulation {
             return;
         }
         let destination = null_coord(runtime(entity).and_then(|hover| hover.destination));
-        if self.trim_path_for_object_navcom(id, destination) {
+        if self.substrate.trim_path_for_object_navcom(id, destination) {
             return;
         }
         if self.foot_can_fire_at_target(id, rules, registry) == Some(true)
@@ -1144,7 +1127,7 @@ impl Simulation {
         };
         let probe = super::super::track_head::offset_head(location, direction);
         let probe_structural = cells.flags(cells.lookup_world(probe.x, probe.y)) & 0x100 != 0;
-        if let Some(hover) = self.hover_mut(id) {
+        if let Some(hover) = self.substrate.hover_mut(id) {
             hover.head = Some(head);
         }
         //5153D8..5153EE: the crate question on the candidate cell.
@@ -1176,7 +1159,7 @@ impl Simulation {
             .get(id)
             .expect("surviving Hover Foot");
         if probe_structural != entity.on_bridge() {
-            self.latch_foot_68b(id);
+            self.substrate.latch_foot_68b(id);
         }
         let code = self.hover_can_enter(id, cell, direction, rules, registry)?;
         match code {
@@ -1213,25 +1196,25 @@ impl Simulation {
                     .map_err(|cause| self.hover_error(id, cause))?;
                 let mut code = code;
                 if retry {
-                    self.hover_halt(id);
+                    self.substrate.hover_halt(id);
                     self.hover_release_head(id);
                     self.hover_restart_path(id);
                     self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
                     code = self.hover_process_movement(id, false, rules, registry, out, effects)?;
                 }
                 if code != 0 {
-                    if let Some(hover) = self.hover_mut(id) {
+                    if let Some(hover) = self.substrate.hover_mut(id) {
                         hover.head = None;
                     }
-                    self.hover_halt(id);
+                    self.substrate.hover_halt(id);
                 }
                 Ok(code)
             }
             2 => {
-                if let Some(hover) = self.hover_mut(id) {
+                if let Some(hover) = self.substrate.hover_mut(id) {
                     hover.head = None;
                 }
-                self.hover_halt(id);
+                self.substrate.hover_halt(id);
                 let entity = self
                     .substrate
                     .entities
@@ -1253,7 +1236,7 @@ impl Simulation {
                 Ok(2)
             }
             3 => {
-                if let Some(hover) = self.hover_mut(id) {
+                if let Some(hover) = self.substrate.hover_mut(id) {
                     hover.head = None;
                 }
                 let _ = crate::sim::gate_runtime::request_gate_open_for_cell(
@@ -1262,15 +1245,15 @@ impl Simulation {
                     id,
                     rules,
                 );
-                self.hover_halt(id);
+                self.substrate.hover_halt(id);
                 Ok(3)
             }
             4 | 5 => {
-                if let Some(hover) = self.hover_mut(id) {
+                if let Some(hover) = self.substrate.hover_mut(id) {
                     hover.head = None;
                 }
                 if retry {
-                    self.hover_halt(id);
+                    self.substrate.hover_halt(id);
                     self.hover_restart_path(id);
                     self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
                     return self.hover_process_movement(id, false, rules, registry, out, effects);
@@ -1280,10 +1263,10 @@ impl Simulation {
             }
             6 => {
                 if retry {
-                    if let Some(hover) = self.hover_mut(id) {
+                    if let Some(hover) = self.substrate.hover_mut(id) {
                         hover.head = None;
                     }
-                    self.hover_halt(id);
+                    self.substrate.hover_halt(id);
                     self.hover_restart_path(id);
                     self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
                     return self.hover_process_movement(id, false, rules, registry, out, effects);
@@ -1305,10 +1288,10 @@ impl Simulation {
                 //515902..5159E1: scatter the head cell; the head drops.
                 self.scatter_blocked_track_cell(id, cell, rules, registry, effects)
                     .map_err(|cause| self.hover_error(id, cause))?;
-                if let Some(hover) = self.hover_mut(id) {
+                if let Some(hover) = self.substrate.hover_mut(id) {
                     hover.head = None;
                 }
-                self.hover_halt(id);
+                self.substrate.hover_halt(id);
                 Ok(6)
             }
             other => Err(self.hover_error(id, format!("Can_Enter_Cell code {other}"))),
@@ -1325,6 +1308,27 @@ impl Simulation {
                 .start_movement(frame, 0);
             entity.navigation.path_replay_mut().clear_live_head();
         }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    fn hover_mut(&mut self, id: u64) -> Option<&mut HoverRuntime> {
+        self.entities.get_mut(id).and_then(runtime_mut)
+    }
+    /// `Set_Speed` (Foot vt+0x544, SetSpeedFraction 0x004D3710).
+    fn hover_set_speed(&mut self, id: u64, full: bool) {
+        if let Some(entity) = self.entities.get_mut(id) {
+            entity
+                .foot_speed
+                .set_speed_fraction(if full { SIM_ONE } else { SIM_ZERO });
+        }
+    }
+    /// The zeroed request/current pair and `Set_Speed(0)`.
+    fn hover_halt(&mut self, id: u64) {
+        if let Some(hover) = self.hover_mut(id) {
+            hover.zero_speeds();
+        }
+        self.hover_set_speed(id, false);
     }
 }
 

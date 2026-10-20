@@ -98,6 +98,7 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
     instance.charge_duration = 1;
     instance.is_ready = true;
     sim.super_weapons
+        .map_mut_for_test()
         .entry(owner)
         .or_default()
         .insert(sw_type_id, instance);

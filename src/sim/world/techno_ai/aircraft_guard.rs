@@ -187,7 +187,7 @@ impl GuardHost for WorldGuard<'_> {
     }
 
     fn queue(&mut self, mission: MissionType) {
-        crate::sim::aircraft::queue_mission(self.sim, self.id, mission);
+        crate::sim::aircraft::queue_mission(&mut self.sim.substrate, self.id, mission);
     }
 
     fn rate(&mut self) -> i32 {

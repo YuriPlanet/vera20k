@@ -53,7 +53,7 @@ pub(crate) struct ConnectionDestroyed {
 }
 
 /// What a controlled peer did during the match, decoded from its packets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NetworkMatchEvent {
     /// Participant `source_index` sent EXIT: its event executes at the
     /// current frame as if received.
@@ -66,6 +66,17 @@ pub(crate) enum NetworkMatchEvent {
     /// Kick proposal packet `0x1C` from `voter` against `target`, both
     /// participant indices; queued like `[0x00A8BB28]`.
     KickVote { voter: usize, target: usize },
+    /// Participant `source_index`'s EVENT_ALLY toward the House at
+    /// registration index `house_index`: it executes at the current frame
+    /// as if received.
+    PeerAlly {
+        source_index: usize,
+        house_index: i32,
+    },
+    /// Chat packet `0x0C` from participant `source_index`.
+    Chat { source_index: usize, text: String },
+    /// Taunt packet `0x1D`; the receiver reads only its taunt byte.
+    Taunt { byte: u8 },
 }
 
 /// `Network__DestroyConnection 0x005DA750` for participant `source_index`.
@@ -230,6 +241,31 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkMatchEvent) -> a
                 .received_votes
                 .push_back((voter, target));
         }
+        NetworkMatchEvent::PeerAlly {
+            source_index,
+            house_index,
+        } => {
+            let owner = state
+                .match_state
+                .session
+                .network_source_owner(source_index)
+                .ok_or_else(|| anyhow::anyhow!("no participant {source_index}"))?;
+            let runtime = state
+                .match_state
+                .sim_runtime
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("no running match"))?;
+            crate::app::input::commands::schedule_command_in_sim(
+                &mut runtime.simulation,
+                &owner,
+                crate::sim::command::Command::Ally { house_index },
+            )
+            .ok_or_else(|| anyhow::anyhow!("ALLY for {owner} was not queued"))?;
+        }
+        NetworkMatchEvent::Chat { source_index, text } => {
+            crate::app::input::chat::receive(state, source_index, &text);
+        }
+        NetworkMatchEvent::Taunt { byte } => crate::app::input::taunt::receive(state, byte),
     }
     Ok(())
 }
@@ -352,7 +388,7 @@ pub(crate) enum WaitPass {
     Leave,
 }
 
-fn local_source(session: &MatchSession) -> Option<usize> {
+pub(crate) fn local_source(session: &MatchSession) -> Option<usize> {
     session
         .network_setup()
         .map(|launch| launch.local_player_index)
@@ -375,7 +411,7 @@ pub(crate) fn nodes(session: &MatchSession) -> Vec<usize> {
         .collect()
 }
 
-fn participant_name(session: &MatchSession, source_index: usize) -> String {
+pub(crate) fn participant_name(session: &MatchSession, source_index: usize) -> String {
     session
         .network_setup()
         .and_then(|launch| launch.humans.get(source_index))
@@ -487,7 +523,7 @@ fn open_dialog(state: &mut AppState, elapsed: u64) {
         .take(crate::ui::shell::connection::CONNECTION_ROWS)
         .map(|source| participant_name(session, source))
         .collect();
-    let wol = session.mode() == SessionMode::Wol;
+    let wol = state.match_state.session_mode() == SessionMode::Wol;
     let reconnecting = lowest_record(state)
         .map(|source| participant_name(&state.match_state.session, source))
         .unwrap_or_default();
@@ -598,12 +634,16 @@ fn tally_kicks(
 /// runtime decides whether a frame may run.
 pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
     let now = now_ms >> 4;
-    let session = &state.match_state.session;
-    if !session.mode().is_network() || state.match_state.sim_runtime.is_none() {
+    if state.match_state.sim_runtime.is_none() || !state.match_state.session_mode().is_network() {
         state.match_state.network_wait.wait = None;
         return WaitPass::Running;
     }
-    let connected = session.network_connected_source_indices().to_vec();
+    let mode = state.match_state.session_mode();
+    let connected = state
+        .match_state
+        .session
+        .network_connected_source_indices()
+        .to_vec();
     let network_wait = &mut state.match_state.network_wait;
     network_wait
         .stalled
@@ -612,7 +652,7 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
         if network_wait.stalled.is_empty() {
             return WaitPass::Running;
         }
-        let (dialog_after, timeout) = wait_periods(session.mode());
+        let (dialog_after, timeout) = wait_periods(mode);
         network_wait.wait = Some(ConnectionWait {
             entry: now,
             dialog_timer: BucketTimer::start(now, dialog_after),
@@ -674,7 +714,7 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
         if let Some(source) = lowest_record(state) {
             kick(state, source, ConnectionError::Lost);
         }
-        let (dialog_after, timeout) = wait_periods(state.match_state.session.mode());
+        let (dialog_after, timeout) = wait_periods(state.match_state.session_mode());
         if let Some(wait) = state.match_state.network_wait.wait.as_mut() {
             wait.dialog_timer = BucketTimer::start(now, dialog_after);
             wait.timeout_timer = BucketTimer::start(now, timeout);

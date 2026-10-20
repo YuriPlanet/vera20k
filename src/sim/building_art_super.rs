@@ -265,7 +265,11 @@ mod tests {
         for slot in SUPER_ANIM..=SUPER_ANIM_CLOSING {
             sim.clear_building_anim_slot(id, slot);
         }
-        let weapons = sim.super_weapons.entry(owner).or_default();
+        let weapons = sim
+            .super_weapons
+            .map_mut_for_test()
+            .entry(owner)
+            .or_default();
         weapons.clear();
         for (index, row_super) in supers.iter().enumerate() {
             let type_id = sim.interner.intern(&format!("SW{index}"));
@@ -274,6 +278,7 @@ mod tests {
             instance.set_charge_start_tick_for_test(int(&row_super[1]));
             instance.set_charge_duration_for_test(int(&row_super[2]));
             sim.super_weapons
+                .map_mut_for_test()
                 .get_mut(&owner)
                 .unwrap()
                 .insert(type_id, instance);

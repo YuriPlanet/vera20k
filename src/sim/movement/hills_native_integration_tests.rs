@@ -682,7 +682,8 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
         } = &mut scenario.runtime;
         let frame = sim.session.binary_frame();
         for id in [peer, mover] {
-            sim.mission_assign_exact(id, MissionId::from_known(MissionType::Move), frame)
+            sim.substrate
+                .mission_assign_exact(id, MissionId::from_known(MissionType::Move), frame)
                 .unwrap();
             let actor = sim.substrate.entities.get(id).unwrap();
             assert!(!actor.on_bridge());

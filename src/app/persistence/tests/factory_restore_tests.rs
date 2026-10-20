@@ -168,7 +168,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
             .advance_one_step(houses.get_mut(&owner).unwrap().economy_mut_for_test());
         *saved.houses_mut_for_test() = houses;
     }
-    crate::sim::credit_income::add_credits(&mut saved, owner, 123);
+    crate::sim::credit_income::add_credits(saved.houses_mut_for_test(), owner, 123);
     saved
         .houses_mut_for_test()
         .get_mut(&owner)

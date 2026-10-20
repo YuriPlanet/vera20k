@@ -1937,7 +1937,7 @@ mod tests {
             let mut power = PowerState::default();
             power.set_total_output_for_test(input["power_output"].as_i64().unwrap() as i32);
             power.set_total_drain_for_test(input["power_drain"].as_i64().unwrap() as i32);
-            sim.power_states.insert(owner, power);
+            sim.power_states.map_mut_for_test().insert(owner, power);
             let type_id = sim.interner.intern("PENDING");
             let inputs =
                 time_to_build_inputs(&sim, &rules, owner, rules.object("PENDING").unwrap());

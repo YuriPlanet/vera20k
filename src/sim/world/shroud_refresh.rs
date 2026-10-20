@@ -384,7 +384,7 @@ impl Simulation {
     /// neighbour of the last cell after `after` whose frame reads its
     /// neighbours. Without such a cell the walk stamped nothing since `after`.
     fn restamp_edge_dummy(
-        &mut self,
+        &self,
         viewer: crate::sim::intern::InternedId,
         order: &AllocatedCellOrder,
         after: Option<u32>,

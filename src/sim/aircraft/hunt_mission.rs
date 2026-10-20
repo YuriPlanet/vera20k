@@ -182,7 +182,7 @@ impl HuntHost for WorldHunt<'_> {
     }
 
     fn queue(&mut self, mission: MissionType) {
-        super::queue_mission(self.sim, self.id, mission);
+        super::queue_mission(&mut self.sim.substrate, self.id, mission);
     }
 
     fn enter_idle_mode(&mut self) {

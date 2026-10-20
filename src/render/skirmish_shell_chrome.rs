@@ -2,10 +2,12 @@
 //!
 //! Packs the shared native shell art into one GPU texture. Screen-specific
 //! entries require active caller evidence and are selected by that screen.
-//! Skirmish setup intentionally uses RA2's MNSCRNS/MNSCRNL backgrounds
-//! through SHELL.PAL as a presentation preference.
-//! User-requested YR parity exception: preserve this RA2 background during
-//! future parity work unless the user explicitly asks to change it.
+//! The persisted shell style selects exact RA2 art or active YR art for the
+//! Skirmish setup and Choose Map screens while keeping YR dialog geometry.
+//! User-requested YR parity exception: RA2 shell art is the default (#2196,
+//! replacing #2055's YR default); `[VERA] YROriginalStyle=yes` restores YR's
+//! art. Keep that default during future parity work unless the user
+//! explicitly asks to change it.
 
 use std::collections::HashMap;
 
@@ -16,6 +18,9 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
 use crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
+use crate::render::shell_ui_style_assets::{
+    ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver,
+};
 use crate::ui::sidebar::SidebarTheme;
 
 const ATLAS_PADDING: u32 = 2;
@@ -72,8 +77,60 @@ const WOL_SETUP_PCX_NAMES: [&str; 5] = [
     "wodact.pcx",
     "wouact.pcx",
 ];
-const LAN_SETUP_SHAPE: &str = "MnScrnLCoopGameSetup.shp";
-const LAN_SETUP_PALETTE: &str = "MnScrnLCoopGameSetup.PAL";
+const COOP_SETUP_SHAPE: &str = "MnScrnLCoopGameSetup.shp";
+const COOP_SETUP_PALETTE: &str = "MnScrnLCoopGameSetup.PAL";
+const CUSTOMIZE_BATTLE_SHAPE: &str = "MnScrnLCustomizeBattle.shp";
+const CUSTOMIZE_BATTLE_PALETTE: &str = "MnScrnLCustomizeBattle.PAL";
+const RA2_LOCAL_ARCHIVE: &str = "ra2.mix -> local.mix";
+const RA2_NEUTRAL_ARCHIVE: &str = "ra2.mix -> neutral.mix";
+const RA2_CACHE_ARCHIVE: &str = "ra2.mix -> cache.mix";
+// YR owner-draw loader 0x60CF00 maps dialogs {0x102,0xBC,0xBD,0xC2,0xC9}
+// to converter 0x72D030. Each corresponding caller runs 0x72CF40 before
+// creating its dialog: that loader reads MnScrnLCoopGameSetup.PAL and loads
+// the large SHP at width 800. Painter 0x72E730 selects MNSCRNS at width 640
+// and the large setup art otherwise.
+const SETUP_SMALL_BACKGROUND: ShellUiAssetPair = ShellUiAssetPair::new(
+    ShellUiAssetLocator::archive("MNSCRNS.SHP", RA2_NEUTRAL_ARCHIVE),
+    ShellUiAssetLocator::active("MNSCRNS.SHP"),
+);
+const SETUP_LARGE_BACKGROUND: ShellUiAssetPair = ShellUiAssetPair::new(
+    ShellUiAssetLocator::archive("MNSCRNL.SHP", RA2_NEUTRAL_ARCHIVE),
+    ShellUiAssetLocator::active(COOP_SETUP_SHAPE),
+);
+const SETUP_PALETTE: ShellUiAssetPair = ShellUiAssetPair::new(
+    ShellUiAssetLocator::archive("SHELL.PAL", RA2_CACHE_ARCHIVE),
+    ShellUiAssetLocator::active(COOP_SETUP_PALETTE),
+);
+// YR Choose Map 0x6B maps through converter 0x72D210 and loader 0x72D120.
+// RA2 game.exe 1.08's active 0x6B caller reaches the generic fallback, which
+// uses MNSCRNS/L through SHELL.PAL. RA2's direct 0x102 creator is unproven.
+const CHOOSE_MAP_SMALL_BACKGROUND: ShellUiAssetPair = ShellUiAssetPair::new(
+    ShellUiAssetLocator::archive("MNSCRNS.SHP", RA2_NEUTRAL_ARCHIVE),
+    ShellUiAssetLocator::active("MNSCRNS.SHP"),
+);
+const CHOOSE_MAP_LARGE_BACKGROUND: ShellUiAssetPair = ShellUiAssetPair::new(
+    ShellUiAssetLocator::archive("MNSCRNL.SHP", RA2_NEUTRAL_ARCHIVE),
+    ShellUiAssetLocator::active(CUSTOMIZE_BATTLE_SHAPE),
+);
+const CHOOSE_MAP_PALETTE: ShellUiAssetPair = ShellUiAssetPair::new(
+    ShellUiAssetLocator::archive("SHELL.PAL", RA2_CACHE_ARCHIVE),
+    ShellUiAssetLocator::active(CUSTOMIZE_BATTLE_PALETTE),
+);
+const MODE_TWO_NEUTRAL_BACKGROUND: ShellUiAssetPair = ShellUiAssetPair::new(
+    ShellUiAssetLocator::archive("PUDLGBGN.SHP", RA2_LOCAL_ARCHIVE),
+    ShellUiAssetLocator::active("PUDLGBGN.SHP"),
+);
+const MODE_TWO_NEUTRAL_PALETTE: ShellUiAssetPair = ShellUiAssetPair::new(
+    ShellUiAssetLocator::archive("DIALOG.PAL", RA2_LOCAL_ARCHIVE),
+    ShellUiAssetLocator::active("DIALOGN.PAL"),
+);
+// RA2 game.exe 1.08 reads DIALOG.PAL at 0x6F1BAF and builds the converter
+// returned for PUDLGBGN by 0x6F2230/0x5FF223. YR's 0x60CF00 owner-draw loader
+// returns the converter built from DIALOGN.PAL for that neutral popup.
+const MAIN_BUTTON_SHAPE: ShellUiAssetPair = ShellUiAssetPair::new(
+    ShellUiAssetLocator::archive("MNBTTN.SHP", RA2_LOCAL_ARCHIVE),
+    ShellUiAssetLocator::active("MNBTTN.SHP"),
+);
 
 #[derive(Debug, Clone, Copy)]
 pub struct SkirmishShellChromeEntry {
@@ -84,6 +141,9 @@ pub struct SkirmishShellChromeEntry {
 
 pub struct SkirmishShellChromeAtlas {
     pub texture: BatchTexture,
+    /// Style identity for rebuilding this derived atlas when the Options
+    /// preview changes the selected source family.
+    pub yr_original_style: bool,
     pub right_panel_top_sdtp: Option<SkirmishShellChromeEntry>,
     pub right_panel_top_highlight_sdtp_frame1: Option<SkirmishShellChromeEntry>,
     pub right_panel_tile_sdbtnbkgd: Option<SkirmishShellChromeEntry>,
@@ -104,14 +164,16 @@ pub struct SkirmishShellChromeAtlas {
     /// SDWRNTMP.SHP frames 0..=5: the top panel's warning display moving while
     /// the slide engine runs (SHELL.PAL, `0x0072E280`).
     pub sd_warning_frames: [Option<SkirmishShellChromeEntry>; 6],
+    /// Selected large background for Choose Map 0x6B, resolved by shell style.
     pub choose_map_background_800_customize_battle: Option<SkirmishShellChromeEntry>,
-    /// Choose Map at 640 wide: MNSCRNS through MnScrnLCustomizeBattle.PAL.
+    /// Choose Map at 640 wide; both styles use MNSCRNS with their screen palette.
     pub choose_map_background_640_customize_battle: Option<SkirmishShellChromeEntry>,
+    /// Offline Skirmish `0x102` at 640 (slot 0) and other widths (slot 1).
+    pub offline_setup_backgrounds: [Option<SkirmishShellChromeEntry>; 2],
     /// Generic common-shell small background, decoded through SHELL.PAL.
     pub generic_background_640_mnscrns_shell: Option<SkirmishShellChromeEntry>,
     /// Generic common-shell large background, decoded through SHELL.PAL.
     pub generic_background_large_mnscrnl_shell: Option<SkirmishShellChromeEntry>,
-    lan_setup_backgrounds: [Option<SkirmishShellChromeEntry>; 2],
     lan_icons: [Option<SkirmishShellChromeEntry>; 4],
     wol_setup_icons: [Option<SkirmishShellChromeEntry>; 5],
     pub lower_side_640_lwscrns: Option<SkirmishShellChromeEntry>,
@@ -216,18 +278,15 @@ pub struct ControlChrome {
 }
 
 impl SkirmishShellChromeAtlas {
-    /// Original 60CF00 assigns BB the generic shell art, BC/BD the setup art.
-    /// Loader72CF40 (called by LAN5DCE93/5E0963) loads the large shape only
-    /// at800; small MNSCRNS uses that same setup palette. Native72CF90 frees
-    /// the setup pair on return. This retained atlas shares app-owned assets
-    /// and does not change the intentional RA2 offline-skirmish selection.
-    pub fn lan_background(&self, dialog_id: u16, width: u32) -> Option<SkirmishShellChromeEntry> {
+    /// Original YR `0x60CF00` assigns BB the generic shell art and the setup
+    /// family to `0x102` and BC/BD/C2/C9. RA2-style setup screens use the
+    /// shared MNSCRN art with SHELL.PAL. Dialog geometry remains YR-owned.
+    pub fn setup_background(&self, dialog_id: u16, width: u32) -> Option<SkirmishShellChromeEntry> {
         match (dialog_id, width) {
             (0xBB, 640) => self.generic_background_640_mnscrns_shell,
             (0xBB, _) => self.generic_background_large_mnscrnl_shell,
-            // 60CF00 gives WOL C2/C9 the same 72D030 setup art as BC/BD.
-            (0xBC | 0xBD | 0xC2 | 0xC9, 640) => self.lan_setup_backgrounds[0],
-            (0xBC | 0xBD | 0xC2 | 0xC9, 800) => self.lan_setup_backgrounds[1],
+            (0x102, 640) | (0xBC | 0xBD | 0xC2 | 0xC9, 640) => self.offline_setup_backgrounds[0],
+            (0x102, 800) | (0xBC | 0xBD | 0xC2 | 0xC9, 800) => self.offline_setup_backgrounds[1],
             _ => None,
         }
     }
@@ -356,7 +415,7 @@ impl ControlChrome {
 enum ShellAssetRole {
     VerifiedParentBackground,
     VerifiedChooseMapBackground,
-    VerifiedLanSetupBackground,
+    VerifiedCoopSetupBackground,
     VerifiedLanIcon,
     VerifiedOfflineStartMarker,
     AssignedPlayerMarker,
@@ -379,12 +438,16 @@ pub fn build_skirmish_shell_chrome_atlas(
     gpu: &GpuContext,
     batch: &BatchRenderer,
     assets: &AssetManager,
+    yr_original_style: bool,
 ) -> Option<SkirmishShellChromeAtlas> {
+    let style_resolver = ShellUiAssetResolver::new(assets, yr_original_style);
     let shell_palette = load_shell_palette(assets)?;
     let shell2_palette = load_named_palette(assets, "SHELL2.PAL")?;
     let sdbtnanm_palette = load_named_palette(assets, "SDBTNANM.PAL");
     let main_button_palette = load_named_palette(assets, "MAINBTTN.PAL");
-    let choose_map_background_palette = load_choose_map_background_palette(assets);
+    let setup_palette = load_style_palette(&style_resolver, SETUP_PALETTE, "Skirmish setup");
+    let choose_map_background_palette =
+        load_style_palette(&style_resolver, CHOOSE_MAP_PALETTE, "Choose Map");
 
     let mut rendered = Vec::new();
     // Original SDWRNANM header supplies 91 frames; keep the runtime sequence
@@ -452,9 +515,9 @@ pub fn build_skirmish_shell_chrome_atlas(
     }
     if let Some(main_button_palette) = main_button_palette.as_ref() {
         for frame in [0usize, 1, 2] {
-            match render_shp_entry_labeled(
-                assets,
-                "MNBTTN.SHP",
+            match render_style_shp_entry_labeled(
+                &style_resolver,
+                MAIN_BUTTON_SHAPE,
                 &format!("mnbttn.shp#{frame}"),
                 main_button_palette,
                 frame,
@@ -472,19 +535,37 @@ pub fn build_skirmish_shell_chrome_atlas(
     }
     // Original loaders 72B060/72B0D0 and getters 72AFF0/72B010/72B030.
     // AssetManager retains the mounted retail winner and the SHP's dimensions.
+    // Original YR getter 72AFF0 keeps Allied/Soviet on DIALOG.PAL; 72B010 and
+    // 72B030 select DIALOGY.PAL and DIALOGN.PAL for Yuri and neutral. The
+    // Allied/Soviet SHPs and DIALOG.PAL have one RA2 local.mix copy, so normal
+    // lookup keeps those shared bytes in either shell style.
     for (name, palette_name) in MODE_TWO_DIALOG_ART {
-        if let Some(palette) = load_named_palette(assets, palette_name) {
-            push_optional(
-                &mut rendered,
+        let palette = if name == "PUDLGBGN.SHP" {
+            load_style_palette(&style_resolver, MODE_TWO_NEUTRAL_PALETTE, palette_name)
+        } else {
+            load_named_palette(assets, palette_name)
+        };
+        if let Some(palette) = palette {
+            let entry = if name == "PUDLGBGN.SHP" {
+                render_style_shp_entry_labeled(
+                    &style_resolver,
+                    MODE_TWO_NEUTRAL_BACKGROUND,
+                    &format!("{}#0", name.to_ascii_lowercase()),
+                    &palette,
+                    0,
+                )
+            } else {
+                // The Yuri mode's icon and dialog background have no RA2
+                // counterpart; preserve the YR feature asset in either style.
                 render_shp_entry_labeled(
                     assets,
                     name,
                     &format!("{}#0", name.to_ascii_lowercase()),
                     &palette,
                     0,
-                ),
-                name,
-            );
+                )
+            };
+            push_optional(&mut rendered, entry, name);
         } else {
             log::warn!(
                 "Skipping native mode-2 background {name}: missing or invalid {palette_name}"
@@ -543,48 +624,59 @@ pub fn build_skirmish_shell_chrome_atlas(
         );
     }
 
-    // 72CF40/72D030 and 60CF00: native BC/BD use the setup palette for
-    // both sizes. BB reuses the generic entries above, without another atlas.
-    if let Some(palette) = load_named_palette(assets, LAN_SETUP_PALETTE) {
-        for (name, label) in [
-            ("MNSCRNS.SHP", "mnscrns.shp#lansetup"),
-            (LAN_SETUP_SHAPE, "mnscrnlcoopgamesetup.shp"),
-        ] {
-            push_optional(
-                &mut rendered,
-                render_shp_entry_labeled(assets, name, label, &palette, 0),
-                name,
-            );
-        }
+    // Active YR `0x72CF40/0x72D030` and `0x60CF00` use the Skirmish setup
+    // pair; RA2-style setup uses its exact MNSCRN/SHELL pair. At 640 the
+    // selected shape is the shared MNSCRNS.SHP, but the palette remains
+    // screen-specific in YR.
+    if let Some(palette) = setup_palette.as_ref() {
+        push_optional(
+            &mut rendered,
+            render_style_shp_entry_labeled(
+                &style_resolver,
+                SETUP_SMALL_BACKGROUND,
+                "mnscrns.shp#offline-setup",
+                palette,
+                0,
+            ),
+            "Skirmish setup MNSCRNS.SHP",
+        );
+        push_optional(
+            &mut rendered,
+            render_style_shp_entry_labeled(
+                &style_resolver,
+                SETUP_LARGE_BACKGROUND,
+                "mnscrnlofflinesetup.shp",
+                palette,
+                0,
+            ),
+            "Skirmish setup large background",
+        );
     }
 
-    if let Some(choose_map_background_palette) = choose_map_background_palette.as_ref() {
+    // YR `0x6B` owns a different large background and palette. The 640 shape
+    // is shared MNSCRNS.SHP, decoded with this context's YR palette.
+    if let Some(palette) = choose_map_background_palette.as_ref() {
         push_optional(
             &mut rendered,
-            render_shp_entry(
-                assets,
-                "MnScrnLCustomizeBattle.shp",
-                choose_map_background_palette,
+            render_style_shp_entry_labeled(
+                &style_resolver,
+                CHOOSE_MAP_LARGE_BACKGROUND,
+                "mnscrnlcustomizebattle.shp",
+                palette,
                 0,
             ),
-            "MnScrnLCustomizeBattle.shp",
+            CUSTOMIZE_BATTLE_SHAPE,
         );
-        // At 640 wide `0x6B` draws the small MNSCRNS through its own
-        // CustomizeBattle palette (`0x0060CF00`, `0x0072E7AD`).
         push_optional(
             &mut rendered,
-            render_shp_entry_labeled(
-                assets,
-                "MNSCRNS.SHP",
+            render_style_shp_entry_labeled(
+                &style_resolver,
+                CHOOSE_MAP_SMALL_BACKGROUND,
                 "mnscrns.shp#customizebattle",
-                choose_map_background_palette,
+                palette,
                 0,
             ),
-            "MNSCRNS.SHP",
-        );
-    } else {
-        log::warn!(
-            "Skipping verified Choose Map modal background because MnScrnLCustomizeBattle.PAL is missing or invalid"
+            "Choose Map MNSCRNS.SHP",
         );
     }
 
@@ -621,7 +713,11 @@ pub fn build_skirmish_shell_chrome_atlas(
         "sbgripm.pcx",
         "sbgripb.pcx",
     ] {
-        push_optional(&mut rendered, render_pcx_entry(assets, name), name);
+        let entry = style_control_asset_pair(name).map_or_else(
+            || render_pcx_entry(assets, name),
+            |pair| render_style_pcx_entry(&style_resolver, name, pair),
+        );
+        push_optional(&mut rendered, entry, name);
     }
 
     for (width, height, reserve) in TRACKBAR_FRAMES {
@@ -667,10 +763,23 @@ pub fn build_skirmish_shell_chrome_atlas(
     for name in SKIRMISH_FLAG_PCX_NAMES {
         push_optional(&mut rendered, render_flag_pcx_entry(assets, name), name);
     }
-    for name in LAN_PCX_NAMES.into_iter().chain(WOL_SETUP_PCX_NAMES) {
+    for name in LAN_PCX_NAMES
+        .into_iter()
+        .chain(["pingg.pcx", "pingy.pcx", "pingr.pcx"])
+    {
         // 6B9D00 packs embedded PCX palette to display RGB565; list images
         // and kind-2 statics compare the same packed magenta key as flags.
         push_optional(&mut rendered, render_flag_pcx_entry(assets, name), name);
+    }
+    for name in ["wodact.pcx", "wouact.pcx"] {
+        let Some(pair) = style_control_asset_pair(name) else {
+            continue;
+        };
+        push_optional(
+            &mut rendered,
+            render_style_pcx_entry(&style_resolver, name, pair),
+            name,
+        );
     }
 
     let (texture, packed) = pack_entries(gpu, batch, &rendered)?;
@@ -691,6 +800,7 @@ pub fn build_skirmish_shell_chrome_atlas(
 
     Some(SkirmishShellChromeAtlas {
         texture,
+        yr_original_style,
         launcher_warning_frames: (0..91)
             .map_while(|frame| by_label.get(&format!("sdwrnanm.shp#{frame}")).copied())
             .collect(),
@@ -721,9 +831,9 @@ pub fn build_skirmish_shell_chrome_atlas(
             .copied(),
         generic_background_640_mnscrns_shell: by_label.get("mnscrns.shp#shell").copied(),
         generic_background_large_mnscrnl_shell: by_label.get("mnscrnl.shp#shell").copied(),
-        lan_setup_backgrounds: [
-            by_label.get("mnscrns.shp#lansetup").copied(),
-            by_label.get("mnscrnlcoopgamesetup.shp").copied(),
+        offline_setup_backgrounds: [
+            by_label.get("mnscrns.shp#offline-setup").copied(),
+            by_label.get("mnscrnlofflinesetup.shp").copied(),
         ],
         lan_icons: LAN_PCX_NAMES.map(|name| by_label.get(name).copied()),
         wol_setup_icons: WOL_SETUP_PCX_NAMES.map(|name| by_label.get(name).copied()),
@@ -786,19 +896,40 @@ pub fn build_skirmish_shell_chrome_atlas(
     })
 }
 
-fn load_choose_map_background_palette(assets: &AssetManager) -> Option<Palette> {
-    let Some(palette_bytes) = assets.get_ref("MnScrnLCustomizeBattle.PAL") else {
-        log::warn!("Missing verified Choose Map modal palette MnScrnLCustomizeBattle.PAL");
-        return None;
-    };
-    Palette::from_bytes(palette_bytes)
+fn load_style_palette(
+    resolver: &ShellUiAssetResolver<'_>,
+    pair: ShellUiAssetPair,
+    label: &str,
+) -> Option<Palette> {
+    let asset = resolver
+        .resolve(pair)
+        .map_err(|err| {
+            log::warn!("Could not resolve shell style palette {label}: {err:#}");
+            err
+        })
+        .ok()?;
+    Palette::from_bytes(asset.bytes)
         .map_err(|err| {
             log::warn!(
-                "Could not parse verified Choose Map modal palette MnScrnLCustomizeBattle.PAL: {err:#}"
+                "Could not parse shell style palette {label} from {}: {err:#}",
+                asset.source
             );
             err
         })
         .ok()
+}
+
+fn style_control_asset_pair(name: &str) -> Option<ShellUiAssetPair<'_>> {
+    let member = match name {
+        "cue_i.pcx" | "cce_i.pcx" | "trakgrip.pcx" | "dnarrowr.pcx" | "dnarrowp.pcx"
+        | "uparrowr.pcx" | "uparrowp.pcx" | "sbgript.pcx" | "sbgripm.pcx" | "sbgripb.pcx"
+        | "wodact.pcx" | "wouact.pcx" => name,
+        _ => return None,
+    };
+    Some(ShellUiAssetPair::new(
+        ShellUiAssetLocator::archive(member, RA2_LOCAL_ARCHIVE),
+        ShellUiAssetLocator::active(member),
+    ))
 }
 
 fn load_shell_palette(assets: &AssetManager) -> Option<Palette> {
@@ -825,7 +956,7 @@ fn classify_shell_asset(name: &str) -> ShellAssetRole {
     match name.to_ascii_lowercase().as_str() {
         "mnscrns.shp" | "mnscrnl.shp" => ShellAssetRole::VerifiedParentBackground,
         "mnscrnlcustomizebattle.shp" => ShellAssetRole::VerifiedChooseMapBackground,
-        "mnscrnlcoopgamesetup.shp" => ShellAssetRole::VerifiedLanSetupBackground,
+        "mnscrnlcoopgamesetup.shp" => ShellAssetRole::VerifiedCoopSetupBackground,
         "wolnob.pcx" | "wolob.pcx" | "wolhost.pcx" | "wolacpt.pcx" => {
             ShellAssetRole::VerifiedLanIcon
         }
@@ -901,6 +1032,32 @@ fn render_shp_entry_labeled(
     frame: usize,
 ) -> Option<RenderedShellEntry> {
     let bytes = assets.get_ref(file_name)?;
+    render_shp_bytes_entry_labeled(bytes, label, palette, frame)
+}
+
+fn render_style_shp_entry_labeled(
+    resolver: &ShellUiAssetResolver<'_>,
+    pair: ShellUiAssetPair,
+    label: &str,
+    palette: &Palette,
+    frame: usize,
+) -> Option<RenderedShellEntry> {
+    let asset = resolver
+        .resolve(pair)
+        .map_err(|err| {
+            log::warn!("Could not resolve shell style SHP {label}: {err:#}");
+            err
+        })
+        .ok()?;
+    render_shp_bytes_entry_labeled(asset.bytes, label, palette, frame)
+}
+
+fn render_shp_bytes_entry_labeled(
+    bytes: &[u8],
+    label: &str,
+    palette: &Palette,
+    frame: usize,
+) -> Option<RenderedShellEntry> {
     let shp = ShpFile::from_bytes(bytes).ok()?;
     if frame >= shp.frames.len() {
         return None;
@@ -937,6 +1094,25 @@ fn render_shp_entry_labeled(
 
 fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<RenderedShellEntry> {
     let bytes = assets.get_ref(file_name)?;
+    render_pcx_bytes_entry(file_name, bytes)
+}
+
+fn render_style_pcx_entry(
+    resolver: &ShellUiAssetResolver<'_>,
+    file_name: &'static str,
+    pair: ShellUiAssetPair,
+) -> Option<RenderedShellEntry> {
+    let asset = resolver
+        .resolve(pair)
+        .map_err(|err| {
+            log::warn!("Could not resolve shell style PCX {file_name}: {err:#}");
+            err
+        })
+        .ok()?;
+    render_pcx_bytes_entry(file_name, asset.bytes)
+}
+
+fn render_pcx_bytes_entry(file_name: &str, bytes: &[u8]) -> Option<RenderedShellEntry> {
     let pcx = PcxFile::from_bytes(bytes).ok()?;
     Some(RenderedShellEntry {
         label: file_name.to_ascii_lowercase(),
@@ -1324,9 +1500,16 @@ mod tests {
     }
 
     fn retail_assets() -> AssetManager {
-        let config = crate::util::config::GameConfig::load().expect("game config");
-        let mut assets = AssetManager::new(&config.paths.ra2_dir, MediaArchiveMode::STOCK_DIGITAL)
-            .expect("asset manager");
+        let retail_dir = std::env::var_os("RA2_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                crate::util::config::GameConfig::load()
+                    .expect("game config")
+                    .paths
+                    .ra2_dir
+            });
+        let mut assets =
+            AssetManager::new(&retail_dir, MediaArchiveMode::STOCK_DIGITAL).expect("asset manager");
         assert!(
             assets
                 .register_neutral_archives()
@@ -1344,7 +1527,7 @@ mod tests {
         );
         assert_eq!(
             classify_shell_asset("MnScrnLCoopGameSetup.shp"),
-            ShellAssetRole::VerifiedLanSetupBackground
+            ShellAssetRole::VerifiedCoopSetupBackground
         );
         assert_eq!(
             classify_shell_asset("STARTBUT.SHP"),
@@ -1641,9 +1824,9 @@ mod tests {
     #[ignore = "requires the configured stock retail RA2/YR install"]
     fn retail_lan_art_uses_native_setup_shape_and_player_glyphs() {
         let assets = retail_assets();
-        let palette = load_named_palette(&assets, super::LAN_SETUP_PALETTE)
+        let palette = load_named_palette(&assets, super::COOP_SETUP_PALETTE)
             .expect("native72CF40 setup palette in NTRLMD.MIX");
-        let setup = render_shp_entry(&assets, super::LAN_SETUP_SHAPE, &palette, 0)
+        let setup = render_shp_entry(&assets, super::COOP_SETUP_SHAPE, &palette, 0)
             .expect("native BC/BD setup shape");
         // Original retail SHP header, NTRLMD.MIX. BB's generic background
         // retains its independently loaded SHELL.PAL entry.
@@ -1665,6 +1848,190 @@ mod tests {
             let icon = super::render_flag_pcx_entry(&assets, name).expect(name);
             // Dimensions from original retail PCX xmin/ymin/xmax/ymax bytes.
             assert_eq!((icon.width, icon.height), (width, 14), "{name}");
+        }
+    }
+
+    #[test]
+    #[ignore = "requires the configured stock retail RA2/YR install"]
+    fn retail_shell_styles_decode_the_selected_production_art_and_palette() {
+        let assets = retail_assets();
+        let ra2 = crate::render::shell_ui_style_assets::ShellUiAssetResolver::new(&assets, false);
+        let yr = crate::render::shell_ui_style_assets::ShellUiAssetResolver::new(&assets, true);
+
+        let ra2_setup_palette =
+            super::load_style_palette(&ra2, super::SETUP_PALETTE, "offline Skirmish")
+                .expect("RA2 setup palette");
+        let yr_setup_palette =
+            super::load_style_palette(&yr, super::SETUP_PALETTE, "offline Skirmish")
+                .expect("YR setup palette");
+        let ra2_setup_small = super::render_style_shp_entry_labeled(
+            &ra2,
+            super::SETUP_SMALL_BACKGROUND,
+            "offline-setup-small",
+            &ra2_setup_palette,
+            0,
+        )
+        .expect("RA2 MNSCRNS setup art");
+        let yr_setup_small = super::render_style_shp_entry_labeled(
+            &yr,
+            super::SETUP_SMALL_BACKGROUND,
+            "offline-setup-small",
+            &yr_setup_palette,
+            0,
+        )
+        .expect("YR MNSCRNS setup art");
+        assert_eq!((ra2_setup_small.width, ra2_setup_small.height), (472, 448));
+        assert_eq!((yr_setup_small.width, yr_setup_small.height), (472, 448));
+        assert_ne!(ra2_setup_small.rgba, yr_setup_small.rgba);
+
+        let ra2_choose_palette =
+            super::load_style_palette(&ra2, super::CHOOSE_MAP_PALETTE, "Choose Map")
+                .expect("RA2 Choose Map palette");
+        let yr_choose_palette =
+            super::load_style_palette(&yr, super::CHOOSE_MAP_PALETTE, "Choose Map")
+                .expect("YR Choose Map palette");
+        let ra2_choose_large = super::render_style_shp_entry_labeled(
+            &ra2,
+            super::CHOOSE_MAP_LARGE_BACKGROUND,
+            "choose-map-large",
+            &ra2_choose_palette,
+            0,
+        )
+        .expect("RA2 MNSCRNL Choose Map art");
+        let yr_choose_large = super::render_style_shp_entry_labeled(
+            &yr,
+            super::CHOOSE_MAP_LARGE_BACKGROUND,
+            "choose-map-large",
+            &yr_choose_palette,
+            0,
+        )
+        .expect("YR Customize Battle art");
+        assert_eq!(
+            (ra2_choose_large.width, ra2_choose_large.height),
+            (632, 568)
+        );
+        assert_eq!((yr_choose_large.width, yr_choose_large.height), (632, 568));
+        assert_ne!(ra2_choose_large.rgba, yr_choose_large.rgba);
+
+        let ra2_modal_palette =
+            super::load_style_palette(&ra2, super::MODE_TWO_NEUTRAL_PALETTE, "neutral popup")
+                .expect("RA2 DIALOG.PAL");
+        let yr_modal_palette =
+            super::load_style_palette(&yr, super::MODE_TWO_NEUTRAL_PALETTE, "neutral popup")
+                .expect("YR DIALOGN.PAL");
+        let ra2_modal = super::render_style_shp_entry_labeled(
+            &ra2,
+            super::MODE_TWO_NEUTRAL_BACKGROUND,
+            "neutral-popup",
+            &ra2_modal_palette,
+            0,
+        )
+        .expect("RA2 PUDLGBGN");
+        let yr_modal = super::render_style_shp_entry_labeled(
+            &yr,
+            super::MODE_TWO_NEUTRAL_BACKGROUND,
+            "neutral-popup",
+            &yr_modal_palette,
+            0,
+        )
+        .expect("YR PUDLGBGN");
+        assert_ne!(ra2_modal.rgba, yr_modal.rgba);
+
+        let main_button_palette =
+            super::load_named_palette(&assets, "MAINBTTN.PAL").expect("shared button palette");
+        let ra2_button = super::render_style_shp_entry_labeled(
+            &ra2,
+            super::MAIN_BUTTON_SHAPE,
+            "mnbttn.shp#0",
+            &main_button_palette,
+            0,
+        )
+        .expect("RA2 MNBTTN");
+        let yr_button = super::render_style_shp_entry_labeled(
+            &yr,
+            super::MAIN_BUTTON_SHAPE,
+            "mnbttn.shp#0",
+            &main_button_palette,
+            0,
+        )
+        .expect("YR MNBTTN");
+        assert_ne!(ra2_button.rgba, yr_button.rgba);
+    }
+
+    #[test]
+    #[ignore = "requires the configured stock retail RA2/YR install"]
+    fn production_style_pairs_resolve_the_expected_retail_members() {
+        use crate::render::shell_ui_style_assets::ShellUiAssetResolver;
+        let assets = retail_assets();
+        let ra2 = ShellUiAssetResolver::new(&assets, false);
+        let yr = ShellUiAssetResolver::new(&assets, true);
+        let control = super::style_control_asset_pair("cue_i.pcx").expect("styled control");
+        for (label, pair, ra2_source, yr_source, should_differ) in [
+            (
+                "setup small",
+                super::SETUP_SMALL_BACKGROUND,
+                "ra2.mix -> neutral.mix",
+                "ra2.mix -> neutral.mix",
+                false,
+            ),
+            (
+                "setup large",
+                super::SETUP_LARGE_BACKGROUND,
+                "ra2.mix -> neutral.mix",
+                "ra2md.mix -> ntrlmd.mix",
+                true,
+            ),
+            (
+                "choose map large",
+                super::CHOOSE_MAP_LARGE_BACKGROUND,
+                "ra2.mix -> neutral.mix",
+                "ra2md.mix -> ntrlmd.mix",
+                true,
+            ),
+            (
+                "setup palette",
+                super::SETUP_PALETTE,
+                "ra2.mix -> cache.mix",
+                "ra2md.mix -> ntrlmd.mix",
+                true,
+            ),
+            (
+                "neutral popup",
+                super::MODE_TWO_NEUTRAL_BACKGROUND,
+                "ra2.mix -> local.mix",
+                "expandmd01.mix",
+                true,
+            ),
+            (
+                "main button",
+                super::MAIN_BUTTON_SHAPE,
+                "ra2.mix -> local.mix",
+                "ra2md.mix -> localmd.mix",
+                true,
+            ),
+            (
+                "control",
+                control,
+                "ra2.mix -> local.mix",
+                "ra2md.mix -> localmd.mix",
+                true,
+            ),
+        ] {
+            let ra2_asset = ra2.resolve(pair).expect("resolve exact RA2 source");
+            let yr_asset = yr.resolve(pair).expect("resolve active YR source");
+            assert_eq!(ra2_asset.source, ra2_source, "{label}");
+            assert_eq!(yr_asset.source, yr_source, "{label}");
+            assert_eq!(ra2_asset.bytes != yr_asset.bytes, should_differ, "{label}");
+        }
+
+        // These mode-2 resources have one retail member and remain shared
+        // through ordinary lookup in either shell style.
+        for member in ["PUDLGBGA.SHP", "PUDLGBGS.SHP", "DIALOG.PAL"] {
+            let (bytes, source) = assets
+                .get_with_source_ref(member)
+                .unwrap_or_else(|| panic!("missing shared shell asset {member}"));
+            assert_eq!(source, "ra2.mix -> local.mix", "{member}");
+            assert!(!bytes.is_empty(), "{member}");
         }
     }
 }

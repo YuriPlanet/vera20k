@@ -36,6 +36,10 @@ pub(crate) fn chrono_warp_selected(targeting: Option<&TargetingMode>, rules: &Ru
     let selected = targeting.and_then(TargetingMode::as_super_weapon);
     selected.is_some_and(|name| {
         chrono_warp_selection(rules).is_some_and(|warp| warp.eq_ignore_ascii_case(name))
+            || rules.super_weapon(name).is_some_and(|warp| {
+                warp.kind == SuperWeaponKind::ChronoWarp
+                    && crate::sim::superweapon::paid_pair_source(rules, warp).is_some()
+            })
     })
 }
 
@@ -68,10 +72,37 @@ pub(super) fn follow_selection_writes(
         }
         let selected = targeting.as_ref().and_then(TargetingMode::as_super_weapon);
         if let SimSoundEvent::SuperWeaponStatusChanged { .. } = event {
+            // An old cancel/hold can precede a new Begin in one slow-frame
+            // batch. The saved current ticket wins over that transient event;
+            // do not clear the newly selected destination of the same type.
+            if sim
+                .paid_super_weapon_selection(*owner)
+                .is_some_and(|selection| selection.destination == *sw_type)
+            {
+                continue;
+            }
             if selected
                 .is_some_and(|name| name.eq_ignore_ascii_case(sim.interner().resolve(*sw_type)))
             {
                 *targeting = None;
+            }
+            continue;
+        }
+        if sim
+            .next_paid_super_weapon_selection(rules, *owner, *sw_type)
+            .is_some()
+        {
+            // Extension source selection is saved and may have been cancelled
+            // later in this same command batch. Never revive that old event.
+            if let Some(selection) = sim
+                .paid_super_weapon_selection(*owner)
+                .filter(|selection| selection.source == *sw_type)
+                && selected
+                    .is_some_and(|name| name.eq_ignore_ascii_case(sim.interner().resolve(*sw_type)))
+            {
+                *targeting = Some(TargetingMode::SuperWeapon(
+                    sim.interner().resolve(selection.destination).to_owned(),
+                ));
             }
             continue;
         }
@@ -150,6 +181,103 @@ mod tests {
 
     fn warp_selected() -> Option<TargetingMode> {
         Some(TargetingMode::SuperWeapon("ChronoWarpSpecial".to_string()))
+    }
+
+    #[test]
+    fn paid_superweapon_selection_tracks_the_ticket_and_never_revives_cancelled_source() {
+        use crate::sim::command::Command;
+        let Some((mut rules, mut sim, owner)) = retail_world() else {
+            return;
+        };
+        let source_type = rules
+            .super_weapons
+            .values_mut()
+            .find(|sw| sw.kind == SuperWeaponKind::ChronoSphere)
+            .unwrap();
+        source_type.money_amount = 500;
+        source_type.is_powered = false;
+        sim.spawn_object("GACSPH", "Americans", 5, 5, 0, &rules)
+            .unwrap();
+        let source = charge_chronosphere(&mut sim, owner);
+        let ticket = sim
+            .next_paid_super_weapon_selection(&rules, owner, source)
+            .unwrap();
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::BeginPaidSuperWeapon {
+                selection: ticket,
+                target_rx: SOURCE.0,
+                target_ry: SOURCE.1,
+            },
+            Some(&rules),
+        ));
+        let source_events = sim.sound_events().to_vec();
+        let mut targeting = Some(TargetingMode::SuperWeapon("ChronoSphereSpecial".into()));
+        follow_selection_writes(
+            &mut targeting,
+            &source_events,
+            &sim,
+            &rules,
+            Some("Americans"),
+        );
+        assert_eq!(targeting, warp_selected());
+        sim.take_sound_events_for_test();
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::CancelPaidSuperWeapon { selection: ticket },
+            Some(&rules),
+        ));
+        follow_selection_writes(
+            &mut targeting,
+            sim.sound_events(),
+            &sim,
+            &rules,
+            Some("Americans"),
+        );
+        assert!(targeting.is_none());
+        follow_selection_writes(
+            &mut targeting,
+            &source_events,
+            &sim,
+            &rules,
+            Some("Americans"),
+        );
+        assert!(targeting.is_none());
+        assert!(sim.paid_super_weapon_selection(owner).is_none());
+        assert_eq!(sim.houses()[&owner].economy().credits(), 0);
+        // Source -> cancel -> same source again before presentation catches
+        // up: the older cancel event must not erase the new destination.
+        sim.take_sound_events_for_test();
+        let first = sim
+            .next_paid_super_weapon_selection(&rules, owner, source)
+            .unwrap();
+        for command in [
+            Command::BeginPaidSuperWeapon {
+                selection: first,
+                target_rx: SOURCE.0,
+                target_ry: SOURCE.1,
+            },
+            Command::CancelPaidSuperWeapon { selection: first },
+            Command::BeginPaidSuperWeapon {
+                selection: crate::sim::superweapon::PaidSuperWeaponSelection {
+                    sequence: first.sequence + 1,
+                    ..first
+                },
+                target_rx: SOURCE.0,
+                target_ry: SOURCE.1,
+            },
+        ] {
+            assert!(sim.apply_command("Americans", &command, Some(&rules),));
+        }
+        targeting = Some(TargetingMode::SuperWeapon("ChronoSphereSpecial".into()));
+        follow_selection_writes(
+            &mut targeting,
+            sim.sound_events(),
+            &sim,
+            &rules,
+            Some("Americans"),
+        );
+        assert_eq!(targeting, warp_selected());
     }
 
     #[test]
@@ -557,7 +685,7 @@ mod tests {
         // selection, then the client hides its anims.
         let mut frame = |sim: &mut Simulation, targeting: &mut Option<TargetingMode>| {
             step(sim, &rules);
-            let events = std::mem::take(sim.sound_events_mut_for_test());
+            let events = sim.take_sound_events_for_test();
             follow_selection_writes(targeting, &events, sim, &rules, Some("Americans"));
             let warp = chrono_warp_selected(targeting.as_ref(), &rules);
             hide_placement_anims(&mut hidden, sim, warp, Some("Americans"), &mut output);

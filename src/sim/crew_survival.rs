@@ -115,6 +115,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::occupancy::RawCellKey;
+use crate::sim::rng::SimRng;
 use crate::sim::world::{
     FrameEffects, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation,
     UninitContext,
@@ -272,28 +273,6 @@ pub(crate) struct DyingTransport {
 }
 
 impl Simulation {
-    /// `TechnoClass::GetCrew @ 0x00707D20` for a Crewed type owned by a house
-    /// of `side` (House `+0x1E8`): the side's crew, Technician for any other
-    /// side, and a 15% Technician roll for an armed object. A country with no
-    /// `Side=` (HouseType `+0xBC == -1`) returns Technician before the roll
-    /// at707D81..707D8B. Executed controls: building_sale.py --crew-type.
-    fn techno_crew_type(&mut self, rules: &RuleSet, side: i32, armed: bool) -> Option<String> {
-        let general = &rules.general;
-        if side == -1 {
-            return general.technician.clone();
-        }
-        let crew = match side {
-            0 => general.allied_crew.clone(),
-            1 => general.soviet_crew.clone(),
-            2 => general.third_crew.clone(),
-            _ => general.technician.clone(),
-        };
-        if armed && self.scenario_rng.next_range_u32_inclusive(0, 99) < 15 {
-            return general.technician.clone();
-        }
-        crew
-    }
-
     /// Building vt+0x30C `0x0044EB10`: an uncaptured building always draws
     /// the Engineer roll, which only a `Factory=BuildingType` yard can win,
     /// then falls to GetCrew. A garrison's IsArmed arm (`0x00458DD0`) is
@@ -311,7 +290,7 @@ impl Simulation {
         if !captured && self.scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
             return rules.general.engineer_infantry.clone();
         }
-        self.techno_crew_type(rules, side, armed)
+        techno_crew_type(&mut self.scenario_rng, rules, side, armed)
     }
 
     /// `BuildingClass::How_Many_Survivors @ 0x00451330`: zero when
@@ -451,7 +430,7 @@ impl Simulation {
             }
             let strength = rules.object(crew).map_or(0, |object| object.strength);
             let health = sim.scenario_rng.next_range_i32_inclusive(5, strength);
-            sim.set_crew_health(id, health);
+            sim.substrate.set_crew_health(id, health);
             sim.scatter_crew(rules, registry, id, effects);
 
             // `HouseClass::IsAlliedWith(object) @ 0x004F9AF0` on the building owner.
@@ -472,7 +451,7 @@ impl Simulation {
             } else {
                 MissionType::Hunt
             };
-            sim.queue_crew_mission(id, mission);
+            sim.substrate.queue_crew_mission(id, mission);
             if let Some(planter) = enemy_planter {
                 // Infantry vt+0x3C8 (`0x0051B1F0`) over TechnoClass::Assign_Target.
                 let target = Some(crate::sim::combat::TargetKind::Entity(planter));
@@ -647,7 +626,8 @@ impl Simulation {
                 sim.scatter_crew(rules, registry, passenger, effects);
             }
             if !sim.owner_is_human(owner) {
-                sim.queue_crew_mission(passenger, MissionType::Hunt);
+                sim.substrate
+                    .queue_crew_mission(passenger, MissionType::Hunt);
             }
         });
     }
@@ -728,7 +708,7 @@ impl Simulation {
         if !crew_escapes(roll, rules.general.crew_escape) {
             return;
         }
-        let Some(crew) = self.techno_crew_type(rules, side, armed) else {
+        let Some(crew) = techno_crew_type(&mut self.scenario_rng, rules, side, armed) else {
             return;
         };
         let Some(id) = self.construct_crew(rules, &crew, owner, unlimbo, registry, effects) else {
@@ -737,14 +717,14 @@ impl Simulation {
         // Signed Strength/2 (CDQ; SUB; SAR).
         let strength = rules.object(&crew).map_or(0, |object| object.strength);
         let health = self.scenario_rng.next_range_i32_inclusive(5, strength / 2);
-        self.set_crew_health(id, health);
+        self.substrate.set_crew_health(id, health);
         self.scatter_crew(rules, registry, id, effects);
         let mission = if self.owner_is_human(owner) {
             MissionType::Guard
         } else {
             MissionType::Hunt
         };
-        self.queue_crew_mission(id, mission);
+        self.substrate.queue_crew_mission(id, mission);
         if selected_by_player {
             // `0x0073835E`: Select (vt+0x14C) with the voice latch set, as
             // every Logic pass leaves it.
@@ -967,7 +947,9 @@ impl Simulation {
                     Some((team_id, _)) => {
                         sim.team_add_member(team_id, passenger, false, rules, registry, effects);
                     }
-                    None => sim.queue_crew_mission(passenger, MissionType::Hunt),
+                    None => sim
+                        .substrate
+                        .queue_crew_mission(passenger, MissionType::Hunt),
                 }
             }
             // `0x00738174..0x00738180`: Select (vtable `+0x14C`), voice latch
@@ -1222,21 +1204,12 @@ impl Simulation {
             if escaped {
                 self.scatter_crew(rules, registry, id, effects);
                 self.with_object_placement_scope(|sim| {
-                    sim.queue_crew_mission(id, MissionType::Move)
+                    sim.substrate.queue_crew_mission(id, MissionType::Move)
                 });
                 spawned = true;
             }
         }
         spawned
-    }
-
-    /// The survivor's Health: `BuildingClass::SpawnSurvivors` stores it at
-    /// `0x00443214`, a dying unit's crew (`UnitClass::ReceiveDamage`) at
-    /// `0x0073830F`.
-    fn set_crew_health(&mut self, id: u64, health: i32) {
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.health.set(health);
-        }
     }
 
     /// `InfantryClass::Scatter(&EmptyCoord, 1, 0)`. A receiver error leaves
@@ -1261,9 +1234,41 @@ impl Simulation {
             log::debug!("crew {id} did not scatter: {cause}");
         }
     }
+}
 
+/// `TechnoClass::GetCrew @ 0x00707D20` for a Crewed type owned by a house
+/// of `side` (House `+0x1E8`): the side's crew, Technician for any other
+/// side, and a 15% Technician roll for an armed object. A country with no
+/// `Side=` (HouseType `+0xBC == -1`) returns Technician before the roll
+/// at707D81..707D8B. Executed controls: building_sale.py --crew-type.
+fn techno_crew_type(rng: &mut SimRng, rules: &RuleSet, side: i32, armed: bool) -> Option<String> {
+    let general = &rules.general;
+    if side == -1 {
+        return general.technician.clone();
+    }
+    let crew = match side {
+        0 => general.allied_crew.clone(),
+        1 => general.soviet_crew.clone(),
+        2 => general.third_crew.clone(),
+        _ => general.technician.clone(),
+    };
+    if armed && rng.next_range_u32_inclusive(0, 99) < 15 {
+        return general.technician.clone();
+    }
+    crew
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// The survivor's Health: `BuildingClass::SpawnSurvivors` stores it at
+    /// `0x00443214`, a dying unit's crew (`UnitClass::ReceiveDamage`) at
+    /// `0x0073830F`.
+    fn set_crew_health(&mut self, id: u64, health: i32) {
+        if let Some(entity) = self.entities.get_mut(id) {
+            entity.health.set(health);
+        }
+    }
     fn queue_crew_mission(&mut self, id: u64, mission: MissionType) {
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
+        if let Some(entity) = self.entities.get_mut(id) {
             crate::sim::mission::authority::queue_entity_mission_deferred(
                 entity,
                 MissionId::from_known(mission),

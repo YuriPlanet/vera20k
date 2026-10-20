@@ -55,7 +55,9 @@ fn miner_at(
         30,
         30 + sim.substrate.entities.len() as u16 % 8,
     );
-    let _ = sim.mission_assign_exact(id, MissionId::from_known(MissionType::Harvest), 100);
+    let _ =
+        sim.substrate
+            .mission_assign_exact(id, MissionId::from_known(MissionType::Harvest), 100);
     let position = &mut sim.substrate.entities.get_mut(id).unwrap().position;
     position.set_rx_for_test(cell.0);
     position.set_ry_for_test(cell.1);
@@ -187,7 +189,9 @@ fn the_production_frame_nudges_a_stuck_computer_miner() {
     // Unlimbo marks the miner into the pad Cell, as docking leaves it.
     spawn(&mut sim, &rules, "GAREFN", "Russians", 10, 10);
     let miner = spawn(&mut sim, &rules, "HARV", "Russians", 13, 11);
-    let _ = sim.mission_assign_exact(miner, MissionId::from_known(MissionType::Sleep), 100);
+    let _ =
+        sim.substrate
+            .mission_assign_exact(miner, MissionId::from_known(MissionType::Sleep), 100);
     sim.session.set_binary_frame_for_test(401);
 
     let commands = sim.take_due_commands();

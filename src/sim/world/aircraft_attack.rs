@@ -19,7 +19,7 @@ impl Simulation {
     ///418006..418030: raw Target presence chooses1/10, preserving pending ammo.
     /// The caller already cleared readiness. Search belongs to the next visit.
     /// Each visit returns Mission+0xBC and the frames it returns.
-    pub(crate) fn aircraft_begin_attack(&mut self, id: u64) -> (u8, i32) {
+    pub(crate) fn aircraft_begin_attack(&self, id: u64) -> (u8, i32) {
         let present = crate::sim::combat::target_present(
             self.substrate
                 .entities
@@ -72,7 +72,11 @@ impl Simulation {
         // when there was no target/ammo or when the destination was refused.
         (
             state,
-            self.mission_rate_epilogue(rules, MissionType::Attack),
+            crate::sim::mission::authority::rate_epilogue(
+                rules,
+                MissionType::Attack,
+                &mut self.scenario_rng,
+            ),
         )
     }
 

@@ -466,7 +466,13 @@ fn sync_in_game_regions(state: &mut AppState) {
                 let amount = item
                     .super_weapon_section
                     .as_deref()
-                    .and_then(|name| state.rules()?.super_weapon(name))
+                    .and_then(|name| {
+                        let rules = state.rules()?;
+                        Some(crate::sim::superweapon::financial_type(
+                            rules,
+                            rules.super_weapon(name)?,
+                        ))
+                    })
                     .map_or(0, |sw| sw.money_amount);
                 let money_format = state
                     .process_assets

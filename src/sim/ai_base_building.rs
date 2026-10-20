@@ -63,6 +63,7 @@ use crate::sim::ai_base_site::{SiteKey, find_base_building_site, reserved_near};
 use crate::sim::ai_unit_choice::{self, UnitChoiceKind};
 use crate::sim::base_plan::{BasePlanNode, pack_base_plan_cell, unpack_base_plan_cell};
 use crate::sim::build_site::{Flush, can_place_building_at, flush_for_placement};
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::locomotor::MovementLayer;
@@ -329,19 +330,19 @@ pub(crate) fn choose_building(
     };
     // `0x004FE41C..0x004FE4A4`: a naval node while naval building is off is
     // removed, and the lookup runs once more.
-    let node_type = plan_node(sim, owner, index).type_or_control;
+    let node_type = plan_node(&sim.houses, owner, index).type_or_control;
     if !naval_allowed && rules.building_type_at(node_type).is_some_and(|ty| ty.naval) {
-        remove_node(sim, owner, index);
+        remove_node(&mut sim.houses, owner, index);
         let Some(next) = find_node(sim, rules, owner, -1, registry) else {
             return;
         };
         index = next;
     }
-    let mut node = plan_node(sim, owner, index);
+    let mut node = plan_node(&sim.houses, owner, index);
     // `0x004FE4B0..0x004FE518`: remove a perimeter node (its `0x005082C0`
     // scan is a residual).
     if node.type_or_control == -3 {
-        remove_node(sim, owner, index);
+        remove_node(&mut sim.houses, owner, index);
         return;
     }
     let wall_tower = rules.building_type_at(node.type_or_control).filter(|ty| {
@@ -371,14 +372,14 @@ pub(crate) fn choose_building(
             // `0x004FE640..0x004FE6D2`: a WallTower node goes first, then
             // the node at its index.
             if wall_tower.is_some() {
-                remove_node(sim, owner, index);
+                remove_node(&mut sim.houses, owner, index);
             }
-            remove_node(sim, owner, index);
+            remove_node(&mut sim.houses, owner, index);
             return;
         }
         // `0x004FE6E1`: the node now holds the defense (or the WallTower its
         // cell) and takes the ordinary path.
-        node = plan_node(sim, owner, index);
+        node = plan_node(&sim.houses, owner, index);
     }
     if node.type_or_control == -2 {
         return;
@@ -533,15 +534,15 @@ pub(crate) fn exit_building(
             BuildingExit::TryLater
         }
         Flush::Blocked => {
-            forget_failed_site(sim, rules, owner, node, site);
+            forget_failed_site(&mut sim.houses, rules, owner, node, site);
             BuildingExit::Failed
         }
         Flush::Clear => {
             if !place_building(sim, rules, owner, ty, product, site, registry, effects) {
-                forget_failed_site(sim, rules, owner, node, site);
+                forget_failed_site(&mut sim.houses, rules, owner, node, site);
                 return BuildingExit::Failed;
             }
-            carry_wall_tower_site(sim, rules, owner, ty, node, site);
+            carry_wall_tower_site(&mut sim.houses, rules, owner, ty, node, site);
             log::info!(
                 "{} placed {} at ({}, {})",
                 sim.interner.resolve(owner),
@@ -570,7 +571,7 @@ fn building_site(
     registry: Option<&OverlayTypeRegistry>,
 ) -> (i16, i16) {
     let node_cell = node
-        .map(|index| plan_node(sim, owner, index).packed_cell)
+        .map(|index| plan_node(&sim.houses, owner, index).packed_cell)
         .filter(|&packed| packed != 0);
     if let Some(packed) = node_cell {
         let cell = unpack_base_plan_cell(packed);
@@ -677,7 +678,7 @@ fn place_building(
 /// (`+0x1571`, `+0x16B7`) is removed; any other node's site is forgotten by
 /// every node that holds it. Without a node nothing changes.
 fn forget_failed_site(
-    sim: &mut Simulation,
+    houses: &mut Houses,
     rules: &RuleSet,
     owner: InternedId,
     node: Option<usize>,
@@ -686,13 +687,13 @@ fn forget_failed_site(
     let Some(index) = node else {
         return;
     };
-    let node_type = plan_node(sim, owner, index).type_or_control;
+    let node_type = plan_node(houses, owner, index).type_or_control;
     if rules
         .building_type_at(node_type)
         .is_some_and(|ty| ty.wall || ty.gate)
     {
-        remove_node(sim, owner, index);
-    } else if let Some(house) = sim.houses.get_mut(&owner) {
+        remove_node(houses, owner, index);
+    } else if let Some(house) = houses.get_mut(&owner) {
         house
             .base_plan_mut()
             .clear_failed_site(pack_base_plan_cell(i32::from(site.0), i32::from(site.1)));
@@ -702,7 +703,7 @@ fn forget_failed_site(
 /// `0x0044540D..0x004454D4`: a placed `WallTower=` building hands its cell to
 /// the first base defense node (`+0x1706`) after its own.
 fn carry_wall_tower_site(
-    sim: &mut Simulation,
+    houses: &mut Houses,
     rules: &RuleSet,
     owner: InternedId,
     ty: &ObjectType,
@@ -721,7 +722,7 @@ fn carry_wall_tower_site(
     let (true, Some(index)) = (wall_tower, node) else {
         return;
     };
-    let Some(house) = sim.houses.get_mut(&owner) else {
+    let Some(house) = houses.get_mut(&owner) else {
         return;
     };
     let defense = house
@@ -785,7 +786,7 @@ pub(crate) fn find_node(
     let mut index = 0;
     // The count is re-read every step (`0x0042EBAE`).
     while index < sim.houses.get(&owner)?.base_plan().nodes().len() {
-        let node = plan_node(sim, owner, index);
+        let node = plan_node(&sim.houses, owner, index);
         if wanted == -1 {
             if !node_satisfied(sim, rules, owner, &node, registry) {
                 if !game_mode_nonzero || !node.filled {
@@ -936,8 +937,8 @@ fn node_may_replan(
         <= sim.session.binary_frame() as i32
 }
 
-fn plan_node(sim: &Simulation, owner: InternedId, index: usize) -> BasePlanNode {
-    sim.houses[&owner].base_plan().nodes()[index]
+fn plan_node(houses: &Houses, owner: InternedId, index: usize) -> BasePlanNode {
+    houses[&owner].base_plan().nodes()[index]
 }
 
 /// `HouseClass::AI_BuildWalls @ 0x0050C340` for house `owner`'s node at
@@ -1034,8 +1035,8 @@ fn wall_nodes(
 
 /// Removes house `owner`'s node `index`
 /// ([`crate::sim::base_plan::BasePlanState::remove`]).
-fn remove_node(sim: &mut Simulation, owner: InternedId, index: usize) {
-    if let Some(house) = sim.houses.get_mut(&owner) {
+fn remove_node(houses: &mut Houses, owner: InternedId, index: usize) {
+    if let Some(house) = houses.get_mut(&owner) {
         house.base_plan_mut().remove(index);
     }
 }

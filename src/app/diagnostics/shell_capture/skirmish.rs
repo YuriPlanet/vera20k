@@ -1716,6 +1716,7 @@ pub(super) fn press_diplomacy_tab(state: &mut AppState) -> Result<()> {
                 location: winit::keyboard::KeyLocation::Standard,
                 state: edge,
                 repeat: false,
+                text: None,
             },
             paused_at_event,
         );

@@ -64,7 +64,7 @@ impl Simulation {
     /// The returned registered sound name is a presentation request; this
     /// operation changes only the existing process Main cursor.
     pub fn selection_voice_request<'a>(
-        &mut self,
+        &self,
         rules: &'a RuleSet,
         entity_id: u64,
         voices_enabled: bool,
@@ -100,7 +100,7 @@ impl Simulation {
     /// VoiceMove708FC0 consumes the full fixed-catalog list retained by the
     /// existing type-processing owner, including Enter/Capture/Harvest fallback.
     pub fn order_voice_request<'a>(
-        &mut self,
+        &self,
         rules: &'a RuleSet,
         entity_id: u64,
         voice_field: &str,
@@ -148,7 +148,7 @@ impl Simulation {
     /// A reached list still draws before QueueVoice rejects disabled/nonhuman
     /// requests; QueueMegaMission's earlier enable gate is owned above.
     fn attack_voice_request<'a>(
-        &mut self,
+        &self,
         rules: &'a RuleSet,
         entity_id: u64,
         target: Option<crate::sim::combat::TargetKind>,
@@ -252,7 +252,8 @@ impl Simulation {
             };
             Self::queue_voice_request(sound, voices_enabled, human_player)
         };
-        self.entities_mut()
+        self.substrate
+            .entities
             .get_mut(entity_id)?
             .suppress_deploy_voice
             .clear();
@@ -266,7 +267,7 @@ impl Simulation {
     /// Native ReadSoundList binding skips unresolved names, so its selected-ID
     /// -1 rejection is represented only by deliberately unbound test inputs.
     fn voice_request_from_list<'a>(
-        &mut self,
+        &self,
         voices: &'a [String],
         voices_enabled: bool,
         human_player: bool,

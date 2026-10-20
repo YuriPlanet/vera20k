@@ -110,7 +110,7 @@ fn fixture(case: &Value) -> Simulation {
                 0,
                 false,
             );
-            sim.entities_mut().insert(entity);
+            sim.substrate.entities.insert(entity);
             sim.occupancy_mut().add(
                 0,
                 0,

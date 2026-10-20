@@ -1360,6 +1360,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
         state["power_dirty"] = json!(before["house"]["dirty"][0] == 1);
         state["radar_dirty"] = json!(before["house"]["dirty"][1] == 1);
         sim.power_states
+            .map_mut_for_test()
             .insert(owner, serde_json::from_value(state).unwrap());
         // The native reader fixture also has an admitted plant and MTNK. Adopt
         // its declared pre-cancel full cursors; their construction is outside

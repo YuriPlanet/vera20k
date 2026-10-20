@@ -197,7 +197,7 @@ pub struct ObjectLifecycle {
     /// `ObjectClass+0x74`, Marked: whether Mark/cell-list insertion owns cell
     /// membership. `ObjectClass::Mark` stores it (`0x005F58F7`, `0x005F5913`)
     /// through `movement::foot_mark`, whose
-    /// `Simulation::replace_foot_marked_byte` also saves, clears and restores
+    /// `ObjectSubstrate::replace_foot_marked_byte` also saves, clears and restores
     /// it around the locomotors' setters.
     cell_marked: bool,
 }
@@ -1529,7 +1529,7 @@ impl Simulation {
                 .filter(|entity| entity.category() == EntityCategory::Structure)
                 .map(|entity| entity.owner())
             {
-                self.request_house_tech_tree_recheck(owner);
+                self.houses.request_house_tech_tree_recheck(owner);
             }
             self.append_live_build_const(stable_id);
             self.append_house_base_building(stable_id);
@@ -1553,7 +1553,7 @@ impl Simulation {
         }
         self.submit_entity_display(stable_id, context.rules, context.terrain());
         self.lifecycle_outputs
-            .push(LifecycleOutput::RevealDisplay { stable_id });
+            .emit(LifecycleOutput::RevealDisplay { stable_id });
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RevealDisplayBoundary);
 
@@ -1778,7 +1778,7 @@ impl Simulation {
         };
         //44D61A precedes Grand_Opening, independent of ScenarioInit. The
         //owner's existing House tail sees this request from nested callbacks.
-        self.request_house_tech_tree_recheck(owner);
+        self.houses.request_house_tech_tree_recheck(owner);
         if no_radio
             && grand_admitted
             && let Some(rules) = context.rules()
@@ -2451,7 +2451,7 @@ impl Simulation {
     /// [`Self::fly_process`]) or a Jumpjet's (`world::jumpjet_cruise`). Each
     /// keeps its own AircraftTracker membership (Add `0x004134A0`, Remove
     /// `0x004135D0`, Update `0x004138C0`), and `FootClass::Limbo` removes a
-    /// tracked object ([`Self::release_foot_air_tracker_before_limbo`]).
+    /// tracked object ([`ObjectSubstrate::release_foot_air_tracker_before_limbo`](crate::sim::world::ObjectSubstrate::release_foot_air_tracker_before_limbo)).
     pub(crate) fn tick_air_movement_with_cell_lists_one(
         &mut self,
         stable_id: u64,
@@ -2914,7 +2914,7 @@ impl Simulation {
         {
             return false;
         }
-        self.mark_anim_display(stable_id, true);
+        self.substrate.mark_anim_display(stable_id, true);
         if submit {
             self.submit_anim_display(stable_id, rules);
         }
@@ -2923,7 +2923,7 @@ impl Simulation {
 
     pub(crate) fn conceal_anim(&mut self, stable_id: u64) -> bool {
         self.substrate.display.remove(stable_id);
-        self.mark_anim_display(stable_id, false);
+        self.substrate.mark_anim_display(stable_id, false);
         self.unregister_logic_object(stable_id)
     }
 
@@ -2971,12 +2971,6 @@ impl Simulation {
     /// A particle is owned by its system and never joins global Logic.
     pub(crate) fn reveal_particle(&mut self, stable_id: u64) {
         self.submit_object_display(stable_id, DisplayLayer::AIR, None);
-    }
-
-    /// ObjectLimbo5F4D74 removes the individual particle's retained AIR
-    /// entry through DisplayRemove4A9770, independently of its system.
-    pub(crate) fn conceal_particle(&mut self, stable_id: u64) {
-        self.substrate.display.remove(stable_id);
     }
 
     /// Spark62ED2C (and the other System AI cleanup callers) invokes the
@@ -3297,12 +3291,12 @@ impl Simulation {
         // whole-world atlas coverage scan for every child retirement.
         if self.substrate.entities.contains(stable_id) {
             self.lifecycle_outputs
-                .push(LifecycleOutput::DisplayRemove { stable_id });
+                .emit(LifecycleOutput::DisplayRemove { stable_id });
         }
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDisplayBoundary);
         self.lifecycle_outputs
-            .push(LifecycleOutput::DetachAttachedAnims { stable_id });
+            .emit(LifecycleOutput::DetachAttachedAnims { stable_id });
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealAnimBoundary);
         // ObjectConceal5F4D81 hard-stops the AmbientSound handle (+3C) and
@@ -3325,12 +3319,12 @@ impl Simulation {
             .is_some_and(|entity| entity.removal_facts.dirty_rect_eligible());
         if dirty_rect_eligible {
             self.lifecycle_outputs
-                .push(LifecycleOutput::DirtyTacticalRect { stable_id });
+                .emit(LifecycleOutput::DirtyTacticalRect { stable_id });
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDirtyTacticalRectBoundary);
         }
         self.lifecycle_outputs
-            .push(LifecycleOutput::ClearDrawnState { stable_id });
+            .emit(LifecycleOutput::ClearDrawnState { stable_id });
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealClearDrawnStateBoundary);
 
@@ -3351,7 +3345,7 @@ impl Simulation {
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealLimboSet);
         self.lifecycle_outputs
-            .push(LifecycleOutput::ClearRedraw { stable_id });
+            .emit(LifecycleOutput::ClearRedraw { stable_id });
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealClearRedrawBoundary);
         ConcealOutcome::Concealed
@@ -3524,9 +3518,10 @@ impl Simulation {
             })
         {
             self.sound_events
-                .push(super::SimSoundEvent::ObjectSoundDetached { owner: stable_id });
+                .emit(super::SimSoundEvent::ObjectSoundDetached { owner: stable_id });
         }
-        self.release_foot_air_tracker_before_limbo(stable_id);
+        self.substrate
+            .release_foot_air_tracker_before_limbo(stable_id);
         if self
             .substrate
             .entities
@@ -3691,18 +3686,6 @@ impl Simulation {
             && let Some(house) = self.houses.get_mut(&owner)
         {
             house.stats_mut().record_loss(category);
-        }
-    }
-
-    /// Object5F5765 invokes RecordKill for each actual exact-zero callback.
-    /// A retained Health1 hull can reach this again with a different attacker;
-    /// stale attribution and the prior UnInit guard must not swallow it.
-    /// The receiver then captures this hit's credit, awards experience
-    /// (702FF0), and consumes the score record (703003..7031DC) before Destroy.
-    pub(crate) fn begin_receiver_kill_record(&mut self, id: u64) {
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
-            debug_assert_eq!(entity.health.current(), 0);
-            entity.kill_record.clear();
         }
     }
 
@@ -4064,7 +4047,7 @@ impl Simulation {
         // Ordinary21slots have no Anim owner+CC and survive this broadcast;
         // Building43BDC5 clears them only at deferred scalar destruction.
         self.record_destruction_once(stable_id);
-        crate::sim::docking::bunker_link::break_links_on_despawn(self, stable_id);
+        crate::sim::docking::bunker_link::break_links_on_despawn(&mut self.substrate, stable_id);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::UninitClassPre { stable_id });
     }
@@ -4958,7 +4941,8 @@ impl Simulation {
             .expiry_listeners
             .entities_reached_by(&mut self.substrate.entities, expired_id);
         for owner in holders {
-            self.parasite_anim_pointer_expired(owner, expired_id);
+            self.substrate
+                .parasite_anim_pointer_expired(owner, expired_id);
         }
         let acting = self
             .expiry_listeners
@@ -5109,7 +5093,7 @@ impl Simulation {
 
         // BuildingLight436A00 clears parent/target for either expiry control.
         // These nullable-field writes commute with the other listener clears.
-        self.spotlights_pointer_expired(expired_id);
+        self.substrate.spotlights_pointer_expired(expired_id);
 
         #[cfg(any(test, feature = "test-support"))]
         if let Some(smudge) = self
@@ -5500,7 +5484,7 @@ impl Simulation {
         // Tactical/Logic expiry and eventual DisplayRemove/Alive writes.
         if expired_owner.is_some() {
             self.lifecycle_outputs
-                .push(LifecycleOutput::ObjectPointerExpired {
+                .emit(LifecycleOutput::ObjectPointerExpired {
                     stable_id: expired_id,
                 });
         }
@@ -5747,7 +5731,7 @@ impl Simulation {
                     .map(|_| entity.owner())
             })
         {
-            self.request_house_tech_tree_recheck(owner);
+            self.houses.request_house_tech_tree_recheck(owner);
         }
         // Constructor-complete Unit7357F6..735809, Infantry517DF2..517E05
         // and Aircraft4140EB..4140FE leave their Team before Remove_Tracking.
@@ -5810,7 +5794,7 @@ impl Simulation {
             // Building destructor43BD27 releases the construction SoundClass
             //(+6A0) before the delegated Techno destructor removes tracking.
             self.sound_events
-                .push(super::SimSoundEvent::ObjectSoundReleased { owner: stable_id });
+                .emit(super::SimSoundEvent::ObjectSoundReleased { owner: stable_id });
             // The delegated Techno destructor also tears down the turret
             // rotation loop's `+0x488` handle; this object's own UnInit Limbo
             // released it already, and a structure that never limbos never
@@ -5920,7 +5904,7 @@ impl Simulation {
         // Selected original Foot destructor4D3632..4D366E clears only its
         // cached+564 Cell if+E0 still holds this Foot. UnInit/Limbo retain it;
         // the block sends no notification and leaves the obsolete+564 intact.
-        self.clear_foot_air_slot_at_destruction(stable_id);
+        self.substrate.clear_foot_air_slot_at_destruction(stable_id);
         // Foot destructor4D3677 Release406060 follows class Remove_Tracking
         // and Foot's cached-cell cleanup. All Foot classes share it, including
         // constructor-complete limbo disposal. No caller-local hard stop.
@@ -5931,7 +5915,7 @@ impl Simulation {
             .is_some_and(|entity| entity.category() != EntityCategory::Structure)
         {
             self.sound_events
-                .push(super::SimSoundEvent::ObjectSoundReleased { owner: stable_id });
+                .emit(super::SimSoundEvent::ObjectSoundReleased { owner: stable_id });
         }
         // Foot's Parasite destructor6293E0 destroys its held Anim and clears
         // progress; it neither invents a release nor rewrites the host's HP.
@@ -5945,7 +5929,7 @@ impl Simulation {
         // the same stream as AI visits and those Anim sound callbacks.
         if self.substrate.entities.contains(stable_id) {
             self.sound_events
-                .push(super::SimSoundEvent::UnitVoiceDestroyed { owner: stable_id });
+                .emit(super::SimSoundEvent::UnitVoiceDestroyed { owner: stable_id });
         }
         // Techno destructor6F4667..6F4679 UnInits its Behind Anim, then
         //6F467F..6F4691 its retained deploy Anim. Pointer-expiry may already
@@ -5969,14 +5953,15 @@ impl Simulation {
         self.destroy_building_light(stable_id);
         if self.substrate.anims.contains_key(stable_id) {
             self.notify_anim_pointer_expired(stable_id);
-            self.clear_damage_fire_anim_reference(stable_id);
+            self.substrate.clear_damage_fire_anim_reference(stable_id);
             self.conceal_anim(stable_id);
-            self.release_anim_owner_reference(stable_id);
-            self.clear_building_anim_reference(stable_id);
+            self.substrate.release_anim_owner_reference(stable_id);
+            self.substrate.clear_building_anim_reference(stable_id);
         }
         // The native Object field+34 disappears with storage. This is not
         // SetTag(nullptr): the shared Tag owner preserves its native counter.
-        self.finalize_object_trigger_tag_attachment(stable_id);
+        self.trigger_runtime
+            .finalize_object_trigger_tag_attachment(stable_id);
         // Display registration never outlives the object. Fly's phase tail
         // (4CD4DE) resubmits even an owner concealed earlier in the frame.
         self.substrate.display.remove(stable_id);
@@ -5999,7 +5984,7 @@ impl Simulation {
             // vector is freed. Ordinary AI retirement has no children left;
             // direct disposal must still remove each individual AIR entry.
             for particle in system.particles() {
-                self.conceal_particle(particle.stable_id());
+                self.substrate.conceal_particle(particle.stable_id());
             }
         }
         let terrain = self.terrain_objects.remove(stable_id);
@@ -6007,7 +5992,7 @@ impl Simulation {
         let projectile = self.projectiles.remove(stable_id);
         if projectile.is_some() {
             self.lifecycle_outputs
-                .push(LifecycleOutput::LineTrailDetached { stable_id });
+                .emit(LifecycleOutput::LineTrailDetached { stable_id });
         }
         let wave = self.waves.remove(stable_id);
         let smudge = self
@@ -6099,7 +6084,7 @@ impl Simulation {
                 DeferredDeleteTicket::Tag(id) => {
                     self.delete_live_tag(id, rules, game_state, started)
                 }
-                DeferredDeleteTicket::Trigger(id) => self.delete_live_trigger(id),
+                DeferredDeleteTicket::Trigger(id) => self.trigger_runtime.delete_live_trigger(id),
                 DeferredDeleteTicket::DiskLaser(id) => self.destroy_disk_laser(id),
             }
         }
@@ -6110,6 +6095,25 @@ impl Simulation {
     #[cfg(any(test, feature = "test-support"))]
     pub fn flush_pending_delete(&mut self) {
         self.process_pending_delete();
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// ObjectLimbo5F4D74 removes the individual particle's retained AIR
+    /// entry through DisplayRemove4A9770, independently of its system.
+    pub(crate) fn conceal_particle(&mut self, stable_id: u64) {
+        self.display.remove(stable_id);
+    }
+    /// Object5F5765 invokes RecordKill for each actual exact-zero callback.
+    /// A retained Health1 hull can reach this again with a different attacker;
+    /// stale attribution and the prior UnInit guard must not swallow it.
+    /// The receiver then captures this hit's credit, awards experience
+    /// (702FF0), and consumes the score record (703003..7031DC) before Destroy.
+    pub(crate) fn begin_receiver_kill_record(&mut self, id: u64) {
+        if let Some(entity) = self.entities.get_mut(id) {
+            debug_assert_eq!(entity.health.current(), 0);
+            entity.kill_record.clear();
+        }
     }
 }
 

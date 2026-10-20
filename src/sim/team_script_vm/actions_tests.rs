@@ -292,7 +292,7 @@ fn patrol_team_fixture(armed: bool) -> (Simulation, RuleSet, u64, Vec<u64>) {
         .into(),
     );
     for &member in &members {
-        sim.team_set_member_initiated(team, member);
+        sim.team_script_vm.team_set_member_initiated(team, member);
     }
     let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
     state.cursor = -1;
@@ -817,7 +817,7 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
             .into(),
         );
         for &member in &members {
-            sim.team_set_member_initiated(team, member);
+            sim.team_script_vm.team_set_member_initiated(team, member);
             // Supplied native raw+2FC prior for this control. Production
             // non-Aircraft ammunition writers remain the documented owner
             // residual; this fixture does not invent a working reload loop.

@@ -562,7 +562,7 @@ fn spyplane_missions_match_native() {
             assert_eq!(Edge::opposite_edge(own), opposite, "{row}");
             expected_pick(&sim, opposite, 0)
         });
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let now = sim.session.binary_frame();
 
         crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, Default::default());
@@ -657,7 +657,7 @@ fn retail_spy_plane_photographs_the_target_and_leaves() {
     let mut overfly = None;
     let mut saw_body_counter_advance = false;
     while sim.substrate.entities.contains(plane) {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
         frames += 1;
         snapshots += camera_sounds(&sim);
@@ -727,6 +727,7 @@ fn retail_spy_plane_flies_with_super_weapons_off() {
 
     let instance = sim
         .super_weapons
+        .map_mut_for_test()
         .get_mut(&americans)
         .and_then(|supers| supers.get_mut(&spy_plane))
         .unwrap();

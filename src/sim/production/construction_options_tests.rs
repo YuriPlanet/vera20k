@@ -56,7 +56,8 @@ fn cameo_draw_state_darkens_where_draw_does_not_decide_retention() {
 
     // An offline factory keeps the entry and darkens it: Draw's
     // `FindFactory(1, 1, 1)` requires `+660`, `Recalculate`'s does not.
-    sim.entities_mut()
+    sim.substrate
+        .entities
         .get_mut(yard)
         .unwrap()
         .set_temporal_for_test(TemporalState::warped_by_for_test(yard));
@@ -66,7 +67,8 @@ fn cameo_draw_state_darkens_where_draw_does_not_decide_retention() {
     assert!(!offline.enabled);
     assert!(!offline.at_build_limit);
     // The same live query clears the overlay when the yard is back online.
-    sim.entities_mut()
+    sim.substrate
+        .entities
         .get_mut(yard)
         .unwrap()
         .set_temporal_for_test(TemporalState::default());
@@ -254,13 +256,15 @@ fn construction_options_match_original_gates_type_order_limit_and_warp_grant() {
         if row["limbo"].as_bool() == Some(true) {
             sim.techno_limbo_with_rules(factory, &rules, None);
         }
-        sim.entities_mut()
+        sim.substrate
+            .entities
             .get_mut(factory)
             .unwrap()
             .discovery
             .set_discovered_by_current_house_for_test(row["discovered"].as_bool().unwrap_or(true));
         for phase in row["results"].as_array().unwrap() {
-            sim.entities_mut()
+            sim.substrate
+                .entities
                 .get_mut(factory)
                 .unwrap()
                 .set_temporal_for_test(if phase["online"].as_bool().unwrap() {
@@ -270,7 +274,8 @@ fn construction_options_match_original_gates_type_order_limit_and_warp_grant() {
                 });
             if let Some(grant) = phase["grant"].as_str() {
                 let id = sim.interner.get(grant).unwrap();
-                sim.entities_mut()
+                sim.substrate
+                    .entities
                     .get_mut(lab)
                     .unwrap()
                     .assign_secret_lab_fallback((ObjectCategory::Infantry, id));

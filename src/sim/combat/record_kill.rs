@@ -389,7 +389,7 @@ impl KillRecord {
 
     /// Drop the credit and the guard: a retained hull's next exact-zero
     /// callback must capture its own credit
-    /// (`Simulation::begin_receiver_kill_record`), and a PostMortem restore
+    /// (`ObjectSubstrate::begin_receiver_kill_record`), and a PostMortem restore
     /// keeps no killer.
     pub(crate) fn clear(&mut self) {
         *self = Self::default();

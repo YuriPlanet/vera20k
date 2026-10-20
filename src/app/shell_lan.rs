@@ -4,7 +4,7 @@
 
 use super::{App, AppState};
 use crate::app::frontend::{shell_layout, shell_transition};
-use crate::app::match_runtime::session::{NetworkReturnContext, SessionMode};
+use crate::app::match_runtime::session::NetworkReturnContext;
 use crate::skirmish_launch::SkirmishHumanSlot;
 use crate::ui::lan_shell::*;
 use crate::ui::main_menu_dialogs::options::LauncherCue;
@@ -136,7 +136,7 @@ impl App {
         state
             .match_state
             .session
-            .enter_network(SessionMode::Lan, NetworkReturnContext::LanLobby);
+            .enter_network(NetworkReturnContext::LanLobby);
         let local = state.frontend.multiplayer_shell_runtime.local_participant();
         let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
         let mut runtime = LanShellRuntime::new(&local.name, observer);

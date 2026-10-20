@@ -396,9 +396,10 @@ impl Replay {
                     },
                 );
             }
-            "post_foot_ai" => {
-                crate::sim::miner::miner_system::unit_ai_clear_harvesting(&mut s.sim, s.miner)
-            }
+            "post_foot_ai" => crate::sim::miner::miner_system::unit_ai_clear_harvesting(
+                &mut s.sim.substrate,
+                s.miner,
+            ),
             "break_contact" => {
                 let response = crate::sim::radio::transmit_to_contact(
                     &mut s.sim,

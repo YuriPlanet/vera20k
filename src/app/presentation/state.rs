@@ -146,6 +146,9 @@ pub(crate) struct MatchPresentationState {
     /// §4.3: the native composite timer freezes during pause). Fed pause
     /// edges by `messages::update`.
     pub(crate) message_clock: crate::ui::messages::PauseAwareClock,
+    /// The in-battle chat target and chat mask, beside the list whose edit
+    /// line they route.
+    pub(crate) chat: crate::app::input::chat::ChatState,
     /// In-scenario modal state — the port of gamemd's in-scenario state
     /// variable. Owns the in-game menu, the abort-mission confirmation and the
     /// parent/child relationship with the `0xBBB` Options dialog.

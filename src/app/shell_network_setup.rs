@@ -159,7 +159,7 @@ pub(crate) fn dialog(state: &AppState) -> SetupDialog {
     let session = &state.match_state.session;
     SetupDialog {
         host: session.host(),
-        flavor: if session.mode() == SessionMode::Wol {
+        flavor: if state.match_state.session_mode() == SessionMode::Wol {
             SetupFlavor::Wol
         } else {
             SetupFlavor::Lan

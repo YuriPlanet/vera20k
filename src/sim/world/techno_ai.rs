@@ -41,7 +41,7 @@ pub(crate) use target_scan::{can_fire_at, weapon_at_index};
 
 use target_scan::{can_acquire_target, passive_acquire_step};
 
-use super::{FrameEffects, Simulation};
+use super::{FrameEffects, ObjectSubstrate, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -238,7 +238,7 @@ impl Simulation {
                 return;
             }
             sim.mission_host_promote(id, now, rules);
-            sim.aircraft_ammo_after_commence(id);
+            sim.substrate.aircraft_ammo_after_commence(id);
         });
     }
 
@@ -261,22 +261,7 @@ impl Simulation {
             return;
         }
         self.mission_host_promote(id, self.session.binary_frame(), rules);
-        self.aircraft_ammo_after_commence(id);
-    }
-
-    /// AircraftAI41505E..415085 consumes a pending release after Ready/Commence,
-    /// using the resulting native Mission+AC, including when an order interrupts
-    /// Attack. It neither reads nor clears the separate readiness latch+6D2.
-    fn aircraft_ammo_after_commence(&mut self, id: u64) {
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
-            return;
-        };
-        if entity.category() == EntityCategory::Aircraft
-            && entity.mission.current().raw() != 1
-            && let Some(ammo) = entity.ammo_mut()
-        {
-            ammo.consume_release(false);
-        }
+        self.substrate.aircraft_ammo_after_commence(id);
     }
 
     /// One `VoxelAnimClass::AI @ 0x00749F30` LogicVector slot.
@@ -691,6 +676,23 @@ impl Simulation {
     }
 }
 
+impl crate::sim::world::ObjectSubstrate {
+    /// AircraftAI41505E..415085 consumes a pending release after Ready/Commence,
+    /// using the resulting native Mission+AC, including when an order interrupts
+    /// Attack. It neither reads nor clears the separate readiness latch+6D2.
+    fn aircraft_ammo_after_commence(&mut self, id: u64) {
+        let Some(entity) = self.entities.get_mut(id) else {
+            return;
+        };
+        if entity.category() == EntityCategory::Aircraft
+            && entity.mission.current().raw() != 1
+            && let Some(ammo) = entity.ammo_mut()
+        {
+            ammo.consume_release(false);
+        }
+    }
+}
+
 /// Per-category dispatch shell.
 ///
 /// `match category` — NO trait / dyn / vtable (invariant #2). Every arm runs
@@ -752,7 +754,7 @@ fn techno_ai_shell(
     // `InfantryClass::AI`'s Health reset (`0x0051BC57`) precedes
     // `FootClass::AI`, and with it the Techno body below.
     if category == EntityCategory::Infantry {
-        sim.infantry_health_reset(id);
+        sim.substrate.infantry_health_reset(id);
     }
     // Techno6F9F6E..9F precedes veterancy promotion, missions and acquisition for every
     // Techno category. object_ai_visit_one excludes the entry-active Tube leaf
@@ -859,7 +861,7 @@ fn techno_ai_shell(
                 return;
             }
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
-            flash_step(sim, id);
+            flash_step(&mut sim.substrate, id);
             if let Some(rules) = rules {
                 building_missions::gattling_idle(sim, id, rules);
             }
@@ -1080,7 +1082,7 @@ fn veterancy_promotion_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         }
     };
     let sound_id = sound.map(|name| sim.interner.intern(name));
-    sim.sound_events.push(super::SimSoundEvent::UnitPromoted {
+    sim.sound_events.emit(super::SimSoundEvent::UnitPromoted {
         owner,
         sound_id,
         rx,
@@ -1335,7 +1337,7 @@ fn mission_counter_step(
         }
     }
     sim.object_ai_sounds(id, rules, ctx.effects);
-    ai_alive(sim, id)
+    ai_alive(&sim.substrate, id)
 }
 
 // ===== TechnoClass common-body bracket =====
@@ -1359,8 +1361,8 @@ fn mission_counter_step(
 ///
 /// [`GameEntity::is_object_alive`]: crate::sim::game_entity::GameEntity::is_object_alive
 /// [`GameEntity::mission_handler_due`]: crate::sim::game_entity::GameEntity::mission_handler_due
-pub(crate) fn ai_alive(sim: &Simulation, id: u64) -> bool {
-    sim.substrate
+pub(crate) fn ai_alive(substrate: &ObjectSubstrate, id: u64) -> bool {
+    substrate
         .entities
         .get(id)
         .is_some_and(|entity| entity.is_object_alive())
@@ -1433,7 +1435,7 @@ fn techno_common_steps(
             );
             sim.commit_direct_damage_receiver(rules, overlay_registry, event, effects);
         }
-        if !ai_alive(sim, id) {
+        if !ai_alive(&sim.substrate, id) {
             return false;
         }
     }
@@ -1766,7 +1768,7 @@ fn techno_after_acquisition(
         sim.slave_manager_ai(id, rules, ctx.overlay_registry, ctx.effects);
         sim.capture_manager_update(id, rules, ctx.overlay_registry, ctx.effects);
     }
-    if !ai_alive(sim, id) {
+    if !ai_alive(&sim.substrate, id) {
         return false;
     }
     if let Some(rules) = rules {
@@ -2043,7 +2045,7 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.tick_native_stage(sim.session.binary_frame() as i32);
     }
-    flash_step(sim, id);
+    flash_step(&mut sim.substrate, id);
     let Some(rules) = rules else {
         return;
     };
@@ -2054,9 +2056,9 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
 /// Shared late Techno6FAC31..6FAC79 slot for every represented category.
 /// The countdown owns no RNG or CdTimer. Native redraw virtual+124 is a
 /// presentation dependency; the existing +F0 supplies its phase bits.
-fn flash_step(sim: &mut Simulation, id: u64) {
-    if ai_alive(sim, id)
-        && let Some(entity) = sim.substrate.entities.get_mut(id)
+fn flash_step(substrate: &mut ObjectSubstrate, id: u64) {
+    if ai_alive(substrate, id)
+        && let Some(entity) = substrate.entities.get_mut(id)
     {
         entity.flashing.tick();
     }
@@ -2094,7 +2096,7 @@ fn unit_techno_bracket(
     // Guard or Harvest the gate and the scan with its Scenario draws, which
     // can acquire a target its fire update then shoots), the bomb and the
     // managers, and the post block; only the handlers are skipped.
-    if !ai_alive(sim, id) {
+    if !ai_alive(&sim.substrate, id) {
         return BracketReach::DiedInPre;
     }
     // The off-mission passive-target clear runs BEFORE the +0xC4 counter.
@@ -2842,7 +2844,7 @@ mod tests {
         assert_eq!(unit_voice_facts(&sim), vec![(9, false), (3, false)]);
 
         // No pending owners means no per-actor output for the whole live walk.
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.prepare_unit_voice_visits(Default::default());
         sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
         assert!(unit_voice_facts(&sim).is_empty());
@@ -3429,7 +3431,8 @@ mod tests {
         let mut sim = Simulation::new();
         insert_scannable(&mut sim, 1, "Americans", "MTNK", EntityCategory::Unit);
         sim.session.set_binary_frame_for_test(45);
-        sim.mission_assign_exact(1, MissionId::from_known(MissionType::Attack), 45)
+        sim.substrate
+            .mission_assign_exact(1, MissionId::from_known(MissionType::Attack), 45)
             .unwrap();
         sim.mission_queue_exact(
             1,
@@ -3448,7 +3451,7 @@ mod tests {
             timer
         );
 
-        sim.mission_commence_exact(1, 45).unwrap();
+        sim.substrate.mission_commence_exact(1, 45).unwrap();
         sim.session.set_binary_frame_for_test(46);
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
         assert_ne!(sim.scenario_rng.logical_state(), before);
@@ -3784,7 +3787,7 @@ mod tests {
         let mut power = crate::sim::power_system::PowerState::default();
         power.set_total_drain_for_test(100);
         power.set_is_low_power_for_test(true);
-        sim.power_states.insert(owner, power);
+        sim.power_states.map_mut_for_test().insert(owner, power);
 
         let before = sim.scenario_rng.state();
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
@@ -3812,7 +3815,8 @@ mod tests {
         // job has to be LIVE for the committed selector to be read — a mission
         // whose machinery has gone quiet defers to the derived reading, which is
         // what stops a finished order from deafening a unit forever.
-        sim.mission_assign_exact(1, MissionId::from_known(MissionType::Unload), now)
+        sim.substrate
+            .mission_assign_exact(1, MissionId::from_known(MissionType::Unload), now)
             .unwrap();
         {
             let e = sim.substrate.entities.get_mut(1).unwrap();
@@ -5307,7 +5311,8 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         assert_eq!(sim.scenario_rng.state(), frozen);
         assert_eq!(spark_system(&sim, 1), Some(first));
 
-        sim.particle_systems_mut()
+        sim.substrate
+            .particle_systems
             .get_mut(first)
             .unwrap()
             .set_done_spawning_for_test(true);
@@ -5340,7 +5345,8 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         );
         // This is an explicit done-empty prior. Its real common AI, rather
         // than a guessed Lifetime<=0 timer, broadcasts the matching expiry.
-        sim.particle_systems_mut()
+        sim.substrate
+            .particle_systems
             .get_mut(system_id)
             .unwrap()
             .set_done_spawning_for_test(true);

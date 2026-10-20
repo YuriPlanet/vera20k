@@ -95,6 +95,7 @@ fn super_grant_actions_survive_provider_loss_power_and_shell_until_house_defeat(
         spring(&mut sim, &rules);
         sim.session.game_options_mut_for_test().super_weapons = false;
         sim.power_states
+            .map_mut_for_test()
             .entry(owner)
             .or_default()
             .set_is_low_power_for_test(true);
@@ -207,6 +208,7 @@ fn super_grant_retained_histories_preserve_original_flags_and_old_hold() {
         let (mut sim, rules, _, owner, id) = scene(kind);
         let slot = sim
             .super_weapons
+            .map_mut_for_test()
             .get_mut(&owner)
             .unwrap()
             .get_mut(&id)

@@ -450,7 +450,7 @@ impl Simulation {
         };
         if let Some(sound) = flags.crush_sound.as_ref() {
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::wall_crushed(
+                .emit(crate::sim::world::SimSoundEvent::wall_crushed(
                     sound.clone(),
                     &actor.position,
                 ));
@@ -722,7 +722,7 @@ impl Simulation {
         );
         let _ =
             self.set_unit_destination(id, NavTargetRef::cell(post.0, post.1), rules, true, effects);
-        let _ = self.mission_commence_exact(id, now);
+        let _ = self.substrate.mission_commence_exact(id, now);
         if let Some(unit) = self.substrate.entities.get_mut(id) {
             unit.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(post.0, post.1)));
         }

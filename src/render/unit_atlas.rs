@@ -21,6 +21,7 @@ use std::time::Instant;
 
 #[path = "unit_shadow_cache.rs"]
 mod shadow_cache;
+pub(crate) use shadow_cache::{UnitShadowPart, composite_mask_part};
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::hva_file::HvaFile;
@@ -50,6 +51,9 @@ const UNIT_FACING_BUCKETS: u16 = crate::render::vxl_raster::VOXEL_FACING_STEPS a
 // Private atlas companion, never a native HVA frame. It preserves the existing
 // geometry when a prepared native shadow's runtime caller is unsupported.
 pub(crate) const LEGACY_SHADOW_FRAME: u32 = u32::MAX;
+/// Unit73C468 separates the grounded composed mask from unmasked flight.
+/// This atlas discriminator never changes the HVA frame used by a shadow.
+pub(crate) const GROUNDED_SHADOW_FRAME_FLAG: u32 = 0x8000_0000;
 /// Turret/barrel facing quantization step: 8 = 32 buckets (11.25° per bucket).
 ///
 /// Turret and barrel matrices go through the same 5-bit facing quantization as the
@@ -567,7 +571,9 @@ fn render_unit_key(
     let (sprite, native_draw_bounds) = model.render(key, vpl, None, pose)?;
     let legacy_shadow = (key.layer == VxlLayer::Shadow
         && native_draw_bounds.is_some()
-        && !model.shadow.is_some_and(|shadow| shadow.aircraft))
+        && !model
+            .shadow
+            .is_some_and(|shadow| shadow.aircraft || shadow.jumpjet))
     .then(|| {
         let mut fallback_key = key.clone();
         fallback_key.frame = LEGACY_SHADOW_FRAME;
@@ -579,12 +585,30 @@ fn render_unit_key(
         }))
     })
     .flatten();
+    let mut cached = CachedUnitSprite::from_rendered(RenderedSprite {
+        key: key.clone(),
+        sprite,
+        native_draw_bounds,
+    });
+    if key.layer == VxlLayer::Shadow
+        && native_draw_bounds.is_some()
+        && let Some(shadow) = model.shadow
+        && let Some(body) = &model.body
+    {
+        cached.shadow_center = vxl_raster::shadow::center(
+            body.vxl(),
+            body.hva(),
+            &VxlRenderParams {
+                facing: key.facing,
+                slope_type: key.slope_type,
+                ..Default::default()
+            },
+            shadow.index,
+            shadow.considered_aircraft,
+        );
+    }
     Some(RenderedKey {
-        sprite: CachedUnitSprite::from_rendered(RenderedSprite {
-            key: key.clone(),
-            sprite,
-            native_draw_bounds,
-        }),
+        sprite: cached,
         legacy_shadow,
     })
 }
@@ -608,6 +632,9 @@ struct CachedUnitSprite {
     offset_x: f32,
     offset_y: f32,
     native_draw_bounds: Option<[i32; 4]>,
+    ///756860 adds its mask displacement to this fractional center before
+    ///truncating. Source: the same model/key/HVA geometry as these pixels.
+    shadow_center: Option<[f32; 2]>,
 }
 
 impl CachedUnitSprite {
@@ -620,6 +647,7 @@ impl CachedUnitSprite {
             offset_x: rs.sprite.offset_x,
             offset_y: rs.sprite.offset_y,
             native_draw_bounds: rs.native_draw_bounds,
+            shadow_center: None,
         }
     }
 }
@@ -734,16 +762,36 @@ fn seed_unit_variant_keys(
     }
     // Aircraft414728 includes the body frame remainder in its shadow cache
     // key, but707280 still samples ShadowIndex's HVA frame zero.
-    if is_ground_vehicle || shadow.is_some_and(|shadow| shadow.aircraft) {
+    if is_ground_vehicle || shadow.is_some_and(|shadow| shadow.aircraft || shadow.jumpjet) {
         insert_unit_layer_keys(
             needed,
             variant,
             VxlLayer::Shadow,
             0,
-            if is_ground_vehicle { 1 } else { shadow_frames },
+            if shadow.is_some_and(|s| s.aircraft || s.jumpjet) {
+                shadow_frames
+            } else {
+                1
+            },
             true,
             &[0],
         );
+        if shadow.is_some_and(|shadow| shadow.jumpjet) {
+            let grounded: Vec<_> = needed
+                .iter()
+                .filter(|key| {
+                    key.type_id == variant
+                        && key.layer == VxlLayer::Shadow
+                        && key.frame & GROUNDED_SHADOW_FRAME_FLAG == 0
+                })
+                .cloned()
+                .map(|mut key| {
+                    key.frame |= GROUNDED_SHADOW_FRAME_FLAG;
+                    key
+                })
+                .collect();
+            needed.extend(grounded);
+        }
     }
 }
 
@@ -1023,6 +1071,7 @@ struct ShadowModel {
     index: i32,
     considered_aircraft: bool,
     aircraft: bool,
+    jumpjet: bool,
 }
 
 impl ShadowModel {
@@ -1030,11 +1079,16 @@ impl ShadowModel {
         use crate::rules::locomotor_type::LocomotorKind;
         let aircraft = object.category == crate::rules::object_type::ObjectCategory::Aircraft
             && matches!(object.locomotor, LocomotorKind::Fly | LocomotorKind::Rocket);
-        (aircraft || (object.locomotor == LocomotorKind::Drive && !object.considered_aircraft))
+        let jumpjet = object.category == crate::rules::object_type::ObjectCategory::Vehicle
+            && object.locomotor == LocomotorKind::Jumpjet;
+        (aircraft
+            || jumpjet
+            || (object.locomotor == LocomotorKind::Drive && !object.considered_aircraft))
             .then_some(Self {
                 index: object.voxel_shadow_index(),
                 considered_aircraft: object.considered_aircraft,
                 aircraft,
+                jumpjet,
             })
     }
 }
@@ -1140,11 +1194,13 @@ impl UnitModel {
         };
         // Aircraft templates are unmasked: the original4148A0->4DB0D0->
         //706BD0->707280 caller supplies NULL for its body-mask surface.
+        // Unit Jumpjet has a distinct grounded first-fill mask and fresh
+        // positive low-flight masks; its high-flight template stays unmasked.
         // Ground Drive retains its existing first-fill composed-body mask.
         if key.layer == VxlLayer::Shadow
             && key.frame != LEGACY_SHADOW_FRAME
             && let Some(shadow) = self.shadow
-            && (shadow.aircraft || (params.slope_type == 0 && key.frame == 0))
+            && (shadow.aircraft || shadow.jumpjet || (params.slope_type == 0 && key.frame == 0))
             && let Some(body) = &self.body
         {
             let sprite = vxl_raster::shadow::render(
@@ -1154,7 +1210,7 @@ impl UnitModel {
                 shadow.index,
                 shadow.considered_aircraft,
             );
-            if shadow.aircraft && sprite.is_none() {
+            if (shadow.aircraft || shadow.jumpjet) && sprite.is_none() {
                 return None;
             }
             if let Some(sprite) = sprite {

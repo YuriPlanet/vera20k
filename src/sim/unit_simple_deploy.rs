@@ -58,7 +58,8 @@ impl Simulation {
             &EntityReadyInputProvider,
         )
         .map_err(|error| error.to_string())?;
-        self.mission_commence_exact(id, self.session.binary_frame())
+        self.substrate
+            .mission_commence_exact(id, self.session.binary_frame())
             .map_err(|error| error.to_string())?;
         Ok(450)
     }

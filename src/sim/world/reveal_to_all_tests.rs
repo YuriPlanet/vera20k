@@ -168,7 +168,7 @@ fn captures_keep_the_sight_and_a_shroud_reset_shows_it_again() {
 
     // ChangeOwner's ReReveal(0, 0, 0, 0) keeps it; the reopening for another
     // computer house raises the radar event alone.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.change_owner_with_rules(id, confederation, &rules, None, FrameEffects::default());
     assert_eq!(
         sim.substrate.entities.get(id).unwrap().owner(),
@@ -189,7 +189,7 @@ fn captures_keep_the_sight_and_a_shroud_reset_shows_it_again() {
     assert_eq!(sim.fog.alternate_sight_admissions_for_test(), &admitted);
 
     // The human's capture raises no radar event and keeps the sight too.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.change_owner_with_rules(id, americans, &rules, None, FrameEffects::default());
     assert!(radar_events(&sim).is_empty());
     assert_eq!(sim.fog.alternate_sight_admissions_for_test(), &admitted);

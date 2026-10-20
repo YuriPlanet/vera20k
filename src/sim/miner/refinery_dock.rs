@@ -59,6 +59,7 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::radio::{self, RadioMessage};
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 use super::ResourceType;
@@ -109,7 +110,7 @@ pub(crate) fn mission_unload(
     if entity.radio_contacts.is_empty() {
         sim.unit_enter_idle_mode(id, Some(rules), false, effects);
         set_unload_latch(sim, rules, id, false);
-        stop_if_moving(sim, id);
+        stop_if_moving(&mut sim.substrate, id);
         commence_if_ready(sim, rules, id);
         return 1;
     }
@@ -137,7 +138,7 @@ pub(crate) fn mission_unload(
         if let Some(building) = unload_building(sim, id) {
             crate::sim::world::building_anim::start_refinery_unload(sim, rules, building);
         }
-        set_status(sim, id, UNLOAD_DUMPING);
+        set_status(&mut sim.substrate, id, UNLOAD_DUMPING);
         return epilogue(sim, rules, id);
     }
     match entity.mission.handler_state() {
@@ -200,7 +201,7 @@ fn unload_dumping(
             // 0x0073E4DC..0x0073E534: empty → ProductionAnim, state 4,
             // SpecialAnim destroyed.
             crate::sim::world::building_anim::end_refinery_unload_empty(sim, rules, building);
-            set_status(sim, id, UNLOAD_FINISHING);
+            set_status(&mut sim.substrate, id, UNLOAD_FINISHING);
             #[cfg(any(test, feature = "test-support"))]
             sim.bale_events.push(BaleDepositEvent {
                 building_id: building,
@@ -214,7 +215,7 @@ fn unload_dumping(
     // other than Harvest) ends the unload early, gate or not.
     if new_order_pending(sim, id) {
         crate::sim::world::building_anim::end_refinery_unload_empty(sim, rules, building);
-        set_status(sim, id, UNLOAD_FINISHING);
+        set_status(&mut sim.substrate, id, UNLOAD_FINISHING);
     }
     1
 }
@@ -239,7 +240,7 @@ fn unload_finishing(
     }
     set_unload_latch(sim, rules, id, false);
     if new_order_pending(sim, id) {
-        stop_if_moving(sim, id);
+        stop_if_moving(&mut sim.substrate, id);
         commence_if_ready(sim, rules, id);
     } else {
         let _ = sim.mission_queue_exact(
@@ -256,7 +257,7 @@ fn unload_finishing(
         // warp's Per_Cell release drops the contact. Native reading; no row.
         if sim.mission_ready_to_commence(id, rules) {
             radio::transmit_to_contact(sim, id, RadioMessage::Break, Some(rules), effects);
-            let _ = sim.mission_commence_exact(id, now);
+            let _ = sim.substrate.mission_commence_exact(id, now);
         }
     }
     epilogue(sim, rules, id)
@@ -326,7 +327,7 @@ pub(crate) fn per_cell_release_dock_contact(
 /// draws `UnloadingClass=` while the latch is set.
 fn set_unload_latch(sim: &mut Simulation, rules: &RuleSet, id: u64, active: bool) {
     if !active {
-        clear_unload_latch(sim, id);
+        clear_unload_latch(&mut sim.substrate, id);
         return;
     }
     let image = sim
@@ -350,8 +351,8 @@ fn set_unload_latch(sim: &mut Simulation, rules: &RuleSet, id: u64, active: bool
 /// Drop Unit+0x6D1: the ordinary image returns. The StageClass keeps
 /// ticking at its rate until Mission_Harvest re-arms it. Returns whether the
 /// latch was set.
-pub(crate) fn clear_unload_latch(sim: &mut Simulation, id: u64) -> bool {
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+pub(crate) fn clear_unload_latch(substrate: &mut ObjectSubstrate, id: u64) -> bool {
+    let Some(entity) = substrate.entities.get_mut(id) else {
         return false;
     };
     let Some(miner) = entity.miner.as_mut() else {
@@ -409,8 +410,8 @@ fn new_order_pending(sim: &Simulation, id: u64) -> bool {
 }
 
 /// `vt+0x500` when the locomotor still moves (`0x0073DF1C` / `0x0073E22C`).
-fn stop_if_moving(sim: &mut Simulation, id: u64) {
-    if let Some(entity) = sim.substrate.entities.get_mut(id)
+fn stop_if_moving(substrate: &mut ObjectSubstrate, id: u64) {
+    if let Some(entity) = substrate.entities.get_mut(id)
         && crate::sim::movement::motion_query::is_moving(entity).unwrap_or(false)
     {
         crate::sim::movement::track_stop_moving(entity);
@@ -424,8 +425,8 @@ fn commence_if_ready(sim: &mut Simulation, rules: &RuleSet, id: u64) {
 
 /// Mission+0xBC: the harvester branch stores 3 at `0x0073E093` and 4 at
 /// `0x0073E51C` and `0x0073E594`.
-fn set_status(sim: &mut Simulation, id: u64, status: u32) {
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+fn set_status(substrate: &mut ObjectSubstrate, id: u64, status: u32) {
+    if let Some(entity) = substrate.entities.get_mut(id) {
         entity.mission.set_handler_state(status);
     }
 }

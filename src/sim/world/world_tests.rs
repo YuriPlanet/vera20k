@@ -178,16 +178,15 @@ fn game_speed_transition_applies_at_ingress_before_triggers_and_hash() {
 }
 
 #[test]
-fn game_speed_change_notice_decodes_and_applies_at_ingress() {
-    // Native opcode 0x0D (EventClass::Execute type-13 @ 0x004C794B): the payload
-    // dword at Event+7 is the new GameSpeed setting (0x00A8EB60); the changer is
-    // the header house. It is SetGameSpeed's live-network twin and applies at the
-    // same master-frame ingress, never at the EventClass-shaped tail.
+fn live_game_speed_event_decodes_and_applies_within_its_frame() {
+    // Native opcode 0x0D (EventClass::Execute type 13 @ 0x004C794B): the payload
+    // dword at Event+7 is the new GameSpeed setting (0x00A8EB60). Unlike the
+    // offline SetGameSpeed it applies at the EventClass tail of its frame.
     let (mut sim, owner) = game_speed_command_sim();
     let (mut control, _) = game_speed_command_sim();
 
-    // decode: a native 0x0D record for header house 0 (== owner) carrying speed 5.
-    let record = crate::sim::command::GameSpeedNoticeRecord {
+    // A native 0x0D record for header house 0 (== owner) carrying speed 5.
+    let record = crate::sim::command::GameSpeedRecord {
         house_id: 0,
         frame: 1,
         speed: 5,
@@ -198,9 +197,9 @@ fn game_speed_change_notice_decodes_and_applies_at_ingress() {
         .decode_native_command_record(&record, 1)
         .expect("a 0x0D record decodes");
     assert_eq!(decoded.owner, owner);
-    assert_eq!(decoded.payload, Command::GameSpeedChangeNotice { speed: 5 });
+    assert_eq!(decoded.payload, Command::LiveGameSpeed { speed: 5 });
 
-    let command = CommandEnvelope::new(owner, 1, Command::GameSpeedChangeNotice { speed: 5 });
+    let command = CommandEnvelope::new(owner, 1, Command::LiveGameSpeed { speed: 5 });
     let result = sim
         .advance_master_frame(
             &[command],
@@ -282,6 +281,35 @@ fn building_on_off_line_opcodes_decode_direction_and_target() {
             on: false
         }
     );
+
+    // 0x004C6CF0/0x004C6D4D drop a dead or limboed target before GoOffline.
+    let rules = crate::rules::ruleset::RuleSet::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[BuildingTypes]\n1=GAPOWR\n[GAPOWR]\nPower=-20\n",
+        ),
+    )
+    .unwrap();
+    {
+        let building = sim.substrate.entities.get_mut(7).unwrap();
+        building.set_type_ref_for_test(sim.interner.intern("GAPOWR"));
+        building.set_category_for_test(EntityCategory::Structure);
+        building.lifecycle.set_object_alive_for_test(true);
+        building.lifecycle.set_in_limbo_for_test(true);
+    }
+    let off = Command::SetBuildingOnLine {
+        entity_id: 7,
+        on: false,
+    };
+    assert!(!sim.apply_command("Local", &off, Some(&rules)));
+    assert!(sim.substrate.entities.get(7).unwrap().building_online());
+    sim.substrate
+        .entities
+        .get_mut(7)
+        .unwrap()
+        .lifecycle
+        .set_in_limbo_for_test(false);
+    assert!(sim.apply_command("Local", &off, Some(&rules)));
+    assert!(!sim.substrate.entities.get(7).unwrap().building_online());
 }
 
 /// A launch hashes every frame and a test world none until the caller asks.
@@ -492,7 +520,7 @@ fn particle_frame_boundary_fixture(frame_count: u16) -> (Simulation, RuleSet) {
         rules.particle_type(ParticleTypeId(0)),
         &mut sim,
     );
-    sim.particle_systems_mut().insert({
+    sim.substrate.particle_systems.insert({
         let mut system =
             ParticleSystem::test_fixture(stable_id, ParticleSystemTypeId(0), IVec3::ZERO);
         system.set_particles_for_test(vec![particle]);
@@ -931,7 +959,7 @@ fn terminal_master_frame_visits_class_sequence_before_exit_without_frame_commit(
 fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() {
     let mut sim = Simulation::new();
     sim.hash_state_every(std::num::NonZeroU64::MIN);
-    sim.sound_events.push(SimSoundEvent::AnimationStarted {
+    sim.sound_events.emit(SimSoundEvent::AnimationStarted {
         anim_id: 9,
         sound_id: "WaterfallLoop".to_owned(),
         world: crate::sim::anim_class::AnimWorldCoord {
@@ -3953,7 +3981,8 @@ fn native_frame_committed_late_gate_captures_pre_increment_frame() {
     let gate_id = sim
         .spawn_object("GAGATE_A", "Americans", 10, 10, 0, &rules)
         .expect("spawn gate");
-    sim.mission_assign_exact(gate_id, crate::sim::mission::MissionId::NONE, 0)
+    sim.substrate
+        .mission_assign_exact(gate_id, crate::sim::mission::MissionId::NONE, 0)
         .unwrap();
     sim.mission_queue_exact(
         gate_id,
@@ -3963,7 +3992,7 @@ fn native_frame_committed_late_gate_captures_pre_increment_frame() {
         &crate::sim::mission::authority::EntityReadyInputProvider,
     )
     .unwrap();
-    sim.mission_commence_exact(gate_id, 0).unwrap();
+    sim.substrate.mission_commence_exact(gate_id, 0).unwrap();
     assert_eq!(sim.session.binary_frame(), 0, "fresh sim starts at frame 0");
 
     let _ = sim.advance_tick(&[], Some(&rules), None, None, 1);
@@ -4149,7 +4178,7 @@ fn gsi_01_04_house_rung_owns_savour_deadline_and_emits_one_transition_edge() {
         "only the current player's accepted victory emits its EVA edge"
     );
 
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.session.set_tick_for_test(35);
     sim.session.set_binary_frame_for_test(35);
     check_defeat_now(&mut sim, Some(&rules));
@@ -7259,7 +7288,8 @@ fn unit_route_beside_building(
         e.radio_contacts.insert(building_id);
     }
     let grid = PathGrid::clone(&sim.path_grid_snapshot().expect("navigation built"));
-    sim.mission_assign_exact(tank, MissionId::from_known(MissionType::Move), 0)
+    sim.substrate
+        .mission_assign_exact(tank, MissionId::from_known(MissionType::Move), 0)
         .unwrap();
     sim.assign_destination_represented(
         tank,
@@ -8909,7 +8939,7 @@ fn engineer_capture_of_an_ordinary_building_requests_the_radar_event() {
     );
 
     // A second capture one cell away publishes its own request as well.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.announce_engineer_capture(2, player, &rules);
     assert_eq!(
         captured_events(&sim),
@@ -9004,7 +9034,7 @@ fn defeat_of_a_non_passive_house_emits_player_defeated() {
     );
 
     // A house already flagged defeated is not announced again.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     check_defeat_now(&mut sim, Some(&rules));
     assert!(
         sim.sound_events

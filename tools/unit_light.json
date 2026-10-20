@@ -1,0 +1,2567 @@
+{
+  "retail": {
+    "cases": [
+      {
+        "cell": [
+          75,
+          75
+        ],
+        "on_bridge": false,
+        "row": 51,
+        "source_cell": {
+          "anchor": null,
+          "coord": [
+            75,
+            75
+          ],
+          "deck_bits": 0,
+          "deck_head": 0,
+          "deck_owner": -1,
+          "flags": 0,
+          "ground_bits": 0,
+          "ground_head": 0,
+          "ground_owner": -1,
+          "land": 1,
+          "level": 6,
+          "overlay": -1,
+          "slope": 0,
+          "state": 0,
+          "subtile": 7,
+          "tile": 821,
+          "zone_type": 0
+        }
+      },
+      {
+        "cell": [
+          76,
+          75
+        ],
+        "on_bridge": true,
+        "row": 52,
+        "source_cell": {
+          "anchor": null,
+          "coord": [
+            76,
+            75
+          ],
+          "deck_bits": 0,
+          "deck_head": 0,
+          "deck_owner": -1,
+          "flags": 72576,
+          "ground_bits": 0,
+          "ground_head": 0,
+          "ground_owner": -1,
+          "land": 3,
+          "level": 2,
+          "overlay": 237,
+          "slope": 0,
+          "state": 0,
+          "subtile": 8,
+          "tile": 821,
+          "zone_type": 6
+        }
+      },
+      {
+        "cell": [
+          78,
+          76
+        ],
+        "on_bridge": false,
+        "row": 53,
+        "source_cell": {
+          "anchor": [
+            78,
+            75
+          ],
+          "coord": [
+            78,
+            76
+          ],
+          "deck_bits": 0,
+          "deck_head": 0,
+          "deck_owner": -1,
+          "flags": 68352,
+          "ground_bits": 0,
+          "ground_head": 0,
+          "ground_owner": -1,
+          "land": 0,
+          "level": 2,
+          "overlay": -1,
+          "slope": 0,
+          "state": 0,
+          "subtile": 0,
+          "tile": 134,
+          "zone_type": 0
+        }
+      }
+    ],
+    "native_input_binary": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+    "physical": {
+      "bytes": 144458,
+      "file": "Hills.map",
+      "local_size": [
+        5,
+        5,
+        70,
+        69
+      ],
+      "normalized_local_size": [
+        5,
+        5,
+        70,
+        69
+      ],
+      "physical_cells": 12720,
+      "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e",
+      "size": [
+        80,
+        80
+      ]
+    }
+  },
+  "rows": [
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        -1,
+        -1
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": -1,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          207
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0,
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          208
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        207,
+        207
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 207,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          415
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        208,
+        208
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 208,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          416
+        ]
+      },
+      "light": 1200,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        415,
+        415
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 415,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          623
+        ]
+      },
+      "light": 1200,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        416
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 416,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        417
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 417,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          625
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        -1,
+        -1
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": -1,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          623
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        207
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 207,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          831
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        208
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 208,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          832
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        415
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 415,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          1039
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        416
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 416,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          1040
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        417
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 417,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          1041
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 0,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1200,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0,
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 65536,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0,
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 0,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0,
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 65792,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 0,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 65792,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 0,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "packed_cell",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 2304,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 0,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 0,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1200,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        207
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 65536,
+        "height": 207,
+        "ion_level": -12,
+        "level": 32,
+        "marked": false,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          415
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        208
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 65536,
+        "height": 208,
+        "ion_level": -12,
+        "level": 32,
+        "marked": false,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          416
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        750
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 65536,
+        "height": 750,
+        "ion_level": -12,
+        "level": 32,
+        "marked": false,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          958
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        207,
+        207
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 65536,
+        "height": 207,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          415
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        208,
+        208
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 65536,
+        "height": 208,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          416
+        ]
+      },
+      "light": 1200,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        750,
+        750
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 65536,
+        "height": 750,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          958
+        ]
+      },
+      "light": 1200,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 1,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1600,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 2,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 1,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1508,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 1,
+        "on_bridge": true,
+        "psydom": 1,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1508,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 2,
+        "on_bridge": true,
+        "psydom": 1,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1508,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 5,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1508,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 1,
+        "on_bridge": true,
+        "psydom": 5,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1508,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 2,
+        "on_bridge": true,
+        "psydom": 5,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1508,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": true,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1152,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 1,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": true,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1152,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 2,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": true,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1152,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 1,
+        "storm": true,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1152,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 1,
+        "on_bridge": true,
+        "psydom": 1,
+        "storm": true,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1152,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 2,
+        "on_bridge": true,
+        "psydom": 1,
+        "storm": true,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1152,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 5,
+        "storm": true,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1152,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 1,
+        "on_bridge": true,
+        "psydom": 5,
+        "storm": true,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1152,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 2,
+        "on_bridge": true,
+        "psydom": 5,
+        "storm": true,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1152,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": -32768,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": -32440,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": -1,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 327,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 0,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 328,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 32767,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 33095,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 2147483647,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 32,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": -2147482521,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 67840,
+        "height": 0,
+        "ion_level": -12,
+        "level": 2147483647,
+        "marked": true,
+        "north_flags": 256,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 256,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1196,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 6,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 0,
+        "height": 0,
+        "ion_level": -12,
+        "level": 14,
+        "marked": true,
+        "north_flags": 0,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 0,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1200,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "neighbor",
+        "packed_cell",
+        "storm",
+        "dominator",
+        "nuke",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 72576,
+        "height": 0,
+        "ion_level": -12,
+        "level": 14,
+        "marked": true,
+        "north_flags": 72448,
+        "nuke": 0,
+        "on_bridge": true,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 0,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          624
+        ]
+      },
+      "light": 1256,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    },
+    {
+      "calls": [
+        "get_cell",
+        "get_height",
+        "coord_cell",
+        "packed_cell",
+        "foot_high",
+        "object_high",
+        "get_height",
+        "packed_cell"
+      ],
+      "cell": [
+        40,
+        50
+      ],
+      "heights": [
+        0,
+        0
+      ],
+      "input": {
+        "cell_level": 2,
+        "dominator_level": 77,
+        "extra": 200,
+        "flags": 68352,
+        "height": 0,
+        "ion_level": -12,
+        "level": 14,
+        "marked": true,
+        "north_flags": 72576,
+        "nuke": 0,
+        "on_bridge": false,
+        "psydom": 0,
+        "storm": false,
+        "west_flags": 68352,
+        "word": 1000,
+        "xyz": [
+          10368,
+          12928,
+          208
+        ]
+      },
+      "light": 700,
+      "rng_unchanged": true,
+      "unit_unchanged": true
+    }
+  ],
+  "startup": {
+    "geometry_initializers": [
+      "006D1830",
+      "006D18C0",
+      "006D1BB0",
+      "0049F2F0",
+      "00561710",
+      "005617A0",
+      "005617C0",
+      "005617E0",
+      "00561910",
+      "005638D0",
+      "0047B150",
+      "0047B180",
+      "0047B1A0",
+      "0047B1C0",
+      "0047B1E0",
+      "0047B200",
+      "0047B220",
+      "0047B260",
+      "0047B290",
+      "0047B2C0",
+      "0047B2F0",
+      "0047B300",
+      "0047B320",
+      "0047B340",
+      "006DCD70",
+      "006DCDA0",
+      "006DCDC0",
+      "006DCDE0",
+      "006DCE00",
+      "006DCE20",
+      "006DCE40",
+      "006DCE80",
+      "006DCEB0",
+      "006DCEE0",
+      "006DCF10",
+      "006DCF20",
+      "006DCF40",
+      "006DCF60"
+    ],
+    "nuke_level": 100,
+    "scalars": [
+      104,
+      104,
+      416,
+      416
+    ]
+  }
+}

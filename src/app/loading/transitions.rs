@@ -376,6 +376,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             .frontend
             .random_map_retention
             .publish_mapgen_continuation(None, continuation);
+        // GameMode is process-global too; the shell takes it back.
+        state
+            .match_state
+            .session
+            .retake_mode_from_world(outgoing.simulation.session().game_mode());
     }
     state.match_state.sim_runtime = incoming.map(|(mut simulation, rules)| {
         simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
@@ -391,6 +396,12 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             },
         }
     });
+    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        state
+            .match_state
+            .session
+            .hand_mode_to_world(runtime.simulation.session().game_mode());
+    }
     // Only an actually-carried lease returns. A fallback result must not wipe
     // the process-sticky manager already restored by its failure path.
     if let Some(manager) = result.asset_manager {
@@ -477,6 +488,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     );
     state.match_state.match_presentation.message_clock =
         crate::ui::messages::PauseAwareClock::default();
+    state.match_state.match_presentation.chat = Default::default();
     state.match_state.input.minimap_dragging = false;
     state.match_state.input.tactical_mouse.reset_for_new_view();
     state.match_state.input.keys_held.clear();

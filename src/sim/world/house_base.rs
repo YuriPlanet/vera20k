@@ -881,17 +881,6 @@ impl Simulation {
         self.append_house_base_building(id);
     }
 
-    /// `BuildingClass::ChangeOwner`'s moves between the two Houses' lists:
-    /// before the Techno owner swap it stable-removes the building from the
-    /// old House's FactoryPlant list, recomputes and removes it from House+68
-    /// (`0x00448A21..0x00448AB0`); after it, it appends to the new House's
-    /// lists (`0x00449155..0x004491D2`).
-    pub(super) fn leave_house_base_lists(&mut self, id: u64, owner: InternedId) {
-        if let Some(house) = self.houses.get_mut(&owner) {
-            house.base_projection_mut().remove_membership(id);
-        }
-    }
-
     pub(super) fn join_house_base_lists(
         &mut self,
         id: u64,
@@ -907,27 +896,6 @@ impl Simulation {
         }
         if let Some(house) = self.houses.get_mut(&owner) {
             house.base_projection_mut().append_membership(id);
-        }
-    }
-
-    /// `TechnoClass::ChangeOwner`'s Remove_Tracking on the old House and
-    /// Add_Tracking on the new (`0x007015DE`, `0x007015E6`) move the
-    /// building's registration with it.
-    pub(super) fn move_house_base_tracking(
-        &mut self,
-        id: u64,
-        old_owner: InternedId,
-        new_owner: InternedId,
-    ) {
-        let Some(entry) = self
-            .houses
-            .get_mut(&old_owner)
-            .and_then(|house| house.base_projection_mut().unregister(id))
-        else {
-            return;
-        };
-        if let Some(house) = self.houses.get_mut(&new_owner) {
-            house.base_projection_mut().register(entry);
         }
     }
 
@@ -952,6 +920,38 @@ impl Simulation {
         {
             //43BF34 changes tracking AFTER the earlier expiry/Limbo. No recalc.
             house.base_projection_mut().unregister(id);
+        }
+    }
+}
+
+impl crate::sim::houses::Houses {
+    /// `BuildingClass::ChangeOwner`'s moves between the two Houses' lists:
+    /// before the Techno owner swap it stable-removes the building from the
+    /// old House's FactoryPlant list, recomputes and removes it from House+68
+    /// (`0x00448A21..0x00448AB0`); after it, it appends to the new House's
+    /// lists (`0x00449155..0x004491D2`).
+    pub(super) fn leave_house_base_lists(&mut self, id: u64, owner: InternedId) {
+        if let Some(house) = self.get_mut(&owner) {
+            house.base_projection_mut().remove_membership(id);
+        }
+    }
+    /// `TechnoClass::ChangeOwner`'s Remove_Tracking on the old House and
+    /// Add_Tracking on the new (`0x007015DE`, `0x007015E6`) move the
+    /// building's registration with it.
+    pub(super) fn move_house_base_tracking(
+        &mut self,
+        id: u64,
+        old_owner: InternedId,
+        new_owner: InternedId,
+    ) {
+        let Some(entry) = self
+            .get_mut(&old_owner)
+            .and_then(|house| house.base_projection_mut().unregister(id))
+        else {
+            return;
+        };
+        if let Some(house) = self.get_mut(&new_owner) {
+            house.base_projection_mut().register(entry);
         }
     }
 }
