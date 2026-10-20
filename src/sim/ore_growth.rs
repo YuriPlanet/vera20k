@@ -30,6 +30,7 @@ use crate::sim::tiberium::{
     spread_tiberium,
 };
 use crate::sim::timer::CdTimer;
+use crate::util::native_heap::NativeHeap;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
 
 #[cfg(test)]
@@ -247,27 +248,23 @@ pub struct NativeTiberiumClassState {
 /// `RebuildSpreadQueue @ 0x007228B0`, `AddToGrowthQueue @ 0x007235A0`,
 /// `AddToSpreadQueue @ 0x00722AF0`, the processor reinserts at
 /// `0x00723060..0x007230D8` and `0x0072259A..0x00722614`) appends the entry
-/// at the array counter unconditionally, increments the counter, and only
-/// when `count + 1 < capacity` sifts the new reference up while the parent's
-/// priority is strictly greater (`parent <= new` breaks the loop). The
-/// processors pop slot 1, move the last slot to the root, decrement the
-/// count, and run `FloatMinHeap::SiftDown @ 0x005AD870` (a child replaces
-/// its parent only when strictly smaller, left before right). The array
-/// contents past the popped references are never reused before a rebuild.
+/// at the array counter unconditionally, increments the counter, and then
+/// inserts its reference into the shared native heap, which drops it when the
+/// heap is full. The processors pop the heap (`FloatMinHeap::SiftDown @
+/// 0x005AD870`). The array contents past the popped references are never
+/// reused before a rebuild.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeTiberiumQueue {
     /// Entry array in insertion order (the native counter is its length).
     entries: Vec<NativeTiberiumQueueEntry>,
-    /// 1-based heap of entry-array indices; slot 0 is unused.
-    heap: Vec<u32>,
-    /// Native store capacity.
-    capacity: u32,
+    /// The entry-array indices by priority; its size word is the store
+    /// capacity.
+    heap: NativeHeap<u32>,
 }
 
 impl Default for NativeTiberiumQueue {
     /// An unsized store (capacity 0): every insert stays array-only until a
-    /// rebuild sizes it. Slot 0 is present so the 1-based heap invariant
-    /// holds from construction.
+    /// rebuild sizes it.
     fn default() -> Self {
         Self::with_capacity(0)
     }
@@ -287,14 +284,13 @@ impl NativeTiberiumQueue {
     pub fn with_capacity(capacity: u32) -> Self {
         Self {
             entries: Vec::new(),
-            heap: vec![0],
-            capacity,
+            heap: NativeHeap::new(capacity as usize),
         }
     }
 
     /// Heap count (`+0x110` / `+0xF4` first dword).
     pub fn len(&self) -> usize {
-        self.heap.len().saturating_sub(1)
+        self.heap.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -307,22 +303,21 @@ impl NativeTiberiumQueue {
     }
 
     pub fn capacity(&self) -> u32 {
-        self.capacity
+        u32::try_from(self.heap.size()).expect("the store capacity is a native dword")
     }
 
     /// Rebuilds reset the logical stores; retain their backing allocations.
     fn reset_for_rebuild(&mut self, capacity: u32) {
         self.entries.clear();
-        self.heap.truncate(1);
-        self.capacity = capacity;
+        self.heap.reset(capacity as usize);
     }
 
     /// Entries referenced by the heap, in heap slot order (slot 1 first).
     #[cfg(any(test, feature = "test-support"))]
     pub fn iter_heap(&self) -> impl Iterator<Item = &NativeTiberiumQueueEntry> + '_ {
         self.heap
+            .as_slice()
             .iter()
-            .skip(1)
             .map(move |&index| &self.entries[index as usize])
     }
 
@@ -330,7 +325,8 @@ impl NativeTiberiumQueue {
     #[cfg(any(test, feature = "test-support"))]
     pub fn heap_entry(&self, slot: usize) -> Option<&NativeTiberiumQueueEntry> {
         self.heap
-            .get(slot + 1)
+            .as_slice()
+            .get(slot)
             .map(|&index| &self.entries[index as usize])
     }
 
@@ -338,90 +334,36 @@ impl NativeTiberiumQueue {
     pub fn push(&mut self, entry: NativeTiberiumQueueEntry) -> NativeQueueInsert {
         let index = u32::try_from(self.entries.len()).expect("queue array fits u32");
         self.entries.push(entry);
-        let slot = self.len() + 1;
-        if u32::try_from(slot).map_or(true, |slot| slot >= self.capacity) {
-            return NativeQueueInsert::ArrayOnly;
+        if self.heap.push(index, by_priority(&self.entries)) {
+            NativeQueueInsert::Heaped
+        } else {
+            NativeQueueInsert::ArrayOnly
         }
-        self.heap.push(index);
-        let priority = priority_f32(&entry);
-        let mut hole = slot;
-        while hole > 1 {
-            let parent_index = self.heap[hole >> 1];
-            if !priority_greater(self.entry_priority(parent_index), priority) {
-                break;
-            }
-            self.heap[hole] = parent_index;
-            hole >>= 1;
-        }
-        self.heap[hole] = index;
-        NativeQueueInsert::Heaped
     }
 
     /// Native processor pop: take slot 1, move the last slot to the root, and
-    /// sift it down.
+    /// sift it down (`FloatMinHeap::SiftDown @ 0x005AD870`).
     pub fn pop_root(&mut self) -> Option<NativeTiberiumQueueEntry> {
-        if self.is_empty() {
-            return None;
-        }
-        let root = self.heap[1];
-        let last = self.heap.pop().expect("heap holds the root");
-        if !self.is_empty() {
-            self.heap[1] = last;
-            self.sift_down(1);
-        }
+        let root = self.heap.pop(by_priority(&self.entries))?;
         Some(self.entries[root as usize])
     }
 
-    /// `FloatMinHeap::SiftDown @ 0x005AD870`.
-    fn sift_down(&mut self, mut slot: usize) {
-        let count = self.len();
-        loop {
-            let mut smallest = slot;
-            let left = slot * 2;
-            let right = left + 1;
-            if left <= count && priority_less(self.slot_priority(left), self.slot_priority(slot)) {
-                smallest = left;
-            }
-            if right <= count
-                && priority_less(self.slot_priority(right), self.slot_priority(smallest))
-            {
-                smallest = right;
-            }
-            if smallest == slot {
-                return;
-            }
-            self.heap.swap(slot, smallest);
-            slot = smallest;
-        }
-    }
-
-    fn slot_priority(&self, slot: usize) -> f32 {
-        self.entry_priority(self.heap[slot])
-    }
-
-    fn entry_priority(&self, index: u32) -> f32 {
-        priority_f32(&self.entries[index as usize])
-    }
-
     fn hash_into(&self, hasher: &mut impl Hasher) {
-        self.capacity.hash(hasher);
+        self.capacity().hash(hasher);
         self.entries.len().hash(hasher);
         for entry in &self.entries {
             entry.rx.hash(hasher);
             entry.ry.hash(hasher);
             entry.priority_bits.hash(hasher);
         }
-        self.heap.hash(hasher);
+        self.heap.as_slice().hash(hasher);
     }
 }
 
-/// Native `FCOMP` ordering of two finite float priorities.
-fn priority_less(lhs: f32, rhs: f32) -> bool {
-    lhs.partial_cmp(&rhs) == Some(std::cmp::Ordering::Less)
-}
-
-fn priority_greater(lhs: f32, rhs: f32) -> bool {
-    lhs.partial_cmp(&rhs) == Some(std::cmp::Ordering::Greater)
+/// The queues' order: their entries' float priorities, compared as native's
+/// `FCOMP` does for finite floats.
+fn by_priority(entries: &[NativeTiberiumQueueEntry]) -> impl Fn(&u32, &u32) -> bool + '_ {
+    move |&a, &b| priority_f32(&entries[a as usize]) < priority_f32(&entries[b as usize])
 }
 
 /// `FUN_0042B1F0`: `(MapRect.Height + 4) * MapRect.Width * 2`.

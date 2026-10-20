@@ -41,6 +41,8 @@ pub(crate) fn enter_wol_main(state: &mut AppState) {
     if !state.frontend.wol_account.nickname.is_empty() {
         return;
     }
+    // The assignment allocates the buffer even for an empty AutoLogin.
+    state.frontend.wol_account.nickname_allocated = true;
     let Some(file) = info_file(state) else {
         return;
     };
@@ -52,49 +54,64 @@ pub(crate) fn enter_wol_main(state: &mut AppState) {
 }
 
 /// `0x10E`'s init (`0x007989AA`): with a nickname, the persona (loading it
-/// creates the file) fills the heading, the five stats and the update
-/// line (`0x0077A9F0`).
+/// creates the file) fills the heading, the five stats and the update line.
 pub(super) fn fill_welcome(state: &mut AppState) {
     let nickname = state.frontend.wol_account.nickname.clone();
     let texts = if nickname.is_empty() {
         Vec::new()
     } else {
         let persona = load(state, &nickname);
-        let stat = |value: i32| {
-            if value == -1 {
-                service::resolve(state, "GUI:UnknownStats")
-            } else {
-                value.to_string()
-            }
-        };
-        let heading = format_csf(
-            &service::resolve(state, "GUI:UserProfileLabel"),
-            &[CsfArg::Str(&nickname)],
-        );
-        let update = if !persona.update_date.is_empty() && !persona.update_time.is_empty() {
-            format_csf(
-                &service::resolve(state, "GUI:WelcomeUpdate"),
-                &[
-                    CsfArg::Str(&persona.update_date),
-                    CsfArg::Str(&persona.update_time),
-                ],
-            )
-        } else {
-            service::resolve(state, "GUI:Blank")
-        };
-        vec![
-            (0x06EF, heading),
-            (0x06F4, stat(persona.rank)),
-            (0x06F5, stat(persona.points)),
-            (0x06F0, stat(persona.wins)),
-            (0x06F1, stat(persona.losses)),
-            (0x0701, stat(persona.disconnects)),
-            (0x0797, update),
-        ]
+        profile_texts(state, &nickname, &persona)
     };
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.welcome_texts = texts;
     }
+}
+
+/// `0x0077A9F0`'s texts by control id: the heading (`GUI:UserProfileLabel`,
+/// empty without a name), rank, points, wins, losses and disconnects
+/// (`GUI:UnknownStats` for -1) and the update line (`GUI:WelcomeUpdate`
+/// with both date and time, else `GUI:Blank`).
+pub(super) fn profile_texts(
+    state: &AppState,
+    name: &str,
+    persona: &WolPersona,
+) -> Vec<(u16, String)> {
+    let stat = |value: i32| {
+        if value == -1 {
+            service::resolve(state, "GUI:UnknownStats")
+        } else {
+            value.to_string()
+        }
+    };
+    let heading = if name.is_empty() {
+        String::new()
+    } else {
+        format_csf(
+            &service::resolve(state, "GUI:UserProfileLabel"),
+            &[CsfArg::Str(name)],
+        )
+    };
+    let update = if !persona.update_date.is_empty() && !persona.update_time.is_empty() {
+        format_csf(
+            &service::resolve(state, "GUI:WelcomeUpdate"),
+            &[
+                CsfArg::Str(&persona.update_date),
+                CsfArg::Str(&persona.update_time),
+            ],
+        )
+    } else {
+        service::resolve(state, "GUI:Blank")
+    };
+    vec![
+        (0x06EF, heading),
+        (0x06F4, stat(persona.rank)),
+        (0x06F5, stat(persona.points)),
+        (0x06F0, stat(persona.wins)),
+        (0x06F1, stat(persona.losses)),
+        (0x0701, stat(persona.disconnects)),
+        (0x0797, update),
+    ]
 }
 
 /// `CChatEventSink+0x84` (`0x007AB8E0`): each user's locale goes into the

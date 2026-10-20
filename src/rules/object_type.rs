@@ -428,8 +428,10 @@ pub struct ObjectType {
     /// No clamp or post-read conversion; retain the native double bits.
     pub threat_avoidance_coefficient: crate::util::native_x87::NativeF64Bits,
     /// Armor type name (e.g., "heavy", "light", "wood"). Determines damage
-    /// multipliers from warhead Verses= values.
+    /// authorship for diagnostics. Gameplay uses the bound `armor_id()`;
+    /// reparsing this text later could retroactively bind an unknown Ares name.
     pub armor: String,
+    armor_id: crate::rules::armor::ArmorId,
     /// Canonical Speed percent,0..100 (0 is immobile). TechnoType
     /// ReadINI71464A retains the prior value for -1 across rules passes.
     /// Whole-lepton Type+678 conversion belongs to util::fixed_math.
@@ -1867,9 +1869,11 @@ pub struct ObjectType {
     pub is_selectable_combatant: bool,
 
     /// `CanBeHidden=` (TechnoType `+0x724`): constructor `0x00711229` writes
-    /// true; ReadINI (`0x007121EB..0x00712202`) reads it with ReadBool, the
-    /// current byte as default. Gates the Behind indicator
-    /// (`TechnoClass::AI_Update @ 0x006FA2A2`).
+    /// true; ReadINI (`0x007121EB..0x00712202`) reads it with ReadBool from
+    /// the ART INI (`0x00887180`) under the type's own ID, never the rules
+    /// section. `RuleSet::project_art_data` sets it from
+    /// [`ArtRegistry::can_be_hidden`](crate::rules::art_data::ArtRegistry::can_be_hidden).
+    /// Gates the Behind indicator (`TechnoClass::AI_Update @ 0x006FA2A2`).
     pub can_be_hidden: bool,
 
     /// `RevealToAll=` (TechnoType `+0x5EE`): constructor `0x00710FFC` writes
@@ -2069,6 +2073,14 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    pub fn armor_id(&self) -> crate::rules::armor::ArmorId {
+        self.armor_id
+    }
+
+    pub(crate) fn bind_armor(&mut self, armor: crate::rules::armor::ArmorId) {
+        self.armor_id = armor;
+    }
+
     /// Native fixed-ART ShadowIndex, retained by the ordered Type reader.
     pub const fn voxel_shadow_index(&self) -> i32 {
         self.voxel_shadow_index
@@ -2524,6 +2536,7 @@ impl ObjectType {
     /// owner (`native_processing`) reads keep their constructor values here;
     /// `RuleSet::from_processed_rules` publishes that owner's retained result.
     pub fn from_ini_section(id: &str, section: &IniSection, category: ObjectCategory) -> Self {
+        let armor = section.read_string("Armor", "none", 0x80);
         // BuildingType45FE50: Hospital, Armory460B03, then the three
         // barracks readers460B1D/37/51. Each starts at constructor0 and folds
         // reached layer values with the live byte as the next pass's default.
@@ -2662,7 +2675,8 @@ impl ObjectType {
                 "ThreatAvoidanceCoefficient",
                 crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO,
             ),
-            armor: section.read_string("Armor", "none", 0x80),
+            armor_id: crate::rules::armor::armor_index(&armor),
+            armor,
             speed: section.read_techno_speed("Speed", 0),
             // TechnoTypeClass ctor/read contract: raw signed ints, with no
             // clamp or conversion. A zero WalkRate is invalid content natively
@@ -3252,7 +3266,8 @@ impl ObjectType {
             // `Selectable=no` turn it off.
             selectable: section.read_bool("Selectable", true),
             is_selectable_combatant: section.read_bool("IsSelectableCombatant", false),
-            can_be_hidden: section.read_bool("CanBeHidden", true),
+            // The constructor's value; ART supplies the key (`project_art_data`).
+            can_be_hidden: true,
             reveal_to_all: section.read_bool("RevealToAll", false),
 
             // Naval flags

@@ -1153,9 +1153,14 @@ mod tests {
                 (true, players),
             ];
             windows.extend(
-                LauncherOptionsLayout::new(width as i32, height as i32)
-                    .trackbars
-                    .map(|(id, rect)| (id.plaque_reserve() > 0, rect)),
+                LauncherOptionsLayout::new(
+                    width as i32,
+                    height as i32,
+                    crate::ui::main_menu_dialogs::options::OptionsPage::Main,
+                )
+                .trackbars
+                .into_iter()
+                .map(|(id, rect)| (id.plaque_reserve() > 0, rect)),
             );
             windows.extend(
                 crate::ui::shell::sound::ShellSoundLayout::new(width as i32, height as i32)

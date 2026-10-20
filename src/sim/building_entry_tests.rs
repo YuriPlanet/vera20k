@@ -1729,10 +1729,11 @@ fn a_foot_retasked_to_move_stays_out_of_the_old_absorber() {
     };
     assert!(sim.apply_command(
         "Americans",
-        &Command::EnterTransport {
-            passenger_id: foot,
-            transport_id: reactor,
-        },
+        &Command::clicked_mission(
+            foot,
+            crate::sim::mission::MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(reactor)
+        ),
         Some(&rules),
     ));
     let stepping_on = |sim: &Simulation| {
@@ -2315,10 +2316,11 @@ fn cancelling_a_manual_bunker_entry_frees_it_for_another_tank() {
         let second = spawn(&mut sim, &rules, "YTNK", "Americans", 12, 14);
         assert!(sim.apply_command(
             "Americans",
-            &Command::EnterBunker {
-                unit_id: first,
-                bunker_id: bunker,
-            },
+            &Command::clicked_mission(
+                first,
+                crate::sim::mission::MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(bunker)
+            ),
             Some(&rules)
         ));
         assert!(!sim.apply_command(
@@ -2346,10 +2348,11 @@ fn cancelling_a_manual_bunker_entry_frees_it_for_another_tank() {
         assert!(
             sim.apply_command(
                 "Americans",
-                &Command::EnterBunker {
-                    unit_id: second,
-                    bunker_id: bunker,
-                },
+                &Command::clicked_mission(
+                    second,
+                    crate::sim::mission::MissionType::Enter,
+                    crate::sim::combat::TargetKind::Entity(bunker)
+                ),
                 Some(&rules)
             ),
             "after {cancel:?}, the empty bunker must accept the second tank"
@@ -2393,10 +2396,11 @@ fn replacing_a_bunker_entry_releases_only_the_previous_bunker() {
         let second = spawn(&mut sim, &rules, "YTNK", "Americans", 12, 14);
         assert!(sim.apply_command(
             "Americans",
-            &Command::EnterBunker {
-                unit_id: first,
-                bunker_id: previous,
-            },
+            &Command::clicked_mission(
+                first,
+                crate::sim::mission::MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(previous)
+            ),
             Some(&rules)
         ));
         if ai {
@@ -2405,10 +2409,11 @@ fn replacing_a_bunker_entry_releases_only_the_previous_bunker() {
         } else {
             assert!(sim.apply_command(
                 "Americans",
-                &Command::EnterBunker {
-                    unit_id: first,
-                    bunker_id: next,
-                },
+                &Command::clicked_mission(
+                    first,
+                    crate::sim::mission::MissionType::Enter,
+                    crate::sim::combat::TargetKind::Entity(next)
+                ),
                 Some(&rules)
             ));
         }
@@ -2423,10 +2428,11 @@ fn replacing_a_bunker_entry_releases_only_the_previous_bunker() {
         );
         assert!(sim.apply_command(
             "Americans",
-            &Command::EnterBunker {
-                unit_id: second,
-                bunker_id: previous,
-            },
+            &Command::clicked_mission(
+                second,
+                crate::sim::mission::MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(previous)
+            ),
             Some(&rules)
         ));
         assert!(
@@ -2455,10 +2461,11 @@ fn retail_manual_tank_bunker_entry_installs_from_each_side() {
             assert!(
                 sim.apply_command(
                     "Americans",
-                    &Command::EnterBunker {
-                        unit_id: tank,
-                        bunker_id: bunker
-                    },
+                    &Command::clicked_mission(
+                        tank,
+                        crate::sim::mission::MissionType::Enter,
+                        crate::sim::combat::TargetKind::Entity(bunker)
+                    ),
                     Some(rules),
                 ),
                 "{kind} at ({rx}, {ry}) admitted"

@@ -47,10 +47,9 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::production::{CanBuild, can_build};
 use crate::sim::world::Simulation;
-use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
+use crate::util::native_random::unit_draw_threshold;
+use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
-/// `1 / 0x7FFFFFFE` as the choosers scale their draw (`[0x007E3570]`).
-const DRAW_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0x3E00_0000_0040_0000);
 /// `0.01` (`[0x007E3808]`).
 const PERCENT_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0x3F84_7AE1_47AE_147B);
 
@@ -422,10 +421,11 @@ fn is_recruitable(
 /// A candidate whose need exceeds every earlier one's restarts the list; a
 /// later one of lower need still joins it. The earliest team's type is the
 /// first candidate of the lowest creation frame. The first draw,
-/// `RandomRanged(0, 0x7FFFFFFE)`, always happens; in PC53/chop, `fill% *
-/// 0.01 > r * (1 / 0x7FFFFFFE)` (`FCOMPP`, `TEST AH,0x41`) takes the earliest
-/// team's type (none without candidates) with no second draw; otherwise a
-/// non-empty list takes `list[RandomRanged(0, len - 1)]`.
+/// `RandomRanged(0, 0x7FFFFFFE)`, always happens; when it passes the unit gate
+/// against the chopped `fill% * 0.01` (`0x004FEE63..0x004FEE89`: FCOMPP,
+/// `TEST AH,0x41`), the earliest team's type is taken (none without
+/// candidates) with no second draw; otherwise a non-empty list takes
+/// `list[RandomRanged(0, len - 1)]`.
 fn pick(
     candidates: &[Candidate],
     fill_earliest_percent: i32,
@@ -445,10 +445,13 @@ fn pick(
             earliest = Some(candidate);
         }
     }
-    let load = |bits| X::load_f64(bits).expect("the chooser scales are finite");
-    let roll = X::mul(X::load_i32(draw(0, 0x7FFF_FFFE)), load(DRAW_SCALE));
-    let fill = X::mul(X::load_i32(fill_earliest_percent), load(PERCENT_SCALE));
-    if X::compare(fill, roll) == X87Ordering::Greater {
+    let roll = draw(0, 0x7FFF_FFFE) as u32;
+    let fill = X::store_f64(X::mul(
+        X::load_i32(fill_earliest_percent),
+        X::load_f64(PERCENT_SCALE).expect("0.01 is finite"),
+    ))
+    .expect("a percent of 0.01 is a finite double");
+    if roll < unit_draw_threshold(f64::from_bits(fill.bits())) {
         return earliest.map(|candidate| candidate.index);
     }
     if most_needed.is_empty() {

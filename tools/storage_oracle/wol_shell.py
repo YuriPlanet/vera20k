@@ -34,8 +34,8 @@ OUTPUTS = dict(max_ahead=0xA8B550, frame_send_rate=0xA8B554, precalc_max_ahead=0
                current_speed=0xA8EB60)
 USER_LEN = 0x6C
 SIZES = ((640, 480), (800, 600), (1024, 768))
-PAGES = (0x10F, 0x113, 0xC2, 0xC9, 0x2BC, 0xD6, 0x112, 0xFE)
-POPUPS = (0xC3, 0xE1, 0xC4, 0xCF, 0x11E)
+PAGES = (0x10F, 0x113, 0xC2, 0xC9, 0x2BC, 0xD6, 0x112, 0xFE, 0x114, 0x116, 0x122)
+POPUPS = (0xC3, 0xE1, 0xC4, 0xCF, 0x11E, 0x115)
 
 
 def signed(value):
@@ -213,7 +213,7 @@ def generate():
 
 if __name__ == "__main__":
     finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=lambda: provenance(
-        scope="WOL Start Game Now timing block 0x794F6F..0x79523E (inside 0x794BA0); relayout/popup geometry and status-line help of WOL dialogs 0x10F, 0x113, 0xC2, 0xC9, 0x2BC and its Sound Options page 0xD6, the auto-login query 0x112 and the locale page 0xFE (pages) and 0xC3, 0xE1, 0xC4, the page dialog 0xCF and the page-received dialog 0x11E (popups) at 640x480, 800x600 and 1024x768; slide record flags 0x6228BD..0x6229D4 and top/bottom classifiers 0x60A180/0x60A250 for the eight pages",
+        scope="WOL Start Game Now timing block 0x794F6F..0x79523E (inside 0x794BA0); relayout/popup geometry and status-line help of WOL dialogs 0x10F, 0x113, 0xC2, 0xC9, 0x2BC and its Sound Options page 0xD6, the auto-login query 0x112, the locale page 0xFE, My Information 0x114, the Buddy List 0x116 and the add-buddy query 0x122 (pages) and 0xC3, 0xE1, 0xC4, the page dialog 0xCF, the page-received dialog 0x11E and Add Buddy 0x115 (popups) at 640x480, 800x600 and 1024x768; slide record flags 0x6228BD..0x6229D4 and top/bottom classifiers 0x60A180/0x60A250 for the eleven pages",
         assumptions=[
             "Timing enters 0x794F6F with caller-established ESI=0 (0x794F3A) and stops at 0x79523E, before the debug-only 0x664610 call and the WDT/clan name block. Game speed, the eight raw ping dwords, the debug byte 0xA8E2C8, the channel user list (count 0xB77900, 0x6C-byte rows at [0xB77908]: +0 flags, +0x24 nickname) and the local nickname string at [0xB73E40] are controlled inputs; every output starts at 0xDEADBEEF and 0xA8B574[0xD0] at 0xA5 bytes, so each observed value is a native write",
             "channel_owner is observed, not supplied: true when 0x795094 (PreCalcFrameRate=0) is not executed, i.e. the first user row with flags bit0 has a nickname _stricmp-equal (0x7C8D20, C locale handle 0) to the local one",
@@ -221,7 +221,7 @@ if __name__ == "__main__":
             "Page layouts run shell_relayout.relayout, which fails closed unless 0x60C540 accepts the dialog (0x622F9C); popups run shell_relayout.popup_layout: 6x13 DLU MulDiv start, 0x775BC0 child-then-parent resize with cached benchmark client 300x163, 0x60C540/0x60C7D0 classification and 0x777060/0x777080 centring on the main window [0xB73550] whose client is the screen. Window non-client borders and font metrics are not emulated",
             "Popup control rect is client-relative (screen_rect minus the dialog origin); page control rect is the screen rect of a dialog at (0,0,W,H) before NewEdit 0x497's +1/-2 text inset",
             "Help is the table lookup 0x6040B0 only; per-control 0x4E8 and per-proc 0x4E9 answers (0x113 lists, 0xC2/0xC9 ping icons) are not executed",
-            "Slide classifiers count template children with WS_VISIBLE; dialog-proc ShowWindow/EnableWindow changes after creation are not executed (the decompiled 0x78AC10, 0x78F7F0 and 0x799EA0 bodies hide no counted button; 0xC9's proc 0x791B10 is not checked)",
+            "Slide classifiers count template children with WS_VISIBLE; dialog-proc ShowWindow/EnableWindow changes after creation are not executed (the decompiled 0x78AC10, 0x78F7F0 and 0x799EA0 bodies hide no counted button; 0xC9's proc 0x791B10 is not checked; 0x114's proc 0x799080 only enables or disables 0x6EB/0x687 at init, and the template-disabled Forget 0x6EB is counted)",
         ],
         substitutions=[
             "IPX SetTiming 0x540C60 (thiscall on 0xA8E9C0) records its four stack arguments and returns; no other call in the timing block is substituted (0x4068E0 is the original bare ret, 0x7B5440 and 0x7C8D20 run unchanged)",

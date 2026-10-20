@@ -148,9 +148,10 @@ pub(super) fn radar_pixel_candidate_eligible(
     let object = rules.and_then(|rules| rules.object(type_str));
 
     if let Some(local_owner) = local_owner {
+        // RenderCellPixel: `PlayerPtr->Is_Ally_ByObject(object)` (`0x00655E09`).
         let friendly = entity.owner() == local_owner
             || interner.is_some_and(|interner| {
-                crate::map::houses::are_houses_friendly(
+                crate::map::houses::is_allied_with(
                     alliances,
                     interner.resolve(local_owner),
                     interner.resolve(entity.owner()),

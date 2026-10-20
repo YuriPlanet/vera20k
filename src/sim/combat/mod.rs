@@ -71,6 +71,8 @@ pub(crate) mod receiver_fixture;
 
 #[cfg(test)]
 mod aegis_launch_tests;
+#[cfg(all(test, feature = "ares"))]
+mod ares_armor_tests;
 #[cfg(test)]
 mod bridge_cluster_tests;
 #[cfg(test)]
@@ -127,7 +129,7 @@ pub use effects::{
     UnderAttackEvent, UnitLostEvent,
 };
 pub use in_range::can_fire_at_target;
-pub use in_range::{can_fire_at_target_in_query, is_within_range_leptons, lepton_distance_sq_raw};
+pub use in_range::{MaplessTarget, can_fire_at_target_in_query, mapless_in_range};
 pub use object_health::{Health, health_category};
 pub(crate) use projectile_delivery::{FiredBullet, admit_fired_bullet};
 pub use receiver_call::TerrainDamageEvent;
@@ -299,35 +301,6 @@ pub(crate) fn vehicle_like(
         EntityCategory::Aircraft => low_flying(),
         EntityCategory::Infantry => false,
     }
-}
-
-/// Armor type name → Verses index mapping.
-/// Matches the order defined in warhead_type.rs: none(0), flak(1), plate(2),
-/// light(3), medium(4), heavy(5), wood(6), steel(7), concrete(8),
-/// special_1(9), special_2(10).
-const ARMOR_NAMES: &[&str] = &[
-    "none",
-    "flak",
-    "plate",
-    "light",
-    "medium",
-    "heavy",
-    "wood",
-    "steel",
-    "concrete",
-    "special_1",
-    "special_2",
-];
-
-/// Look up the Verses array index for an armor type name.
-/// Returns 0 ("none") for unrecognized armor strings.
-/// Used by combat_weapon.rs for weapon selection.
-pub fn armor_index(armor: &str) -> usize {
-    // The names are lowercase, so this matches the lowercased armor string.
-    ARMOR_NAMES
-        .iter()
-        .position(|name| name.eq_ignore_ascii_case(armor))
-        .unwrap_or(0)
 }
 
 /// Call-local arguments of Building Update's two native FireAt sites.

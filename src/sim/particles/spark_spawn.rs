@@ -17,8 +17,9 @@ use thiserror::Error;
 use super::{Particle, ParticleSystem, SparkRuntimeState};
 use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::rng::{RANDOM_RANGED_UNIT_SCALE, SimRng};
+use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
+use crate::util::native_random::RANDOM_RANGED_UNIT_SCALE;
 use crate::util::native_x87::{
     NativeF32Bits, NativeF64Bits, NativeX87Error, X87Chop53, X87Ordering, X87Value, sqrt_approx_f32,
 };

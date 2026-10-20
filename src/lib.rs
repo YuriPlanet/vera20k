@@ -1,4 +1,4 @@
-//! RA2 Engine — client library root.
+//! VERA20k — client library root.
 //!
 //! Re-exports all modules so the game and the tool binaries in `src/bin/`
 //! can access the engine's functionality. The binary entry point (main.rs)

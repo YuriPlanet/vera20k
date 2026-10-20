@@ -28,15 +28,6 @@ pub(crate) fn abs_before_modulo(draw: u32, divisor: i32) -> i32 {
     (draw as i32).wrapping_abs().wrapping_rem(divisor)
 }
 
-/// The `double` at `0x007E3570` that scales a `RandomRanged(0, 0x7ffffffe)`
-/// draw onto `[0, 1]` for a unit-interval probability gate (Spark spawns, the
-/// `CrewEscape=` roll). Raw bytes `00 00 40 00 00 00 00 3E`, i.e.
-/// `1.0 / 2147483646.0` — the reciprocal of the draw's own inclusive top, NOT
-/// `2^-31`. The two differ by `2^-30` relative, which is a real bias in a
-/// deterministic gate, so this is carried as bits and never recomputed.
-pub(crate) const RANDOM_RANGED_UNIT_SCALE: crate::util::native_x87::NativeF64Bits =
-    crate::util::native_x87::NativeF64Bits::from_bits(0x3e00_0000_0040_0000);
-
 const RNG_TABLE_LEN: usize = native_random::STATE_WORDS;
 
 #[cfg(any(test, feature = "test-support"))]

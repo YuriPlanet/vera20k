@@ -1346,6 +1346,9 @@ fn self_heal_step(
 ///     Assign_Target(NULL);
 /// ```
 ///
+/// The alliance is the aircraft's house asking (`0x00414D63`,
+/// `HouseClass::IsAlliedWith(ObjectClass*) @ 0x004F9AF0`).
+///
 /// Aircraft alone re-test this every tick, so a Harrier loses its lock the
 /// moment its house's sensor coverage of a submerged target lapses — the ground
 /// units around it keep theirs until their own scan cadence comes round.
@@ -1378,7 +1381,7 @@ fn drop_unsensed_cloaked_target_step(
         return;
     }
     let target_cell = (target.position.rx(), target.position.ry());
-    if crate::map::houses::are_houses_friendly(
+    if crate::map::houses::is_allied_with(
         sim.house_alliances.as_map(),
         &owner_str,
         sim.interner.resolve(target.owner()),
@@ -2311,7 +2314,8 @@ mod tests {
     /// retail rules: a tank on a hiding Cell takes one attached BEHIND anim
     /// and keeps it, and UnInits it once the Cell stops hiding it; an
     /// Aircraft never takes one; a Cell holding a building hides only from a
-    /// second contribution on.
+    /// second contribution on. A building takes one only when its ART leaves
+    /// `CanBeHidden=` true.
     #[test]
     fn a_tank_behind_a_building_takes_the_behind_anim_until_it_leaves() {
         use crate::rules::object_type::BuildingHiddenOccupancyProfile;
@@ -2405,6 +2409,36 @@ mod tests {
         assert!(!sim.substrate.cell_hides_objects(20, 10), "its own count");
         hide(&mut sim, true, (20, 10));
         assert!(sim.substrate.cell_hides_objects(20, 10));
+
+        // ReadINI reads CanBeHidden from the type's ART section (0x007121EB):
+        // retail artmd sets it False on GAPOWR, so the hidden power plant
+        // takes no anim. GAPILL's section leaves the constructor's true, and
+        // GASPYSAT has no section of its own (its Image GASPST says False).
+        assert!(!rules.object("GAPOWR").unwrap().can_be_hidden);
+        assert!(rules.object("GASPYSAT").unwrap().can_be_hidden);
+        behind_indicator_step(&mut sim, power, &rules);
+        assert_eq!(
+            sim.substrate.entities.get(power).unwrap().behind_anim(),
+            None
+        );
+        let pillbox = sim
+            .spawn_object("GAPILL", "Americans", 24, 10, 0, &rules)
+            .expect("retail GAPILL spawns");
+        while sim.substrate.hidden_occupation.count(24, 10) != 0 {
+            hide(&mut sim, false, (24, 10));
+        }
+        hide(&mut sim, true, (24, 10));
+        hide(&mut sim, true, (24, 10));
+        assert!(sim.substrate.cell_hides_objects(24, 10));
+        behind_indicator_step(&mut sim, pillbox, &rules);
+        assert!(
+            sim.substrate
+                .entities
+                .get(pillbox)
+                .unwrap()
+                .behind_anim()
+                .is_some()
+        );
     }
 
     /// TechnoClass::AI's healer drops (`0x006FA9D8..0x006FAAEF`) in
@@ -4301,6 +4335,44 @@ mod tests {
             Some(MissionType::Guard),
             "stock [Attack] carries neither key"
         );
+    }
+
+    /// `AircraftClass::AI` keeps an unsensed cloaked Target only while its own
+    /// house is allied with the target's (`0x00414D63`,
+    /// `HouseClass::IsAlliedWith(ObjectClass*) @ 0x004F9AF0`): the target's
+    /// house allying the aircraft's alone does not keep it.
+    #[test]
+    fn an_aircraft_asks_its_own_house_before_dropping_a_cloaked_target() {
+        let kept = |asker: &str, other: &str| {
+            let mut sim = Simulation::with_seed(0x414D);
+            for (id, category, owner, rx) in [
+                (1, EntityCategory::Aircraft, "Americans", 5),
+                (2, EntityCategory::Unit, "Russians", 6),
+            ] {
+                let mut entity = GameEntity::test_default(id, "TEST", owner, rx, 5);
+                entity.set_category_for_test(category);
+                entity.lifecycle.set_in_limbo_for_test(false);
+                entity.set_owner_for_test(sim.interner.intern(owner));
+                sim.substrate.entities.insert(entity);
+            }
+            let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
+            cloak.set_state_for_test(2);
+            sim.substrate.entities.get_mut(2).unwrap().cloak = Some(cloak);
+            sim.substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(2)));
+            *sim.house_alliances_mut_for_test() = crate::map::houses::HouseAllianceMap::from([(
+                asker.to_ascii_uppercase(),
+                [other.to_ascii_uppercase()].into(),
+            )]);
+            drop_unsensed_cloaked_target_step(&mut sim, 1, None, FrameEffects::empty());
+            target_of(&sim, 1).is_some()
+        };
+        assert!(kept("Americans", "Russians"));
+        assert!(!kept("Russians", "Americans"));
     }
 
     /// `TechnoClass::AI_Update @ 0x006FA472..0x006FA4CB`: an attack dog

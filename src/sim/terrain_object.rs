@@ -12,7 +12,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_object_type::TerrainObjectType;
 use crate::rules::warhead_type::WarheadType;
 use crate::sim::cell_kernel::{WorldCoordinate, cell_center};
-use crate::sim::combat::{armor_index, damage};
+use crate::sim::combat::damage;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::occupancy::RawCellOccupationGrid;
 use crate::sim::terrain_spawn::TerrainAnimationState;
@@ -523,8 +523,7 @@ impl TerrainObjectStore {
                 raw_damage,
                 warhead.cell_spread_f64,
                 warhead.percent_at_max_f64,
-                &warhead.verses_f64,
-                damage::ArmorClass(armor_index(&terrain_type.armor) as u8),
+                warhead.interaction(terrain_type.armor_id()).multiplier(),
                 distance_leptons,
                 scenario_no_damage,
                 rules.combat_damage.max_damage,
@@ -1010,6 +1009,49 @@ mod tests {
 
     fn resolved_clear_grid() -> ResolvedTerrainGrid {
         ResolvedTerrainGrid::from_cells(1, 1, vec![ResolvedTerrainCell::clear_for_test(0, 0)])
+    }
+
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_custom_armor_terrain_receiver_uses_the_same_effective_record() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[ArmorTypes]\npaper=steel\n[General]\nTreeStrength=100\n\
+             [TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=100\nArmor=paper\n\
+             [Warheads]\n0=WH\n[WH]\nWood=yes\nCellSpread=0\nVersus.paper=25%\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        seed_one_at(&mut sim, &rules, "TREE01", (0, 0));
+        let stable_id = sim.terrain_objects.cell_index()[&(0, 0)];
+        assert!(
+            rules
+                .terrain_object_type_case_insensitive("TREE01")
+                .unwrap()
+                .armor_id()
+                .index()
+                >= 11
+        );
+        let mut area = TerrainAreaState::take_from(
+            &mut sim.terrain_objects,
+            &mut sim.substrate.raw_cell_occupation,
+        );
+        // The executed custom-armor native kernel control101 *25% =25.
+        assert_eq!(
+            area.receive_area_damage(
+                stable_id,
+                (0, 0),
+                101,
+                0,
+                rules.warhead("WH").unwrap(),
+                &rules,
+                &sim.interner,
+            ),
+            TerrainAreaReceiveResult::Damaged { remaining: 75 },
+        );
+        let _ = area.restore_into(
+            &mut sim.terrain_objects,
+            &mut sim.substrate.raw_cell_occupation,
+        );
     }
 
     #[test]

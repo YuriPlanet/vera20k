@@ -399,11 +399,11 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
     let miner = one_owned(&scene, "HARV");
     ordinary_frame(
         &mut scene,
-        Some(Command::HarvestCell {
-            entity_id: miner,
-            target_rx: ORE.0,
-            target_ry: ORE.1,
-        }),
+        Some(Command::clicked_mission(
+            miner,
+            crate::sim::mission::MissionType::Harvest,
+            crate::sim::combat::TargetKind::Cell(ORE.0, ORE.1),
+        )),
     );
     let packet: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/ore_render.json",

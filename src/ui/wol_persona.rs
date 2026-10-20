@@ -131,6 +131,36 @@ pub(crate) struct LocaleRow {
     pub(crate) locale: i32,
 }
 
+/// The locale rows of `0xFE`'s list and `0x114`'s locale combo
+/// (`0x00798F50`): for each locale from the last down to 0, its
+/// `WOL:Locale%02d` text (`0x00780A00`) goes in with `0x4CD`/`0x4C2` for
+/// locales 2 and up, which the sorted list or combo (`0x0061B481`) adds by
+/// name, and with `0x4CC`/`0x4C1` (insert at row 0) for 0 and 1. So Unknown
+/// and Rest of World lead and the others follow by name.
+pub(crate) fn locale_rows(texts: impl IntoIterator<Item = (i32, String)>) -> Vec<LocaleRow> {
+    let mut sorted: Vec<LocaleRow> = Vec::new();
+    let mut leading: Vec<LocaleRow> = Vec::new();
+    let mut texts: Vec<(i32, String)> = texts.into_iter().collect();
+    texts.sort_by_key(|(locale, _)| std::cmp::Reverse(*locale));
+    for (locale, text) in texts {
+        let row = LocaleRow { text, locale };
+        if locale < 2 {
+            leading.insert(0, row);
+        } else {
+            // LBS_SORT/CBS_SORT over the narrowed text: case-insensitive
+            // order, a later equal name after the earlier ones.
+            let key = row.text.to_ascii_lowercase();
+            let at = sorted
+                .iter()
+                .position(|other| other.text.to_ascii_lowercase() > key)
+                .unwrap_or(sorted.len());
+            sorted.insert(at, row);
+        }
+    }
+    leading.extend(sorted);
+    leading
+}
+
 /// Dialog `0xFE` while it exists.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WolLocalePage {
@@ -145,34 +175,10 @@ pub(crate) struct WolLocalePage {
 }
 
 impl WolLocalePage {
-    /// Init `0x497` (`0x00796C8E..0x00796D2F`): for each locale from the
-    /// last down to 0, its `WOL:Locale%02d` text (`0x00780A00`) goes in with
-    /// `0x4CD` for locales 2 and up, which the shell list (`0x0061B481`)
-    /// turns into LB_ADDSTRING into this LBS_SORT list, and with `0x4CC`
-    /// (LB_INSERTSTRING at row 0) for 0 and 1. So Unknown and Rest of World
-    /// lead and the others follow by name.
+    /// Init `0x497` (`0x00796C8E..0x00796D2F`): the rows of
+    /// [`locale_rows`], none selected.
     pub(crate) fn fill(&mut self, texts: impl IntoIterator<Item = (i32, String)>) {
-        let mut sorted: Vec<LocaleRow> = Vec::new();
-        let mut leading: Vec<LocaleRow> = Vec::new();
-        let mut texts: Vec<(i32, String)> = texts.into_iter().collect();
-        texts.sort_by_key(|(locale, _)| std::cmp::Reverse(*locale));
-        for (locale, text) in texts {
-            let row = LocaleRow { text, locale };
-            if locale < 2 {
-                leading.insert(0, row);
-            } else {
-                // LBS_SORT over the narrowed text: case-insensitive order,
-                // a later equal name after the earlier ones.
-                let key = row.text.to_ascii_lowercase();
-                let at = sorted
-                    .iter()
-                    .position(|other| other.text.to_ascii_lowercase() > key)
-                    .unwrap_or(sorted.len());
-                sorted.insert(at, row);
-            }
-        }
-        leading.extend(sorted);
-        self.rows = leading;
+        self.rows = locale_rows(texts);
         self.selected = None;
         self.top = 0;
     }

@@ -71,7 +71,7 @@ fn build_controls(
     let mut out = Vec::new();
     let chrome = atlas.control_chrome();
     let scale = layout.scale;
-    for (id, rect) in layout.trackbars {
+    for &(id, rect) in &layout.trackbars {
         paint_control(
             &mut out,
             &chrome,
@@ -83,7 +83,7 @@ fn build_controls(
             scale,
         );
     }
-    for (id, rect) in layout.checkboxes {
+    for &(id, rect) in &layout.checkboxes {
         paint_control(
             &mut out,
             &chrome,
@@ -95,10 +95,7 @@ fn build_controls(
         );
     }
     let open = dialog.shell_popup(layout).map(|popup| popup.combo);
-    for (combo, rect) in [
-        (LauncherComboId::Zoom, layout.zoom),
-        (LauncherComboId::Sidebar, layout.sidebar),
-    ] {
+    for &(combo, rect) in &layout.combos {
         paint_control(
             &mut out,
             &chrome,
@@ -111,7 +108,7 @@ fn build_controls(
             scale,
         );
     }
-    for (id, rect) in layout.buttons.into_iter().filter(|_| buttons) {
+    for &(id, rect) in layout.buttons.iter().filter(|_| buttons) {
         push_right_panel_button_shp(
             &mut out,
             atlas,
@@ -174,7 +171,7 @@ fn build_text(
             ));
         }
     }
-    for (id, rect) in layout.checkboxes {
+    for &(id, rect) in &layout.checkboxes {
         // The box's icon column keeps its authored 26-pixel reserve.
         let text = scale.derive_rect(rect, |rect| {
             RectPx::new(rect.x + 26, rect.y, rect.w - 26, rect.h)
@@ -188,7 +185,7 @@ fn build_text(
             glyph,
         ));
     }
-    for (id, rect) in layout.trackbars {
+    for &(id, rect) in &layout.trackbars {
         if matches!(
             id,
             LauncherTrackbarId::Score | LauncherTrackbarId::Sound | LauncherTrackbarId::Voice
@@ -212,20 +209,15 @@ fn build_text(
             RectPx::new(rect.x + 3, rect.y, rect.w - 23, rect.h)
         })
     };
-    for (text, rect) in [
-        (
-            zoom_label(
+    for &(combo, rect) in &layout.combos {
+        let text = match combo {
+            LauncherComboId::Zoom => zoom_label(
                 dialog.shell_selected_zoom(layout),
                 layout.screen(),
                 dialog.shell_checkbox_checked(LauncherCheckboxId::OriginalShape),
             ),
-            layout.zoom,
-        ),
-        (
-            dialog.shell_selected_sidebar(layout).label().to_owned(),
-            layout.sidebar,
-        ),
-    ] {
+            LauncherComboId::Sidebar => dialog.shell_selected_sidebar(layout).label().to_owned(),
+        };
         out.push(text_draw(
             font,
             &text,
@@ -235,7 +227,7 @@ fn build_text(
             glyph,
         ));
     }
-    for (id, rect) in layout.buttons.into_iter().filter(|_| buttons) {
+    for &(id, rect) in layout.buttons.iter().filter(|_| buttons) {
         let pressed = dialog.shell_button_pressed(id);
         // 612B70 type1: ordinary press retains AC18A4 foreground; the text
         // rectangle changes at61358D..6135CD, independently of SHP geometry.
@@ -301,15 +293,23 @@ pub(crate) fn render_launcher_options(
 ) -> anyhow::Result<()> {
     use crate::app::frontend::shell_transition::ShellSlideKind;
     let now = Instant::now();
-    let layout = crate::app::frontend::shell_layout::launcher_options_layout(state);
+    let page = state
+        .frontend
+        .options_dialog
+        .as_ref()
+        .expect("launcher active")
+        .page();
+    let layout = crate::app::frontend::shell_layout::launcher_options_layout(state, page);
     let scale = layout.scale;
     // The teardown slide starts with a full dialog repaint (`0x00622C4F`) and
     // pumps no messages until it ends: every child stays blank. The entry
     // slide suppresses the heading, status line, monitor and column buttons
     // (`0x00606800`); the left-side controls paint.
-    let exit_wave =
-        crate::app::frontend::shell_transition::shell_exit_wave(state, ShellSlideKind::Options)
-            .cloned();
+    let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
+        state,
+        ShellSlideKind::options_page(page),
+    )
+    .cloned();
     let leaving = exit_wave.is_some();
     let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();

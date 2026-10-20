@@ -1227,7 +1227,15 @@ use crate::util::save_codec;
 // header; reject cross-capability saves before deserializing Simulation.
 // 459 -> 460: retained Ares generic prerequisite definitions and custom group
 // references in typed TechnoType prerequisites.
-const SNAPSHOT_VERSION: u32 = 460;
+// 460 -> 461: a Tiberium queue's heap is the shared native heap: its slots
+// lose the unused slot 0 and its size word replaces the queue's capacity.
+// 461 -> 462: Command::MinerReturn, RepairAtDepot, EnterTransport, EnterBunker
+// and HarvestCell are gone (each was the MEGAMISSION event under a second
+// name), which renumbers the later Command variants in pending
+// CommandEnvelope payloads.
+// 462 -> 463: retained ObjectType armor IDs, Ares armor registry and independent
+// Warhead extension records; the capability metadata header still starts at 459.
+const SNAPSHOT_VERSION: u32 = 463;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10241,6 +10249,9 @@ mod tests {
         // 457 -> 458: host-owned installed upgrades and shared type art.
         // 458 -> 459: the retained Rules/build extension capability.
         // 459 -> 460: retained generic prerequisite definitions.
-        assert_eq!(super::SNAPSHOT_VERSION, 460);
+        // 460 -> 461: Tiberium queues hold the shared native heap.
+        // 461 -> 462: the typed Enter and Harvest commands are gone.
+        // 462 -> 463: retained armor IDs and Ares warhead extension records.
+        assert_eq!(super::SNAPSHOT_VERSION, 463);
     }
 }

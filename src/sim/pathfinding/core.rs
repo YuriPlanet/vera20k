@@ -13,7 +13,6 @@
 //! - Part of sim/ — depends on map/ (resolved terrain for walkability).
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-use super::native_heap::NativeHeap;
 use super::search_table::SearchTable;
 use super::zone_hierarchy::{MarkedZones, ZoneLevelGraph};
 use super::zone_map::ZoneId;
@@ -70,7 +69,8 @@ type ClosedLayer = SearchTable<PathDescriptor>;
 /// the search goes on where gamemd's corrupts memory. Frequency: searches
 /// reaching more than about 65,000 cells, such as long routes on the 500x500
 /// scale map (about 125,000 cells). Downstream risk: none within VERA.
-type OpenList = NativeHeap<AStarNode, { usize::MAX }>;
+type OpenList = crate::util::native_heap::NativeHeap<AStarNode>;
+const OPEN_LIST_SIZE: usize = usize::MAX;
 
 /// Reusable scratch for `astar_search`. Lives in a thread-local so repeated
 /// repaths share one set of full-map-sized buffers instead of allocating them
@@ -83,11 +83,20 @@ type OpenList = NativeHeap<AStarNode, { usize::MAX }>;
 /// cleared but keeps capacity. Use through `with_pathfind_workspace` only; it
 /// asserts non-reentrancy so a future recursive A* caller fails loudly instead
 /// of silently sharing buffers.
-#[derive(Default)]
 struct PathfindWorkspace {
     ground: ClosedLayer,
     bridge: ClosedLayer,
     open: OpenList,
+}
+
+impl Default for PathfindWorkspace {
+    fn default() -> Self {
+        Self {
+            ground: ClosedLayer::default(),
+            bridge: ClosedLayer::default(),
+            open: OpenList::new(OPEN_LIST_SIZE),
+        }
+    }
 }
 
 impl PathfindWorkspace {
@@ -502,7 +511,9 @@ fn offer_child(held: &mut Option<AStarNode>, open: &mut OpenList, child: AStarNo
         Some(best) if child.f_cost < best.f_cost => {
             open.push(std::mem::replace(best, child), cheaper);
         }
-        Some(_) => open.push(child, cheaper),
+        Some(_) => {
+            open.push(child, cheaper);
+        }
         None => *held = Some(child),
     }
 }

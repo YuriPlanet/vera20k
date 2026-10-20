@@ -210,11 +210,7 @@ impl App {
         // is itself full screen). The resize that ends the animation re-fits
         // the surface.
         let mut window_attrs: WindowAttributes = WindowAttributes::default()
-            .with_title(if crate::rules::ARES_ENABLED {
-                "RA2 Engine [Ares]"
-            } else {
-                "RA2 Engine"
-            })
+            .with_title(super::WINDOW_TITLE)
             .with_inner_size(inner_size)
             .with_resizable(!capture)
             .with_fullscreen(
@@ -354,6 +350,9 @@ impl App {
             None
         };
         if let Some(splash) = startup_splash.as_mut() {
+            // Surface acquisition can be transient before the first event-loop
+            // redraw. A splash that did not reach the screen stays unarmed for
+            // the frame loop to retry.
             match startup_splash::render_and_present(
                 &gpu,
                 &batch_renderer,
@@ -362,10 +361,11 @@ impl App {
                 &fps_overlay,
                 splash,
             ) {
-                Ok(()) => splash.mark_presented(Instant::now()),
+                Ok(true) => splash.mark_presented(Instant::now()),
+                Ok(false) => {
+                    log::warn!("Initial retail startup splash present deferred: no surface frame");
+                }
                 Err(err) => {
-                    // Surface acquisition can be transient before the first
-                    // event-loop redraw. Keep the unarmed splash for retry.
                     log::warn!("Initial retail startup splash present deferred: {err:#}");
                 }
             }
@@ -771,6 +771,7 @@ impl App {
                 load_saved_game: None,
                 wol: None,
                 wol_account: Default::default(),
+                wol_test_credentials: Vec::new(),
                 network_options: None,
                 lan: None,
                 multiplayer_setup: None,
@@ -780,6 +781,10 @@ impl App {
                 wol_lobby_art: None,
                 wol_options_art: None,
                 wol_auto_login_art: None,
+                wol_my_info_art: None,
+                wol_buddy_art: None,
+                wol_buddies: Default::default(),
+                wol_test_buddies: crate::app::shell_wol::test_service_buddies(),
                 wol_sound_options_art: None,
                 wol_lobby_globals: Default::default(),
                 wol_preferences: Default::default(),

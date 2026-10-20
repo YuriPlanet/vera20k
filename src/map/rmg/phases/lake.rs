@@ -20,7 +20,7 @@ use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::x87::{self, TruncF64};
 use crate::util::native_x87::X87Chop53;
 
-use super::blob::{BlobCtx, MinHeap, seed_draw};
+use super::blob::{BlobCtx, CellHeap, by_key, seed_draw};
 use super::shore::{self, ShoreCtx};
 use super::water::WaterArgs;
 
@@ -333,13 +333,13 @@ pub(crate) fn grow_lake(
     let size = size_draw(ctx, remaining);
 
     let cap = (remaining * 2 + 2).max(MIN_HEAP_CAP) as usize;
-    let mut heap = MinHeap::new(cap);
+    let mut heap = CellHeap::new(cap);
     ctx.scratch.get_mut(seed.0, seed.1).stamp = region;
-    heap.push(0.0, seed);
+    heap.push((0.0, seed), by_key);
 
     let mut alive = true;
     let mut placed = 0i32;
-    let mut current = heap.pop();
+    let mut current = heap.pop(by_key);
 
     // Growth: pop the cheapest frontier cell, carve it, offer its four cardinal
     // neighbours to the heap.
@@ -367,7 +367,7 @@ pub(crate) fn grow_lake(
                     let distance = x87::approx_sqrt_f32(dx * dx + dy * dy);
                     let draw = ctx.rng.next_u32();
                     ctx.scratch.get_mut(nx, ny).stamp = region;
-                    heap.push(growth_key(distance, draw, placed), (nx, ny));
+                    heap.push((growth_key(distance, draw, placed), (nx, ny)), by_key);
                     continue;
                 }
             }
@@ -379,13 +379,13 @@ pub(crate) fn grow_lake(
         }
 
         placed += 1;
-        current = heap.pop();
+        current = heap.pop(by_key);
     }
 
     // Drain: whatever is still queued must remain carvable, or the attempt dies.
     // These cells still count toward `placed`, so a committed lake is larger
     // than the drawn size by the length of its final frontier.
-    if let Some(mut entry) = current.or_else(|| heap.pop()) {
+    if let Some(mut entry) = current.or_else(|| heap.pop(by_key)) {
         loop {
             if !alive {
                 break;
@@ -402,7 +402,7 @@ pub(crate) fn grow_lake(
                 alive = false;
             }
             placed += 1;
-            match heap.pop() {
+            match heap.pop(by_key) {
                 Some(next) => entry = next,
                 None => break,
             }

@@ -14,10 +14,9 @@ use super::native_math::{
 use super::{ProjectileCoord, ProjectileVelocity};
 use crate::sim::rng::SimRng;
 use crate::util::direction_tables::{facing16_from_angle, radians_from_facing16};
+use crate::util::native_random::RANDOM_RANGED_UNIT_SCALE;
 
 const POSITIVE_HEIGHT_ANGLE: NativeF64Bits = NativeF64Bits::from_bits(0x3fe9_21d9_f4d3_7c12);
-/// `[0x007E3570]` = 1/0x7FFFFFFE, the scatter angle draw's bound.
-const INVERSE_DRAW_SPAN: NativeF64Bits = NativeF64Bits::from_bits(0x3e00_0000_0040_0000);
 /// `[0x007E3CC0]` = 2π.
 const TWO_PI: NativeF64Bits = NativeF64Bits::from_bits(0x4019_21fb_5444_2d18);
 /// `[0x007E44D0]`, the radial fan's π.
@@ -415,7 +414,7 @@ fn scatter_delta(
     trig: &TrigTable,
 ) -> ProjectileCoord {
     let angle = radians_from_facing16(facing16_from_angle(X::mul(
-        X::mul(X::load_i32(raw), d(INVERSE_DRAW_SPAN)),
+        X::mul(X::load_i32(raw), d(RANDOM_RANGED_UNIT_SCALE)),
         d(TWO_PI),
     )));
     offset_along(point, angle, magnitude, trig)

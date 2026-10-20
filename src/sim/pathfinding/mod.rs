@@ -15,7 +15,6 @@
 // Core A* algorithm, PathGrid, PathCell
 mod core;
 // Search scratch shared by the cell A* and the zone precheck
-mod native_heap;
 mod search_table;
 
 // Path post-processing

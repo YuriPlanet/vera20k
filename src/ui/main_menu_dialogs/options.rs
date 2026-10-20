@@ -4,6 +4,8 @@
 //! profile, filesystem, audio device, window, or child-dialog callback.
 //! The `shell` child supplies retail resource geometry and physical-pixel input;
 //! the app shell renderer paints that model through the shared retail compositor.
+//! VERA's own controls sit on a second page of the same dialog
+//! ([`OptionsPage::Vera`]), so the main page keeps retail's look.
 
 use crate::ui::shell::trackbar::{
     TrackbarHold, TrackbarPress, trackbar_position_from_x, trackbar_press,
@@ -78,6 +80,34 @@ pub(crate) const FPS_COUNTER_LABEL: &str = "FPS Counter";
 pub(crate) const FPS_COUNTER_HELP: &str = "Show frames per second in the top-left corner. Off at every start; Ctrl+Alt+F also switches it.";
 pub(crate) const SHIFT_QUEUE_HELP: &str =
     "Shift-click an infantry, vehicle or aircraft cameo to queue several at once.";
+/// The main page's button to VERA's page, and that page's heading.
+pub(crate) const VERA_OPTIONS_LABEL: &str = "VERA20K Options";
+pub(crate) const VERA_OPTIONS_HELP: &str =
+    "Settings VERA20K adds: full screen, sidebar size, smooth motion and more.";
+/// The VERA page's Back reuses retail's caption; its status help is the
+/// Keyboard page's Back help, "Return to the Options Menu."
+/// (`STT:KeyboardButtonBack`).
+const VERA_PAGE_BACK_LABEL: (&str, &str) = ("GUI:Back", "Back");
+
+/// Which page of Options shows. The main page keeps retail's controls, with
+/// VERA's Zoom in the resolution combo's place; VERA's own controls are on a
+/// page of their own behind the VERA20K Options button, so the main page looks
+/// like retail's. Both pages are one dialog with one set of values: switching
+/// pages applies, saves and resets nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OptionsPage {
+    Main,
+    Vera,
+}
+
+/// A right-column button on either page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LauncherButton {
+    /// Keyboard, Network or Main Menu: one of gamemd's parent exits.
+    Exit(LauncherParentResult),
+    /// VERA20K Options on the main page, Back on VERA's: shows that page.
+    Page(OptionsPage),
+}
 
 /// VERA's battle zoom: the Options combo that took the place of gamemd's
 /// resolution list (`0x005601A0..0x00560270`). The window keeps the size the
@@ -250,6 +280,8 @@ pub(crate) struct LauncherOptionsLabels {
     pub(crate) sound_volume: String,
     pub(crate) voice_volume: String,
     pub(crate) blank: String,
+    /// The VERA page's Back.
+    pub(crate) back: String,
     low: String,
     high: String,
     easy: String,
@@ -283,6 +315,7 @@ impl LauncherOptionsLabels {
             sound_volume: label(15),
             voice_volume: label(16),
             blank: label(17),
+            back: csf(VERA_PAGE_BACK_LABEL.0).unwrap_or_else(|| VERA_PAGE_BACK_LABEL.1.to_string()),
             low: label(18),
             high: label(19),
             easy: label(20),
@@ -415,6 +448,8 @@ pub(crate) enum LauncherParentResult {
 pub(crate) struct LauncherOptionsFrameOutput {
     pub(crate) events: Vec<LauncherOptionsEvent>,
     pub(crate) result: Option<LauncherParentResult>,
+    /// The page a button asked for: the showing page slides out first.
+    pub(crate) page: Option<OptionsPage>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -543,6 +578,8 @@ pub(crate) struct OptionsDialogState {
     capture: Option<TrackbarHold<LauncherTrackbarId>>,
     pending_events: Vec<LauncherOptionsEvent>,
     pending_result: Option<LauncherParentResult>,
+    page: OptionsPage,
+    pending_page: Option<OptionsPage>,
     shell_interaction: shell::ShellInteraction,
 }
 
@@ -590,6 +627,8 @@ impl OptionsDialogState {
             capture: None,
             pending_events: Vec::new(),
             pending_result: None,
+            page: OptionsPage::Main,
+            pending_page: None,
             shell_interaction: shell::ShellInteraction::default(),
         }
     }
@@ -837,9 +876,29 @@ impl OptionsDialogState {
     /// Back, Network, Keyboard, and terminal completion distinct parent
     /// results; the first admitted result owns the frame's teardown path.
     pub(crate) fn request_result(&mut self, result: LauncherParentResult) {
-        if self.pending_result.is_none() {
+        if self.pending_result.is_none() && self.pending_page.is_none() {
             self.pending_result = Some(result);
         }
+    }
+
+    pub(crate) const fn page(&self) -> OptionsPage {
+        self.page
+    }
+
+    /// Ask for `page`; like a parent result, the first request wins.
+    pub(crate) fn request_page(&mut self, page: OptionsPage) {
+        if self.pending_result.is_none() && self.pending_page.is_none() {
+            self.pending_page = Some(page);
+        }
+    }
+
+    /// Show `page` once the other has slid out. Nothing is applied or saved;
+    /// a held slider, an open list and a pressed button don't carry over.
+    pub(crate) fn show_page(&mut self, page: OptionsPage) {
+        self.page = page;
+        self.open_combo = None;
+        self.capture = None;
+        self.shell_interaction = shell::ShellInteraction::default();
     }
 
     /// gamemd-derived: primary-proc slice `0x0055FDB0..0x0056047A` observes
@@ -849,6 +908,7 @@ impl OptionsDialogState {
         LauncherOptionsFrameOutput {
             events: std::mem::take(&mut self.pending_events),
             result: self.pending_result.take(),
+            page: self.pending_page.take(),
         }
     }
 }
@@ -1249,6 +1309,25 @@ mod tests {
                 LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
                 LauncherOptionsEvent::RenderInterpolationChanged(!initial.render_interpolation),
             ]
+        );
+    }
+
+    #[test]
+    fn the_first_request_of_a_frame_wins_across_results_and_pages() {
+        let mut state = state(true);
+        state.request_page(OptionsPage::Vera);
+        state.request_result(LauncherParentResult::Back);
+        let output = state.drain_output();
+        assert_eq!(
+            (output.result, output.page),
+            (None, Some(OptionsPage::Vera))
+        );
+        state.request_result(LauncherParentResult::Keyboard);
+        state.request_page(OptionsPage::Vera);
+        let output = state.drain_output();
+        assert_eq!(
+            (output.result, output.page),
+            (Some(LauncherParentResult::Keyboard), None)
         );
     }
 

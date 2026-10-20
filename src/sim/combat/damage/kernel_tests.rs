@@ -121,8 +121,9 @@ fn shared_kernel_matches_every_representable_native_invocation() {
             call.damage.unwrap(),
             widened_f32(&row.input.warhead_cell_spread),
             widened_f32(&row.input.warhead_percent_at_max),
-            &verses(&row.input),
-            ArmorClass(call.armor.unwrap()),
+            NativeF64Bits::from_bits(
+                verses(&row.input)[usize::from(call.armor.unwrap())].to_bits(),
+            ),
             distance,
             row.input.scenario_flags & 0x20 != 0,
             row.input.rules_max_damage,
@@ -211,8 +212,9 @@ fn parser_admitted_percent_overflow_uses_native_masked_kernel() {
                 100,
                 warhead.cell_spread_f64,
                 warhead.percent_at_max_f64,
-                &warhead.verses_f64,
-                ArmorClass(2),
+                warhead
+                    .interaction(crate::rules::armor::armor_index("plate"))
+                    .multiplier(),
                 0,
                 false,
                 i32::MAX,
@@ -229,8 +231,7 @@ fn native_binary32_spill_can_change_distance_zero_damage() {
             16_777_217,
             spread,
             0.0,
-            &[1.0; 11],
-            ArmorClass(2),
+            NativeF64Bits::ONE,
             0,
             false,
             i32::MAX,

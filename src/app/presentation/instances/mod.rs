@@ -10,6 +10,7 @@
 //! - `shp` — SHP building/infantry instances (building anims, bibs)
 //! - `overlays` — map overlays, AnimClass objects, fog snapshots
 //! - `voxel_anims` — VoxelAnimClass debris (tumbling VXL pieces)
+//! - `tether_redraw` — an unloading building's redraw of its tethered contacts
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
@@ -35,5 +36,8 @@ pub(crate) use particles::*;
 
 mod voxel_anims;
 pub(crate) use voxel_anims::*;
+
+mod tether_redraw;
+pub(crate) use tether_redraw::*;
 
 pub mod bridges;

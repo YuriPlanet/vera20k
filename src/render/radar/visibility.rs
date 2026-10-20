@@ -146,6 +146,8 @@ pub(super) struct RadarMobileVisibilityFacts {
     pub shrouded: bool,
     pub cloak_state: i32,
     pub has_sensor: bool,
+    /// The current player's house asks (`PlayerPtr->IsAlliedWith(Owner)`,
+    /// `0x0070D394`, `HouseClass::IsAlliedWith @ 0x004F9A50`).
     pub allied_with_current_player: bool,
     pub height_leptons: i32,
     pub veteran_radar_invisible: bool,
@@ -203,6 +205,8 @@ pub(super) struct RadarBuildingVisibilityFacts {
     /// BuildingClass+0x6E7. No Rust production writer exists yet.
     pub building_cloak_flag: bool,
     pub has_sensor: bool,
+    /// The current player's house asks (`PlayerPtr->IsAlliedWith(Owner)`,
+    /// `0x00457196`, `HouseClass::IsAlliedWith @ 0x004F9A50`).
     pub allied_with_current_player: bool,
 }
 
@@ -338,7 +342,7 @@ pub(super) fn build_radar_object_update(
         || local_owner.is_some_and(|local_owner| {
             entity.owner() == local_owner
                 || interner.is_some_and(|interner| {
-                    crate::map::houses::are_houses_friendly(
+                    crate::map::houses::is_allied_with(
                         alliances,
                         interner.resolve(local_owner),
                         interner.resolve(entity.owner()),
@@ -863,6 +867,54 @@ mod tests {
             &entity,
             (3, 2),
         ));
+    }
+
+    /// The radar asks from the current player's house whether an object's
+    /// owner is its ally (`0x0070D394`): the owner's own one-way alliance with
+    /// the player does not count.
+    #[test]
+    fn radar_alliance_is_the_current_players_ask() {
+        let local = crate::sim::intern::test_intern("Local");
+        let enemy = crate::sim::intern::test_intern("Enemy");
+        crate::sim::intern::test_intern("DOT");
+        let interner = crate::sim::intern::test_interner();
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=DOT\n[DOT]\nStrength=100\n",
+        ))
+        .expect("visibility fixture rules");
+        let mut houses = crate::sim::houses::Houses::default();
+        houses.register(crate::sim::house_state::HouseState::new(
+            enemy, 0, None, false, 0, 10,
+        ));
+        let fog = FogState::default();
+        let mut entity = crate::sim::game_entity::GameEntity::test_default(1, "DOT", "Enemy", 5, 5);
+        entity.lifecycle.set_in_limbo_for_test(false);
+        let allied = |asker: &str, other: &str| {
+            let alliances = crate::map::houses::HouseAllianceMap::from([(
+                asker.to_ascii_uppercase(),
+                [other.to_ascii_uppercase()].into(),
+            )]);
+            let update = build_radar_object_update(
+                &entity,
+                &houses,
+                Some(local),
+                &fog,
+                &alliances,
+                false,
+                true,
+                Some(&rules),
+                Some(&interner),
+                visibility_projection(),
+                None,
+                None,
+            );
+            match update.visibility {
+                RadarRegistrationVisibilityFacts::Mobile(facts) => facts.allied_with_current_player,
+                RadarRegistrationVisibilityFacts::Building(_) => unreachable!("DOT is a vehicle"),
+            }
+        };
+        assert!(allied("Local", "Enemy"));
+        assert!(!allied("Enemy", "Local"));
     }
 
     #[test]

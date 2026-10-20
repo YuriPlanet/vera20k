@@ -594,39 +594,19 @@ mod tests {
             ),
             (
                 7,
-                Command::EnterTransport {
-                    passenger_id: 42,
-                    transport_id: 43,
-                },
-            ),
-            (
-                7,
-                Command::EnterBunker {
-                    unit_id: 42,
-                    bunker_id: 43,
-                },
-            ),
-            (
-                7,
-                Command::RepairAtDepot {
-                    entity_id: 42,
-                    depot_id: 43,
-                },
-            ),
-            (
-                7,
-                Command::MinerReturn {
-                    entity_id: 42,
-                    target_refinery_id: Some(43),
-                },
+                Command::clicked_mission(
+                    42,
+                    crate::sim::mission::MissionType::Enter,
+                    crate::sim::combat::TargetKind::Entity(43),
+                ),
             ),
             (
                 10,
-                Command::HarvestCell {
-                    entity_id: 42,
-                    target_rx: 5,
-                    target_ry: 6,
-                },
+                Command::clicked_mission(
+                    42,
+                    crate::sim::mission::MissionType::Harvest,
+                    crate::sim::combat::TargetKind::Cell(5, 6),
+                ),
             ),
         ];
         for (mission, payload) in commands {

@@ -6,7 +6,7 @@
 use super::gates::evaluate_gates;
 use super::kernel::apply_warhead_damage;
 use super::{DamageGate, DamageOutcome, DefenceDivisors, ImmunityInputs, TargetDamageView};
-use crate::util::native_x87::MaskedX87Chop53 as X;
+use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
 
 /// `TechnoClass::ReceiveDamage @ 0x00701900`'s defence divides for a
 /// defended, non-negative hit (`0x00701939..0x007019E3`), each an x87 divide
@@ -31,14 +31,14 @@ pub(crate) fn defence_divides(damage: i32, divisors: &DefenceDivisors) -> i32 {
 }
 
 /// Prepare the receiver packet without committing HP or predicting its result.
-/// `cell_spread`/`percent_at_max`/`verses_f64` are the warhead's decoded kernel
+/// `cell_spread`/`percent_at_max`/`armor_multiplier` are the warhead's decoded kernel
 /// inputs (see kernel::apply_warhead_damage). `distance_leptons` is the impact
 /// distance in the kernel lepton unit (256 leptons/cell).
 pub(crate) fn receive_damage(
     incoming: i32,
     cell_spread: f64,
     percent_at_max: f64,
-    verses_f64: &[f64; 11],
+    armor_multiplier: NativeF64Bits,
     target: &TargetDamageView,
     divisors: &DefenceDivisors,
     gates: &ImmunityInputs,
@@ -80,8 +80,7 @@ pub(crate) fn receive_damage(
                 dmg,
                 cell_spread,
                 percent_at_max,
-                verses_f64,
-                target.armor,
+                armor_multiplier,
                 0,
                 scenario_no_damage,
                 max_damage,
@@ -130,8 +129,7 @@ pub(crate) fn receive_damage(
             dmg,
             cell_spread,
             percent_at_max,
-            verses_f64,
-            target.armor,
+            armor_multiplier,
             distance_leptons,
             scenario_no_damage,
             max_damage,
@@ -153,9 +151,7 @@ pub(crate) fn receive_damage(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::sim::combat::damage::{
-        ArmorClass, DefenceDivisors, ImmunityInputs, TargetDamageView,
-    };
+    use crate::sim::combat::damage::{DefenceDivisors, ImmunityInputs, TargetDamageView};
 
     const MAXD: i32 = 10000;
 
@@ -317,7 +313,6 @@ pub(crate) mod tests {
 
     fn tgt(_strength: i32, hp: i32) -> TargetDamageView {
         TargetDamageView {
-            armor: ArmorClass(5),
             current_hp: hp,
             object_immune: false,
         }
@@ -328,10 +323,8 @@ pub(crate) mod tests {
             ..Default::default()
         }
     }
-    fn verses(v: f64) -> [f64; 11] {
-        let mut t = [1.0; 11];
-        t[5] = v;
-        t
+    fn multiplier(v: f64) -> NativeF64Bits {
+        NativeF64Bits::from_bits(v.to_bits())
     }
 
     /// `ObjectClass::ReceiveDamage @ 0x005F5390` returns before the kernel for
@@ -343,7 +336,7 @@ pub(crate) mod tests {
             400,
             0.0,
             1.0,
-            &verses(0.25),
+            multiplier(0.25),
             &tgt(300, 0),
             &DefenceDivisors::default(),
             &allow(),
@@ -373,7 +366,7 @@ pub(crate) mod tests {
             400,
             0.0,
             1.0,
-            &verses(1.0),
+            multiplier(1.0),
             &tgt(300, 0),
             &DefenceDivisors::default(),
             &ignoring,
@@ -391,7 +384,7 @@ pub(crate) mod tests {
             400,
             0.0,
             1.0,
-            &verses(0.25),
+            multiplier(0.25),
             &tgt(300, 1),
             &DefenceDivisors::default(),
             &allow(),
@@ -409,7 +402,7 @@ pub(crate) mod tests {
             500,
             0.0,
             1.0,
-            &verses(1.0),
+            multiplier(1.0),
             &tgt(300, 50),
             &DefenceDivisors::default(),
             &allow(),
@@ -427,7 +420,7 @@ pub(crate) mod tests {
             10,
             0.0,
             1.0,
-            &verses(0.0001),
+            multiplier(0.0001),
             &tgt(1000, 1000),
             &DefenceDivisors::default(),
             &allow(),
@@ -449,7 +442,7 @@ pub(crate) mod tests {
             100,
             0.0,
             1.0,
-            &verses(1.0),
+            multiplier(1.0),
             &tgt(300, 300),
             &DefenceDivisors::default(),
             &g,
@@ -471,7 +464,7 @@ pub(crate) mod tests {
             100,
             0.0,
             1.0,
-            &verses(1.0),
+            multiplier(1.0),
             &tgt(300, 300),
             &DefenceDivisors::default(),
             &g,

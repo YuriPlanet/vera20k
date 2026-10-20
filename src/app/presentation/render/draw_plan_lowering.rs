@@ -55,6 +55,7 @@ pub(crate) enum ObjectTexture {
 }
 
 /// One already-resolved sprite owned by one retained Display parent object.
+#[derive(Clone)]
 pub(crate) struct ObjectPieceInstance {
     pub target: ObjectTexture,
     /// Which depth pipeline draws it (`RenderZPolicy::None` passthrough,
@@ -84,6 +85,13 @@ pub(crate) struct PlannedObjectInstance {
     pub tail_draws: Vec<SurfaceDraw>,
     pub brackets: Option<crate::app::presentation::selection_brackets::BuildingBracketLines>,
     pub status: Option<crate::app::presentation::ui_overlays::TechnoExtras>,
+    /// The contacts a building draws again at the start of its Display slot,
+    /// in radio order ([`assign_tether_redraws`]).
+    ///
+    /// [`assign_tether_redraws`]: crate::app::presentation::instances::assign_tether_redraws
+    pub tether_redraws: Vec<DrawId>,
+    /// A Unit that draws only in its tether building's slot.
+    pub drawn_by_tether: bool,
 }
 
 impl PlannedObjectInstance {
@@ -96,6 +104,8 @@ impl PlannedObjectInstance {
             tail_draws: Vec::new(),
             brackets: None,
             status: None,
+            tether_redraws: Vec::new(),
+            drawn_by_tether: false,
         }
     }
 
@@ -108,6 +118,8 @@ impl PlannedObjectInstance {
             tail_draws: Vec::new(),
             brackets: None,
             status: None,
+            tether_redraws: Vec::new(),
+            drawn_by_tether: false,
         }
     }
 }
@@ -269,10 +281,18 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
     let mut status = BTreeMap::new();
     let mut body_draws = BTreeMap::new();
     let mut tail_draws = BTreeMap::new();
+    let mut tether_redraws = BTreeMap::new();
+    let mut drawn_by_tether = std::collections::BTreeSet::new();
     let mut inputs = Vec::with_capacity(entries.len());
 
     for entry in entries {
         let id = entry.parent.id;
+        if !entry.tether_redraws.is_empty() {
+            tether_redraws.insert(id, entry.tether_redraws);
+        }
+        if entry.drawn_by_tether {
+            drawn_by_tether.insert(id);
+        }
         if let Some(draw) = entry.body_draw {
             assert!(
                 entry.pieces.is_empty() && entry.building_pieces.is_none(),
@@ -334,6 +354,23 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
         }
     }
 
+    // A tether redraw repeats each contact's own draw, sprites and tail stores
+    // alike, whichever of the two Display slots comes first.
+    let mut redrawn: BTreeMap<DrawId, Vec<(DrawId, Vec<ObjectPieceInstance>, Vec<SurfaceDraw>)>> =
+        tether_redraws
+            .into_iter()
+            .map(|(building, contacts)| {
+                let draws = contacts
+                    .into_iter()
+                    .filter_map(|contact: DrawId| {
+                        let pieces = ordinary.get(&contact)?.clone();
+                        let tails = tail_draws.get(&contact).cloned().unwrap_or_default();
+                        Some((contact, pieces, tails))
+                    })
+                    .collect();
+                (building, draws)
+            })
+            .collect();
     let plan = TacticalDrawPlan::build(inputs);
     let mut layers: [ObjectLayerPass; 5] = std::array::from_fn(|_| ObjectLayerPass::default());
     for layer in plan.object_layers {
@@ -538,12 +575,26 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     }
                 }
             }
+            // Display6D916C's43DA80 opens with the tether redraw (43DAA0), after
+            // this building's Extras and before its voxel turret.
+            for (contact, pieces, tails) in redrawn.remove(&owner).unwrap_or_default() {
+                for piece in pieces {
+                    let run = push_object_piece(lowered, contact, piece);
+                    append_object_run(&mut lowered.runs, run);
+                }
+                if !tails.is_empty() {
+                    push_surface_draws(lowered, tails);
+                }
+            }
+            let refused = drawn_by_tether.contains(&owner);
             match entry {
                 crate::render::tactical_draw_plan::LayerEntry::Object(_) => {
-                    for piece in ordinary
+                    let pieces = ordinary
                         .remove(&owner)
-                        .expect("planned Display object must retain its sprites")
-                    {
+                        .expect("planned Display object must retain its sprites");
+                    // Unit73B0B0 refuses the body to a tethered Unit; its
+                    // building's redraw draws it.
+                    for piece in pieces.into_iter().filter(|_| !refused) {
                         let run = push_object_piece(lowered, owner, piece);
                         append_object_run(&mut lowered.runs, run);
                     }
@@ -569,7 +620,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     }
                 }
             }
-            if let Some(draws) = tail_draws.remove(&owner) {
+            if let Some(draws) = tail_draws.remove(&owner).filter(|_| !refused) {
                 push_surface_draws(lowered, draws);
             }
         }
@@ -1231,6 +1282,84 @@ mod tests {
             .collect();
         assert_eq!(display_markers, [10, 29, 30]);
         assert_eq!(pass.owners, [10, 20, 20, 20, 20, 30, 40]);
+    }
+
+    /// Display6D916C's43DA80 redraws an unloading building's tethered
+    /// contacts (43DAA0) after its Extras and before its voxel turret, and
+    /// Unit73B0B0 refuses the tethered Unit its own slot, laser included.
+    /// The redraw does not depend on which slot comes first; a contact the
+    /// Unit side does not refuse draws twice, and a refused one no building
+    /// redraws does not draw.
+    #[test]
+    fn an_unloading_building_draws_its_tethered_contacts_in_its_own_slot() {
+        let laser = |marker: i32| {
+            SurfaceDraw::Line(crate::render::surface_line::SurfaceLine {
+                from: [marker, 0],
+                to: [marker, 8],
+                z_adjust: [0, 0],
+                blend: crate::render::surface_line::SurfaceLineBlend::Replace(0),
+            })
+        };
+        let order = NativeDisplayOrder::new(&[10, 20, 30, 40, 50, 60]);
+        let unit = |id, refused| {
+            let mut unit = PlannedObjectInstance::object(
+                plain_parent(&order, id),
+                vec![marked_piece(ObjectTexture::UnitAtlasPage(0), id as u32)],
+            );
+            unit.tail_draws = vec![laser(id as i32)];
+            unit.drawn_by_tether = refused;
+            unit
+        };
+        let factory = |id, contacts: Vec<DrawId>| {
+            let mut factory = PlannedObjectInstance::building(
+                plain_parent(&order, id),
+                [
+                    (BuildingPieceKind::Body, id as u32),
+                    (BuildingPieceKind::PoweredOrActiveOverlay, id as u32 + 1),
+                ]
+                .into_iter()
+                .map(|(kind, marker)| PlannedBuildingPieceInstance {
+                    kind,
+                    z_bias: 0,
+                    policy: if kind == BuildingPieceKind::Body {
+                        BlitPolicy::opaque(SpriteEncoding::Plain)
+                    } else {
+                        BlitPolicy::z_read(SpriteEncoding::Voxel)
+                    },
+                    target: ObjectTexture::ShpPage(0),
+                    instance: marked_piece(ObjectTexture::ShpPage(0), marker).instance,
+                })
+                .collect(),
+            );
+            factory.tether_redraws = contacts;
+            factory
+        };
+        // 10 is drawn by 20, 40 by 30 (40's slot comes later), 50 is redrawn
+        // by 30 without refusing its own slot, and 60 refuses with no redraw.
+        let pass = lower_ground_object_instances(vec![
+            unit(10, true),
+            factory(20, vec![10]),
+            factory(30, vec![40, 50]),
+            unit(40, true),
+            unit(50, false),
+            unit(60, true),
+        ]);
+        let display_markers: Vec<_> = pass
+            .runs
+            .iter()
+            .flat_map(|run| run.start..run.start + run.count)
+            .map(|index| pass.instances[index as usize].draw_state.fx_flags)
+            .collect();
+        assert_eq!(display_markers, [10, 21, 40, 50, 31, 50]);
+        assert_eq!(
+            pass.surface_draws,
+            [
+                vec![laser(10)],
+                vec![laser(40)],
+                vec![laser(50)],
+                vec![laser(50)]
+            ]
+        );
     }
 
     #[test]

@@ -468,10 +468,11 @@ fn depot_release_and_pad_entry_route_through_find_path() {
             .set_for_test(hp);
         assert!(sim.apply_command(
             "Americans",
-            &crate::sim::command::Command::RepairAtDepot {
-                entity_id: tank,
-                depot_id: depot,
-            },
+            &crate::sim::command::Command::clicked_mission(
+                tank,
+                MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(depot)
+            ),
             Some(&rules),
         ));
     }
@@ -797,10 +798,11 @@ fn a_teleporter_and_a_hover_unit_are_serviced_at_a_depot() {
             .set_for_test(150);
         assert!(sim.apply_command(
             "Americans",
-            &crate::sim::command::Command::RepairAtDepot {
-                entity_id: id,
-                depot_id: depot,
-            },
+            &crate::sim::command::Command::clicked_mission(
+                id,
+                MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(depot)
+            ),
             Some(&rules),
         ));
         // The Teleporter must also drive off the pad again.

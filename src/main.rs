@@ -1,4 +1,4 @@
-//! RA2 Engine — entry point.
+//! VERA20k — entry point.
 //!
 //! Creates the winit event loop and delegates everything to App.
 //! This file should stay minimal (~50 lines). All application logic lives in the app facade and its modules.
@@ -23,7 +23,7 @@ fn main() -> Result<()> {
 
     vera20k::util::logging::install_panic_hook(log_path.as_deref());
 
-    log::info!("RA2 Engine starting");
+    log::info!("VERA20k starting");
     log::info!("Ares support compiled in: {}", vera20k::rules::ARES_ENABLED);
     if let Some(path) = &log_path {
         log::info!("Log file: {}", path.display());
@@ -50,7 +50,7 @@ fn main() -> Result<()> {
     let _instance_guard = match &launch_mode {
         vera20k::app::frontend::launch::AppLaunchMode::Interactive(_)
         | vera20k::app::frontend::launch::AppLaunchMode::Spawn(_) => {
-            match vera20k::util::single_instance::acquire() {
+            match vera20k::util::single_instance::acquire(vera20k::app::WINDOW_TITLE) {
                 vera20k::util::single_instance::SingleInstance::Acquired(guard) => Some(guard),
                 vera20k::util::single_instance::SingleInstance::AlreadyRunning => {
                     if matches!(
@@ -65,7 +65,7 @@ fn main() -> Result<()> {
                     // here, so a live-smoke harness that only checks the exit
                     // code reads "already running" as a clean run. Anything
                     // asserting on a window must assert on the window.
-                    log::info!("RA2 Engine is already running — raised the existing window");
+                    log::info!("VERA20k is already running — raised the existing window");
                     return Ok(());
                 }
             }
@@ -104,7 +104,7 @@ fn main() -> Result<()> {
     event_loop.run_app(&mut app)?;
     app.finish_capture()?;
 
-    log::info!("RA2 Engine shut down cleanly");
+    log::info!("VERA20k shut down cleanly");
     log::logger().flush();
     Ok(())
 }

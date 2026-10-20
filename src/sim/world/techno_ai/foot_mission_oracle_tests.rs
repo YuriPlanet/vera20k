@@ -312,9 +312,13 @@ fn assert_weapon_reader_projection(rules: &RuleSet, expected: &Value, family: &s
         if let Some(name) = weapon.warhead.as_deref() {
             let actual = rules.warhead(name).unwrap();
             assert_eq!(
-                actual
-                    .verses_f64
-                    .map(|value| format!("{:016x}", value.to_bits())),
+                std::array::from_fn::<_, 11, _>(|index| format!(
+                    "{:016x}",
+                    actual
+                        .interaction(crate::rules::armor::ArmorId::from_index(index))
+                        .multiplier()
+                        .bits()
+                )),
                 std::array::from_fn::<_, 11, _>(|index| {
                     warhead["verses_bits"][index].as_str().unwrap().to_owned()
                 }),

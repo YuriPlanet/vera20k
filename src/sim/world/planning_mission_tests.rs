@@ -244,17 +244,11 @@ fn retail_planned_enter_reaches_transport_and_bunker_adapters() {
                 &rules,
             )
             .unwrap();
-        let order = if bunker {
-            Command::EnterBunker {
-                unit_id: actor,
-                bunker_id: target,
-            }
-        } else {
-            Command::EnterTransport {
-                passenger_id: actor,
-                transport_id: target,
-            }
-        };
+        let order = Command::clicked_mission(
+            actor,
+            crate::sim::mission::MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(target),
+        );
         planned(&mut sim, &rules, owner, order);
         commit(&mut sim, &rules, owner);
         let mut entered = false;
@@ -322,17 +316,11 @@ fn retail_planned_depot_and_refinery_orders_reach_their_dock_owners() {
         for _ in 0..3 {
             step(&mut sim, &rules);
         }
-        let order = if refinery {
-            Command::MinerReturn {
-                entity_id: actor,
-                target_refinery_id: Some(target),
-            }
-        } else {
-            Command::RepairAtDepot {
-                entity_id: actor,
-                depot_id: target,
-            }
-        };
+        let order = Command::clicked_mission(
+            actor,
+            crate::sim::mission::MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(target),
+        );
         planned(&mut sim, &rules, owner, order);
         commit(&mut sim, &rules, owner);
         let mut docked = false;
@@ -465,11 +453,11 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
                     .known(),
                 Some(crate::sim::mission::MissionType::Guard)
             );
-            let order = Command::HarvestCell {
-                entity_id: actor,
-                target_rx: 17,
-                target_ry: 12,
-            };
+            let order = Command::clicked_mission(
+                actor,
+                crate::sim::mission::MissionType::Harvest,
+                crate::sim::combat::TargetKind::Cell(17, 12),
+            );
             assert_eq!(
                 sim.resolved_terrain
                     .as_ref()

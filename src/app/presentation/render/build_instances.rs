@@ -404,6 +404,9 @@ pub(super) fn build_world_instances(
             }
         }
     }
+    if let Some(rt) = state.match_state.sim_runtime.as_ref() {
+        instances::assign_tether_redraws(&rt.simulation, &mut planned_objects);
+    }
     // Native +99 is set before a Building's body opportunity, independently
     // of successful pixels. Empty body frames still have a retained parent.
     let building_body_opportunities = planned_objects

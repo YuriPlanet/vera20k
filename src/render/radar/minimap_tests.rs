@@ -681,10 +681,26 @@ fn radar_pixel_radar_invisible_precedes_radar_visible_but_alliance_restores() {
         radar_gate_projection(),
     ));
 
-    let allies = BTreeSet::from(["LOCAL".to_string(), "ENEMY".to_string()]);
-    alliances.insert("LOCAL".to_string(), allies.clone());
-    alliances.insert("ENEMY".to_string(), allies);
-    assert!(crate::map::houses::are_houses_friendly(
+    // RenderCellPixel asks from the current player's house (`0x00655E09`):
+    // the enemy's alliance with the player alone does not restore the dot.
+    alliances.insert("ENEMY".to_string(), BTreeSet::from(["LOCAL".to_string()]));
+    assert!(!radar_pixel_candidate_eligible(
+        entry,
+        &entities,
+        &houses,
+        Some(local),
+        &fog,
+        &alliances,
+        true,
+        true,
+        Some(&rules),
+        Some(&interner),
+        radar_gate_projection(),
+    ));
+    // The player's alliance with the enemy alone restores it.
+    alliances.clear();
+    alliances.insert("LOCAL".to_string(), BTreeSet::from(["ENEMY".to_string()]));
+    assert!(crate::map::houses::is_allied_with(
         &alliances,
         interner.resolve(local),
         interner.resolve(enemy),

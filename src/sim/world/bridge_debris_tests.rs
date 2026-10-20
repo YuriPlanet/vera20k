@@ -294,3 +294,22 @@ fn retail_bridge_debris_matches_original_producer_and_constructor_rng() {
 
 #[path = "bridge_debris_flight_tests.rs"]
 mod flight_tests;
+
+/// The executed debris gates (`0x0047DE5D..0x0047DE72` against 0.95 and
+/// `0x0047DF4C..0x0047DF61` against 0.5) at their boundary draws: under chop,
+/// draw `0x3FFFFFFF` still throws MetallicDebris.
+#[test]
+fn the_debris_gates_take_the_native_boundary_draws() {
+    for (gate, threshold) in [
+        ("bridge_outer", BRIDGE_DEBRIS_OUTER_GATE),
+        ("bridge_metallic", BRIDGE_METALLIC_GATE),
+    ] {
+        for (band, draw, passed) in crate::util::native_random::native_gate_rows(gate) {
+            assert_eq!(
+                draw < threshold,
+                passed,
+                "{gate}: band {band:e}, draw {draw:#x}"
+            );
+        }
+    }
+}

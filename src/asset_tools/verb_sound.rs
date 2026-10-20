@@ -768,6 +768,9 @@ mod tests {
             custom.sources.unwrap().bag.source_sha256,
             crate::util::sha256::sha256_hex(&[3, 4])
         );
+        // Release the archive mappings before removing the YR pair; Windows
+        // filesystems can refuse to delete a MIX while it is still mapped.
+        drop(manager);
         std::fs::remove_file(dir.path().join("audiomd.mix")).unwrap();
         let fallback = AssetManager::new(
             dir.path(),

@@ -43,6 +43,10 @@ mod guard_sabotage_tests;
 #[path = "hunt_idle_tests.rs"]
 mod hunt_idle_tests;
 
+#[cfg(test)]
+#[path = "area_guard_post_tests.rs"]
+mod area_guard_post_tests;
+
 /// Whether [`dispatch_foot_mission`] runs `id`'s handler at `now`: a Unit or
 /// Infantry that passes `MissionClass::AI`'s gate
 /// ([`GameEntity::mission_handler_due`]; harvest_attack_return.json
@@ -1671,6 +1675,82 @@ fn computer_capture_building(sim: &Simulation, id: u64, rules: &RuleSet) -> Opti
     .then_some(building)
 }
 
+/// `FootClass::Mission_AreaGuard`'s building-post arm (`0x004D6B8D..0x004D6D1A`),
+/// after the navigation-list head. A computer Foot (`0x0050B730`), other than
+/// a harvester Unit, whose post (ArchiveTarget `+0x218`) is a Cell under an own
+/// or allied building (the cell's first ground-list Building, `0x0047C520`;
+/// `HouseClass::IsAlliedWith @ 0x004F9A50`) moves the post to
+/// Find_Nearby_Passable_Cell (`0x0056DC20`) from that cell: Track, Normal, the
+/// zone of its own cell (Location / 256, `GetZoneID @ 0x0056D230`), one cell,
+/// bridges allowed and no target cell. A zero cell leaves the post. The arm
+/// draws nothing and writes no destination; the rest of the visit uses the
+/// new post.
+fn area_guard_post_off_building(sim: &mut Simulation, id: u64) {
+    use crate::rules::locomotor_type::{MovementZone, SpeedType};
+    use crate::sim::combat::TargetKind;
+    use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    let Some(TargetKind::Cell(px, py)) = entity.archive_target() else {
+        return;
+    };
+    let Some(building_owner) = sim
+        .substrate
+        .occupancy
+        .first_building_on_layer(
+            px,
+            py,
+            crate::sim::movement::locomotor::MovementLayer::Ground,
+        )
+        .and_then(|building| sim.substrate.entities.get(building))
+        .map(|building| building.owner())
+    else {
+        return;
+    };
+    let owner = entity.owner();
+    if !crate::sim::combat::combat_weapon::is_ally_by_object(
+        Some(sim.house_alliances.as_map()),
+        &sim.interner,
+        owner,
+        building_owner,
+    ) || sim.owner_is_human(owner)
+        || (entity.category() == EntityCategory::Unit && entity.is_harvester())
+    {
+        return;
+    }
+    // `0x004D6C1E..0x004D6C71`: signed, truncating `/ 256` of the Location.
+    let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+    let own_cell = ((location.x / 256) as u16, (location.y / 256) as u16);
+    let zone = sim
+        .resolved_terrain
+        .as_ref()
+        .zip(sim.zone_grid.as_ref())
+        .and_then(|(terrain, zones)| {
+            zones.get_zone_id_native(terrain, own_cell, MovementZone::Normal, false)
+        });
+    let Some((x, y)) = sim
+        .nearby_passable_cell(
+            (i32::from(px), i32::from(py)),
+            NearbyArgs::plain(
+                PassabilityArgs {
+                    speed_type: SpeedType::Track,
+                    required_zone_id: zone,
+                    movement_zone: MovementZone::Normal,
+                    bridge_aware_zone: false,
+                },
+                NearbyFootprint::SINGLE,
+            ),
+        )
+        .filter(|cell| *cell != (0, 0))
+    else {
+        return;
+    };
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity.set_archive_target(Some(TargetKind::Cell(x, y)));
+    }
+}
+
 /// Archive the raw physical Map565730 Cell receiver, never Foot's HeadTo.
 /// Real map cells retain their canonical coordinates. The tagged Cell adapter
 /// does not yet preserve a retained Dummy pointer across subsequent stamps.
@@ -1938,7 +2018,8 @@ const AREA_GUARD_CADENCE_JITTER_MAX: u32 = 5;
 ///
 /// The heads (tank bunker, [`foot_building_entry_head`], then a computer
 /// Foot's navigation list, [`Simulation::area_guard_navigation_head`])
-/// precede it. With a Target and a post it approaches through
+/// precede it, then a computer Foot's post under a friendly building moves
+/// beside it ([`area_guard_post_off_building`]). With a Target and a post it approaches through
 /// [`Simulation::approach_target`] (`0x004D6F32`). ElectricAssault adjacency
 /// follows the idle block. A harvester instead commences Harvest before the
 /// post/leash/scan work (4D6D1A..4D6D68), preserving its target and navigation.
@@ -1974,6 +2055,7 @@ pub(super) fn evaluate_foot_area_guard(
         return head;
     }
     sim.area_guard_navigation_head(id, rules, ctx.overlay_registry, ctx.effects);
+    area_guard_post_off_building(sim, id);
     if sim
         .substrate
         .entities

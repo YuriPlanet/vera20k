@@ -143,7 +143,9 @@ pub(crate) fn hover_target_at_point(
     )?;
     let entity = sim.entities().get(stable_id)?;
     let is_structure = entity.category() == EntityCategory::Structure;
-    let is_friendly = crate::map::houses::are_houses_friendly(
+    // What_Action asks the actor's house, here the local player's
+    // (HouseClass::Is_Ally_ByObject4F9A90 at 7003C4).
+    let is_friendly = crate::map::houses::is_allied_with(
         sim.house_alliances(),
         local_owner,
         sim.interner().resolve(entity.owner()),
@@ -424,7 +426,9 @@ fn is_drawn_for_local_owner(
         // Sandbox full visibility: everything is drawn.
         return true;
     };
-    if crate::map::houses::are_houses_friendly(alliances, local_owner, entity_owner) {
+    // VERA's policy, with no native ally test: the local player's allies are
+    // drawn, as the local player's house counts them.
+    if crate::map::houses::is_allied_with(alliances, local_owner, entity_owner) {
         return true;
     }
     let owner_id = local_owner_id.unwrap_or_default();

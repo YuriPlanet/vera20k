@@ -2743,6 +2743,32 @@ fn build_off_ally_lends_an_eligible_allied_provider_only_while_enabled() {
     }
 }
 
+/// BuildOffAlly lends the area only when the provider's house is allied
+/// with the placer's (`HouseClass::IsAlliedWith @ 0x004F9A50`, asked by the
+/// provider's house at `0x004A900E`): the placer's own one-way alliance with
+/// the provider lends nothing.
+#[test]
+fn build_off_ally_asks_the_providers_house_about_the_placer() {
+    let rules = build_off_ally_rules();
+    for (asker, other, admitted) in [
+        ("Alliance", "Americans", true),
+        ("Americans", "Alliance", false),
+    ] {
+        let mut sim = placement_sim();
+        sim.session.game_options_mut_for_test().build_off_ally = true;
+        spawn_structure(&mut sim, &rules, 1, "Alliance", "GACNST", 10, 10);
+        spawn_structure(&mut sim, &rules, 2, "Americans", "GACNST", 50, 50);
+        sim.house_alliances_mut_for_test()
+            .entry(asker.to_ascii_uppercase())
+            .or_default()
+            .insert(other.to_ascii_uppercase());
+        ready_building(&mut sim, &rules, "Americans", "GAPOWR");
+
+        let placed = place_building(&mut sim, &rules, "Americans", "GAPOWR", (12, 10), None);
+        assert_eq!(placed, admitted, "{asker} allies {other}");
+    }
+}
+
 #[test]
 fn placement_preview_keeps_shared_dummy_unchanged_across_unallocated_foundation_cells() {
     let mut sim = placement_sim();

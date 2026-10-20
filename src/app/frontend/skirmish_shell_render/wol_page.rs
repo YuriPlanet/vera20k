@@ -294,6 +294,58 @@ pub(crate) fn paint_wol_page_received(
     paint
 }
 
+/// Add Buddy `0x115` over `0x116`: the centred caption, the name edit and
+/// two buttons (Add created disabled). Its status line `0x695` has no help
+/// to show.
+pub(crate) fn paint_wol_add_buddy(
+    state: &AppState,
+    add: &crate::ui::wol_buddy::WolAddBuddy,
+    layout: &crate::ui::shell::modal::WolAddBuddyLayout,
+) -> WolLobbyPaint {
+    use crate::ui::wol_buddy::{ADD, BACK as ADD_BACK};
+    let labels = vec![
+        caption(
+            state,
+            "GUI:BuddyNickname",
+            layout.label,
+            ShellAlign::H_CENTER,
+            true,
+        ),
+        button_caption(
+            state,
+            "GUI:AddBuddy",
+            layout.add,
+            &add.buttons,
+            ADD,
+            add.add_enabled,
+        ),
+        button_caption(state, "GUI:Back", layout.back, &add.buttons, ADD_BACK, true),
+    ];
+    let buttons = [
+        ModalButton {
+            rect: layout.add,
+            pressed: add.buttons.is_pressed(ADD),
+            enabled: add.add_enabled,
+        },
+        ModalButton {
+            rect: layout.back,
+            pressed: add.buttons.is_pressed(ADD_BACK),
+            enabled: true,
+        },
+    ];
+    let mut paint = paint_box(state, layout.dialog, &buttons, &labels);
+    push_edit(
+        &mut paint,
+        state,
+        &add.edit,
+        layout.name,
+        add.edit.focused && caret_visible(add.focus_at, Instant::now()),
+        SCALE,
+        POPUP_DEPTHS.text,
+    );
+    paint
+}
+
 /// The in-match `0xCF` (state 7) as GPU buffers for the screen-fixed UI
 /// pass: the battlefield keeps drawing under it, and the dialog goes down
 /// after the tooltips and before the cursor.

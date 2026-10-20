@@ -10,9 +10,12 @@
 //! are fixed stand-ins. Two of them say one line each when a chat lobby is
 //! joined, and a locate finds them; nobody else ever joins or starts, so a
 //! created game cannot be started and a joined game never receives its
-//! host's options.
+//! host's options. The buddy list starts with four stand-ins whose locates
+//! answer a chat lobby, a game, offline and find-disabled; Add and Remove
+//! change it for the process.
 
 use super::lobby::WolJoined;
+use super::service::WolLadderRecord;
 use super::{WolApiStatus, WolLoginAccepted, WolServer, WolServerList, WolServiceEvent};
 use super::{WolProvider, WolServiceRequest, service_event};
 use crate::app::AppState;
@@ -22,6 +25,7 @@ use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{
     EX_INFO_VERSION, GAME_CHANNEL, MEMBER_OPERATOR, MEMBER_VOICE, WolChannel, WolMember,
 };
+use crate::ui::wol_login::WolCredential;
 use std::time::Instant;
 
 /// Event 9's status that completes the server-list wait.
@@ -112,7 +116,22 @@ fn answer_setup(state: &mut AppState, request: NetworkSetupRequest) {
 fn answer(state: &mut AppState, request: WolServiceRequest) {
     let event = match request {
         WolServiceRequest::EnsureApi => WolServiceEvent::Api(WolApiStatus::Available),
-        WolServiceRequest::ListCredentials => WolServiceEvent::Credentials(Vec::new()),
+        WolServiceRequest::ListCredentials => {
+            WolServiceEvent::Credentials(state.frontend.wol_test_credentials.clone())
+        }
+        WolServiceRequest::StoreCredential {
+            nickname, password, ..
+        } => {
+            store_credential(&mut state.frontend.wol_test_credentials, nickname, password);
+            return;
+        }
+        WolServiceRequest::ForgetCredential { slot } => {
+            state
+                .frontend
+                .wol_test_credentials
+                .retain(|stored| stored.slot != slot);
+            return;
+        }
         WolServiceRequest::FetchServers { .. } => {
             service_event(state, WolServiceEvent::NetStatus(SERVER_STATUS_READY));
             WolServiceEvent::ServerList(Ok(servers()))
@@ -151,6 +170,29 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             line: WolChatLine::Locate { name },
             ..
         } => WolServiceEvent::Located(locate(&String::from_utf16_lossy(&name))),
+        WolServiceRequest::Locate(name) => WolServiceEvent::Located(locate(&name)),
+        WolServiceRequest::ListBuddies => {
+            WolServiceEvent::Buddies(Ok(state.frontend.wol_test_buddies.clone()))
+        }
+        // The add/delete result sinks (+0x98/+0x9C) ignore the answer.
+        WolServiceRequest::AddBuddy(name) => {
+            let buddies = &mut state.frontend.wol_test_buddies;
+            if !buddies.iter().any(|known| known.eq_ignore_ascii_case(&name)) {
+                buddies.push(name);
+            }
+            return;
+        }
+        WolServiceRequest::RemoveBuddy(name) => {
+            state.frontend.wol_test_buddies.retain(|known| *known != name);
+            return;
+        }
+        WolServiceRequest::LadderRecords(names) => WolServiceEvent::Ladder(
+            names
+                .iter()
+                .filter(|name| name.eq_ignore_ascii_case("Tanya"))
+                .map(|_| tanya_ladder())
+                .collect(),
+        ),
         WolServiceRequest::Chat {
             line: WolChatLine::Page { name, .. },
             ..
@@ -198,12 +240,10 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         }
         // Every WOL:Locale00..37 the retail CSF holds.
         WolServiceRequest::LocaleCount => WolServiceEvent::LocaleCount(38),
-        // Nothing to cancel, remember, forget or deliver: nobody is online.
+        // Nothing to cancel or deliver: nobody is online.
         WolServiceRequest::SetLocale(_)
         | WolServiceRequest::LeaveChannel
         | WolServiceRequest::CancelWait
-        | WolServiceRequest::ForgetCredential { .. }
-        | WolServiceRequest::StoreCredential { .. }
         | WolServiceRequest::Chat { .. }
         | WolServiceRequest::Emote { .. }
         // Server-side page/find/language enforcement is not simulated.
@@ -223,10 +263,7 @@ fn lobby_greeting(state: &mut AppState) {
         action: false,
     };
     for event in [
-        WolServiceEvent::LadderRank {
-            name: "Tanya".into(),
-            rank: 1,
-        },
+        WolServiceEvent::Ladder(vec![tanya_ladder()]),
         WolServiceEvent::UserLocales(Ok(vec![("Tanya".into(), 2)])),
         line(
             member("Tanya", MEMBER_OPERATOR),
@@ -236,6 +273,27 @@ fn lobby_greeting(state: &mut AppState) {
     ] {
         service_event(state, event);
     }
+}
+
+/// Tanya's ladder record, the only one the service holds.
+fn tanya_ladder() -> WolLadderRecord {
+    WolLadderRecord {
+        name: "Tanya".into(),
+        wins: 12,
+        losses: 3,
+        points: 1520,
+        rank: 1,
+        disconnects: 0,
+    }
+}
+
+/// The buddy list a fresh process starts with: Tanya (in a chat lobby),
+/// Boris (in his game), Ghost (offline) and Ivan (find disabled).
+pub(crate) fn default_buddies() -> Vec<String> {
+    ["Tanya", "Boris", "Ghost", "Ivan"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Tanya's locale (United States); the other stand-ins have none.
@@ -264,9 +322,16 @@ fn page(state: &mut AppState, name: &str) {
     );
 }
 
-/// A locate finds a stand-in in the first chat lobby; anyone else is not
-/// logged in (`0x40130`).
+/// A locate finds Boris in his game, Ivan with find disabled (`0x40132`)
+/// and the other lobby stand-ins in the first chat lobby; anyone else is
+/// not logged in (`0x40130`).
 fn locate(name: &str) -> Result<WolChannel, u32> {
+    if name.eq_ignore_ascii_case("Boris") {
+        return Ok(games().remove(1));
+    }
+    if name.eq_ignore_ascii_case("Ivan") {
+        return Err(0x0004_0132);
+    }
     if lobby_members()
         .iter()
         .any(|member| member.name.eq_ignore_ascii_case(name))
@@ -349,9 +414,46 @@ fn host_of(channel: &str) -> &str {
     channel.strip_suffix("'s_game").unwrap_or("Host")
 }
 
+/// Remember after a login: the same nickname keeps its slot with the new
+/// password, a new one takes the first free slot of 1..32; with none free
+/// it is dropped. The stores' real slot policy is WOLAPI's and unknown.
+fn store_credential(stored: &mut Vec<WolCredential>, nickname: String, password: String) {
+    if let Some(existing) = stored
+        .iter_mut()
+        .find(|stored| stored.nickname.eq_ignore_ascii_case(&nickname))
+    {
+        existing.password = password;
+        return;
+    }
+    let Some(slot) = (1..=32).find(|slot| stored.iter().all(|stored| stored.slot != *slot)) else {
+        return;
+    };
+    stored.push(WolCredential {
+        slot,
+        nickname,
+        password,
+    });
+    stored.sort_by_key(|stored| stored.slot);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remembered_accounts_keep_their_slot_and_fill_the_first_free_one() {
+        let mut stored = Vec::new();
+        store_credential(&mut stored, "Tester".into(), "aaaaaaaa".into());
+        store_credential(&mut stored, "Alpha".into(), "bbbbbbbb".into());
+        stored.retain(|stored| stored.slot != 1);
+        store_credential(&mut stored, "Omega".into(), "cccccccc".into());
+        store_credential(&mut stored, "alpha".into(), "dddddddd".into());
+        let slots: Vec<(u32, &str, &str)> = stored
+            .iter()
+            .map(|s| (s.slot, s.nickname.as_str(), s.password.as_str()))
+            .collect();
+        assert_eq!(slots, [(1, "Omega", "cccccccc"), (2, "Alpha", "dddddddd")]);
+    }
 
     #[test]
     fn stand_in_games_admit_a_join_and_name_their_hosts() {

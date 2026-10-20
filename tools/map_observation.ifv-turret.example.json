@@ -132,9 +132,13 @@
       "issue_after_step": 10,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "EnterTransport": {
-          "passenger_id": 18,
-          "transport_id": 14
+        "MegaMission": {
+          "entity_id": 18,
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 14
+          }
         }
       }
     },
@@ -142,9 +146,13 @@
       "issue_after_step": 10,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "EnterTransport": {
-          "passenger_id": 19,
-          "transport_id": 15
+        "MegaMission": {
+          "entity_id": 19,
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 15
+          }
         }
       }
     },
@@ -152,9 +160,13 @@
       "issue_after_step": 10,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "EnterTransport": {
-          "passenger_id": 20,
-          "transport_id": 16
+        "MegaMission": {
+          "entity_id": 20,
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 16
+          }
         }
       }
     },
@@ -189,9 +201,13 @@
       "issue_after_step": 300,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "EnterTransport": {
-          "passenger_id": 18,
-          "transport_id": 14
+        "MegaMission": {
+          "entity_id": 18,
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 14
+          }
         }
       }
     },
@@ -199,9 +215,13 @@
       "issue_after_step": 300,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "EnterTransport": {
-          "passenger_id": 19,
-          "transport_id": 15
+        "MegaMission": {
+          "entity_id": 19,
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 15
+          }
         }
       }
     },
@@ -209,9 +229,13 @@
       "issue_after_step": 300,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "EnterTransport": {
-          "passenger_id": 20,
-          "transport_id": 16
+        "MegaMission": {
+          "entity_id": 20,
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 16
+          }
         }
       }
     }

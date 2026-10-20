@@ -29,11 +29,11 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 use super::TargetKind;
-use super::armor_index;
 use super::veterancy::RANK_ELITE_U16;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::{HouseAllianceMap, is_allied_with};
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
+use crate::rules::armor::ArmorId;
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::object_type::{ObjectType, WEAPON_SLOT_COUNT};
 use crate::rules::ruleset::RuleSet;
@@ -622,6 +622,8 @@ pub(crate) fn passive_scan_class_bits<'r>(
 /// Warhead `+0x149`, which the Verses parse sets (`0x0075DE5A..0x0075DE9A`)
 /// when the exact doubles `Verses[4]` and `Verses[6]` are both `0.0`, read
 /// through slot 0's weapon at the live tier (`0x0051E329..0x0051E343`).
+/// Ares3.0 reader hook75DDCC ->10054410 skips that derivation and clears
+/// the flag at75DE98. The rule owner retains this distinction from its table.
 pub(crate) fn primary_warhead_spares_medium_and_wood(
     rules: &RuleSet,
     obj: &ObjectType,
@@ -630,7 +632,7 @@ pub(crate) fn primary_warhead_spares_medium_and_wood(
     let warhead = primary_for_tier(obj, veterancy)
         .and_then(|id| rules.weapon(id))
         .and_then(|weapon| warhead_of(rules, weapon));
-    verses_is_zero(warhead, 4) && verses_is_zero(warhead, 6)
+    warhead.is_some_and(WarheadType::uses_medium_wood_target_mask)
 }
 
 pub(crate) fn warhead_of<'a>(rules: &'a RuleSet, weapon: &WeaponType) -> Option<&'a WarheadType> {
@@ -639,12 +641,11 @@ pub(crate) fn warhead_of<'a>(rules: &'a RuleSet, weapon: &WeaponType) -> Option<
 
 /// Native `FCOMP Verses[armor], 0.0` (`0x006F3705` / `0x006F3738`): the
 /// double is compared for exact equality with zero.
-fn verses_is_zero(warhead: Option<&WarheadType>, armor: usize) -> bool {
+fn verses_is_zero(warhead: Option<&WarheadType>, armor: ArmorId) -> bool {
     warhead.is_some_and(|warhead| {
-        warhead
-            .verses_f64
-            .get(armor)
-            .is_some_and(|verses| *verses == 0.0)
+        // Ares 3.0 hook10054360 retains numeric zero and secondary-first
+        // ordering. Its independent fire/acquisition flags do not select slots.
+        f64::from_bits(warhead.interaction(armor).multiplier().bits()) == 0.0
     })
 }
 
@@ -827,7 +828,7 @@ fn techno_what_weapon_should_i_use(
     else {
         return 0;
     };
-    let armor = armor_index(&target_obj.armor);
+    let armor = target_obj.armor_id();
     // R @ 0x006F36E3 / S @ 0x006F3716: the only Verses reads, both `== 0.0`.
     if verses_is_zero(secondary_warhead, armor) {
         return 0;
@@ -1348,7 +1349,7 @@ mod tests {
             );
             assert_eq!(
                 primary_warhead_spares_medium_and_wood(&rules, obj, 0),
-                medium != "0.001"
+                !crate::rules::ARES_ENABLED && medium != "0.001"
             );
             assert!(
                 !primary_warhead_spares_medium_and_wood(&rules, obj, 200),

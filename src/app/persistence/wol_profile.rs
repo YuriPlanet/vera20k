@@ -108,6 +108,30 @@ impl WolPersona {
         }
     }
 
+    /// `0x0077A760`: MatchByRes (+0x38).
+    pub(crate) fn set_match_by_res(&mut self, value: bool) {
+        if self.match_by_res != value {
+            self.match_by_res = value;
+            self.dirty = true;
+        }
+    }
+
+    /// `0x0077A780`: the MultiPlayer country item data (+0x1C).
+    pub(crate) fn set_country(&mut self, value: i32) {
+        if self.country != value {
+            self.country = value;
+            self.dirty = true;
+        }
+    }
+
+    /// `0x0077A7A0`: the MultiPlayer colour item data (+0x20).
+    pub(crate) fn set_color(&mut self, value: i32) {
+        if self.color != value {
+            self.color = value;
+            self.dirty = true;
+        }
+    }
+
     /// `0x0077A700(locale, priority)`: the same locale only verifies (from
     /// a service answer, priority 2); another needs a nonzero value and an
     /// unset locale or at least the stored priority, and priority 3 (the
@@ -458,6 +482,23 @@ mod tests {
         verified.set_locale(7, 2);
         assert_eq!((verified.locale, verified.locale_priority), (7, 2));
         assert!(verified.locale_verified);
+    }
+
+    #[test]
+    fn the_my_information_setters_dirty_only_on_a_change() {
+        let mut persona = WolPersona::default();
+        persona.set_country(-2);
+        persona.set_color(-2);
+        persona.set_match_by_res(true);
+        assert!(!persona.dirty);
+        persona.set_country(3);
+        assert!(persona.dirty && persona.country == 3);
+        persona.dirty = false;
+        persona.set_color(5);
+        assert!(persona.dirty && persona.color == 5);
+        persona.dirty = false;
+        persona.set_match_by_res(false);
+        assert!(persona.dirty && !persona.match_by_res);
     }
 
     #[test]

@@ -1,5 +1,31 @@
 # Native comparison workflow
 
+### Selected-weapon target-scan bound
+
+`python -m tools.spatial_oracle.threat_scan_bound --check` compares 65 original
+`Greatest_Threat` bound calculations at `0x6F9042..0x6F9148`. The preceding
+`Threat_Range` result and runtime type, weapon, veterancy and cargo state are
+supplied. Original getters execute without substitutions; the bound is read
+from `ESP+0x38`. Checked completion requires the relevant branch visits,
+unchanged object storage and stack pointer, and no writes outside the stack.
+
+The controls cover nonzero hard bounds, current weapon slots for non-Gattling
+types with `TurretCount > 0`, the underwater/organic/self-healing `GuardRange`
+branch, fallback slots 0/1, signed cell truncation, `AirRangeBonus`, elite
+fallback and open-topped cargo limits. The Rust comparison is
+`scan_bound_matches_original_weapon_selection_slice` in
+`src/sim/combat/greatest_threat.rs`. The slice ends before occupied-building
+adjustments, target traversal and scoring; it is not a whole-game comparison.
+
+The related stock regression,
+`retail_sniper_ifv_guard_scan_uses_its_boarded_weapon_range`, uses retail Battle
+rules and the production boarding command to put `SNIPE` in an `FV`. It checks
+Guard acquisition at 12 cells with `AWPE`, rejection at 15 cells, and rejection
+after unloading restores `HoverMissile`. Set `RA2_DIR` to the retail install
+and `VERA20K_REQUIRE_RETAIL_ASSETS=1` so missing archive inputs fail instead
+of skipping. This joins stock boarding to the rebuilt scanner; it does not
+run a matching whole native scenario.
+
 ### Terror Drone firing, impulse and Drive controls
 
 `tools.spatial_oracle.gattling_unit_fire --shp-frames --check` compares the
@@ -213,6 +239,7 @@ covered. The metadata records the executed binary, command and supplied type get
 
 | Python module | Sampled native behavior | Rust consumer/test location |
 | --- | --- | --- |
+| `tools.spatial_oracle.vehicle_passenger_escape` | Six resolved-input Unit passenger controls through the original death-escape caller, full Unit Unlimbo, map occupation, virtual Scatter and destination setter. Two-passenger rows retain the first passenger's native writes: its new NavCom admits the second before movement. Includes Sleep-to-Guard Unlimbo, frame, retained destination and blocked-neighbor controls. Boarding, damage prefix, full constructors/readers and later movement are excluded. | `world/vehicle_passenger_escape_oracle_tests.rs` compares placement, navigation, occupancy and RNG; `passenger/gunner_tests.rs` exercises stock LCRF/MTNK boarding and destruction through production commands and damage. |
 | `tools.rmg_oracle.gen_rng_vectors` | Seeded state and 16 draws for five seeds | `src/map/rmg/rng.rs` |
 | `tools.rmg_oracle.gen_x87_vectors` | Eight Gaussian draws for two seeds | `src/map/rmg/x87.rs` |
 | `tools.storage_oracle.sed_description` | 28 fresh-file Description fixtures and one cached-section diagnostic; original reader with supplied INI indexes | `src/map/rmg/description.rs`; disk-load regression in `saved_seeds.rs` |

@@ -3,11 +3,11 @@
 //! whether the target sits inside the weapon's reach from there.
 //!
 //! `TechnoClass::CanFireAtTarget` 0x006F7780 ([`can_fire_at_target`]) asks both
-//! for the weapon it selects. The 2D [`lepton_distance_sq_raw`] +
-//! [`is_within_range_leptons`] twin remains only as the fallback of the fire
-//! gate, the threat scan and the cursor for a world without resolved
-//! terrain. Implements 3D distance, IsLowFlying ground-snap, AirRange bonus,
-//! bunker and open-topped range bonuses, the elevation bonus for a shot fired
+//! for the weapon it selects. In a world without resolved terrain the fire
+//! gate, the threat scan and the cursor ask [`mapless_in_range`] instead,
+//! which runs the steps that read no cell. Implements 3D distance,
+//! IsLowFlying ground-snap, AirRange bonus, bunker and open-topped range
+//! bonuses, the elevation bonus for a shot fired
 //! downhill (`0x006F6F60`, `0x006F70E0`), the arcing arm's 2-D distance,
 //! foundation bonus, the InRange bridge gate (0x006F75FB), the verified
 //! boundary semantics (<= max inclusive, < min strict, -512 lep sentinel), and
@@ -44,15 +44,19 @@ use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::foundation::foundation_dimensions;
+use crate::rules::projectile_type::ProjectileType;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::weapon_type::WeaponType;
 use crate::sim::cell_kernel::native_cell_own_coords;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::combat_weapon;
 use crate::sim::combat::line_of_fire::{self, LineOfFireInputs};
+use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
-use crate::sim::movement::air_movement::{is_high_flying_in_query, is_low_flying_in_query};
+use crate::sim::movement::air_movement::{
+    is_high_flying, is_high_flying_in_query, is_low_flying_in_query,
+};
 use crate::sim::movement::ground_pose::{
     object_center_xy, object_get_coords, object_world_z_leptons,
 };
@@ -82,39 +86,99 @@ fn cells_fixed_to_leptons(cells: SimFixed) -> i64 {
     (i64::from(cells.to_bits()) * 256) >> 16
 }
 
-/// Range before target-coordinate resolution, 6F7261..6F72E1. The target's
-/// +54 query and AirRange bonus precede +48/+50, even when MinimumRange later
-/// rejects the shot. Foundation size belongs to the later non-arcing arm. The
-/// caller adds the open-topped passenger bonus here for both abstract and
-/// retained Cell targets, and then the elevation bonus.
-///
-/// The caller applies [`occupied_range_leptons`], then the bunker and
-/// open-topped stages, before either elevation arm.
-fn initial_range_leptons(
+/// The range before target-coordinate resolution, 6F7261..6F72E1, for both
+/// arms and abstract and retained Cell targets alike: the weapon's, plus
+/// AirRangeBonus when the target flies high (its +54 query precedes +48/+50,
+/// even when MinimumRange later rejects the shot); an occupied building's
+/// reach in place of that ([`occupied_range_leptons`]); then the bunker and
+/// open-topped bonuses. Each arm adds its own elevation bonus, and the
+/// non-arcing arm the target's foundation ([`foundation_reach_leptons`]).
+fn reach_leptons(
     attacker: &GameEntity,
-    target: RangeTarget<'_>,
+    target_flies_high: bool,
     weapon: &WeaponType,
     rules: &RuleSet,
     interner: &StringInterner,
-    cells: &NativeCellQuery<'_>,
 ) -> i64 {
     let mut range_lep: i64 = i64::from(weapon.range_leptons);
-
-    let high = match target {
-        RangeTarget::Techno(target) => {
-            is_high_flying_in_query(target, cells, Some((rules, interner)))
-        }
-        RangeTarget::Terrain(target) => target.is_high_flying_in_query(Some(cells)),
-        RangeTarget::Cell(_) | RangeTarget::Missing => false,
-    };
-    if high
+    if target_flies_high
         && let Some(attacker_obj) = interner.object_type(attacker.type_ref(), rules)
         && let Some(air_bonus) = attacker_obj.air_range_bonus
     {
         range_lep += cells_fixed_to_leptons(air_bonus);
     }
+    let mut range_lep = occupied_range_leptons(attacker, rules, interner).unwrap_or(range_lep);
+    // Active-YR InRange6F72A2..6F72C8: +2E4 on a non-Building adds
+    // Rules+F54 cells before open-topped, MinimumRange and the arcing split.
+    // Both SHL and ADD operate on signed dword bits, including overflow.
+    // Steam executable controls: tools/spatial_oracle/walk_cell_range_bunker.json.
+    if attacker.category() != EntityCategory::Structure
+        && attacker.bunker.link().installed_in().is_some()
+    {
+        range_lep = i64::from(
+            (range_lep as i32).wrapping_add(
+                rules
+                    .garrison_rules
+                    .bunker_weapon_range_bonus
+                    .wrapping_shl(8),
+            ),
+        );
+    }
+    range_lep + open_topped_range_bonus_leptons(attacker, rules)
+}
 
-    range_lep
+/// `0x006F7525..0x006F7554`, on the non-arcing arm after the target's
+/// coordinates and MinimumRange: a building target adds 64 leptons for each
+/// cell of its foundation's width and height.
+fn foundation_reach_leptons(
+    target: &GameEntity,
+    rules: &RuleSet,
+    interner: &StringInterner,
+) -> i64 {
+    if target.category() != EntityCategory::Structure {
+        return 0;
+    }
+    interner
+        .object_type(target.type_ref(), rules)
+        .map_or(0, |object| {
+            let (width, height) = foundation_dimensions(&object.foundation);
+            (width as i64 + height as i64) * 0x40
+        })
+}
+
+/// The arcing arm's reach, `0x006F7404..0x006F74D1`: the 2-D distance through
+/// Sqrt_Approx and ftol against `range`, then a shell launched at the speed
+/// that range gives (`Ballistic_Launch_Speed`) must reach the target's height,
+/// under Rules `Gravity=`, halved for a `Floater=` projectile. With retail
+/// gravity, a target 834 leptons away and two levels up needs a range of 912;
+/// four levels up needs 1126.
+fn arcing_reaches(
+    src: (i64, i64, i64),
+    target: (i64, i64, i64),
+    range: i64,
+    projectile: &ProjectileType,
+    rules: &RuleSet,
+) -> bool {
+    let distance = sqrt_approx_length([
+        (target.0 as i32).wrapping_sub(src.0 as i32),
+        (target.1 as i32).wrapping_sub(src.1 as i32),
+    ]);
+    if i64::from(distance) > range {
+        return false;
+    }
+    let rise = (target.2 as i32).wrapping_sub(src.2 as i32);
+    let gravity = rules.general.gravity;
+    let speed = ballistic_launch_speed(range as i32, gravity, projectile.floater);
+    ballistic_can_reach(speed, distance, rise, gravity, projectile.floater)
+}
+
+/// The non-arcing arm's reach, `0x006F7594..0x006F75F2`: the 3-D distance,
+/// approximated as MinimumRange measures it, at most `range`.
+fn direct_reaches(src: (i64, i64, i64), target: (i64, i64, i64), range: i64) -> bool {
+    i64::from(crate::util::native_x87::distance_3d_leptons(
+        [src.0 as i32, src.1 as i32, src.2 as i32],
+        [target.0 as i32, target.1 as i32, target.2 as i32],
+    )) <= range
 }
 
 /// `0x006F727E..0x006F729F`: an occupied building
@@ -401,26 +465,14 @@ pub(crate) fn compute_range_target(
         return true;
     }
 
-    let initial_range_lep = initial_range_leptons(attacker, target, weapon, rules, interner, cells);
-    let mut initial_range_lep =
-        occupied_range_leptons(attacker, rules, interner).unwrap_or(initial_range_lep);
-    // Active-YR InRange6F72A2..6F72C8: +2E4 on a non-Building adds
-    // Rules+F54 cells before open-topped, MinimumRange and the arcing split.
-    // Both SHL and ADD operate on signed dword bits, including overflow.
-    // Steam executable controls: tools/spatial_oracle/walk_cell_range_bunker.json.
-    if attacker.category() != EntityCategory::Structure
-        && attacker.bunker.link().installed_in().is_some()
-    {
-        initial_range_lep = i64::from(
-            (initial_range_lep as i32).wrapping_add(
-                rules
-                    .garrison_rules
-                    .bunker_weapon_range_bonus
-                    .wrapping_shl(8),
-            ),
-        );
-    }
-    let initial_range_lep = initial_range_lep + open_topped_range_bonus_leptons(attacker, rules);
+    let target_flies_high = match target {
+        RangeTarget::Techno(target) => {
+            is_high_flying_in_query(target, cells, Some((rules, interner)))
+        }
+        RangeTarget::Terrain(target) => target.is_high_flying_in_query(Some(cells)),
+        RangeTarget::Cell(_) | RangeTarget::Missing => false,
+    };
+    let initial_range_lep = reach_leptons(attacker, target_flies_high, weapon, rules, interner);
 
     let projectile = weapon
         .projectile
@@ -455,23 +507,8 @@ pub(crate) fn compute_range_target(
     // without the direct bonus or a building's foundation (`EBX = EDI` at
     // `0x006F7457`), plus the arcing bonus.
     if let Some(projectile) = projectile.filter(|p| p.arcing) {
-        let distance = sqrt_approx_length([
-            (tx as i32).wrapping_sub(src.0 as i32),
-            (ty as i32).wrapping_sub(src.1 as i32),
-        ]);
         let range = initial_range_lep + elevation_bonus(ElevationArm::Arcing);
-        if i64::from(distance) > range {
-            return false;
-        }
-        // `0x006F747E..0x006F74D1`: a shell launched at the speed that range
-        // gives (`Ballistic_Launch_Speed`) must reach the target's height,
-        // under Rules `Gravity=`, halved for a `Floater=` projectile. With
-        // retail gravity, a target 834 leptons away and two levels up needs a
-        // range of 912; four levels up needs 1126.
-        let rise = (tz as i32).wrapping_sub(src.2 as i32);
-        let gravity = rules.general.gravity;
-        let speed = ballistic_launch_speed(range as i32, gravity, projectile.floater);
-        if !ballistic_can_reach(speed, distance, rise, gravity, projectile.floater) {
+        if !arcing_reaches(src, (tx, ty, tz), range, projectile, rules) {
             return false;
         }
         // The bridge ceiling, `0x006F74D7..0x006F7504`: a target whose cell
@@ -480,6 +517,7 @@ pub(crate) fn compute_range_target(
         // target on the deck stands at deck height, and the target snap
         // (`0x006F7336`) lifts a marked target under the deck there too, so a
         // cannon at the bridge's ground level can shell neither.
+        let rise = (tz as i32).wrapping_sub(src.2 as i32);
         let cell = cells.lookup_world(tx as i32, ty as i32);
         if cells.flags(cell) & 0x100 != 0 && i64::from(rise) >= 3 * LEPTONS_PER_LEVEL {
             return false;
@@ -502,22 +540,10 @@ pub(crate) fn compute_range_target(
     }
 
     let mut max_range_lep = direct_range_lep;
-    // Building foundation size is queried only after the non-arcing split,
-    // 6F7525..6F7554, after target coordinates and MinimumRange.
-    if let RangeTarget::Techno(entity) = target
-        && entity.category() == EntityCategory::Structure
-        && let Some(object) = interner.object_type(entity.type_ref(), rules)
-    {
-        let (width, height) = foundation_dimensions(&object.foundation);
-        max_range_lep += (width as i64 + height as i64) * 0x40;
+    if let RangeTarget::Techno(entity) = target {
+        max_range_lep += foundation_reach_leptons(entity, rules, interner);
     }
-
-    let dist_lep = i64::from(crate::util::native_x87::distance_3d_leptons(
-        [src.0 as i32, src.1 as i32, src.2 as i32],
-        [tx as i32, ty as i32, tz as i32],
-    ));
-
-    if dist_lep > max_range_lep {
+    if !direct_reaches(src, (tx, ty, tz), max_range_lep) {
         return false;
     }
 
@@ -939,65 +965,69 @@ pub fn can_fire_at_target_in_query(
     )
 }
 
-/// Squared distance in leptons from raw coordinates.
-///
-/// Takes individual fields rather than a `&Position`, for use with snapshots
-/// where positions are destructured.
-pub fn lepton_distance_sq_raw(
-    ax_cell: u16,
-    ay_cell: u16,
-    ax_sub: SimFixed,
-    ay_sub: SimFixed,
-    bx_cell: u16,
-    by_cell: u16,
-    bx_sub: SimFixed,
-    by_sub: SimFixed,
-) -> i64 {
-    let ax: i64 = ax_cell as i64 * 256 + ax_sub.to_num::<i64>();
-    let ay: i64 = ay_cell as i64 * 256 + ay_sub.to_num::<i64>();
-    let bx: i64 = bx_cell as i64 * 256 + bx_sub.to_num::<i64>();
-    let by: i64 = by_cell as i64 * 256 + by_sub.to_num::<i64>();
-    let dx: i64 = ax - bx;
-    let dy: i64 = ay - by;
-    dx * dx + dy * dy
+/// What [`mapless_in_range`] measures to.
+#[derive(Clone, Copy)]
+pub enum MaplessTarget<'a> {
+    /// A Techno: its GetCoords, and its flight height and foundation.
+    Techno(&'a GameEntity),
+    /// Any other target's coordinates: a cell, a terrain object.
+    Point(DriveCoord),
 }
 
-/// Check if a squared lepton distance is within a weapon's range: its +B4
-/// leptons (`WeaponType::range_leptons`), squared in i64 to match
-/// `lepton_distance_sq_raw()` output.
+/// InRange in a world without resolved terrain (headless fixtures, pre-map
+/// bring-up): the one answer the fire gate, the threat scan and the attack
+/// cursor give there. gamemd always has a map, so this is VERA's policy, not
+/// a second port of `TechnoClass::InRange` 0x006F7220: it runs that port's
+/// steps that read no cell, in its order, between the GetCoords points.
 ///
-/// RESIDUAL — this 2-D twin does NOT honour the `-512` always-in-range
-/// sentinel that `compute_in_range` does. `TechnoClass::InRange`
-/// 0x006F7220 tests it first of all (`CMP EDI,0xFFFFFE00` at 0x006F724E) and
-/// returns true; here `Range=-2` scales to `-512` leptons, squares to a
-/// positive `262144`, and reads as a two-cell reach.
+/// Kept: the -512 sentinel first (`0x006F724E`), the reach
+/// ([`reach_leptons`]: AirRangeBonus against a high flyer, an occupied
+/// building's reach, the bunker and open-topped bonuses), MinimumRange, then
+/// the arcing arm ([`arcing_reaches`]) or the target's foundation and the 3-D
+/// distance ([`direct_reaches`]).
 ///
-/// - Trigger: any consumer of this function firing a `Range=-2` weapon —
-///   `ASWLauncher` (`[DEST]`/`[CDEST]` Destroyer secondary), `MakeupKit`
-///   (`[SPY]` primary), and the unreferenced `TankMakeupKit`/`CRMakeupKit`.
-/// - Player effect: a Destroyer's anti-submarine weapon reads as in range only
-///   within two cells, where gamemd is always in range.
-/// - Frequency: only the no-resolved-terrain fallbacks listed under RESIDUAL 2
-///   reach this predicate.
-/// - Downstream risk: those fallbacks agree with each other, so the drift is
-///   consistent rather than self-correcting.
-///
-/// RESIDUAL 2 — this twin also has no line-of-fire walk, no elevation bonus
-/// and no occupied arm. `TechnoClass::InRange` ends in `CALL 0x004CC310` at
-/// 0x006F7642 and refuses the shot when a wall or a cliff sits on the line, it
-/// adds `0x006F6F60`'s bonus for a `SubjectToElevation=` projectile fired down
-/// at a lower target, and it measures an occupied building with its reach
-/// (`0x006F727E`); `compute_in_range` does all three (see
-/// `sim::combat::line_of_fire`, `elevation_bonus_leptons` and
-/// `combat_weapon::occupied_reach_cells`) and this function does none.
-///
-/// Every reader is a fallback for a world without resolved terrain (headless
-/// fixtures, pre-map bring-up): the fire gate, the threat scan and the
-/// cursor. None of them can run a walk, so they agree with each other rather
-/// than diverging.
-pub fn is_within_range_leptons(dist_sq_leptons: i64, range_leptons: i32) -> bool {
-    let range_leptons = i64::from(range_leptons);
-    dist_sq_leptons <= range_leptons * range_leptons
+/// Only cells answer the rest, which this lets pass: the elevation bonus,
+/// the low-flying target's ground snap, the source substitutions
+/// (`CellRangefinding=`, a high flyer's target height), the bridge ceiling,
+/// the under-bridge refusal and the line-of-fire walk.
+pub fn mapless_in_range(
+    attacker: &GameEntity,
+    target: MaplessTarget<'_>,
+    weapon: &WeaponType,
+    rules: &RuleSet,
+    interner: &StringInterner,
+) -> bool {
+    if i64::from(weapon.range_leptons) == WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS {
+        return true;
+    }
+    let (techno, point) = match target {
+        MaplessTarget::Techno(entity) => (Some(entity), object_get_coords(entity, None)),
+        MaplessTarget::Point(point) => (None, point),
+    };
+    let flies_high =
+        techno.is_some_and(|entity| is_high_flying(entity, None, Some((rules, interner))));
+    let range = reach_leptons(attacker, flies_high, weapon, rules, interner);
+    let source = object_get_coords(attacker, None);
+    let src = (
+        i64::from(source.x),
+        i64::from(source.y),
+        i64::from(source.z),
+    );
+    let target = (i64::from(point.x), i64::from(point.y), i64::from(point.z));
+    if minimum_range_blocks(weapon, src, target) {
+        return false;
+    }
+    let projectile = weapon
+        .projectile
+        .as_deref()
+        .and_then(|name| rules.projectile(name));
+    if let Some(projectile) = projectile.filter(|p| p.arcing) {
+        return arcing_reaches(src, target, range, projectile, rules);
+    }
+    let foundation = techno.map_or(0, |entity| {
+        foundation_reach_leptons(entity, rules, interner)
+    });
+    direct_reaches(src, target, range + foundation)
 }
 
 #[cfg(test)]
@@ -2529,22 +2559,41 @@ mod tests {
         ));
     }
 
-    // RESIDUAL — gamemd address 0x006F724E, `CMP EDI,0xFFFFFE00`, the first
-    // thing `TechnoClass::InRange` tests.
-    //
-    // `compute_in_range` honours the `-512` always-in-range sentinel;
-    // `is_within_range_leptons`, the 2-D twin the other range call sites
-    // still use, does not — `Range=-2` squares to a positive `262144` there
-    // and reads as a two-cell reach. Full trigger / effect / frequency /
-    // downstream note sits on that function above; the short of it is that
-    // a Destroyer's `ASWLauncher` closes to two cells where gamemd is always
-    // in range.
-    //
-    // Pre-existing, and recorded here rather than fixed because the cure is
-    // migrating those call sites onto `compute_in_range`, not adding a second
-    // sentinel test to the twin.
-    // Residual (formerly an ignored placeholder test): gamemd 0x006F724E -512 always-in-range sentinel is unhandled in is_within_range_leptons.
-    // Unimplemented: is_within_range_leptons has no InRange 0x006F724E -512 sentinel.
+    /// Without a map, InRange's cell-free steps still decide: the -512
+    /// sentinel reaches across the map, a fractional `Range=` is real reach
+    /// (5.5 cells is 1408 leptons, neither five cells nor six), MinimumRange
+    /// refuses inside it, and a Techno target is measured from its GetCoords.
+    #[test]
+    fn mapless_range_keeps_the_sentinel_fractional_reach_and_minimum_range() {
+        let attacker = ground_attacker(10, 10, 0, "ATKR");
+        let target = ground_target(15, 10, 0, "TGT");
+        let interner = test_interner();
+        let source = object_get_coords(&attacker, None);
+        let east = |leptons: i32| {
+            MaplessTarget::Point(DriveCoord {
+                x: source.x + leptons,
+                ..source
+            })
+        };
+        let reaches = |weapon_ini: &str, target: MaplessTarget<'_>| {
+            let rules = rules_with_weapon(weapon_ini, "", "");
+            let weapon = rules.weapon("GUN").expect("weapon");
+            mapless_in_range(&attacker, target, weapon, &rules, &interner)
+        };
+        assert!(reaches("Damage=1\nRange=-2\nWarhead=WH", east(50 * 256)));
+        let fractional = "Damage=1\nRange=5.5\nWarhead=WH";
+        assert!(reaches(fractional, east(1344)));
+        assert!(!reaches(fractional, east(1472)));
+        let minimum = "Damage=1\nRange=6\nMinimumRange=2\nWarhead=WH";
+        assert!(!reaches(minimum, east(384)));
+        assert!(reaches(minimum, east(640)));
+        // The Techno five cells east, centre to centre.
+        assert!(reaches(fractional, MaplessTarget::Techno(&target)));
+        assert!(!reaches(
+            "Damage=1\nRange=4.5\nWarhead=WH",
+            MaplessTarget::Techno(&target)
+        ));
+    }
 
     /// Guards the INCLUSIVE half of the gate's boundary pair (`JGE` at
     /// 0x006F762F): a target exactly on the deck top is refused. Without this

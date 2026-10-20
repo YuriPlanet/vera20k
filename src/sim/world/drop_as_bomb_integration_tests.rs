@@ -45,10 +45,11 @@ fn boarded_transport(sim: &mut Simulation, rules: &RuleSet, kind: &str) -> (u64,
     assert!(
         sim.apply_command(
             "Americans",
-            &Command::EnterTransport {
-                passenger_id: passenger,
-                transport_id: carrier
-            },
+            &Command::clicked_mission(
+                passenger,
+                crate::sim::mission::MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(carrier)
+            ),
             Some(rules),
         ),
         "board failed: passenger={:?} transport={:?} admitted={}",

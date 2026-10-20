@@ -901,8 +901,29 @@ Details: {details}"
                     result,
                 );
             }
-            None => state.frontend.options_dialog = Some(dialog),
+            None => {
+                state.frontend.options_dialog = Some(dialog);
+                // VERA20K Options or Back: the showing page slides out first.
+                if let Some(page) = output.page {
+                    Self::leave_shell_dialog(
+                        state,
+                        crate::app::frontend::shell_transition::ShellExitThen::OptionsPage(page),
+                    );
+                }
+            }
         }
+    }
+
+    /// The other Options page has slid out: show `page`, whose column slides
+    /// in on the next frame. The dialog and its values stay as they are.
+    fn commit_options_page(
+        state: &mut AppState,
+        page: crate::ui::main_menu_dialogs::options::OptionsPage,
+    ) {
+        if let Some(dialog) = state.frontend.options_dialog.as_mut() {
+            dialog.show_page(page);
+        }
+        state.platform.window.request_redraw();
     }
 
     /// `0xD5`'s teardown slide has run: commit the controls (`0x0055FAA0`),
@@ -935,7 +956,8 @@ Details: {details}"
             state.match_state.input.cursor_x as i32,
             state.match_state.input.cursor_y as i32,
         );
-        let layout = crate::app::frontend::shell_layout::launcher_options_layout(state);
+        let layout =
+            crate::app::frontend::shell_layout::launcher_options_layout(state, dialog.page());
         match down {
             Some(true) => dialog.shell_mouse_down(x, y, &layout),
             Some(false) => dialog.shell_mouse_up(x, y, &layout),
@@ -1343,6 +1365,7 @@ Details: {details}"
             ShellExitThen::CampaignStart(side) => Self::commit_campaign_start(state, side),
             ShellExitThen::LoadSavedGameBack => Self::commit_load_saved_game_back(state),
             ShellExitThen::Options(result) => Self::commit_launcher_options_result(state, result),
+            ShellExitThen::OptionsPage(page) => Self::commit_options_page(state, page),
             ShellExitThen::KeyboardClose(exit) => {
                 crate::app::input::keyboard::commit_close(state, exit)
             }
@@ -1379,6 +1402,7 @@ Details: {details}"
             ShellExitThen::WolAction(mode) => Self::commit_wol_action(state, mode),
             ShellExitThen::WolLoginClose(result) => Self::commit_wol_login_close(state, result),
             ShellExitThen::WolLobbyBack => crate::app::shell_wol::lobby::commit_back(state),
+            ShellExitThen::WolLobbyBuddy => crate::app::shell_wol::lobby::commit_buddy(state),
             ShellExitThen::WolLobbyHide => crate::app::shell_wol::lobby::commit_hide(state),
             ShellExitThen::WolCreateAccepted { observe } => {
                 crate::app::shell_wol::lobby::commit_create(state, observe)
@@ -1398,6 +1422,12 @@ Details: {details}"
             }
             ShellExitThen::WolLocaleClose(locale) => {
                 crate::app::shell_wol::persona::commit_locale(state, locale)
+            }
+            ShellExitThen::WolMyInformationClose(control) => {
+                crate::app::shell_wol::my_info::commit_close(state, control)
+            }
+            ShellExitThen::WolBuddyClose(control) => {
+                crate::app::shell_wol::buddy::commit_close(state, control)
             }
         }
     }

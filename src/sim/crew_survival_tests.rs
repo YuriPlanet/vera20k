@@ -255,26 +255,18 @@ fn queued(sim: &Simulation, id: u64) -> MissionId {
         .queued()
 }
 
-/// For the stock 50% the x87 gate is exactly `r < 0x40000000`: only
-/// `0x3FFFFFFF` depends on the chop control word, and under chop it escapes.
-/// A 25% chance is the prefix below `0x20000000`, and an unordered compare
-/// sets C0 like "less".
+/// The executed gate (`0x00738218..0x0073822D`) at the boundary draws of the
+/// stock 50%, of 25% and of NaN: under chop `0x3FFFFFFF` escapes at 50%, and
+/// an unordered compare lets every roll escape.
 #[test]
-fn crew_escape_is_a_prefix_of_the_draw_range() {
-    let half = NativeF64Bits::from_bits(0x3fe0_0000_0000_0000);
-    for roll in [0, 1, 0x3fff_fffe, 0x3fff_ffff] {
-        assert!(crew_escapes(roll, half), "{roll:#x}");
+fn crew_escape_takes_the_native_gate_draws() {
+    for (band, roll, escapes) in crate::util::native_random::native_gate_rows("crew") {
+        assert_eq!(
+            crew_escapes(roll, NativeF64Bits::from_bits(band.to_bits())),
+            escapes,
+            "band {band:e}, roll {roll:#x}"
+        );
     }
-    for roll in [0x4000_0000, 0x4000_0001, 0x7fff_fffe] {
-        assert!(!crew_escapes(roll, half), "{roll:#x}");
-    }
-    let quarter = NativeF64Bits::from_bits(0x3fd0_0000_0000_0000);
-    assert!(crew_escapes(0x1fff_ffff, quarter));
-    assert!(!crew_escapes(0x2000_0000, quarter));
-    assert!(crew_escapes(
-        0x7fff_fffe,
-        NativeF64Bits::from_bits(0x7ff8_0000_0000_0000)
-    ));
 }
 
 /// How_Many_Survivors over GetRefund: Soylent replaces the cost and skips

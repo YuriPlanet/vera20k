@@ -243,6 +243,30 @@ impl GpuContext {
         log::debug!("Surface resized to {}x{}", width, height);
     }
 
+    /// Take the window's next frame to draw into, or `None` when there is none
+    /// this time and the next redraw should try again.
+    ///
+    /// A swapchain the driver no longer considers fit for its window shows up
+    /// only here: `SurfaceTexture::present` drops that status, and the only
+    /// other reconfigure is a resize event, which a change that leaves the
+    /// window's size alone never sends. So a stale, lost or failed swapchain is
+    /// reconfigured once and asked again, as wgpu 27's own example does
+    /// (`SurfaceWrapper::acquire`, `examples/features/src/framework.rs` at
+    /// v27.0.1). A frame wgpu marks suboptimal is drawn as it is, as there.
+    pub fn acquire_frame(&self) -> Result<Option<wgpu::SurfaceTexture>, wgpu::SurfaceError> {
+        acquire_with_recovery(
+            || self.surface.get_current_texture(),
+            |error| {
+                log::warn!(
+                    "Surface texture: {error}; reconfiguring the surface at {}x{}",
+                    self.config.width,
+                    self.config.height
+                );
+                self.surface.configure(&self.device, &self.config);
+            },
+        )
+    }
+
     /// Create a depth texture matching the current surface dimensions.
     ///
     /// Must be recreated whenever the window is resized (surface dimensions change).
@@ -263,6 +287,40 @@ impl GpuContext {
             view_formats: &[],
         });
         texture.create_view(&Default::default())
+    }
+}
+
+/// One frame acquisition under [`GpuContext::acquire_frame`]'s rule. A
+/// timeout skips the frame. A stale, lost or failed swapchain is reconfigured
+/// once and asked again; still stale or timed out, the frame is skipped, and
+/// any other failure is the caller's error.
+fn acquire_with_recovery<Frame>(
+    mut acquire: impl FnMut() -> Result<Frame, wgpu::SurfaceError>,
+    reconfigure: impl FnOnce(&wgpu::SurfaceError),
+) -> Result<Option<Frame>, wgpu::SurfaceError> {
+    use wgpu::SurfaceError;
+
+    let error = match acquire() {
+        Ok(frame) => return Ok(Some(frame)),
+        Err(error @ SurfaceError::Timeout) => {
+            log::debug!("Surface texture: {error}; skipping this frame");
+            return Ok(None);
+        }
+        Err(
+            error @ (SurfaceError::Outdated
+            | SurfaceError::Lost
+            | SurfaceError::OutOfMemory
+            | SurfaceError::Other),
+        ) => error,
+    };
+    reconfigure(&error);
+    match acquire() {
+        Ok(frame) => Ok(Some(frame)),
+        Err(error @ (SurfaceError::Timeout | SurfaceError::Outdated)) => {
+            log::debug!("Surface texture after reconfiguring: {error}; skipping this frame");
+            Ok(None)
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -315,7 +373,57 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::task::Poll;
 
-    use super::block_on;
+    use wgpu::SurfaceError::{Lost, Outdated, Timeout};
+
+    use super::{acquire_with_recovery, block_on};
+
+    /// Run one acquisition over `results`, the acquire answers in call order;
+    /// returns its outcome and how often it reconfigured the surface.
+    fn acquire_over(
+        results: Vec<Result<u32, wgpu::SurfaceError>>,
+    ) -> (Result<Option<u32>, wgpu::SurfaceError>, u32) {
+        let mut results = results.into_iter();
+        let mut reconfigures = 0;
+        let outcome = acquire_with_recovery(
+            || results.next().expect("acquired more often than scripted"),
+            |_| reconfigures += 1,
+        );
+        assert!(results.next().is_none(), "scripted answers left unasked");
+        (outcome, reconfigures)
+    }
+
+    #[test]
+    fn stale_swapchain_is_reconfigured_and_its_frame_taken() {
+        assert_eq!(acquire_over(vec![Err(Outdated), Ok(7)]), (Ok(Some(7)), 1));
+    }
+
+    #[test]
+    fn lost_swapchain_is_reconfigured_and_its_frame_taken() {
+        assert_eq!(acquire_over(vec![Err(Lost), Ok(7)]), (Ok(Some(7)), 1));
+    }
+
+    #[test]
+    fn timeout_skips_the_frame_without_reconfiguring() {
+        assert_eq!(acquire_over(vec![Err(Timeout)]), (Ok(None), 0));
+    }
+
+    #[test]
+    fn swapchain_still_stale_after_its_reconfigure_skips_the_frame() {
+        assert_eq!(
+            acquire_over(vec![Err(Outdated), Err(Outdated)]),
+            (Ok(None), 1)
+        );
+    }
+
+    #[test]
+    fn surface_still_lost_after_its_reconfigure_is_an_error() {
+        assert_eq!(acquire_over(vec![Err(Lost), Err(Lost)]), (Err(Lost), 1));
+    }
+
+    #[test]
+    fn ready_frame_is_taken_without_reconfiguring() {
+        assert_eq!(acquire_over(vec![Ok(7)]), (Ok(Some(7)), 0));
+    }
 
     #[test]
     fn block_on_sleeps_until_another_thread_wakes_the_future() {

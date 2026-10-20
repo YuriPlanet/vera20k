@@ -48,6 +48,7 @@ use crate::sim::scenario_bootstrap::NativeStartBounds;
 use crate::sim::world::Simulation;
 use crate::sim::{intern::InternedId, rng::SimRng};
 use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, LEPTONS_PER_LEVEL};
+use crate::util::native_random::unit_draw_threshold;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
 #[cfg(test)]
@@ -378,16 +379,12 @@ fn finish_hut_fallback(
 const MAX_HUT_SWEEP_STEPS: usize = 4;
 const MAX_HUT_ATTEMPTS_PER_STEP: usize = 3;
 const NORMALIZED_RNG_MAX_INCLUSIVE: u32 = 0x7FFF_FFFE;
-// Bridge-debris RNG gate boundaries. The original engine compares
-// `(double)draw * scale` against 0.95 / 0.5, where `scale` is the bit-exact
-// double `2^-31 + 2^-61` (NOT `1/2^31`). The tiny `2^-61` term pushes each
-// integer boundary just below the naive `threshold * 2^31`, so a draw landing
-// exactly on the float boundary must FAIL the gate. Gate passes iff
-// `draw < EXCLUSIVE`. Do NOT "simplify" these back to 2^31-scaled values
-// (…466 / 0x4000_0000): the off-by-{2,1} reproduces the float boundary, and a
-// spurious pass spends extra slot draws -> lockstep desync.
-const BRIDGE_DEBRIS_OUTER_GATE_EXCLUSIVE: u32 = 2_040_109_464;
-const BRIDGE_METALLIC_GATE_EXCLUSIVE: u32 = 0x3FFF_FFFF;
+/// A collapsing cell throws debris when its draw passes `[0x007E4F58]`, 0.95
+/// (`0x0047DE5D..0x0047DE72`).
+const BRIDGE_DEBRIS_OUTER_GATE: u32 = unit_draw_threshold(0.95);
+/// The debris adds a MetallicDebris anim when the next draw passes
+/// `[0x007E1738]`, 0.5 (`0x0047DF4C..0x0047DF61`).
+const BRIDGE_METALLIC_GATE: u32 = unit_draw_threshold(0.5);
 // Safety cap on the extent-measurement walk (Phase 1 of the bounded
 // walker). gamemd has no explicit cap — the off-bridge band check
 // terminates the walk — but a runaway count would only happen if the
@@ -852,7 +849,7 @@ fn spawn_bridge_debris(sim: &mut Simulation, rules: &RuleSet, cells: &BTreeSet<(
         let outer_draw = sim
             .bridge_rng()
             .next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE);
-        if outer_draw >= BRIDGE_DEBRIS_OUTER_GATE_EXCLUSIVE {
+        if outer_draw >= BRIDGE_DEBRIS_OUTER_GATE {
             continue;
         }
         // 47DE78..47DEB6 reads signed Cell.Level and adds416 unconditionally,
@@ -867,7 +864,7 @@ fn spawn_bridge_debris(sim: &mut Simulation, rules: &RuleSet, cells: &BTreeSet<(
         let metallic_draw = sim
             .bridge_rng()
             .next_range_u32_inclusive(0, NORMALIZED_RNG_MAX_INCLUSIVE);
-        if metallic_draw < BRIDGE_METALLIC_GATE_EXCLUSIVE && metallic_count > 0 {
+        if metallic_draw < BRIDGE_METALLIC_GATE && metallic_count > 0 {
             let slot = sim.bridge_rng().next_range_u32(metallic_count) as usize;
             let spawn = bridge_anim_spawn(sim.metallic_debris[slot], coord, 0);
             construct_bridge_anim(sim, rules, spawn);
@@ -959,7 +956,7 @@ fn bridge_jittered_coord(rng: &mut SimRng, cell: (i16, i16), z: i32) -> AnimWorl
 /// the deterministic native arithmetic owner for the chained multiply/sub/add;
 /// a host floating-point expression can change the emitted flight coordinate.
 fn bridge_jittered_axis(cell: i16, draw: u32) -> i32 {
-    let scale = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3e00_0000_0040_0000))
+    let scale = X87Chop53::load_f64(crate::util::native_random::RANDOM_RANGED_UNIT_SCALE)
         .expect("finite native normalized random scale");
     let half = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3fe0_0000_0000_0000))
         .expect("finite native one-half");

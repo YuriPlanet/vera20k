@@ -5,7 +5,8 @@
 //! coordinate/timer state as visible crates.
 
 use crate::sim::timer::CdTimer;
-use crate::util::native_x87::{NativeF64Bits, X87Chop53};
+use crate::util::native_random::minutes_timer_frames;
+use crate::util::native_x87::NativeF64Bits;
 
 pub(crate) const CRATE_SLOT_CAPACITY: usize = 256;
 
@@ -114,32 +115,19 @@ impl CrateAuthority {
     }
 }
 
-/// Compute the accepted-slot timer words in the verified x87 expression
-/// direction from `CrateSlot__PlaceOverlayAndInitTimer @ 0x004A17C0`.
+/// Compute the accepted-slot timer words of
+/// `CrateSlot__PlaceOverlayAndInitTimer @ 0x004A17C0`: the duration
+/// [`minutes_timer_frames`] draws from `CrateRegen=`, then
+/// `0x004A18BA..0x004A18C5` store the start frame, the high dword of the
+/// stored upper bound and that duration.
 pub(crate) fn crate_timer_words(
     regen: NativeF64Bits,
     draw: u32,
     current_frame: i32,
 ) -> (i32, u32, i32) {
     debug_assert!(draw <= 0x7fff_fffe);
-    let regen = X87Chop53::load_f64(regen).expect("validated CrateRegen");
-    let lower = X87Chop53::mul(regen, X87Chop53::load_i32(450));
-    let upper = X87Chop53::mul(regen, X87Chop53::load_i32(1800));
-    let fraction = X87Chop53::div(
-        X87Chop53::load_i32(draw as i32),
-        X87Chop53::load_i32(0x7fff_fffe),
-    )
-    .expect("nonzero crate timer divisor");
-    let value = X87Chop53::add(
-        lower,
-        X87Chop53::mul(fraction, X87Chop53::sub(upper, lower)),
-    );
-    let stored_upper = X87Chop53::store_f64(upper).expect("finite CrateRegen upper");
-    // `Math__ftol @ 0x007C5F00` executes masked `FISTP qword`; an
-    // out-of-range conversion stores integer-indefinite i64::MIN. The crate
-    // writer at 0x004A18C5 keeps only EAX, so either-sign overflow becomes 0.
-    let duration = X87Chop53::ftol_i32_low_masked(value);
-    (current_frame, (stored_upper.bits() >> 32) as u32, duration)
+    let (duration, upper) = minutes_timer_frames(regen, draw);
+    (current_frame, (upper.bits() >> 32) as u32, duration)
 }
 
 mod crate_slot_array_serde {
@@ -238,28 +226,31 @@ mod tests {
         );
     }
 
+    /// The words original PlaceOverlayAndInitTimer stores for six CrateRegen
+    /// values and eight draws: the top draw ends one frame short of
+    /// `regen * 1800`, a chopped `7.3 * 450` floors below 3285, and an
+    /// out-of-range FISTP keeps the integer indefinite's low dword 0.
     #[test]
-    fn crate_timer_native_endpoints_and_interior_vector() {
-        let regen = NativeF64Bits::from_bits(3.0_f64.to_bits());
-        assert_eq!(crate_timer_words(regen, 0, -1), (-1, 0x40b5_1800, 1350));
-        assert_eq!(
-            crate_timer_words(regen, 0x7fff_fffe, i32::MIN),
-            (i32::MIN, 0x40b5_1800, 5400)
-        );
-        assert_eq!(
-            crate_timer_words(regen, 0x3fff_ffff, 77),
-            (77, 0x40b5_1800, 3375)
-        );
-    }
-
-    #[test]
-    fn crate_timer_out_of_range_fistp_stores_integer_indefinite_low_dword() {
-        for regen in [1.0e20_f64, -1.0e20_f64] {
-            let (_, _, duration) =
-                crate_timer_words(NativeF64Bits::from_bits(regen.to_bits()), 0x3fff_ffff, 91);
+    fn crate_timer_words_match_the_native_rows() {
+        let corpus = crate::test_fixture::json("tools/unit_draw_oracle.json");
+        let rows = corpus["crate_timer"].as_array().expect("native rows");
+        assert_eq!(rows.len(), 48);
+        let int = |row: &serde_json::Value, key: &str| row[key].as_i64().expect(key);
+        for row in rows {
+            let regen = row["regen"].as_f64().expect("regen");
+            let draw = int(row, "draw") as u32;
             assert_eq!(
-                duration, 0,
-                "masked FISTP qword writes i64::MIN and the native slot keeps low EAX"
+                crate_timer_words(
+                    NativeF64Bits::from_bits(regen.to_bits()),
+                    draw,
+                    int(row, "frame") as i32
+                ),
+                (
+                    int(row, "start_frame") as i32,
+                    int(row, "aux") as u32,
+                    int(row, "duration") as i32
+                ),
+                "CrateRegen {regen}, draw {draw:#x}"
             );
         }
     }

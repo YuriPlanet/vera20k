@@ -346,10 +346,11 @@ fn check_vehicle_transport_trip(mut fx: Fixture, carrier_type: &str, passenger_t
         fx.spawn(passenger_type, 12, 18, 0),
     ];
     for passenger in passengers {
-        assert!(fx.apply(Command::EnterTransport {
-            passenger_id: passenger,
-            transport_id: transport,
-        }));
+        assert!(fx.apply(Command::clicked_mission(
+            passenger,
+            MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(transport)
+        )));
     }
     for _ in 0..600 {
         fx.tick();

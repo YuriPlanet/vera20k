@@ -17,7 +17,7 @@ use crate::map::rmg::x87::{TruncF64, approx_sqrt_f32};
 use crate::util::native_x87::X87Chop53;
 
 use super::area;
-use super::blob::MinHeap;
+use super::blob::{CellHeap, by_key};
 use super::regions::{Regions, RmgRegion};
 use super::zones::{ZoneField, diamond_frame_contains};
 
@@ -449,12 +449,12 @@ fn clearing_floods(ctx: &mut StartsCtx<'_>, args: &StartsArgs, outcome: &StartsO
         };
         let seed = (i32::from(seed.0), i32::from(seed.1));
         ctx.scratch.get_mut(seed.0, seed.1).stamp = marker;
-        let mut heap = MinHeap::new(CLEARING_HEAP_CAP);
-        heap.push(0.0, seed);
+        let mut heap = CellHeap::new(CLEARING_HEAP_CAP);
+        heap.push((0.0, seed), by_key);
 
         let mut pops = 0;
         while pops < CLEARING_POP_CAP {
-            let Some((_, (x, y))) = heap.pop() else {
+            let Some((_, (x, y))) = heap.pop(by_key) else {
                 break;
             };
             pops += 1;
@@ -479,7 +479,7 @@ fn clearing_floods(ctx: &mut StartsCtx<'_>, args: &StartsArgs, outcome: &StartsO
                 // The stamp is taken even when the heap is full and drops
                 // the node.
                 ctx.scratch.get_mut(nx, ny).stamp = marker;
-                heap.push(key, (nx, ny));
+                heap.push((key, (nx, ny)), by_key);
             }
         }
     }

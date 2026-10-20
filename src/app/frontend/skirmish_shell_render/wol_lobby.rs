@@ -61,7 +61,7 @@ pub(super) fn label(state: &AppState, key: &str) -> String {
 }
 
 /// A PCX of the lobby art centred vertically in `rect`, `x` columns in.
-fn push_icon(
+pub(super) fn push_icon(
     out: &mut Vec<SpriteInstance>,
     art: &WolPageArt,
     file: &str,

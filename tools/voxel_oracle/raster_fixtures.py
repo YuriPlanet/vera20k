@@ -104,7 +104,35 @@ def generate():
     assert seen_reverse, 'fixture must exercise native backward encoded traversal'
     assert seen_unstable, 'fixture must exercise indirectly reversed equal-depth section ties'
     assert seen_zero_erase, 'fixture must exercise zero result erasing an earlier visible pixel'
+    models += use_buffer_models(camera)
     return {'source': 'unicorn/gamemd.exe', 'models': models}
+
+
+def use_buffer_models(camera):
+    """The same four models with 0xB43180 set, as for a UseBuffer=yes type."""
+    models, seen = [], set()
+    for name, reverse, no_hva, long_hull in (
+            ('ordinary_sections', False, False, False),
+            ('tilted_reverse', True, False, False),
+            ('no_hva_ignores_tailer_transform', False, True, False),
+            ('long_sections', False, False, True)):
+        vxl, hva, vpl = test_files(reverse, no_hva, long_hull)
+        cases = []
+        for step in (0, 3, 12, 20):
+            result = render_native(vxl, hva, vpl, native_multiply(camera, native_facing(step)),
+                                   use_buffer=True)
+            seen.update(p['entry'] for p in result['raster_params'])
+            tests = result['depth_tests']
+            seen.update(key for key in ('reject', 'tie') if tests[key])
+            if result['write_counts']['zero_erases_nonzero']:
+                seen.add('zero_erase')
+            cases.append({'step': step, **result})
+        models.append({'name': f'{name}_use_buffer', 'use_buffer': True, 'vxl': vxl.hex(),
+                       'hva': hva.hex() if hva is not None else None,
+                       'vpl': vpl.hex(), 'cases': cases})
+    missing = {0x757980, 0x757bf0, 'reject', 'tie', 'zero_erase'} - seen
+    assert not missing, f'UseBuffer fixture must exercise {missing}'
+    return models
 
 
 def bullet_flights(root):
@@ -344,7 +372,7 @@ elif __name__ == '__main__' and '--bullet' in sys.argv:
                    provenance=bullet_metadata, argv=args)
 elif __name__ == '__main__':
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(
-        scope='Four synthetic VXL models at eight facings: ordinary/reverse-Z, no HVA and long bounds; full native buffers and metadata',
+        scope='Four synthetic VXL models at eight facings: ordinary/reverse-Z, no HVA and long bounds; full native buffers and metadata. The same models at four facings with UseBuffer (0xB43180) set: reversed section order and the depth-tested leaves, with their depth maps',
         assumptions=[
             'original x87 0E7F and original startup camera/light/viewer initializers',
             'immutable generated VXL/HVA/VPL files, normal mode 4, frame zero, unmirrored opaque Render core',
@@ -352,9 +380,11 @@ elif __name__ == '__main__':
             'native loader, normal loop, bounding corners, section exchange sort and both 7DF9C0/7DFAE0 execute',
             'zero VPL output, raw run/skip/duplicate grouping, unequal limb scales and empty section are intentional test inputs',
             'no-HVA model carries nonidentity tailer transforms and ten empty prefix runs in one section',
+            'UseBuffer models write 0xB43180 = 1 after the Init_Game slice zeroes it, as 706ED0 does at 706F12; 753E00 then clears the depth map 0xB1D5E0 itself, and its contents after the draw are recorded',
         ],
         substitutions=['file vtable open/read/seek/close over bounded immutable input bytes',
                        'operator new returns distinct mapped emulator heap allocations'],
         entry_points={'vxl_loader': 0x755DB0, 'hva_loader': 0x5BD5C0, 'hva_scale': 0x5BD730,
                       'submit_box': 0x7540F0, 'sort_rasterize': 0x754510,
-                      'section_prepare': 0x756590, 'forward': 0x7DF9C0, 'backward': 0x7DFAE0}))
+                      'section_prepare': 0x756590, 'forward': 0x7DF9C0, 'backward': 0x7DFAE0,
+                      'use_buffer_forward': 0x757980, 'use_buffer_backward': 0x757BF0}))

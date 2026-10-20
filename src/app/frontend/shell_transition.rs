@@ -62,6 +62,8 @@ pub(crate) enum ShellSlideKind {
     LoadSavedGame,
     /// Dialog 0xD5 — launcher Options.
     Options,
+    /// VERA's own page of `0xD5`: VERA's controls, with Back in the column.
+    VeraOptions,
     /// Dialog 0x10E — Westwood Online welcome.
     WolWelcome,
     /// Dialog 0x10F — Westwood Online login.
@@ -76,6 +78,10 @@ pub(crate) enum ShellSlideKind {
     WolAutoLoginQuery,
     /// Dialog 0xFE — the WOL locale page during the connect.
     WolLocale,
+    /// Dialog 0x114 — WOL My Information.
+    WolMyInformation,
+    /// Dialog 0x116 — the WOL Buddy List.
+    WolBuddyList,
     /// Dialog 0xA3 — Options' Keyboard page (front-end parent only).
     Keyboard,
     /// Dialog D7, Options' Network child.
@@ -106,7 +112,7 @@ impl ShellSlideKind {
             ShellSlideKind::Skirmish => 0x0102,
             ShellSlideKind::Campaign => 0x0094,
             ShellSlideKind::LoadSavedGame => 0x00B7,
-            ShellSlideKind::Options => 0x00D5,
+            ShellSlideKind::Options | ShellSlideKind::VeraOptions => 0x00D5,
             ShellSlideKind::WolWelcome => 0x010E,
             ShellSlideKind::WolLogin => 0x010F,
             ShellSlideKind::WolLobby => 0x0113,
@@ -114,6 +120,8 @@ impl ShellSlideKind {
             ShellSlideKind::WolSoundOptions => 0x00D6,
             ShellSlideKind::WolAutoLoginQuery => 0x0112,
             ShellSlideKind::WolLocale => 0x00FE,
+            ShellSlideKind::WolMyInformation => 0x0114,
+            ShellSlideKind::WolBuddyList => 0x0116,
             ShellSlideKind::Keyboard => 0x00A3,
             ShellSlideKind::NetworkOptions => 0x00D7,
             ShellSlideKind::LanLobby => 0xBB,
@@ -127,11 +135,30 @@ impl ShellSlideKind {
 
     /// The dialog's slide column with the panel's `rows` tile rows. Every
     /// rendered shell has a `slide` table entry, so a miss is a programming
-    /// error.
+    /// error. Options' two pages adjust `0xD5`'s retail column to VERA's
+    /// buttons: the main page slides VERA20K Options under Network too, and
+    /// VERA's page has only Back, as on the Keyboard page `0xA3`.
     pub(crate) fn column(self, rows: u32) -> SlideColumn {
-        crate::ui::shell::slide::slide_spec_for(self.dialog_id())
-            .expect("rendered shell dialog must have a slide column")
-            .column(rows)
+        let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
+            .expect("rendered shell dialog must have a slide column");
+        let top_buttons = match self {
+            ShellSlideKind::Options => spec.top_buttons + 1,
+            ShellSlideKind::VeraOptions => 0,
+            _ => spec.top_buttons,
+        };
+        crate::ui::shell::slide::SlideDialogSpec {
+            top_buttons,
+            ..spec
+        }
+        .column(rows)
+    }
+
+    /// The kind of the Options page that shows.
+    pub(crate) fn options_page(page: crate::ui::main_menu_dialogs::options::OptionsPage) -> Self {
+        match page {
+            crate::ui::main_menu_dialogs::options::OptionsPage::Main => ShellSlideKind::Options,
+            crate::ui::main_menu_dialogs::options::OptionsPage::Vera => ShellSlideKind::VeraOptions,
+        }
     }
 }
 
@@ -181,6 +208,9 @@ pub(crate) enum ShellExitThen {
     /// commits and writes (Main Menu `0x5CB`; state 0x12 recreates `0xE2`) or
     /// commits and runs the Keyboard page (`0x5CE`).
     Options(crate::ui::main_menu_dialogs::options::LauncherParentResult),
+    /// VERA's page switch: the other Options page slides out, then this page
+    /// shows and slides in. Nothing is applied or saved.
+    OptionsPage(crate::ui::main_menu_dialogs::options::OptionsPage),
     /// Keyboard `0xA3` Back or Cancel: `0x005FBEF0` tears it down with its
     /// slide, then the bindings save or reload and a new `0xD5` is built.
     KeyboardClose(crate::app::input::keyboard::KeyboardExit),
@@ -229,6 +259,9 @@ pub(crate) enum ShellExitThen {
     WolLoginClose(u16),
     /// `0x113` Back (`0x686`): the runner leaves its channel and returns 0.
     WolLobbyBack,
+    /// `0x113` Buddy List (`0x689`): the runner ends as for Back, with mode
+    /// 5 and return mode 4.
+    WolLobbyBuddy,
     /// A game join was requested (`0x0078C281`): `0x113` slides out and hides.
     WolLobbyHide,
     /// The create succeeded: `0x113` slides out and hides, then C2 opens.
@@ -247,6 +280,10 @@ pub(crate) enum ShellExitThen {
     WolAutoLoginClose(crate::ui::wol_persona::AutoLoginAnswer),
     /// `0xFE` closed with the chosen locale (0 for Cancel or none).
     WolLocaleClose(i32),
+    /// `0x114` closed with this button.
+    WolMyInformationClose(u16),
+    /// `0x116` ended with Create, Join or Back.
+    WolBuddyClose(u16),
 }
 
 impl ShellExitThen {
@@ -261,6 +298,13 @@ impl ShellExitThen {
             Self::CampaignBack | Self::CampaignStart(_) => ShellSlideKind::Campaign,
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
             Self::Options(_) => ShellSlideKind::Options,
+            // The page that slides out is the other one.
+            Self::OptionsPage(crate::ui::main_menu_dialogs::options::OptionsPage::Vera) => {
+                ShellSlideKind::Options
+            }
+            Self::OptionsPage(crate::ui::main_menu_dialogs::options::OptionsPage::Main) => {
+                ShellSlideKind::VeraOptions
+            }
             Self::KeyboardClose(_) => ShellSlideKind::Keyboard,
             Self::NetworkOptionsClose => ShellSlideKind::NetworkOptions,
             Self::LanBack | Self::LanCreate { .. } | Self::LanJoinAccepted(_) => {
@@ -277,6 +321,7 @@ impl ShellExitThen {
             Self::WolBack | Self::WolAction(_) => ShellSlideKind::WolWelcome,
             Self::WolLoginClose(_) => ShellSlideKind::WolLogin,
             Self::WolLobbyBack
+            | Self::WolLobbyBuddy
             | Self::WolLobbyHide
             | Self::WolCreateAccepted { .. }
             | Self::WolOptionsOpen => ShellSlideKind::WolLobby,
@@ -284,6 +329,8 @@ impl ShellExitThen {
             Self::WolSoundOptionsBack => ShellSlideKind::WolSoundOptions,
             Self::WolAutoLoginClose(_) => ShellSlideKind::WolAutoLoginQuery,
             Self::WolLocaleClose(_) => ShellSlideKind::WolLocale,
+            Self::WolMyInformationClose(_) => ShellSlideKind::WolMyInformation,
+            Self::WolBuddyClose(_) => ShellSlideKind::WolBuddyList,
             Self::ScoreContinue => ShellSlideKind::Score,
             Self::CampaignScoreContinue => ShellSlideKind::CampaignScore,
         }
@@ -554,6 +601,7 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::Campaign
             | ShellSlideKind::LoadSavedGame
             | ShellSlideKind::Options
+            | ShellSlideKind::VeraOptions
             | ShellSlideKind::WolWelcome
             | ShellSlideKind::WolLogin
             | ShellSlideKind::WolLobby
@@ -561,6 +609,8 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::WolSoundOptions
             | ShellSlideKind::WolAutoLoginQuery
             | ShellSlideKind::WolLocale
+            | ShellSlideKind::WolMyInformation
+            | ShellSlideKind::WolBuddyList
             | ShellSlideKind::Keyboard
             | ShellSlideKind::NetworkOptions
             | ShellSlideKind::LanLobby => ShellWaveCompletion::MenuPage,
@@ -748,10 +798,10 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
         return None;
     }
     // Only the native page slides; the assetless fallback does not.
-    if state.frontend.options_dialog.is_some() {
+    if let Some(dialog) = state.frontend.options_dialog.as_ref() {
         return (crate::app::App::native_launcher_options_active(state)
             && crate::ui::shell::slide::is_slide_eligible(ShellSlideKind::Options.dialog_id()))
-        .then_some(ShellSlideKind::Options);
+        .then_some(ShellSlideKind::options_page(dialog.page()));
     }
     let candidate = if state.frontend.shell_route.skirmish() {
         skirmish_slide_target(&state.frontend.skirmish_shell_state)?
@@ -788,6 +838,10 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
                 ShellSlideKind::WolAutoLoginQuery
             }
             Some(crate::app::shell_wol::WolPage::Locale(_)) => ShellSlideKind::WolLocale,
+            Some(crate::app::shell_wol::WolPage::MyInformation(_)) => {
+                ShellSlideKind::WolMyInformation
+            }
+            Some(crate::app::shell_wol::WolPage::Buddy(_)) => ShellSlideKind::WolBuddyList,
             _ => return None,
         }
     } else if state.frontend.shell_route.wol_lobby() {
@@ -1000,10 +1054,12 @@ pub(crate) fn render_shell_first_paint_slide(
         | ShellSlideKind::WolOptions
         | ShellSlideKind::WolSoundOptions
         | ShellSlideKind::WolAutoLoginQuery
-        | ShellSlideKind::WolLocale => {
+        | ShellSlideKind::WolLocale
+        | ShellSlideKind::WolMyInformation
+        | ShellSlideKind::WolBuddyList => {
             crate::app::frontend::wol_welcome_render::render_wol_page(state, encoder, destination)?
         }
-        ShellSlideKind::Options => {
+        ShellSlideKind::Options | ShellSlideKind::VeraOptions => {
             crate::app::App::native_launcher_options_active(state) && {
                 crate::app::frontend::skirmish_shell_render::render_launcher_options(
                     state,
@@ -1355,6 +1411,19 @@ mod tests {
         );
         assert_eq!(top_and_bottom(ShellSlideKind::MovieList), (1, true, false));
         assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (2, true, true));
+        // Retail `0xD5` slides Keyboard and Network; VERA's main page adds
+        // VERA20K Options under them, and VERA's page slides only Back.
+        assert_eq!(
+            crate::ui::shell::slide::slide_spec_for(DialogId(0x00D5))
+                .unwrap()
+                .top_buttons,
+            2
+        );
+        assert_eq!(top_and_bottom(ShellSlideKind::Options), (3, true, false));
+        assert_eq!(
+            top_and_bottom(ShellSlideKind::VeraOptions),
+            (0, true, false)
+        );
     }
 
     #[test]
