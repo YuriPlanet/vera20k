@@ -764,6 +764,16 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "sidebar_cameo", &sidebar.cameo);
     pool.upload(
         &state.renderer.gpu,
+        "sidebar_cameo_caption_fill",
+        &sidebar.cameo_caption_fill,
+    );
+    pool.upload(
+        &state.renderer.gpu,
+        "sidebar_cameo_caption_text",
+        &sidebar.cameo_caption_text,
+    );
+    pool.upload(
+        &state.renderer.gpu,
         "sidebar_unavailable",
         &sidebar.unavailable,
     );

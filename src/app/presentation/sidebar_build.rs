@@ -470,11 +470,41 @@ pub(crate) fn build_gclock_instance(
 #[derive(Default)]
 pub(crate) struct SidebarCameoInstances {
     pub cameo: Vec<SpriteInstance>,
+    pub caption_fill: Vec<SpriteInstance>,
+    pub caption_text: Vec<SpriteInstance>,
     pub unavailable: Vec<SpriteInstance>,
     pub flash: Vec<SpriteInstance>,
     pub gclock: Vec<SpriteInstance>,
     pub queue_overlay: Vec<SpriteInstance>,
     pub overlay: Vec<SpriteInstance>,
+}
+
+/// The retail image includes its own name pixels. The ordinary Chinese Apple
+/// client replaces only that bottom band; the rest of the cameo stays intact.
+/// Measure before drawing so even a long CSF name fits the actual HUD slot.
+fn cameo_caption_layout(
+    font: &crate::render::bit_font::BitFont,
+    name: &str,
+    slot: Rect,
+) -> Option<(Rect, [f32; 2], f32)> {
+    if slot.w <= 0.0 || slot.h <= 0.0 || name.trim().is_empty() {
+        return None;
+    }
+    let band = Rect {
+        x: slot.x,
+        y: slot.y + slot.h * 0.75,
+        w: slot.w,
+        h: slot.h * 0.25,
+    };
+    let margin = (slot.w / 60.0).min(slot.w * 0.25);
+    let width = font.text_width(name).max(1) as f32;
+    let scale =
+        ((slot.h * 9.0 / 48.0) / font.glyph_height().max(1.0)).min((band.w - 2.0 * margin) / width);
+    let origin = [
+        band.x + (band.w - width * scale) * 0.5,
+        band.y + (band.h - font.glyph_height() * scale) * 0.5,
+    ];
+    Some((band, origin, scale))
 }
 
 /// Original shape point is the cameo top-left; the caller clips at +60/+48
@@ -521,6 +551,8 @@ pub(crate) fn build_sidebar_cameo_instances(
         return SidebarCameoInstances::default();
     };
     let mut instances = Vec::new();
+    let mut caption_fill = Vec::new();
+    let mut caption_text = Vec::new();
     let mut gclock_instances = Vec::new();
     let mut overlay_instances = Vec::new();
     let mut queue_overlay = Vec::new();
@@ -557,6 +589,30 @@ pub(crate) fn build_sidebar_cameo_instances(
             alpha: 1.0,
             ..Default::default()
         });
+        if crate::app::chinese_ui::enabled(state.platform.capture_client_size.is_some())
+            && let Some((band, origin, scale)) =
+                cameo_caption_layout(&state.renderer.bit_font, &item.display_name, slot)
+        {
+            caption_fill.push(SpriteInstance {
+                position: [band.x + co[0], band.y + co[1]],
+                size: [band.w, band.h],
+                uv_origin: [0.0; 2],
+                uv_size: [1.0; 2],
+                depth: 0.000439,
+                tint: [0.015, 0.02, 0.025],
+                alpha: 1.0,
+                ..Default::default()
+            });
+            caption_text.extend(state.renderer.bit_font.build_text(
+                &item.display_name,
+                origin[0],
+                origin[1],
+                scale,
+                0.000438,
+                [1.0; 3],
+                co,
+            ));
+        }
         if shows_build_clock(item)
             && let Some(instance) = build_gclock_instance(gclock_frames, item.progress, slot, co)
         {
@@ -635,6 +691,8 @@ pub(crate) fn build_sidebar_cameo_instances(
     }
     SidebarCameoInstances {
         cameo: instances,
+        caption_fill,
+        caption_text,
         unavailable,
         flash,
         gclock: gclock_instances,
@@ -728,9 +786,62 @@ pub(crate) fn build_sidebar_text_instances(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_gclock_instance, place_canvas_crop_in_slot};
+    use super::{build_gclock_instance, cameo_caption_layout, place_canvas_crop_in_slot};
     use crate::render::sidebar_chrome::SidebarChromeEntry;
     use crate::ui::sidebar::Rect;
+
+    #[test]
+    fn localized_cameo_name_band_tracks_standard_wide_and_fractional_slots() {
+        let name = "矿石精炼厂";
+        let chars: Vec<_> = name.chars().map(|ch| (ch as u16, 16)).collect();
+        let font = crate::render::bit_font::tests::make_test_font(&chars, 8);
+        for (w, h) in [(60.0, 48.0), (120.0, 96.0), (93.75, 75.0)] {
+            let slot = Rect {
+                x: 37.25,
+                y: 80.5,
+                w,
+                h,
+            };
+            let (band, origin, scale) = cameo_caption_layout(&font, name, slot).unwrap();
+            assert_eq!(band.x, slot.x);
+            assert_eq!(band.w, slot.w);
+            assert!((band.y + band.h - slot.y - slot.h).abs() < 0.001);
+            let glyphs =
+                font.build_text(name, origin[0], origin[1], scale, 0.0, [1.0; 3], [0.0; 2]);
+            assert_eq!(glyphs.len(), name.chars().count());
+            for glyph in glyphs {
+                assert!(glyph.position[0] >= band.x);
+                assert!(glyph.position[1] >= band.y);
+                assert!(glyph.position[0] + glyph.size[0] <= band.x + band.w + 0.001);
+                assert!(glyph.position[1] + glyph.size[1] <= band.y + band.h + 0.001);
+            }
+        }
+    }
+
+    #[test]
+    fn localized_long_cameo_names_fit_without_covering_neighboring_icons() {
+        let name = "盟军超时空矿石采集精炼设施".repeat(4);
+        let chars: Vec<_> = name.chars().map(|ch| (ch as u16, 16)).collect();
+        let font = crate::render::bit_font::tests::make_test_font(&chars, 8);
+        let slot = Rect {
+            x: 100.0,
+            y: 50.0,
+            w: 60.0,
+            h: 48.0,
+        };
+        let (band, origin, scale) = cameo_caption_layout(&font, &name, slot).unwrap();
+        let glyphs = font.build_text(&name, origin[0], origin[1], scale, 0.0, [1.0; 3], [0.0; 2]);
+        assert_eq!(glyphs.len(), name.chars().count());
+        assert!(scale > 0.0 && scale < 0.1);
+        for glyph in glyphs {
+            assert!(glyph.position[0] >= band.x);
+            assert!(glyph.position[0] + glyph.size[0] <= band.x + band.w + 0.001);
+            assert!(glyph.position[1] >= band.y);
+            assert!(glyph.position[1] + glyph.size[1] <= band.y + band.h + 0.001);
+        }
+        assert!(cameo_caption_layout(&font, " ", slot).is_none());
+        assert!(cameo_caption_layout(&font, &name, Rect { w: 0.0, ..slot }).is_none());
+    }
 
     #[test]
     fn test_canvas_crop_uses_shared_rounded_edges_with_camera_cancellation() {

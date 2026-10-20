@@ -97,6 +97,17 @@ fn draw_sidebar_surface(
             .map(|atlas| &atlas.texture),
         "sidebar_cameo",
     );
+    // Localized names replace the bitmap's bottom caption before the existing
+    // unavailable/flash/clock operations, so those operations shade both the
+    // original picture and its translated name in their established order.
+    draw(
+        Some(&renderer.status_screen_fill),
+        "sidebar_cameo_caption_fill",
+    );
+    draw(
+        Some(renderer.bit_font.atlas()),
+        "sidebar_cameo_caption_text",
+    );
     drop(pass);
 
     // Original StripDraw: icon6A9A3E -> unavailable4016A9B46 -> flash404
@@ -1178,6 +1189,8 @@ mod tests {
     fn gsi_04_01_retained_sidebar_radar_subpass_ends_with_content_boundary() {
         let chrome = source_offset("\"sidebar_chrome\"");
         let cameo = source_offset("\"sidebar_cameo\"");
+        let cameo_caption_fill = source_offset("\"sidebar_cameo_caption_fill\"");
+        let cameo_caption_text = source_offset("\"sidebar_cameo_caption_text\"");
         let gclock = source_offset("\"sidebar_gclock\"");
         let unavailable = source_offset("\"sidebar_unavailable\"");
         let flash = source_offset("\"sidebar_flash\"");
@@ -1192,7 +1205,9 @@ mod tests {
         let message = source_offset("\"message_text\"");
 
         assert!(chrome < cameo);
-        assert!(cameo < unavailable);
+        assert!(cameo < cameo_caption_fill);
+        assert!(cameo_caption_fill < cameo_caption_text);
+        assert!(cameo_caption_text < unavailable);
         assert!(unavailable < flash);
         assert!(flash < queue_fill);
         assert!(queue_fill < queue_text);

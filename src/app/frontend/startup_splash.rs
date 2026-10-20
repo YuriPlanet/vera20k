@@ -132,7 +132,55 @@ impl VisibleHold {
 pub(crate) struct StartupSplashPresentation {
     texture: BatchTexture,
     instance_buffer: wgpu::Buffer,
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    projection: BrandedSplashProjection,
     hold: VisibleHold,
+}
+
+/// The texture is composed once, but UIKit/macOS may finish resizing the
+/// client after that first present. Only project its artwork, not its cached
+/// black canvas margins, into the current viewport.
+#[cfg(any(target_os = "ios", target_os = "macos", test))]
+#[derive(Clone, Copy)]
+struct BrandedSplashProjection {
+    canvas: [u32; 2],
+    viewport: [u32; 2],
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos", test))]
+impl BrandedSplashProjection {
+    fn instance(self) -> SpriteInstance {
+        let source = branded_art_rect(self.canvas[0], self.canvas[1]);
+        let height = (self.viewport[1] as f32).min(self.viewport[0] as f32 * 0.75);
+        let size = [height * 4.0 / 3.0, height];
+        SpriteInstance {
+            position: [
+                (self.viewport[0] as f32 - size[0]) * 0.5,
+                (self.viewport[1] as f32 - size[1]) * 0.5,
+            ],
+            size,
+            uv_origin: [
+                source.x as f32 / self.canvas[0] as f32,
+                source.y as f32 / self.canvas[1] as f32,
+            ],
+            uv_size: [
+                source.w as f32 / self.canvas[0] as f32,
+                source.h as f32 / self.canvas[1] as f32,
+            ],
+            depth: 0.0,
+            tint: [1.0; 3],
+            alpha: 1.0,
+            ..Default::default()
+        }
+    }
+
+    fn resize(&mut self, viewport: [u32; 2]) -> Option<SpriteInstance> {
+        if viewport.contains(&0) || self.viewport == viewport {
+            return None;
+        }
+        self.viewport = viewport;
+        Some(self.instance())
+    }
 }
 
 impl StartupSplashPresentation {
@@ -154,7 +202,7 @@ impl StartupSplashPresentation {
         #[cfg(not(any(target_os = "ios", target_os = "macos")))]
         let ([width, height], placement) = splash_placement(client_width, client_height);
         #[cfg(any(target_os = "ios", target_os = "macos"))]
-        let ([width, height], placement) = branded_splash_placement(client_width, client_height);
+        let ([width, height], _) = branded_splash_placement(client_width, client_height);
         #[cfg(not(any(target_os = "ios", target_os = "macos")))]
         let rgba = compose_startup_splash(
             assets,
@@ -172,6 +220,7 @@ impl StartupSplashPresentation {
             compose_branded_startup_splash(csf, font, width, height)?
         };
         let texture = batch.create_texture(gpu, &rgba, width, height);
+        #[cfg(not(any(target_os = "ios", target_os = "macos")))]
         let instance = SpriteInstance {
             position: [placement.x as f32, placement.y as f32],
             size: [placement.w as f32, placement.h as f32],
@@ -182,6 +231,13 @@ impl StartupSplashPresentation {
             alpha: 1.0,
             ..Default::default()
         };
+        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        let projection = BrandedSplashProjection {
+            canvas: [width, height],
+            viewport: [client_width, client_height],
+        };
+        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        let instance = projection.instance();
         let (instance_buffer, count) = batch
             .create_instance_buffer(gpu, &[instance])
             .context("create startup splash instance buffer")?;
@@ -190,8 +246,27 @@ impl StartupSplashPresentation {
         Ok(Self {
             texture,
             instance_buffer,
+            #[cfg(any(target_os = "ios", target_os = "macos"))]
+            projection,
             hold: VisibleHold::default(),
         })
+    }
+
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    pub(crate) fn resize(&mut self, gpu: &GpuContext, batch: &BatchRenderer) -> Result<()> {
+        if !self.is_active(Instant::now()) {
+            return Ok(());
+        }
+        let mut projection = self.projection;
+        let Some(instance) = projection.resize([gpu.config.width, gpu.config.height]) else {
+            return Ok(());
+        };
+        let (buffer, _) = batch
+            .create_instance_buffer(gpu, &[instance])
+            .context("refit active startup splash to viewport")?;
+        self.instance_buffer = buffer;
+        self.projection = projection;
+        Ok(())
     }
 
     pub(crate) fn mark_presented(&mut self, now: Instant) {
@@ -302,6 +377,18 @@ fn branded_splash_placement(width: u32, height: u32) -> ([u32; 2], RectPx) {
     (
         [columns, rows],
         RectPx::new(0, 0, width as i32, height as i32),
+    )
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos", test))]
+fn branded_art_rect(width: u32, height: u32) -> RectPx {
+    let art_width = (height * 4 / 3).min(width);
+    let art_height = art_width * 3 / 4;
+    RectPx::new(
+        ((width - art_width) / 2) as i32,
+        ((height - art_height) / 2) as i32,
+        art_width as i32,
+        art_height as i32,
     )
 }
 
@@ -471,10 +558,9 @@ fn compose_branded_startup_splash(
     let mut rasterize = |codepoint, width| rasterizer.glyph(codepoint, width);
     #[cfg(not(any(target_os = "ios", target_os = "macos")))]
     let mut rasterize = |_, _| None;
-    let art_width = (height * 4 / 3).min(width);
-    let art_height = art_width * 3 / 4;
-    let art_x = (width - art_width) / 2;
-    let art_y = (height - art_height) / 2;
+    let art = branded_art_rect(width, height);
+    let (art_x, art_y, art_width, art_height) =
+        (art.x as u32, art.y as u32, art.w as u32, art.h as u32);
     let column_width = art_width.saturating_sub(40) / 2;
     let disclaimer = wrap_footer_lines(font, &WERHD_DISCLAIMER, column_width, ROWS);
     // At 640x480 keep the right block below the green URL wordmark: two
@@ -523,7 +609,7 @@ fn compose_branded_startup_splash(
             source_over_rgba(&mut canvas[offset..offset + 4], &[0, 0, 0, alpha]);
         }
     }
-    let loading = csf_text(csf, LOADING_KEY, LOADING_FALLBACK);
+    let loading = branded_loading_text(csf);
     draw_text_with_rasterizer(
         &mut canvas,
         width as usize,
@@ -588,6 +674,13 @@ fn compose_branded_startup_splash(
         }
     }
     Ok(canvas)
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos", test))]
+fn branded_loading_text(csf: Option<&CsfFile>) -> &str {
+    csf.and_then(|table| table.get(LOADING_KEY))
+        .filter(|text| !text.trim().is_empty())
+        .unwrap_or("加载中…")
 }
 
 #[cfg(any(target_os = "ios", target_os = "macos", test))]
@@ -1058,6 +1151,61 @@ mod tests {
             );
             assert!(columns >= rows * 4 / 3);
         }
+    }
+
+    #[test]
+    fn active_branded_projection_follows_late_viewport_height_without_stretching_art() {
+        // Reproduce a client that gains 32 displayed rows after splash build.
+        // The cached canvas and footer survive; only its GPU quad is refitted.
+        let (canvas, _) = branded_splash_placement(1448, 636);
+        let mut projection = BrandedSplashProjection {
+            canvas,
+            viewport: [1448, 636],
+        };
+        let initial = projection.instance();
+        assert_eq!(initial.position[1], 0.0);
+        assert_eq!(initial.size[1], 636.0);
+        let resized = projection.resize([1448, 668]).unwrap();
+        assert_eq!(resized.position[1], 0.0);
+        assert_eq!(resized.size[1], 668.0);
+        assert!((resized.size[0] / resized.size[1] - 4.0 / 3.0).abs() < 0.00001);
+        assert_eq!(resized.uv_origin, initial.uv_origin);
+        assert_eq!(resized.uv_size, initial.uv_size);
+        assert_eq!(resized.uv_origin[1], 0.0);
+        assert_eq!(resized.uv_size[1], 1.0);
+        assert!(
+            resized.uv_origin[0] > 0.0,
+            "cached canvas side bars are excluded"
+        );
+        assert!(resized.uv_size[0] < 1.0);
+        assert!(projection.resize([1448, 668]).is_none());
+        assert!(projection.resize([1448, 0]).is_none());
+        assert_eq!(projection.viewport, [1448, 668]);
+
+        // A desktop resize through a narrower-than-4:3 viewport still fits the
+        // entire same artwork and its footer, instead of cropping either one.
+        let narrow = projection.resize([600, 800]).unwrap();
+        assert_eq!(narrow.position, [0.0, 175.0]);
+        assert_eq!(narrow.size, [600.0, 450.0]);
+        let wide = projection.resize([1600, 900]).unwrap();
+        assert_eq!(wide.position, [200.0, 0.0]);
+        assert_eq!(wide.size, [1200.0, 900.0]);
+    }
+
+    #[test]
+    fn branded_loading_label_keeps_localization_and_has_no_missing_key_placeholder() {
+        use crate::assets::csf_file::test_csf;
+        let missing = test_csf(&[("UNRELATED", "text")]);
+        let empty = test_csf(&[(LOADING_KEY, "  ")]);
+        let translated = test_csf(&[(LOADING_KEY, "正在加载……")]);
+        assert_eq!(branded_loading_text(None), "加载中…");
+        assert_eq!(branded_loading_text(Some(&missing)), "加载中…");
+        assert_eq!(branded_loading_text(Some(&empty)), "加载中…");
+        assert_eq!(branded_loading_text(Some(&translated)), "正在加载……");
+        assert_eq!(
+            csf_text(Some(&missing), LOADING_KEY, LOADING_FALLBACK),
+            "MISSING:'GUI:LoadingEx'"
+        );
     }
 
     #[test]

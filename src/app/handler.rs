@@ -66,6 +66,12 @@ impl App {
             .renderer
             .shell_surface_presenter
             .resize(&state.renderer.gpu);
+        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        if let Some(splash) = state.frontend.startup_splash.as_mut()
+            && let Err(err) = splash.resize(&state.renderer.gpu, &state.renderer.batch_renderer)
+        {
+            log::warn!("Could not refit startup splash: {err:#}");
+        }
         // The frame-index wave is driven by wall-clock ticks and repaints every
         // frame, so a mid-flight resize simply lets it finish; no snap/cancel.
         Self::invalidate_main_menu_movie_if_base_changed(state);
