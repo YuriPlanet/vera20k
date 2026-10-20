@@ -100,7 +100,7 @@ fn latch(sim: &Simulation, id: u64) -> bool {
 }
 
 fn tick(sim: &mut Simulation, rules: &RuleSet) {
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.advance_tick(&[], Some(rules), None, None, TICK_MS);
 }
 
@@ -263,7 +263,7 @@ fn voice_precedes_turret_controls_and_each_control_reaches_its_native_boundary()
     let (mut sim, rules, id) = scene("GTGCAN");
     begin_rotation(&mut sim, &rules, id);
     sim.prepare_unit_voice_visits([id].into());
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     let boundary = TurretBoundary {
         delivered: Cell::new(0),
         batches: RefCell::default(),
@@ -285,7 +285,7 @@ fn voice_precedes_turret_controls_and_each_control_reaches_its_native_boundary()
     );
     assert!(!latch(&sim, id));
 
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     boundary.delivered.set(0);
     boundary.batches.borrow_mut().clear();
     let release = TurretBoundary {
@@ -355,7 +355,7 @@ fn turret_rotate_sound_matches_native_control_corpus() {
             .set_for_test(history["initial_latch"].as_bool().unwrap());
         for visit in history["visits"].as_array().unwrap() {
             let prior = latch(&sim, id);
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
             let boundary = TurretBoundary {
                 delivered: Cell::new(0),
                 batches: RefCell::default(),
@@ -422,7 +422,7 @@ fn turret_rotate_sound_matches_native_control_corpus() {
             }
         }
         let prior = latch(&sim, id);
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.turret_rotate_sound_limbo(id, FrameEffects::default(), Some(&rules));
         assert_eq!(
             turret_events(&sim, id),

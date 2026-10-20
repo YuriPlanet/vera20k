@@ -563,7 +563,10 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
                 "index_b":view.index_b,"state":view.words})
         };
         assert_eq!(rng(), row["after_radio_constructor"]["scenario_rng"]);
-        sim.install_techno_components(
+        Simulation::install_techno_components(
+            &mut sim.interner,
+            &sim.session,
+            &sim.houses,
             &mut entity,
             rules.object("BASE"),
             Some(&rules),

@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
     1,
     33621247
   ],
-  "scope": "Twelve sequences through all eight high perpendicular helpers with original connected tile replacement and Recalc; supplied retail middle cells",
+  "scope": "Twelve sequences through all eight high perpendicular helpers with original connected tile replacement and Recalc; supplied retail middle cells, plus admitted576BA0 visits on both neighboring spans",
   "assumptions": [
     "Retailc3y03md.map NEWURBAN source/hash and loader commit are recorded in bridge_middle_stock_inputs.json; native loading excluded",
     "338 supplied scalar cells; two13x13 crops match full18258-cell outputs for DamageA,DamageB,CollapseA on both orientations",
@@ -17,6 +17,7 @@
     "No objects, CellTags, occupation, or Tube inputs; unsupplied cached+11D/zone fields initiallyzero. Compare after-Recalc fields only for visited cells",
     "Non-self anchors reconstructed from supplied literal coordinates; self-anchor+2C initializedzero, compare anchor only after a recorded native+2C write",
     "Inputs target road subtiles4(NS) and2(EW); terminal recursion covers both halves and preserves duplicate fallout",
+    "Two additional four-visit original576BA0 body sequences execute perpendicular/flood/Recalc on both physical neighboring structural spans. The first collapsed span leaves middle level4; collapse of the opposite span writes level0. No direct level replacement is supplied.",
     "No weapon dispatch, damage RNG, fallout reentry, runtime navigation connectivity, radar color, or rendered-output equivalence claim"
   ],
   "substitutions": [
@@ -34,6 +35,7 @@
     "EW_DamageB": "0x00572C90",
     "EW_CollapseA": "0x00572DA0",
     "EW_CollapseB": "0x00573170",
+    "high_body": "0x00576BA0",
     "flood": "0x0056EB80",
     "recalc": "0x0047D2B0",
     "lat": "0x0047CA80",
@@ -42,5 +44,6 @@
     "land": "0x00544BE0",
     "dimensions": "0x00547150"
   },
-  "payload_sha256": "cd80ed51000916bdd3e685d12e91cc256b0149d44e25b2980b5d3989168124ec"
+  "replay_command": "python -m tools.spatial_oracle.bridge_middle_tiles",
+  "payload_sha256": "bfbaec2a5724b2d481fc8fd8f126a4efc16747656bc44d76a8ef447d736b1a90"
 }

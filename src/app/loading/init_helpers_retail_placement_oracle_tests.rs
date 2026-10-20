@@ -18,7 +18,6 @@ use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::PathGrid;
-use crate::sim::power_system::tick_power_states;
 use crate::sim::production::{
     placement_preview_for_owner_with_overlays, ready_buildings_for_owner,
 };
@@ -531,17 +530,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         );
     }
 
-    let frame = sim.session().binary_frame();
-    let interner = sim.interner().clone();
-    let mut power_states = std::mem::take(sim.power_states_mut_for_test());
-    tick_power_states(
-        &mut power_states,
-        sim.entities_mut_for_test(),
-        &rules,
-        &interner,
-        frame,
-    );
-    *sim.power_states_mut_for_test() = power_states;
+    sim.assess_power_for_test(&rules);
     let power = sim
         .power_states()
         .get(&owner_id)

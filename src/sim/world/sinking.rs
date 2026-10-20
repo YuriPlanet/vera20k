@@ -127,7 +127,7 @@ impl Simulation {
                 .or_else(|| rules.general.sinking_sound.clone());
             let coord = position_world_coord(&entity.position);
             if let Some(sound_id) = voice {
-                self.sound_events.push(SimSoundEvent::VocAt {
+                self.sound_events.emit(SimSoundEvent::VocAt {
                     sound_id,
                     audible_to: None,
                     rx: entity.position.rx(),
@@ -138,7 +138,7 @@ impl Simulation {
                 });
             }
             if let Some(sound) = sound {
-                self.sound_events.push(SimSoundEvent::AnimationStarted {
+                self.sound_events.emit(SimSoundEvent::AnimationStarted {
                     anim_id: id,
                     sound_id: sound,
                     world: AnimWorldCoord {
@@ -150,7 +150,7 @@ impl Simulation {
             }
         } else if !entity.move_sound.is_active() {
             self.sound_events
-                .push(SimSoundEvent::ObjectSoundReleased { owner: id });
+                .emit(SimSoundEvent::ObjectSoundReleased { owner: id });
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.sinking.sound_edge_seen = state.active;
@@ -205,7 +205,7 @@ impl Simulation {
                 UninitContext::new(Some(rules), registry).with_effects(frame_effects),
             );
             self.sound_events
-                .push(SimSoundEvent::ObjectSoundReleased { owner: id });
+                .emit(SimSoundEvent::ObjectSoundReleased { owner: id });
             return true;
         }
         if self.session.binary_frame() & 3 == 0 {

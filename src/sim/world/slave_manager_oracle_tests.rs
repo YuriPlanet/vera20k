@@ -274,7 +274,8 @@ pub(super) fn row_scene_edited(
     };
     // The MissionClass start frame (`+0xC0`) the row supplies.
     let started = (i64::from(frame) + input["mission_start"].as_i64().unwrap_or(0)) as u32;
-    sim.mission_assign_exact(master, MissionId::from_known(owner_mission), started)
+    sim.substrate
+        .mission_assign_exact(master, MissionId::from_known(owner_mission), started)
         .unwrap();
     let mut slaves = BTreeMap::new();
     let mut nodes = Vec::new();
@@ -376,7 +377,8 @@ fn place_slave(
         );
     }
     let current = mission(node["mission"].as_str().unwrap_or("guard"));
-    sim.mission_assign_exact(id, MissionId::from_known(current), frame)
+    sim.substrate
+        .mission_assign_exact(id, MissionId::from_known(current), frame)
         .unwrap();
     if let Some(queued) = node["queued"].as_str() {
         sim.mission_queue_exact(

@@ -38,6 +38,8 @@ mod placement_gpu_tests;
 #[cfg(test)]
 mod status_gpu_tests;
 #[cfg(test)]
+mod target_laser_gpu_tests;
+#[cfg(test)]
 pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_overlay_bodies};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
@@ -330,8 +332,7 @@ pub(crate) fn render_game(
         state.match_state.input.zoom_level,
     );
     let composition_view = state.renderer.combat_light_renderer.composition_view();
-    let (tactical_x, tactical_y, tactical_w, tactical_h) =
-        crate::app::input::camera::tactical_viewport_px(state);
+    let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
     // Shader row coordinates are unscaled world pixels; scissor uses target
     // pixels. Native zoom1 is exact, and scaled views preserve that unit frame.
     let native_z_origin_y = tactical_y as f32 / state.match_state.input.zoom_level;
@@ -372,12 +373,7 @@ pub(crate) fn render_game(
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
     ];
-    let viewport = crate::render::surface_line::SurfaceLineViewport {
-        camera: camera.map(|v| v.floor() as i32),
-        clip: [tactical_x, tactical_y, tactical_w, tactical_h].map(|v| (v as f32 / z) as i32),
-        z_origin_y: native_z_origin_y as i32,
-        zoom: z,
-    };
+    let viewport = tactical_surface_line_viewport(state);
     let palette = surface_palette
         .as_ref()
         .map(crate::render::electric_bolt::ElectricBoltPalette::from_palette);
@@ -612,6 +608,25 @@ pub(crate) fn render_game(
         #[cfg(feature = "telemetry-dashboard")]
         phases,
     })
+}
+
+/// The tactical surface object-layer DSurface stores address: logical
+/// (unzoomed) pixels from the floored camera, clipped to the tactical rect.
+pub(crate) fn tactical_surface_line_viewport(
+    state: &AppState,
+) -> crate::render::surface_line::SurfaceLineViewport {
+    let z = state.match_state.input.zoom_level;
+    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    crate::render::surface_line::SurfaceLineViewport {
+        camera: [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ]
+        .map(|v| v.floor() as i32),
+        clip: [x, y, w, h].map(|v| (v as f32 / z) as i32),
+        z_origin_y: (y as f32 / z) as i32,
+        zoom: z,
+    }
 }
 
 /// Upload all per-frame instance vectors to the GPU buffer pool.

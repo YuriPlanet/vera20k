@@ -136,10 +136,12 @@ fn restore_departure(
     }
     match route {
         DepartureRoute::Paradrop => match failure {
-            DepartureFailure::MissingPassenger => sim.clear_radio_contacts_for(passenger_id),
+            DepartureFailure::MissingPassenger => {
+                sim.substrate.clear_radio_contacts_for(passenger_id)
+            }
             DepartureFailure::NotReady | DepartureFailure::Placement => {}
             DepartureFailure::ParachuteAttach | DepartureFailure::ParachuteReveal(_) => {
-                sim.clear_radio_contacts_for(passenger_id);
+                sim.substrate.clear_radio_contacts_for(passenger_id);
                 if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
                     if matches!(failure, DepartureFailure::ParachuteReveal(_)) {
                         passenger.finish_fall();
@@ -183,7 +185,12 @@ fn restore_departure(
         // then dispatches infantry vtable+0x11C (`TechnoClass::
         // ClearDiscoveryOnConceal @ 0x006F4A40`), which preserves the
         // discovery latch for human-controlled owners and clears it for AI.
-        sim.techno_clear_discovery_on_conceal(passenger_id);
+        Simulation::techno_clear_discovery_on_conceal(
+            &sim.session,
+            &mut sim.substrate,
+            &sim.houses,
+            passenger_id,
+        );
     }
     // Vehicle failures always re-adopt the current passenger's IFVMode. The
     // landed-aircraft compatibility path did so only before Reveal; retain that

@@ -19,13 +19,20 @@ fn click_cell(
     camera: (f32, f32),
     zoom: f32,
     heights: &BTreeMap<(u16, u16), u8>,
-    bridges: &dyn crate::map::terrain::TacticalBridgeLookup,
+    bridges: &BTreeMap<(u16, u16), TacticalBridgeCell>,
 ) -> (u16, u16) {
     // Only the test's forward view transform is local. Its inverse and the
     // world -> cell resolution are the same owners used by tactical orders.
     let screen = ((point.0 - camera.0) * zoom, (point.1 - camera.1) * zoom);
     let world = screen_point_to_world_with_camera(screen, camera, zoom);
-    world_point_to_cell(world.0, world.1, heights, Some(bridges))
+    world_point_to_cell(
+        world.0,
+        world.1,
+        Some(&crate::map::terrain::TacticalCellFixture {
+            levels: heights,
+            bridges: Some(bridges),
+        }),
+    )
 }
 
 fn ordinary_move(
@@ -279,20 +286,14 @@ fn follow_clicked_goal(
     expected: (u16, u16),
     expected_on_bridge: bool,
 ) {
-    let bridges = crate::app::match_runtime::sim_tick::tactical_bridge_cells(scenario.sim())
+    let bridges = crate::app::match_runtime::sim_tick::tactical_cells(scenario.sim())
         .expect("retail terrain");
     // Noninteger camera coordinates and zoom exercise the production adapter.
-    let goal = click_cell(
-        point,
-        (-100.25, 1800.5),
-        1.25,
-        &scenario
-            .sim()
-            .resolved_terrain()
-            .unwrap()
-            .build_height_map(),
-        bridges,
-    );
+    let camera = (-100.25, 1800.5);
+    let zoom = 1.25;
+    let screen = ((point.0 - camera.0) * zoom, (point.1 - camera.1) * zoom);
+    let world = screen_point_to_world_with_camera(screen, camera, zoom);
+    let goal = world_point_to_cell(world.0, world.1, Some(bridges));
     assert_eq!(goal, expected, "retail click {point:?}");
     let facts = scenario
         .sim()

@@ -110,7 +110,7 @@ impl EnterHost for WorldEnter<'_> {
     }
 
     fn set_dock(&mut self, dock: Option<u64>) {
-        self.sim.set_aircraft_dock(self.id, dock);
+        self.sim.substrate.set_aircraft_dock(self.id, dock);
     }
 
     fn over_out(&mut self) {

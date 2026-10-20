@@ -24,6 +24,16 @@ pub const MESSAGE_LINE_HEIGHT_PX: i32 = 19;
 pub const MESSAGE_PREFIX_SEPARATOR: &str = ":";
 /// Retail visible-message cap (Init maxMsg=6; clamped ≤ MESSAGE_SLOTS).
 pub const MESSAGE_MAX_VISIBLE_RETAIL: usize = 6;
+/// Read_Scenario's Init MaxChars `0x62` (`0x00684ABB`, clamp `0x70`): the
+/// edit holds at most `MaxChars − 1` typed units.
+const MESSAGE_EDIT_MAX_CHARS: usize = 0x62;
+/// Init's OverflowStart `0x14` and OverflowEnd `0x62`, which Init clamps to
+/// `MaxChars − 1` (`0x005D3A60`).
+const MESSAGE_OVERFLOW_START: usize = 0x14;
+const MESSAGE_OVERFLOW_END: usize = MESSAGE_EDIT_MAX_CHARS - 1;
+/// Input's width margin: a unit stays only while the whole edit line is
+/// narrower than the width limit minus 10 (`0x005D4510`).
+const MESSAGE_EDIT_WIDTH_MARGIN_PX: i32 = 10;
 
 /// One live message row.
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +56,17 @@ struct MessageReveal {
 }
 
 impl Message {
+    /// The edit line as a row to draw.
+    pub fn edit_row(edit: &EditLine) -> Self {
+        Self {
+            text: edit.text.clone(),
+            rgb: edit.rgb,
+            deadline_ms: None,
+            y: edit.y,
+            reveal: None,
+        }
+    }
+
     /// Original434500: zero draws the whole string; a positive count draws
     /// that many UTF-16 units, with a trailing eight-unit highlight.
     pub fn reveal_count(&self) -> u32 {
@@ -75,8 +96,64 @@ pub struct MessagePost<'a> {
     /// None = never expires (native timeout −1 → deadline 0).
     pub timeout_ms: Option<u64>,
     /// Silent adds neither request the insert sound nor enable typing reveal
-    /// in the offline MessageList path (GameMode5, original5D3D95..5D3DBD).
+    /// (original5D3D95..5D3DBD); see [`MessageList::set_typing`].
     pub silent: bool,
+}
+
+/// The live edit line (MessageList `+0x19` editing, `+0x24` label,
+/// `+0x28` buffer, `+0x2B0` Index, `+0x2B4` Start). The edit sits at the
+/// list's own X/Y (Init EditX/EditY −1).
+#[derive(Debug, Clone, PartialEq)]
+struct MessageEdit {
+    /// The prefix, then the typed UTF-16 units. Index is its length.
+    buffer: Vec<u16>,
+    /// Start: the prefix length, which Backspace never crosses.
+    start: usize,
+    rgb: [f32; 3],
+    /// `+0x18`: split an overfull line instead of refusing the unit.
+    overflow: bool,
+}
+
+/// One key as Input `0x005D4510` decodes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditKey {
+    /// A character unit (WM_CHAR, or End's mapped `\`).
+    Unit(u16),
+    /// The mapped `8` of a WM_CHAR backspace or of Home; a raw VK_BACK
+    /// deletes nothing.
+    Delete,
+    Enter,
+    Escape,
+    /// Right mouse button: ends the edit; the game still sees the click.
+    RightClick,
+    /// Every other key: consumed, no effect.
+    Other,
+}
+
+/// Input's result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditInput {
+    /// 0: nothing changed (also every key while no edit is open).
+    Unchanged,
+    /// 1: one unit appended.
+    Typed,
+    /// 2: the last typed unit removed.
+    Deleted,
+    /// 2: the edit ended with nothing to send.
+    Ended,
+    /// 3: Enter ended the edit; the typed text with its appended space.
+    Sent(String),
+    /// 4: the line overflowed. This chunk is cut off and sent; the edit
+    /// stays open with the rest and the new unit.
+    Overflowed(String),
+}
+
+/// The edit line as drawn: its label sits at the list's top.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EditLine {
+    pub text: String,
+    pub rgb: [f32; 3],
+    pub y: i32,
 }
 
 #[derive(Debug)]
@@ -86,6 +163,10 @@ pub struct MessageList {
     max_visible: usize,
     max_width_px: i32,
     messages: Vec<Message>,
+    edit: Option<MessageEdit>,
+    /// Add_Message's per-mode reveal gate: LANScrollText `[0xA8D1F8]` in
+    /// GameMode 3, WOLScrollText `[0xA8D1F9]` in 4, always on otherwise.
+    typing: bool,
 }
 
 impl MessageList {
@@ -96,16 +177,128 @@ impl MessageList {
             max_visible: max_visible.min(MESSAGE_SLOTS),
             max_width_px,
             messages: Vec::with_capacity(MESSAGE_SLOTS),
+            edit: None,
+            typing: true,
         }
     }
 
     /// Re-anchor on viewport/layout change (the native viewport re-init,
     /// contract §4.1): x = tactical_x + 3, y = tactical_y, width = tactical_w − 14.
+    /// A width change is Set_View_Dimensions' Init (`0x004A8BB8`), which
+    /// drops a live edit without a message.
+    /// RESIDUAL: that Init also deletes every row; VERA keeps them.
     pub fn set_view(&mut self, x: i32, y: i32, max_width_px: i32) {
+        if max_width_px != self.max_width_px && self.edit.is_some() {
+            self.end_edit();
+        }
         self.x = x;
         self.y = y;
         self.max_width_px = max_width_px;
         self.restack();
+    }
+
+    /// The mode's reveal gate for later non-silent adds.
+    pub fn set_typing(&mut self, typing: bool) {
+        self.typing = typing;
+    }
+
+    /// `+0x19`: an edit line is open.
+    pub fn editing(&self) -> bool {
+        self.edit.is_some()
+    }
+
+    pub fn edit_line(&self) -> Option<EditLine> {
+        self.edit.as_ref().map(|edit| EditLine {
+            text: String::from_utf16_lossy(&edit.buffer),
+            rgb: edit.rgb,
+            y: self.y,
+        })
+    }
+
+    /// AddEdit `0x005D4210`: refused while an edit is open. Evicts the
+    /// oldest row when the list is full, opens the edit with `prefix`,
+    /// moves the rows one line down and lowers the row cap by one. The
+    /// caller sets the overflow byte `+0x18`.
+    pub fn add_edit(&mut self, prefix: &str, rgb: [f32; 3], overflow: bool) -> bool {
+        if self.edit.is_some() {
+            return false;
+        }
+        if self.max_visible < self.messages.len() + 1 && !self.messages.is_empty() {
+            self.messages.remove(0);
+        }
+        let buffer: Vec<u16> = prefix.encode_utf16().collect();
+        self.edit = Some(MessageEdit {
+            start: buffer.len(),
+            buffer,
+            rgb,
+            overflow,
+        });
+        self.restack();
+        self.max_visible = self.max_visible.saturating_sub(1);
+        true
+    }
+
+    /// Input `0x005D4510` for one decoded key.
+    pub fn input(&mut self, key: EditKey, measure: &dyn Fn(&str) -> i32) -> EditInput {
+        let limit = self.max_width_px - MESSAGE_EDIT_WIDTH_MARGIN_PX;
+        let Some(edit) = self.edit.as_mut() else {
+            return EditInput::Unchanged;
+        };
+        match key {
+            EditKey::RightClick | EditKey::Escape => {
+                self.end_edit();
+                EditInput::Ended
+            }
+            EditKey::Delete => {
+                if edit.buffer.len() > edit.start {
+                    edit.buffer.pop();
+                    EditInput::Deleted
+                } else {
+                    EditInput::Unchanged
+                }
+            }
+            EditKey::Enter => {
+                let typed = edit.buffer.len() - edit.start;
+                if typed == 0 {
+                    self.end_edit();
+                    return EditInput::Ended;
+                }
+                if typed < MESSAGE_EDIT_MAX_CHARS - 1 {
+                    edit.buffer.push(u16::from(b' '));
+                }
+                let text = String::from_utf16_lossy(&edit.buffer[edit.start..]);
+                self.end_edit();
+                EditInput::Sent(text)
+            }
+            EditKey::Unit(unit) if unit >= 0x20 => {
+                if edit.buffer.len() - edit.start < MESSAGE_EDIT_MAX_CHARS - 1 {
+                    edit.buffer.push(unit);
+                    if measure(&String::from_utf16_lossy(&edit.buffer)) < limit {
+                        return EditInput::Typed;
+                    }
+                    edit.buffer.pop();
+                }
+                if !edit.overflow {
+                    return EditInput::Unchanged;
+                }
+                let typed = &edit.buffer[edit.start..];
+                let cut = trim_message_cut(typed, MESSAGE_OVERFLOW_START, MESSAGE_OVERFLOW_END);
+                let chunk = String::from_utf16_lossy(&typed[..cut]);
+                edit.buffer.drain(edit.start..edit.start + cut);
+                edit.buffer.push(unit);
+                EditInput::Overflowed(chunk)
+            }
+            EditKey::Unit(_) | EditKey::Other => EditInput::Unchanged,
+        }
+    }
+
+    /// Every end-of-edit path (`0x005D4390` and Input's copies): the rows
+    /// move back up and the row cap returns.
+    fn end_edit(&mut self) {
+        if self.edit.take().is_some() {
+            self.restack();
+            self.max_visible += 1;
+        }
     }
 
     pub fn x(&self) -> i32 {
@@ -166,8 +359,13 @@ impl MessageList {
         let mut line = compose_prefix;
         line.push_str(&text[..fit_bytes]);
         let line: String = line.chars().take(MESSAGE_SLOT_CHARS).collect();
-        // Step 5 — evict the oldest while at the visible cap.
-        while self.messages.len() >= self.max_visible {
+        // Step 5 — evict the oldest once at the cap. The count includes an
+        // open edit line, which AddEdit already took from the cap, so the
+        // rows stop one short of it (0x005D3CAA..0x005D3CFF).
+        if self.max_visible > 0
+            && self.max_visible < self.messages.len() + usize::from(self.edit.is_some()) + 1
+            && !self.messages.is_empty()
+        {
             self.messages.remove(0);
         }
         // Slot-pool guard (unreachable with retail max_visible ≤ 14).
@@ -180,7 +378,7 @@ impl MessageList {
             rgb: post.rgb,
             deadline_ms: post.timeout_ms.map(|t| now_ms + t),
             y: 0,
-            reveal: (!silent).then(MessageReveal::default),
+            reveal: (!silent && self.typing).then(MessageReveal::default),
         });
         self.restack();
         outcome.added += 1;
@@ -244,11 +442,29 @@ impl MessageList {
     }
 
     fn restack(&mut self) {
-        let base = self.y;
+        let base = self.y
+            + if self.edit.is_some() {
+                MESSAGE_LINE_HEIGHT_PX
+            } else {
+                0
+            };
         for (i, m) in self.messages.iter_mut().enumerate() {
             m.y = base + i as i32 * MESSAGE_LINE_HEIGHT_PX;
         }
     }
+}
+
+/// TrimMessage `0x005D4B20` with scandir 1: the cut is the largest length
+/// in `min..=max` (max capped at the text length) whose last unit is below
+/// `0x21`, else `min`. Native leaves a text shorter than `min` undefined;
+/// the cut is capped at the text length.
+fn trim_message_cut(text: &[u16], min: usize, max: usize) -> usize {
+    let max = max.min(text.len());
+    (min..=max)
+        .rev()
+        .find(|&cut| cut > 0 && text[cut - 1] < 0x21)
+        .unwrap_or(min)
+        .min(text.len())
 }
 
 /// Greedy px-budget fitter with word break (contract lane §4.2 step-4 fitter
@@ -503,6 +719,129 @@ mod tests {
         l.add_message(&post(None, "new", None, false), 0, &mono);
         assert_eq!(l.advance_reveal(100_000), 1);
         assert_eq!(l.messages()[0].reveal_count(), 1);
+    }
+
+    fn typed(list: &mut MessageList, text: &str) -> Vec<EditInput> {
+        text.encode_utf16()
+            .map(|unit| list.input(EditKey::Unit(unit), &mono))
+            .collect()
+    }
+
+    #[test]
+    fn edit_takes_the_top_row_and_one_slot_until_it_ends() {
+        let mut l = list(6, 500);
+        for i in 0..6 {
+            l.add_message(&post(None, &format!("m{i}"), None, true), 0, &mono);
+        }
+        assert!(l.add_edit("From A:", WHITE, true));
+        assert!(!l.add_edit("From A:", WHITE, true), "refused while editing");
+        let texts: Vec<&str> = l.messages().iter().map(|m| m.text.as_str()).collect();
+        assert_eq!(texts, ["m1", "m2", "m3", "m4", "m5"], "AddEdit evicts one");
+        assert_eq!(l.messages()[0].y, MESSAGE_LINE_HEIGHT_PX, "rows move down");
+        assert_eq!(l.edit_line().unwrap().y, 0);
+        // Add_Message counts the edit against the lowered cap and evicts
+        // one row per add.
+        l.add_message(&post(None, "n", None, true), 0, &mono);
+        assert_eq!(l.messages().len(), 5);
+        assert_eq!(l.messages()[4].y, 5 * MESSAGE_LINE_HEIGHT_PX);
+        assert_eq!(l.input(EditKey::RightClick, &mono), EditInput::Ended);
+        assert!(!l.editing());
+        assert_eq!(l.messages()[0].y, 0, "rows move back up");
+        l.add_message(&post(None, "o", None, true), 0, &mono);
+        assert_eq!(l.messages().len(), 6, "cap restored");
+    }
+
+    #[test]
+    fn edit_is_append_only_and_backspace_stops_at_the_prefix() {
+        let mut l = list(6, 500);
+        assert_eq!(l.input(EditKey::Unit(0x41), &mono), EditInput::Unchanged);
+        l.add_edit("From A:", WHITE, true);
+        assert_eq!(typed(&mut l, "hi"), [EditInput::Typed, EditInput::Typed]);
+        assert_eq!(l.input(EditKey::Unit(0x09), &mono), EditInput::Unchanged);
+        assert_eq!(l.input(EditKey::Other, &mono), EditInput::Unchanged);
+        assert_eq!(l.edit_line().unwrap().text, "From A:hi");
+        assert_eq!(l.input(EditKey::Delete, &mono), EditInput::Deleted);
+        assert_eq!(l.input(EditKey::Delete, &mono), EditInput::Deleted);
+        assert_eq!(l.input(EditKey::Delete, &mono), EditInput::Unchanged);
+        assert_eq!(l.edit_line().unwrap().text, "From A:");
+        assert_eq!(l.input(EditKey::Enter, &mono), EditInput::Ended, "empty");
+        l.add_edit("From A:", WHITE, true);
+        typed(&mut l, "go");
+        assert_eq!(
+            l.input(EditKey::Enter, &mono),
+            EditInput::Sent("go ".into()),
+            "Enter appends one space"
+        );
+        l.add_edit("P:", WHITE, true);
+        assert_eq!(l.input(EditKey::Escape, &mono), EditInput::Ended);
+    }
+
+    #[test]
+    fn a_full_line_is_split_at_the_last_space_after_unit_20() {
+        // 97 units fit; the 98th overflows.
+        let mut l = list(6, 100_000);
+        l.add_edit("P:", WHITE, true);
+        let text = format!("{} {}", "a".repeat(30), "b".repeat(66));
+        assert!(typed(&mut l, &text).iter().all(|r| *r == EditInput::Typed));
+        assert_eq!(
+            l.input(EditKey::Unit(u16::from(b'c')), &mono),
+            EditInput::Overflowed(format!("{} ", "a".repeat(30))),
+            "the cut includes the space"
+        );
+        assert_eq!(
+            l.edit_line().unwrap().text,
+            format!("P:{}c", "b".repeat(66))
+        );
+        // No break at or after unit 20: a 20-unit chunk.
+        let mut l = list(6, 100_000);
+        l.add_edit("P:", WHITE, true);
+        typed(&mut l, &"x".repeat(97));
+        assert_eq!(
+            l.input(EditKey::Unit(u16::from(b'y')), &mono),
+            EditInput::Overflowed("x".repeat(20))
+        );
+        // Overflow off: the unit is refused.
+        let mut l = list(6, 100_000);
+        l.add_edit("P:", WHITE, false);
+        typed(&mut l, &"x".repeat(97));
+        assert_eq!(l.input(EditKey::Unit(0x79), &mono), EditInput::Unchanged);
+    }
+
+    #[test]
+    fn the_whole_edit_line_must_stay_10_px_inside_the_width() {
+        // limit 200 − 10: "P:" + 16 units = 180 px fits, 190 px does not.
+        let mut l = list(6, 200);
+        l.add_edit("P:", WHITE, false);
+        assert!(
+            typed(&mut l, &"x".repeat(16))
+                .iter()
+                .all(|r| *r == EditInput::Typed)
+        );
+        assert_eq!(l.input(EditKey::Unit(0x78), &mono), EditInput::Unchanged);
+        assert_eq!(
+            l.input(EditKey::Enter, &mono),
+            EditInput::Sent(format!("{} ", "x".repeat(16)))
+        );
+    }
+
+    #[test]
+    fn a_width_change_drops_the_edit() {
+        let mut l = list(6, 500);
+        l.add_edit("P:", WHITE, true);
+        l.set_view(3, 0, 500);
+        assert!(l.editing());
+        l.set_view(3, 0, 600);
+        assert!(!l.editing());
+    }
+
+    #[test]
+    fn a_closed_scroll_text_gate_adds_whole_rows() {
+        let mut l = list(6, 500);
+        l.set_typing(false);
+        let o = l.add_message(&post(None, "abc", None, false), 0, &mono);
+        assert!(o.play_sound, "the sound does not depend on the gate");
+        assert_eq!(l.advance_reveal(100), 0);
+        assert_eq!(l.messages()[0].reveal_count(), 0, "drawn whole");
     }
 
     #[test]

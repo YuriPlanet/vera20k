@@ -338,6 +338,17 @@ impl ResolvedTerrainCell {
         self.has_bridge_deck.then_some(self.bridge_deck_level)
     }
 
+    /// The deck level of a high bridge; low bridges (LOBRDG/LOBRDB) sit at
+    /// ground level and answer `None`.
+    pub fn high_bridge_deck_level(&self) -> Option<u8> {
+        self.bridge_deck_level_if_any().filter(|_| {
+            !self
+                .bridge_layer
+                .as_ref()
+                .is_some_and(|layer| layer.direction == BridgeDirection::Low)
+        })
+    }
+
     pub fn bridge_flags(&self) -> u32 {
         self.bridge_facts.raw_flags
     }
@@ -1356,7 +1367,12 @@ impl ResolvedTerrainGrid {
     }
 }
 
-impl crate::map::terrain::TacticalBridgeLookup for ResolvedTerrainGrid {
+impl crate::map::terrain::TacticalCellLookup for ResolvedTerrainGrid {
+    fn cell_level(&self, rx: u16, ry: u16) -> Option<u8> {
+        // Original6D6753 reads the current candidate, not a load-time level.
+        self.cell(rx, ry).map(|cell| cell.level)
+    }
+
     fn bridge_cell(&self, rx: u16, ry: u16) -> Option<crate::map::terrain::TacticalBridgeCell> {
         let facts = &self.cell(rx, ry)?.bridge_facts;
         // Original6D6760/6D6793 reads raw100/800, independent of inferred

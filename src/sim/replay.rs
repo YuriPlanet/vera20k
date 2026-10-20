@@ -712,10 +712,10 @@ pub enum ScenarioServiceInput {
 impl ScenarioServiceInput {
     pub fn apply(self, sim: &mut Simulation) -> Vec<crate::sim::trigger_runtime::TriggerEffect> {
         match self {
-            Self::Pause => sim.pause_scenario(0),
-            Self::Resume => sim.resume_scenario(),
-            Self::ExpireTimedPause => sim.expire_scenario_pause(),
-            Self::StepChronoScreen => sim.process_chrono_screen_effect(),
+            Self::Pause => sim.session.pause_scenario(0),
+            Self::Resume => sim.session.resume_scenario(),
+            Self::ExpireTimedPause => sim.session.expire_scenario_pause(),
+            Self::StepChronoScreen => sim.session.process_chrono_screen_effect(),
         }
     }
 }

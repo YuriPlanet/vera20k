@@ -64,8 +64,8 @@ pub(crate) const FULL_SCREEN_HELP: &str = "Fill the whole screen. Untick it to p
 pub(crate) const ORIGINAL_SHAPE_LABEL: &str = "Original 4:3 Shape";
 pub(crate) const ORIGINAL_SHAPE_HELP: &str =
     "Battles keep the original 4:3 shape, with bars on wide screens.";
-pub(crate) const RA2_LOOK_LABEL: &str = "RA2 Loading & Menu Movie";
-pub(crate) const RA2_LOOK_HELP: &str = "Show the Red Alert 2 loading screen and menu movie.";
+pub(crate) const YR_ORIGINAL_STYLE_LABEL: &str = "Original YR Style";
+pub(crate) const YR_ORIGINAL_STYLE_HELP: &str = "Use Yuri's Revenge artwork for the startup splash, menu movie, setup screens, buttons, scrollbars and popups.";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
 pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "Developer Options";
 pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "Offline Internet Test Service";
@@ -341,10 +341,9 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's own box: battles keep gamemd's 4:3 screen shape instead of the
     /// window's. Like Full Screen, it applies at once.
     OriginalShape,
-    /// VERA's own box: the startup splash and the menu movie use Red Alert 2's
-    /// art instead of Yuri's Revenge's. The movie changes at once; the splash,
-    /// drawn before any menu, at the next launch.
-    Ra2Look,
+    /// VERA's own box: use original Yuri's Revenge art where the shell has
+    /// separate game assets. The movie changes at once; the splash at next launch.
+    YrOriginalStyle,
     /// VERA's own box: Shift + left click on a mobile build cameo queues
     /// several copies instead of gamemd's one. It applies at once.
     ShiftQueue,
@@ -373,7 +372,7 @@ pub(crate) enum LauncherOptionsEvent {
     SidebarSelected(SidebarSize),
     FullScreenChanged(bool),
     OriginalShapeChanged(bool),
-    Ra2LookChanged(bool),
+    YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
     WolTestServiceChanged(bool),
     ScorePreview(f32),
@@ -409,7 +408,7 @@ pub(crate) struct LauncherOptionsValues {
     /// The window's state when the page opened, then each toggle.
     pub(crate) full_screen: bool,
     pub(crate) original_shape: bool,
-    pub(crate) ra2_look: bool,
+    pub(crate) yr_original_style: bool,
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
@@ -430,7 +429,7 @@ impl Default for LauncherOptionsValues {
             show_hidden: false,
             full_screen: false,
             original_shape: false,
-            ra2_look: false,
+            yr_original_style: false,
             shift_queue: false,
             wol_test_service: false,
             sidebar: SidebarSize::Normal,
@@ -717,7 +716,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShowHidden => &mut self.values.show_hidden,
             LauncherCheckboxId::FullScreen => &mut self.values.full_screen,
             LauncherCheckboxId::OriginalShape => &mut self.values.original_shape,
-            LauncherCheckboxId::Ra2Look => &mut self.values.ra2_look,
+            LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
             LauncherCheckboxId::WolTestService => &mut self.values.wol_test_service,
         };
@@ -732,9 +731,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::OriginalShape => self
                 .pending_events
                 .push(LauncherOptionsEvent::OriginalShapeChanged(checked)),
-            LauncherCheckboxId::Ra2Look => self
+            LauncherCheckboxId::YrOriginalStyle => self
                 .pending_events
-                .push(LauncherOptionsEvent::Ra2LookChanged(checked)),
+                .push(LauncherOptionsEvent::YrOriginalStyleChanged(checked)),
             LauncherCheckboxId::ShiftQueue => self
                 .pending_events
                 .push(LauncherOptionsEvent::ShiftQueueChanged(checked)),

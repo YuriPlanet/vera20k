@@ -917,7 +917,13 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
         // Boarding retains the locomotor head. A later carrier teardown calls
         // UnInit/Limbo again; native Foot's early in-limbo gate preserves the
         // raw bit another mover has since written at that old head.
-        sim.track_raw_mark_at(supplied, true);
+        crate::sim::world::Simulation::track_raw_mark_at(
+            &mut sim.substrate,
+            &sim.path_grid,
+            &sim.resolved_terrain,
+            supplied,
+            true,
+        );
         sim.apply_lifecycle_request(LifecycleRequest::Uninit {
             stable_id: 1,
             reason: UninitReason::Crush,

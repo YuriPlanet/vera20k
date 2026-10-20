@@ -319,6 +319,24 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
         super::commit_back(state);
         return;
     }
+    // The host's random map keeps the start staging its generator wrote
+    // (Scenario +0x1140, 0x0059647B..0x00596565), as skirmish's does.
+    // RESIDUAL: a guest's staging arrives in the host's 'W' setup string
+    // (0x005E7EB0), which VERA does not carry yet, so a guest cannot load a
+    // random map.
+    let accepted_random_map = if state.match_state.session.host() {
+        let selected = state
+            .match_state
+            .session
+            .network_setup()
+            .and_then(|launch| launch.selected_map_file.clone());
+        state
+            .frontend
+            .random_map_retention
+            .take_acceptance_for_loading(selected.as_deref())
+    } else {
+        None
+    };
     match state.match_state.session.freeze_network_start(agreed_seed) {
         Ok(startup) => {
             state.frontend.multiplayer_setup = None;
@@ -326,7 +344,8 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
             state.frontend.skirmish_preview_texture = None;
             crate::app::loading::pump::begin_loading(
                 state,
-                crate::app::loading::pump::LoadingRequest::network(startup),
+                crate::app::loading::pump::LoadingRequest::network(startup)
+                    .with_accepted_random_map(accepted_random_map),
             );
         }
         Err(error) => {

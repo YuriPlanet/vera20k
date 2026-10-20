@@ -24,12 +24,12 @@ impl super::ScenarioSession {
     }
 }
 
-impl Simulation {
+impl super::ScenarioSession {
     /// Original684060. A repeated nonzero request still rearms the app
     /// timer, but630 prevents acquiring a second timed hold. The outermost
     /// entry synchronously locks35A2 before the next authored action runs.
-    pub fn pause_scenario(&mut self, duration: i32) -> Vec<TriggerEffect> {
-        let pause = &mut self.session.scenario_pause;
+    pub(crate) fn pause_scenario(&mut self, duration: i32) -> Vec<TriggerEffect> {
+        let pause = &mut self.scenario_pause;
         if duration != 0 {
             if pause.timed {
                 return vec![TriggerEffect::ScenarioPause {
@@ -46,9 +46,9 @@ impl Simulation {
             outermost,
         }];
         if outermost {
-            pause.prior_input_locked = self.session.input_locked;
+            pause.prior_input_locked = self.input_locked;
             if !pause.prior_input_locked {
-                self.session.input_locked = true;
+                self.input_locked = true;
                 effects.push(TriggerEffect::InputLockChanged {
                     locked: true,
                     was_locked: false,
@@ -60,8 +60,8 @@ impl Simulation {
 
     /// Original684180. Only the last release clears a lock this pause acquired. An
     /// explicit46/47 during the hold does not replace native B054CC.
-    pub fn resume_scenario(&mut self) -> Vec<TriggerEffect> {
-        let pause = &mut self.session.scenario_pause;
+    pub(crate) fn resume_scenario(&mut self) -> Vec<TriggerEffect> {
+        let pause = &mut self.scenario_pause;
         if pause.depth == 0 {
             return Vec::new();
         }
@@ -71,8 +71,8 @@ impl Simulation {
         }
         let mut effects = Vec::new();
         if !pause.prior_input_locked {
-            let was_locked = self.session.input_locked;
-            self.session.input_locked = false;
+            let was_locked = self.input_locked;
+            self.input_locked = false;
             effects.push(TriggerEffect::InputLockChanged {
                 locked: false,
                 was_locked,
@@ -84,11 +84,29 @@ impl Simulation {
 
     /// Main_Tick55D815 clears630 before calling the shared684180 owner.
     /// The app has already observed620's expiry in offline modes0/5.
-    pub fn expire_scenario_pause(&mut self) -> Vec<TriggerEffect> {
-        if !self.session.scenario_pause.timed {
+    pub(crate) fn expire_scenario_pause(&mut self) -> Vec<TriggerEffect> {
+        if !self.scenario_pause.timed {
             return Vec::new();
         }
-        self.session.scenario_pause.timed = false;
+        self.scenario_pause.timed = false;
         self.resume_scenario()
+    }
+}
+
+/// The app's entry points; the session owns the pause.
+impl Simulation {
+    /// [`ScenarioSession::pause_scenario`](super::ScenarioSession::pause_scenario).
+    pub fn pause_scenario(&mut self, duration: i32) -> Vec<TriggerEffect> {
+        self.session.pause_scenario(duration)
+    }
+
+    /// [`ScenarioSession::resume_scenario`](super::ScenarioSession::resume_scenario).
+    pub fn resume_scenario(&mut self) -> Vec<TriggerEffect> {
+        self.session.resume_scenario()
+    }
+
+    /// [`ScenarioSession::expire_scenario_pause`](super::ScenarioSession::expire_scenario_pause).
+    pub fn expire_scenario_pause(&mut self) -> Vec<TriggerEffect> {
+        self.session.expire_scenario_pause()
     }
 }

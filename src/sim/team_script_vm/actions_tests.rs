@@ -292,7 +292,7 @@ fn patrol_team_fixture(armed: bool) -> (Simulation, RuleSet, u64, Vec<u64>) {
         .into(),
     );
     for &member in &members {
-        sim.team_set_member_initiated(team, member);
+        sim.team_script_vm.team_set_member_initiated(team, member);
     }
     let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
     state.cursor = -1;
@@ -817,7 +817,7 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
             .into(),
         );
         for &member in &members {
-            sim.team_set_member_initiated(team, member);
+            sim.team_script_vm.team_set_member_initiated(team, member);
             // Supplied native raw+2FC prior for this control. Production
             // non-Aircraft ammunition writers remain the documented owner
             // residual; this fixture does not invent a working reload loop.
@@ -1124,10 +1124,21 @@ fn the_team_attacks_the_building_its_first_member_finds() {
             "mode {mode}"
         );
         let first = sim.substrate.entities.get(members[0]).unwrap();
+        // The fixture's E1 carries no weapon, and Foot4D5690 has no unarmed
+        // exit: GetWeaponRange answers 0 (`0x007012C0`), CanFireAt is false
+        // (`0x006F7237`), the Attack mission passes the drop arms
+        // (`0x004D5716..0x004D57E4`), the search runs no ring and the
+        // exhausted arm drops the Target (`0x004D69FB`) while setting the
+        // passable cell nearest the plant as its destination
+        // (`0x004D68E7..0x004D6A58`).
         assert_eq!(
             first.attack_target.target(),
-            Some(crate::sim::combat::TargetKind::Entity(plants[pick])),
-            "mode {mode}: the first member's target"
+            None,
+            "mode {mode}: the unarmed first member drops its target"
+        );
+        assert!(
+            first.navigation.nav_com().is_some(),
+            "mode {mode}: the first member walks toward the plant"
         );
     }
 }

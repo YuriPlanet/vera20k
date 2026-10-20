@@ -243,7 +243,11 @@ impl Simulation {
             return;
         };
         let sw_type_id = self.interner.intern(name);
-        self.fire_super_weapon(
+        // Script actions are synchronous authoritative producers. Capture the
+        // current ticket now; the shared finalizer still consumes it once.
+        let selection = self.paid_super_weapon_selection(owner)
+            .filter(|selection| selection.destination == sw_type_id);
+        self.fire_super_weapon_selected(
             rules,
             owner,
             sw_type_id,
@@ -251,6 +255,7 @@ impl Simulation {
             registry,
             frame_effects,
             false,
+            selection,
         );
     }
 }

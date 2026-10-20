@@ -643,12 +643,33 @@ impl Iterator for RingSource {
     }
 }
 
+/// Longest span this source reports, in frames. VERA-owned, not native.
+///
+/// rodio 0.22.2 (and 0.23.0) `Mixer::add` converts every source with one
+/// `SampleRateConverter` per span, whose `from * next_output_span_pos_in_chunk`
+/// (`conversions/sample_rate.rs:158`, `:173`) is `u32`. It overflows once a
+/// span outputs more than `u32::MAX / from` frames: a cue over about a second
+/// at a shifted rate coprime with a 192 kHz device (103% of 22 050 Hz is
+/// 22 711 Hz). Overflow-checked builds panic in the device callback; release
+/// builds spin about 2^32 converter steps there, stalling every live cue.
+/// A span outputs about `frames * device_rate` frames' worth of that product,
+/// so 8192 frames stays below `u32::MAX` up to a 384 kHz device.
+const MAX_SPAN_FRAMES: usize = 8192;
+
 impl Source for RingSource {
     fn current_span_len(&self) -> Option<usize> {
         // rodio0.22.2 Source::current_span_len permits Some(0) only at
-        // exhaustion. PCM quarters do not change this source's format;
-        // report one span until Iterator::next delivers the real endpoint.
-        None
+        // exhaustion, and PCM quarters never change this source's format.
+        // A bounded span only restarts the mixer's converter (see
+        // MAX_SPAN_FRAMES). At a quarter boundary the next quarter, if any,
+        // holds exactly one cache length; an ended source still ends early
+        // through Iterator::next.
+        let remaining = if self.position < self.valid {
+            self.valid - self.position
+        } else {
+            self.cache.len()
+        };
+        Some(remaining.min(MAX_SPAN_FRAMES * usize::from(self.channels.get())))
     }
     fn channels(&self) -> NonZero<u16> {
         self.channels

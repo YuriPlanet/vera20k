@@ -242,6 +242,7 @@ pub(crate) fn build_unit_instances(
         .sim_runtime
         .as_ref()
         .and_then(|rt| rt.view().resolved_terrain());
+    let light_cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
     state
         .match_state
         .match_presentation
@@ -249,6 +250,8 @@ pub(crate) fn build_unit_instances(
         .borrow_mut()
         .retain(|id| sim.entities().contains(id));
 
+    let surface_view = crate::app::presentation::render::tactical_surface_line_viewport(state);
+    let laser_palette = std::cell::OnceCell::new();
     let encounter_order = super::helpers::tactical_entity_encounter_order(sim);
     for stable_id in encounter_order {
         let Some(entity) = sim.entities().get(stable_id) else {
@@ -339,7 +342,12 @@ pub(crate) fn build_unit_instances(
         let interp_z = pos.z();
         let draw_state = draw_decision.state;
         let extra_light = state.rules().map_or(0, |rules| {
-            crate::app::presentation::lighting::body_extra_light(entity, rules, sim, terrain)
+            crate::app::presentation::lighting::body_extra_light(
+                entity,
+                rules,
+                sim,
+                light_cells.as_ref(),
+            )
         });
         let tint = vxl_body_tint(
             state.match_state.match_presentation.lighting.grid(),
@@ -633,7 +641,29 @@ pub(crate) fn build_unit_instances(
                 crate::render::tactical_draw_plan::SpriteEncoding::Voxel,
             );
             if let Some(parent) = parent {
-                objects.push(PlannedObjectInstance::object(parent, pieces));
+                let mut planned = PlannedObjectInstance::object(parent, pieces);
+                if let Some(rules) = state.rules() {
+                    planned.tail_draws = crate::app::presentation::target_lines::target_laser_draws(
+                        entity,
+                        sim,
+                        rules,
+                        || {
+                            laser_palette
+                                .get_or_init(|| {
+                                    state
+                                        .process_assets
+                                        .manager()
+                                        .and_then(|assets| assets.get_ref("palette.pal"))
+                                        .and_then(|bytes| {
+                                            crate::assets::pal_file::Palette::from_bytes(bytes).ok()
+                                        })
+                                })
+                                .as_ref()
+                        },
+                        surface_view,
+                    );
+                }
+                objects.push(planned);
             }
         }
     }
@@ -2487,10 +2517,7 @@ mod tests {
             display_binary_frame_for_committed_session(restored.session().binary_frame());
         assert_eq!(display_binary_frame, 50);
         assert_eq!(
-            locomotor_render_slope_state(
-                restored.entities().get(1).unwrap(),
-                display_binary_frame,
-            ),
+            locomotor_render_slope_state(restored.entities().get(1).unwrap(), display_binary_frame,),
             Some(UnitRenderSlopeState::Transition {
                 from_slope: 4,
                 to_slope: 9,

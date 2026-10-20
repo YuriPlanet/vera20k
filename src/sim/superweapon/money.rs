@@ -12,9 +12,8 @@ use crate::sim::world::{SimSoundEvent, Simulation};
 #[path = "money_tests.rs"]
 mod tests;
 
-/// Ares separates source selection from final settlement (ChronoSphere
-/// `NoMoney`, SWTypeExt::Launch). VERA has no saved one-use paid selection;
-/// reject these optional settings instead of paying a repeatable source.
+/// Single-stage admission. Paired powers instead require the saved one-use
+/// selection owner in `two_stage`; malformed half-pairs remain rejected.
 /// https://github.com/Ares-Developers/Ares/blob/4f1d929920aca31924c6cd4d3dfa849daa65252a/src/Ext/SWType/Body.cpp#L469
 pub(super) fn configuration_supported(sw: &SuperWeaponType) -> bool {
     sw.money_amount == 0
@@ -62,7 +61,7 @@ pub(super) fn admit(
     }
     if sim.houses.contains_key(&owner) {
         sim.sound_events
-            .push(SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type });
+            .emit(SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type });
     }
     false
 }
@@ -80,9 +79,9 @@ pub(super) fn transact(
         // Affordability proves the positive cost fits a signed wallet, so the
         // checked conversion cannot overflow even for an authored i32::MIN.
         let cost = sw.money_amount.checked_neg().expect("admitted signed cost");
-        crate::sim::credit_income::spend_money(sim, owner, cost);
+        crate::sim::credit_income::spend_money(&mut sim.houses, owner, cost);
     } else if sw.money_amount > 0 {
-        crate::sim::credit_income::add_credits(sim, owner, sw.money_amount);
+        crate::sim::credit_income::add_credits(&mut sim.houses, owner, sw.money_amount);
     }
     true
 }

@@ -62,7 +62,7 @@ fn setup(rules: &RuleSet, input: &Value, location: IVec3) -> (Simulation, u64) {
         )
         .unwrap();
     // The native fixture explicitly installs this system in DAT_A8ED78.
-    sim.particle_systems_mut().gas_cloud_system = Some(system);
+    sim.substrate.particle_systems.gas_cloud_system = Some(system);
     (sim, system)
 }
 fn assert_particle(p: &Particle, expected: &Value, name: &str) {
@@ -188,7 +188,8 @@ fn gas_system_motion_lifetime_replacement_and_rng_match_original_histories() {
             [p.drift_x, p.drift_y, p.drift_z] =
                 serde_json::from_value(prior["drift"].clone()).unwrap();
             assert_particle(&p, prior, name);
-            sim.particle_systems_mut()
+            sim.substrate
+                .particle_systems
                 .get_mut(system)
                 .unwrap()
                 .particles

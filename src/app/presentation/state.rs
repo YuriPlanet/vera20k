@@ -44,12 +44,6 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sidebar_chrome: Option<SidebarChromeSet>,
     pub(crate) software_cursor: Option<crate::app::presentation::render::SoftwareCursor>,
     pub(crate) terrain_grid: Option<TerrainGrid>,
-    /// Load-time cell levels for click and hover resolution. A presentation
-    /// copy: the simulation reads its live terrain, and this is not refreshed
-    /// when a bridge body or cliff rewrites a level.
-    pub(crate) height_map: BTreeMap<(u16, u16), u8>,
-    /// Load-time high-bridge deck levels for the same click resolution.
-    pub(crate) bridge_height_map: BTreeMap<(u16, u16), u8>,
     /// Overlay entries from map for per-frame instance generation.
     pub(crate) overlays: crate::app::presentation::overlay_index::OverlayRenderIndex,
     /// Terrain objects from map for per-frame instance generation.
@@ -146,6 +140,9 @@ pub(crate) struct MatchPresentationState {
     /// §4.3: the native composite timer freezes during pause). Fed pause
     /// edges by `messages::update`.
     pub(crate) message_clock: crate::ui::messages::PauseAwareClock,
+    /// The in-battle chat target and chat mask, beside the list whose edit
+    /// line they route.
+    pub(crate) chat: crate::app::input::chat::ChatState,
     /// In-scenario modal state — the port of gamemd's in-scenario state
     /// variable. Owns the in-game menu, the abort-mission confirmation and the
     /// parent/child relationship with the `0xBBB` Options dialog.

@@ -260,7 +260,7 @@ impl Probe {
                 - input["viewport_y"].as_i64().unwrap() as f32,
         ];
         let terrain = scene.sim().resolved_terrain().unwrap();
-        let heights = terrain.build_height_map();
+
         if let Some((source, owner, expected)) = &mut self.live_a {
             source.rebuild_if_needed(
                 &self.gpu.device,
@@ -307,7 +307,7 @@ impl Probe {
                         interner: Some(scene.sim().interner()),
                         tiberium_types: Some(&scene.runtime.resources.rules.tiberium_types),
                         terrain: Some(terrain),
-                        heights: &heights,
+
                         lighting: self.lighting.grid(),
                         camera: camera.camera_pos,
                         viewport: self.size.map(|v| v as f32),

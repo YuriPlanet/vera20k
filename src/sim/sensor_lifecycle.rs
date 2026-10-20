@@ -378,7 +378,7 @@ impl Simulation {
                     object.cloak_radius_in_cells,
                     detect_radius,
                     crate::sim::power_system::is_building_powered(
-                        &self.power_states,
+                        self.power_states.as_map(),
                         rules,
                         entity,
                         &self.interner,

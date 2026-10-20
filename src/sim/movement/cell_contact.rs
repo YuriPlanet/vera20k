@@ -71,7 +71,12 @@ impl Simulation {
                         .expect("same contact receiver")
                         .start_uncloaking(now, speed, rules.general.cloaking_stages, false);
                     if result.play_sound {
-                        emit_configured_cloak_sound(self, id, rules);
+                        emit_configured_cloak_sound(
+                            &self.substrate,
+                            &mut self.sound_events,
+                            id,
+                            rules,
+                        );
                     }
                 }
             }

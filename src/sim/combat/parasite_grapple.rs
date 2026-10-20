@@ -4,6 +4,8 @@
 use super::*;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::AnimClassSpawnDescriptor;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::ObjectSubstrate;
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53 as X, X87Value};
 use crate::util::retail_trig::TrigTable;
@@ -38,20 +40,6 @@ impl ParasiteState {
 }
 
 impl Simulation {
-    /// PointerExpired62A484..62A490, reached by Anim's dedicated subscribers.
-    pub(crate) fn parasite_anim_pointer_expired(&mut self, owner: u64, expired: u64) {
-        if let Some(state) = self
-            .substrate
-            .entities
-            .get_mut(owner)
-            .and_then(|entity| entity.parasite.class_mut())
-            && state.grapple.anim == Some(expired)
-        {
-            state.grapple.anim = None;
-            state.grapple.invalidated = true;
-        }
-    }
-
     /// Shared AttachTo/ExitUnit/grapple cleanup. Delete broadcasts expiry before
     /// the held pointer and invalidation latch clear (62A7E0..62A84B).
     pub(crate) fn reset_parasite_grapple(&mut self, owner: u64, rules: Option<&RuleSet>) {
@@ -82,12 +70,16 @@ impl Simulation {
     /// Helper629720: only a stage advance writes the Anim frame/timer.
     /// Reaching stage10 returns before writing; the new phase gets its own
     /// immediate helper visit in the caller.
-    fn advance_grapple_stage(&mut self, owner: u64, victim: u64) -> bool {
-        let facing = self.substrate.entities.get(victim).map_or(0, |entity| {
-            entity.body_facing_current(self.session.binary_frame())
+    fn advance_grapple_stage(
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        owner: u64,
+        victim: u64,
+    ) -> bool {
+        let facing = substrate.entities.get(victim).map_or(0, |entity| {
+            entity.body_facing_current(session.binary_frame())
         });
-        let Some(state) = self
-            .substrate
+        let Some(state) = substrate
             .entities
             .get_mut(owner)
             .and_then(|entity| entity.parasite.class_mut())
@@ -110,7 +102,7 @@ impl Simulation {
         }
         let frame = base + i32::from(dir_from_facing16(facing)) * 10 + state.grapple.stage;
         if let Some(anim) = state.grapple.anim {
-            self.set_anim_manual_frame(anim, frame, 128);
+            Self::set_anim_manual_frame(session, substrate, anim, frame, 128);
         }
         false
     }
@@ -133,7 +125,7 @@ impl Simulation {
             state.grapple.stage = 0;
             state.grapple.delay = 0;
         }
-        self.advance_grapple_stage(owner, victim);
+        Self::advance_grapple_stage(&self.session, &mut self.substrate, owner, victim);
         self.grapple_wakes(victim, origin, rules);
     }
 
@@ -203,7 +195,7 @@ impl Simulation {
             .phase;
         match phase {
             0 => {
-                self.write_grapple_roll(victim, SimFixed::ZERO);
+                self.substrate.write_grapple_roll(victim, SimFixed::ZERO);
                 let name = crate::rules::effect_asset_catalog::SQUID_GRAPPLE_ANIM;
                 // Lookup-only427CB0, not a factory creating an unknown type.
                 let anim = if rules.anim_type_names.contains(name) {
@@ -229,15 +221,15 @@ impl Simulation {
                 state.grapple.phase = 1;
                 state.grapple.stage = 0;
                 state.grapple.delay = 0;
-                self.advance_grapple_stage(owner, victim);
+                Self::advance_grapple_stage(&self.session, &mut self.substrate, owner, victim);
             }
             1 => {
-                if self.advance_grapple_stage(owner, victim) {
+                if Self::advance_grapple_stage(&self.session, &mut self.substrate, owner, victim) {
                     self.start_grapple_roll(owner, victim, origin, rules);
                 }
             }
             2 | 3 => {
-                if self.advance_grapple_stage(owner, victim) {
+                if Self::advance_grapple_stage(&self.session, &mut self.substrate, owner, victim) {
                     let state = self
                         .substrate
                         .entities
@@ -249,7 +241,7 @@ impl Simulation {
                     state.grapple.phase = 4;
                     state.grapple.stage = 0;
                     state.grapple.delay = 0;
-                    self.advance_grapple_stage(owner, victim);
+                    Self::advance_grapple_stage(&self.session, &mut self.substrate, owner, victim);
                 }
                 let state = &self
                     .substrate
@@ -260,10 +252,11 @@ impl Simulation {
                     .class()
                     .unwrap()
                     .grapple;
-                self.write_grapple_roll(victim, grapple_roll(state.stage, phase == 2));
+                self.substrate
+                    .write_grapple_roll(victim, grapple_roll(state.stage, phase == 2));
             }
             4 => {
-                self.write_grapple_roll(victim, SimFixed::ZERO);
+                self.substrate.write_grapple_roll(victim, SimFixed::ZERO);
                 self.grapple_splashes(victim, origin, rules);
                 if warhead.culling && self.grapple_cull_admitted(owner, victim, rules) {
                     self.grapple_cull(owner, victim, rules, effects);
@@ -322,7 +315,7 @@ impl Simulation {
                     .and_then(|terrain| terrain.cell(target.position.rx(), target.position.ry()))
             {
                 let frame = self.anim(anim).unwrap().runtime().current_frame;
-                self.set_anim_frame_and_z_adjust(
+                self.substrate.set_anim_frame_and_z_adjust(
                     anim,
                     frame,
                     crate::map::lighting::cell_ground_z_adjust(
@@ -331,18 +324,6 @@ impl Simulation {
                     ),
                 );
             }
-        }
-    }
-
-    fn write_grapple_roll(&mut self, victim: u64, angle: SimFixed) {
-        if let Some(entity) = self.substrate.entities.get_mut(victim) {
-            // Native Techno6F2EB0..6F2EC2 initializes these inline fields to zero.
-            // Rust stores them sparsely until a producer first writes them;
-            // an ordinary admitted ship has no crash-created component yet.
-            entity
-                .rocking
-                .get_or_insert_with(Default::default)
-                .set_angle_sideways(angle);
         }
     }
 
@@ -483,6 +464,32 @@ impl Simulation {
         self.reset_parasite_grapple(owner, Some(rules));
         if let Some(source) = self.substrate.entities.get_mut(owner) {
             source.parasite.end_paralysis(self.session.binary_frame());
+        }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// PointerExpired62A484..62A490, reached by Anim's dedicated subscribers.
+    pub(crate) fn parasite_anim_pointer_expired(&mut self, owner: u64, expired: u64) {
+        if let Some(state) = self
+            .entities
+            .get_mut(owner)
+            .and_then(|entity| entity.parasite.class_mut())
+            && state.grapple.anim == Some(expired)
+        {
+            state.grapple.anim = None;
+            state.grapple.invalidated = true;
+        }
+    }
+    fn write_grapple_roll(&mut self, victim: u64, angle: SimFixed) {
+        if let Some(entity) = self.entities.get_mut(victim) {
+            // Native Techno6F2EB0..6F2EC2 initializes these inline fields to zero.
+            // Rust stores them sparsely until a producer first writes them;
+            // an ordinary admitted ship has no crash-created component yet.
+            entity
+                .rocking
+                .get_or_insert_with(Default::default)
+                .set_angle_sideways(angle);
         }
     }
 }

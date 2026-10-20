@@ -18,6 +18,36 @@ use crate::util::save_codec;
 
 const NEAREST_PLANT: i32 = 2 << 16;
 
+#[test]
+fn action56_paid_pair_settles_the_shared_wallet_once_after_destination() {
+    for amount in [-500, 500] {
+        let mut scene = scene(NEAREST_PLANT, true);
+        scene
+            .rules
+            .super_weapons
+            .values_mut()
+            .find(|sw| sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ChronoSphere)
+            .unwrap()
+            .money_amount = amount;
+        let owner = scene.sim.interner.get(OWNER).unwrap();
+        let source_id = scene.sim.interner.get("SW3").unwrap();
+        crate::sim::superweapon::trigger_grant_super(
+            &mut scene.sim,
+            &scene.rules,
+            owner,
+            source_id,
+            false,
+        );
+        crate::sim::credit_income::add_credits(&mut scene.sim.houses, owner, 1000);
+        assert_eq!(step(&mut scene).len(), 2);
+        assert_eq!(scene.sim.houses[&owner].economy().credits(), 1000 + amount);
+        assert!(scene.sim.paid_super_weapon_selection(owner).is_none());
+        assert!(!source(&mut scene).is_ready());
+        step(&mut scene);
+        assert_eq!(scene.sim.houses[&owner].economy().credits(), 1000 + amount);
+    }
+}
+
 fn scene(argument: i32, plant: bool) -> Replay {
     scene_with_members(
         argument,
@@ -97,6 +127,7 @@ fn source(scene: &mut Replay) -> &mut SuperWeaponInstance {
     scene
         .sim
         .super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&id)

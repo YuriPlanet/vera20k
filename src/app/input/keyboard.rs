@@ -18,6 +18,8 @@ pub(crate) struct InGameKeyEdge<'a> {
     pub location: KeyLocation,
     pub state: ElementState,
     pub repeat: bool,
+    /// The characters the press types (WM_CHAR), for the chat edit.
+    pub text: Option<&'a str>,
 }
 
 pub(crate) fn in_game_key_edge(
@@ -25,6 +27,17 @@ pub(crate) fn in_game_key_edge(
     edge: InGameKeyEdge<'_>,
     paused_at_event: bool,
 ) {
+    // Process_Command 0x0055DEE0 first runs the chat pre-hook 0x0055E420 and
+    // stops when it zeroed the key. A release still clears held scrolling.
+    if crate::app::input::chat::key_edge(state, &edge) {
+        if !edge.state.is_pressed() {
+            state.match_state.input.keys_held.remove(&edge.physical);
+            if let Some(scroll_key) = hotkeys::physical_scroll_key(edge.physical) {
+                state.match_state.input.keys_held.remove(&scroll_key);
+            }
+        }
+        return;
+    }
     let is_escape = matches!(edge.logical, Key::Named(NamedKey::Escape));
     let locked = crate::app::input::campaign_input::is_locked(state);
     let binding_key = hotkeys::binding_logical_key(edge.logical, edge.unmodified, edge.location);

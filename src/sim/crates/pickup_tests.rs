@@ -1207,7 +1207,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
             row["rng_before"],
             "{name} independent native seed input"
         );
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         assert_eq!(
             pickup_crate(
                 &mut sim,

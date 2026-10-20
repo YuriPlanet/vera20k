@@ -16,6 +16,7 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement;
 use crate::sim::movement::ScatterFlags;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 /// Unit+0x68C, the runtime Deploy continuation (not the type's
@@ -194,7 +195,13 @@ pub(crate) fn mission_hunt_deploy(
         }
         _ => {}
     }
-    sim.mission_rate_epilogue_for(rules, id, MissionType::Hunt)
+    Simulation::mission_rate_epilogue_for(
+        &mut sim.scenario_rng,
+        &sim.substrate,
+        rules,
+        id,
+        MissionType::Hunt,
+    )
 }
 
 /// `UnitClass::TryToDeploy @ 0x00738D30`: true when the unit may deploy where
@@ -379,7 +386,7 @@ pub(crate) fn mission_unload(
                     queued != MissionId::NONE
                         && queued != MissionId::from_known(MissionType::Unload)
                 }) {
-                    let _ = sim.mission_commence_exact(id, now);
+                    let _ = sim.substrate.mission_commence_exact(id, now);
                 }
             } else {
                 sim.deploy_mcv(id, rules, registry, effects);
@@ -394,17 +401,23 @@ pub(crate) fn mission_unload(
                 .is_some_and(|e| e.mcv_deploy_pending.is_pending());
             if pending {
                 let accepted = sim.deploy_mcv(id, rules, registry, effects);
-                finish_retry(sim, id, accepted);
+                finish_retry(&mut sim.substrate, id, accepted);
             } else {
                 // 0x0073D6CA..0x0073D6DB: Enter_Idle_Mode(0, 1), then
                 // NextMission.
                 sim.unit_enter_idle_mode(id, Some(rules), false, effects);
-                let _ = sim.mission_commence_exact(id, now);
+                let _ = sim.substrate.mission_commence_exact(id, now);
             }
         }
         _ => {}
     }
-    sim.mission_rate_epilogue_for(rules, id, MissionType::Unload)
+    Simulation::mission_rate_epilogue_for(
+        &mut sim.scenario_rng,
+        &sim.substrate,
+        rules,
+        id,
+        MissionType::Unload,
+    )
 }
 
 // Kept as the production result seam so original interior-block oracle outputs
@@ -445,9 +458,9 @@ pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64) {
 
 /// `UnitClass::Mission_Unload @ 0x0073D630`'s state-2 retry (`0x0073DD5D..0x0073DD76`):
 /// a refused `Deploy` with a NavCom (`+0x5A4`) clears `+0x68C`.
-pub(crate) fn finish_retry(sim: &mut Simulation, id: u64, accepted: bool) {
+pub(crate) fn finish_retry(substrate: &mut ObjectSubstrate, id: u64, accepted: bool) {
     if !accepted
-        && let Some(e) = sim.substrate.entities.get_mut(id)
+        && let Some(e) = substrate.entities.get_mut(id)
         && e.navigation.nav_com().is_some()
     {
         e.mcv_deploy_pending.clear();

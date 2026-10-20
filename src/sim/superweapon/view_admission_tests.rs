@@ -29,12 +29,16 @@ fn nuke_scene() -> (Simulation, RuleSet, InternedId, InternedId) {
         .register(HouseState::new(owner, 0, None, true, 0, 10));
     let type_id = sim.interner.intern("NukeSpecial");
     sim.super_weapons
+        .map_mut_for_test()
         .entry(owner)
         .or_default()
         .insert(type_id, SuperWeaponInstance::new(type_id, owner, 0));
     sim.spawn_object("NAMISL", "Americans", 10, 10, 0, &rules)
         .unwrap();
-    sim.power_states.entry(owner).or_default();
+    sim.power_states
+        .map_mut_for_test()
+        .entry(owner)
+        .or_default();
     (sim, rules, owner, type_id)
 }
 

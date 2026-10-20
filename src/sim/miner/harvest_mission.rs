@@ -43,7 +43,9 @@ pub(crate) fn mission_harvest(
             .is_some_and(|object| object.resource_destination && object.resource_gatherer);
     if slave_master {
         sim.handle_returned_slaves(id, rules, frame_effects);
-        return Some(sim.mission_rate_epilogue_for(
+        return Some(Simulation::mission_rate_epilogue_for(
+            &mut sim.scenario_rng,
+            &sim.substrate,
             rules,
             id,
             crate::sim::mission::MissionType::Harvest,
@@ -62,7 +64,7 @@ pub(crate) fn mission_harvest(
         &mut snap,
         frame_effects,
     );
-    commit_miner_snapshot(sim, &snap);
+    commit_miner_snapshot(&mut sim.substrate, &snap);
     Some(snap.dispatch_delay)
 }
 

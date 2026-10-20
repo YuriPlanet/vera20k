@@ -10,7 +10,6 @@
 
 use crate::app::types::HoverTargetKind;
 use crate::map::entities::EntityCategory;
-use crate::map::terrain::TacticalBridgeLookup;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
@@ -66,17 +65,12 @@ pub(crate) fn hover_target_at_point(
     local_owner: &str,
     ignore_visibility: bool,
     rules: Option<&RuleSet>,
-    height_map: &std::collections::BTreeMap<(u16, u16), u8>,
-    bridge_cells: Option<&dyn TacticalBridgeLookup>,
 ) -> Option<HoverTargetKindWithId> {
+    let cells = crate::app::match_runtime::sim_tick::tactical_cells(sim);
     let player = sim.interner().get(local_owner);
     let fog = (!ignore_visibility).then_some(sim.fog());
-    let (rx, ry) = crate::app::match_runtime::sim_tick::world_point_to_cell(
-        world_x,
-        world_y,
-        height_map,
-        bridge_cells,
-    );
+    let (rx, ry) =
+        crate::app::match_runtime::sim_tick::world_point_to_cell(world_x, world_y, cells);
     if crate::app::presentation::instances::cell_visibility_for_local_owner(
         player,
         fog,
@@ -191,8 +185,6 @@ pub(crate) fn compute_click_selection_snapshot(
     additive: bool,
     rules: Option<&RuleSet>,
     houses: Option<&HouseStates>,
-    height_map: &std::collections::BTreeMap<(u16, u16), u8>,
-    bridge_cells: Option<&dyn TacticalBridgeLookup>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> Option<SelectionMutation> {
     compute_click_selection_snapshot_with_playfield(
@@ -207,8 +199,6 @@ pub(crate) fn compute_click_selection_snapshot(
         additive,
         rules,
         houses,
-        height_map,
-        bridge_cells,
         interner,
         false,
         None,
@@ -227,8 +217,6 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
     additive: bool,
     rules: Option<&RuleSet>,
     houses: Option<&HouseStates>,
-    height_map: &std::collections::BTreeMap<(u16, u16), u8>,
-    bridge_cells: Option<&dyn TacticalBridgeLookup>,
     interner: Option<&crate::sim::intern::StringInterner>,
     require_playfield_membership: bool,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -243,8 +231,6 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
         click_radius,
         rules,
         houses,
-        height_map,
-        bridge_cells,
         interner,
         terrain,
     ) else {
@@ -1078,23 +1064,18 @@ pub(crate) fn pick_entity_at_point(
     click_radius: f32,
     rules: Option<&RuleSet>,
     _houses: Option<&HouseStates>,
-    height_map: &std::collections::BTreeMap<(u16, u16), u8>,
-    bridge_cells: Option<&dyn TacticalBridgeLookup>,
     interner: Option<&crate::sim::intern::StringInterner>,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> Option<u64> {
+    let cells = terrain.map(|terrain| terrain as &dyn crate::map::terrain::TacticalCellLookup);
     // Elliptical pick distance: dx² + 0.5*dy² < 200, with the 0.5 Y-weight
     // compensating for isometric projection.
     // The click_radius parameter is kept for API compatibility but not used.
     let _ = click_radius;
     let local_owner_id = local_owner.and_then(|o| interner.and_then(|i| i.get(o)));
     if let (Some(fog), Some(owner_id)) = (fog, local_owner_id) {
-        let (rx, ry) = crate::app::match_runtime::sim_tick::world_point_to_cell(
-            world_x,
-            world_y,
-            height_map,
-            bridge_cells,
-        );
+        let (rx, ry) =
+            crate::app::match_runtime::sim_tick::world_point_to_cell(world_x, world_y, cells);
         if crate::app::presentation::instances::cell_visibility_for_local_owner(
             Some(owner_id),
             Some(fog),
@@ -1134,12 +1115,8 @@ pub(crate) fn pick_entity_at_point(
 
     // Cell/foundation occupancy is consulted only when the tracked-anchor pass
     // found nothing. Preserve encounter order when a malformed overlap exists.
-    let click_cell = crate::app::match_runtime::sim_tick::world_point_to_cell(
-        world_x,
-        world_y,
-        height_map,
-        bridge_cells,
-    );
+    let click_cell =
+        crate::app::match_runtime::sim_tick::world_point_to_cell(world_x, world_y, cells);
     entities.values().find_map(|entity| {
         if entity.category() != EntityCategory::Structure
             || !entity.lifecycle.object_alive()
@@ -1283,7 +1260,7 @@ mod tests {
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
             let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
-            let heights = std::collections::BTreeMap::new();
+
             let expected = admitted.then_some(1);
             assert_eq!(
                 pick_entity_at_point(
@@ -1296,8 +1273,6 @@ mod tests {
                     0.0,
                     None,
                     None,
-                    &heights,
-                    None,
                     Some(sim.interner()),
                     None,
                 ),
@@ -1305,10 +1280,8 @@ mod tests {
                 "pointer: owner equality{same_owner}, retained{retained_owned}, sensor{sensed}, cloak{cloak_state}"
             );
             assert_eq!(
-                hover_target_at_point(
-                    &sim, world.0, world.1, "viewer", false, None, &heights, None
-                )
-                .map(|target| target.stable_id),
+                hover_target_at_point(&sim, world.0, world.1, "viewer", false, None,)
+                    .map(|target| target.stable_id),
                 expected,
                 "hover: owner equality{same_owner}, retained{retained_owned}, sensor{sensed}, cloak{cloak_state}"
             );
@@ -1344,8 +1317,6 @@ mod tests {
                 30.0,
                 false,
                 None,
-                None,
-                &std::collections::BTreeMap::new(),
                 None,
                 Some(&interner),
             )
@@ -1427,7 +1398,7 @@ mod tests {
             .unwrap()
             .bunker
             .set_bunker_occupant_for_test(Some(1));
-        let heights = std::collections::BTreeMap::new();
+
         let pick = |sim: &Simulation, point: (f32, f32)| {
             pick_entity_at_point(
                 sim.entities(),
@@ -1438,8 +1409,6 @@ mod tests {
                 point.1,
                 30.0,
                 Some(&retail.rules),
-                None,
-                &heights,
                 None,
                 Some(sim.interner()),
                 sim.resolved_terrain(),
@@ -1474,8 +1443,6 @@ mod tests {
             30.0,
             false,
             Some(&retail.rules),
-            None,
-            &heights,
             None,
             Some(sim.interner()),
             true,

@@ -190,13 +190,14 @@ fn the_launch_matches_native() {
         let charged = row["charged"] == true;
         if !charged {
             sim.super_weapons
+                .map_mut_for_test()
                 .get_mut(&owner)
                 .unwrap()
                 .get_mut(&sw_type)
                 .unwrap()
                 .is_ready = false;
         }
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let cell = (target.0 as u16, target.1 as u16);
         OBSERVED.set(Some(Vec::new()));
         let launched = launch(
@@ -615,7 +616,8 @@ fn the_make_infantry_end_matches_native() {
         let anim = super::super::spawn_super_anim(&mut sim, &rules, "GENDEATH", [x, y, z])
             .expect("the MakeInfantry anim");
         if let Some(owner) = row["owner"].as_u64() {
-            sim.set_anim_owner_house(anim, houses[owner as usize]);
+            sim.substrate
+                .set_anim_owner_house(anim, houses[owner as usize]);
         }
         sim.substrate
             .anims
@@ -939,7 +941,14 @@ fn a_fourth_infantryman_at_a_full_cells_centre_mutates() {
     // The fourth moves to the centre of (40, 40), behind the three on its list.
     let [x, y] =
         ground_pose::position_world_xy(&sim.substrate.entities.get(fourth).unwrap().position);
-    assert!(sim.object_raw_receiver_at(fourth, DriveCoord { x, y, z: 0 }, false));
+    assert!(Simulation::object_raw_receiver_at(
+        &mut sim.substrate,
+        &sim.path_grid,
+        &sim.resolved_terrain,
+        fourth,
+        DriveCoord { x, y, z: 0 },
+        false
+    ));
     let occupancy = &mut sim.substrate.occupancy;
     occupancy.move_entity(
         41,
@@ -974,7 +983,14 @@ fn a_fourth_infantryman_at_a_full_cells_centre_mutates() {
         entity.position.put_location(centre);
         entity.set_sub_cell(Some(0));
     }
-    assert!(sim.object_raw_receiver_at(fourth, centre, true));
+    assert!(Simulation::object_raw_receiver_at(
+        &mut sim.substrate,
+        &sim.path_grid,
+        &sim.resolved_terrain,
+        fourth,
+        centre,
+        true
+    ));
     let listed: Vec<u64> = sim
         .substrate
         .occupancy

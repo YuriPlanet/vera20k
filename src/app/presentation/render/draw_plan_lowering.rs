@@ -79,6 +79,9 @@ pub(crate) struct PlannedObjectInstance {
     pub pieces: Vec<ObjectPieceInstance>,
     pub building_pieces: Option<Vec<PlannedBuildingPieceInstance>>,
     pub body_draw: Option<ObjectBodyDraw>,
+    /// Destination stores the parent's draw call makes after its sprites, such
+    /// as the target laser at the end of `UnitClass::Draw_It` (`0x0073D43A`).
+    pub tail_draws: Vec<SurfaceDraw>,
     pub brackets: Option<crate::app::presentation::selection_brackets::BuildingBracketLines>,
     pub status: Option<crate::app::presentation::ui_overlays::TechnoExtras>,
 }
@@ -90,6 +93,7 @@ impl PlannedObjectInstance {
             pieces,
             building_pieces: None,
             body_draw: None,
+            tail_draws: Vec::new(),
             brackets: None,
             status: None,
         }
@@ -101,6 +105,7 @@ impl PlannedObjectInstance {
             pieces: Vec::new(),
             building_pieces: Some(pieces),
             body_draw: None,
+            tail_draws: Vec::new(),
             brackets: None,
             status: None,
         }
@@ -260,6 +265,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
     let mut brackets = BTreeMap::new();
     let mut status = BTreeMap::new();
     let mut body_draws = BTreeMap::new();
+    let mut tail_draws = BTreeMap::new();
     let mut inputs = Vec::with_capacity(entries.len());
 
     for entry in entries {
@@ -270,6 +276,9 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 "one Display body uses sprites or one surface operation"
             );
             assert!(body_draws.insert(id, draw).is_none());
+        }
+        if !entry.tail_draws.is_empty() {
+            assert!(tail_draws.insert(id, entry.tail_draws).is_none());
         }
         if let Some(lines) = entry.brackets {
             assert!(brackets.insert(id, lines).is_none());
@@ -547,6 +556,9 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     }
                 }
             }
+            if let Some(draws) = tail_draws.remove(&owner) {
+                push_surface_draws(lowered, draws);
+            }
         }
     }
     layers
@@ -723,6 +735,52 @@ mod tests {
             ObjectTexture::SurfaceLines(1)
         ));
         assert_eq!((pass.runs[3].start, pass.runs[3].count), (2, 1));
+    }
+
+    /// A parent's tail stores (the target laser at the end of
+    /// `UnitClass::Draw_It`, `0x0073D43A`) follow its own sprites in its
+    /// Display slot and precede the next parent's.
+    #[test]
+    fn tail_draws_follow_their_parents_sprites() {
+        let store = |word| SurfaceDraw::OpaqueRect {
+            rect: [0, 0, 1, 1],
+            word,
+        };
+        let parent = |id, display_order, tail_draws: Vec<SurfaceDraw>| {
+            let piece = || ObjectPieceInstance {
+                target: ObjectTexture::OverlayAtlas,
+                render_z: RenderZPolicy::ReadOnly,
+                instance: SpriteInstance::default(),
+            };
+            let mut parent = PlannedObjectInstance::object(
+                ObjectDraw {
+                    id,
+                    layer: TacticalLayer(2),
+                    display_order,
+                    policy: BlitPolicy::z_read(SpriteEncoding::Rle),
+                },
+                vec![piece(), piece()],
+            );
+            parent.tail_draws = tail_draws;
+            parent
+        };
+        let pass = lower_ground_object_instances(vec![
+            parent(8, 1, Vec::new()),
+            parent(7, 0, vec![store(1), store(2)]),
+        ]);
+        assert_eq!(pass.owners, [7, 7, 8, 8]);
+        assert_eq!(pass.surface_draws, [vec![store(1), store(2)]]);
+        assert_eq!(
+            pass.runs
+                .iter()
+                .map(|run| (run.target, run.start, run.count))
+                .collect::<Vec<_>>(),
+            [
+                (ObjectTexture::OverlayAtlas, 0, 2),
+                (ObjectTexture::SurfaceLines(0), 2, 0),
+                (ObjectTexture::OverlayAtlas, 2, 2),
+            ]
+        );
     }
 
     #[test]

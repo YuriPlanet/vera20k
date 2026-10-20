@@ -276,7 +276,7 @@ pub(crate) fn harvest_reach(sim: &Simulation, rules: &RuleSet, id: u64) -> Optio
 /// order: candidate playfield, campaign/current-player ground/shroud gate,
 /// source coordinate/layer, zone reach, LandType, then the class entry receiver.
 fn is_cell_harvestable(
-    sim: &mut Simulation,
+    sim: &Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,

@@ -1940,6 +1940,7 @@ impl MapKeyboardGestureReceipt {
                     location,
                     state: pressed,
                     repeat,
+                    text: None,
                 },
                 false,
             )

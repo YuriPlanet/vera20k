@@ -882,7 +882,7 @@ pub(crate) fn commit_entities(
                 {
                     let coordinate =
                         crate::sim::movement::ground_pose::position_world_coord(&target.position);
-                    world.sound_events.push(SimSoundEvent::VocAtCoord {
+                    world.sound_events.emit(SimSoundEvent::VocAtCoord {
                         sound_id: sound_id.to_owned(),
                         coordinate,
                         //702734/70277D PUSH0 before each750E20;
@@ -917,7 +917,7 @@ pub(crate) fn commit_entities(
             let mut position = target.position;
             position.put_location(coord);
             if sound_enabled {
-                world.sound_events.push(SimSoundEvent::voc_at(
+                world.sound_events.emit(SimSoundEvent::voc_at(
                     object.voice_feedback[index].clone(),
                     &position,
                 ));
@@ -991,7 +991,12 @@ pub(crate) fn commit_entities(
                     )
                 });
             if surfaced.is_some_and(|result| result.play_sound) && sound_enabled {
-                emit_configured_cloak_sound(world, target_id, rules);
+                emit_configured_cloak_sound(
+                    &world.substrate,
+                    &mut world.sound_events,
+                    target_id,
+                    rules,
+                );
             }
         }
 
@@ -1158,7 +1163,7 @@ pub(crate) fn commit_entities(
         {
             let coordinate =
                 crate::sim::movement::ground_pose::position_world_coord(&target.position);
-            world.sound_events.push(SimSoundEvent::VocAtCoord {
+            world.sound_events.emit(SimSoundEvent::VocAtCoord {
                 sound_id: sound_id.to_owned(),
                 coordinate,
                 //4426E1 PUSH0 before750E20 at442706 (same executed owner).
@@ -1567,7 +1572,13 @@ pub(crate) fn handle_death(
                 // Crazy Ivan's own bomber) plants a bomb on the dying object
                 // instead of damaging (`0x00469343`), which goes off below.
                 if explodes
-                    && let Some(detonation) = super::death_weapon_detonation(world, dead_id, rules)
+                    && let Some(detonation) = super::death_weapon_detonation(
+                        &mut world.interner,
+                        &world.substrate,
+                        &world.resolved_terrain,
+                        dead_id,
+                        rules,
+                    )
                 {
                     let commit =
                         commit_projectiles(world, run, &[detonation], rules, overlay_registry);
@@ -2064,7 +2075,7 @@ fn run_special_detonation_arm(
             );
         }
         SpecialDetonationAction::ElectricAssault => {
-            world.electric_assault_detonation(owner, object);
+            world.substrate.electric_assault_detonation(owner, object);
         }
         SpecialDetonationAction::Airstrike => {
             world.airstrike_detonation(owner, object, rules, effects);

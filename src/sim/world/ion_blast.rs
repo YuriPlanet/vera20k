@@ -200,7 +200,7 @@ impl Simulation {
             (RAD_NO_ATTACKER, None, wh),
             effects,
         );
-        self.combat_light_requests.push(CombatLightRequest::Impact {
+        self.combat_light_requests.emit(CombatLightRequest::Impact {
             target_id: None,
             damage: rules.general.ion_cannon_damage,
             warhead_ref: wh,

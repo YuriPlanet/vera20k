@@ -396,7 +396,7 @@ impl Simulation {
                 .chrono_mut()
                 .unwrap()
                 .set_pending_state(3);
-            let _ = self.mission_commence_exact(member, frame);
+            let _ = self.substrate.mission_commence_exact(member, frame);
         }
         let review = self.team_type_house(team_type, rules).and_then(|owner| {
             self.session
@@ -579,7 +579,9 @@ impl Simulation {
         }
         //65DCF9 invokes Aircraft Commence41B870 directly, with no Ready
         //query, after the entire payload attaches. Use the sole mission owner.
-        let _ = self.mission_commence_exact(plane, self.session.binary_frame());
+        let _ = self
+            .substrate
+            .mission_commence_exact(plane, self.session.binary_frame());
         true
     }
 

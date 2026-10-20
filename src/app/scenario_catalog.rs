@@ -86,12 +86,24 @@ impl ScenarioCatalog {
                 anyhow::anyhow!("selected network map has no local catalog record: {file}")
             })?;
         let loaded = load_map_ini_by_name_or_path_with_assets(root, &record.file_name, assets)?;
+        let digest = if record
+            .file_name
+            .eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
+        {
+            // The random-map record carries 0x005E84D0's option digest
+            // (0x005E8590), not a [Digest]; the .Sed holds the same block.
+            let mut options = crate::map::rmg::RmgOptions::default();
+            options.apply_sed(&loaded.ini);
+            options.native_digest()
+        } else {
+            network_map_digest(&loaded.ini)
+        };
         Ok(NetworkMapMetadata {
             display_name: record.display_name.clone(),
             player_capacity: record.player_capacity,
             official: record.official,
             byte_length: physical_map_length(&loaded.source),
-            digest: network_map_digest(&loaded.ini),
+            digest,
         })
     }
 
@@ -176,6 +188,30 @@ mod tests {
     use super::*;
     use crate::map::skirmish_scenarios::SkirmishScenarioSource;
     use crate::map::source::test_support::TestDirectory;
+
+    #[test]
+    fn the_random_map_record_publishes_the_generator_option_digest() {
+        let root = TestDirectory::new("network-random-map-metadata");
+        let options = crate::map::rmg::RmgOptions {
+            seed: 4321,
+            ..crate::map::rmg::RmgOptions::default()
+        };
+        let bytes = options.to_sed_bytes();
+        root.write("RandMap.Sed", &bytes);
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let catalog =
+            ScenarioCatalog::from_records(vec![SkirmishScenarioRecord::random_map_sentinel(
+                0,
+                "Random Map",
+                4,
+            )]);
+        let metadata = catalog
+            .network_map_metadata("RandMap.Sed", root.path(), &assets)
+            .unwrap();
+        assert_eq!(metadata.digest, options.native_digest());
+        assert_eq!(metadata.byte_length, bytes.len() as i32);
+        assert!(metadata.official);
+    }
 
     #[test]
     fn network_availability_matches_registered_name_size_and_native_digest_reader() {

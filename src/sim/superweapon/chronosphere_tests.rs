@@ -106,6 +106,7 @@ fn world_with_cells(
         for name in &rules.super_weapon_order {
             let type_id = sim.interner.intern(name);
             sim.super_weapons
+                .map_mut_for_test()
                 .entry(id)
                 .or_default()
                 .insert(type_id, super::SuperWeaponInstance::new(type_id, id, 0));
@@ -246,6 +247,7 @@ pub(crate) fn charge_super(sim: &mut Simulation, owner: InternedId, name: &str) 
     instance.charge_start_tick -= 6300;
     instance.is_ready = true;
     sim.super_weapons
+        .map_mut_for_test()
         .entry(owner)
         .or_default()
         .insert(sw_type, instance);

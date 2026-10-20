@@ -300,7 +300,9 @@ fn spawn_inert_dock_instance(sim: &mut Simulation) {
     if !sim.houses.contains_key(&owner_id) {
         seed_human_house(sim, "Americans");
     }
-    sim.update_house_tracking(
+    Simulation::update_house_tracking(
+        &mut sim.substrate,
+        &mut sim.houses,
         INERT_DOCK_ID,
         crate::sim::house_tracking::HouseTracking::add_tracking,
     );

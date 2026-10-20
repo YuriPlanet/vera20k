@@ -623,7 +623,6 @@ struct CellOverlayInputs<'a> {
     interner: Option<&'a crate::sim::intern::StringInterner>,
     tiberium_types: Option<&'a crate::rules::tiberium_type::TiberiumTypeRegistry>,
     terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    heights: &'a std::collections::BTreeMap<(u16, u16), u8>,
     lighting: &'a crate::map::lighting::CellLightGrid,
     camera: [f32; 2],
     viewport: [f32; 2],
@@ -719,10 +718,9 @@ fn build_cell_overlay_instances(
         };
 
         let z: u8 = input
-            .heights
-            .get(&(entry.rx, entry.ry))
-            .copied()
-            .unwrap_or(0);
+            .terrain
+            .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
+            .map_or(0, |cell| cell.level);
         let (screen_x, screen_y) = terrain::iso_to_screen(entry.rx, entry.ry, z);
         let live_flags = input
             .terrain
@@ -875,7 +873,6 @@ pub(crate) fn build_overlay_instances(
                 .sim_runtime
                 .as_ref()
                 .and_then(|runtime| runtime.simulation.resolved_terrain()),
-            heights: state.height_map(),
             lighting: state.match_state.match_presentation.lighting.grid(),
             camera: [cam_x, cam_y],
             viewport: [sw, sh],

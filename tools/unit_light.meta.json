@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Unit DrawIt packed-cell getter and admitted body intensity, including bridge, side-cell, height and lighting-profile branches",
+  "assumptions": [
+    "Original Unit vtable, declared Location/OnBridge/Marked and three flat Cell inputs; real GetCell/GetHeight/IsHighFlying, map floor and neighbor queries execute.",
+    "Existing discovery, Object and Unit geometry startup owners establish104/416 scalars; scenario profile values and weather/superweapon statuses are declared inputs; Scenario Set_Defaults establishes the fixed NukeLevel100.",
+    "Unit73CF1D..73CF34 supplies the packed cell; admitted73CF70..73D0D7 follows the visual/deploy/tactical-notification boundary, which is outside this component.",
+    "Cell intensity is a signed word; sums/products retain native32-bit wrap. Unit bytes and all three RNG buffers remain unchanged. No full scene or renderer parity."
+  ],
+  "substitutions": [
+    "Only existing Emu platform allocation/CRT boundaries; no reached lighting, height, high-flight, neighbor or weather call is replaced."
+  ],
+  "entry_points": {
+    "unit_draw": "0x0073CEC0",
+    "unit_cell": "0x0073CF1D",
+    "unit_light": "0x0073CF70",
+    "unit_get_cell": "0x0041BEA0",
+    "get_height": "0x005F5F40",
+    "high_flight": "0x004DE620",
+    "cell_neighbor": "0x00481810"
+  },
+  "replay_command": "python -m tools.superweapon_oracle --unit-light",
+  "payload_sha256": "f8db3b9406f4cadf9531158afcbe0388dd5455f64d67a6f729961c48ffa1d1d9"
+}

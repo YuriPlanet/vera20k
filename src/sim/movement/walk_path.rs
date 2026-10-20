@@ -287,7 +287,7 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), String> {
-        self.play_foot_path_scold(id, rules);
+        Self::play_foot_path_scold(&self.substrate, &mut self.sound_events, id, rules);
         self.substrate
             .entities
             .get_mut(id)

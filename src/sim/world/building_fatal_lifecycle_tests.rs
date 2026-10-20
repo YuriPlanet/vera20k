@@ -421,6 +421,7 @@ impl Fixture {
             power["power_dirty"] = json!(native["dirty"][0] == 1);
             power["radar_dirty"] = json!(native["dirty"][1] == 1);
             sim.power_states
+                .map_mut_for_test()
                 .insert(*house, serde_json::from_value(power).unwrap());
         }
         sim.scenario_rng =
@@ -1744,9 +1745,12 @@ fn original_direct_ap_receivers_join_debris_crew_uninit_power_and_deferred_destr
             &visit["after_receiver"],
             &format!("direct receiver {index}"),
         );
-        fixture
-            .sim
-            .sample_building_health_for_house_update(fixture.building);
+        Simulation::sample_building_health_for_house_update(
+            &mut fixture.sim.substrate,
+            &fixture.sim.houses,
+            &mut fixture.sim.power_states,
+            fixture.building,
+        );
         fixture.power_prefix();
         fixture.assert_state(
             &visit["after_sample_and_power"],

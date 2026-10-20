@@ -144,7 +144,7 @@ fn scene(rules: &RuleSet, input: &Value) -> (Simulation, u64, u64) {
     sim.resolve_type_handles(rules);
     sim.session
         .set_binary_frame_for_test(int(&input["birth_frame"]) as u32);
-    sim.power_states.clear();
+    sim.power_states.map_mut_for_test().clear();
     if input["retained_target"].as_bool().unwrap() {
         assert!(super::install_entity_attack_target_for_test(
             &mut sim.substrate.entities,
@@ -157,7 +157,7 @@ fn scene(rules: &RuleSet, input: &Value) -> (Simulation, u64, u64) {
         .get_mut(source)
         .unwrap()
         .set_gunner_selection_for_test(int(&input["current_weapon_number"]), 0);
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     (sim, source, target)
 }
 

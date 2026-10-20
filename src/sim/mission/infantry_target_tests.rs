@@ -281,12 +281,13 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                         .get_mut(1)
                         .unwrap()
                         .set_archive_target(Some(TargetKind::Entity(3)));
-                    sim.mission_assign_exact(
-                        1,
-                        MissionId::from_known(MissionType::Attack),
-                        sim.session.binary_frame(),
-                    )
-                    .unwrap();
+                    sim.substrate
+                        .mission_assign_exact(
+                            1,
+                            MissionId::from_known(MissionType::Attack),
+                            sim.session.binary_frame(),
+                        )
+                        .unwrap();
                     sim.reset_orders_to_guard(1, rules, crate::sim::world::FrameEffects::default());
                     let actor = sim.substrate.entities.get(1).unwrap();
                     assert_eq!(actor.archive_target(), None, "{name}: Guard archive");

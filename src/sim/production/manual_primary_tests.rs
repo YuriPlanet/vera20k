@@ -465,7 +465,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
             }
             ids.push(id);
         }
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let seed = corpus["seed"].as_u64().unwrap();
         sim.main_rng = SimRng::new(seed).into();
         sim.scenario_rng = SimRng::new(seed);
@@ -510,7 +510,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                     .iter()
                     .map(|owner| sim.houses[owner].waypoint_edge())
                     .collect();
-                sim.sound_events.clear();
+                sim.sound_events.clear_for_test();
                 let mut event = None;
                 match input["op"].as_str().unwrap() {
                     "automatic" => initialize_factory_primary(&mut sim, id, &rules),

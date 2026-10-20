@@ -544,7 +544,8 @@ pub fn spawn_terrain_tile_animations(
                 )
             });
         assert!(
-            sim.set_terrain_anim_z_adjust_after_construction(id, tile.z_adjust),
+            sim.substrate
+                .set_terrain_anim_z_adjust_after_construction(id, tile.z_adjust),
             "terrain animation {id} disappeared before its producer ZAdjust write"
         );
         spawned.push(id);
@@ -1004,7 +1005,7 @@ where
         terrain.width(),
         terrain.height(),
     ));
-    sim.flush_smudge_dirty();
+    Simulation::flush_smudge_dirty(&mut sim.smudge_grid, &mut sim.dirty_cells);
 
     let removed = sim.scalar_delete_load_terrain_anims();
     if removed > 0 {
@@ -1133,7 +1134,12 @@ pub fn finalize_constructed_scenario(
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count
     // is rules-owned; presentation atlases retain only body-frame ranges.
-    let seeded_terrain = crate::sim::terrain_spawn::seed_terrain_spawner_animation(sim, rules);
+    let seeded_terrain = crate::sim::terrain_spawn::seed_terrain_spawner_animation(
+        &sim.interner,
+        &mut sim.terrain_objects,
+        &sim.session,
+        rules,
+    );
     if seeded_terrain > 0 {
         log::info!(
             "Seeded {} ore-spawning terrain objects (TIBTRE)",
@@ -1188,7 +1194,7 @@ pub fn finalize_constructed_scenario(
             grid_width,
             grid_height,
         ));
-        sim.flush_smudge_dirty();
+        Simulation::flush_smudge_dirty(&mut sim.smudge_grid, &mut sim.dirty_cells);
         log::info!(
             "Smudge grid initialized: {}x{}, {} entries",
             grid_width,

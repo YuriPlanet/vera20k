@@ -42,8 +42,8 @@ fn fixture(relative_z: i32) -> (Simulation, RuleSet, u64) {
         .position
         .set_exact_z_leptons_for_test(Some(208 + relative_z));
     sim.substrate.entities.insert(entity);
-    sim.begin_receiver_kill_record(id);
-    sim.record_destruction_once(id);
+    sim.substrate.begin_receiver_kill_record(id);
+    Simulation::record_destruction_once(&mut sim.substrate, &mut sim.houses, id);
     sim.begin_ship_sinking(id, &rules, crate::sim::world::FrameEffects::default());
     (sim, rules, id)
 }
@@ -289,7 +289,7 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
         sim.main_rng = SimRng::new(1).into();
         sim.scenario_rng = SimRng::new(1);
         sim.mapgen_rng = SimRng::new(1);
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.sinking_edge_sounds(id, &rules);
         let events: Vec<_> = sim
             .sound_events

@@ -122,13 +122,13 @@ pub(crate) fn launch(
     }
     let general = &rules.general;
     super::spawn_cell_anim(sim, rules, &general.ion_blast_anim, target_rx, target_ry);
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx: target_rx,
         ry: target_ry,
     });
-    sim.sound_events.push(SimSoundEvent::RadarEvent {
+    sim.sound_events.emit(SimSoundEvent::RadarEvent {
         radar: RadarEventRequest::new(RadarEventType::ImpactSilent, target_rx, target_ry),
     });
 
@@ -181,7 +181,8 @@ pub(crate) fn launch(
                 continue;
             }
             if let Some(event) = super::strength_receiver_event(
-                sim,
+                &mut sim.interner,
+                &sim.substrate,
                 rules,
                 id,
                 &general.mutate_warhead,

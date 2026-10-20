@@ -195,7 +195,7 @@ fn run_until(
     for _ in 0..frames {
         let commands = sim.take_due_commands();
         sim.advance_tick(&commands, Some(rules), Some(grid), None, 33);
-        events.append(&mut sim.sound_events);
+        events.extend(sim.sound_events.take_for_test());
         if done(sim) {
             return true;
         }
@@ -412,7 +412,7 @@ fn destroying_the_center_switches_its_robot_tanks_off() {
 
     events.clear();
     destroy(&mut sim, &rules, center);
-    events.append(&mut sim.sound_events);
+    events.extend(sim.sound_events.take_for_test());
     assert!(tanks.iter().all(|&id| offline(&sim, id)));
     assert!(!sim.has_powered_center(americans));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_OFFLINE), 1);
@@ -453,7 +453,7 @@ fn a_captured_center_counts_for_its_captor_only_at_its_next_edge() {
 
     events.clear();
     sim.change_owner_with_rules(center, russians, &rules, None, FrameEffects::default());
-    events.append(&mut sim.sound_events);
+    events.extend(sim.sound_events.take_for_test());
     assert!(tanks.iter().all(|&id| offline(&sim, id)));
     assert!(!sim.has_powered_center(americans));
     assert_eq!(lines(&events, americans, EVA_ROBOT_TANKS_OFFLINE), 1);

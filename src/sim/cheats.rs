@@ -121,14 +121,14 @@ impl Simulation {
             },
             ..Default::default()
         };
-        for power in self.power_states.values_mut() {
+        for (_, power) in self.power_states.iter_mut() {
             power.set_debug_full_power(false);
         }
         if let Some(owner) = old_tech_owner {
-            self.request_house_tech_tree_recheck(owner);
+            self.houses.request_house_tech_tree_recheck(owner);
         }
         for id in logged {
-            if let Some(entity) = self.entities_mut().get_mut(id) {
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.set_debug_logging(false);
             }
         }
@@ -199,11 +199,11 @@ impl Simulation {
         let old = self.debug_tools.flags;
         self.debug_tools.flags = flags;
         self.debug_tools.owner = Some(owner);
-        for (&id, power) in &mut self.power_states {
+        for (&id, power) in self.power_states.iter_mut() {
             power.set_debug_full_power(id == owner && flags.infinite_power);
         }
         if old.tech_all != flags.tech_all || old.tech_boost != flags.tech_boost {
-            self.request_house_tech_tree_recheck(owner);
+            self.houses.request_house_tech_tree_recheck(owner);
         }
         Ok(())
     }
@@ -268,11 +268,11 @@ impl Simulation {
             // Ask the existing House owner to refresh retained generation even
             // if the building's next live AI visit is gated.
             if healed_structure {
-                self.invalidate_house_power(owner, true);
+                Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
             }
         }
         if pending & 2 != 0 {
-            for entity in self.entities_mut().values_mut() {
+            for entity in self.substrate.entities.values_mut() {
                 if entity.owner() == owner
                     && entity.lifecycle.object_alive()
                     && !entity.death.is_dying()
@@ -284,10 +284,9 @@ impl Simulation {
         }
         if pending & 4 != 0
             && let Some(rules) = rules
-            && let Some(weapons) = self.super_weapons.get_mut(&owner)
         {
             let frame = self.session.binary_frame();
-            for (type_id, instance) in weapons {
+            for (type_id, instance) in self.super_weapons.house_instances_mut(&owner) {
                 if let Some(sw) = rules.super_weapon(self.interner.resolve(*type_id)) {
                     instance.debug_charge_full(sw, frame);
                 }
@@ -359,13 +358,13 @@ impl Simulation {
         let old = std::mem::replace(&mut self.debug_tools.logged_entities, selected.clone());
         for id in old {
             if !selected.contains(&id)
-                && let Some(entity) = self.entities_mut().get_mut(id)
+                && let Some(entity) = self.substrate.entities.get_mut(id)
             {
                 entity.set_debug_logging(false);
             }
         }
         for id in selected {
-            if let Some(entity) = self.entities_mut().get_mut(id) {
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.set_debug_logging(true);
             }
         }
@@ -466,7 +465,11 @@ mod tests {
     #[test]
     fn context_change_drops_pending_actions_and_power_without_corrupting_totals() {
         let (mut sim, owner) = offline();
-        let power = sim.power_states.entry(owner).or_default();
+        let power = sim
+            .power_states
+            .map_mut_for_test()
+            .entry(owner)
+            .or_default();
         power.set_total_output_for_test(100);
         power.set_total_drain_for_test(200);
         power.set_is_low_power_for_test(true);
@@ -515,7 +518,7 @@ mod tests {
             false,
         );
         entity.selection.set_selected_for_test(true);
-        sim.entities_mut().insert(entity);
+        sim.substrate.entities.insert(entity);
         let hash = sim.state_hash();
         let before = crate::util::save_codec::serialize(&sim).unwrap();
         sim.set_cheat_flags(CheatFlags::default()).unwrap();
@@ -551,7 +554,7 @@ mod tests {
                 false,
             );
             entity.selection.set_selected_for_test(true);
-            sim.entities_mut().insert(entity);
+            sim.substrate.entities.insert(entity);
         }
         sim.set_debug_event_logging(true);
         assert_eq!(
@@ -561,7 +564,8 @@ mod tests {
                 .count(),
             32
         );
-        sim.entities_mut()
+        sim.substrate
+            .entities
             .get_mut(1)
             .unwrap()
             .selection
@@ -600,7 +604,8 @@ mod tests {
         let ty = sim.interner.intern("E1");
         let warhead = sim.interner.intern("SA");
         for (id, house) in [(1, owner), (2, other)] {
-            sim.entities_mut()
+            sim.substrate
+                .entities
                 .insert(GameEntity::new_at_frame_zero_for_test(
                     id,
                     1,
@@ -651,7 +656,7 @@ mod tests {
             crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.entities().get(2).unwrap().health.current(), 70);
-        let entity = sim.entities_mut().get_mut(1).unwrap();
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
         apply_invulnerability(entity, 0, 300, InvulnKind::IronCurtain);
         let original = crate::util::save_codec::serialize(&entity.invulnerability).unwrap();
         sim.apply_debug_tools(Some(&rules));
@@ -688,7 +693,8 @@ mod tests {
         let enemy = sim.interner.intern("Enemy");
         let ty = sim.interner.intern("E1");
         for (id, house) in [(1, owner), (2, enemy)] {
-            sim.entities_mut()
+            sim.substrate
+                .entities
                 .insert(GameEntity::new_at_frame_zero_for_test(
                     id,
                     1,
@@ -712,7 +718,7 @@ mod tests {
         assert_eq!(sim.entities().get(1).unwrap().veterancy.rank(), 200);
         assert_eq!(sim.entities().get(2).unwrap().health.current(), 10);
         assert_eq!(sim.entities().get(2).unwrap().veterancy.rank(), 0);
-        sim.entities_mut().get_mut(1).unwrap().health.set(50);
+        sim.substrate.entities.get_mut(1).unwrap().health.set(50);
         sim.apply_debug_tools(Some(&rules));
         assert_eq!(
             sim.entities().get(1).unwrap().health.current(),
@@ -729,6 +735,7 @@ mod tests {
         let mut instance = crate::sim::superweapon::SuperWeaponInstance::new(ty, owner, 0);
         instance.set_is_active_for_test(true);
         sim.super_weapons
+            .map_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(ty, instance);
@@ -738,6 +745,7 @@ mod tests {
         assert!(sim.super_weapons[&owner][&ty].is_ready());
         let instance = sim
             .super_weapons
+            .map_mut_for_test()
             .get_mut(&owner)
             .unwrap()
             .get_mut(&ty)
@@ -772,8 +780,8 @@ mod tests {
             1,
             false,
         );
-        sim.entities_mut().insert(entity);
-        sim.power_states.insert(
+        sim.substrate.entities.insert(entity);
+        sim.power_states.map_mut_for_test().insert(
             owner,
             crate::sim::power_system::PowerState::settled_for_test(),
         );
@@ -782,7 +790,7 @@ mod tests {
         assert_eq!(sim.entities().get(1).unwrap().health.current(), 100);
         assert!(sim.power_states[&owner].power_recheck_for_test());
         assert!(sim.power_states[&owner].radar_recheck_for_test());
-        sim.power_states.insert(
+        sim.power_states.map_mut_for_test().insert(
             owner,
             crate::sim::power_system::PowerState::settled_for_test(),
         );

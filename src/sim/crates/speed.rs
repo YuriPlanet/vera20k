@@ -6,14 +6,16 @@
 
 use crate::map::entities::EntityCategory;
 use crate::sim::components::DriveCoord;
+use crate::sim::houses::Houses;
 use crate::sim::movement::ground_pose::position_world_coord;
-use crate::sim::world::Simulation;
+use crate::sim::world::ObjectSubstrate;
 use crate::util::native_x87::{NativeF64Bits, distance_3d_leptons};
 
 /// Returns the native local EVA latch: at least one changed recipient's house
 /// has PlayerControl(+1ED). No owner-equality filter or RNG draw occurs here.
 pub(super) fn apply_speed_crate(
-    sim: &mut Simulation,
+    substrate: &mut ObjectSubstrate,
+    houses: &Houses,
     center: DriveCoord,
     radius: i32,
     multiplier: NativeF64Bits,
@@ -21,12 +23,11 @@ pub(super) fn apply_speed_crate(
     let mut announce = false;
     // This arm has no callback that changes the display vector. Coordinate
     // getters are retained XYZ, and the only entity write is Foot+580.
-    for &id in sim
-        .substrate
+    for &id in substrate
         .display
         .members(crate::sim::world::display_layers::DisplayLayer::GROUND)
     {
-        let Some(entity) = sim.substrate.entities.get_mut(id) else {
+        let Some(entity) = substrate.entities.get_mut(id) else {
             continue;
         };
         if entity.category() == EntityCategory::Structure {
@@ -44,8 +45,7 @@ pub(super) fn apply_speed_crate(
             continue;
         }
         if entity.foot_speed.accept_speed_crate(multiplier) {
-            announce |= sim
-                .houses
+            announce |= houses
                 .get(&entity.owner())
                 .is_some_and(|house| house.player_control());
         }
@@ -57,6 +57,7 @@ pub(super) fn apply_speed_crate(
 mod tests {
     use super::*;
     use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+    use crate::sim::world::Simulation;
     use crate::sim::{combat::Health, game_entity::GameEntity, house_state::HouseState};
     use crate::util::fixed_math::SimFixed;
 
@@ -107,7 +108,8 @@ mod tests {
         assert!(sim.substrate.logic.as_slice().is_empty());
         let multiplier = NativeF64Bits::from_bits(1.2f64.to_bits());
         apply_speed_crate(
-            &mut sim,
+            &mut sim.substrate,
+            &sim.houses,
             DriveCoord {
                 x: 2688,
                 y: 2688,
@@ -240,7 +242,8 @@ mod tests {
             };
             let rng_before = sim.scenario_rng.logical_state();
             let announce = apply_speed_crate(
-                &mut sim,
+                &mut sim.substrate,
+                &sim.houses,
                 center,
                 input["radius"].as_i64().unwrap_or(768) as i32,
                 NativeF64Bits::from_bits(

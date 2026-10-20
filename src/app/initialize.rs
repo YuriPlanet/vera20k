@@ -277,7 +277,7 @@ impl App {
                         fnt,
                         gpu.config.width,
                         gpu.config.height,
-                        options_profile.ra2_look,
+                        options_profile.yr_original_style,
                     )
                     .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
                     .ok()
@@ -544,6 +544,7 @@ impl App {
                         0,
                     ),
                     message_clock: crate::ui::messages::PauseAwareClock::default(),
+                    chat: Default::default(),
                     in_game_menu: crate::ui::pause_menu::InGameMenuState::default(),
                     modal_latch: true,
                     pause_menu_has_saves: false,
@@ -582,8 +583,6 @@ impl App {
                     target_lines: startup_target_lines,
                     cached_overlay_instances: Vec::new(),
                     terrain_grid: None,
-                    height_map: BTreeMap::new(),
-                    bridge_height_map: BTreeMap::new(),
                     overlays: Default::default(),
                     terrain_objects: Vec::new(),
                     overlay_names: BTreeMap::new(),

@@ -44,7 +44,7 @@ pub(crate) fn enter(state: &mut AppState, duration: i32, outermost: bool, wall_m
         return;
     }
     if matches!(
-        state.match_state.session.mode(),
+        state.match_state.session_mode(),
         super::session::SessionMode::Campaign | super::session::SessionMode::Skirmish
     ) {
         state.match_state.scenario_elapsed_clock.pause(wall_ms);
@@ -71,7 +71,7 @@ pub(crate) fn resume(state: &mut AppState, wall_ms: u64) {
 /// the first live poll, while untimed holds remain with their existing owner.
 pub(crate) fn poll(state: &mut AppState, wall_ms: u64) {
     if matches!(
-        state.match_state.session.mode(),
+        state.match_state.session_mode(),
         super::session::SessionMode::Campaign | super::session::SessionMode::Skirmish
     ) && state
         .match_state

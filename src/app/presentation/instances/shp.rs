@@ -106,11 +106,6 @@ pub(crate) fn build_shp_instances(
     let ignore_visibility = state.match_state.sandbox_full_visibility;
     let art_reg: Option<&crate::rules::art_data::ArtRegistry> =
         state.rules().map(|rules| rules.art());
-    let terrain = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .and_then(|rt| rt.view().resolved_terrain());
     let canopy_owners = super::overlays::parachute_canopy_owners(state, sim);
 
     // Drawing borrows live map fields but uses its own small Dummy identity,
@@ -479,7 +474,7 @@ pub(crate) fn build_shp_instances(
             parachute_body_depths.insert(entity.stable_id(), depth);
         }
         let extra_light = state.rules().map_or(0, |rules| {
-            crate::app::presentation::lighting::body_extra_light(entity, rules, sim, terrain)
+            crate::app::presentation::lighting::body_extra_light(entity, rules, sim, cells.as_ref())
         });
         let tint = shp_body_tint(
             state.match_state.match_presentation.lighting.grid(),
@@ -1311,7 +1306,6 @@ pub(crate) fn build_building_anim_instances(
     };
     let sim = &runtime.simulation;
     let grid = state.match_state.match_presentation.lighting.grid();
-    let terrain = runtime.view().resolved_terrain();
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let local_owner_id = local_owner
         .as_deref()
@@ -1382,8 +1376,12 @@ pub(crate) fn build_building_anim_instances(
         let draw_state = material.state;
         let cell = (building.position.rx(), building.position.ry());
         let tint = grid.building_body_tint_at(cell);
-        let extra_light =
-            crate::app::presentation::lighting::body_extra_light(building, rules, sim, terrain);
+        let extra_light = crate::app::presentation::lighting::body_extra_light(
+            building,
+            rules,
+            sim,
+            cells.as_ref(),
+        );
         let selected_palette =
             crate::app::presentation::lighting::body_palette_light(grid, cell, extra_light);
         emit_building_anims(

@@ -207,7 +207,9 @@ pub(crate) fn clip_line(a: &mut [i32; 2], b: &mut [i32; 2], clip: [i32; 4]) -> b
     }
 }
 
-/// Patterned pixel walk from DSurface4C0750. Endpoints must already be clipped.
+/// Patterned pixel walk from DSurface4C0750, which XSurface7BA8C0 (DSurface
+/// vt+48: planning strokes, the target laser) shares without the A
+/// predicate. Endpoints must already be clipped.
 /// Axis-aligned lines include the final endpoint; diagonals exclude it.
 /// The callback receives lit pixels in native store order. The original leaf's
 /// ABuffer predicate selects pass zero for nonzero samples, pass one for zero.

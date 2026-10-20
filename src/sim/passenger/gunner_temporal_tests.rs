@@ -73,7 +73,7 @@ fn retail_unload_and_snapshot_resume_preserve_the_gunners_rearm() {
         for _ in 0..240 {
             let frame = sim.session.binary_frame() as i32;
             let waiting = entity(&sim, passenger).rearm_timer.remaining(frame);
-            sim.fire_events.clear();
+            sim.fire_events.clear_for_test();
             sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
             if let Some(shot) = sim
                 .fire_events

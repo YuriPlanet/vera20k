@@ -133,7 +133,7 @@ fn retail_deso_attack_emits_a_copied_straight_radiation_beam() {
         },
         Some(rules),
     ));
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..32 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
@@ -216,7 +216,7 @@ fn retail_cleg_first_attack_emits_a_copied_chrono_beam() {
         },
         Some(rules)
     ));
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..32 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
@@ -467,7 +467,7 @@ fn assert_native_births(
         let id_before = sim.native_unique_ids.as_ref().unwrap().current_raw();
         let stable_before = sim.next_stable_object_id();
         let logic_before = sim.live_object_order_snapshot();
-        sim.lifecycle_outputs.clear();
+        sim.lifecycle_outputs.clear_for_test();
         super::radiation_beam::create(
             &mut sim,
             &rules,

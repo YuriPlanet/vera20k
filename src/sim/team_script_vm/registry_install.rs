@@ -174,6 +174,7 @@ impl TeamScriptVm {
                     mind_control_decision: fields.read_int("MindControlDecision", 0),
                     droppod: fields.read_bool("Droppod", false),
                     only_target_house_enemy: fields.read_bool("OnlyTargetHouseEnemy", false),
+                    loadable: fields.read_bool("Loadable", false),
                     source: team_type.source,
                 },
             );

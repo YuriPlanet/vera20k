@@ -275,11 +275,14 @@ fn queue_orders_in_sim(
                 | crate::sim::command::Command::SetRally { .. }
                 | crate::sim::command::Command::SellBuilding { .. }
                 | crate::sim::command::Command::UndeployBuilding { .. }
+                | crate::sim::command::Command::MoveFlash { .. }
         ) {
             // Selection4AE750 -> Building443410/4436F0 sends direct
             // PRIMARY17 / ARCHIVE1E / SELL16. These do not use
             // Player_Send_Command6FFBE0. The deploy key is separately
             // refused as DEPLOY9; a mobile self-click is Unload16.
+            // ClickedAction_Cell builds the MoveFlash (`0x004D7EB5`) before
+            // its Move reaches Player_Send_Command.
             sim.queue_command(order);
             added = true;
             continue;
@@ -658,6 +661,7 @@ mod tests {
             },
             Command::SellBuilding { entity_id: 42 },
             Command::UndeployBuilding { entity_id: 42 },
+            Command::MoveFlash { rx: 5, ry: 6 },
         ] {
             let envelope = CommandEnvelope::new(local, 0, payload);
             assert!(queue_orders_in_sim(&mut sim, local, &[42], vec![envelope.clone()]).unwrap());

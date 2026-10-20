@@ -59,6 +59,7 @@ pub mod shell_surface_present;
 pub mod shell_text;
 pub mod shell_text_reveal;
 pub mod shell_transition_pass;
+pub(crate) mod shell_ui_style_assets;
 pub mod shroud_buffer;
 #[cfg(test)]
 mod shroud_gpu_tests;

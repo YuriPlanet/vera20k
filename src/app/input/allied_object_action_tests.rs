@@ -85,8 +85,6 @@ fn picked_target(sim: &Simulation, rules: &RuleSet, target: u64) -> HoverTargetK
         "Americans",
         false,
         Some(rules),
-        &Default::default(),
-        None,
     )
     .expect("revealed ordinary tank is picked");
     assert_eq!(hover.stable_id, target);

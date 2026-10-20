@@ -229,12 +229,12 @@ pub fn toggle_repair(
             if owner_is_player {
                 entity.flash_base(7);
             }
-            sim.sound_events.push(SimSoundEvent::Repairing { owner });
+            sim.sound_events.emit(SimSoundEvent::Repairing { owner });
         }
         rules.general.generic_click_sound.clone()
     };
     if let Some(sound) = sound {
-        sim.sound_events.push(SimSoundEvent::voc_at_for(
+        sim.sound_events.emit(SimSoundEvent::voc_at_for(
             sound,
             Some([owner, owner]),
             &position,
@@ -283,7 +283,7 @@ pub(crate) fn engineer_repair(sim: &mut Simulation, rules: &RuleSet, id: u64) ->
         position.put_world_xy([coord.x, coord.y]);
         position.put_z(coord.z);
         sim.sound_events
-            .push(SimSoundEvent::voc_at(sound, &position));
+            .emit(SimSoundEvent::voc_at(sound, &position));
     }
     true
 }
@@ -503,7 +503,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         }
         return;
     }
-    spend_money(sim, owner, cost);
+    spend_money(&mut sim.houses, owner, cost);
     let step = rules.general.repair_step;
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;

@@ -106,7 +106,9 @@ impl Scene {
         let owner = sim.intern("Americans");
         sim.houses
             .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
-        sim.power_states.insert(owner, PowerState::default());
+        sim.power_states
+            .map_mut_for_test()
+            .insert(owner, PowerState::default());
         sim.session.set_current_house_for_test(Some(owner));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(

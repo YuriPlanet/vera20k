@@ -295,7 +295,7 @@ impl Simulation {
         if !self.substrate.entities.contains(id) {
             return false;
         }
-        self.aircraft_tracker_remove(id);
+        self.substrate.aircraft_tracker_remove(id);
         self.set_object_height(id, 0, Some(rules), overlay_registry, frame_effects);
         let bridge_state_changed =
             self.fire_death_weapon(id, rules, overlay_registry, frame_effects);
@@ -340,7 +340,7 @@ impl Simulation {
             .map_or((false, false), |object| {
                 (object.crashable, object.balloon_hover)
             });
-        self.aircraft_tracker_remove(id);
+        self.substrate.aircraft_tracker_remove(id);
         let bridge_state_changed = if crashable {
             self.set_object_height(id, 0, Some(rules), overlay_registry, frame_effects);
             let bridge_state_changed = if balloon_hover {
@@ -514,7 +514,14 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        crate::sim::combat::death_weapon_detonation(self, id, rules).is_some_and(|detonation| {
+        crate::sim::combat::death_weapon_detonation(
+            &mut self.interner,
+            &self.substrate,
+            &self.resolved_terrain,
+            id,
+            rules,
+        )
+        .is_some_and(|detonation| {
             self.commit_logic_projectile_detonations(
                 rules,
                 overlay_registry,
@@ -551,7 +558,7 @@ impl Simulation {
         };
         if let Some(sound_id) = sound {
             let event = super::SimSoundEvent::voc_at(sound_id, &entity.position);
-            self.sound_events.push(event);
+            self.sound_events.emit(event);
         }
     }
 
@@ -575,7 +582,7 @@ impl Simulation {
             // Foot4DAD01 releases the shared handle even if its MoveSound
             // latch was already cleared by the preceding tail.
             self.sound_events
-                .push(super::SimSoundEvent::ObjectSoundReleased { owner: id });
+                .emit(super::SimSoundEvent::ObjectSoundReleased { owner: id });
             let entity = self.substrate.entities.get(id).expect("checked above");
             let owner = entity.owner();
             let object = self.object_type(entity.type_ref(), rules);
@@ -590,12 +597,12 @@ impl Simulation {
             {
                 let event =
                     super::SimSoundEvent::voc_at_for(voice, Some([owner, owner]), &entity.position);
-                self.sound_events.push(event);
+                self.sound_events.emit(event);
             }
             if let Some(sound) = crashing_sound {
                 let world = Self::movement_sound_world(entity);
                 self.sound_events
-                    .push(super::SimSoundEvent::AnimationStarted {
+                    .emit(super::SimSoundEvent::AnimationStarted {
                         anim_id: id,
                         sound_id: sound,
                         world,
@@ -607,7 +614,7 @@ impl Simulation {
             // shared handle alone; otherwise it releases the crash sound.
             if !entity.crash.crashing && !entity.move_sound.is_active() {
                 self.sound_events
-                    .push(super::SimSoundEvent::ObjectSoundReleased { owner: id });
+                    .emit(super::SimSoundEvent::ObjectSoundReleased { owner: id });
             }
             entity.crash.seen = entity.crash.crashing;
         }

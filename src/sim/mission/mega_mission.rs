@@ -183,7 +183,7 @@ impl Simulation {
             return mission;
         }
         if mission != MissionType::AttackMove {
-            self.foot_clear_all_tarcom(id);
+            self.substrate.foot_clear_all_tarcom(id);
             return mission;
         }
         if !rules.is_some_and(|rules| self.techno_can_attack_move(id, rules)) {
@@ -209,16 +209,8 @@ impl Simulation {
             mega.target = resolved_target;
             return MissionType::Attack;
         }
-        self.foot_clear_all_tarcom(id);
+        self.substrate.foot_clear_all_tarcom(id);
         MissionType::AttackMove
-    }
-
-    /// `FootClass::Clear_All_TarCom @ 0x004DF1A0` (vt+0x4A8): MegaMission
-    /// NONE, no MegaDestination or MegaTarget, HaveAttackMoveTarget clear.
-    pub(crate) fn foot_clear_all_tarcom(&mut self, id: u64) {
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.mega_mission = MegaMission::default();
-        }
     }
 
     /// `FootClass::ContinueMegaMission @ 0x004DF320` (vt+0x4C8):
@@ -264,7 +256,7 @@ impl Simulation {
             }
             return true;
         }
-        self.foot_clear_all_tarcom(id);
+        self.substrate.foot_clear_all_tarcom(id);
         false
     }
 
@@ -290,7 +282,7 @@ impl Simulation {
         if entity.mega_mission.have_attack_move_target {
             entity.mega_mission.have_attack_move_target = false;
         } else if entity.mission.effective().known() != Some(MissionType::Guard) {
-            self.foot_clear_all_tarcom(id);
+            self.substrate.foot_clear_all_tarcom(id);
             return false;
         }
         self.foot_continue_mega_mission(id, rules, registry, effects)
@@ -423,6 +415,16 @@ impl Simulation {
             return crate::sim::world::can_fire_at(self, rules, id, target, 1, registry);
         }
         self.techno_can_fire_at_target(id, target, rules, registry)
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// `FootClass::Clear_All_TarCom @ 0x004DF1A0` (vt+0x4A8): MegaMission
+    /// NONE, no MegaDestination or MegaTarget, HaveAttackMoveTarget clear.
+    pub(crate) fn foot_clear_all_tarcom(&mut self, id: u64) {
+        if let Some(entity) = self.entities.get_mut(id) {
+            entity.mega_mission = MegaMission::default();
+        }
     }
 }
 

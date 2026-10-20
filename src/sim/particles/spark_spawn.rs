@@ -236,7 +236,7 @@ pub(super) fn spark_spawn_pass(
             && !pst.one_frame_light
         {
             sim.combat_light_requests
-                .push(crate::sim::combat::CombatLightRequest::Spark {
+                .emit(crate::sim::combat::CombatLightRequest::Spark {
                     coord: crate::sim::projectile::ProjectileCoord::new(
                         sys.coords.x,
                         sys.coords.y,

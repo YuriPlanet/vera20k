@@ -273,7 +273,9 @@ pub(crate) fn is_high_flying(
     query_flight_predicate(entity, cells.as_ref(), rules_context, true)
 }
 
-pub(crate) fn is_high_flying_in_query(
+/// The existing high-flight dispatch through a caller-owned query identity.
+/// Presentation supplies an isolated query so drawing cannot stamp lockstep state.
+pub fn is_high_flying_in_query(
     entity: &crate::sim::game_entity::GameEntity,
     cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
     rules_context: Option<(

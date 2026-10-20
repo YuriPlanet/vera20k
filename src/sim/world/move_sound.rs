@@ -31,17 +31,6 @@ impl MoveSoundState {
 }
 
 impl Simulation {
-    /// FootClass::Load 0x4DB60D..0x4DB624 reconstructs the handle and clears both fields
-    /// of logical sound state, regardless of sinking/crash state. The next
-    /// ordinary paid Foot visit may start a new sound and spends its own draw.
-    pub(crate) fn restore_move_sound_state_after_load(&mut self, id: u64) {
-        if let Some(entity) = self.substrate.entities.get_mut(id)
-            && entity.category() != EntityCategory::Structure
-        {
-            entity.move_sound = MoveSoundState::default();
-        }
-    }
-
     /// The before value is the same Foot+538 captured before Process, not
     /// position, facing or a locomotor cursor. The short-circuit changed arm
     /// does not ask IsMovingNow again. Stock idle SQD changes every four
@@ -85,13 +74,13 @@ impl Simulation {
                 let world = Self::movement_sound_world(entity);
                 // 0x4DAA91 hard-stops any prior sound on the shared Foot handle,
                 // then 0x4DAACB draws Main once even for a singleton vector.
-                self.sound_events.push(SimSoundEvent::AnimationStopped {
+                self.sound_events.emit(SimSoundEvent::AnimationStopped {
                     anim_id: stable_id,
                     stop_sound_id: None,
                     world,
                 });
                 let index = self.main_rng.next_u32() as usize % sounds.len();
-                self.sound_events.push(SimSoundEvent::AnimationStarted {
+                self.sound_events.emit(SimSoundEvent::AnimationStarted {
                     anim_id: stable_id,
                     sound_id: sounds[index].clone(),
                     world,
@@ -109,11 +98,24 @@ impl Simulation {
                 // 0x4DAB2B Release (0x406060) lets a one-shot play out. It is distinct
                 // from the Stop405D40 before a new selection and Limbo405FD0.
                 self.sound_events
-                    .push(SimSoundEvent::ObjectSoundReleased { owner: stable_id });
+                    .emit(SimSoundEvent::ObjectSoundReleased { owner: stable_id });
                 entity.move_sound = MoveSoundState::default();
             } else {
                 entity.move_sound.countdown = state.countdown.wrapping_sub(1);
             }
+        }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// FootClass::Load 0x4DB60D..0x4DB624 reconstructs the handle and clears both fields
+    /// of logical sound state, regardless of sinking/crash state. The next
+    /// ordinary paid Foot visit may start a new sound and spends its own draw.
+    pub(crate) fn restore_move_sound_state_after_load(&mut self, id: u64) {
+        if let Some(entity) = self.entities.get_mut(id)
+            && entity.category() != EntityCategory::Structure
+        {
+            entity.move_sound = MoveSoundState::default();
         }
     }
 }

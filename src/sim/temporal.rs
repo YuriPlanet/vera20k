@@ -299,19 +299,6 @@ impl Simulation {
             .and_then(|entity| entity.temporal.link.as_ref())
     }
 
-    fn temporal_link_mut(&mut self, attacker: u64) -> Option<&mut TemporalLink> {
-        self.substrate
-            .entities
-            .get_mut(attacker)
-            .and_then(|entity| entity.temporal.link.as_mut())
-    }
-
-    fn set_temporal_head(&mut self, target: u64, head: Option<u64>) {
-        if let Some(entity) = self.substrate.entities.get_mut(target) {
-            entity.temporal.head = head;
-        }
-    }
-
     /// The Temporal arm of `BulletClass::DetonateAtCoord` (`0x00469423..
     /// 0x004694C6`): no firer or no target ends it; a Foot outside the ground
     /// layer is not warped (`0x0046946C`, InWhichLayer `!= 2`); a Unit in a
@@ -445,15 +432,15 @@ impl Simulation {
         }) else {
             return;
         };
-        if let Some(link) = self.temporal_link_mut(attacker) {
+        if let Some(link) = self.substrate.temporal_link_mut(attacker) {
             link.target = Some(target);
         }
         match existing_head {
             None => {
                 // 0x0071AF98..0x0071AFB9: the first attacker heads the chain
                 // with Strength * 10 (`LEA x5; SHL 1`).
-                self.set_temporal_head(target, Some(attacker));
-                if let Some(link) = self.temporal_link_mut(attacker) {
+                self.substrate.set_temporal_head(target, Some(attacker));
+                if let Some(link) = self.substrate.temporal_link_mut(attacker) {
                     link.warp_remaining = strength.wrapping_mul(10);
                 }
                 self.temporal_warp_start_notice(target, rules);
@@ -461,15 +448,15 @@ impl Simulation {
             Some(head) => {
                 // 0x0071B0D1..0x0071B0E4: insert right after the head.
                 let head_next = self.temporal_link(head).and_then(|link| link.next);
-                if let Some(link) = self.temporal_link_mut(attacker) {
+                if let Some(link) = self.substrate.temporal_link_mut(attacker) {
                     link.prev = Some(head);
                     link.next = head_next;
                 }
-                if let Some(link) = self.temporal_link_mut(head) {
+                if let Some(link) = self.substrate.temporal_link_mut(head) {
                     link.next = Some(attacker);
                 }
                 if let Some(next) = head_next
-                    && let Some(link) = self.temporal_link_mut(next)
+                    && let Some(link) = self.substrate.temporal_link_mut(next)
                 {
                     link.prev = Some(attacker);
                 }
@@ -477,7 +464,8 @@ impl Simulation {
         }
         // 0x0071B0EA sets `+0x270`, which the head above stands for; a
         // building's independent online latch is forced off (`0x004521C0`).
-        self.set_building_online_for_temporal(target, false);
+        self.substrate
+            .set_building_online_for_temporal(target, false);
         // 0x0071B0FC..0x0071B10B: a gattling victim winds down one tick.
         if self
             .substrate
@@ -492,8 +480,8 @@ impl Simulation {
         if let Some(owner) = self.substrate.entities.get(target).and_then(|entity| {
             (entity.category() == EntityCategory::Structure).then_some(entity.owner())
         }) {
-            self.invalidate_house_power(owner, false); //71B126, before release
-            self.request_house_tech_tree_recheck(owner); //71B13A
+            Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false); //71B126, before release
+            self.houses.request_house_tech_tree_recheck(owner); //71B13A
         }
         self.temporal_release_if_warping(target);
         // 0x0071B16D: ObjectClass::Deselect.
@@ -585,7 +573,7 @@ impl Simulation {
                 .get(target)
                 .is_some_and(|entity| entity.temporal.head == Some(head))
         {
-            self.set_temporal_head(target, None);
+            self.substrate.set_temporal_head(target, None);
             self.temporal_clear_linked_list(head, rules, effects);
             return;
         }
@@ -617,7 +605,7 @@ impl Simulation {
             .map_or(0, |next| self.temporal_chain_damage(next, 1, rules));
         let damage = self.temporal_owner_damage(head, rules);
         let remaining = link.warp_remaining.wrapping_sub(damage.wrapping_add(chain));
-        if let Some(stored) = self.temporal_link_mut(head) {
+        if let Some(stored) = self.substrate.temporal_link_mut(head) {
             stored.warp_remaining = remaining;
         }
         if remaining > 0 {
@@ -680,9 +668,9 @@ impl Simulation {
             // 0x0071A895..0x0071A8B5: no target — clear and idle; then the
             // `0x0071A90E` retest jumps to the common tail, which clears and
             // idles again (`0x0071AAE7..0x0071AB02`).
-            self.temporal_clear_fields(head);
+            self.substrate.temporal_clear_fields(head);
             self.temporal_owner_idle(head, rules, effects);
-            self.temporal_clear_fields(head);
+            self.substrate.temporal_clear_fields(head);
             self.temporal_owner_idle(head, rules, effects);
             return;
         };
@@ -747,12 +735,12 @@ impl Simulation {
         if category == EntityCategory::Structure
             && let Some(owner) = target_owner
         {
-            self.request_house_tech_tree_recheck(owner);
+            self.houses.request_house_tech_tree_recheck(owner);
         }
         // 0x0071AAD5..0x0071AB02: idle, clear, idle again (the UnInit's
         // pointer expiry already cleared the link and idled once).
         self.temporal_owner_idle(head, rules, effects);
-        self.temporal_clear_fields(head);
+        self.substrate.temporal_clear_fields(head);
         self.temporal_owner_idle(head, rules, effects);
     }
 
@@ -807,14 +795,6 @@ impl Simulation {
         }
     }
 
-    fn temporal_clear_fields(&mut self, attacker: u64) {
-        if let Some(link) = self.temporal_link_mut(attacker) {
-            link.target = None;
-            link.next = None;
-            link.prev = None;
-        }
-    }
-
     /// The `if (+0x274 && +0x274->Target) LetGo()` every release site
     /// shares: retargeting, idle mode (`0x00709A43..0x00709A54`), the cell
     /// entry tail (`0x006F50A3..0x006F50B4`) and CaptureManager's
@@ -845,35 +825,41 @@ impl Simulation {
             None => {
                 if let Some(next) = link.next {
                     if let Some(target) = link.target {
-                        self.set_temporal_head(target, Some(next));
+                        self.substrate.set_temporal_head(target, Some(next));
                     }
-                    if let Some(next_link) = self.temporal_link_mut(next) {
+                    if let Some(next_link) = self.substrate.temporal_link_mut(next) {
                         next_link.prev = None;
                         next_link.warp_remaining = link.warp_remaining;
                     }
                 } else if let Some(target) = link.target {
-                    self.set_temporal_head(target, None);
-                    self.set_building_online_for_temporal(target, true); //71AC3D
+                    self.substrate.set_temporal_head(target, None);
+                    self.substrate
+                        .set_building_online_for_temporal(target, true); //71AC3D
                     if let Some(owner) = self.substrate.entities.get(target).and_then(|entity| {
                         (entity.category() == EntityCategory::Structure).then_some(entity.owner())
                     }) {
-                        self.invalidate_house_power(owner, false); //71AC36
-                        self.request_house_tech_tree_recheck(owner); //71AC49
+                        Self::invalidate_house_power(
+                            &self.houses,
+                            &mut self.power_states,
+                            owner,
+                            false,
+                        ); //71AC36
+                        self.houses.request_house_tech_tree_recheck(owner); //71AC49
                     }
                 }
             }
             Some(prev) => {
                 if let Some(next) = link.next
-                    && let Some(next_link) = self.temporal_link_mut(next)
+                    && let Some(next_link) = self.substrate.temporal_link_mut(next)
                 {
                     next_link.prev = Some(prev);
                 }
-                if let Some(prev_link) = self.temporal_link_mut(prev) {
+                if let Some(prev_link) = self.substrate.temporal_link_mut(prev) {
                     prev_link.next = link.next;
                 }
             }
         }
-        self.temporal_clear_fields(attacker);
+        self.substrate.temporal_clear_fields(attacker);
     }
 
     /// `ClearLinkedList @ 0x0071ADE0`: frees the target, then walks Next and
@@ -890,14 +876,14 @@ impl Simulation {
         let Some(target) = self.temporal_link(attacker).and_then(|link| link.target) else {
             return;
         };
-        self.set_temporal_head(target, None);
+        self.substrate.set_temporal_head(target, None);
         //71ADE9..71ADF2 clears Warp/Head, without ForceOnline or House
         //dirty writes. This is not ClearWarp71ACD0 and can leave660 false.
-        if let Some(stored) = self.temporal_link_mut(attacker) {
+        if let Some(stored) = self.substrate.temporal_link_mut(attacker) {
             stored.target = None;
         }
         if let Some(next) = self.temporal_link(attacker).and_then(|link| link.next) {
-            if let Some(next_link) = self.temporal_link_mut(next)
+            if let Some(next_link) = self.substrate.temporal_link_mut(next)
                 && next_link.prev == Some(attacker)
             {
                 next_link.prev = None;
@@ -906,14 +892,14 @@ impl Simulation {
         }
         // Prev is read again after the Next walk (`0x0071AE12`).
         if let Some(prev) = self.temporal_link(attacker).and_then(|link| link.prev) {
-            if let Some(prev_link) = self.temporal_link_mut(prev)
+            if let Some(prev_link) = self.substrate.temporal_link_mut(prev)
                 && prev_link.next == Some(attacker)
             {
                 prev_link.next = None;
             }
             self.temporal_clear_linked_list(prev, rules, effects);
         }
-        self.temporal_clear_fields(attacker);
+        self.substrate.temporal_clear_fields(attacker);
         self.temporal_owner_idle(attacker, rules, effects);
     }
 
@@ -931,20 +917,21 @@ impl Simulation {
             return;
         };
         if let Some(target) = target {
-            self.set_temporal_head(target, None);
-            self.set_building_online_for_temporal(target, true); //ClearWarp71AD0B
+            self.substrate.set_temporal_head(target, None);
+            self.substrate
+                .set_building_online_for_temporal(target, true); //ClearWarp71AD0B
             if let Some(owner) = self.substrate.entities.get(target).and_then(|entity| {
                 (entity.category() == EntityCategory::Structure).then_some(entity.owner())
             }) {
-                self.invalidate_house_power(owner, false); //ClearWarp71AD04
-                self.request_house_tech_tree_recheck(owner); //71AD17
+                Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false); //ClearWarp71AD04
+                self.houses.request_house_tech_tree_recheck(owner); //71AD17
             }
-            if let Some(stored) = self.temporal_link_mut(attacker) {
+            if let Some(stored) = self.substrate.temporal_link_mut(attacker) {
                 stored.target = None;
             }
         }
         if let Some(next) = self.temporal_link(attacker).and_then(|link| link.next) {
-            if let Some(next_link) = self.temporal_link_mut(next)
+            if let Some(next_link) = self.substrate.temporal_link_mut(next)
                 && next_link.prev == Some(attacker)
             {
                 next_link.prev = None;
@@ -952,14 +939,14 @@ impl Simulation {
             self.temporal_clear_linked_list(next, rules, effects);
         }
         if let Some(prev) = self.temporal_link(attacker).and_then(|link| link.prev) {
-            if let Some(prev_link) = self.temporal_link_mut(prev)
+            if let Some(prev_link) = self.substrate.temporal_link_mut(prev)
                 && prev_link.next == Some(attacker)
             {
                 prev_link.next = None;
             }
             self.temporal_clear_linked_list(prev, rules, effects);
         }
-        self.temporal_clear_fields(attacker);
+        self.substrate.temporal_clear_fields(attacker);
     }
 
     /// `TechnoClass::PointerExpired`'s forward (`0x00707B34` ->
@@ -981,17 +968,11 @@ impl Simulation {
         if expired == listener {
             self.temporal_let_go(listener);
         } else if target == Some(expired) {
-            self.temporal_clear_fields(listener);
+            self.substrate.temporal_clear_fields(listener);
             if let Some(rules) = rules {
                 self.temporal_owner_idle(listener, rules, effects);
             }
         }
-    }
-
-    /// `UnitClass` vtable `+0x4D4` (`0x00746420`): a gunner's TemporalClass
-    /// moves to the IFV, which becomes its owner.
-    pub(crate) fn temporal_receive_gunner(&mut self, ifv: u64, gunner: u64) -> bool {
-        self.temporal_move_link(gunner, ifv)
     }
 
     /// `UnitClass` vtable `+0x4D8` (`0x007464E0`), when the last passenger
@@ -1001,50 +982,10 @@ impl Simulation {
     /// Returns whether the manager moved, so the passenger owner can run
     /// the callback's conditional burst/GetROF/rearm continuation.
     pub(crate) fn temporal_remove_gunner(&mut self, ifv: u64, gunner: u64) -> bool {
-        if !self.temporal_move_link(ifv, gunner) {
+        if !self.substrate.temporal_move_link(ifv, gunner) {
             return false;
         }
         self.temporal_release_if_warping(gunner);
-        true
-    }
-
-    /// Move a TemporalClass to another owner, re-pointing the chain and the
-    /// target's head to the new owner's id. Returns false when `from` holds
-    /// none (the native null tests at `0x00746434`/`0x007464FC`).
-    fn temporal_move_link(&mut self, from: u64, to: u64) -> bool {
-        if !self.substrate.entities.contains(to) {
-            return false;
-        }
-        let Some(link) = self
-            .substrate
-            .entities
-            .get_mut(from)
-            .and_then(|entity| entity.temporal.link.take())
-        else {
-            return false;
-        };
-        if let Some(target) = link.target
-            && self
-                .substrate
-                .entities
-                .get(target)
-                .is_some_and(|entity| entity.temporal.head == Some(from))
-        {
-            self.set_temporal_head(target, Some(to));
-        }
-        if let Some(prev) = link.prev
-            && let Some(prev_link) = self.temporal_link_mut(prev)
-        {
-            prev_link.next = Some(to);
-        }
-        if let Some(next) = link.next
-            && let Some(next_link) = self.temporal_link_mut(next)
-        {
-            next_link.prev = Some(to);
-        }
-        if let Some(entity) = self.substrate.entities.get_mut(to) {
-            entity.temporal.link = Some(link);
-        }
         true
     }
 
@@ -1078,7 +1019,7 @@ impl Simulation {
             }
         };
         if let Some(z_adjust) = z_adjust {
-            self.set_anim_z_adjust(anim, z_adjust);
+            self.substrate.set_anim_z_adjust(anim, z_adjust);
         }
     }
 
@@ -1290,6 +1231,68 @@ impl Simulation {
             };
             self.spawn_temporal_anim(&name, coord, Some(PORT_SPARKLE_Z_ADJUST), rules);
         }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    fn temporal_link_mut(&mut self, attacker: u64) -> Option<&mut TemporalLink> {
+        self.entities
+            .get_mut(attacker)
+            .and_then(|entity| entity.temporal.link.as_mut())
+    }
+    fn set_temporal_head(&mut self, target: u64, head: Option<u64>) {
+        if let Some(entity) = self.entities.get_mut(target) {
+            entity.temporal.head = head;
+        }
+    }
+    fn temporal_clear_fields(&mut self, attacker: u64) {
+        if let Some(link) = self.temporal_link_mut(attacker) {
+            link.target = None;
+            link.next = None;
+            link.prev = None;
+        }
+    }
+    /// `UnitClass` vtable `+0x4D4` (`0x00746420`): a gunner's TemporalClass
+    /// moves to the IFV, which becomes its owner.
+    pub(crate) fn temporal_receive_gunner(&mut self, ifv: u64, gunner: u64) -> bool {
+        self.temporal_move_link(gunner, ifv)
+    }
+    /// Move a TemporalClass to another owner, re-pointing the chain and the
+    /// target's head to the new owner's id. Returns false when `from` holds
+    /// none (the native null tests at `0x00746434`/`0x007464FC`).
+    fn temporal_move_link(&mut self, from: u64, to: u64) -> bool {
+        if !self.entities.contains(to) {
+            return false;
+        }
+        let Some(link) = self
+            .entities
+            .get_mut(from)
+            .and_then(|entity| entity.temporal.link.take())
+        else {
+            return false;
+        };
+        if let Some(target) = link.target
+            && self
+                .entities
+                .get(target)
+                .is_some_and(|entity| entity.temporal.head == Some(from))
+        {
+            self.set_temporal_head(target, Some(to));
+        }
+        if let Some(prev) = link.prev
+            && let Some(prev_link) = self.temporal_link_mut(prev)
+        {
+            prev_link.next = Some(to);
+        }
+        if let Some(next) = link.next
+            && let Some(next_link) = self.temporal_link_mut(next)
+        {
+            next_link.prev = Some(to);
+        }
+        if let Some(entity) = self.entities.get_mut(to) {
+            entity.temporal.link = Some(link);
+        }
+        true
     }
 }
 

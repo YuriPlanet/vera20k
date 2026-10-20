@@ -30,7 +30,7 @@ pub fn has_radar_for_owner(sim: &Simulation, _rules: &RuleSet, owner: &str) -> b
     let Some(owner_id) = sim.interner.get(owner) else {
         return false;
     };
-    crate::sim::power_system::has_active_radar(&sim.power_states, owner_id)
+    crate::sim::power_system::has_active_radar(sim.power_states.as_map(), owner_id)
 }
 
 /// Native runtime radar event type (`CreateRadarEvent @ 0x0065FA70`'s ECX).
@@ -160,7 +160,7 @@ mod tests {
                 sim.session.free_radar(),
                 timer[2] as u32,
             );
-            sim.power_states.insert(owner, state);
+            sim.power_states.map_mut_for_test().insert(owner, state);
             assert_eq!(
                 has_radar_for_owner(&sim, &rules, "Americans"),
                 case["available"].as_u64().unwrap() != 0,

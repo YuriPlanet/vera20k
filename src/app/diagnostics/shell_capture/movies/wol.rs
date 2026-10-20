@@ -728,7 +728,7 @@ impl WolCapture {
                     .context("installed WOL runtime")?
                     .simulation;
                 ensure!(
-                    state.match_state.session.mode() == SessionMode::Wol
+                    state.match_state.session_mode() == SessionMode::Wol
                         && sim.session().started()
                         && sim.session().game_mode_nonzero(),
                     "the WOL runtime was not admitted"
@@ -784,7 +784,7 @@ impl WolCapture {
                 if state.frontend.shell_route.wol_lobby() && state.frontend.shell_exit.is_none() {
                     ensure!(
                         self.exit_consumed
-                            && state.match_state.session.mode() == SessionMode::Wol
+                            && state.match_state.session_mode() == SessionMode::Wol
                             && state.frontend.loading_session.is_none()
                             && state.match_state.scenario_exit.is_none()
                             && state.frontend.multiplayer_setup.is_none()
@@ -1763,7 +1763,7 @@ impl WolCapture {
                 return Ok(false);
             }
             ensure!(
-                state.match_state.session.mode() == SessionMode::Wol,
+                state.match_state.session_mode() == SessionMode::Wol,
                 "the WOL handoff became offline"
             );
             return Ok(state.frontend.screen == GameScreen::Loading

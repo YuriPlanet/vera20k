@@ -29,6 +29,8 @@ use crate::util::direction::DIRECTION_DELTAS;
 use crate::sim::intern::InternedId;
 
 use crate::sim::movement::ground_pose::{object_get_coords, object_world_z_leptons};
+use crate::sim::rng::SimRng;
+use crate::sim::world::ObjectSubstrate;
 use crate::util::native_x87::{X87Chop53, sqrt_approx_f32};
 
 /// Native too-far test: `ftol(Sqrt_Approx(d²)) > threshold_cells * 256` is far;
@@ -106,8 +108,15 @@ pub(super) const DISPATCH_NEXT_FRAME: i32 = 1;
 /// on every dispatch, the search state whenever the miner is left driving
 /// (an archive or scan-hit destination, or one it already held), and any
 /// cursor outside the native handler's switch.
-pub(super) fn arm_rate_epilogue(sim: &mut Simulation, rules: &RuleSet, snap: &mut MinerSnapshot) {
-    snap.dispatch_delay = sim.mission_rate_epilogue_for(
+pub(super) fn arm_rate_epilogue(
+    scenario_rng: &mut SimRng,
+    substrate: &ObjectSubstrate,
+    rules: &RuleSet,
+    snap: &mut MinerSnapshot,
+) {
+    snap.dispatch_delay = Simulation::mission_rate_epilogue_for(
+        scenario_rng,
+        substrate,
         rules,
         snap.entity_id,
         crate::sim::mission::MissionType::Harvest,
@@ -168,8 +177,8 @@ pub(super) fn build_miner_snapshot(sim: &Simulation, id: u64) -> Option<MinerSna
 /// FSM cursor of record (`MissionCom::handler_state`, which
 /// `UnitClass::Mission_Harvest @ 0x0073E5E0` stores at
 /// `0x0073E714..0x0073EE68`).
-pub(super) fn commit_miner_snapshot(sim: &mut Simulation, snap: &MinerSnapshot) {
-    let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) else {
+pub(super) fn commit_miner_snapshot(substrate: &mut ObjectSubstrate, snap: &MinerSnapshot) {
+    let Some(entity) = substrate.entities.get_mut(snap.entity_id) else {
         return;
     };
     entity.miner = Some(snap.miner.clone());
@@ -188,8 +197,8 @@ pub(crate) fn native_mission_is_harvest(entity: &crate::sim::game_entity::GameEn
 /// Mission_Move, Mission_Patrol and Mission_Repair also clear it on entry
 /// (`0x00740A99`, `0x00740B1A`, `0x00740F10`); they run inside FootClass::AI
 /// and nothing reads the byte in between, so this clear covers them.
-pub(crate) fn unit_ai_clear_harvesting(sim: &mut Simulation, id: u64) {
-    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+pub(crate) fn unit_ai_clear_harvesting(substrate: &mut ObjectSubstrate, id: u64) {
+    let Some(entity) = substrate.entities.get_mut(id) else {
         return;
     };
     if entity.death.is_dying()
@@ -325,14 +334,14 @@ pub(super) fn process_miner(
         // dispatch leaves through the default Rate epilogue.
         MinerState::ReturnToRefinery => {
             handle_return(sim, rules, snap, frame_effects);
-            arm_rate_epilogue(sim, rules, snap);
+            arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
         }
         MinerState::Dock => handle_handoff(sim, snap),
         MinerState::WaitNoOre => {
             if handle_going_to_idle(sim, rules, overlay_registry, snap, frame_effects) {
                 // Native state 4 has no `return 1` exit: every dispatch falls
                 // into the default Rate epilogue (`0x0073EF97`).
-                arm_rate_epilogue(sim, rules, snap);
+                arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
             }
         }
     }
@@ -424,7 +433,12 @@ fn harvest_looking(
         frame_effects,
     ) {
         snap.miner.harvesting = true;
-        arm_stage(sim, snap.entity_id, sim.session.binary_frame(), 2);
+        arm_stage(
+            &mut sim.substrate,
+            snap.entity_id,
+            sim.session.binary_frame(),
+            2,
+        );
         snap.state = MinerState::Harvest;
         return;
     }
@@ -458,7 +472,7 @@ fn harvest_looking(
         };
         assign_archive_destination(sim, rules, id, archive, overlay_registry, frame_effects);
     }
-    arm_rate_epilogue(sim, rules, snap);
+    arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
 }
 
 /// The state-0 no-ore return (`return 0x69` at `0x0073E91C`): frames until
@@ -480,8 +494,8 @@ fn assign_archive_destination(
 }
 
 /// Arm the Unit+0xF8 StageClass: value 0, timer and rate `rate` from `now`.
-fn arm_stage(sim: &mut Simulation, id: u64, now: u32, rate: u32) {
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+fn arm_stage(substrate: &mut ObjectSubstrate, id: u64, now: u32, rate: u32) {
+    if let Some(entity) = substrate.entities.get_mut(id) {
         entity.restart_native_stage(0, now as i32, rate as i32);
     }
 }
@@ -523,7 +537,7 @@ fn harvest_cutting(
         .get(snap.entity_id)
         .is_some_and(|entity| entity.native_stage().rate() == 0)
     {
-        arm_stage(sim, snap.entity_id, now, load_rate(rules));
+        arm_stage(&mut sim.substrate, snap.entity_id, now, load_rate(rules));
     }
     if sim
         .substrate
@@ -631,7 +645,7 @@ fn harvest_ore_tick(
         || snap.miner.is_full()
         || !super::ore_scan::cell_is_tiberium_land(sim, overlay_registry, cell)
     {
-        arm_stage(sim, id, now, 0);
+        arm_stage(&mut sim.substrate, id, now, 0);
         return false;
     }
     let request = snap
@@ -657,7 +671,7 @@ fn harvest_ore_tick(
             resource_type,
             value,
         }));
-    arm_stage(sim, id, now, load_rate(rules));
+    arm_stage(&mut sim.substrate, id, now, load_rate(rules));
     true
 }
 
@@ -835,7 +849,7 @@ fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
 /// idempotent). Once on Guard the Harvest handler is no longer dispatched;
 /// what brings a miner back is `UnitClass::Mission_Guard @ 0x00740810` (the
 /// chrono arms in `techno_ai/mission_handlers.rs`) or a player order
-/// (`Command::HarvestCell` / `MinerReturn`, EventClass MEGAMISSION →
+/// (`Command::HarvestCell` / MEGAMISSION Enter, EventClass MEGAMISSION →
 /// `Queue_Mission(mission, 0)` at `0x004C73B9`). A human war miner therefore
 /// parks on Guard until re-ordered — native behaviour.
 ///
@@ -852,8 +866,8 @@ fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
 /// `House+0x242` is clear — and the scan miss that led here has just set it,
 /// with no clearing writer. What keeps a native AI economy alive after that
 /// is house/team logic (`AI_Choose_Unit` reading `+0x242`, team recruitment),
-/// none of which VERA runs yet (`sim/ai.rs` never issues `HarvestCell`/
-/// `MinerReturn` and skips harvesters). Until that lane lands, an AI-house
+/// none of which VERA runs yet (`sim/ai.rs` never issues `HarvestCell` or a
+/// refinery Enter and skips harvesters). Until that lane lands, an AI-house
 /// miner does not park: state 4 drops straight back into the state-0 scan,
 /// which on a miss re-arms the same fixed 105-frame wait (the pre-Guard-park
 /// perpetual re-scan cadence, `House+0x242` still written native-true on

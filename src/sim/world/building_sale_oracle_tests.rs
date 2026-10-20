@@ -198,7 +198,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
     assert!(building.building_down(), "the sale commenced");
     building.mission.set_handler_state(1);
     sim.scenario_rng = SimRng::new(seed);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     (s, passengers)
 }
 

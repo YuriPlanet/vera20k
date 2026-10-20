@@ -545,6 +545,7 @@ fn probe_arrow_edge(state: &mut AppState, locked: bool) -> Result<Value> {
                 location: KeyLocation::Standard,
                 state: edge_state,
                 repeat: false,
+                text: None,
             },
             false,
         );

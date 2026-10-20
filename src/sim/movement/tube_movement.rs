@@ -265,7 +265,14 @@ impl Simulation {
         let target = walk_tube_target(&mut actor.position, on_bridge, tube, terrain)?;
         let location = ground_pose::position_world_coord(&actor.position);
         self.foot_mark_remove(id, Some(rules), registry, effects);
-        self.object_raw_receiver_at(id, location, false);
+        Self::object_raw_receiver_at(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
+            id,
+            location,
+            false,
+        );
         let actor = self
             .substrate
             .entities
@@ -805,7 +812,14 @@ impl Simulation {
         self.foot_mark_put(id, Some(rules), registry, effects);
         if let Some(actor) = self.substrate.entities.get(id) {
             let location = ground_pose::position_world_coord(&actor.position);
-            self.object_raw_receiver_at(id, location, true);
+            Self::object_raw_receiver_at(
+                &mut self.substrate,
+                &self.path_grid,
+                &self.resolved_terrain,
+                id,
+                location,
+                true,
+            );
         }
 
         let navcom_names_cell = self.substrate.entities.get(id).is_some_and(|actor| {
@@ -1148,7 +1162,14 @@ mod tests {
             .unwrap()
             .set_walk_destination(Some(DriveCoord::cell(3, 0, 0)));
         sim.add_entity_occupancy(1);
-        sim.object_raw_receiver_at(1, spot, true);
+        Simulation::object_raw_receiver_at(
+            &mut sim.substrate,
+            &sim.path_grid,
+            &sim.resolved_terrain,
+            1,
+            spot,
+            true,
+        );
         (sim, rules)
     }
 
@@ -1185,7 +1206,14 @@ mod tests {
         ));
         sim.substrate.entities.insert(friend);
         sim.add_entity_occupancy(2);
-        sim.object_raw_receiver_at(2, centre, true);
+        Simulation::object_raw_receiver_at(
+            &mut sim.substrate,
+            &sim.path_grid,
+            &sim.resolved_terrain,
+            2,
+            centre,
+            true,
+        );
         let exit_bits = |sim: &Simulation| {
             sim.substrate.raw_cell_occupation.bits_at(
                 crate::sim::occupancy::RawCellKey::Real(2, 0),

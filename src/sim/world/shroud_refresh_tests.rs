@@ -30,7 +30,7 @@ fn fixture(topology: &Value) -> (Simulation, InternedId, InternedId) {
     for (owner, human) in [(player, true), (other, false)] {
         sim.houses
             .register(HouseState::new(owner, 0, None, human, 0, 10));
-        sim.power_states.insert(
+        sim.power_states.map_mut_for_test().insert(
             owner,
             crate::sim::power_system::PowerState::settled_for_test(),
         );

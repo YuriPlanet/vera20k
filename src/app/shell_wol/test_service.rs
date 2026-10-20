@@ -78,7 +78,7 @@ fn pending(state: &AppState) -> bool {
 /// The WOL setup's own requests; this service answers only the guest's
 /// leave.
 fn setup_requests(state: &mut AppState) -> Vec<NetworkSetupRequest> {
-    if state.match_state.session.mode() != SessionMode::Wol
+    if state.match_state.session_mode() != SessionMode::Wol
         || !state.frontend.shell_route.network_setup()
     {
         return Vec::new();

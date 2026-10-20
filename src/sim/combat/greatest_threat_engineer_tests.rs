@@ -65,12 +65,13 @@ fn scene_with(
         .health
         .set_for_test(1);
     let frame = sim.session.binary_frame();
-    sim.mission_assign_exact(
-        engineer,
-        MissionId::from_known(MissionType::AreaGuard),
-        frame,
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            engineer,
+            MissionId::from_known(MissionType::AreaGuard),
+            frame,
+        )
+        .unwrap();
     let actor = sim.substrate.entities.get(engineer).unwrap();
     assert!(is_armed(actor, object));
     Some((sim, rules, registry, engineer, building))
@@ -240,12 +241,13 @@ fn retail_ai_engineer_hunt_acquires_enters_repairs_and_is_consumed() {
     // Original Hunt4D53BA..53F4/4D548F..54B9 assigns the building as destination and
     // queues Capture. AreaGuard4D6F32 instead calls ordinary Approach;
     // do not invent Hunt's transition in that separate handler.
-    sim.mission_assign_exact(
-        engineer,
-        MissionId::from_known(MissionType::Hunt),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            engineer,
+            MissionId::from_known(MissionType::Hunt),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
     for _ in 0..600 {
         sim.advance_tick(&[], Some(&rules), Some(&path), Some(&registry), 66);
         if sim

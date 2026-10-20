@@ -73,7 +73,7 @@ impl Simulation {
             let Some(plane) = plane else {
                 break;
             };
-            self.link_airstrike_aircraft(owner, plane);
+            self.substrate.link_airstrike_aircraft(owner, plane);
             self.substrate
                 .entities
                 .get_mut(plane)

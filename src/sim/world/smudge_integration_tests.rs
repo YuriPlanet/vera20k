@@ -168,7 +168,7 @@ fn gsi_04_11_smudge_dirty_flush_publishes_tactical_then_radar_per_cell() {
         );
     }
     sim.smudge_grid = Some(grid);
-    sim.flush_smudge_dirty();
+    Simulation::flush_smudge_dirty(&mut sim.smudge_grid, &mut sim.dirty_cells);
 
     let expected = vec![(3, 4), (4, 4), (3, 5), (4, 5)];
     assert_eq!(sim.dirty_cells.tactical_for_test(), expected);

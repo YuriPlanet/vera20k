@@ -268,7 +268,7 @@ impl Simulation {
             }
             if self.mission_ready_to_commence(id, rules) {
                 let now = self.session.binary_frame();
-                let _ = self.mission_commence_exact(id, now);
+                let _ = self.substrate.mission_commence_exact(id, now);
             }
         }
         if repair {
@@ -346,7 +346,14 @@ impl Simulation {
             .as_ref()
             .is_some_and(|locomotor| locomotor.rocket_runtime().is_some())
         {
-            self.rocket_move_to(id, coord, rules);
+            Self::rocket_move_to(
+                &self.interner,
+                &self.session,
+                &mut self.substrate,
+                id,
+                coord,
+                rules,
+            );
         } else {
             self.move_air_coordinate(id, coord, None, Some(rules));
         }

@@ -3,6 +3,7 @@
 //! input, and the fatal lifecycle stages the world runs around them.
 
 use super::*;
+use crate::sim::world::ObjectSubstrate;
 
 /// The `Death_Announcement` (`+0x3B8`) input for one death site.
 ///
@@ -113,26 +114,21 @@ pub(super) fn fire_death_weapon_payload(
 /// GetCoords (vt+0x48, `0x0070D77C`; a building's foundation centre) through
 /// `DetonateAtCoord @ 0x004690B0`. `None` when no weapon fires.
 pub(crate) fn death_weapon_detonation(
-    world: &mut Simulation,
+    interner: &mut StringInterner,
+    substrate: &ObjectSubstrate,
+    resolved_terrain: &Option<ResolvedTerrainGrid>,
     id: u64,
     rules: &RuleSet,
 ) -> Option<ProjectileDetonation> {
-    let entity = world.substrate.entities.get(id)?;
-    let object = world.interner.object_type(entity.type_ref(), rules)?;
-    let current_weapon = combat_weapon::current_weapon(
-        entity,
-        object,
-        &world.substrate.entities,
-        rules,
-        &world.interner,
-    );
-    let impact = crate::sim::movement::ground_pose::object_get_coords(
-        entity,
-        world.resolved_terrain.as_ref(),
-    );
+    let entity = substrate.entities.get(id)?;
+    let object = interner.object_type(entity.type_ref(), rules)?;
+    let current_weapon =
+        combat_weapon::current_weapon(entity, object, &substrate.entities, rules, interner);
+    let impact =
+        crate::sim::movement::ground_pose::object_get_coords(entity, resolved_terrain.as_ref());
     let (damage, warhead, weapon) =
-        fire_death_weapon_payload(rules, object, current_weapon, &mut world.interner)?;
-    let kind = rules.weapon(world.interner.resolve(weapon))?;
+        fire_death_weapon_payload(rules, object, current_weapon, interner)?;
+    let kind = rules.weapon(interner.resolve(weapon))?;
     Some(ProjectileDetonation {
         projectile_id: id,
         source_id: id,
@@ -141,9 +137,7 @@ pub(crate) fn death_weapon_detonation(
         payload: ProjectilePayload::new(
             damage,
             warhead,
-            kind.projectile
-                .as_deref()
-                .map(|id| world.interner.intern(id)),
+            kind.projectile.as_deref().map(|id| interner.intern(id)),
             kind.bright,
         )
         .with_installed_weapon(Some(weapon)),

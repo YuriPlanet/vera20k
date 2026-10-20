@@ -404,11 +404,14 @@ fn damage_bridge(
 pub enum RetailHighBridgeScene {
     HillsWood,
     PacificConcrete,
+    C3MiddleConcrete,
 }
 
 /// Real high-bridge receiver publication and ordinary Engineer repair.
 /// Hills uses physical BRIDGEB2; Pacific uses physical BRIDGE1. The Hills
-/// receiver/approach continue the existing techno_ai bridge witnesses. Pacific
+/// receiver/approach continue the existing techno_ai bridge witnesses. C3
+/// covers the physical middle TMP whose side levels fall from4 to0; its
+/// receiver, hut and approach are authored map inputs. Pacific
 /// uses its actual CABHUT and an empty level-six bank; production spawn/path
 /// admission and hut entry must succeed. No bridge facts are assigned here.
 /// Native body publication: tools/spatial_oracle/bridge_body_publication.
@@ -435,6 +438,15 @@ pub fn visit_retail_high_bridge_stages(
             24,
             (72, 93),
             (70, 95),
+        ),
+        RetailHighBridgeScene::C3MiddleConcrete => (
+            "C3Y03MD.MAP",
+            (91, 50),
+            (91, 51),
+            416,
+            24,
+            (81, 54),
+            (80, 54),
         ),
     };
     let retail = std::path::PathBuf::from(std::env::var_os("RA2_DIR").unwrap());
@@ -498,6 +510,21 @@ pub fn visit_retail_high_bridge_stages(
         "{kind:?}: receiver must publish collapse"
     );
     assert!(!facts(&scene, target).has_structural_bridge());
+    if matches!(kind, RetailHighBridgeScene::C3MiddleConcrete) {
+        // A middle TMP falls only when BOTH adjacent structural spans have
+        // collapsed. Original576BA0 on91,50 twice leaves level4; the two
+        // subsequent93,50 body visits publish level0. Native body sequences:
+        // tools/spatial_oracle/bridge_middle_tiles.json.
+        visit("half-collapsed", &scene);
+        let other = (93, 50);
+        for _ in 0..8 {
+            if !facts(&scene, other).has_structural_bridge() {
+                break;
+            }
+            damage_bridge(&mut scene, other, impact_z, damage, "HE");
+        }
+        assert!(!facts(&scene, other).has_structural_bridge());
+    }
     visit("collapsed", &scene);
 
     repair_ordinary_bridge(&mut scene, hut, start, &mut ordinary_repair_orders);
