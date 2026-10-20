@@ -87,7 +87,7 @@ class RenderDepthFixtureTests(unittest.TestCase):
         for section in ('Map', 'Lighting', 'IsoMapPack5', 'OverlayPack', 'OverlayDataPack', 'Terrain', 'Waypoints'):
             self.assertEqual(actual[section], original[section])
         self.assertEqual([row.split(',')[1:5] for row in actual['Units'].values()],
-                         [['DLPH', '256', '106', '118'], ['CARRIER', '256', '110', '118']])
+                         [['DLPH', '256', '106', '118'], ['CARRIER', '256', '108', '118']])
         self.assertFalse(actual['Infantry'])
         for section in ('DLPH', 'CARRIER', 'SonicZap', 'Sonic', 'SonicWarhead'):
             self.assertNotIn(section, actual)

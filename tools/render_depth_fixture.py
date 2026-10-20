@@ -388,7 +388,7 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
             # no water flags, unit, weapon or wave state is overridden here.
             units = [
                 '0=<human player>,DLPH,256,106,118,64,Sleep,None,0,-1,0,-1,1,1',
-                '1=Computer,CARRIER,256,110,118,192,Sleep,None,0,-1,0,-1,1,1',
+                '1=Computer,CARRIER,256,108,118,192,Sleep,None,0,-1,0,-1,1,1',
             ]
             structures = ['0=Computer,GAPOWR,256,76,76,0,None,0,0,1,0,0,None,None,None,0,0']
             infantry = []

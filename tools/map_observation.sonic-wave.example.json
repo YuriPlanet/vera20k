@@ -130,7 +130,7 @@
   ],
   "commands": [
     {
-      "issue_after_step": 0,
+      "issue_after_step": 12,
       "owner": "Americans",
       "payload": {
         "Attack": {
@@ -146,7 +146,7 @@
       }
     },
     {
-      "issue_after_step": 12,
+      "issue_after_step": 24,
       "owner": "Americans",
       "payload": {
         "Stop": {
@@ -159,7 +159,7 @@
     }
   ],
   "camera_cell": [
-    108,
+    107,
     118
   ],
   "cursor_position": [
@@ -177,12 +177,15 @@
       118
     ],
     [
-      110,
+      108,
       118
     ],
     [
       76,
       76
     ]
-  ]
+  ],
+  "observe_waves": true,
+  "observe_projectiles": true,
+  "observe_bombs": true
 }
