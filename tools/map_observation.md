@@ -649,7 +649,7 @@ the fixed scene around `(48,48)`. Set the profile's selected map to the result.
 DRON, DroneJump and its ART keep their retail fields. The fixture explicitly
 overrides MTNK's primary to SonicZap and SonicZap's damage to4 so a normal shot
 can exercise the production parasite-release receiver while both actors survive.
-`observe_disguise` retains the existing read-only SHP-frame projection. Exact
+`observe_disguise_inputs` retains the existing read-only SHP-frame projection. Exact
 release/idle steps must be inspected from the run; the profile does not prescribe
 a successful hit or native timing and is not an original scene/pixel comparison.
 Generate its map with:
