@@ -468,7 +468,7 @@ Scenario=ALL03umd.MAP
                             startup.mission_counter() + 1,
                             1,
                             3,
-                            [false; crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT],
+                            crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
                             &mut clock,
                         );
                         let mut metadata =
