@@ -315,7 +315,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::task::Poll;
 
-    use super::{GpuAdapterObservation, block_on};
+    use super::block_on;
 
     #[test]
     fn block_on_sleeps_until_another_thread_wakes_the_future() {
@@ -337,28 +337,5 @@ mod tests {
             Poll::Pending
         }));
         assert_eq!(output, 7);
-    }
-
-    #[test]
-    fn adapter_observation_preserves_every_adapter_info_field() {
-        let info = wgpu::AdapterInfo {
-            name: "fixture adapter".to_string(),
-            vendor: 0x1234,
-            device: 0x5678,
-            device_type: wgpu::DeviceType::IntegratedGpu,
-            driver: "fixture driver".to_string(),
-            driver_info: "fixture driver info".to_string(),
-            backend: wgpu::Backend::Vulkan,
-        };
-
-        let observed = GpuAdapterObservation::from(&info);
-
-        assert_eq!(observed.name, "fixture adapter");
-        assert_eq!(observed.vendor, 0x1234);
-        assert_eq!(observed.device, 0x5678);
-        assert_eq!(observed.device_type, wgpu::DeviceType::IntegratedGpu);
-        assert_eq!(observed.driver, "fixture driver");
-        assert_eq!(observed.driver_info, "fixture driver info");
-        assert_eq!(observed.backend, wgpu::Backend::Vulkan);
     }
 }

@@ -117,21 +117,46 @@ pub(super) fn push_new_edit_instances(
         push_solid_rect(out, atlas, paint.frame, rgb, paint.frame_depth + 0.00001);
     }
     push_ownerdraw_two_pixel_bevel_frame(out, atlas, paint.frame, paint.frame_depth);
-    if editor.focused && paint.caret_visible {
-        let field = scale.base_rect(paint.text);
-        let caret = editor.caret.min(editor.units.len());
-        let start = editor.first_visible_unit.min(caret);
-        let prefix = String::from_utf16_lossy(&editor.units[start..caret]);
-        let x = field.x + font.text_width(&prefix) as i32;
-        if x < field.x + field.w {
-            push_solid_rect(
-                out,
-                atlas,
-                scale.scale_rect(RectPx::new(x, field.y + 2, 2, (field.h - 4).max(1))),
-                SHELL_LABEL_TEXT_RGB,
-                paint.caret_depth,
-            );
-        }
+    if paint.caret_visible {
+        push_new_edit_caret(
+            out,
+            atlas,
+            font,
+            editor,
+            paint.text,
+            paint.caret_depth,
+            scale,
+        );
+    }
+}
+
+/// The NewEdit caret alone, for an editor painted inside another control's
+/// face (the WOL login's editable combo).
+pub(super) fn push_new_edit_caret(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    font: &BitFont,
+    editor: &crate::ui::skirmish_shell::SavedSeedDescriptionEdit,
+    text: RectPx,
+    depth: f32,
+    scale: ShellScale,
+) {
+    if !editor.focused {
+        return;
+    }
+    let field = scale.base_rect(text);
+    let caret = editor.caret.min(editor.units.len());
+    let start = editor.first_visible_unit.min(caret);
+    let prefix = editor.painted_range(start, caret);
+    let x = field.x + font.text_width(&prefix) as i32;
+    if x < field.x + field.w {
+        push_solid_rect(
+            out,
+            atlas,
+            scale.scale_rect(RectPx::new(x, field.y + 2, 2, (field.h - 4).max(1))),
+            SHELL_LABEL_TEXT_RGB,
+            depth,
+        );
     }
 }
 
@@ -159,6 +184,7 @@ pub(super) fn combo_face_entry(
         118 => chrome.combo_face_118,
         42 => chrome.combo_face_42,
         39 => chrome.combo_face_39,
+        213 => chrome.combo_face_213,
         117 => chrome.combo_face_117,
         44 => chrome.combo_face_44,
         38 => chrome.combo_face_38,
@@ -1135,14 +1161,18 @@ mod tests {
             combo_face_39: Some(face(39)),
             ..Default::default()
         };
-        for host in [false, true] {
+        use crate::ui::multiplayer_setup::{SetupDialog, SetupFlavor};
+        for dialog in [SetupFlavor::Lan, SetupFlavor::Wol]
+            .into_iter()
+            .flat_map(|flavor| [false, true].map(|host| SetupDialog { host, flavor }))
+        {
             for (width, height, responsive) in [
                 (640, 480, false),
                 (800, 600, false),
                 (1024, 768, false),
                 (1280, 960, true),
             ] {
-                let layout = MultiplayerSetupLayout::new(host, width, height, responsive);
+                let layout = MultiplayerSetupLayout::new(dialog, width, height, responsive);
                 for rect in layout.combos.into_iter().flatten() {
                     let entry = combo_face_entry(&chrome, rect, layout.page.scale)
                         .expect("every BC/BD combo window must resolve an atlas face");

@@ -1422,10 +1422,10 @@ fn install_recorded_anytown_query_state(
             )),
             signed(&input["radius"]),
         );
-        house.alternate_base_center = (
+        house.set_alternate_base_center_for_test((
             signed(&input["alternate"][0]) as u16,
             signed(&input["alternate"][1]) as u16,
-        );
+        ));
     }
 }
 
@@ -2343,7 +2343,7 @@ fn saved_native_stage_resumes_original_clock_and_changes_world_hash() {
             let after = native_clock_fixture(&frame["after"]);
             let before_hash = sim.state_hash();
             let bytes = GameSnapshot::save_validated(&sim, 0, 0, &at, 0);
-            sim = GameSnapshot::load_validated(&bytes, 0, 0, &sim.session.map_name())
+            sim = GameSnapshot::load_validated(&bytes, 0, 0, sim.session.map_name())
                 .unwrap()
                 .sim;
             assert_eq!(

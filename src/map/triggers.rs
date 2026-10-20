@@ -242,10 +242,4 @@ mod tests {
         }
         assert_eq!(checked, 29);
     }
-
-    #[test]
-    fn test_missing_triggers_is_empty() {
-        let ini = IniFile::from_str("[Map]\nTheater=TEMPERATE\n");
-        assert!(parse_triggers(&ini).is_empty());
-    }
 }

@@ -312,7 +312,7 @@ fn unit_lost_events(sim: &Simulation) -> usize {
 
 fn house_stats(sim: &Simulation, house: &str) -> crate::sim::house_state::MatchStatistics {
     let id = sim.interner.get(house).unwrap();
-    sim.houses.get(&id).unwrap().stats
+    *sim.houses.get(&id).unwrap().stats()
 }
 
 /// Init_Managers reads weapon 0 only, at rookie rank.
@@ -718,7 +718,7 @@ fn erase_awards_price_each_cost_by_its_house() {
         f32::from_bits(expected.veterancy.raw().bits())
     );
     let russians = sim.interner.get("Russians").unwrap();
-    assert_eq!(sim.houses[&russians].economy.score(), 450);
+    assert_eq!(sim.houses[&russians].economy().score(), 450);
 }
 
 /// A warp's start makes a victim that was itself warping let go
@@ -1572,7 +1572,7 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
     sim.houses
         .get_mut(&americans)
         .unwrap()
-        .economy
+        .economy_mut()
         .set_credits_for_test(5000);
     let now = sim.session.binary_frame();
     let _ = sim.mission_assign_exact(gi, MissionId::from_known(MissionType::Guard), now);
@@ -1619,7 +1619,7 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
         crate::sim::world::FrameEffects::default(),
     );
     let credits_before = sim.houses[&sim.interner.get("Americans").unwrap()]
-        .economy
+        .economy()
         .credits();
     assert!(
         !idle_turn(&mut sim, now.wrapping_add(200_000)),
@@ -1633,7 +1633,7 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
     assert_eq!(entity(&sim, plant).health.current(), 300, "no repair");
     assert_eq!(
         sim.houses[&sim.interner.get("Americans").unwrap()]
-            .economy
+            .economy()
             .credits(),
         credits_before,
         "no bill"
@@ -2453,8 +2453,10 @@ fn native_first_head_building_warning_and_release_corpus() {
                 .or_default()
                 .insert("AMERICANS".into());
         }
-        sim.houses.get_mut(&owner).unwrap().multiplay_passive =
-            input["passive"].as_bool() == Some(true);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_multiplay_passive_for_test(input["passive"].as_bool() == Some(true));
         let owner_name = sim.interner.resolve(owner).to_owned();
         // Native Location5248,5248 is cell20's centre; a 2x2 Building's
         // original GetCoords adds its centre and requests radar at21,21.

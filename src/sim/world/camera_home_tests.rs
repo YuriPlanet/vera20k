@@ -45,7 +45,7 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, x: u16,
 fn clear_base(sim: &mut Simulation, owner: InternedId) {
     let house = sim.houses.get_mut(&owner).unwrap();
     house.set_base_geometry_for_test(None, 0);
-    house.alternate_base_center = (0, 0);
+    house.set_alternate_base_center_for_test((0, 0));
 }
 
 fn query(sim: &Simulation, rules: &RuleSet) -> Option<[i32; 3]> {
@@ -142,7 +142,7 @@ fn home_base_units_use_retained_count_rule_membership_and_existing_human_player_
     let misleading = spawn(&mut sim, &rules, "OTHERUNIT", "Local", 19, 17);
     let last = spawn(&mut sim, &rules, "BASEUNIT", "Local", 21, 17);
     clear_base(&mut sim, houses[0]);
-    assert!(sim.houses[&houses[0]].tracking.vehicles() != 0);
+    assert!(sim.houses[&houses[0]].tracking().vehicles() != 0);
     assert_eq!(query(&sim, &rules), Some(coord(&sim, last)));
     sim.substrate
         .entities
@@ -156,7 +156,10 @@ fn home_base_units_use_retained_count_rule_membership_and_existing_human_player_
         "DeploysInto is not BaseUnit membership"
     );
     assert_ne!(coord(&sim, misleading), coord(&sim, first));
-    sim.houses.get_mut(&houses[1]).unwrap().player_control = true;
+    sim.houses
+        .get_mut(&houses[1])
+        .unwrap()
+        .set_player_control_for_test(true);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     assert_eq!(query(&sim, &rules), Some(coord(&sim, other)));
@@ -180,8 +183,8 @@ fn home_base_units_use_retained_count_rule_membership_and_existing_human_player_
         .houses
         .get_mut(&houses[1])
         .unwrap()
-        .player_control = true;
-    assert_eq!(empty_owner.houses[&houses[0]].tracking.vehicles(), 0);
+        .set_player_control_for_test(true);
+    assert_eq!(empty_owner.houses[&houses[0]].tracking().vehicles(), 0);
     assert_eq!(query(&empty_owner, &rules), None);
 }
 
@@ -208,7 +211,7 @@ fn home_base_fallback_is_shared_and_local_input_cannot_write_simulation_dummy() 
     sim.houses
         .get_mut(&houses[0])
         .unwrap()
-        .alternate_base_center = (19, 20);
+        .set_alternate_base_center_for_test((19, 20));
     let cells = sim
         .resolved_terrain
         .as_ref()
@@ -220,7 +223,7 @@ fn home_base_fallback_is_shared_and_local_input_cannot_write_simulation_dummy() 
     sim.houses
         .get_mut(&houses[0])
         .unwrap()
-        .alternate_base_center = (500, 500);
+        .set_alternate_base_center_for_test((500, 500));
     let dummy = sim.effective_shared_cell_dummy();
     dummy.stamp_coord(7, 9);
     let before = sim.state_hash();
@@ -267,7 +270,7 @@ fn home_primary_and_base_geometry_survive_real_snapshot_restore() {
     sim.houses
         .get_mut(&houses[0])
         .unwrap()
-        .alternate_base_center = (18, 19);
+        .set_alternate_base_center_for_test((18, 19));
     let expected = query(&sim, &rules);
     assert_eq!(expected, Some(coord(&sim, second)));
     assert_ne!(expected, Some(coord(&sim, first)));

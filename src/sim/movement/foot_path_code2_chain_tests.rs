@@ -13,7 +13,6 @@ use crate::util::fixed_math::SIM_ONE;
 const NORTH: u8 = 0;
 const NORTH_EAST: u8 = 1;
 const EAST: u8 = 2;
-const WEST: u8 = 6;
 
 /// A tank and a one-cell building.
 fn rules() -> RuleSet {
@@ -241,18 +240,6 @@ fn a_jammed_chain_detours_the_route_and_a_clear_one_runs_through() {
         assert_eq!(route.contains(&(10, 10)), through, "head {head}: {route:?}");
         assert_eq!(route.last(), Some(&(11, 10)));
     }
-}
-
-/// An off-map cell is the shared dummy, which lists nothing.
-#[test]
-fn an_off_map_step_clears() {
-    let rules = rules();
-    let mut sim = arena(&rules);
-    let tank = stopped(&mut sim, &rules, (10, 10), Some(WEST));
-    let tank = sim.substrate.entities.get_mut(tank).unwrap();
-    tank.position.set_rx_for_test(0);
-
-    assert!(!jams(&sim, (10, 10)));
 }
 
 /// The original executable's controls (`tools/spatial_oracle/

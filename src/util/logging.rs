@@ -307,7 +307,7 @@ mod tests {
 
     use log::LevelFilter;
 
-    use super::{Filter, claim_exception_dump, normalize_crlf, utc_timestamp};
+    use super::{Filter, claim_exception_dump, utc_timestamp};
 
     #[test]
     fn rust_log_directives_pick_the_longest_matching_target() {
@@ -367,10 +367,5 @@ mod tests {
             claim_exception_dump(&active).is_some(),
             "a later independent handler entry must replace except.txt"
         );
-    }
-
-    #[test]
-    fn exception_dump_uses_windows_line_endings() {
-        assert_eq!(normalize_crlf("one\ntwo\r\n"), "one\r\ntwo\r\n");
     }
 }

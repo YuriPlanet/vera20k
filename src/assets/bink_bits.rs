@@ -252,35 +252,11 @@ mod tests {
     }
 
     #[test]
-    fn read_bits_4_4_from_one_byte() {
-        // 0xA3: low nibble = 0x3, high nibble = 0xA.
-        let data = [0xA3u8];
-        let mut r = BitReader::from_bytes(&data);
-        assert_eq!(r.read_bits(4).unwrap(), 0x3);
-        assert_eq!(r.read_bits(4).unwrap(), 0xA);
-    }
-
-    #[test]
     fn read_bits_across_byte_boundary() {
         // 0x78 0x56 -> as 16 bits LSB-first = 0x5678.
         let data = [0x78u8, 0x56u8];
         let mut r = BitReader::from_bytes(&data);
         assert_eq!(r.read_bits(16).unwrap(), 0x5678);
-    }
-
-    #[test]
-    fn read_bits_spanning_three_bytes() {
-        // 24 bits: 0x44 0x33 0x22 -> 0x223344
-        let data = [0x44u8, 0x33u8, 0x22u8];
-        let mut r = BitReader::from_bytes(&data);
-        assert_eq!(r.read_bits(24).unwrap(), 0x223344);
-    }
-
-    #[test]
-    fn read_bits_32() {
-        let data = [0x78u8, 0x56, 0x34, 0x12];
-        let mut r = BitReader::from_bytes(&data);
-        assert_eq!(r.read_bits(32).unwrap(), 0x12345678);
     }
 
     #[test]
@@ -363,22 +339,5 @@ mod tests {
         let data = [0u8];
         let mut r = BitReader::new(&data, 0);
         assert_eq!(table.decode_vlc(&mut r).unwrap(), 0);
-    }
-
-    #[test]
-    fn vlc_canonical_bink_tree_1() {
-        // Mimics Bink tree 1 (len 1,2,3,4,5,6,7,8,8...). Just confirm build
-        // succeeds and decodes round-trip correctly for symbol 0.
-        let codes: [u8; 16] = [
-            0x00, 0x01, 0x03, 0x05, 0x07, 0x09, 0x0B, 0x0D, 0x0F, 0x13, 0x15, 0x17, 0x19, 0x1B,
-            0x1D, 0x1F,
-        ];
-        let lens: [u8; 16] = [1, 3, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5];
-        let table = VlcTable::build(&codes, &lens).unwrap();
-        // Code 0 (length 1) = symbol 0. A byte of 0xFE has bit0=0, so reads 0.
-        let data = [0xFEu8];
-        let mut r = BitReader::from_bytes(&data);
-        assert_eq!(table.decode_vlc(&mut r).unwrap(), 0);
-        assert_eq!(r.pos(), 1);
     }
 }

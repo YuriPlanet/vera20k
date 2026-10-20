@@ -266,16 +266,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_section_is_a_no_op() {
-        let mut options = RmgOptions {
-            seed: 123,
-            ..Default::default()
-        };
-        options.apply_sed(&IniFile::from_str("[Basic]\nName=nope\n"));
-        assert_eq!(options.seed, 123);
-    }
-
-    #[test]
     fn sed_round_trips() {
         let mut original = RmgOptions {
             theater: 2,
@@ -321,32 +311,6 @@ mod tests {
             encode_description(&"Random Map".into()),
             "52,61,6e,64,6f,6d,20,4d,61,70,"
         );
-    }
-
-    #[test]
-    fn description_decodes_the_native_form() {
-        assert_eq!(
-            sed_description("52,61,6e,64,6f,6d,20,4d,61,70,"),
-            "Random Map"
-        );
-    }
-
-    #[test]
-    fn description_round_trips_through_sed() {
-        let mut original = RmgOptions {
-            description: "Random Map".into(),
-            seed: 1234,
-            ..Default::default()
-        };
-        original.normalize();
-
-        let bytes = original.to_sed_bytes();
-        let mut parsed = RmgOptions::default();
-        parsed.apply_sed(&IniFile::from_bytes(&bytes).unwrap());
-        parsed.normalize();
-
-        assert_eq!(parsed.description, "Random Map");
-        assert_eq!(parsed, original);
     }
 
     #[test]

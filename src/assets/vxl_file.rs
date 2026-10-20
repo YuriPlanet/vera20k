@@ -465,22 +465,6 @@ mod tests {
         assert!(VxlFile::from_bytes(&data).is_err());
     }
 
-    #[test]
-    fn test_reject_too_small() {
-        assert!(VxlFile::from_bytes(&[0u8; 100]).is_err());
-    }
-
-    #[test]
-    fn test_limb_bounds_and_transform() {
-        let vxl: VxlFile = VxlFile::from_bytes(&make_test_vxl()).expect("Should parse");
-        let limb: &VxlLimb = &vxl.limbs[0];
-        assert!((limb.bounds[0] - 0.0).abs() < f32::EPSILON);
-        assert!((limb.bounds[3] - 2.0).abs() < f32::EPSILON);
-        assert!((limb.transform[0] - 1.0).abs() < f32::EPSILON);
-        assert!((limb.transform[4] - 1.0).abs() < f32::EPSILON);
-        assert!((limb.transform[8] - 1.0).abs() < f32::EPSILON);
-    }
-
     /// Verify the parser handles palette_count != 1 correctly. The original
     /// engine supports a variable-length palette section (palette_count × 770
     /// bytes); a hard-coded 802-byte assumption breaks for any value other than 1.

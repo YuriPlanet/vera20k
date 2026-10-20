@@ -11,6 +11,8 @@ use serde_json::{Value, json};
 mod abort_return;
 mod lan;
 pub(crate) use lan::{LAN_CHECKPOINTS, LanTarget};
+mod wol;
+pub(crate) use wol::{WOL_CHECKPOINTS, WolTarget};
 mod network_options;
 mod opening;
 pub(crate) use network_options::NetworkOptionsTarget;
@@ -94,6 +96,7 @@ pub(super) enum MoviesTarget {
     NetworkBounce,
     NetworkOptions(NetworkOptionsTarget),
     Lan(LanTarget),
+    Wol(WolTarget),
     /// Main Menu -> Internet: `0x10E` settled (pointer at `hover` or
     /// neutral), held at `entry_tick`, or after one of its buttons.
     WolWelcome {
@@ -176,6 +179,7 @@ pub(super) struct MoviesCapture {
     abort_input: Option<abort_return::AbortReturnInput>,
     opening: Option<opening::OpeningCapture>,
     lan: Option<lan::LanCapture>,
+    wol: Option<wol::WolCapture>,
 }
 
 impl MoviesCapture {
@@ -184,6 +188,11 @@ impl MoviesCapture {
             target,
             lan: if let MoviesTarget::Lan(target) = target {
                 Some(lan::LanCapture::new(target))
+            } else {
+                None
+            },
+            wol: if let MoviesTarget::Wol(target) = target {
+                Some(wol::WolCapture::new(target))
             } else {
                 None
             },
@@ -210,6 +219,9 @@ impl MoviesCapture {
         if let Some(lan) = &self.lan {
             return lan.timeout();
         }
+        if let Some(wol) = &self.wol {
+            return wol.timeout();
+        }
         self.opening
             .as_ref()
             .map_or(Duration::from_secs(60), opening::OpeningCapture::timeout)
@@ -233,6 +245,9 @@ impl MoviesCapture {
     ) -> Result<()> {
         if let Some(lan) = self.lan.as_mut() {
             return lan.after_present(state, rendered, frame);
+        }
+        if let Some(wol) = self.wol.as_mut() {
+            return wol.after_present(state, rendered, frame);
         }
         let starting_campaign = matches!(self.target, MoviesTarget::CampaignStart { .. })
             && self.phase == Phase::CampaignStarting;
@@ -467,6 +482,7 @@ impl MoviesCapture {
                         | MoviesTarget::Options0xD5 { .. }
                         | MoviesTarget::NetworkOptions(_)
                         | MoviesTarget::Lan(_)
+                        | MoviesTarget::Wol(_)
                         | MoviesTarget::NetworkBounce
                         | MoviesTarget::WolWelcome { .. } => {
                             bail!("{:?} capture reached the 0x101 page", self.target)
@@ -886,11 +902,7 @@ impl MoviesCapture {
                 match press {
                     WolPress::MyInformation => {
                         ensure!(
-                            state
-                                .frontend
-                                .wol_welcome
-                                .as_ref()
-                                .is_some_and(|wol| wol.api_missing.is_some()),
+                            wol_api_missing_shown(state),
                             "the WOL action did not show TXT_APIMISSING"
                         );
                         Self::restore_neutral_pointer(state);
@@ -1056,6 +1068,9 @@ impl MoviesCapture {
         if let Some(lan) = self.lan.as_ref() {
             return lan.ready(state);
         }
+        if let Some(wol) = self.wol.as_ref() {
+            return wol.ready(state);
+        }
         if matches!(
             self.target,
             MoviesTarget::CampaignStart {
@@ -1192,6 +1207,7 @@ impl MoviesCapture {
                 ..
             } => true,
             MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
+            MoviesTarget::Wol(_) => unreachable!("WOL driver handled above"),
             MoviesTarget::NetworkOptions(target) => {
                 target.is_message()
                     || target == NetworkOptionsTarget::SaveReturn
@@ -1228,13 +1244,9 @@ impl MoviesCapture {
             MoviesTarget::WolWelcome {
                 press: WolPress::MyInformation,
                 ..
-            } => state
-                .frontend
-                .wol_welcome
-                .as_ref()
-                .is_some_and(|wol| wol.api_missing.is_some()),
+            } => wol_api_missing_shown(state),
             MoviesTarget::WolWelcome { entry_tick, .. } => {
-                state.frontend.shell_route.wol_welcome()
+                state.frontend.shell_route.wol()
                     && entry_tick.is_none_or(|target| {
                         state
                             .frontend
@@ -1274,6 +1286,7 @@ impl MoviesCapture {
                     })
             }
             MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
+            MoviesTarget::Wol(_) => unreachable!("WOL driver handled above"),
             MoviesTarget::NetworkOptions(target) => self.network_options_ready(state, target)?,
             MoviesTarget::Options0xD5 { entry_tick, .. } => {
                 state.frontend.options_dialog.is_some()
@@ -1405,6 +1418,9 @@ impl MoviesCapture {
         if let Some(lan) = self.lan.as_ref() {
             manifest["lan"] = lan.receipt(state)?;
         }
+        if let Some(wol) = self.wol.as_ref() {
+            manifest["wol"] = wol.receipt(state);
+        }
         Ok(manifest)
     }
 
@@ -1419,6 +1435,9 @@ impl MoviesCapture {
         if let Some(lan) = self.lan.as_ref() {
             return lan.owns_simulation_steps(state);
         }
+        if let Some(wol) = self.wol.as_ref() {
+            return wol.owns_simulation_steps(state);
+        }
 
         matches!(
             self.target,
@@ -1431,6 +1450,17 @@ impl MoviesCapture {
         ) && self.phase == Phase::CampaignStarting
             && state.frontend.screen == GameScreen::InGame
     }
+}
+
+/// The visit shows `0xD0` with `TXT_APIMISSING` over the backdrop.
+fn wol_api_missing_shown(state: &AppState) -> bool {
+    let expected = App::csf_label(state, "TXT_APIMISSING", "TXT_APIMISSING");
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.message())
+        .is_some_and(|message| message.body == expected)
 }
 
 /// Same physical-window to retained-render coordinates as CursorMoved in the
@@ -1585,20 +1615,20 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
     let roster = sim.houses.order().iter().map(|id| {
         let house = sim.houses.get(id).context("registered House missing from live roster")?;
         let native_id = house.native_unique_id().context("registered House has no native identity")?;
-        let team_timer = house.team_creation.timer();
+        let team_timer = house.team_creation().timer();
         let attack_timer = house.native_attack_timer().map(|(timer, value)| json!({
             "start_frame": timer.start_frame(), "duration": timer.duration(), "value": value}));
         Ok(json!({"name": sim.interner.resolve(*id), "native_unique_id": native_id,
             "house_type": sim.interner.resolve(house.house_type_id()),
-            "country": house.country.map(|country| sim.interner.resolve(country)),
-            "side_index": house.side_index, "is_human": house.is_human,
-            "player_control": house.player_control, "difficulty": house.difficulty as i32,
-            "credits": house.economy.credits(), "scenario_credits": house.economy.scenario_credits(),
-            "tech_level": house.tech_level, "authored_iq": house.authored_iq, "current_iq": house.current_iq,
+            "country": house.country().map(|country| sim.interner.resolve(country)),
+            "side_index": house.side_index(), "is_human": house.is_human(),
+            "player_control": house.player_control(), "difficulty": house.difficulty() as i32,
+            "credits": house.economy().credits(), "scenario_credits": house.economy().scenario_credits(),
+            "tech_level": house.tech_level(), "authored_iq": house.authored_iq(), "current_iq": house.current_iq(),
             "authored_edge": house.authored_edge(), "scenario_team_ratios": house.scenario_team_ratios(),
             "scalar_difficulty_bits": house.scalar_difficulty_biases().map(|value| format!("{:016x}", value.bits())),
             "attack_timer": attack_timer,
-            "team_creation": {"ratio": house.team_creation.ratio(),
+            "team_creation": {"ratio": house.team_creation().ratio(),
                 "start_frame": team_timer.start_frame(), "duration": team_timer.duration()},
         }))
     }).collect::<Result<Vec<_>>>()?;

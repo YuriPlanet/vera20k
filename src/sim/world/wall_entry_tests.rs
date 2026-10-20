@@ -573,8 +573,8 @@ fn assert_retail_wall_fire_profile(
             "ordinary AP reaches stage two beside a pristine same-type child"
         );
         let house = scene.sim().houses.get(&owner).unwrap();
-        assert_eq!(house.economy.credits(), 8500);
-        assert_eq!(house.economy.spent_credits(), 1500);
+        assert_eq!(house.economy().credits(), 8500);
+        assert_eq!(house.economy().spent_credits(), 1500);
     }
     assert!(shots >= 2, "the real weapon reaches repeated impacts");
     assert_eq!(

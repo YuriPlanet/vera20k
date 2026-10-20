@@ -54,7 +54,7 @@ pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
         .session
         .current_house()
         .and_then(|owner| runtime.simulation.houses.get(&owner))
-        .map_or(0, |house| i32::from(house.side_index));
+        .map_or(0, |house| i32::from(house.side_index()));
     let rules = &runtime.resources.rules;
     let rgb = trigger_message_rgb(&rules.color_schemes, side);
     let timeout = message_delay_timeout_ms(rules.general.message_delay_minutes);

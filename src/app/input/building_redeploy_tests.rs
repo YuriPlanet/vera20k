@@ -161,7 +161,10 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4436F0);
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.get("Americans").unwrap();
-        sim.houses.get_mut(&owner).unwrap().is_human = human;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_is_human_for_test(human);
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(skirmish),
         );

@@ -379,7 +379,7 @@ fn assert_primary_native_state(
                 "{context}: native supplied empty queue slot"
             );
             assert!(
-                sim.production.factories.view(owner, category).is_none(),
+                sim.production.factories().view(owner, category).is_none(),
                 "{context}: queue unchanged"
             );
         }
@@ -489,7 +489,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
         };
         assert_rng(&sim, &case["rng_before"]);
         assert_primary_native_state(&sim, &rules, &ids, &owners, &case["initial"], name);
-        let factories = sim.production.factories.clone();
+        let factories = sim.production.factories().clone();
         let mut issued = Vec::new();
         let (_, draws) = trace_draws(|| {
             for phase in case["phases"].as_array().unwrap() {
@@ -508,7 +508,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                 let mut houses_before = sim.houses.clone();
                 let edges_before: Vec<_> = owners
                     .iter()
-                    .map(|owner| sim.houses[owner].waypoint_edge)
+                    .map(|owner| sim.houses[owner].waypoint_edge())
                     .collect();
                 sim.sound_events.clear();
                 let mut event = None;
@@ -566,7 +566,8 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                 assert_primary_native_state(&sim, &rules, &ids, &owners, &phase["state"], &context);
                 assert_rng(&sim, &phase["rng"]);
                 assert_eq!(
-                    sim.production.factories, factories,
+                    *sim.production.factories(),
+                    factories,
                     "{context}: no allocation/relink/queue mutation"
                 );
                 assert!(
@@ -591,8 +592,10 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                     .any(|effect| effect["event"] == "determine_edge");
                 for owner in owners {
                     if has_edge {
-                        houses_before.get_mut(&owner).unwrap().waypoint_edge =
-                            sim.houses[&owner].waypoint_edge;
+                        houses_before
+                            .get_mut(&owner)
+                            .unwrap()
+                            .set_waypoint_edge_for_test(sim.houses[&owner].waypoint_edge());
                     }
                 }
                 assert_eq!(
@@ -604,7 +607,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                     assert_eq!(
                         owners
                             .iter()
-                            .map(|owner| sim.houses[owner].waypoint_edge)
+                            .map(|owner| sim.houses[owner].waypoint_edge())
                             .collect::<Vec<_>>(),
                         edges_before,
                         "{context}: no edge write"

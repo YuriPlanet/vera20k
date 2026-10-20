@@ -139,10 +139,10 @@ impl BridgeOccupantHost for Occupants<'_, '_> {
             CellObjectMember::Terrain(id) => self
                 .live
                 .sim
-                .production
                 .terrain_objects
+                .objects()
                 .get(&id)
-                .map_or(0, |e| e.health),
+                .map_or(0, |e| e.health()),
         }
     }
     fn receive_damage(&mut self, member: Member, damage: i32) -> Result<(), String> {

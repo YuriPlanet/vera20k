@@ -218,16 +218,12 @@ pub(crate) fn active_page_title_text(
             crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE.title_key
         }
         ShellSlideKind::WolWelcome => crate::ui::wol_shell::WOL_WELCOME_PAGE.title_key,
+        ShellSlideKind::WolLogin => crate::ui::wol_login::PAGE.title_key,
+        ShellSlideKind::WolLobby => crate::ui::wol_shell::WOL_LOBBY_TITLE_KEY,
         ShellSlideKind::Keyboard => crate::ui::shell::keyboard::KEYBOARD_PAGE.title_key,
         ShellSlideKind::NetworkOptions => crate::ui::network_options::PAGE.title_key,
         ShellSlideKind::LanLobby => crate::ui::lan_shell::PAGE.title_key,
-        ShellSlideKind::LanSetup { host } => {
-            if host {
-                crate::ui::multiplayer_setup::HOST_PAGE.title_key
-            } else {
-                crate::ui::multiplayer_setup::GUEST_PAGE.title_key
-            }
-        }
+        ShellSlideKind::NetworkSetup(dialog) => dialog.page().title_key,
         ShellSlideKind::ChooseMap => crate::ui::skirmish_shell::CHOOSE_MAP_TITLE_KEY,
         ShellSlideKind::RandomMap => crate::ui::skirmish_shell::RANDOM_MAP_TITLE_KEY,
         // The Options heading is the dialog's own resolved label.

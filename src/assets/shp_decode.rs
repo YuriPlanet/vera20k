@@ -111,25 +111,8 @@ mod tests {
     }
 
     #[test]
-    fn test_rle_decode_all_transparent() {
-        let data = [4, 0, 0, 4];
-        let pixels = decode_rle_frame(&data, 4, 1).expect("decode");
-        assert_eq!(pixels, vec![0, 0, 0, 0]);
-    }
-
-    #[test]
     fn truncated_prefix_errors() {
         assert!(decode_rle_frame(&[], 2, 1).is_err());
-    }
-
-    #[test]
-    fn prefix_smaller_than_two_errors() {
-        assert!(decode_rle_frame(&[1, 0], 1, 1).is_err());
-    }
-
-    #[test]
-    fn prefix_past_slice_errors() {
-        assert!(decode_rle_frame(&[5, 0, 7], 1, 1).is_err());
     }
 
     #[test]

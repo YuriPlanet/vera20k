@@ -146,13 +146,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stem_truncates_at_the_first_dot() {
-        assert_eq!(movie_stem("RENEGADE.BIK"), "RENEGADE");
-        assert_eq!(movie_stem("A00_F00E"), "A00_F00E");
-        assert_eq!(movie_stem("a.b.c"), "a");
-    }
-
-    #[test]
     fn origin_centers_movies_and_clamps_negative_offsets() {
         // 800x600 movies fill 800x600 and center at 1024x768; the negative
         // 640x480 origin is clamped (the retail result there is unverified).

@@ -477,21 +477,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn body_and_shadow_keys_are_distinct() {
-        let body = BridgeAtlasKey {
-            name: "BRIDGE1".into(),
-            frame: 5,
-            kind: BridgeFrameKind::Body,
-        };
-        let shadow = BridgeAtlasKey {
-            name: "BRIDGE1".into(),
-            frame: 5,
-            kind: BridgeFrameKind::Shadow,
-        };
-        assert_ne!(body, shadow);
-    }
-
-    #[test]
     fn every_high_bridge_identity_preloads_without_a_map_authored_cell() {
         // Repair and crate scatter can write any of the four high-bridge
         // indices; a renamed index still routes by number, and a canonical

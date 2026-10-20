@@ -305,7 +305,7 @@ fn march(
             let mut house = HouseState::new(id, (index % 2) as u8, None, false, 0, 10);
             // No house owns a building, so exempt every house from the defeat
             // scan; objects still fight because only same-house pairs are allied.
-            house.multiplay_passive = true;
+            house.make_multiplay_passive();
             sim.houses.register(house);
             id
         })

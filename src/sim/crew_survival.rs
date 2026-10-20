@@ -284,7 +284,7 @@ impl Simulation {
         let captured = entity.has_been_captured.is_set();
         let armed = crate::sim::combat::combat_weapon::is_armed(entity, object);
         let yard = object.factory_type() == Some(FactoryType::BuildingType);
-        let side = self.houses.get(&entity.owner())?.side_index;
+        let side = self.houses.get(&entity.owner())?.side_index();
         if !captured && self.scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
             return rules.general.engineer_infantry.clone();
         }
@@ -313,7 +313,7 @@ impl Simulation {
         let Some(house) = self.houses.get(&entity.owner()) else {
             return 0;
         };
-        let divisor = match house.side_index {
+        let divisor = match house.side_index() {
             0 => rules.general.allied_survivor_divisor,
             1 => rules.general.soviet_survivor_divisor,
             2 => rules.general.third_survivor_divisor,
@@ -467,7 +467,7 @@ impl Simulation {
                 let target = Some(crate::sim::combat::TargetKind::Entity(planter));
                 let stored = crate::sim::mission::concrete_effects::assign_target_stored(
                     &sim.substrate.entities,
-                    &sim.production.terrain_objects,
+                    sim.terrain_objects.objects(),
                     id,
                     target,
                     Some((rules, &sim.interner)),
@@ -672,7 +672,7 @@ impl Simulation {
         let armed = crate::sim::combat::combat_weapon::is_armed(entity, object);
         let on_bridge = entity.on_bridge();
         let position = entity.position;
-        let Some(side) = self.houses.get(&owner).map(|house| house.side_index) else {
+        let Some(side) = self.houses.get(&owner).map(|house| house.side_index()) else {
             return;
         };
         // `InfantryClass::Unlimbo @ 0x0051DFF0` places through

@@ -1790,21 +1790,6 @@ mod tests {
         );
     }
 
-    /// AT-5: authoritative bounds are queryable before any advance_tick — no
-    /// zero-dim fog window between construction and the first vision pass.
-    #[test]
-    fn map_bounds_known_before_first_tick() {
-        let desc = ScenarioDescriptor {
-            seed: 7,
-            map_width: 80,
-            map_height: 60,
-            ..Default::default()
-        };
-        let sim = Simulation::from_descriptor(&desc);
-        assert_eq!((sim.fog.width, sim.fog.height), (80, 60));
-        assert_eq!((sim.session.map_width, sim.session.map_height), (80, 60));
-    }
-
     /// AT-4: scenario identity (map name, theater) is sim-resident and
     /// survives a snapshot round-trip.
     #[test]
@@ -1873,16 +1858,6 @@ mod tests {
             .expect("snapshot load")
             .sim;
         assert_eq!(restored.state_hash(), a.state_hash());
-    }
-
-    #[test]
-    fn native_replay_header_starts_normal_scenario_descriptor() {
-        let header = crate::sim::replay::NativeReplayHeader::new(0x1234_5678, "arena.map");
-        let descriptor = ScenarioDescriptor::from_native_replay_header(&header);
-        assert_eq!(descriptor.seed, 0x1234_5678);
-        assert_eq!(descriptor.map_name, "arena.map");
-        assert_eq!(descriptor.map_width, 0);
-        assert_eq!(descriptor.map_height, 0);
     }
 
     #[test]

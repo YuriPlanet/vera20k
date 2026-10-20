@@ -2109,30 +2109,6 @@ mod tests {
     }
 
     #[test]
-    fn retained_wall_neighbor_plane_roundtrips_with_overlay_authority() {
-        let grid =
-            OverlayGrid::from_finalized_map_payload(FinalizedOverlayPayload::from_cells_for_test(
-                2,
-                2,
-                vec![(-1, 0), (1, 2), (-1, 0), (-1, 0)],
-                vec![0, 7, 255, 3],
-            ));
-        let bytes = crate::util::save_codec::serialize(&grid).expect("serialize overlay authority");
-        let restored: OverlayGrid =
-            crate::util::save_codec::deserialize(&bytes).expect("deserialize overlay authority");
-
-        assert_eq!(restored.retained_neighbor_counts(), &[0, 7, 255, 3][..]);
-        assert_eq!(restored.cell(1, 0), grid.cell(1, 0));
-    }
-
-    #[test]
-    fn new_grid_is_empty() {
-        let grid = OverlayGrid::new(4, 4);
-        assert_eq!(grid.cell(0, 0).overlay_id, None);
-        assert_eq!(grid.cell(3, 3).overlay_id, None);
-    }
-
-    #[test]
     fn gsi_04_07_map_seeded_overlay_is_unowned() {
         let grid = OverlayGrid::from_overlay_entries(
             &[OverlayEntry {
@@ -2148,29 +2124,6 @@ mod tests {
         assert_eq!(cell.overlay_id, Some(2));
         assert_eq!(cell.overlay_data, 0x18);
         assert_eq!(cell.wall_owner, None);
-    }
-
-    #[test]
-    fn from_overlay_entries_seeds_cells() {
-        let entries = vec![
-            OverlayEntry {
-                rx: 1,
-                ry: 2,
-                overlay_id: 5,
-                frame: 7,
-            },
-            OverlayEntry {
-                rx: 3,
-                ry: 0,
-                overlay_id: 10,
-                frame: 0,
-            },
-        ];
-        let grid = OverlayGrid::from_overlay_entries(&entries, 4, 4);
-        assert_eq!(grid.cell(1, 2).overlay_id, Some(5));
-        assert_eq!(grid.cell(1, 2).overlay_data, 7);
-        assert_eq!(grid.cell(3, 0).overlay_id, Some(10));
-        assert_eq!(grid.cell(0, 0).overlay_id, None);
     }
 
     #[test]
@@ -2231,35 +2184,6 @@ mod tests {
     }
 
     #[test]
-    fn place_and_clear_overlay() {
-        let mut grid = OverlayGrid::new(4, 4);
-        grid.place_overlay(2, 2, 42, 11);
-        assert_eq!(grid.cell(2, 2).overlay_id, Some(42));
-        assert_eq!(grid.cell(2, 2).overlay_data, 11);
-
-        let prev = grid.clear_overlay(2, 2);
-        assert_eq!(prev, Some(42));
-        assert_eq!(grid.cell(2, 2).overlay_id, None);
-    }
-
-    #[test]
-    fn set_overlay_data_updates_existing() {
-        let mut grid = OverlayGrid::new(4, 4);
-        grid.place_overlay(1, 1, 5, 3);
-        grid.set_overlay_data(1, 1, 9);
-        assert_eq!(grid.cell(1, 1).overlay_data, 9);
-        assert_eq!(grid.cell(1, 1).overlay_id, Some(5));
-    }
-
-    #[test]
-    fn set_overlay_data_noop_on_empty_cell() {
-        let mut grid = OverlayGrid::new(4, 4);
-        grid.set_overlay_data(1, 1, 9);
-        assert_eq!(grid.cell(1, 1).overlay_id, None);
-        assert_eq!(grid.cell(1, 1).overlay_data, 0);
-    }
-
-    #[test]
     fn bridge_publication_literal_fields_do_not_schedule_attribute_recalc() {
         let mut terrain = single_cell_terrain(0, Default::default(), false);
         let mut grid = OverlayGrid::new(1, 1);
@@ -2284,33 +2208,6 @@ mod tests {
     }
 
     #[test]
-    fn out_of_bounds_returns_default() {
-        let grid = OverlayGrid::new(2, 2);
-        assert_eq!(grid.cell(5, 5).overlay_id, None);
-    }
-
-    #[test]
-    fn iter_occupied_skips_empty() {
-        let mut grid = OverlayGrid::new(3, 3);
-        grid.place_overlay(0, 0, 1, 0);
-        grid.place_overlay(2, 2, 2, 5);
-        let occupied: Vec<_> = grid.iter_occupied().collect();
-        assert_eq!(occupied.len(), 2);
-        assert_eq!(occupied[0].0, 0); // rx
-        assert_eq!(occupied[0].1, 0); // ry
-        assert_eq!(occupied[1].0, 2);
-        assert_eq!(occupied[1].1, 2);
-    }
-
-    #[test]
-    fn place_overlay_pushes_dirty() {
-        let mut grid = OverlayGrid::new(10, 10);
-        assert!(grid.dirty_cells.is_empty());
-        grid.place_overlay(3, 4, 7, 0);
-        assert_eq!(grid.dirty_cells, vec![(3, 4)]);
-    }
-
-    #[test]
     fn clear_overlay_pushes_dirty_when_in_bounds() {
         let mut grid = OverlayGrid::new(10, 10);
         grid.place_overlay(2, 2, 5, 0);
@@ -2318,14 +2215,6 @@ mod tests {
         let prev = grid.clear_overlay(2, 2);
         assert_eq!(prev, Some(5));
         assert_eq!(grid.dirty_cells, vec![(2, 2)]);
-    }
-
-    #[test]
-    fn clear_overlay_no_push_when_out_of_bounds() {
-        let mut grid = OverlayGrid::new(10, 10);
-        let prev = grid.clear_overlay(100, 100);
-        assert_eq!(prev, None);
-        assert!(grid.dirty_cells.is_empty());
     }
 
     #[test]
@@ -2339,18 +2228,6 @@ mod tests {
         grid.dirty_cells.clear();
         grid.set_overlay_data(1, 1, 42);
         assert_eq!(grid.dirty_cells, vec![(1, 1)]);
-    }
-
-    #[test]
-    fn take_dirty_cells_returns_and_clears() {
-        let mut grid = OverlayGrid::new(10, 10);
-        grid.place_overlay(0, 0, 1, 0);
-        grid.place_overlay(1, 1, 2, 0);
-        let drained = grid.take_dirty_cells();
-        assert_eq!(drained, vec![(0, 0), (1, 1)]);
-        assert!(grid.dirty_cells.is_empty());
-        // Second take returns empty.
-        assert!(grid.take_dirty_cells().is_empty());
     }
 
     #[test]

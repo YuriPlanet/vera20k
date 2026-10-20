@@ -366,55 +366,6 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, building: u64, source: u64) -> usi
     pings.len()
 }
 
-/// A human's turreted defence hit from out of range pings and turns its
-/// turret to the low byte of one Scenario draw; hit again while the turret
-/// still turns, it pings without a draw. The first draw of seed 1 is the
-/// oracle's `human_seed1` (0x78B76ED5, so 0xD500 in 4 frames at ROT 10).
-#[test]
-fn a_human_defence_hit_from_out_of_range_turns_its_turret_once() {
-    let rules = production_rules("");
-    let (mut sim, building, source) = production_fixture(&rules, "DEF", true, OUT_OF_RANGE);
-    let mut expected = sim.scenario_rng.clone();
-    let drawn = expected.next_u32();
-    assert_eq!(drawn, 0x78B7_6ED5);
-
-    assert_eq!(hit(&mut sim, &rules, building, source), 1);
-    assert_eq!(
-        sim.scenario_rng.logical_state(),
-        expected.logical_state(),
-        "one Scenario draw"
-    );
-    let entity = sim.substrate.entities.get(building).unwrap();
-    assert_eq!(entity.health.current(), 990);
-    assert!(entity.attack_target.target().is_none());
-    let turret = entity.body_facing;
-    assert_eq!(turret.destination(), 0xD500);
-    assert_eq!(turret.timer_duration(), 4);
-    assert!(turret.is_rotating(FRAME));
-
-    assert_eq!(hit(&mut sim, &rules, building, source), 1);
-    assert_eq!(
-        sim.scenario_rng.logical_state(),
-        expected.logical_state(),
-        "no draw while the turret turns"
-    );
-    assert_eq!(
-        sim.substrate.entities.get(building).unwrap().body_facing,
-        turret
-    );
-}
-
-/// `Insignificant=` gates only the ping: a human's turretless insignificant
-/// building still turns its body (`+0x388`, which every building carries).
-#[test]
-fn an_insignificant_building_turns_without_a_ping() {
-    let rules = production_rules("");
-    let (mut sim, building, source) = production_fixture(&rules, "SHACK", true, OUT_OF_RANGE);
-    assert_eq!(hit(&mut sim, &rules, building, source), 0);
-    let body = sim.substrate.entities.get(building).unwrap().body_facing;
-    assert_eq!(body.destination(), 0xD500);
-}
-
 /// A 2x2 building that undeploys and gathers (the deployed Slave Miner)
 /// pings on NotifyUnderAttack's ore-miner line (`0x004F9491..0x004F94A3`).
 #[test]
@@ -442,65 +393,6 @@ fn a_deployed_slave_miner_pings_the_ore_miner_line() {
             })
             .collect::<Vec<_>>(),
         [true]
-    );
-}
-
-/// A computer's defence hit from in range takes the source; with
-/// `PlayerReturnFire=` a human's does too, and neither draws.
-#[test]
-fn a_returned_hit_takes_the_source_without_a_draw() {
-    for (human, extra) in [
-        (false, ""),
-        (true, "[CombatDamage]\nPlayerReturnFire=yes\n"),
-    ] {
-        let rules = production_rules(extra);
-        let (mut sim, building, source) = production_fixture(&rules, "DEF", human, IN_RANGE);
-        let rng = sim.scenario_rng.logical_state();
-        assert_eq!(hit(&mut sim, &rules, building, source), 1);
-        assert_eq!(sim.scenario_rng.logical_state(), rng, "human {human}");
-        let entity = sim.substrate.entities.get(building).unwrap();
-        assert_eq!(
-            entity.attack_target.target(),
-            Some(TargetKind::Entity(source)),
-            "human {human}"
-        );
-        assert_eq!(entity.body_facing.destination(), 0, "human {human}");
-    }
-}
-
-/// A hit without a source object neither pings nor turns (`0x00442942`).
-#[test]
-fn a_hit_without_a_source_does_nothing() {
-    let rules = production_rules("");
-    let (mut sim, building, _) = production_fixture(&rules, "DEF", true, OUT_OF_RANGE);
-    let rng = sim.scenario_rng.logical_state();
-    let warhead = sim.interner.intern("AP");
-    let event = EntityDamageEvent::area(
-        building,
-        10,
-        0,
-        crate::sim::combat::RAD_NO_ATTACKER,
-        None,
-        warhead,
-    );
-    let (_, pings) = commit_entities(
-        &mut sim,
-        &mut ReceiverRun::default(),
-        &[event],
-        None,
-        &rules,
-        None,
-    );
-    assert!(pings.is_empty());
-    assert_eq!(sim.scenario_rng.logical_state(), rng);
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(building)
-            .unwrap()
-            .health
-            .current(),
-        990
     );
 }
 

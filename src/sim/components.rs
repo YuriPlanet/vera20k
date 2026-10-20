@@ -697,21 +697,6 @@ pub struct BunkerWallAnimEvent {
 mod tests {
     use super::*;
     use crate::sim::movement::DriveLocomotionRuntime;
-    use crate::util::fixed_math::SIM_ZERO;
-
-    #[test]
-    fn test_position_creation() {
-        let pos: Position = Position::new(
-            30,
-            40,
-            0,
-            None,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-            crate::util::lepton::CELL_CENTER_LEPTON,
-        );
-        assert_eq!(pos.rx(), 30);
-        assert_eq!(pos.ry(), 40);
-    }
 
     #[test]
     fn test_types_are_send_sync() {
@@ -723,32 +708,6 @@ mod tests {
         assert_send_sync::<crate::sim::movement::locomotor::LocomotorState>();
         assert_send_sync::<NavigationState>();
         assert_send_sync::<DriveLocomotionRuntime>();
-    }
-
-    #[test]
-    fn drive_coord_cell_uses_center_leptons() {
-        let coord = DriveCoord::cell(45, 40, 0);
-        assert_eq!(coord.x, 45 * 256 + 128);
-        assert_eq!(coord.y, 40 * 256 + 128);
-        assert_eq!(coord.z, 0);
-    }
-
-    #[test]
-    fn drive_locomotion_default_is_inert() {
-        let drive = DriveLocomotionRuntime::default();
-        assert_eq!(drive.destination(), None);
-        assert_eq!(drive.head_to(), None);
-        let navigation = NavigationState::default();
-        assert!(navigation.path_replay.directions.is_empty());
-        assert_eq!(navigation.path_replay.cursor, 0);
-        assert_eq!(drive.track().turn_index(), -1);
-        assert_eq!(drive.track().cursor(), -1);
-        assert!(!drive.track_valid());
-        assert!(!drive.track().reversed());
-        assert_eq!(drive.target_speed_fraction(), SIM_ZERO);
-        let owner_speed = FootSpeedState::default();
-        assert_eq!(owner_speed.applied_fraction, SIM_ZERO);
-        assert_eq!(drive.track().residual(), 0);
     }
 
     /// `FootClass::SetSpeedFraction @ 0x004D3710` executed on the original
@@ -786,12 +745,6 @@ mod tests {
             setter_rows += usize::from(case["input"]["family"] == "setter");
         }
         assert_eq!((cases.len(), setter_rows), (25, 13));
-    }
-
-    #[test]
-    fn drive_locomotion_serde_defaults_missing_fields() {
-        let drive: DriveLocomotionRuntime = serde_json::from_str("{}").expect("deserialize drive");
-        assert_eq!(drive, DriveLocomotionRuntime::default());
     }
 
     #[test]

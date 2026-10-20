@@ -1020,9 +1020,9 @@ fn push_terrain_aoe_damage(
     let Some(object) = view.objects.get(&stable_id) else {
         return;
     };
-    if object.lifecycle != TerrainObjectLifecycle::Live
-        || object.rx != scan_rx
-        || object.ry != scan_ry
+    if object.lifecycle() != TerrainObjectLifecycle::Live
+        || object.cell().0 != scan_rx
+        || object.cell().1 != scan_ry
     {
         return;
     }
@@ -2659,10 +2659,16 @@ mod tests {
                 // transition. Terrain remains in its real owning store.
                 let type_ref = world.interner.intern("TREE01");
                 let mut tree = TerrainObjectState::for_test(100, type_ref, 9, 8);
-                tree.health = health;
-                tree.lifecycle = lifecycle;
-                world.production.terrain_objects.insert(100, tree);
-                world.production.terrain_object_cells.insert((9, 8), 100);
+                tree.set_health_for_test(health);
+                tree.set_lifecycle_for_test(lifecycle);
+                world
+                    .terrain_objects
+                    .objects_mut_for_test()
+                    .insert(100, tree);
+                world
+                    .terrain_objects
+                    .cell_index_mut_for_test()
+                    .insert((9, 8), 100);
             }
             let warhead_ref = world.interner.intern("WH");
             let result = super::super::world_receiver::collect_area(
@@ -3203,7 +3209,7 @@ mod tests {
 
         let mut commit = ReceiverCommit::new();
         let mut target_house = HouseState::new(american, 0, Some(american), true, 0, 10);
-        target_house.difficulty = HouseDifficulty::Normal;
+        target_house.set_difficulty_for_test(HouseDifficulty::Normal);
         commit.houses.register(target_house);
         let (death, pings) = commit.run(
             &aoe.hits,
@@ -3495,10 +3501,10 @@ mod tests {
 
         let mut commit = ReceiverCommit::new();
         let mut normal = HouseState::new(normal_house, 0, None, false, 0, 10);
-        normal.difficulty = HouseDifficulty::Normal;
+        normal.set_difficulty_for_test(HouseDifficulty::Normal);
         commit.houses.register(normal);
         let mut easy = HouseState::new(easy_house, 0, None, false, 0, 10);
-        easy.difficulty = HouseDifficulty::Easy;
+        easy.set_difficulty_for_test(HouseDifficulty::Easy);
         commit.houses.register(easy);
         let (death, _) = commit.run(
             &aoe.hits,
@@ -3844,7 +3850,7 @@ mod tests {
             );
             let mut house =
                 HouseState::new(victim_house, 0, None, human_control == Some(true), 0, 10);
-            house.player_control = human_control.is_some();
+            house.set_player_control_for_test(human_control.is_some());
             world.houses.register(house);
             if team {
                 let script = world.interner.intern("ScatterFixture");
@@ -4245,7 +4251,7 @@ mod tests {
         for (stable_id, rx) in [(100, 5), (101, 6), (102, 8)] {
             terrain_objects.insert(stable_id, {
                 let mut terrain = TerrainObjectState::for_test(stable_id, tree_ref, rx, 5);
-                terrain.occupation_bits = 4;
+                terrain.set_occupation_bits_for_test(4);
                 terrain
             });
             terrain_cells.insert((rx, 5), stable_id);
@@ -4369,24 +4375,24 @@ mod tests {
         let terrain_ref = sim.interner.intern("TIBTREE");
         let terrain_state = {
             let mut terrain = TerrainObjectState::for_test(terrain_id, terrain_ref, 5, 5);
-            terrain.health = 10;
-            terrain.max_health = 10;
-            terrain.occupation_bits = 4;
+            terrain.set_health_for_test(10);
+            terrain.set_max_health_for_test(10);
+            terrain.set_occupation_bits_for_test(4);
             terrain
         };
-        sim.production
-            .terrain_objects
+        sim.terrain_objects
+            .objects_mut_for_test()
             .insert(terrain_id, terrain_state.clone());
-        sim.production
-            .terrain_object_cells
+        sim.terrain_objects
+            .cell_index_mut_for_test()
             .insert((5, 5), terrain_id);
-        sim.production
-            .tiberium_spawning_terrain_cells
+        sim.terrain_objects
+            .spawning_cells_mut_for_test()
             .insert((5, 5));
         crate::sim::terrain_object::mark_terrain_raw_occupation(
             &mut sim.substrate.raw_cell_occupation,
             (5, 5),
-            terrain_state.occupation_bits,
+            terrain_state.occupation_bits(),
         );
         sim.substrate.raw_cell_occupation.mark_ground(5, 5, 0x80);
         sim.substrate.raw_cell_occupation.mark_deck(5, 5, 0xA5);
@@ -4448,20 +4454,18 @@ mod tests {
                 .is_none(),
             "nested and parent null-source events do not fabricate an attacker"
         );
-        let destroyed = &sim.production.terrain_objects[&terrain_id];
-        assert_eq!(destroyed.health, 0);
-        assert_eq!(destroyed.lifecycle, TerrainObjectLifecycle::Destroyed);
-        assert!(!sim.production.terrain_object_cells.contains_key(&(5, 5)));
+        let destroyed = &sim.terrain_objects.objects()[&terrain_id];
+        assert_eq!(destroyed.health(), 0);
+        assert_eq!(destroyed.lifecycle(), TerrainObjectLifecycle::Destroyed);
+        assert!(!sim.terrain_objects.cell_index().contains_key(&(5, 5)));
         assert!(
-            !sim.production
-                .tiberium_spawning_terrain_cells
-                .contains(&(5, 5)),
+            !sim.terrain_objects.spawning_cells().contains(&(5, 5)),
             "the outer Terrain finalizes once after the Wood-enabled C4 re-entry is guarded"
         );
         assert_eq!(
             sim.substrate.raw_cell_occupation.ground_bits(5, 5)
                 & crate::sim::terrain_object::terrain_raw_occupation_mask(
-                    terrain_state.occupation_bits
+                    terrain_state.occupation_bits()
                 ),
             0,
             "Terrain-specific raw occupation clears even though the live Techno remains"
@@ -4515,18 +4519,20 @@ mod tests {
 
         let terrain_id = 901;
         let terrain_ref = sim.interner.intern("TIBTREE");
-        sim.production.terrain_objects.insert(terrain_id, {
-            let mut terrain = TerrainObjectState::for_test(terrain_id, terrain_ref, 5, 5);
-            terrain.health = 10;
-            terrain.max_health = 10;
-            terrain.occupation_bits = 4;
-            terrain
-        });
-        sim.production
-            .terrain_object_cells
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .insert(terrain_id, {
+                let mut terrain = TerrainObjectState::for_test(terrain_id, terrain_ref, 5, 5);
+                terrain.set_health_for_test(10);
+                terrain.set_max_health_for_test(10);
+                terrain.set_occupation_bits_for_test(4);
+                terrain
+            });
+        sim.terrain_objects
+            .cell_index_mut_for_test()
             .insert((5, 5), terrain_id);
-        sim.production
-            .tiberium_spawning_terrain_cells
+        sim.terrain_objects
+            .spawning_cells_mut_for_test()
             .insert((5, 5));
         sim.session.set_no_damage_for_test(true);
         let outer_ref = sim.interner.intern("OUTERWH");
@@ -4571,10 +4577,10 @@ mod tests {
                 .current(),
             1000
         );
-        let terrain = &sim.production.terrain_objects[&terrain_id];
-        assert_eq!(terrain.health, 10);
-        assert_eq!(terrain.lifecycle, TerrainObjectLifecycle::Live);
-        assert_eq!(sim.production.terrain_object_cells[&(5, 5)], terrain_id);
+        let terrain = &sim.terrain_objects.objects()[&terrain_id];
+        assert_eq!(terrain.health(), 10);
+        assert_eq!(terrain.lifecycle(), TerrainObjectLifecycle::Live);
+        assert_eq!(sim.terrain_objects.cell_index()[&(5, 5)], terrain_id);
         assert_eq!(sim.scenario_rng.state(), before_rng);
         assert_eq!(sim.state_hash(), before_hash);
     }

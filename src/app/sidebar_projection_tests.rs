@@ -113,13 +113,21 @@ fn superweapon_money_cameo_refresh_tracks_wallet_without_membership_rebuild() {
     assert_eq!(view.items.len(), 1);
     assert!(!view.items[0].enabled);
     let order = projection.cameo_strips().saved_identities();
-    sim.houses.get_mut(&owner).unwrap().economy.add_credits(1);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .economy_mut_for_test()
+        .add_credits(1);
     let before = sim.state_hash();
     projection.apply_cameo_draw_state(&mut view, &sim, &rules, owner, None);
     assert!(view.items[0].enabled);
     assert!(view.items[0].is_ready);
     assert_eq!(sim.state_hash(), before);
-    sim.houses.get_mut(&owner).unwrap().economy.add_credits(-1);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .economy_mut_for_test()
+        .add_credits(-1);
     projection.apply_cameo_draw_state(&mut view, &sim, &rules, owner, None);
     assert!(!view.items[0].enabled);
     assert!(view.items[0].is_ready);
@@ -203,7 +211,11 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
     projection.reconcile_factory_links(&sim, owner);
     assert_eq!(projection.ready_building_tabs(&sim, owner), [false; 2]);
     for category in [ProductionCategory::Building, ProductionCategory::Defense] {
-        assert!(sim.production.factories.test_arm_ready(owner, category));
+        assert!(
+            sim.production
+                .factories_mut_for_test()
+                .test_arm_ready(owner, category)
+        );
     }
     let ready = projection.ready_building_tabs(&sim, owner);
     assert_eq!(ready, [true; 2]);

@@ -64,8 +64,8 @@ pub(crate) fn bullet_land(
                     cell.ry,
                     crate::sim::movement::locomotor::MovementLayer::Ground,
                     world
-                        .production
-                        .terrain_object_cells
+                        .terrain_objects
+                        .cell_index()
                         .get(&(cell.rx, cell.ry))
                         .copied(),
                 )

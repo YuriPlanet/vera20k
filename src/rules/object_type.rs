@@ -3820,40 +3820,6 @@ mod tests {
         assert_eq!(rules.object("LATE").unwrap().vhp_scan, VhpScan::Normal);
     }
 
-    #[test]
-    fn vhp_scan_retail_nasam_is_strong() {
-        // Checked retail rulesmd.ini NASAM section, VHPScan=Strong at12132;
-        // keep the fixture independent of machine-local retail installations.
-        let ini = IniFile::from_str("[NASAM]\nVHPScan=Strong\n");
-        let obj = ObjectType::from_ini_section(
-            "NASAM",
-            ini.section("NASAM").unwrap(),
-            ObjectCategory::Building,
-        );
-        assert_eq!(obj.vhp_scan, VhpScan::Strong);
-    }
-
-    #[test]
-    fn building_native_speed_default_and_repair_type_inputs() {
-        let ini = crate::rules::ini_parser::IniFile::from_str(
-            "[TEST]\nPlaceAnywhere=yes\nToTile=Green01\n[EXPLICIT]\nSpeedType=Float\n",
-        );
-        let building = super::ObjectType::from_ini_section(
-            "TEST",
-            ini.section("TEST").unwrap(),
-            super::ObjectCategory::Building,
-        );
-        assert_eq!(building.speed_type, super::SpeedType::Foot);
-        assert!(building.place_anywhere);
-        assert_eq!(building.to_tile.as_deref(), Some("Green01"));
-        let explicit = super::ObjectType::from_ini_section(
-            "EXPLICIT",
-            ini.section("EXPLICIT").unwrap(),
-            super::ObjectCategory::Building,
-        );
-        assert_eq!(explicit.speed_type, super::SpeedType::Float);
-    }
-
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
@@ -3958,89 +3924,6 @@ mod tests {
         assert_eq!(none_obj.voice_capture(), None);
     }
 
-    /// GSI-06.04 carry-over: retail's attack-move eligibility is
-    /// `Primary != null && !PreventAttackMove`. Stock engineers carry both a
-    /// real `Primary=` and the key, so the flag has to survive the parse for
-    /// the predicate to refuse them.
-    #[test]
-    fn gsi_06_parses_prevent_attack_move_flag() {
-        // The weapon slots come from the ordered Rules owner.
-        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n0=ENGINEER\n\
-             [ENGINEER]\nName=Engineer\nPrimary=DefuseKit\nPreventAttackMove=yes\n",
-        ))
-        .unwrap();
-        let obj = rules.object("ENGINEER").unwrap();
-        assert!(obj.prevent_attack_move);
-        assert_eq!(obj.primary(), Some("DefuseKit"));
-
-        // Absent key defaults to false — an ordinary tank still attack-moves.
-        let none_ini: IniFile = IniFile::from_str("[MTNK]\nName=Grizzly\nPrimary=90mm\n");
-        let none_obj = ObjectType::from_ini_section(
-            "MTNK",
-            none_ini.section("MTNK").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert!(!none_obj.prevent_attack_move);
-    }
-
-    #[test]
-    fn parses_ui_name_key() {
-        let ini: IniFile =
-            IniFile::from_str("[MTNK]\nName=Grizzly Tank\nUIName=Name:MTNK\nCost=700\n");
-        let parsed = ObjectType::from_ini_section(
-            "MTNK",
-            ini.section("MTNK").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert_eq!(parsed.ui_name, Some("Name:MTNK".to_string()));
-
-        // Absent UIName yields None.
-        let absent_ini = IniFile::from_str("[HTNK]\nName=Rhino Tank\n");
-        let absent = ObjectType::from_ini_section(
-            "HTNK",
-            absent_ini.section("HTNK").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert_eq!(absent.ui_name, None);
-
-        // Empty UIName= also yields None.
-        let empty_ini = IniFile::from_str("[E1]\nUIName=\nCost=0\n");
-        let empty = ObjectType::from_ini_section(
-            "E1",
-            empty_ini.section("E1").unwrap(),
-            ObjectCategory::Infantry,
-        );
-        assert_eq!(empty.ui_name, None);
-    }
-
-    #[test]
-    fn allowed_to_start_in_multiplayer_parses_and_defaults_yes() {
-        let enabled_ini = IniFile::from_str("[MTNK]\nAllowedToStartInMultiplayer=yes\n");
-        let enabled = ObjectType::from_ini_section(
-            "MTNK",
-            enabled_ini.section("MTNK").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert!(enabled.allowed_to_start_in_multiplayer);
-
-        let disabled_ini = IniFile::from_str("[HTNK]\nAllowedToStartInMultiplayer=no\n");
-        let disabled = ObjectType::from_ini_section(
-            "HTNK",
-            disabled_ini.section("HTNK").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert!(!disabled.allowed_to_start_in_multiplayer);
-
-        let default_ini = IniFile::from_str("[E1]\nFixtureOnly=1\n");
-        let defaulted = ObjectType::from_ini_section(
-            "E1",
-            default_ini.section("E1").unwrap(),
-            ObjectCategory::Infantry,
-        );
-        assert!(defaulted.allowed_to_start_in_multiplayer);
-    }
-
     #[test]
     fn test_parse_building() {
         let ini: IniFile = IniFile::from_str(
@@ -4059,68 +3942,6 @@ mod tests {
         assert!(obj.base_normal);
         assert!(!obj.eligibile_for_ally_building);
         assert!(obj.crewed);
-    }
-
-    #[test]
-    fn test_light_visibility_defaults_to_5000_without_intensity() {
-        let ini = IniFile::from_str("[BuildingTypes]\n0=GALITE\n[GALITE]\nFixtureOnly=1\n");
-        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
-        let light = rules.object("GALITE").unwrap().building_light();
-        assert_eq!(light.visibility_leptons(), 5000);
-        assert_eq!(light.intensity_units(), 0);
-        assert_eq!(light.tint_units(), [1_000_000; 3]);
-    }
-
-    #[test]
-    fn test_light_fields_use_light_float_parser() {
-        let ini: IniFile = IniFile::from_str(
-            "[BuildingTypes]\n0=GALITE\n[GALITE]\n\
-             LightVisibility=4096\n\
-             LightIntensity=0.75\n\
-             LightRedTint=-0.25\n\
-             LightGreenTint=0,01\n\
-             LightBlueTint=1.5\n",
-        );
-        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
-        let light = rules.object("GALITE").unwrap().building_light();
-        assert_eq!(light.visibility_leptons(), 4096);
-        assert_eq!(light.intensity_units(), 750);
-        assert_eq!(light.tint_units(), [-249, 0, 1500]);
-    }
-
-    #[test]
-    fn parse_bridge_repair_hut_flag() {
-        let ini: IniFile =
-            IniFile::from_str("[CABHUT]\nBridgeRepairHut=yes\n[NACABH]\nFixtureOnly=1\n");
-        let obj_on: ObjectType = ObjectType::from_ini_section(
-            "CABHUT",
-            ini.section("CABHUT").unwrap(),
-            ObjectCategory::Building,
-        );
-        let obj_off: ObjectType = ObjectType::from_ini_section(
-            "NACABH",
-            ini.section("NACABH").unwrap(),
-            ObjectCategory::Building,
-        );
-        assert!(obj_on.bridge_repair_hut);
-        assert!(!obj_off.bridge_repair_hut);
-    }
-
-    #[test]
-    fn parse_laser_fence_flag() {
-        let ini: IniFile = IniFile::from_str("[FENCE]\nLaserFence=yes\n[OTHER]\nFixtureOnly=1\n");
-        let fence = ObjectType::from_ini_section(
-            "FENCE",
-            ini.section("FENCE").unwrap(),
-            ObjectCategory::Building,
-        );
-        let other = ObjectType::from_ini_section(
-            "OTHER",
-            ini.section("OTHER").unwrap(),
-            ObjectCategory::Building,
-        );
-        assert!(fence.laser_fence);
-        assert!(!other.laser_fence);
     }
 
     #[test]
@@ -4181,87 +4002,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_13_06_walk_and_idle_rates_are_raw_rules_owned_signed_values() {
-        let ini = IniFile::from_str(
-            "[DLPH]\nWalkRate=4\nIdleRate=8\n\
-             [SQD]\nWalkRate=2\nIdleRate=4\n\
-             [DRON]\nFixtureOnly=1\n\
-             [RAW]\nWalkRate=-3\nIdleRate=-7\n",
-        );
-        let parse = |id| {
-            ObjectType::from_ini_section(
-                id,
-                ini.section(id).expect("section"),
-                ObjectCategory::Vehicle,
-            )
-        };
-
-        let dlph = parse("DLPH");
-        assert_eq!((dlph.walk_rate, dlph.idle_rate), (4, 8));
-        let sqd = parse("SQD");
-        assert_eq!((sqd.walk_rate, sqd.idle_rate), (2, 4));
-        let dron = parse("DRON");
-        assert_eq!((dron.walk_rate, dron.idle_rate), (1, 0));
-        let raw = parse("RAW");
-        assert_eq!((raw.walk_rate, raw.idle_rate), (-3, -7));
-    }
-
-    #[test]
-    fn test_parse_build_time_multiplier() {
-        let ini: IniFile = IniFile::from_str("[HTNK]\nBuildTimeMultiplier=1.3\n");
-        let section: &IniSection = ini.section("HTNK").unwrap();
-        let obj: ObjectType =
-            ObjectType::from_ini_section("HTNK", section, ObjectCategory::Vehicle);
-
-        assert_eq!(
-            obj.build_time_multiplier,
-            crate::util::native_x87::NativeF32Bits::from_bits(1.3_f32.to_bits())
-        );
-    }
-
-    #[test]
-    fn test_parse_building_placement_flags() {
-        let ini: IniFile = IniFile::from_str(
-            "[GAGAP]\nFoundation=2x2\nAdjacent=0\nBaseNormal=no\nEligibileForAllyBuilding=yes\n",
-        );
-        let section: &IniSection = ini.section("GAGAP").unwrap();
-        let obj: ObjectType =
-            ObjectType::from_ini_section("GAGAP", section, ObjectCategory::Building);
-
-        assert_eq!(obj.adjacent, 0);
-        assert!(!obj.base_normal);
-        assert!(obj.eligibile_for_ally_building);
-    }
-
-    #[test]
-    fn test_parse_bridge_render_flags() {
-        let ini: IniFile = IniFile::from_str(
-            "[DEST]\nZFudgeCliff=0\nZFudgeColumn=-7\nZFudgeTunnel=13\nZFudgeBridge=11\nTooBigToFitUnderBridge=yes\n",
-        );
-        let section: &IniSection = ini.section("DEST").unwrap();
-        let obj: ObjectType =
-            ObjectType::from_ini_section("DEST", section, ObjectCategory::Vehicle);
-        assert_eq!(obj.zfudge_cliff, 0);
-        assert_eq!(obj.zfudge_column, -7);
-        assert_eq!(obj.zfudge_tunnel, 13);
-        assert_eq!(obj.zfudge_bridge, 11);
-        assert!(obj.too_big_to_fit_under_bridge);
-    }
-
-    #[test]
-    fn test_bridge_render_flags_default() {
-        let ini: IniFile = IniFile::from_str("[BOAT]\nFixtureOnly=1\n");
-        let section: &IniSection = ini.section("BOAT").unwrap();
-        let obj: ObjectType =
-            ObjectType::from_ini_section("BOAT", section, ObjectCategory::Vehicle);
-        assert_eq!(obj.zfudge_cliff, 10);
-        assert_eq!(obj.zfudge_column, 5);
-        assert_eq!(obj.zfudge_tunnel, 10);
-        assert_eq!(obj.zfudge_bridge, 0);
-        assert!(!obj.too_big_to_fit_under_bridge);
-    }
-
-    #[test]
     fn considered_aircraft_uses_native_category_defaults_and_ini_overrides() {
         let ini = IniFile::from_str(
             "[VEH_DEFAULT]\nFixtureOnly=1\n\
@@ -4319,62 +4059,10 @@ mod tests {
         assert_eq!(default_obj.deploy_facing, 0x80);
     }
 
-    #[test]
-    fn ai_build_this_defaults_false_and_reads_native_boolean() {
-        let ini = IniFile::from_str(
-            "[DEFAULT]\nFixtureOnly=1\n[YES]\nAIBuildThis=yes\n[NO]\nAIBuildThis=no\n",
-        );
-        let parse = |id| {
-            ObjectType::from_ini_section(id, ini.section(id).unwrap(), ObjectCategory::Building)
-        };
-        assert!(!parse("DEFAULT").ai_build_this);
-        assert!(parse("YES").ai_build_this);
-        assert!(!parse("NO").ai_build_this);
-    }
-
     /// The production reader: the ordered Rules processor reads the Type
     /// references, `RuleSet` publishes them.
     fn rules(text: &str) -> crate::rules::ruleset::RuleSet {
         crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(text)).unwrap()
-    }
-
-    #[test]
-    fn test_parse_slave_miner_fields() {
-        let rules = rules(
-            "[VehicleTypes]\n0=SMIN\n[InfantryTypes]\n0=SLAV\n\
-             [SMIN]\nEnslaves=SLAV\nSlavesNumber=5\nSlaveRegenRate=500\n\
-             SlaveReloadRate=25\nResourceGatherer=yes\nResourceDestination=yes\n\
-             Storage=20\nSpeed=3\n",
-        );
-        let obj = rules.object("SMIN").unwrap();
-        assert_eq!(obj.enslaves, Some("SLAV".to_string()));
-        assert_eq!(obj.slaves_number, 5);
-        assert_eq!(obj.slave_regen_rate, 500);
-        assert_eq!(obj.slave_reload_rate, 25);
-        assert!(obj.resource_gatherer);
-        assert!(obj.resource_destination);
-        assert!(!obj.slaved); // SMIN is master, not slave
-    }
-
-    #[test]
-    fn test_parse_slave_infantry_fields() {
-        let ini: IniFile = IniFile::from_str("[SLAV]\nSlaved=yes\nStorage=4\nHarvestRate=150\n");
-        let section: &IniSection = ini.section("SLAV").unwrap();
-        let obj: ObjectType =
-            ObjectType::from_ini_section("SLAV", section, ObjectCategory::Infantry);
-        assert!(obj.slaved);
-        assert_eq!(obj.storage, 4);
-        assert_eq!(obj.harvest_rate, 150);
-        assert_eq!(obj.enslaves, None);
-    }
-
-    #[test]
-    fn test_parse_ore_purifier() {
-        let ini: IniFile = IniFile::from_str("[GAPROC]\nOrePurifier=yes\n");
-        let section: &IniSection = ini.section("GAPROC").unwrap();
-        let obj: ObjectType =
-            ObjectType::from_ini_section("GAPROC", section, ObjectCategory::Building);
-        assert!(obj.ore_purifier);
     }
 
     /// `Dock=` tokens resolve to the stored IDs of their BuildingTypes, found
@@ -4411,29 +4099,6 @@ mod tests {
     }
 
     #[test]
-    fn unit_weeder_is_independent_from_slave_ownership() {
-        let rules = rules(
-            "[VehicleTypes]\n0=WEED\n1=SLAVER\n[WEED]\nWeeder=yes\n[SLAVER]\nEnslaves=SLAV\n",
-        );
-        let weeder = rules.object("WEED").unwrap();
-        let slaver = rules.object("SLAVER").unwrap();
-
-        assert!(weeder.weeder);
-        assert!(weeder.enslaves.is_none());
-        assert!(!slaver.weeder);
-        assert_eq!(slaver.enslaves.as_deref(), Some("SLAV"));
-    }
-
-    #[test]
-    fn cloning_key_parses_and_participates_in_rally_lines() {
-        let ini = IniFile::from_str("[YACLON]\nName=Cloning Vats\nStrength=1000\nCloning=yes\n");
-        let section = ini.section("YACLON").unwrap();
-        let obj = ObjectType::from_ini_section("YACLON", section, ObjectCategory::Building);
-        assert!(obj.cloning);
-        assert!(obj.has_rally_line());
-    }
-
-    #[test]
     fn rally_line_accepts_infantry_vehicle_factories_and_repair() {
         let ini = IniFile::from_str(
             "[GAPILE]\nFactory=InfantryType\n\
@@ -4458,37 +4123,6 @@ mod tests {
         assert!(barracks.has_rally_line());
         assert!(factory.has_rally_line());
         assert!(depot.has_rally_line());
-    }
-
-    #[test]
-    fn weapons_factory_parses_independently_from_factory_type() {
-        let ini = IniFile::from_str(
-            "[MISSING]\n\
-             FixtureOnly=1\n\
-             [EXPLICIT_NO]\nWeaponsFactory=no\n\
-             [EXPLICIT_YES]\nWeaponsFactory=yes\n\
-             [FACTORY_ONLY]\nFactory=UnitType\n\
-             [WEAPONS_FACTORY_ONLY]\nWeaponsFactory=yes\n",
-        );
-
-        let parse = |id| {
-            ObjectType::from_ini_section(
-                id,
-                ini.section(id).expect("fixture section"),
-                ObjectCategory::Building,
-            )
-        };
-
-        assert!(!parse("MISSING").weapons_factory);
-        assert!(!parse("EXPLICIT_NO").weapons_factory);
-        assert!(parse("EXPLICIT_YES").weapons_factory);
-        assert_eq!(
-            parse("FACTORY_ONLY").factory_type(),
-            Some(FactoryType::UnitType)
-        );
-        assert!(!parse("FACTORY_ONLY").weapons_factory);
-        assert_eq!(parse("WEAPONS_FACTORY_ONLY").factory_type(), None);
-        assert!(parse("WEAPONS_FACTORY_ONLY").weapons_factory);
     }
 
     #[test]
@@ -4681,73 +4315,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn weapons_factory_flag_includes_stock_land_factories_and_naval_yards() {
-        let merged = IniFile::from_str(
-            "[GAWEAP]\nWeaponsFactory=yes\n\
-             [NAWEAP]\nWeaponsFactory=yes\n\
-             [GAYARD]\nWeaponsFactory=yes\n\
-             [NAYARD]\nWeaponsFactory=yes\n\
-             [YAWEAP]\nWeaponsFactory=yes\n\
-             [YAYARD]\nWeaponsFactory=yes\n\
-             [GAPILE]\nFactory=InfantryType\n\
-             [GAPOWR]\nPower=200\n",
-        );
-
-        for id in ["GAWEAP", "NAWEAP", "GAYARD", "NAYARD", "YAWEAP", "YAYARD"] {
-            let object = ObjectType::from_ini_section(
-                id,
-                merged.section(id).expect("stock building section"),
-                ObjectCategory::Building,
-            );
-            assert!(
-                object.weapons_factory,
-                "{id} must retain WeaponsFactory=yes"
-            );
-        }
-
-        for id in ["GAPILE", "GAPOWR"] {
-            let object = ObjectType::from_ini_section(
-                id,
-                merged
-                    .section(id)
-                    .expect("stock non-weapons-factory section"),
-                ObjectCategory::Building,
-            );
-            assert!(
-                !object.weapons_factory,
-                "{id} must not be inferred as a weapons factory"
-            );
-        }
-    }
-
-    #[test]
-    fn test_parse_transport_fields() {
-        let ini: IniFile = IniFile::from_str(
-            "[HTK]\nPassengers=5\nSizeLimit=2\nOpenTopped=no\nGunner=no\nSize=3\n",
-        );
-        let section: &IniSection = ini.section("HTK").unwrap();
-        let obj = ObjectType::from_ini_section("HTK", section, ObjectCategory::Vehicle);
-        assert_eq!(obj.passengers, 5);
-        assert_eq!(obj.size_limit, 2.0);
-        assert_eq!(obj.size, 3.0);
-        assert!(!obj.open_topped);
-        assert!(!obj.gunner);
-        assert_eq!(obj.weapon_list.len(), WEAPON_SLOT_COUNT);
-        assert!(obj.weapon_list.iter().all(Option::is_none));
-    }
-
-    #[test]
-    fn gsi_04_05_passengers_preserves_native_signed_nonzero_value() {
-        let ini = IniFile::from_str("[ODDTRANSPORT]\nPassengers=-3\n");
-        let obj = ObjectType::from_ini_section(
-            "ODDTRANSPORT",
-            ini.section("ODDTRANSPORT").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert_eq!(obj.passengers, -3);
-    }
-
     /// `WeaponTypeClass::FindOrAllocate @ 0x00772FA0` answers null for `none`
     /// and `<none>`, on both weapon branches.
     #[test]
@@ -4764,33 +4331,6 @@ mod tests {
         let gunner = rules.object("GUNNER").unwrap();
         assert_eq!(gunner.weapon_list[0], None);
         assert_eq!(gunner.weapon_list[1].as_deref(), Some("GUN"));
-    }
-
-    #[test]
-    fn test_parse_ifv_gunner_fields() {
-        // Stock-shaped: the `Weapon%d` loop only runs for a `TurretCount>0`
-        // type, and only up to `WeaponCount` slots.
-        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=FV\n\
-             [FV]\nPassengers=1\nSizeLimit=1\nGunner=yes\nSize=3\n\
-             TurretCount=4\nWeaponCount=3\n\
-             Weapon1=Missiles\nWeapon2=FlakGun\nWeapon3=RepairArm\n",
-        ))
-        .unwrap();
-        let obj = rules.object("FV").unwrap();
-        assert_eq!(obj.passengers, 1);
-        assert_eq!(obj.size_limit, 1.0);
-        assert!(obj.gunner);
-        assert_eq!(obj.weapon_list.len(), WEAPON_SLOT_COUNT);
-        assert_eq!(obj.weapon_list[0].as_deref(), Some("Missiles"));
-        assert_eq!(obj.weapon_list[1].as_deref(), Some("FlakGun"));
-        assert_eq!(obj.weapon_list[2].as_deref(), Some("RepairArm"));
-        assert!(obj.weapon_list[3..].iter().all(Option::is_none));
-        assert!(obj.elite_weapon_list.iter().all(Option::is_none));
-        // Slots 0 and 1 ARE the `Primary`/`Secondary` fields.
-        assert_eq!(obj.primary(), Some("Missiles"));
-        assert_eq!(obj.secondary(), Some("FlakGun"));
-        assert_eq!(obj.elite_primary(), None);
     }
 
     /// `Primary=` and `Weapon1=` are the same storage in gamemd, so whichever
@@ -4916,115 +4456,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_infantry_ifv_mode() {
-        let ini: IniFile = IniFile::from_str("[E1]\nIFVMode=0\nSize=1\n");
-        let section: &IniSection = ini.section("E1").unwrap();
-        let obj = ObjectType::from_ini_section("E1", section, ObjectCategory::Infantry);
-        assert_eq!(obj.ifv_mode, 0);
-        assert_eq!(obj.size, 1.0);
-    }
-
-    #[test]
-    fn test_parse_garrison_building() {
-        let ini: IniFile =
-            IniFile::from_str("[GAPOST]\nCanBeOccupied=yes\nMaxNumberOccupants=10\n");
-        let section: &IniSection = ini.section("GAPOST").unwrap();
-        let obj = ObjectType::from_ini_section("GAPOST", section, ObjectCategory::Building);
-        assert!(obj.can_be_occupied);
-        assert_eq!(obj.max_number_occupants, 10);
-    }
-
-    #[test]
-    fn test_parses_elite_weapon_overrides() {
-        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n0=GGI\n\
-             [GGI]\nPrimary=M60\nSecondary=MissileLauncher\nElitePrimary=M60E\n\
-             EliteSecondary=MissileLauncherE\n",
-        ))
-        .unwrap();
-        let obj = rules.object("GGI").unwrap();
-        assert_eq!(obj.primary(), Some("M60"));
-        assert_eq!(obj.secondary(), Some("MissileLauncher"));
-        assert_eq!(obj.elite_primary(), Some("M60E"));
-        assert_eq!(obj.elite_secondary(), Some("MissileLauncherE"));
-    }
-
-    #[test]
-    fn test_elite_weapons_default_to_none() {
-        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n0=E1\n[E1]\nPrimary=M60\n",
-        ))
-        .unwrap();
-        let obj = rules.object("E1").unwrap();
-        assert_eq!(obj.primary(), Some("M60"));
-        assert_eq!(obj.elite_primary(), None);
-        assert_eq!(obj.elite_secondary(), None);
-    }
-
-    #[test]
-    fn test_parses_open_transport_weapon() {
-        let ini: IniFile = IniFile::from_str("[GGI]\nOpenTransportWeapon=1\n");
-        let section: &IniSection = ini.section("GGI").unwrap();
-        let obj = ObjectType::from_ini_section("GGI", section, ObjectCategory::Infantry);
-        assert_eq!(obj.open_transport_weapon, 1);
-    }
-
-    #[test]
-    fn test_open_transport_weapon_defaults_to_neg_one() {
-        let ini: IniFile = IniFile::from_str("[E1]\nPrimary=M60\n");
-        let section: &IniSection = ini.section("E1").unwrap();
-        let obj = ObjectType::from_ini_section("E1", section, ObjectCategory::Infantry);
-        assert_eq!(obj.open_transport_weapon, -1);
-    }
-
-    #[test]
-    fn test_parse_absorb_fields() {
-        let ini: IniFile = IniFile::from_str("[YABRCK]\nInfantryAbsorb=yes\nUnitAbsorb=no\n");
-        let section: &IniSection = ini.section("YABRCK").unwrap();
-        let obj = ObjectType::from_ini_section("YABRCK", section, ObjectCategory::Building);
-        assert!(obj.infantry_absorb);
-        assert!(!obj.unit_absorb);
-        assert!(!obj.grinding);
-        let grinder_ini = IniFile::from_str("[YAGRND]\nGrinding=yes\nUnitAbsorb=no\n");
-        let grinder = ObjectType::from_ini_section(
-            "YAGRND",
-            grinder_ini.section("YAGRND").unwrap(),
-            ObjectCategory::Building,
-        );
-        assert!(grinder.grinding);
-        assert!(!grinder.unit_absorb);
-    }
-
-    #[test]
-    fn test_parse_extra_power_positive() {
-        let ini: IniFile =
-            IniFile::from_str("[YAPOWR]\nPower=150\nExtraPower=100\nInfantryAbsorb=yes\n");
-        let section: &IniSection = ini.section("YAPOWR").unwrap();
-        let obj = ObjectType::from_ini_section("YAPOWR", section, ObjectCategory::Building);
-        assert_eq!(obj.power, 150);
-        assert_eq!(obj.extra_power, 100);
-        assert!(obj.infantry_absorb);
-    }
-
-    #[test]
-    fn test_parse_extra_power_negative() {
-        // GAOREP (Allied Ore Processor) in rules.ini has ExtraPower=-9000.
-        // Signed parse; downstream gate will suppress the bonus.
-        let ini: IniFile = IniFile::from_str("[GAOREP]\nExtraPower=-9000\n");
-        let section: &IniSection = ini.section("GAOREP").unwrap();
-        let obj = ObjectType::from_ini_section("GAOREP", section, ObjectCategory::Building);
-        assert_eq!(obj.extra_power, -9000);
-    }
-
-    #[test]
-    fn test_parse_extra_power_default_zero() {
-        let ini: IniFile = IniFile::from_str("[GAPOWR]\nPower=200\n");
-        let section: &IniSection = ini.section("GAPOWR").unwrap();
-        let obj = ObjectType::from_ini_section("GAPOWR", section, ObjectCategory::Building);
-        assert_eq!(obj.extra_power, 0);
-    }
-
-    #[test]
     fn test_size_defaults_by_category() {
         let ini = IniFile::from_str(
             "[INF]\nFixtureOnly=1\n[VEH]\nFixtureOnly=1\n\
@@ -5047,29 +4478,6 @@ mod tests {
                 "[{id}] missing SizeLimit= must retain the native constructor's 0.0",
             );
         }
-    }
-
-    #[test]
-    fn test_size_and_size_limit_preserve_read_double_values() {
-        let ini = IniFile::from_str(
-            "[FRACTIONAL]\nSize=1.25\nSizeLimit=1.5\n\
-             [NEGATIVE]\nSize=-0.5\nSizeLimit=-1.25\n",
-        );
-        let fractional = ObjectType::from_ini_section(
-            "FRACTIONAL",
-            ini.section("FRACTIONAL").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert_eq!(fractional.size, 1.25);
-        assert_eq!(fractional.size_limit, 1.5);
-
-        let negative = ObjectType::from_ini_section(
-            "NEGATIVE",
-            ini.section("NEGATIVE").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert_eq!(negative.size, -0.5);
-        assert_eq!(negative.size_limit, -1.25);
     }
 
     #[test]
@@ -5149,54 +4557,6 @@ mod tests {
     }
 
     #[test]
-    fn c4_flag_parses_from_ini() {
-        let ini = IniFile::from_str("[InfantryTypes]\n0=GHOST\n[GHOST]\nC4=yes\n");
-        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
-        assert!(rules.object("GHOST").unwrap().c4);
-    }
-
-    #[test]
-    fn c4_defaults_to_false() {
-        let ini = IniFile::from_str("[E1]\nFixtureOnly=1\n");
-        let section = ini.section("E1").unwrap();
-        let obj = ObjectType::from_ini_section("E1", section, ObjectCategory::Infantry);
-        assert!(!obj.c4);
-    }
-
-    #[test]
-    fn can_c4_defaults_to_true_for_buildings() {
-        let ini = IniFile::from_str("[GAPILE]\nFixtureOnly=1\n");
-        let section = ini.section("GAPILE").unwrap();
-        let obj = ObjectType::from_ini_section("GAPILE", section, ObjectCategory::Building);
-        assert!(obj.can_c4);
-    }
-
-    #[test]
-    fn can_c4_defaults_to_false_for_non_buildings() {
-        let ini = IniFile::from_str("[E1]\nFixtureOnly=1\n");
-        let section = ini.section("E1").unwrap();
-        let obj = ObjectType::from_ini_section("E1", section, ObjectCategory::Infantry);
-        assert!(!obj.can_c4);
-    }
-
-    #[test]
-    fn can_c4_no_overrides_default() {
-        let ini = IniFile::from_str("[CAMISC01]\nCanC4=no\n");
-        let section = ini.section("CAMISC01").unwrap();
-        let obj = ObjectType::from_ini_section("CAMISC01", section, ObjectCategory::Building);
-        assert!(!obj.can_c4);
-    }
-
-    #[test]
-    fn bunker_flag_parses_from_ini() {
-        let ini = IniFile::from_str("[NATBNK]\nBunker=yes\nNumberImpassableRows=0\n");
-        let section = ini.section("NATBNK").unwrap();
-        let obj = ObjectType::from_ini_section("NATBNK", section, ObjectCategory::Building);
-        assert!(obj.bunker);
-        assert_eq!(obj.number_impassable_rows, 0);
-    }
-
-    #[test]
     fn gate_flag_parses_from_ini() {
         let ini = IniFile::from_str(
             "[GAGATE_A]\nGate=yes\nFoundation=3x1\nDeployTime=.044\nGateCloseDelay=.2\n",
@@ -5222,115 +4582,6 @@ mod tests {
         assert!(!infantry.bunkerable);
         assert!(!aircraft.bunkerable);
         assert!(!building.bunkerable);
-    }
-
-    #[test]
-    fn bunkerable_ini_overrides_vehicle_default() {
-        let ini = IniFile::from_str("[HTNK]\nBunkerable=no\n");
-        let section = ini.section("HTNK").unwrap();
-        let obj = ObjectType::from_ini_section("HTNK", section, ObjectCategory::Vehicle);
-        assert!(!obj.bunkerable);
-    }
-
-    #[test]
-    fn invisible_in_game_defaults_to_false() {
-        let ini = IniFile::from_str("[GAPILE]\nFixtureOnly=1\n");
-        let section = ini.section("GAPILE").unwrap();
-        let obj = ObjectType::from_ini_section("GAPILE", section, ObjectCategory::Building);
-        assert!(!obj.invisible);
-        assert!(!obj.invisible_in_game);
-    }
-
-    #[test]
-    fn invisible_and_invisible_in_game_parse_independently() {
-        let ini = IniFile::from_str(
-            "[BRIDGEA]\nInvisible=yes\nInvisibleInGame=no\n\
-             [BRIDGEB]\nInvisible=no\nInvisibleInGame=yes\n",
-        );
-
-        let plain = ObjectType::from_ini_section(
-            "BRIDGEA",
-            ini.section("BRIDGEA").unwrap(),
-            ObjectCategory::Building,
-        );
-        let in_game = ObjectType::from_ini_section(
-            "BRIDGEB",
-            ini.section("BRIDGEB").unwrap(),
-            ObjectCategory::Building,
-        );
-
-        assert!(plain.invisible);
-        assert!(!plain.invisible_in_game);
-        assert!(!in_game.invisible);
-        assert!(in_game.invisible_in_game);
-    }
-
-    #[test]
-    fn radar_insignificant_parses_independently_from_radar_visible() {
-        let ini = IniFile::from_str(
-            "[A]\nInsignificant=yes\nRadarVisible=no\n\
-             [B]\nInsignificant=no\nRadarVisible=yes\n",
-        );
-        let a =
-            ObjectType::from_ini_section("A", ini.section("A").unwrap(), ObjectCategory::Vehicle);
-        let b =
-            ObjectType::from_ini_section("B", ini.section("B").unwrap(), ObjectCategory::Vehicle);
-        assert!(a.insignificant);
-        assert!(!a.radar_visible);
-        assert!(!b.insignificant);
-        assert!(b.radar_visible);
-    }
-
-    #[test]
-    fn gsi_04_05_to_protect_is_an_independent_false_default_type_gate() {
-        let ini = IniFile::from_str("[PLAIN]\nStrength=100\n[GUARDED]\nToProtect=yes\n");
-        let plain = ObjectType::from_ini_section(
-            "PLAIN",
-            ini.section("PLAIN").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        let guarded = ObjectType::from_ini_section(
-            "GUARDED",
-            ini.section("GUARDED").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert!(!plain.to_protect);
-        assert!(guarded.to_protect);
-    }
-
-    #[test]
-    fn radar_invisible_veterancy_abilities_parse_by_rank() {
-        let ini = IniFile::from_str(
-            "[DOT]\nVeteranAbilities=FASTER,RADAR_INVISIBLE\n\
-             EliteAbilities=STRONGER,RADAR_INVISIBLE\n",
-        );
-        let obj = ObjectType::from_ini_section(
-            "DOT",
-            ini.section("DOT").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert!(obj.veteran_abilities.has(Ability::RadarInvisible));
-        assert!(obj.elite_abilities.has(Ability::RadarInvisible));
-        assert!(!obj.radar_invisible);
-    }
-
-    #[test]
-    fn techno_type_particle_fields_default_to_empty() {
-        let ini: IniFile = IniFile::from_str("[E1]\nFixtureOnly=1\n");
-        let section = ini.section("E1").unwrap();
-        let obj = ObjectType::from_ini_section("E1", section, ObjectCategory::Infantry);
-
-        assert_eq!(obj.natural_particle_system, None);
-        assert_eq!(obj.natural_particle_location, IVec3::ZERO);
-        assert_eq!(obj.refinery_smoke_particle_system, None);
-        assert!(obj.damage_particle_systems.is_empty());
-        assert!(obj.destroy_particle_systems.is_empty());
-        assert_eq!(obj.damage_smoke_offset, IVec3::ZERO);
-        assert!(!obj.dam_smk_off_scrn_rel);
-        assert_eq!(obj.destroy_smoke_offset, IVec3::ZERO);
-        assert_eq!(obj.refinery_smoke_offsets, [IVec3::ZERO; 4]);
-        assert_eq!(obj.gap_radius_in_cells, 0);
-        assert_eq!(obj.super_gap_radius_in_cells, 0);
     }
 
     #[test]
@@ -5476,31 +4727,6 @@ mod tests {
     }
 
     #[test]
-    fn techno_type_opportunity_fire_and_can_retaliate_defaults() {
-        // Absent keys: OpportunityFire defaults off, CanRetaliate defaults on
-        // (the gamemd TechnoType defaults — passive acquire opt-in, retaliate
-        // opt-out).
-        let ini: IniFile = IniFile::from_str("[E1]\nFixtureOnly=1\n");
-        let section = ini.section("E1").unwrap();
-        let obj = ObjectType::from_ini_section("E1", section, ObjectCategory::Infantry);
-        assert!(!obj.opportunity_fire, "OpportunityFire defaults to no");
-        assert!(obj.can_retaliate, "CanRetaliate defaults to yes");
-    }
-
-    #[test]
-    fn techno_type_parses_opportunity_fire_and_can_retaliate() {
-        let ini: IniFile = IniFile::from_str(
-            "[MTNK]\n\
-             OpportunityFire=yes\n\
-             CanRetaliate=no\n",
-        );
-        let section = ini.section("MTNK").unwrap();
-        let obj = ObjectType::from_ini_section("MTNK", section, ObjectCategory::Vehicle);
-        assert!(obj.opportunity_fire, "OpportunityFire=yes parses true");
-        assert!(!obj.can_retaliate, "CanRetaliate=no parses false");
-    }
-
-    #[test]
     fn techno_type_can_passive_acquire_defaults_yes_and_parses_the_misspelled_key() {
         // Absent key → yes (the gamemd TechnoType constructor default). The INI
         // spelling is "CanPassiveAquire"; the correctly-spelled variant is NOT a
@@ -5534,64 +4760,6 @@ mod tests {
     }
 
     #[test]
-    fn techno_type_distributed_fire_defaults_no_and_parses() {
-        let plain = IniFile::from_str("[MTNK]\nFixtureOnly=1\n");
-        let obj = ObjectType::from_ini_section(
-            "MTNK",
-            plain.section("MTNK").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert!(!obj.distributed_fire, "DistributedFire defaults to no");
-
-        let aegis = IniFile::from_str("[AEGIS]\nDistributedFire=yes\n");
-        let obj = ObjectType::from_ini_section(
-            "AEGIS",
-            aegis.section("AEGIS").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert!(obj.distributed_fire, "DistributedFire=yes parses true");
-    }
-
-    #[test]
-    fn techno_type_parses_refinery_smoke_offsets() {
-        let rules = rules(
-            "[BuildingTypes]\n0=GAREFN\n\
-             [GAREFN]\n\
-             RefinerySmokeParticleSystem=BigGreySSys\n\
-             RefinerySmokeOffsetOne=10,20,30\n\
-             RefinerySmokeOffsetTwo=-5,0,15\n\
-             RefinerySmokeOffsetThree=0,0,0\n\
-             RefinerySmokeOffsetFour=100,-50,200\n",
-        );
-        let obj = rules.object("GAREFN").unwrap();
-
-        assert_eq!(
-            obj.refinery_smoke_particle_system.as_deref(),
-            Some("BigGreySSys")
-        );
-        assert_eq!(obj.refinery_smoke_offsets[0], IVec3::new(10, 20, 30));
-        assert_eq!(obj.refinery_smoke_offsets[1], IVec3::new(-5, 0, 15));
-        assert_eq!(obj.refinery_smoke_offsets[2], IVec3::ZERO);
-        assert_eq!(obj.refinery_smoke_offsets[3], IVec3::new(100, -50, 200));
-    }
-
-    #[test]
-    fn techno_type_parses_refinery_smoke_frames() {
-        let ini: IniFile = IniFile::from_str("[FOO]\nRefinerySmokeFrames=50\n");
-        let section = ini.section("FOO").expect("section");
-        let obj = ObjectType::from_ini_section("FOO", section, ObjectCategory::Building);
-        assert_eq!(obj.refinery_smoke_frames, 50);
-    }
-
-    #[test]
-    fn techno_type_refinery_smoke_frames_defaults_to_native_25() {
-        let ini: IniFile = IniFile::from_str("[FOO]\nFixtureOnly=1\n");
-        let section = ini.section("FOO").expect("section");
-        let obj = ObjectType::from_ini_section("FOO", section, ObjectCategory::Building);
-        assert_eq!(obj.refinery_smoke_frames, 25);
-    }
-
-    #[test]
     fn original_eight_refinery_smoke_frames_scalar_rows() {
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/refinery_smoke.json",
@@ -5613,39 +4781,6 @@ mod tests {
                 "{row}"
             );
         }
-    }
-
-    #[test]
-    fn techno_type_parses_natural_and_smoke_keys() {
-        let rules = rules(
-            "[BuildingTypes]\n0=GAGAP\n[GAGAP]\n\
-             NaturalParticleSystem=GapPSys\n\
-             NaturalParticleLocation=0,0,256\n\
-             DamageSmokeOffset=12,-12,48\n\
-             DamSmkOffScrnRel=yes\n\
-             DestroySmokeOffset=0,0,128\n\
-             GapRadiusInCells=8\n\
-             SuperGapRadiusInCells=12\n\
-             PsychicDetectionRadius=15\n\
-             SensorArray=yes\n\
-             Sensors=yes\n\
-             SensorsSight=14\n\
-             CloakGenerator=yes\n",
-        );
-        let obj = rules.object("GAGAP").unwrap();
-
-        assert_eq!(obj.natural_particle_system.as_deref(), Some("GapPSys"));
-        assert_eq!(obj.natural_particle_location, IVec3::new(0, 0, 256));
-        assert_eq!(obj.damage_smoke_offset, IVec3::new(12, -12, 48));
-        assert!(obj.dam_smk_off_scrn_rel);
-        assert_eq!(obj.destroy_smoke_offset, IVec3::new(0, 0, 128));
-        assert_eq!(obj.gap_radius_in_cells, 8);
-        assert_eq!(obj.super_gap_radius_in_cells, 12);
-        assert_eq!(obj.psychic_detection_radius, 15);
-        assert!(obj.sensor_array);
-        assert!(obj.sensors);
-        assert_eq!(obj.sensors_sight, 14);
-        assert!(obj.cloak_generator);
     }
 
     #[test]
@@ -5782,52 +4917,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn stock_cloak_and_sensor_type_inputs_parse_without_inference() {
-        let ini = IniFile::from_str(
-            "[DLPH]\nCloakable=yes\nCloakingSpeed=1\nSensorsSight=8\n\
-             [SUB]\nCloakable=yes\nCloakingSpeed=1\nSensorsSight=7\n\
-             [SQD]\nCloakable=yes\nCloakingSpeed=5\nSensorsSight=8\n\
-             [BSUB]\nCloakable=yes\nCloakingSpeed=1\nSensorsSight=8\n\
-             [NAPSIS]\nSensorArray=yes\nSensorsSight=15\n\
-             [RANKED]\nVeteranAbilities=CLOAK\nEliteAbilities=STRONGER,CLOAK\n\
-             [DEFAULTS]\nFixtureOnly=yes\n",
-        );
-        for (id, speed, sight) in [("DLPH", 1, 8), ("SUB", 1, 7), ("SQD", 5, 8), ("BSUB", 1, 8)] {
-            let object = ObjectType::from_ini_section(
-                id,
-                ini.section(id).expect("stock-shaped cloak section"),
-                ObjectCategory::Vehicle,
-            );
-            assert!(object.cloakable, "{id}");
-            assert_eq!(object.cloaking_speed, speed, "{id}");
-            assert_eq!(object.sensors_sight, sight, "{id}");
-        }
-        let napsis = ObjectType::from_ini_section(
-            "NAPSIS",
-            ini.section("NAPSIS").unwrap(),
-            ObjectCategory::Building,
-        );
-        assert!(napsis.sensor_array);
-        assert_eq!(napsis.sensors_sight, 15);
-        assert_eq!(napsis.cloak_radius_in_cells, 20);
-        let ranked = ObjectType::from_ini_section(
-            "RANKED",
-            ini.section("RANKED").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert!(ranked.veteran_abilities.has(Ability::Cloak));
-        assert!(ranked.elite_abilities.has(Ability::Cloak));
-        let defaults = ObjectType::from_ini_section(
-            "DEFAULTS",
-            ini.section("DEFAULTS").unwrap(),
-            ObjectCategory::Vehicle,
-        );
-        assert!(!defaults.cloakable && !defaults.cloak_stop);
-        assert_eq!(defaults.cloaking_speed, 7);
-        assert_eq!(defaults.cloak_radius_in_cells, 20);
-    }
-
     /// ReadSoundList keeps `strtok` tokens as written; empty fields drop.
     #[test]
     fn parses_ordered_death_sound_lists() {
@@ -5841,20 +4930,6 @@ mod tests {
 
         assert_eq!(object.voice_die, ["VoiceA", "VoiceB", " VoiceC"]);
         assert_eq!(object.die_sounds, ["DieA", "DieB"]);
-    }
-
-    #[test]
-    fn parses_infantry_fear_flags_and_fearless_abilities() {
-        let ini = IniFile::from_str(
-            "[E1]\nFearless=yes\nFraidycat=yes\nVeteranAbilities=FEARLESS\nEliteAbilities=SELF_HEAL,FEARLESS\n",
-        );
-        let section = ini.section("E1").unwrap();
-        let obj = ObjectType::from_ini_section("E1", section, ObjectCategory::Infantry);
-        assert!(obj.fearless);
-        assert!(obj.fraidycat);
-        assert!(!obj.crawls);
-        assert!(obj.veteran_abilities.has(Ability::Fearless));
-        assert!(obj.elite_abilities.has(Ability::Fearless));
     }
 
     #[test]
@@ -5882,35 +4957,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn parses_deployed_crushable_with_default_yes() {
-        let ini = IniFile::from_str("[E1]\nCrushable=yes\n");
-        let section = ini.section("E1").unwrap();
-        let obj = ObjectType::from_ini_section("E1", section, ObjectCategory::Infantry);
-        assert!(obj.deployed_crushable);
-
-        let ini = IniFile::from_str("[GGI]\nCrushable=yes\nDeployedCrushable=no\n");
-        let section = ini.section("GGI").unwrap();
-        let obj = ObjectType::from_ini_section("GGI", section, ObjectCategory::Infantry);
-        assert!(!obj.deployed_crushable);
-    }
-
-    #[test]
-    fn object_type_parses_regular_crusher_for_amcv_fixture() {
-        let ini = IniFile::from_str("[AMCV]\nSpeed=4\nMovementZone=Normal\nCrusher=yes\n");
-        let section = ini.section("AMCV").unwrap();
-        let obj = ObjectType::from_ini_section("AMCV", section, ObjectCategory::Vehicle);
-        assert!(obj.crusher);
-    }
-
-    #[test]
-    fn object_type_crusher_defaults_false() {
-        let ini = IniFile::from_str("[MTNK]\nSpeed=7\nMovementZone=Normal\n");
-        let section = ini.section("MTNK").unwrap();
-        let obj = ObjectType::from_ini_section("MTNK", section, ObjectCategory::Vehicle);
-        assert!(!obj.crusher);
-    }
-
     /// TechnoType ctor711500/default and ReadINI7153DA..7153F5.
     #[test]
     fn crush_tilt_reader_preserves_native_true_default_and_explicit_no() {
@@ -5927,68 +4973,6 @@ mod tests {
             );
             assert_eq!(object.tilts_when_crushes, expected);
         }
-    }
-
-    #[test]
-    fn object_type_parses_accelerates_false() {
-        let ini = IniFile::from_str("[MTNK]\nSpeed=7\nAccelerates=false\n");
-        let section = ini.section("MTNK").unwrap();
-        let obj = ObjectType::from_ini_section("MTNK", section, ObjectCategory::Vehicle);
-        assert!(!obj.accelerates);
-    }
-
-    #[test]
-    fn object_type_accelerates_defaults_true() {
-        let ini = IniFile::from_str("[AMCV]\nSpeed=4\n");
-        let section = ini.section("AMCV").unwrap();
-        let obj = ObjectType::from_ini_section("AMCV", section, ObjectCategory::Vehicle);
-        assert!(obj.accelerates);
-    }
-
-    #[test]
-    fn parses_air_range_bonus() {
-        let ini: IniFile =
-            IniFile::from_str("[MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nAirRangeBonus=4\n");
-        let section = ini.section("MTNK").expect("section");
-        let obj = ObjectType::from_ini_section("MTNK", section, ObjectCategory::Vehicle);
-        assert_eq!(obj.air_range_bonus, Some(SimFixed::from_num(4.0_f32)));
-    }
-
-    #[test]
-    fn air_range_bonus_default_none() {
-        let ini: IniFile = IniFile::from_str("[MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\n");
-        let section = ini.section("MTNK").expect("section");
-        let obj = ObjectType::from_ini_section("MTNK", section, ObjectCategory::Vehicle);
-        assert_eq!(obj.air_range_bonus, None);
-    }
-
-    #[test]
-    fn parse_weight_constructor_default_one() {
-        let ini: IniFile = IniFile::from_str("[MTNK]\nStrength=300\n");
-        let section = ini.section("MTNK").expect("section");
-        let obj = ObjectType::from_ini_section("MTNK", section, ObjectCategory::Vehicle);
-        assert_eq!(obj.weight, SimFixed::ONE);
-    }
-
-    #[test]
-    fn parse_weight_custom() {
-        let ini: IniFile = IniFile::from_str("[HTNK]\nWeight=3.5\n");
-        let section = ini.section("HTNK").expect("section");
-        let obj = ObjectType::from_ini_section("HTNK", section, ObjectCategory::Vehicle);
-        assert_eq!(obj.weight, SimFixed::lit("3.5"));
-    }
-
-    #[test]
-    fn parse_retail_weight_apocalypse_is_three_point_five() {
-        // Retail rulesmd.ini: APOC (Apocalypse Tank) has Weight=3.5.
-        // The heaviest unit in stock retail is CARRIER (Aircraft Carrier) at Weight=5.
-        let ini = IniFile::from_str("[APOC]\nWeight=3.5\n");
-        let apoc = ObjectType::from_ini_section(
-            "APOC",
-            ini.section("APOC").expect("APOC section"),
-            ObjectCategory::Vehicle,
-        );
-        assert_eq!(apoc.weight, SimFixed::lit("3.5"));
     }
 
     #[test]

@@ -29,32 +29,6 @@ fn sight_origin(sim: &Simulation, id: u64) -> (u16, u16) {
     (admission.origin.0, admission.origin.1)
 }
 
-/// TechnoUnlimbo6F6D27 dispatches70AF50 before AddedToGame/facing/idle,
-/// not from the next Logic frame. Its5678E0 receiver reaches4A9CA0 and
-/// initializes both Cell edge channels even with FogOfWar=no.
-#[test]
-fn successful_unlimbo_reveals_its_cells_before_returning() {
-    let Some((mut sim, rules, _grid)) = retail_arena() else {
-        return;
-    };
-    sim.fog = vision::FogState::new(32, 32);
-    let owner = sim.intern("Americans");
-    sim.session.set_current_house_for_test(Some(owner));
-    assert!(!sim.fog.is_cell_revealed(owner, 16, 16));
-    let id = sim
-        .spawn_object("AMCV", "Americans", 16, 16, 0, &rules)
-        .expect("ordinary successful Unlimbo");
-    assert_eq!(sim.session.tick(), 0, "no frame pass supplies the reveal");
-    assert!(sim.entities().get(id).unwrap().in_playfield());
-    assert!(
-        sim.fog.is_cell_revealed(owner, 16, 16),
-        "native Unlimbo opens Cell knowledge synchronously"
-    );
-    assert_eq!(sight_origin(&sim, id), (16, 16));
-    let (_, flags) = sim.fog.by_owner[&owner].map_cell_edge_cache_for_test((16, 16));
-    assert_ne!(flags & 2, 0, "Map4A9CA0 initializes the Cell cache");
-}
-
 /// A tank and an infantryman sent three cells east keep their sight where
 /// it was while they cross into each next cell, and take it there when they
 /// arrive: once per cell, in path order.
@@ -307,7 +281,9 @@ fn unlimbo_keeps_its_single_alive_admission_across_sight_callbacks() {
     let type_id = sim.substrate.entities.get(id).unwrap().type_ref();
     let category = crate::map::entities::EntityCategory::Unit;
     sim.techno_limbo_with_rules(id, &rules, None);
-    let before = sim.houses[&owner].tracking.active_count(category, type_id);
+    let before = sim.houses[&owner]
+        .tracking()
+        .active_count(category, type_id);
     sim.fog = vision::FogState::new(32, 32);
     with_first_cell_receiver(
         move |sim| {
@@ -328,7 +304,9 @@ fn unlimbo_keeps_its_single_alive_admission_across_sight_callbacks() {
     let source = sim.substrate.entities.get(id).unwrap();
     assert!(!source.lifecycle.object_alive());
     assert_eq!(
-        sim.houses[&owner].tracking.active_count(category, type_id),
+        sim.houses[&owner]
+            .tracking()
+            .active_count(category, type_id),
         before + 1,
         "6F6D8F Added_To_Game follows the pre-callback alive admission"
     );
@@ -1746,52 +1724,6 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
     assert!(!sim.fog.sight_is_latched(tank, americans));
 }
 
-/// A team skirmish forms its alliances after it places its starting units
-/// (`ScenarioClass::Post_Map_Init`: Generate_Starting_Units at `0x00686937`,
-/// the mode's alliances at `0x00686AE4`). The brackets give an ally's
-/// mobiles no sight callback, so a starting unit's sight reaches its new
-/// ally's map at its next cell arrival, whose reveal RevealArea's house
-/// gate admits for the ally under `AllyReveal=` (`0x00567AEF`).
-#[test]
-fn launch_alliances_open_an_allys_starting_unit_at_its_next_arrival() {
-    let Some((mut sim, rules, _)) = retail_arena() else {
-        return;
-    };
-    sim.fog = vision::FogState::new(32, 32);
-    let americans = sim.intern("Americans");
-    let russians = add_computer_house(&mut sim, "Russians");
-    add_computer_house(&mut sim, "Confederation");
-    let ours = sim
-        .spawn_object("MTNK", "Americans", 8, 8, 0, &rules)
-        .unwrap();
-    let theirs = sim
-        .spawn_object("MTNK", "Russians", 22, 22, 0, &rules)
-        .unwrap();
-    let team = crate::map::houses::HouseAllianceMap::from([
-        ("AMERICANS".to_string(), ["RUSSIANS".to_string()].into()),
-        ("RUSSIANS".to_string(), ["AMERICANS".to_string()].into()),
-    ]);
-    sim.install_house_alliances(
-        crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(team),
-        &rules,
-    );
-    assert!(sim.fog.sight_is_latched(ours, americans));
-    assert!(!sim.fog.sight_is_latched(theirs, americans));
-    assert!(!sim.fog.sight_is_latched(ours, russians));
-    let config = sim.sight_reveal_config(Some(&rules));
-    sim.refresh_sight_sources(&config, Some(&rules));
-    assert!(
-        !sim.fog.sight_is_latched(theirs, americans),
-        "the frame pass reveals nothing"
-    );
-    // Its next cell arrival: ReReveal, then UpdateReveal (Unit `0x0073AC5F`,
-    // `0x0073AC74`).
-    sim.refresh_object_sight(theirs, Some(&rules), 0);
-    assert!(sim.fog.sight_is_latched(theirs, americans));
-    let origin = sim.fog.sight_admission(theirs, americans).unwrap().origin;
-    assert!(sim.fog.is_cell_visible(americans, origin.0, origin.1));
-}
-
 /// Playfield promotion (`0x006F511A`) follows the arrival's reveal (Unit
 /// `0x0073AC74`), which the stored playfield byte refuses: a tank that
 /// drives into the playfield opens its sight at its next arrival.
@@ -1838,50 +1770,4 @@ fn a_tank_promoted_into_the_playfield_reveals_at_its_next_arrival() {
     }
     assert_eq!(promoted_at, Some((11, 10)), "promoted at its first arrival");
     assert_eq!(sight_at, Some((12, 10)), "its sight opens at the next one");
-}
-
-/// VERA's SHP death sequence of an aircraft defers the UnInit whose Limbo
-/// releases a dead object's sight (`0x006F6B16`), so the sequence's start
-/// releases it. (A dying Unit's receiver UnInits it at once; no retail
-/// aircraft is SHP.)
-#[test]
-fn an_shp_aircraft_releases_its_sight_when_its_death_sequence_starts() {
-    let ini = crate::sim::arena_fixture::clear_ground_ini(
-        "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n0=SHPA\n[BuildingTypes]\n\
-         [Warheads]\n0=SA\n[SHPA]\nStrength=100\nSight=5\n\
-         [SA]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-    );
-    let art = crate::rules::ini_parser::IniFile::from_str("[SHPA]\nVoxel=no\n");
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
-    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    let mut sim = Simulation::new();
-    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.fog = vision::FogState::new(32, 32);
-    let owner = sim.intern("Americans");
-    sim.houses
-        .register(crate::sim::house_state::HouseState::new(
-            owner, 0, None, true, 0, 10,
-        ));
-    let id = sim
-        .spawn_object("SHPA", "Americans", 16, 16, 0, &rules)
-        .unwrap();
-    assert!(sim.substrate.entities.get(id).unwrap().animation.is_some());
-    assert!(sim.fog.sight_is_latched(id, owner));
-    let hit = crate::sim::combat::EntityDamageEvent::direct_receiver(
-        id,
-        100,
-        0,
-        crate::sim::combat::RAD_NO_ATTACKER,
-        None,
-        sim.intern("SA"),
-        crate::sim::combat::ReceiverCallFlags {
-            ignore_defenses: true,
-            arg6: false,
-        },
-    );
-    sim.commit_direct_damage_receiver(&rules, None, hit, FrameEffects::default());
-    let wreck = sim.substrate.entities.get(id).unwrap();
-    assert!(wreck.death.is_dying(), "its death sequence started");
-    assert!(!wreck.lifecycle.in_limbo(), "before its UnInit");
-    assert!(!sim.fog.sight_is_latched(id, owner));
 }

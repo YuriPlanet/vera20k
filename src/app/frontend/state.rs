@@ -109,17 +109,29 @@ pub(crate) struct FrontendState {
     /// Its emblem and background art (`0x0072D9A0`), loaded with the dialog
     /// and freed when it closes (`0x0072DAA0`).
     pub(crate) campaign_art: Option<crate::render::main_menu_shell_chrome::CampaignShellArt>,
-    /// Westwood Online welcome `0x10E` (and its box) while its route shows.
-    pub(crate) wol_welcome: Option<crate::ui::wol_shell::WolWelcomeState>,
+    /// One Westwood Online visit (`WOL_Main` `0x0077B2A0`): welcome, login,
+    /// waits, boxes and the lobby entry, from Internet until WOL is left.
+    pub(crate) wol: Option<crate::app::shell_wol::WolVisit>,
+    /// The login chain's process globals (nickname, password, Remember,
+    /// changed byte); they outlive every WOL visit.
+    pub(crate) wol_account: crate::ui::wol_login::WolAccountGlobals,
     /// LAN lobby interaction/discovery; admitted participants belong to MatchSession.
     pub(crate) lan: Option<crate::app::shell_lan::LanShellRuntime>,
-    pub(crate) lan_setup_protocol: Option<crate::app::shell_lan_setup::LanSetupProtocol>,
+    pub(crate) network_setup_protocol:
+        Option<crate::app::shell_network_setup::NetworkSetupProtocol>,
     /// BC/BD control interaction; values are projected from MatchSession.
     pub(crate) multiplayer_setup: Option<crate::ui::multiplayer_setup::MultiplayerSetupState>,
     /// Options' Network child D7, retained until its teardown completes.
     pub(crate) network_options: Option<crate::ui::network_options::NetworkOptionsState>,
-    /// Its background and icon art (`0x0072C7E0`).
-    pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolWelcomeArt>,
+    /// `0x10E`'s background and icon art (`0x0072C7E0`).
+    pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// `0x10F`'s background art (`0x0072C600`), freed with the dialog
+    /// (`0x0072C650`).
+    pub(crate) wol_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// `0x113`'s background and list art (`0x0072CD60`).
+    pub(crate) wol_lobby_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// The custom lobby's process globals (sorts, lobby number, filters).
+    pub(crate) wol_lobby_globals: crate::app::shell_wol::lobby::WolLobbyGlobals,
     /// Single Player's Load Saved Game `0xB7` while its route shows.
     pub(crate) load_saved_game:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
@@ -154,6 +166,9 @@ pub(crate) struct FrontendState {
     /// Audio, Theme and RMG continue that cursor behind the shell; the setup
     /// seed before the first scenario comes from shell Scenario.
     pub(crate) frontend_main_rng: crate::sim::rng::MainRng,
+    /// The process start `g_RngSeed` (`0xA8ED94`) before any match reseeds
+    /// it; WOL hosts publish the resident seed (C2 draws none).
+    pub(crate) startup_rng_seed: u32,
     /// UI-thread CRT state shared by storage dialogs, preserved across routes.
     /// Native tactical sparkle/network consumption is still an integration gap;
     /// do not infer exact post-game filenames from this initial state.

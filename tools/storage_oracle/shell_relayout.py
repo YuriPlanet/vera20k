@@ -381,6 +381,10 @@ def relayout(dialog_id, width, height, side=0):
     for hwnd in machine.children:
         machine.call(0x60AAB0, stack_args=(hwnd, 0))
     machine.call(0x60C540, ecx=PARENT)
+    # 0x622F9C: only a full-screen family dialog takes 0x60C4A0; any other
+    # takes 0x60C7D0 (see popup_layout).
+    if not machine.uc.reg_read(UC_X86_REG_EAX) & 0xFF:
+        raise OracleError(f"0x0060C540 rejects {dialog_id:#x}: not a full-screen relayout dialog")
     minimum = machine.alloc(16)
     machine.w32(minimum, 640)
     machine.w32(minimum + 4, 480)
@@ -409,6 +413,86 @@ def relayout(dialog_id, width, height, side=0):
     finally:
         machine.uc.hook_del(hook)
     return children
+
+
+MAIN_WINDOW = 0x7000
+
+
+def dialog_box(data):
+    """RT_DIALOG template x, y, cx, cy (DLGTEMPLATE or DLGTEMPLATEEX)."""
+    extended = struct.unpack_from("<HH", data, 0) == (1, 0xFFFF)
+    return list(struct.unpack_from("<4h", data, 18 if extended else 10))
+
+
+def popup_layout(dialog_id, width, height, guard=None):
+    """Executed WM_INITDIALOG geometry of a compact popup dialog.
+
+    Children and the dialog start at the 6x13 DLU conversion (MulDiv, no
+    growth); the 0x775BA0 resize callbacks 0x775BC0 run child-then-parent
+    with the cached benchmark client 300x163; 0x60C540 (full-screen family)
+    and 0x60C7D0 (compact popup, record +0xB0 = 2) classify the dialog; and
+    0x777060/0x777080 centre it on its owner, the main window [0xB73550]
+    whose client is the screen. `guard` is an optional (snapshot, check)
+    pair run around the native calls. Returns the machine and the result.
+    """
+    m = Machine(dialog_id, width, height)
+    u = m.uc
+    x, y, cx, cy = dialog_box(Image(u).dialog_template(dialog_id))
+    if (x, y) != (0, 0):
+        raise OracleError(f"{dialog_id:#x} template origin {(x, y)} is not (0, 0)")
+    m.windows[PARENT]["rect"] = [0, 0, muldiv(cx, 6, 4), muldiv(cy, 13, 8)]
+    for hwnd, control in zip(m.children, m.controls):
+        x, y, w, h = control["template"]
+        x, y, w, h = muldiv(x, 6, 4), muldiv(y, 13, 8), muldiv(w, 6, 4), muldiv(h, 13, 8)
+        m.windows[hwnd]["rect"] = [x, y, x + w, y + h]
+    m.windows[MAIN_WINDOW] = {"id": 0, "style": 0, "class": "Main", "rect": [0, 0, width, height]}
+    m.w32(0xB73550, MAIN_WINDOW)
+    m.w32(0xB72F54, 300)
+    m.w32(0xB72F58, 163)
+    events = []
+
+    def get_long():
+        hwnd = m.arg(0)
+        index = m.signed_args(2)[1]
+        window = m.windows[hwnd]
+        value = {-8: MAIN_WINDOW if hwnd == PARENT else PARENT,
+                 -16: window["style"], -12: window["id"]}.get(index, 0)
+        m.ret(8, value)
+
+    m.stubs[m.r32(0x7E1474)] = get_long
+    for iat, name in ((0x7E1398, "MoveWindow"), (0x7E13F0, "SetWindowPos")):
+        old = m.stubs[m.r32(iat)]
+
+        def report(old=old, name=name):
+            events.append({"event": name, "args": [m.arg(i) for i in range(6 if name == "MoveWindow" else 7)]})
+            old()
+
+        m.stubs[m.r32(iat)] = report
+    token = guard[0](u) if guard else None
+    initial = {str(m.windows[h]["id"]): list(m.windows[h]["rect"]) for h in [PARENT] + m.children}
+    # Same callback order as 0x775BA0: each child, then the parent.
+    # Enumeration transport itself is supplied.
+    for hwnd in m.children:
+        m.call(0x775BC0, stack_args=(hwnd, 1))
+    m.call(0x775BC0, stack_args=(PARENT, 0))
+    m.call(0x60C540, ecx=PARENT)
+    fullscreen = u.reg_read(UC_X86_REG_EAX) & 255
+    m.call(0x60C7D0, ecx=PARENT)
+    mode2 = u.reg_read(UC_X86_REG_EAX) & 255
+    m.call(0x777060, ecx=PARENT)
+    if guard:
+        guard[1](u, token)
+    left, top, right, bottom = m.windows[PARENT]["rect"]
+    children = []
+    for hwnd, control in zip(m.children, m.controls):
+        cl, ct, cr, cb = m.windows[hwnd]["rect"]
+        children.append(dict(id=control["id"], style=control["style"],
+                             visible=bool(control["style"] & 0x10000000),
+                             rect=[cl + left, ct + top, cr - cl, cb - ct]))
+    return m, dict(input={"width": width, "height": height, "dialog_base_units": [6, 13],
+                          "benchmark_client": [300, 163], "initial_window_rects": initial},
+                   fullscreen=fullscreen, mode2=mode2, background_mode=m.r32(m.record(PARENT) + 0xB0),
+                   dialog_rect=[left, top, right - left, bottom - top], children=children, events=events)
 
 
 def generate():

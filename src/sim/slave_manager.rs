@@ -972,7 +972,7 @@ impl Simulation {
         if !self
             .houses
             .get(&owner.owner())
-            .is_some_and(|house| house.is_human)
+            .is_some_and(|house| house.is_human())
         {
             return true;
         }

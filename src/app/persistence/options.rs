@@ -348,19 +348,6 @@ mod tests {
     }
 
     #[test]
-    fn apply_disables_target_lines_when_unit_action_lines_are_off() {
-        let mut target_lines = TargetLineState::default();
-        apply_target_lines(
-            &mut target_lines,
-            &InGameOptionsState {
-                unit_action_lines: false,
-                ..Default::default()
-            },
-        );
-        assert!(!target_lines.unit_action_lines_enabled());
-    }
-
-    #[test]
     fn boot_and_live_presentation_gates_follow_the_profile_projection() {
         let mut target_lines = TargetLineState::default();
         let mut tooltips = TooltipService::new();

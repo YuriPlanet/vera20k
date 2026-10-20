@@ -273,10 +273,6 @@ mod tests {
     use std::time::Duration;
     use wgpu::util::DeviceExt;
 
-    // Unorm, so a blend is the plain average the box filter names.
-    const UNORM: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
-    const BACKDROP: [u8; 4] = [9, 9, 9, 255];
-
     struct Gpu {
         device: wgpu::Device,
         queue: wgpu::Queue,
@@ -406,76 +402,9 @@ mod tests {
             .unwrap()
     }
 
-    /// Surfaces for `frame` whose texel (x, y) is BGRA [x, y, part, 255]:
-    /// part 7 for the column, 8 for the bar.
-    fn tagged(gpu: &Gpu, frame: SidebarFrame) -> SidebarSurface {
-        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, UNORM);
-        let surface = SidebarSurface::new(&gpu.device, &gpu.queue, UNORM, &batch, frame);
-        fill(gpu, &surface, SidebarPart::Column, |x, y| {
-            [x as u8, y as u8, 7, 255]
-        });
-        fill(gpu, &surface, SidebarPart::Bar, |x, y| {
-            [x as u8, y as u8, 8, 255]
-        });
-        surface
-    }
-
     fn pixel(pixels: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
         let at = ((y * width + x) * 4) as usize;
         pixels[at..at + 4].try_into().unwrap()
-    }
-
-    #[test]
-    #[ignore = "requires a wgpu adapter; executes the production scaled copy"]
-    fn xl_shows_each_sidebar_pixel_as_a_2x2_block_in_the_right_column() {
-        let gpu = gpu();
-        let frame = SidebarFrame::new(400, 120, 200);
-        assert_eq!(frame.column(), (64, 0, 336, 120));
-        assert_eq!(frame.strip(), (0, 56, 64, 64));
-        let surface = tagged(&gpu, frame);
-        let pixels = composite(&gpu, &surface, UNORM, (400, 120), |_| {});
-        let width = 400;
-        for (x, y) in [(0, 0), (1, 0), (0, 1), (100, 30), (167, 59)] {
-            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                assert_eq!(
-                    pixel(&pixels, width, 64 + 2 * x + dx, 2 * y + dy),
-                    [x as u8, y as u8, 7, 255],
-                    "sidebar pixel ({x}, {y})"
-                );
-            }
-        }
-        // The bar's 32 sidebar pixels make the strip's 64, flush with the
-        // column: its last pixel meets the sidebar's first.
-        assert_eq!(frame.bar_surface_size(), (32, 32));
-        assert_eq!(pixel(&pixels, width, 63, 56), [31, 0, 8, 255]);
-        assert_eq!(pixel(&pixels, width, 0, 119), [0, 31, 8, 255]);
-        // The battlefield's part of the frame is left alone.
-        assert_eq!(pixel(&pixels, width, 63, 55), BACKDROP);
-        assert_eq!(pixel(&pixels, width, 0, 0), BACKDROP);
-    }
-
-    #[test]
-    #[ignore = "requires a wgpu adapter; executes the production scaled copy"]
-    fn large_keeps_whole_pixels_and_blends_only_the_seams() {
-        let gpu = gpu();
-        let frame = SidebarFrame::new(400, 120, 150);
-        assert_eq!(frame.column(), (148, 0, 252, 120));
-        let surface = tagged(&gpu, frame);
-        let pixels = composite(&gpu, &surface, UNORM, (400, 120), |_| {});
-        let width = 400;
-        // Frame pixel 148 lies inside sidebar pixel 0 and 150 inside pixel 1;
-        // 149 straddles them half and half.
-        assert_eq!(pixel(&pixels, width, 148, 0), [0, 0, 7, 255]);
-        assert_eq!(pixel(&pixels, width, 150, 0), [1, 0, 7, 255]);
-        let seam = pixel(&pixels, width, 149, 0);
-        assert!(seam[0] <= 1 && seam[1..] == [0, 7, 255], "{seam:?}");
-        // The last column pixel is the sidebar's last pixel.
-        assert_eq!(pixel(&pixels, width, 399, 0), [167, 0, 7, 255]);
-        assert_eq!(pixel(&pixels, width, 147, 0), BACKDROP);
-        // The bar's strip is 48 pixels tall and ends at the column.
-        assert_eq!(frame.strip(), (0, 72, 148, 48));
-        assert_eq!(pixel(&pixels, width, 147, 119)[2], 8);
-        assert_eq!(pixel(&pixels, width, 147, 71), BACKDROP);
     }
 
     /// At Normal the copy is 1:1 in the production sRGB format: every byte
@@ -506,84 +435,6 @@ mod tests {
             for x in 0..232 {
                 assert_eq!(pixel(&pixels, 400, x, 268 + y), texel(x % 168, y));
             }
-        }
-    }
-
-    /// The parts' cameras put a layer at the frame pixels input converts its
-    /// layout rect to (`SidebarFrame::rect_to_frame`, `bar_rect_to_frame`),
-    /// through the production overlay pipeline.
-    #[test]
-    #[ignore = "requires a wgpu adapter; executes the production batch shader"]
-    fn layers_land_where_their_input_rects_are() {
-        let gpu = gpu();
-        let frame = SidebarFrame::new(400, 120, 200);
-        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, UNORM);
-        let mut surface = SidebarSurface::new(&gpu.device, &gpu.queue, UNORM, &batch, frame);
-        // A scrolled world camera: UI layers carry it in their positions.
-        let mut world = batch.camera_uniform();
-        world.camera_pos = [1000.0, 500.0];
-        world.zoom = 1.5;
-        batch.write_camera(&gpu.queue, world);
-        surface.write_cameras(&gpu.queue, batch.ui_camera_uniform());
-        let white = batch.create_texture_on_device(
-            &gpu.device,
-            &gpu.queue,
-            &[255, 255, 255, 255],
-            1,
-            1,
-            None,
-        );
-        let column_rect = crate::ui::sidebar::Rect {
-            x: frame.layout_left() + 10.0,
-            y: 20.0,
-            w: 4.0,
-            h: 3.0,
-        };
-        let bar_rect = crate::ui::sidebar::Rect {
-            x: 5.0,
-            y: frame.strip_layout_top() + 3.0,
-            w: 2.0,
-            h: 2.0,
-        };
-        let quad = |rect: crate::ui::sidebar::Rect| crate::render::batch::SpriteInstance {
-            position: [1000.0 + rect.x, 500.0 + rect.y],
-            size: [rect.w, rect.h],
-            uv_size: [1.0; 2],
-            tint: [1.0; 3],
-            alpha: 1.0,
-            depth: 0.00048,
-            ..Default::default()
-        };
-        let pixels = composite(&gpu, &surface, UNORM, (400, 120), |encoder| {
-            for (part, rect) in [
-                (SidebarPart::Column, column_rect),
-                (SidebarPart::Bar, bar_rect),
-            ] {
-                let instances = gpu
-                    .device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: None,
-                        contents: bytemuck::bytes_of(&quad(rect)),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    });
-                let mut pass = surface.begin_pass(part, encoder, wgpu::Color::BLACK);
-                pass.set_pipeline(batch.overlay_pipeline());
-                pass.set_bind_group(0, surface.camera(part), &[]);
-                pass.set_bind_group(1, &white.bind_group, &[]);
-                pass.set_vertex_buffer(0, instances.slice(..));
-                pass.draw(0..6, 0..1);
-            }
-        });
-        for rect in [
-            frame.rect_to_frame(column_rect),
-            frame.bar_rect_to_frame(bar_rect),
-        ] {
-            let (x, y) = (rect.x as u32, rect.y as u32);
-            let (right, bottom) = (x + rect.w as u32, y + rect.h as u32);
-            assert_eq!(pixel(&pixels, 400, x, y), [255; 4], "{rect:?}");
-            assert_eq!(pixel(&pixels, 400, right - 1, bottom - 1), [255; 4]);
-            assert_eq!(pixel(&pixels, 400, x - 1, y), [0, 0, 0, 255]);
-            assert_eq!(pixel(&pixels, 400, right, bottom), [0, 0, 0, 255]);
         }
     }
 

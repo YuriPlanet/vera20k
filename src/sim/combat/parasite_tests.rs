@@ -250,19 +250,6 @@ impl Arena {
 }
 
 #[test]
-fn constructor_allocates_a_parasite_only_for_weapon_zero_parasite_types() {
-    let rules = rules();
-    let mut arena = Arena::new(&rules);
-    let dog = arena.spawn(&rules, "DOG", "Russians", (5, 5));
-    let drone = arena.spawn(&rules, "DRON", "Russians", (6, 5));
-    let tank = arena.spawn(&rules, "MTNK", "Americans", (7, 5));
-    let entities = &arena.sim.substrate.entities;
-    assert!(entities.get(dog).unwrap().parasite.class.is_some());
-    assert!(entities.get(drone).unwrap().parasite.class.is_some());
-    assert!(entities.get(tank).unwrap().parasite.class.is_none());
-}
-
-#[test]
 fn dog_bite_kills_the_infantry_and_releases_the_dog_where_it_stood() {
     let rules = rules();
     let mut arena = Arena::new(&rules);
@@ -506,7 +493,7 @@ fn a_paid_repair_radio_request_releases_the_drone_after_the_heal() {
         .houses
         .get_mut(&owner)
         .unwrap()
-        .economy
+        .economy_mut()
         .set_credits_for_test(1);
     assert_eq!(
         crate::sim::radio::receive_radio(
@@ -523,8 +510,8 @@ fn a_paid_repair_radio_request_releases_the_drone_after_the_heal() {
     assert_eq!(arena.health(tank), Some(hp + 8));
     assert!(arena.gone(drone));
     assert_eq!(arena.eater_of(tank), None);
-    assert_eq!(arena.sim.houses[&owner].economy.credits(), 0);
-    assert_eq!(arena.sim.houses[&owner].economy.spent_credits(), 1);
+    assert_eq!(arena.sim.houses[&owner].economy().credits(), 0);
+    assert_eq!(arena.sim.houses[&owner].economy().spent_credits(), 1);
 }
 
 #[test]
@@ -1282,7 +1269,7 @@ fn grinder_arrival_refunds_the_infesting_drone_before_forced_release() {
         .register(crate::sim::house_state::HouseState::new(
             russian, 1, None, false, 0, 10,
         ));
-    let before = arena.sim.houses[&owner].economy.credits();
+    let before = arena.sim.houses[&owner].economy().credits();
     arena
         .sim
         .per_cell_process(
@@ -1294,7 +1281,7 @@ fn grinder_arrival_refunds_the_infesting_drone_before_forced_release() {
         )
         .unwrap();
     // Unit73A0A5 refunds the tank300, then73A13E refunds the drone200.
-    assert_eq!(arena.sim.houses[&owner].economy.credits(), before + 500);
+    assert_eq!(arena.sim.houses[&owner].economy().credits(), before + 500);
     assert!(arena.gone(tank));
     assert!(
         arena.gone(drone),

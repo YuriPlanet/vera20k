@@ -131,7 +131,7 @@ impl Simulation {
                 )
             })
             .expect("wall Overlay constructor joins its existing registries");
-        if self.production.terrain_object_cells.contains_key(&(rx, ry))
+        if self.terrain_objects.cell_index().contains_key(&(rx, ry))
             || (!self.object_placement_scope_active()
                 && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(rx), i32::from(ry)),

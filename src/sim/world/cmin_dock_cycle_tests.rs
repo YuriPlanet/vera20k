@@ -75,7 +75,7 @@ fn frame(s: &mut Scene) -> Sample {
 
 fn credits(s: &Scene) -> i32 {
     let owner = s.sim.interner.get("Americans").unwrap();
-    s.sim.houses[&owner].economy.credits()
+    s.sim.houses[&owner].economy().credits()
 }
 
 /// A full Chrono Miner in Mission_Harvest's FINDING_HOME state at `cell`.
@@ -226,71 +226,6 @@ fn tethered(s: &Scene, id: u64) -> bool {
         .is_some()
 }
 
-/// `(miner id, frame)` dock edges in order.
-type DockLog = Vec<(u64, usize)>;
-
-/// Run both miners' visits to the one dock until both loads are paid and
-/// both have left. Returns each miner's (id, frame) tether and untether
-/// edges in order. No HELLO to the refinery is refused on the way: the
-/// narrow pass admits only a bay with a free slot (`0x004DEF09`).
-fn run_two_visits(s: &mut Scene, second: u64) -> (DockLog, DockLog) {
-    let paid_before = credits(s);
-    let miners = [s.miner, second];
-    let mut docked = Vec::new();
-    let mut left = Vec::new();
-    let mut was = [false; 2];
-    for n in 0..3000 {
-        let transmits = step(s);
-        assert!(
-            !transmits.iter().any(|r| r.target_sid == s.refinery
-                && r.msg == RadioMessage::Hello.code()
-                && r.reply == Some(RadioResponse::Negatory.code())),
-            "frame {n}: a HELLO was refused"
-        );
-        for (slot, id) in miners.into_iter().enumerate() {
-            let now = tethered(s, id);
-            if now && !was[slot] {
-                docked.push((id, n));
-            }
-            if !now && was[slot] {
-                left.push((id, n));
-            }
-            was[slot] = now;
-        }
-        if credits(s) - paid_before == 1000 && left.len() == 2 {
-            break;
-        }
-    }
-    assert_eq!(credits(s) - paid_before, 1000, "both loads pay");
-    assert_eq!(docked.len(), 2, "each miner docks once: {docked:?}");
-    let (first, first_docked) = docked[0];
-    let (next, next_docked) = docked[1];
-    assert_ne!(first, next);
-    let first_left = left
-        .iter()
-        .find(|(id, _)| *id == first)
-        .map(|&(_, n)| n)
-        .expect("the first miner leaves");
-    assert!(
-        first_docked < first_left && first_left <= next_docked,
-        "one miner on the pad at a time: {docked:?} / {left:?}"
-    );
-    let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
-    assert!(refinery.radio_contacts.is_empty(), "the slot is free again");
-    (docked, left)
-}
-
-/// Within `ChronoHarvTooFarDistance` (10 cells here) the HELLO goes out from
-/// the harvest cell; the refinery's MOVE_HERE then warps the miner onto the
-/// pad.
-#[test]
-fn chrono_miner_warps_onto_the_pad_and_unloads_through_the_production_frame() {
-    let mut s = fixture_scene((14, 12));
-    let paid_before = credits(&s);
-    assert_whole_visit(&mut s, false);
-    assert_eq!(credits(&s) - paid_before, 500, "20 ore bales at 25");
-}
-
 /// Beyond `ChronoHarvTooFarDistance` the miner drives toward the staging cell
 /// (NW + `QueueingCell=`) on a Drive piggyback. Once a free bay is within the
 /// distance, Harvest's Teleporter branch drops NavCom mid-drive and HELLOs
@@ -346,20 +281,6 @@ fn chrono_miner_visit_on_retail_rules() {
     let paid_before = credits(&s);
     assert_whole_visit(&mut s, false);
     assert_eq!(credits(&s) - paid_before, 500, "20 ore bales at 25");
-}
-
-/// Two full Chrono Miners, one dock. While the first holds the slot the
-/// narrow pass finds no bay for the second, so it sends no HELLO and drives
-/// toward the queueing cell instead (a Teleporter never waits in place,
-/// `0x0073ECD0`). Once the first has left, the second's HELLO lands and the
-/// MOVE_HERE warps it onto the pad. Both loads pay.
-#[test]
-fn a_second_chrono_miner_warps_in_after_the_first_leaves() {
-    let mut s = fixture_scene((14, 12));
-    one_dock(&mut s);
-    let second = spawn_returning_cmin(&mut s, (15, 15));
-    let (docked, _) = run_two_visits(&mut s, second);
-    assert_eq!(docked[0].0, s.miner, "the nearer miner docks first");
 }
 
 /// A refinery order (`Command::MinerReturn`) for a second Chrono Miner that

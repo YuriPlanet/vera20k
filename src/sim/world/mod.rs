@@ -103,13 +103,11 @@ pub use world_orders::BuildingClickAction;
 pub(crate) use world_orders::CapturedInfantryType;
 pub use world_orders::EngineerBuildingAction;
 pub use world_orders::UnitRepairAction;
-mod shroud_refresh;
-mod track_cell_recalc;
-#[cfg(any(test, feature = "test-support"))]
-use object_turn::foot_body_counter_admitted;
 mod projectile_collision;
+mod shroud_refresh;
 mod substrate;
 mod techno_ai;
+mod track_cell_recalc;
 mod trigger_camera;
 #[cfg(test)]
 mod trigger_camera_tests;
@@ -229,7 +227,6 @@ use crate::sim::command::CommandEnvelope;
 use crate::sim::components::{AnimClassSpawnDescriptor, DriveCoord, Position};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::house_state::HouseState;
-use crate::sim::house_strategy;
 use crate::sim::intern::InternedId;
 use crate::sim::lifecycle_request::LifecycleRequest;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -1040,9 +1037,14 @@ pub struct Simulation {
     /// load. NOT serialized, NOT hashed. `None` until resolved.
     #[serde(skip)]
     pub(crate) rule_handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
-    /// Factories, ready buildings and producer focus; also ore growth,
-    /// terrain objects and airfield docks.
+    /// Factories, the enqueue stamp and the primary-factory flags.
     pub production: ProductionState,
+    /// Live terrain objects and their cell, animation and spawner indexes.
+    pub(crate) terrain_objects: crate::sim::terrain_object::TerrainObjectStore,
+    /// Ore growth/spread configuration resolved from merged INI sources.
+    pub(crate) ore_growth_config: crate::sim::ore_growth::OreGrowthConfig,
+    /// Per-TiberiumClass growth and spread queues, bitmaps and timers.
+    pub(crate) ore_growth_state: crate::sim::ore_growth::OreGrowthState,
     /// Session aggregate — scenario identity, seed, authoritative map
     /// bounds, MP start table, per-match options, and the frame clocks
     /// (`tick` plus the wrapping `binary_frame`, committed late at the end of
@@ -2416,7 +2418,7 @@ impl Simulation {
 
                 let mut current = current_order(
                     &self.substrate.occupancy,
-                    &self.production.terrain_object_cells,
+                    self.terrain_objects.cell_index(),
                     rx,
                     ry,
                     layer,
@@ -2439,7 +2441,7 @@ impl Simulation {
                             if !eligible {
                                 let order = current_order(
                                     &self.substrate.occupancy,
-                                    &self.production.terrain_object_cells,
+                                    self.terrain_objects.cell_index(),
                                     rx,
                                     ry,
                                     layer,
@@ -2532,7 +2534,7 @@ impl Simulation {
                     // list link is gone and this walk terminates.
                     let order = current_order(
                         &self.substrate.occupancy,
-                        &self.production.terrain_object_cells,
+                        self.terrain_objects.cell_index(),
                         rx,
                         ry,
                         layer,
@@ -2555,7 +2557,7 @@ impl Simulation {
                         let _wall = {
                             let mut host = SimulationWallRuntimeHost {
                                 entities: &mut self.substrate.entities,
-                                target_terrain_objects: &self.production.terrain_objects,
+                                target_terrain_objects: self.terrain_objects.objects(),
                                 #[cfg(any(test, feature = "test-support"))]
                                 detach_trace: &mut effects.cell_target_detaches,
                                 radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
@@ -2614,7 +2616,7 @@ impl Simulation {
                         for &coord in &mutation.original_footprint {
                             crate::sim::combat::combat_aoe::expire_cell_target_references(
                                 &mut self.substrate.entities,
-                                &self.production.terrain_objects,
+                                self.terrain_objects.objects(),
                                 coord.0,
                                 coord.1,
                                 Some((rules, &self.interner)),
@@ -2935,7 +2937,7 @@ impl Simulation {
             let victim_passive = self
                 .houses
                 .get(&event.owner)
-                .is_some_and(|house| house.multiplay_passive);
+                .is_some_and(|house| house.multiplay_passive());
             if game_mode_nonzero && victim_passive {
                 continue;
             }
@@ -2950,7 +2952,7 @@ impl Simulation {
                         && self
                             .houses
                             .get(&listener)
-                            .is_some_and(|house| house.is_human)
+                            .is_some_and(|house| house.is_human())
                         && crate::map::houses::is_allied_with(
                             &self.house_alliances,
                             &victim_name,
@@ -3376,6 +3378,9 @@ impl Simulation {
             type_tech_levels: TypeTechLevels::default(),
             rule_handles: None,
             production: ProductionState::default(),
+            terrain_objects: Default::default(),
+            ore_growth_config: crate::sim::ore_growth::OreGrowthConfig::disabled(),
+            ore_growth_state: crate::sim::ore_growth::OreGrowthState::new(0, 0),
             session,
             #[cfg(feature = "debug-tools")]
             debug_tools: Default::default(),
@@ -3534,6 +3539,19 @@ impl Simulation {
         &self.substrate.entities
     }
 
+    /// The live terrain objects and their indexes. Read access for systems
+    /// above sim/.
+    pub fn terrain_objects(&self) -> &crate::sim::terrain_object::TerrainObjectStore {
+        &self.terrain_objects
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn terrain_objects_mut_for_test(
+        &mut self,
+    ) -> &mut crate::sim::terrain_object::TerrainObjectStore {
+        &mut self.terrain_objects
+    }
+
     /// Logic scheduling order, also consumed by the current radar pipeline.
     pub fn logic_order(&self) -> &[u64] {
         self.substrate.logic.as_slice()
@@ -3617,7 +3635,7 @@ impl Simulation {
         request: crate::sim::combat::SmudgeSpawnRequest,
     ) {
         let binary_frame = self.session.binary_frame();
-        let spread_enabled = self.production.ore_growth_config.spreads;
+        let spread_enabled = self.ore_growth_config.spreads();
         let priority = self.object_placement_scope_active();
         let mut construction = crate::sim::smudge_grid::SmudgeConstruction::new(
             &mut self.substrate.next_stable_object_id,
@@ -3635,9 +3653,9 @@ impl Simulation {
             self.overlay_grid.as_mut(),
             self.resolved_terrain.as_mut(),
             self.smudge_grid.as_mut(),
-            &mut self.production.ore_growth_state,
-            &self.production.tiberium_spawning_terrain_cells,
-            &self.production.terrain_object_cells,
+            &mut self.ore_growth_state,
+            self.terrain_objects.spawning_cells(),
+            self.terrain_objects.cell_index(),
             binary_frame,
             spread_enabled,
             &mut self.radar_terrain_dirty_cells,
@@ -3697,20 +3715,20 @@ impl Simulation {
     ) -> crate::sim::tiberium::ReduceTiberiumOutcome {
         let mut ctx = crate::sim::tiberium::ReduceTiberiumContext {
             overlay_grid: self.overlay_grid.as_mut(),
-            ore_growth_state: &mut self.production.ore_growth_state,
+            ore_growth_state: &mut self.ore_growth_state,
             overlay_registry,
             tiberium_types: rules.map(|rules| &rules.tiberium_types),
             resolved_terrain: self.resolved_terrain.as_mut(),
-            source_object_cells: Some(&self.production.tiberium_spawning_terrain_cells),
+            source_object_cells: Some(self.terrain_objects.spawning_cells()),
             live_objects: Some(crate::sim::tiberium::NativeCellObjectView::new(
                 &self.substrate.occupancy,
-                &self.production.terrain_object_cells,
+                self.terrain_objects.cell_index(),
             )),
             // ore growth/spread — scenario stream. Direct field: this literal
             // co-borrows other &mut self fields, so an all-self accessor conflicts.
             rng: Some(&mut self.scenario_rng),
             binary_frame: self.session.binary_frame(),
-            spread_enabled: self.production.ore_growth_config.spreads,
+            spread_enabled: self.ore_growth_config.spreads(),
             radar_dirty_cells: Some(&mut self.radar_terrain_dirty_cells),
             radar_dirty_generation: Some(&mut self.radar_terrain_dirty_generation),
             tactical_dirty_cells: Some(&mut self.tactical_dirty_cells),
@@ -3851,12 +3869,7 @@ impl Simulation {
         // Native TiberiumClass drivers run before the main live-object vector,
         // growth first and spread second.
         let native_growth_ready = !rules.tiberium_types.is_empty()
-            && self
-                .production
-                .ore_growth_state
-                .native_tiberium_state()
-                .classes
-                .len()
+            && self.ore_growth_state.native_tiberium_state().classes.len()
                 == rules.tiberium_types.len()
             && self.overlay_grid.is_some()
             && overlay_registry.is_some();
@@ -3867,37 +3880,37 @@ impl Simulation {
                 &self.substrate.raw_cell_occupation,
                 rules,
                 &self.interner,
-                &self.production.terrain_object_cells,
+                self.terrain_objects.cell_index(),
             );
             if let (Some(grid), Some(registry)) = (self.overlay_grid.as_mut(), overlay_registry) {
                 let dirty_start = grid.pending_dirty_cells().len();
-                self.production.ore_growth_state.tick_native_growth_driver(
+                self.ore_growth_state.tick_native_growth_driver(
                     grid,
                     registry,
                     &rules.tiberium_types,
                     self.resolved_terrain.as_ref(),
-                    &self.production.tiberium_spawning_terrain_cells,
+                    self.terrain_objects.spawning_cells(),
                     Some(live_objects),
                     &mut self.scenario_rng,
                     self.session.binary_frame(),
-                    self.production.ore_growth_config.grows,
-                    self.production.ore_growth_config.spreads,
-                    self.production.ore_growth_config.tiberium_grows_flag,
+                    self.ore_growth_config.grows(),
+                    self.ore_growth_config.spreads(),
+                    self.ore_growth_config.tiberium_grows_flag(),
                     Some(&mut self.radar_terrain_dirty_cells),
                     Some(&mut self.radar_terrain_dirty_generation),
                     Some(&mut self.tactical_dirty_cells),
                 );
-                let spread = self.production.ore_growth_state.tick_native_spread_driver(
+                let spread = self.ore_growth_state.tick_native_spread_driver(
                     grid,
                     registry,
                     &rules.tiberium_types,
                     self.resolved_terrain.as_ref(),
-                    &self.production.tiberium_spawning_terrain_cells,
+                    self.terrain_objects.spawning_cells(),
                     Some(live_objects),
                     &mut self.scenario_rng,
                     self.session.binary_frame(),
-                    self.production.ore_growth_config.grows,
-                    self.production.ore_growth_config.spreads,
+                    self.ore_growth_config.grows(),
+                    self.ore_growth_config.spreads(),
                     Some(&mut self.radar_terrain_dirty_cells),
                     Some(&mut self.radar_terrain_dirty_generation),
                     Some(&mut self.tactical_dirty_cells),
@@ -4060,7 +4073,7 @@ impl Simulation {
                     && self
                         .houses
                         .get(&entity.owner())
-                        .is_some_and(|house| house.is_human);
+                        .is_some_and(|house| house.is_human());
                 Some((stable_id, member, reveal))
             })
             .collect::<Vec<_>>();
@@ -4358,10 +4371,10 @@ impl Simulation {
                         .get(id)
                         .is_some_and(|system| system.in_logic_vector)
                     || self
-                        .production
                         .terrain_objects
+                        .objects()
                         .get(&id)
-                        .is_some_and(|terrain| terrain.in_logic_vector)
+                        .is_some_and(|terrain| terrain.in_logic_vector())
                     || self
                         .projectiles
                         .get(id)
@@ -4400,10 +4413,10 @@ impl Simulation {
             .filter(|(_, system)| system.in_logic_vector)
             .count();
         let flagged_terrain = self
-            .production
             .terrain_objects
+            .objects()
             .values()
-            .filter(|terrain| terrain.in_logic_vector)
+            .filter(|terrain| terrain.in_logic_vector())
             .count();
         let flagged_projectiles = self
             .projectiles
@@ -4578,7 +4591,7 @@ impl Simulation {
         // the tail stamps strictly increase AND exceed the factory's `insertion_seq`, its
         // construction stamp (FIFO `push_back` of a monotonic mint: every queued build was
         // stamped after the factory was made, and a promotion keeps the factory's stamp).
-        let ordered = self.production.factories.iter_insertion_ordered();
+        let ordered = self.production.factories().iter_insertion_ordered();
         let mut prev_seq: Option<u64> = None;
         for f in &ordered {
             if let Some(p) = prev_seq {
@@ -4608,7 +4621,7 @@ impl Simulation {
 
         // (B) STATE: progress in 0..=54; balance >= 0 (the seed is non-negative, the
         // per-step ladder only decrements it, and cancel resets it to 0).
-        for f in self.production.factories.iter_insertion_ordered() {
+        for f in self.production.factories().iter_insertion_ordered() {
             debug_assert!(
                 f.progress <= PRODUCTION_STEPS,
                 "P5b (B): tick {} {:?}/{:?}: progress {} exceeds {}",
@@ -4647,9 +4660,7 @@ impl Simulation {
         for (_, system) in self.substrate.particle_systems.iter_mut() {
             system.in_logic_vector = false;
         }
-        for terrain in self.production.terrain_objects.values_mut() {
-            terrain.in_logic_vector = false;
-        }
+        self.terrain_objects.clear_logic_memberships();
         for (_, projectile) in self.projectiles.iter_mut() {
             projectile.in_logic_vector = false;
         }
@@ -4667,8 +4678,7 @@ impl Simulation {
                 debris.in_logic_vector = true;
             } else if let Some(system) = self.substrate.particle_systems.get_mut(id) {
                 system.in_logic_vector = true;
-            } else if let Some(terrain) = self.production.terrain_objects.get_mut(&id) {
-                terrain.in_logic_vector = true;
+            } else if self.terrain_objects.set_logic_membership(id, true) {
             } else if let Some(projectile) = self.projectiles.get_mut(id) {
                 projectile.in_logic_vector = true;
             } else if let Some(wave) = self.waves.get_mut(id) {
@@ -4755,7 +4765,7 @@ impl Simulation {
             self.substrate.entities.get_mut(stable_id),
             self.houses.get_mut(&owner),
         ) {
-            update(&mut house.tracking, entity);
+            update(house.tracking_mut(), entity);
         }
     }
 
@@ -4853,7 +4863,7 @@ impl Simulation {
         };
         if let Some(house) = self.houses.get_mut(&entity.owner()) {
             let factors = house.cost_factors();
-            house.tracking.added_to_game(entity, &factors);
+            house.tracking_mut().added_to_game(entity, &factors);
         }
     }
 
@@ -4877,7 +4887,7 @@ impl Simulation {
         let owner = entity.owner();
         let structure = entity.category() == EntityCategory::Structure;
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.tracking.removed_from_game_prefix(entity);
+            house.tracking_mut().removed_from_game_prefix(entity);
         }
         self.powered_center_removed(stable_id, rules, effects);
         //50277B resumes after the callback prelude. Pin the original House
@@ -4886,7 +4896,7 @@ impl Simulation {
             && let Some(house) = self.houses.get_mut(&owner)
         {
             let factors = house.cost_factors();
-            house.tracking.removed_from_game(entity, &factors);
+            house.tracking_mut().removed_from_game(entity, &factors);
         }
         if structure {
             self.invalidate_house_power(owner, false);
@@ -4968,7 +4978,7 @@ impl Simulation {
                 .skip_radar_recheck();
             return;
         }
-        let buildings = self.houses[&owner].base_projection.buildings();
+        let buildings = self.houses[&owner].base_projection().buildings();
         power_system::assess_house_radar_projection(
             self.power_states
                 .get_mut(&owner)
@@ -4998,14 +5008,10 @@ impl Simulation {
         }) else {
             return;
         };
-        let _appended = if let Some(house) = self.houses.get_mut(&owner)
-            && !house.build_const_order.contains(&stable_id)
-        {
-            house.build_const_order.push(stable_id);
-            true
-        } else {
-            false
-        };
+        let _appended = self
+            .houses
+            .get_mut(&owner)
+            .is_some_and(|house| house.append_build_const(stable_id));
         #[cfg(any(test, feature = "test-support"))]
         if _appended {
             self.trace_lifecycle_for_test(LifecycleTestEvent::BuildConstAppended { stable_id });
@@ -5026,14 +5032,8 @@ impl Simulation {
         else {
             return;
         };
-        if eligible
-            && let Some(house) = self.houses.get_mut(&owner)
-            && let Some(index) = house
-                .build_const_order
-                .iter()
-                .position(|&id| id == stable_id)
-        {
-            house.build_const_order.remove(index);
+        if eligible && let Some(house) = self.houses.get_mut(&owner) {
+            house.remove_build_const(stable_id);
         }
     }
 
@@ -5056,7 +5056,7 @@ impl Simulation {
         self.houses.order().iter().copied().find(|owner| {
             self.houses
                 .get(owner)
-                .and_then(|house| house.country)
+                .and_then(|house| house.country())
                 .and_then(|id| rules.country_index(self.interner.resolve(id)))
                 == Some(country)
         })
@@ -5269,7 +5269,7 @@ impl Simulation {
                 .and_then(|entity| self.object_type(entity.type_ref(), rules))
                 .map_or(0, |object| self.cost_of(old_owner, object, rules));
             if let Some(house) = self.houses.get_mut(&new_owner) {
-                house.economy.add_score(cost);
+                house.economy_mut().add_score(cost);
             }
         }
         self.update_house_tracking(
@@ -5281,11 +5281,11 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(stable_id)
             && let Some(house) = self.houses.get_mut(&new_owner)
         {
-            house.tracking.add_tracking(entity);
+            house.tracking_mut().add_tracking(entity);
             //701607..70164D: DontScore suppresses this captured-object
             //count, not the preceding old-House price addition.
             if !entity.tracking_facts.dont_score() {
-                house.stats.record_kill(category);
+                house.stats_mut().record_kill(category);
             }
         }
         //701674 Mark(UP),70D4A0 detach and701691 Mark(DOWN) all precede
@@ -5349,10 +5349,10 @@ impl Simulation {
         // whether it is in limbo or not.
         if let Some(entity) = self.substrate.entities.get(stable_id) {
             if let Some(house) = self.houses.get_mut(&old_owner) {
-                house.tracking.recount(entity);
+                house.tracking_mut().recount(entity);
             }
             if let Some(house) = self.houses.get_mut(&new_owner) {
-                house.tracking.increment_factory_count(entity);
+                house.tracking_mut().increment_factory_count(entity);
             }
         }
         // A Helipad's docks leave the old house's AirportDocks
@@ -5370,7 +5370,7 @@ impl Simulation {
         {
             for (owner, delta) in [(old_owner, docks.wrapping_neg()), (new_owner, docks)] {
                 if let Some(house) = self.houses.get_mut(&owner) {
-                    house.tracking.add_airport_docks(delta);
+                    house.tracking_mut().add_airport_docks(delta);
                 }
             }
         }
@@ -5403,11 +5403,8 @@ impl Simulation {
                 .mind_control
                 .clear_house_original_owner_on_owner_change();
         }
-        if build_const_eligible
-            && let Some(house) = self.houses.get_mut(&new_owner)
-            && !house.build_const_order.contains(&stable_id)
-        {
-            house.build_const_order.push(stable_id);
+        if build_const_eligible && let Some(house) = self.houses.get_mut(&new_owner) {
+            house.append_build_const(stable_id);
         }
         if category == EntityCategory::Structure {
             self.join_house_base_lists(stable_id, old_owner, new_owner, rules);
@@ -5456,7 +5453,7 @@ impl Simulation {
             && self
                 .houses
                 .get(&new_owner)
-                .is_some_and(|house| house.is_human)
+                .is_some_and(|house| house.is_human())
         {
             self.leave_team(stable_id, false, rules, effects);
         }
@@ -5806,7 +5803,7 @@ impl Simulation {
         // serialized Terrain objects must overwrite that derived projection.
         // Clear every known source first so Limbo/Destroyed objects stay absent,
         // then replay only live objects through the shared occupation writer.
-        let terrain_objects: Vec<_> = self.production.terrain_objects.values().cloned().collect();
+        let terrain_objects: Vec<_> = self.terrain_objects.objects().values().cloned().collect();
         for terrain in &terrain_objects {
             crate::sim::terrain_object::unmark_terrain_occupation(
                 terrain,
@@ -5850,9 +5847,7 @@ impl Simulation {
         for (_, system) in self.substrate.particle_systems.iter_mut() {
             system.in_logic_vector = false;
         }
-        for terrain in self.production.terrain_objects.values_mut() {
-            terrain.in_logic_vector = false;
-        }
+        self.terrain_objects.clear_logic_memberships();
         for (_, projectile) in self.projectiles.iter_mut() {
             projectile.in_logic_vector = false;
         }
@@ -5870,8 +5865,7 @@ impl Simulation {
                 debris.in_logic_vector = true;
             } else if let Some(system) = self.substrate.particle_systems.get_mut(id) {
                 system.in_logic_vector = true;
-            } else if let Some(terrain) = self.production.terrain_objects.get_mut(&id) {
-                terrain.in_logic_vector = true;
+            } else if self.terrain_objects.set_logic_membership(id, true) {
             } else if let Some(projectile) = self.projectiles.get_mut(id) {
                 projectile.in_logic_vector = true;
             } else if let Some(wave) = self.waves.get_mut(id) {
@@ -6162,7 +6156,7 @@ impl Simulation {
         let mut cell_target_detaches = Vec::new();
         let mut host = SimulationWallRuntimeHost {
             entities: &mut self.substrate.entities,
-            target_terrain_objects: &self.production.terrain_objects,
+            target_terrain_objects: self.terrain_objects.objects(),
             #[cfg(any(test, feature = "test-support"))]
             detach_trace: &mut cell_target_detaches,
             radar_dirty_cells: &mut self.radar_terrain_dirty_cells,
@@ -6202,7 +6196,7 @@ impl Simulation {
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Selling);
         let mut active = BTreeSet::new();
         for (&owner, house) in &self.houses {
-            for &stable_id in house.base_projection.buildings() {
+            for &stable_id in house.base_projection().buildings() {
                 let Some(entity) = self.substrate.entities.get(stable_id) else {
                     continue;
                 };
@@ -6272,7 +6266,7 @@ impl Simulation {
             .iter()
             .filter_map(|(&owner, house)| {
                 let active = active_owners.contains(&owner);
-                (house.spy_sat_active != active).then_some((owner, active))
+                (house.spy_sat_active() != active).then_some((owner, active))
             })
             .collect();
         for (owner, active) in transitions {
@@ -6283,7 +6277,7 @@ impl Simulation {
                 self.reset_shroud_for_owner(owner, rules);
             }
             if let Some(house) = self.houses.get_mut(&owner) {
-                house.spy_sat_active = active;
+                house.record_spy_sat(active);
                 // House509069/509017 stores577A after the Map callback;
                 //509090/50903F then requests the current PlayerPtr's cue.
                 // Native750920 receives center8192, volume1f and NULL handle.
@@ -6320,7 +6314,7 @@ impl Simulation {
         let iq_production = rules.map(|rules| rules.general.iq_production);
         let represented = self.houses.contains_key(&owner);
         if let Some((house, house_order)) = self.houses.get_mut_with_order(&owner) {
-            house_strategy::decay_anger_scores(house, house_order, current_frame);
+            house.decay_anger_scores(house_order, current_frame);
         }
         if represented {
             #[cfg(any(test, feature = "test-support"))]
@@ -7332,10 +7326,6 @@ mod rng_routing_tests;
 #[cfg(test)]
 #[path = "slice6_retask_tests.rs"]
 mod slice6_retask_tests;
-
-#[cfg(test)]
-#[path = "mission_authoritative_tests.rs"]
-mod mission_authoritative_tests;
 
 #[cfg(test)]
 #[path = "global_parity_harness_tests.rs"]

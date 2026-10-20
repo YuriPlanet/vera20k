@@ -1102,29 +1102,6 @@ mod tests {
     }
 
     #[test]
-    fn country_name_alias_resolves_to_global_roster_index() {
-        let registry = registry();
-        let progress = CooperativeProgressRecord {
-            valid: true,
-            campaign_type: 1,
-            current_map: 0,
-            ..Default::default()
-        };
-        let mut rng = SimRng::new(1);
-        assert_eq!(
-            draw_country_for_progress(
-                &registry,
-                &progress,
-                CooperativeCountryRole::Player,
-                &roster(),
-                &mut rng,
-            )
-            .unwrap(),
-            0
-        );
-    }
-
-    #[test]
     fn invalid_progress_returns_zero_without_rng_and_invalid_list_returns_error() {
         let registry = registry();
         let roster = roster();

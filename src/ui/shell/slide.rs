@@ -177,6 +177,24 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         top_panel: true,
         campaign_score: false,
     },
+    // WOL setup C2 (Start, Choose Map, Page) and C9 (Accept, Page) keep
+    // BC/BD's top panel and map button.
+    SlideDialogSpec {
+        dialog_id: 0x00C2,
+        top_buttons: 3,
+        bottom_button: true,
+        map_button: true,
+        top_panel: true,
+        campaign_score: false,
+    },
+    SlideDialogSpec {
+        dialog_id: 0x00C9,
+        top_buttons: 2,
+        bottom_button: true,
+        map_button: true,
+        top_panel: true,
+        campaign_score: false,
+    },
     SlideDialogSpec {
         dialog_id: 0x00D7,
         top_buttons: 1,
@@ -255,6 +273,26 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         bottom_button: true,
         map_button: false,
         top_panel: false,
+        campaign_score: false,
+    },
+    // WOL login 0x10F: Login, Forget Account (disabled, still counted by
+    // 0x0060A180) and Manage Account, then Back. The custom lobby 0x113:
+    // eight top-list buttons (0x00608CD0), Back, and the top panel (+0xD5,
+    // 0x00622820); its runtime button visibility is not yet observed.
+    SlideDialogSpec {
+        dialog_id: 0x010F,
+        top_buttons: 3,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+        campaign_score: false,
+    },
+    SlideDialogSpec {
+        dialog_id: 0x0113,
+        top_buttons: 8,
+        bottom_button: true,
+        map_button: false,
+        top_panel: true,
         campaign_score: false,
     },
     SlideDialogSpec {
@@ -410,16 +448,30 @@ impl SlideColumn {
 
     /// The SDBTNANM draws of `tick` in the engine's order (later on top): the
     /// regular rows top to bottom, then the bottom button.
+    /// The engine's start-tick table (`rows + 3` ints, `0x006075A0..`):
+    /// row `c < rows` starts at `c + 1`; slot `rows` (the map button's) is 0,
+    /// `rows + 1` (the top panel's) is `rows + 3` and `rows + 2` is 0. Top
+    /// buttons past the panel (`0x113`'s eight at 640x480) read those slots.
+    fn entry_tick(self, c: u32) -> i32 {
+        let rows = self.rows;
+        match c {
+            c if c < rows => c as i32 + 1,
+            c if c == rows + 1 => rows as i32 + 3,
+            _ => 0,
+        }
+    }
+
     pub(crate) fn button_draws(self, tick: u32, direction: WaveDirection) -> Vec<ColumnDraw> {
         let tick = tick as i32;
         let first = u32::from(self.map_button);
         // Top buttons claim their rows even where the bottom button already
-        // has the last one: `0x10E`'s six top buttons at 640x480 (six rows)
-        // draw row 5 twice, as the executed engine does.
+        // has the last one, and past the panel: `0x10E`'s six top buttons at
+        // 640x480 (six rows) draw row 5 twice, `0x113`'s eight draw rows 6
+        // and 7 below it, as the executed engine does.
         let regular = self
             .rows
             .saturating_sub(u32::from(self.bottom_button))
-            .max(self.top_buttons.min(self.rows));
+            .max(self.top_buttons);
         let mut draws: Vec<ColumnDraw> = (0..regular)
             .map(|c| {
                 let group = if c < self.top_buttons {
@@ -429,7 +481,7 @@ impl SlideColumn {
                 };
                 ColumnDraw {
                     row: first + c,
-                    frame: frame_for_tick(tick, c as i32 + 1, group, direction),
+                    frame: frame_for_tick(tick, self.entry_tick(c), group, direction),
                 }
             })
             .collect();
@@ -929,7 +981,7 @@ mod tests {
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 96);
+        assert_eq!(cases.len(), 120);
         for case in cases {
             let dialog = case["dialog"].as_str().unwrap();
             let dialog_id = u16::from_str_radix(dialog.trim_start_matches("0x"), 16).unwrap();

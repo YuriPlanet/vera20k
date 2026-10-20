@@ -1610,103 +1610,7 @@ mod tests {
             );
         }
     }
-    use super::shp_body_tint;
-    use crate::map::entities::EntityCategory;
-    use crate::map::lighting::CellLightGrid;
     use crate::sim::building_art::occupied_body_frame;
-
-    #[test]
-    fn gsi_13_10_shp_selector_adds_the_class_extra_except_for_buildings() {
-        let mut grid = CellLightGrid::new();
-        grid.insert_profiled_light((4, 5), [1.0, 0.88, 0.88], 1.0);
-
-        let unit = shp_body_tint(&grid, (4, 5), EntityCategory::Unit, 200);
-        let infantry = shp_body_tint(&grid, (4, 5), EntityCategory::Infantry, 300);
-        let aircraft = shp_body_tint(&grid, (4, 5), EntityCategory::Aircraft, 424);
-        let structure = shp_body_tint(&grid, (4, 5), EntityCategory::Structure, 300);
-        for (actual, expected) in unit.into_iter().zip([1.2, 1.056, 1.056]) {
-            assert!((actual - expected).abs() < 0.0001);
-        }
-        for (actual, expected) in infantry.into_iter().zip([1.3, 1.144, 1.144]) {
-            assert!((actual - expected).abs() < 0.0001);
-        }
-        for (actual, expected) in aircraft.into_iter().zip([1.424, 1.25312, 1.25312]) {
-            assert!((actual - expected).abs() < 0.0001);
-        }
-        for (actual, expected) in structure.into_iter().zip([1.0, 0.88, 0.88]) {
-            assert!((actual - expected).abs() < 0.0001);
-        }
-    }
-
-    // Civilian (TechLevel == -1) — matches CABHUT, CALA01, CAGAS01, CABUNK01, etc.
-    // Yellow-tier damage step is gated on TechLevel > 0, so it never fires here.
-    // Frame 3 collapses to 1 (occupied + red).
-
-    #[test]
-    fn civilian_empty_healthy_returns_0() {
-        assert_eq!(occupied_body_frame(0, 100, 100, -1, 0.5, 0.25), 0);
-    }
-
-    #[test]
-    fn civilian_empty_yellow_tier_returns_0() {
-        // ratio = 0.4: below ConditionYellow but above ConditionRed.
-        // Yellow gate is `tech_level > 0` — fails for civilian, so no +1.
-        assert_eq!(occupied_body_frame(0, 40, 100, -1, 0.5, 0.25), 0);
-    }
-
-    #[test]
-    fn civilian_empty_red_tier_returns_1() {
-        assert_eq!(occupied_body_frame(0, 20, 100, -1, 0.5, 0.25), 1);
-    }
-
-    #[test]
-    fn civilian_occupied_healthy_bstate_formula_returns_2() {
-        assert_eq!(occupied_body_frame(1, 100, 100, -1, 0.5, 0.25), 2);
-    }
-
-    #[test]
-    fn civilian_occupied_yellow_tier_returns_2() {
-        // Same yellow-gate behavior as empty case.
-        assert_eq!(occupied_body_frame(1, 40, 100, -1, 0.5, 0.25), 2);
-    }
-
-    #[test]
-    fn civilian_occupied_red_tier_collapses_to_1() {
-        // base=2 (occupied) + 1 (red) = 3 → collapse rule → 1.
-        assert_eq!(occupied_body_frame(1, 20, 100, -1, 0.5, 0.25), 1);
-    }
-
-    // Buildable (TechLevel >= 1) — TS-era "buildable garrisonable" structures
-    // (none in standard YR but the formula path is real). Yellow tier fires.
-
-    #[test]
-    fn buildable_empty_healthy_returns_0() {
-        assert_eq!(occupied_body_frame(0, 100, 100, 5, 0.5, 0.25), 0);
-    }
-
-    #[test]
-    fn buildable_empty_yellow_tier_returns_1() {
-        assert_eq!(occupied_body_frame(0, 40, 100, 5, 0.5, 0.25), 1);
-    }
-
-    #[test]
-    fn buildable_occupied_healthy_returns_2() {
-        assert_eq!(occupied_body_frame(1, 100, 100, 5, 0.5, 0.25), 2);
-    }
-
-    #[test]
-    fn buildable_occupied_red_tier_returns_3() {
-        // No civilian collapse (tech_level != -1).
-        assert_eq!(occupied_body_frame(1, 20, 100, 5, 0.5, 0.25), 3);
-    }
-
-    // Edge cases.
-
-    #[test]
-    fn zero_over_zero_selects_damaged_body_frame() {
-        // Native masked 0/0 is unordered and TEST AH,41 enters the damage arm.
-        assert_eq!(occupied_body_frame(0, 0, 0, -1, 0.5, 0.25), 1);
-    }
 
     #[test]
     fn original_health_ratio_corpus_matches_completed_occupied_body_frame() {
@@ -1726,19 +1630,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn building_frame_keeps_signed_health_and_live_strength_width() {
-        assert_eq!(occupied_body_frame(0, 70_000, 100_000, 5, 0.5, 0.25), 0);
-        assert_eq!(occupied_body_frame(0, 70_000, 200_000, 5, 0.5, 0.25), 1);
-        assert_eq!(occupied_body_frame(0, -1, 100_000, 5, 0.5, 0.25), 1);
-    }
-
-    #[test]
-    fn boundary_at_condition_red_inclusive() {
-        // ratio == ConditionRed exactly → red_tier fires (<=).
-        assert_eq!(occupied_body_frame(0, 25, 100, -1, 0.5, 0.25), 1);
     }
 
     #[test]

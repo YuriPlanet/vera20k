@@ -153,11 +153,6 @@ impl ResponseSelection {
         }
     }
 
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn remaining_budget(&self) -> i32 {
-        self.remaining_budget
-    }
-
     pub(crate) fn can_scan(&self) -> bool {
         self.remaining_budget > 0
     }
@@ -453,7 +448,7 @@ pub(crate) fn respond_to_base_attack(
     ) || world
         .houses
         .get(&victim_owner)
-        .is_some_and(|house| house.is_human)
+        .is_some_and(|house| house.is_human())
         || attacker.lifecycle.in_limbo()
         // `0x00708114`: `[g_GameMode 0x00A8B238] == 0 && this->Is_Armed
         // (vt+0x2AC)` — an armed victim in that game mode defends itself

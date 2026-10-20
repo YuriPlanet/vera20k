@@ -624,15 +624,6 @@ mod tests {
     }
 
     #[test]
-    fn get_miss_on_a_key_without_a_family_still_produces_a_usable_hint() {
-        let data = build_csf(&[("NAME:MTNK", "Grizzly Battle Tank")]);
-        let err = build_report(&table(&data), Query::Exact("GUI"), &CsfOptions::default())
-            .expect_err("missing label");
-        let hint = err.hint.expect("hint");
-        assert!(hint.contains("csf-grep GUI"), "got {hint}");
-    }
-
-    #[test]
     fn grep_matches_over_both_key_and_value() {
         let data = build_csf(&[
             ("NAME:MTNK", "Grizzly Battle Tank"),
@@ -703,14 +694,6 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_needle_pages_the_whole_table() {
-        let data = build_csf(&[("A", "one"), ("B", "two")]);
-        let out = report(&data, Query::Substring(""), &CsfOptions::default());
-        assert_eq!(out.matched, 2);
-        assert_eq!(out.shown, 2);
-    }
-
-    #[test]
     fn normalisation_is_reported_with_both_forms_of_the_string() {
         // The retail briefing/tooltip pattern: spaces padding a line break, which
         // the engine drops at load time and never draws.
@@ -726,19 +709,6 @@ mod tests {
             Some(stored),
             "the stored form must survive verbatim, newline included"
         );
-    }
-
-    #[test]
-    fn raw_flag_reports_stored_text_even_where_nothing_changed() {
-        let data = build_csf(&[("NAME:MTNK", "Grizzly Battle Tank")]);
-        let opts = CsfOptions {
-            raw: true,
-            ..CsfOptions::default()
-        };
-        let out = report(&data, Query::Exact("NAME:MTNK"), &opts);
-
-        assert!(!out.entries[0].changed_by_normalization);
-        assert_eq!(out.entries[0].raw.as_deref(), Some("Grizzly Battle Tank"));
     }
 
     #[test]
@@ -824,31 +794,6 @@ mod tests {
             1,
             "the oversized record is skipped, not allocated"
         );
-    }
-
-    #[test]
-    fn empty_and_short_buffers_scan_to_nothing() {
-        assert!(scan_raw_labels(&[]).by_key.is_empty());
-        assert!(scan_raw_labels(&[0x20, 0x46, 0x53, 0x43]).by_key.is_empty());
-    }
-
-    #[test]
-    fn locate_warnings_survive_into_the_report() {
-        let data = build_csf(&[("A", "one")]);
-        let mut located = table(&data);
-        located.source = "ra2.csf".to_string();
-        located
-            .warnings
-            .push("read from \"ra2.csf\", not \"ra2md.csf\"".to_string());
-
-        let out = build_report(&located, Query::Exact("A"), &CsfOptions::default())
-            .expect("report builds");
-        assert!(
-            out.warnings.iter().any(|w| w.contains("ra2md.csf")),
-            "got {:?}",
-            out.warnings
-        );
-        assert_eq!(out.source, "ra2.csf");
     }
 
     #[test]

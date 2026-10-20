@@ -579,20 +579,17 @@ fn fresh_begin_owns_native_slope_frame_without_eager_retained_allocation() {
     }
 }
 
+/// Far-move reuse, refusals, end and repeat; a stopped pad setter releasing
+/// the complete Drive before the teleport move; a moving pad setter stopping,
+/// then Foot's end releasing the same complete Drive.
 #[test]
-fn far_move_reuse_refusals_end_and_repeat_match_complete_native_instances() {
+fn drive_instance_controls_match_complete_native_instances() {
     let data = corpus();
-    replay(control(&data, "far_fresh_reuse_end_repeat"));
-}
-
-#[test]
-fn stopped_pad_setter_releases_complete_drive_before_teleport_move() {
-    let data = corpus();
-    replay(control(&data, "pad_stopped_end"));
-}
-
-#[test]
-fn moving_pad_setter_stops_then_foot_end_releases_same_complete_drive() {
-    let data = corpus();
-    replay(control(&data, "pad_moving_refused_stop_end"));
+    for name in [
+        "far_fresh_reuse_end_repeat",
+        "pad_stopped_end",
+        "pad_moving_refused_stop_end",
+    ] {
+        replay(control(&data, name));
+    }
 }

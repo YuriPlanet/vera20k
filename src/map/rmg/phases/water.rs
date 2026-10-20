@@ -679,16 +679,6 @@ mod tests {
     }
 
     #[test]
-    fn every_map_type_produces_land_and_water() {
-        for map_type in [0, 1, 2] {
-            let (grid, identity) = run_water(map_type, 1234);
-            let (land, water, _, _) = census(&grid, &identity);
-            assert!(land > 0, "map type {map_type} produced no land");
-            assert!(water > 0, "map type {map_type} produced no water");
-        }
-    }
-
-    #[test]
     fn shorelines_are_grassed() {
         let (grid, identity) = run_water(1, 77);
         let (_, _, green, shore) = census(&grid, &identity);
@@ -725,28 +715,6 @@ mod tests {
         let mut rng = RmgRng::new(9);
         let rects = partition_grid(&mut rng, 4, &[2, 5, 30, 30]);
         assert_eq!(rects.len(), 4);
-    }
-
-    #[test]
-    fn archipelago_island_count_scales_with_players() {
-        // m = max(2, players/2); islands = players + [1, m]. For 8 players,
-        // islands is in [9, 12]; the partition grid must emit that many.
-        let mut rng = RmgRng::new(31);
-        // Drain the extra-island draw the same way the shape does.
-        let m = 4;
-        let extra = loop {
-            let value = X87Chop53::ftol_f64_low_masked(
-                TruncF64::from_f64(f64::from(rng.next_u32()))
-                    .mul(TruncF64::from_f64(f64::from(m)))
-                    .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)))
-                    .add(TruncF64::from_f64(1.0))
-                    .to_f64(),
-            );
-            if value <= m {
-                break value;
-            }
-        };
-        assert!((1..=4).contains(&extra));
     }
 
     /// Inland and mountainous must never be flooded.

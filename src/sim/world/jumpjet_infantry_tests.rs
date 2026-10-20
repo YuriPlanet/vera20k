@@ -1143,7 +1143,7 @@ fn a_shot_down_rocketeer_falls_like_the_native_crash() {
             assert_eq!(
                 crate::sim::mission::concrete_effects::assign_target_commits(
                     &sim.substrate.entities,
-                    &sim.production.terrain_objects,
+                    sim.terrain_objects.objects(),
                     Some(crate::sim::combat::TargetKind::Entity(1)),
                 ),
                 expected["health"].as_i64() != Some(0)

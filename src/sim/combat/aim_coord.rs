@@ -157,8 +157,8 @@ mod tests {
             ),
             1
         );
-        let tree = world.production.terrain_object_cells[&(10, 10)];
-        let retained = world.production.terrain_objects[&tree].world_coord();
+        let tree = world.terrain_objects.cell_index()[&(10, 10)];
+        let retained = world.terrain_objects.objects()[&tree].world_coord();
         let target = Some(TargetKind::Entity(tree));
         assert_eq!(
             led_target_coordinate(&world, rules, firer, target),

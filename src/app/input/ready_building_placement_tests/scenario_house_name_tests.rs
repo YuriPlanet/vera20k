@@ -204,8 +204,8 @@ fn authored_computer_barracks_is_captured_and_delivers_paid_e2() {
         "capture must unlock the retained E2 cameo"
     );
     let e2 = fixture.sim.interner.get("E2").unwrap();
-    let credits = fixture.sim.houses[&local].economy.credits();
-    let spent = fixture.sim.houses[&local].economy.spent_credits();
+    let credits = fixture.sim.houses[&local].economy().credits();
+    let spent = fixture.sim.houses[&local].economy().spent_credits();
     let cost = fixture
         .sim
         .cost_of(local, fixture.rules.object("E2").unwrap(), &fixture.rules);
@@ -231,7 +231,7 @@ fn authored_computer_barracks_is_captured_and_delivers_paid_e2() {
         if let Some(product) = fixture
             .sim
             .production
-            .factories
+            .factories()
             .view(local, ProductionCategory::Infantry)
             .and_then(|factory| factory.object)
         {
@@ -241,7 +241,7 @@ fn authored_computer_barracks_is_captured_and_delivers_paid_e2() {
                 .expect("the Factory retains the paid E2 body");
             assert!(held.is_none_or(|previous| previous == id));
             held = Some(id);
-            if !saved && fixture.sim.houses[&local].economy.spent_credits() > spent {
+            if !saved && fixture.sim.houses[&local].economy().spent_credits() > spent {
                 fixture.sim.session.set_started(true);
                 roundtrip_fixture_save(&mut fixture, "scenario-house-captured-barracks");
                 assert_eq!(fixture.sim.session.current_house(), Some(local));
@@ -277,9 +277,12 @@ fn authored_computer_barracks_is_captured_and_delivers_paid_e2() {
         product.health.current(),
         fixture.rules.object("E2").unwrap().strength
     );
-    assert_eq!(fixture.sim.houses[&local].economy.credits(), credits - cost);
     assert_eq!(
-        fixture.sim.houses[&local].economy.spent_credits(),
+        fixture.sim.houses[&local].economy().credits(),
+        credits - cost
+    );
+    assert_eq!(
+        fixture.sim.houses[&local].economy().spent_credits(),
         spent + cost
     );
     for _ in 0..32 {
@@ -290,7 +293,7 @@ fn authored_computer_barracks_is_captured_and_delivers_paid_e2() {
         fixture
             .sim
             .production
-            .factories
+            .factories()
             .view(local, ProductionCategory::Infantry)
             .is_none_or(|factory| factory.object.is_none()),
         "delivery clears the Factory's held object"
@@ -307,7 +310,7 @@ fn authored_computer_barracks_is_captured_and_delivers_paid_e2() {
         1
     );
     assert_eq!(
-        fixture.sim.houses[&local].economy.credits(),
+        fixture.sim.houses[&local].economy().credits(),
         credits - cost,
         "no extra product or charge after exit"
     );

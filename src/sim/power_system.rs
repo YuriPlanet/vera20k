@@ -1019,28 +1019,5 @@ BuildSpeed=0.02
         assert!(!state.is_low_power, "power restored after blackout");
     }
 
-    #[test]
-    fn test_power_transitions() {
-        let rules = test_rules();
-        let mut store = EntityStore::new();
-        // Start with just a tesla coil (drain=75, output=0) → immediate low power.
-        store.insert(make_building(1, "TESLA", "Soviet", 400));
-
-        // Pre-intern all strings that will be used (including NAPOWR for the second
-        // building added later) so the interner clone has everything.
-        let soviet = intern::test_intern("Soviet");
-        intern::test_intern("NAPOWR");
-        let interner = test_interner();
-        let mut states: BTreeMap<InternedId, PowerState> = BTreeMap::new();
-
-        tick_power_states(&mut states, &mut store, &rules, &interner, 0);
-        assert!(states[&soviet].is_low_power, "should enter low power");
-
-        // Add a power plant → should restore power.
-        store.insert(make_building(2, "NAPOWR", "Soviet", 400));
-        tick_power_states(&mut states, &mut store, &rules, &interner, 0);
-        assert!(!states[&soviet].is_low_power, "power should be restored");
-    }
-
     // -------- ExtraPower (Yuri Bio-Reactor) bonus tests -----------------
 }

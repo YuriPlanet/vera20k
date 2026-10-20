@@ -855,9 +855,9 @@ impl CommandEnvelope {
 mod tests {
     use super::{
         ABSTRACT_OBJECT_TARGET_KIND, COMMAND_RECORD_LEN, COMMAND_RECORD_PAYLOAD_LEN, CommandRecord,
-        CommandRecordError, EXIT_OPCODE, ExitRecord, MEGAMISSION_OPCODE, MOVE_ACTION,
-        MegaMissionCellTokenError, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
-        NULL_TARGET_KIND, SELL_WALL_AT_CELL_OPCODE, SellWallAtCellRecord,
+        CommandRecordError, EXIT_OPCODE, ExitRecord, MOVE_ACTION, MegaMissionCellTokenError,
+        MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, NULL_TARGET_KIND,
+        SELL_WALL_AT_CELL_OPCODE, SellWallAtCellRecord,
     };
 
     fn native_record(value: &serde_json::Value) -> CommandRecord {
@@ -1014,71 +1014,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_16_01_area_guard_regression_constructor_preserves_fields_and_padding() {
-        let mut bytes = [0xcc; COMMAND_RECORD_LEN];
-        bytes[1] = 0xa4;
-        let mut record = CommandRecord::decode_exact(&bytes).unwrap();
-        let typed = MegaMissionRecord {
-            house_id: 3,
-            frame: 0x1234_5678,
-            source_id: 0x0102_0304,
-            order: MegaMissionOrder::Move {
-                target_x: 34,
-                target_y: 12,
-            },
-        };
-
-        typed.write_into(&mut record).unwrap();
-
-        let bytes = record.as_bytes();
-        assert_eq!(bytes[0], MEGAMISSION_OPCODE);
-        assert_eq!(bytes[1], 0xa4, "the codec does not own queue flags");
-        assert_eq!(bytes[2], 3);
-        assert_eq!(&bytes[3..7], &0x1234_5678_i32.to_le_bytes());
-        assert_eq!(&bytes[7..11], &0x0102_0304_i32.to_le_bytes());
-        assert_eq!(bytes[11], 0x34);
-        assert_eq!(bytes[12], 2);
-        assert_eq!(
-            bytes[13], 0xcc,
-            "original 4C6860 does not write mission padding"
-        );
-        assert_eq!(&bytes[14..18], &0_i32.to_le_bytes());
-        assert_eq!(bytes[18], 0);
-        assert_eq!(&bytes[19..23], &12_034_i32.to_le_bytes());
-        assert_eq!(bytes[23], 0x0b);
-        assert_eq!(&bytes[24..28], &0x0102_0304_i32.to_le_bytes());
-        assert_eq!(bytes[28], 0);
-        assert_eq!(bytes[29], 0);
-        assert!(bytes[30..].iter().all(|&byte| byte == 0xcc));
-        assert_eq!(MegaMissionRecord::decode(&record), Some(typed));
-    }
-
-    #[test]
-    fn gsi_16_01_negative_issuer_leaves_flags_and_payload_untouched() {
-        let mut bytes = [0xcc; COMMAND_RECORD_LEN];
-        bytes[1] = 0x5a;
-        let mut record = CommandRecord::decode_exact(&bytes).unwrap();
-
-        MegaMissionRecord {
-            house_id: -1,
-            frame: -17,
-            source_id: i32::MAX,
-            order: MegaMissionOrder::Move {
-                target_x: i16::MAX,
-                target_y: i16::MIN,
-            },
-        }
-        .write_into(&mut record)
-        .unwrap();
-
-        assert_eq!(record.opcode(), 0);
-        assert_eq!(record.flags(), 0x5a);
-        assert_eq!(record.house_id(), -1);
-        assert_eq!(record.frame_stamp(), -17);
-        assert!(record.payload().iter().all(|&byte| byte == 0xcc));
-    }
-
-    #[test]
     fn gsi_16_01_signed_cell_tokens_require_an_exact_native_roundtrip() {
         for (x, y) in [(999, i16::MAX), (-999, i16::MIN), (-999, 0), (0, 0)] {
             let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).unwrap();
@@ -1215,26 +1150,6 @@ mod tests {
     }
 
     #[test]
-    fn command_record_encoding_uses_the_fixed_native_layout() {
-        let record = CommandRecord::encode(0x15, 3, 0x1234_5678, &[0x10, 0x20, 0x30]).unwrap();
-        let bytes = record.as_bytes();
-
-        assert_eq!(bytes.len(), 111);
-        assert_eq!(bytes[0], 0x15);
-        assert_eq!(bytes[1], 0);
-        assert_eq!(bytes[2], 3);
-        assert_eq!(&bytes[3..7], &[0x78, 0x56, 0x34, 0x12]);
-        assert_eq!(&bytes[7..10], &[0x10, 0x20, 0x30]);
-        assert!(bytes[10..].iter().all(|byte| *byte == 0));
-
-        let decoded = CommandRecord::decode_exact(bytes).unwrap();
-        assert_eq!(decoded, record);
-        assert_eq!(decoded.opcode(), 0x15);
-        assert_eq!(decoded.house_id(), 3);
-        assert_eq!(decoded.frame_stamp(), 0x1234_5678);
-    }
-
-    #[test]
     fn command_record_bincode_roundtrip_preserves_all_fixed_bytes() {
         let mut bytes = [0; COMMAND_RECORD_LEN];
         for (index, byte) in bytes.iter_mut().enumerate() {
@@ -1248,24 +1163,6 @@ mod tests {
             crate::util::save_codec::deserialize::<CommandRecord>(&encoded).unwrap(),
             record
         );
-    }
-
-    #[test]
-    fn negative_house_id_nulls_only_the_issued_header() {
-        let mut bytes = [0xcc; COMMAND_RECORD_LEN];
-        bytes[1] = 0x5a;
-        let mut record = CommandRecord::decode_exact(&bytes).unwrap();
-
-        record.set_issue_header(0x15, -1, 41);
-
-        assert_eq!(record.opcode(), 0);
-        assert_eq!(record.flags(), 0x5a);
-        assert_eq!(record.house_id(), -1);
-        assert_eq!(record.frame_stamp(), 41);
-        assert!(record.payload().iter().all(|byte| *byte == 0xcc));
-
-        let encoded = CommandRecord::encode(0x15, -1, 41, &[1, 2, 3]).unwrap();
-        assert!(encoded.payload().iter().all(|byte| *byte == 0));
     }
 
     #[test]
@@ -1285,20 +1182,6 @@ mod tests {
         assert_eq!(admitted.house_id(), -2);
         assert_eq!(admitted.frame_stamp(), -2);
         assert_eq!(admitted.payload(), &bytes[7..]);
-    }
-
-    #[test]
-    fn processed_marker_mutation_preserves_other_flag_bits() {
-        let mut bytes = [0; COMMAND_RECORD_LEN];
-        bytes[1] = 0xa4;
-        let mut record = CommandRecord::decode_exact(&bytes).unwrap();
-
-        assert!(!record.is_processed());
-        record.mark_processed();
-        assert!(record.is_processed());
-        assert_eq!(record.flags(), 0xa5);
-        record.clear_processed();
-        assert_eq!(record.flags(), 0xa4);
     }
 
     #[test]

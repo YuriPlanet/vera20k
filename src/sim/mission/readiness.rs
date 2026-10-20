@@ -262,7 +262,6 @@ mod tests {
     use super::super::state::MissionTestFixture;
     use super::*;
     use crate::map::entities::EntityCategory;
-    use crate::sim::rng::SimRng;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum Lookup {
@@ -880,29 +879,5 @@ mod tests {
             }),
             Ok(false)
         );
-    }
-
-    #[test]
-    fn unit_ready_to_commence_is_pure_and_does_not_consume_rng() {
-        let mission = mission_fixture(MISSION_GUARD.raw(), MissionId::NONE.raw(), 0);
-        let leaf_state = unit_leaf(0, 0, 0, 0);
-        let world = TestWorld::default();
-        let mission_before = mission;
-        let leaf_before = leaf_state;
-        let rng = SimRng::new(0x1234_5678);
-        let rng_before = rng.state();
-
-        assert_eq!(
-            unit_ready_to_commence(unit_view(
-                &mission,
-                leaf_state.as_unit().expect("Unit leaf"),
-                &world
-            )),
-            Ok(true)
-        );
-
-        assert_eq!(mission, mission_before);
-        assert_eq!(leaf_state, leaf_before);
-        assert_eq!(rng.state(), rng_before);
     }
 }

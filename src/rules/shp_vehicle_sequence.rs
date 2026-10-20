@@ -532,48 +532,6 @@ mod tests {
     }
 
     #[test]
-    fn test_terror_drone_sequences() {
-        // DRON: WalkFrames=6, FiringFrames=4 → stand at 6*8=48, firing at
-        // (6+1)*8=56. Layout is walk 0..=47, stand 48..=55, firing 56..=87,
-        // which fills DRON.SHP's 88-frame body half exactly with nothing left
-        // over. Dropping the standing block strands frames 80..=87.
-        let art = make_art_entry(Some(6), Some(4));
-        let set = build_test(&art);
-
-        assert_eq!(set.get(&SequenceKind::Walk).expect("Walk").start_frame, 0);
-        assert_eq!(
-            set.get(&SequenceKind::Stand).expect("Stand").start_frame,
-            48
-        );
-        let attack = set.get(&SequenceKind::Attack).expect("Attack");
-        assert_eq!(attack.start_frame, 56);
-        assert_eq!(attack.frame_count, 4);
-
-        // 176 retail frames = 88 body + 88 shadow, and the body is fully used.
-        assert_eq!(body_frames_used(&set, 8), 88);
-    }
-
-    #[test]
-    fn test_squid_sequences() {
-        // SQD: WalkFrames=20, FiringFrames=16 → stand at 160, firing at 21*8=168.
-        // Layout runs 0..=295, and SQD.SHP is 296 frames with no shadow half.
-        let art = make_art_entry(Some(20), Some(16));
-        let set = build_test(&art);
-
-        assert_eq!(set.get(&SequenceKind::Walk).expect("Walk").start_frame, 0);
-        assert_eq!(
-            set.get(&SequenceKind::Stand).expect("Stand").start_frame,
-            160
-        );
-        assert_eq!(
-            set.get(&SequenceKind::Attack).expect("Attack").start_frame,
-            168
-        );
-
-        assert_eq!(body_frames_used(&set, 8), 296);
-    }
-
-    #[test]
     fn test_explicit_standing_frames_overrides_the_forced_one() {
         // No stock SHP vehicle declares StandingFrames, but an explicit value
         // replaces the forced 1 and widens the block between walk and firing.

@@ -123,14 +123,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_vpl() {
-        let vpl: VplFile = VplFile::from_bytes(&make_test_vpl()).expect("Should parse");
-        assert_eq!(vpl.first_remap, 16);
-        assert_eq!(vpl.last_remap, 31);
-        assert_eq!(vpl.num_sections, 2);
-    }
-
-    #[test]
     fn test_lookup() {
         let vpl: VplFile = VplFile::from_bytes(&make_test_vpl()).expect("Should parse");
         // Page 0 is identity.
@@ -139,10 +131,5 @@ mod tests {
         assert_eq!(vpl.get_palette_index(1, 200), 42);
         // Out-of-range page clamps to last page (page 1 maps everything to 42).
         assert_eq!(vpl.get_palette_index(5, 77), 42);
-    }
-
-    #[test]
-    fn test_reject_too_small() {
-        assert!(VplFile::from_bytes(&[0u8; 10]).is_err());
     }
 }

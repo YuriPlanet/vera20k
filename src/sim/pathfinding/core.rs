@@ -28,8 +28,6 @@ use crate::util::native_x87::{
     NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, chop_sum_f32, sqrt_approx_f32,
 };
 use std::cell::{Cell, RefCell};
-#[cfg(any(test, feature = "test-support"))]
-use std::collections::BTreeSet;
 
 /// Accepted native path descriptor (`gamemd.exe 42AA90` reads the parent descriptor's
 /// height into each outgoing-height slot). The selected cell/list is stamped
@@ -1665,48 +1663,6 @@ impl PathGrid {
         self.cell(x, y).and_then(PathCell::bridge_deck_level_if_any)
     }
 
-    /// Find the nearest ground-walkable cell to `(x, y)`, searching in expanding rings.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn nearest_walkable(
-        &self,
-        x: u16,
-        y: u16,
-        max_radius: u16,
-        entity_blocks: Option<&BTreeSet<(u16, u16)>>,
-        allow: Option<(u16, u16)>,
-    ) -> Option<(u16, u16)> {
-        if self.is_walkable(x, y)
-            && (allow == Some((x, y)) || entity_blocks.is_none_or(|b| !b.contains(&(x, y))))
-        {
-            return Some((x, y));
-        }
-        for radius in 1..=max_radius {
-            let r = radius as i32;
-            for d in -r..=r {
-                let candidates = [
-                    (x as i32 + d, y as i32 - r),
-                    (x as i32 + d, y as i32 + r),
-                    (x as i32 - r, y as i32 + d),
-                    (x as i32 + r, y as i32 + d),
-                ];
-                for (cx, cy) in candidates {
-                    if cx < 0 || cy < 0 || cx >= self.width as i32 || cy >= self.height as i32 {
-                        continue;
-                    }
-                    let cx = cx as u16;
-                    let cy = cy as u16;
-                    if self.is_walkable(cx, cy)
-                        && (allow == Some((cx, cy))
-                            || entity_blocks.is_none_or(|b| !b.contains(&(cx, cy))))
-                    {
-                        return Some((cx, cy));
-                    }
-                }
-            }
-        }
-        None
-    }
-
     /// Find nearest walkable cell on either layer, searching in expanding rings.
     pub fn nearest_walkable_any_layer(
         &self,
@@ -2097,27 +2053,6 @@ pub fn find_path(grid: &PathGrid, start: (u16, u16), goal: (u16, u16)) -> Option
     )
     .ok()?;
     Some(steps.into_iter().map(|s| (s.rx, s.ry)).collect())
-}
-
-/// Resolve a gamemd foundation name into pathfinding footprint dimensions.
-#[cfg(any(test, feature = "test-support"))]
-fn parse_foundation(foundation: &str) -> (u16, u16) {
-    crate::rules::foundation::foundation_dimensions(foundation)
-}
-
-/// Truncate a path to at most `max_steps` movement steps.
-///
-/// The path includes the start cell at index 0, so a path with `max_steps`
-/// movement steps has `max_steps + 1` entries. If the path is already short
-/// enough, it is returned unchanged.
-#[cfg(any(test, feature = "test-support"))]
-pub fn truncate_path(path: Vec<(u16, u16)>, max_steps: usize) -> Vec<(u16, u16)> {
-    let max_len: usize = max_steps + 1; // +1 for start cell at index 0
-    if path.len() <= max_len {
-        path
-    } else {
-        path[..max_len].to_vec()
-    }
 }
 
 /// A path's cells and the movement layer of each cell, index-aligned.

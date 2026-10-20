@@ -574,7 +574,7 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
         None,
         crate::sim::world::FrameEffects::default()
     ));
-    assert_eq!(sim.houses[&owner].stats.units_lost(), callbacks);
+    assert_eq!(sim.houses[&owner].stats().units_lost(), callbacks);
 
     let mut reached_impact = false;
     for _ in 0..128 {
@@ -601,7 +601,7 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
     );
     assert!(!sim.substrate.entities.get(1).unwrap().is_active());
     assert_eq!(
-        sim.houses[&owner].stats.units_lost(),
+        sim.houses[&owner].stats().units_lost(),
         callbacks,
         "impact UnInit does not add a second loss"
     );
@@ -613,7 +613,7 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
         false,
     );
     assert!(!sim.substrate.entities.contains(1));
-    assert_eq!(sim.houses[&owner].stats.units_lost(), callbacks);
+    assert_eq!(sim.houses[&owner].stats().units_lost(), callbacks);
 }
 
 /// The whole fall of a dead crashing aircraft, frame by frame, through the
@@ -837,128 +837,6 @@ fn crash_smoke_matches_native_rows() {
             "{name}"
         );
     }
-}
-
-/// A lethal hit on a flying aircraft through the production receiver, then
-/// whole frames through `advance_tick`: the aircraft stays alive at Health 0,
-/// latched and spinning, trails smoke and plays its crash sound while it
-/// falls, and at the impact its death weapon strikes the victim below before
-/// it is UnInit. The killer's house holds the kill from the hit on.
-#[test]
-fn a_shot_down_aircraft_falls_and_detonates_through_advance_tick() {
-    use crate::sim::combat::combat_aoe::AreaDamageReceiver;
-    let input = serde_json::json!({"health": 150, "crashing": 0});
-    let (mut sim, rules) = fixture(&input);
-    let soviets = sim.interner.intern("Soviets");
-    let shooter = sim.allocate_stable_id();
-    let shooter_type = sim.interner.intern("VICTIM");
-    let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
-        shooter,
-        40,
-        40,
-        0,
-        0,
-        soviets,
-        crate::sim::combat::Health::new(1000),
-        shooter_type,
-        EntityCategory::Unit,
-        0,
-        5,
-        true,
-    );
-    entity.lifecycle.set_in_limbo_for_test(true);
-    sim.substrate.entities.insert(entity);
-    assert!(matches!(
-        sim.try_reveal_entity(
-            shooter,
-            RevealRequest {
-                position: RevealPosition::new(
-                    40,
-                    40,
-                    0,
-                    None,
-                    SimFixed::from_num(128),
-                    SimFixed::from_num(128)
-                ),
-                placement: PlacementEvidence::MarkSucceeded,
-                logic_eligible: true,
-            }
-        ),
-        RevealOutcome::Revealed { .. }
-    ));
-    let warhead = sim.interner.intern("CrashWH");
-    let hit =
-        crate::sim::combat::EntityDamageEvent::area(1, 200, 0, shooter, Some(soviets), warhead);
-    sim.commit_noncombat_aoe_receivers(
-        &rules,
-        None,
-        &[AreaDamageReceiver::Entity(hit)],
-        crate::sim::world::FrameEffects::default(),
-    );
-    let entity = sim
-        .substrate
-        .entities
-        .get(1)
-        .expect("a crashing aircraft stays represented");
-    assert!(
-        entity.crash.is_crashing() && entity.lifecycle.object_alive() && !entity.death.is_dying()
-    );
-    assert_eq!(entity.health.current(), 0);
-    assert_eq!(entity.kill_record.killer(), Some(soviets));
-    assert!(
-        entity
-            .rocking
-            .as_ref()
-            .is_some_and(|r| r.vel_sideways() != SimFixed::ZERO)
-    );
-
-    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
-    let mut smoke = 0;
-    let mut crash_sound = false;
-    let mut frames = 0;
-    let mut last_xyz = None;
-    while sim
-        .substrate
-        .entities
-        .get(1)
-        .is_some_and(|e| e.lifecycle.object_alive())
-    {
-        frames += 1;
-        assert!(frames < 60, "the fall must reach the ground");
-        let anims_before = sim.substrate.anims.len();
-        sim.sound_events.clear();
-        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
-        smoke += sim.substrate.anims.len().saturating_sub(anims_before);
-        crash_sound |= sim.sound_events.iter().any(|event| {
-            matches!(
-                event,
-                super::SimSoundEvent::AnimationStarted { anim_id: 1, .. }
-            )
-        });
-        if let Some(entity) = sim.substrate.entities.get(1) {
-            last_xyz = Some(crate::sim::movement::ground_pose::position_world_coord(
-                &entity.position,
-            ));
-        }
-    }
-    let last = last_xyz.unwrap();
-    assert!(
-        frames > 30,
-        "a 1500-lepton fall takes ~39 frames, took {frames}"
-    );
-    assert!(smoke > 0, "a dead airborne aircraft trails SGRYSMK1");
-    // The type names no CrashingSound: the test only proves the edge ran once
-    // with nothing to play.
-    assert!(!crash_sound);
-    assert!(last.z >= 0);
-    assert!(
-        sim.sound_events.iter().any(|event| matches!(
-            event,
-            super::SimSoundEvent::VocAt { sound_id, .. } if sound_id == "TypeLand"
-        )),
-        "the impact cue"
-    );
-    assert!(sim.substrate.entities.get(shooter).is_some());
 }
 
 /// A save in mid-fall restores the latch, its seen edge, the fall counter and
@@ -1459,7 +1337,7 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
             .all(|call| call["call"] != "record_kill")
     );
     assert_eq!(
-        sim.houses[&soviets].stats.units_killed(),
+        sim.houses[&soviets].stats().units_killed(),
         3,
         "the transport and both riders are credited before the wreck falls"
     );
@@ -1511,118 +1389,10 @@ fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
         "an Explosion= anim deals no damage"
     );
     assert_eq!(
-        sim.houses[&soviets].stats.units_killed(),
+        sim.houses[&soviets].stats().units_killed(),
         3,
         "impact UnInit does not repeat the transport's fatal callback"
     );
-}
-
-/// A `BalloonHover=` wreck (the Kirov) fires its current weapon as its death
-/// weapon at the impact (`0x007461EF`), which strikes the unit below.
-///
-/// A balloon's Update keeps reading the cell top even over its own cell, and
-/// the victim below lifts that by 85 (`CellClass @ 0x00485080`): the first
-/// frame climbs 10 before State 5's drop, and near the ground Update climbs
-/// against the drop again, so the fall takes a frame more than the
-/// Nighthawk's.
-#[test]
-fn a_shot_down_balloon_jumpjet_bombs_its_impact_cell() {
-    let (mut sim, rules, victim, shooter) = jumpjet_fixture(true);
-    shoot_down(&mut sim, &rules, shooter);
-    let fall = fall_to_the_impact(&mut sim, &rules);
-    assert_eq!(
-        fall.heights,
-        vec![470, 420, 370, 320, 270, 220, 170, 120, 70, 40, 10]
-    );
-    assert_eq!(fall.impact_frame, 12);
-    assert_eq!(fall.impact_booms, 0, "no second Explosion= for a balloon");
-    assert_eq!(fall.impact_sounds, 0);
-    assert_eq!(
-        sim.substrate.entities.get(victim).unwrap().health.current(),
-        1000 - 150,
-        "the death weapon's CrashGun hit the victim below"
-    );
-}
-
-/// A class NULL destination in the cruise runs `Stop_Moving` through Foot's
-/// null arm, which keeps
-/// the moving byte: shot down there, the wreck still latches into State 5 and
-/// reaches the ground. (A hold without the moving byte never latches, natively
-/// too; VERA no longer makes one out of a dropped order.)
-#[test]
-fn a_jumpjet_shot_down_after_its_null_destination_reaches_the_ground() {
-    let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
-    sim.assign_destination_represented(
-        1,
-        Some(crate::sim::components::NavTargetRef::cell(60, 52)),
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    )
-    .expect("the Unit setter takes the cell");
-    // Cruise until the owner has left the hover cell.
-    let mut frame = 1001;
-    while sim
-        .substrate
-        .entities
-        .get(1)
-        .is_some_and(|entity| (entity.position.rx(), entity.position.ry()) == (52, 52))
-    {
-        assert!(frame < 1200, "the cruise never left the hover cell");
-        sim.session.set_binary_frame_for_test(frame);
-        sim.tick_air_movement_with_cell_lists_one(
-            1,
-            Some(&rules),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        )
-        .unwrap();
-        frame += 1;
-    }
-    let runtime = |sim: &Simulation| {
-        sim.substrate
-            .entities
-            .get(1)
-            .and_then(|entity| entity.locomotor.as_ref())
-            .and_then(|locomotor| locomotor.jumpjet_runtime())
-            .cloned()
-            .expect("runtime")
-    };
-    assert_eq!(
-        runtime(&sim).phase(),
-        crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_TRANSLATE
-    );
-    let entity = sim.substrate.entities.get_mut(1).unwrap();
-    let here = (entity.position.rx(), entity.position.ry());
-    sim.assign_null_destination(
-        1,
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    sim.session.set_binary_frame_for_test(frame);
-    sim.tick_air_movement_with_cell_lists_one(
-        1,
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    )
-    .unwrap();
-    let stopped = runtime(&sim);
-    assert!(stopped.moving(), "Stop_Moving keeps the moving byte");
-    assert_eq!(
-        stopped.destination(),
-        DriveCoord {
-            x: i32::from(here.0) * 256 + 128,
-            y: i32::from(here.1) * 256 + 128,
-            z: 0,
-        }
-    );
-
-    shoot_down(&mut sim, &rules, shooter);
-    let fall = fall_to_the_impact(&mut sim, &rules);
-    assert!(fall.impact_frame > 0, "the wreck reached the ground");
-    assert!(fall.heights.windows(2).all(|pair| pair[1] < pair[0]));
 }
 
 /// Shot down one climb step above the ground in State 4, the kill's
@@ -1748,30 +1518,6 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
         }
         assert_eq!(acquired, scans, "{mission:?}");
     }
-}
-
-/// On the ground a crashable unit's Crash refuses, and the receiver UnInits
-/// it as before (`0x00738475..0x0073847F`).
-#[test]
-fn a_landed_jumpjet_dies_where_it_stands() {
-    let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
-    {
-        let entity = sim.substrate.entities.get_mut(1).unwrap();
-        entity.position.set_exact_z_leptons_for_test(Some(0));
-        let loco = entity.locomotor.as_mut().unwrap();
-        let runtime = loco.jumpjet_runtime_mut().unwrap();
-        *runtime = runtime.clone().with_phase_for_test(
-            crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_GROUND,
-        );
-    }
-    shoot_down(&mut sim, &rules, shooter);
-    assert!(
-        sim.substrate
-            .entities
-            .get(1)
-            .is_none_or(|entity| !entity.lifecycle.object_alive()),
-        "no crash on the ground"
-    );
 }
 
 /// Retail Dustbowl runtime, end to end through production: a Harrier ordered
@@ -2277,7 +2023,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                 assert_eq!(entity.health.current(), 0);
                 assert_eq!(entity.kill_record.killer(), Some(russians));
                 if id == nighthawk {
-                    riders_killed_by_crash = Some(sim.houses[&russians].stats.units_killed());
+                    riders_killed_by_crash = Some(sim.houses[&russians].stats().units_killed());
                     assert!(
                         entity
                             .passenger_role

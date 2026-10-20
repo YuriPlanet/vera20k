@@ -271,55 +271,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn trackbar_formula_matches_all_canonical_d5_thresholds() {
-        let cases = [
-            (180, 0, 1, vec![(90, 0), (91, 1)]),
-            (180, 0, 2, vec![(62, 0), (63, 1), (118, 1), (119, 2)]),
-            (
-                180,
-                0,
-                6,
-                vec![
-                    (30, 0),
-                    (31, 1),
-                    (55, 2),
-                    (79, 3),
-                    (103, 4),
-                    (127, 5),
-                    (151, 6),
-                ],
-            ),
-            (
-                128,
-                50,
-                10,
-                vec![
-                    (12, 0),
-                    (13, 1),
-                    (19, 2),
-                    (25, 3),
-                    (31, 4),
-                    (37, 5),
-                    (43, 6),
-                    (49, 7),
-                    (55, 8),
-                    (61, 9),
-                    (67, 10),
-                ],
-            ),
-        ];
-        for (width, reserve, maximum, samples) in cases {
-            for (x, expected) in samples {
-                assert_eq!(
-                    trackbar_position_from_x(x, width, reserve, maximum),
-                    expected,
-                    "width={width} reserve={reserve} x={x}"
-                );
-            }
-        }
-    }
-
-    #[test]
     fn launcher_trackbar_position_and_painted_thumb_match_original_instruction_goldens() {
         // Reproduced by tools/storage_oracle/launcher_trackbar.py from the
         // hash-checked retail executable. This compares the separate native

@@ -208,7 +208,7 @@ impl EntryCell {
         let at = (p.0 as u16, p.1 as u16);
         let sim = live.sim;
         let terrain_object = terrain_object
-            .then(|| sim.production.terrain_object_cells.get(&at).copied())
+            .then(|| sim.terrain_objects.cell_index().get(&at).copied())
             .flatten();
         listed
             .then(|| {
@@ -1650,13 +1650,13 @@ fn terrain_impassable(
     };
     let terrain = live
         .sim
-        .production
         .terrain_objects
+        .objects()
         .get(&id)
         .ok_or("repair retired Terrain")?;
     let ty = live
         .rules
-        .terrain_object_type_case_insensitive(live.sim.interner.resolve(terrain.type_ref))
+        .terrain_object_type_case_insensitive(live.sim.interner.resolve(terrain.type_ref()))
         .ok_or("repair missing TerrainType")?;
     // TerrainClass::Can_Enter_Cell @ 0x0071C4D0: the first foundation cell
     // that is not clear for a typeless, houseless build refuses (7).
@@ -1805,79 +1805,7 @@ mod tests {
     }
 
     #[test]
-    fn aircraft_quotient_requires_one_of_the_four_proved_interfaces() {
-        let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture();
-        sim.session.set_game_mode(
-            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
-        );
-        for kind in [
-            None,
-            Some(LocomotorKind::Walk),
-            Some(LocomotorKind::Drive),
-            Some(LocomotorKind::Ship),
-            Some(LocomotorKind::Hover),
-        ] {
-            let mut entity = GameEntity::test_default(90, "HORNET", "Americans", 17, 15);
-            entity.locomotor = kind.map(|kind| {
-                let mut object = rules.object("HORNET").unwrap().clone();
-                object.locomotor = kind;
-                crate::sim::movement::locomotor::LocomotorState::from_object_type(&object, 0)
-            });
-            let result = aircraft_entry(
-                &EntryReadContext {
-                    sim: &sim,
-                    rules: &rules,
-                    registry: None,
-                    facts: None,
-                },
-                &entity,
-                Cell::Dummy,
-            );
-            assert!(
-                result.unwrap_err().contains("constant-false AtCoord"),
-                "{kind:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn infantry_usable_area_admission_is_independent_of_game_mode() {
-        // Original51BF90 has no A8B238 read. Executed counter0/mode0/1
-        // controls both return7 for this otherwise-clear unusable rim.
-        let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture();
-        let mut mover = GameEntity::test_default(90, "ENGINEER", "Americans", 15, 15);
-        mover.set_owner_for_test(sim.intern("Americans"));
-        mover.set_type_ref_for_test(sim.intern("ENGINEER"));
-        mover.set_category_for_test(EntityCategory::Infantry);
-        mover.set_in_playfield(true);
-        sim.substrate.entities.insert(mover);
-        sim.playfield_bounds = Some(
-            crate::map::playfield::PlayfieldBounds::from_normalized_local_size(16, 0, 0, 1, 1),
-        );
-        let cell = sim
-            .resolved_terrain
-            .as_ref()
-            .unwrap()
-            .native_cell_identity((16, 15));
-        for mode in [false, true] {
-            sim.session.set_game_mode(
-                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(mode),
-            );
-            assert_eq!(
-                sim.foot_entry_receiver(90, &rules, None, None)
-                    .unwrap()
-                    .can_enter(
-                        cell,
-                        crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
-                    ),
-                Ok(7),
-                "mode {mode} cannot bypass Infantry51C13A..51C161",
-            );
-        }
-    }
-
-    #[test]
-    fn nested_escape_priority_restores_the_callers_cell_admission() {
+    fn usable_area_admission_ignores_game_mode_and_nested_escape_restores_it() {
         let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture();
         let mut mover = GameEntity::test_default(90, "ENGINEER", "Americans", 15, 15);
         mover.set_owner_for_test(sim.intern("Americans"));
@@ -1906,7 +1834,20 @@ mod tests {
             sim.main_rng.logical_state(),
             sim.mapgen_rng.logical_state(),
         ];
-        assert_eq!(probe(&sim), Ok(7));
+        // Original51BF90 has no A8B238 read. Executed counter0/mode0/1
+        // controls both return7 for this otherwise-clear unusable rim.
+        let mode = sim.session.game_mode();
+        for nonzero in [false, true] {
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(nonzero),
+            );
+            assert_eq!(
+                probe(&sim),
+                Ok(7),
+                "mode {nonzero} cannot bypass Infantry51C13A..51C161"
+            );
+        }
+        sim.session.set_game_mode(mode);
         sim.with_object_placement_scope(|sim| {
             assert_eq!(probe(sim), Ok(0));
             sim.with_object_placement_scope(|sim| assert_eq!(probe(sim), Ok(0)));

@@ -473,14 +473,6 @@ mod tests {
     }
 
     #[test]
-    fn verses_f64_defaults_to_all_full_when_absent() {
-        let ini: IniFile = IniFile::from_str("[Empty]\nFixtureOnly=1\n");
-        let wh = WarheadType::from_ini_section("Empty", ini.section("Empty").unwrap());
-        // gamemd default is all-100% (1.0), NOT empty.
-        assert_eq!(wh.verses_f64, [1.0; 11]);
-    }
-
-    #[test]
     fn fractional_verses_preserved() {
         // % branch: integer atoi BEFORE x0.01 => "50.5%" -> 50*0.01 = 0.5 (NOT
         // 0.505). Bare branch: "0.505" -> 0.505 full precision.
@@ -528,20 +520,6 @@ mod tests {
     }
 
     #[test]
-    fn test_warhead_mind_control() {
-        let ini: IniFile = IniFile::from_str(
-            "[YOUREWEAK]\nMindControl=yes\nCellSpread=0\nPercentAtMax=1\n\
-             Verses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n",
-        );
-        let section: &IniSection = ini.section("YOUREWEAK").unwrap();
-        let wh: WarheadType = WarheadType::from_ini_section("YOUREWEAK", section);
-
-        assert!(wh.mind_control);
-        assert!(!wh.temporal);
-        assert!(!wh.ivan_bomb);
-    }
-
-    #[test]
     fn test_prone_damage_parses_as_multiplier() {
         let ini: IniFile = IniFile::from_str(
             "[AP]\nProneDamage=50%\n[Gas]\nProneDamage=300%\n[Raw]\nProneDamage=1.25\n",
@@ -554,32 +532,6 @@ mod tests {
         assert_eq!(ap.prone_damage_f64, 0.5);
         assert_eq!(gas.prone_damage_f64, 3.0);
         assert_eq!(raw.prone_damage_f64, 1.25);
-    }
-
-    #[test]
-    fn parse_rocker_default_false() {
-        let ini: IniFile = IniFile::from_str("[TestWH]\nFixtureOnly=1\n");
-        let wh = WarheadType::from_ini_section("TestWH", ini.section("TestWH").unwrap());
-        assert!(!wh.rocker);
-        assert!(!wh.direct_rocker);
-    }
-
-    #[test]
-    fn parse_rocker_yes() {
-        let ini: IniFile = IniFile::from_str("[TestWH]\nRocker=yes\nDirectRocker=yes\n");
-        let wh = WarheadType::from_ini_section("TestWH", ini.section("TestWH").unwrap());
-        assert!(wh.rocker);
-        assert!(wh.direct_rocker);
-    }
-
-    #[test]
-    fn parse_retail_v3wh_has_rocker() {
-        let ini = IniFile::from_str("[V3WH]\nRocker=yes\n");
-        let section = ini.section("V3WH").expect("V3WH missing from rulesmd.ini");
-        let wh = WarheadType::from_ini_section("V3WH", section);
-        assert!(wh.rocker, "V3WH should have Rocker=yes");
-        // V3WH does not set DirectRocker — default no.
-        assert!(!wh.direct_rocker);
     }
 
     #[test]

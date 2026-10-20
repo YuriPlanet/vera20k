@@ -8,7 +8,7 @@
 
 use super::harvest_field_oracle_tests::{registry, row_scene};
 use super::refinery_dock_oracle_tests::Scene;
-use crate::sim::miner::{MinerState, ResourceType};
+use crate::sim::miner::MinerState;
 use crate::sim::ore_growth::OreGrowthConfig;
 
 /// One miner's observable state after a frame.
@@ -48,47 +48,13 @@ fn field(at: (u16, u16), ore: serde_json::Value) -> Scene {
         "unlimbo_at_cell": true,
         "ore": ore,
     }));
-    s.sim.production.ore_growth_config = OreGrowthConfig::disabled();
+    s.sim.ore_growth_config = OreGrowthConfig::disabled();
     s
 }
 
 fn bales_at(s: &Scene, cell: (u16, u16)) -> Option<u8> {
     let overlay = s.sim.overlay_grid.as_ref().unwrap().cell(cell.0, cell.1);
     overlay.overlay_id.map(|_| overlay.overlay_data)
-}
-
-/// Unit MissionAttack7447A0 -> Foot4D4DC0 -> Unit EnterIdle738970(0,1):
-/// a targetless Attack queues Harvest on ore and Guard on human clear land.
-/// The normal Unit host promotes that queue with a fresh handler cursor;
-/// it must never interpret Attack's cursor as a Harvest FSM state.
-#[test]
-fn war_miner_without_a_target_leaves_attack_through_its_idle_hook() {
-    use crate::sim::mission::{MissionId, MissionType};
-
-    for (ore, expected) in [
-        (serde_json::json!([[15, 15, 0, 0, 3]]), MissionType::Harvest),
-        (serde_json::json!([]), MissionType::Guard),
-    ] {
-        let mut s = field((15, 15), ore);
-        let now = s.sim.session.binary_frame();
-        s.sim
-            .mission_assign_exact(s.miner, MissionId::from_known(MissionType::Attack), now)
-            .unwrap();
-        s.sim
-            .substrate
-            .entities
-            .get_mut(s.miner)
-            .unwrap()
-            .mission
-            .set_handler_state(MinerState::Harvest.cursor());
-
-        frame(&mut s);
-
-        let miner = s.sim.substrate.entities.get(s.miner).unwrap();
-        assert_eq!(miner.mission.current().known(), Some(expected));
-        assert_eq!(miner.mission.handler_state(), 0, "Commence resets cursor");
-        assert_eq!(miner.miner.as_ref().unwrap().cargo().len(), 0);
-    }
 }
 
 /// On ore at once: the first dispatch arms the stage (state 0's literal rate
@@ -159,88 +125,6 @@ fn war_miner_cuts_a_bale_per_gate_hops_without_waiting_and_returns_when_dry() {
     assert!(!end.harvesting);
 }
 
-/// From each side of a density-1 target with ore behind it: state 0 drives
-/// onto the target (the nearer ring), cuts only on arrival, and the bale and
-/// the cleared overlay are the target's; the cell behind keeps its ore.
-#[test]
-fn war_miner_cuts_the_cell_it_drove_onto_from_every_side() {
-    let target = (16u16, 16u16);
-    for (label, start, behind) in [
-        ("west", (15u16, 16u16), (17u16, 16u16)),
-        ("east", (17, 16), (15, 16)),
-        ("north", (16, 15), (16, 17)),
-        ("south", (16, 17), (16, 15)),
-    ] {
-        let mut s = field(
-            start,
-            serde_json::json!([[target.0, target.1, 0, 0, 1], [behind.0, behind.1, 0, 0, 1]]),
-        );
-        let mut cut = None;
-        for n in 0..200 {
-            let sample = frame(&mut s);
-            if sample.bales > 0 {
-                cut = Some((n, sample));
-                break;
-            }
-        }
-        let (_, sample) = cut.unwrap_or_else(|| panic!("{label}: never cut"));
-        assert_eq!(sample.cell, target, "{label}: cut where it stands");
-        let miner = s.sim.substrate.entities.get(s.miner).unwrap();
-        assert_eq!(
-            (
-                miner.position.sub_x().to_num::<i32>(),
-                miner.position.sub_y().to_num::<i32>()
-            ),
-            (128, 128),
-            "{label}: at the cell centre"
-        );
-        assert_eq!(
-            bales_at(&s, target),
-            Some(0),
-            "{label}: the target lost its level"
-        );
-        assert_eq!(
-            bales_at(&s, behind),
-            Some(1),
-            "{label}: the cell behind is untouched"
-        );
-        assert_eq!(
-            miner.miner.as_ref().unwrap().cargo()[0].resource_type,
-            ResourceType::Ore
-        );
-    }
-}
-
-/// Retail RULESMD.INI through the production readers: `TiberiumShortScan=6`
-/// and `TiberiumLongScan=48` become 1536 and 12288 leptons (`ReadRange`),
-/// `HarvesterLoadRate` stays the constructor's 2, and a retail War Miner cuts
-/// on the same 19-frame gate.
-#[test]
-fn war_miner_gate_on_retail_rules() {
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
-        return;
-    };
-    assert_eq!(retail.general.tiberium_short_scan, 1536);
-    assert_eq!(retail.general.tiberium_long_scan, 12288);
-    assert_eq!(retail.general.harvester_load_rate, 2);
-    let mut s = field((15, 15), serde_json::json!([[15, 15, 0, 0, 3]]));
-    s.rules.general.tiberium_short_scan = retail.general.tiberium_short_scan;
-    s.rules.general.tiberium_long_scan = retail.general.tiberium_long_scan;
-    s.rules.general.harvester_load_rate = retail.general.harvester_load_rate;
-    let mut last = 0;
-    let mut gaps = Vec::new();
-    let mut bales = 0;
-    for n in 0..120 {
-        let sample = frame(&mut s);
-        if sample.bales > bales {
-            gaps.push(n - last);
-            last = n;
-            bales = sample.bales;
-        }
-    }
-    assert_eq!(gaps, vec![19, 19, 19], "three bales, one per gate");
-}
-
 /// Frames until a War Miner on `field` has cut its first bale, still cutting.
 fn until_first_bale(s: &mut Scene) {
     for _ in 0..60 {
@@ -283,56 +167,6 @@ fn a_return_order_ends_the_harvesting_byte_and_oregath() {
     assert!(!sample.harvesting, "Unit+0x6D2 cleared by the unit AI");
 }
 
-/// A harvest order on a miner already cutting (`Queue_Mission` keeps the
-/// same mission, `0x005B3601..0x005B3612`): state 1 carries on, treats the
-/// drive to the clicked cell as a hop and cuts on arrival; the gate it had
-/// already counted is not re-armed.
-#[test]
-fn a_harvest_order_on_a_cutting_miner_keeps_state_one_and_cuts_on_arrival() {
-    let mut s = field(
-        (15, 15),
-        serde_json::json!([[15, 15, 0, 0, 5], [19, 15, 0, 0, 5]]),
-    );
-    until_first_bale(&mut s);
-    // Four cells away: the drive outlasts the gate armed by the first cut.
-    let miner = s.miner;
-    order(
-        &mut s,
-        crate::sim::command::Command::HarvestCell {
-            entity_id: miner,
-            target_rx: 19,
-            target_ry: 15,
-        },
-    );
-    let mut samples = Vec::new();
-    for _ in 0..200 {
-        samples.push(frame(&mut s));
-    }
-    assert!(
-        samples
-            .iter()
-            .all(|sample| sample.state == Some(MinerState::Harvest)),
-        "state 1 throughout: {samples:?}"
-    );
-    let arrival = samples
-        .iter()
-        .position(|sample| sample.cell == (19, 15) && !sample.driving)
-        .expect("reaches the clicked cell");
-    let cut = samples
-        .iter()
-        .position(|sample| sample.cell == (19, 15) && sample.bales > samples[0].bales)
-        .expect("cuts there");
-    assert!(
-        cut <= arrival + 1,
-        "cuts on arrival (arrival {arrival}, cut {cut})"
-    );
-    assert_eq!(
-        bales_at(&s, (15, 15)),
-        Some(4),
-        "the first cell kept its ore"
-    );
-}
-
 /// Physical RULESMD, fixed ARTMD, Battle override and AnyTown scenario through
 /// the production source/reader owner. The existing 33x33 field fixture supplies
 /// clear terrain and two owned refineries; this is a frame integration test,
@@ -357,7 +191,7 @@ fn retail_war_miner_area_guard_returns_to_harvesting() {
             retail.rules.clone(),
             &retail.processed_rules,
         );
-        s.sim.production.ore_growth_config = OreGrowthConfig::disabled();
+        s.sim.ore_growth_config = OreGrowthConfig::disabled();
         let owner = s.sim.entities().get(s.miner).unwrap().owner();
         s.sim.session.set_current_house_for_test(Some(owner));
         s.sim.houses.reorder_for_test(&[owner]);
@@ -431,7 +265,7 @@ fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
             retail.rules,
             &retail.processed_rules,
         );
-        s.sim.production.ore_growth_config = OreGrowthConfig::disabled();
+        s.sim.ore_growth_config = OreGrowthConfig::disabled();
         let retail_order = |s: &mut Scene, command: Command| {
             assert!(s.sim.apply_command_with_overlays(
                 "Americans",

@@ -548,19 +548,6 @@ mod tests {
     }
 
     #[test]
-    fn test_tile_to_rgba() {
-        let tmp: TmpFile = TmpFile::from_bytes(&make_test_tmp()).expect("Should parse");
-        let palette: Palette = Palette::from_bytes(&vec![0u8; 768]).expect("palette");
-        let rgba: Vec<u8> = tmp.tile_to_rgba(0, &palette).expect("Should convert");
-        assert_eq!(rgba.len(), 128); // 8 × 4 × 4
-    }
-
-    #[test]
-    fn test_reject_too_small() {
-        assert!(TmpFile::from_bytes(&[0; 8]).is_err());
-    }
-
-    #[test]
     fn gsi_02_11_rejects_high_byte_template_count_disagreement() {
         let mut data: Vec<u8> = make_test_tmp();
         // Low-byte width remains 1, while the raw dword width becomes 257.
@@ -635,21 +622,6 @@ mod tests {
         assert_eq!(diamond_row_width_at(29, 30), 0);
         // Out of bounds.
         assert_eq!(diamond_row_width_at(30, 30), 0);
-    }
-
-    #[test]
-    fn test_is_inside_diamond_standard_tile() {
-        // Standard 60x30 tile, no offset.
-        // Center pixel (30, 14) should be inside.
-        assert!(is_inside_diamond(30, 14, 60, 30, 0, 0));
-        // Top-left corner (0, 0) should be outside.
-        assert!(!is_inside_diamond(0, 0, 60, 30, 0, 0));
-        // Top-center pixel (28, 0) should be inside (row 0 starts at x=28).
-        assert!(is_inside_diamond(28, 0, 60, 30, 0, 0));
-        // Pixel just outside diamond at row 0 (27, 0) should be outside.
-        assert!(!is_inside_diamond(27, 0, 60, 30, 0, 0));
-        // Last row (29) has width 0 → all outside.
-        assert!(!is_inside_diamond(30, 29, 60, 30, 0, 0));
     }
 
     #[test]

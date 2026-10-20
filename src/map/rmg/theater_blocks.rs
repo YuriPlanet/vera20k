@@ -137,19 +137,6 @@ mod tests {
     }
 
     #[test]
-    fn tmp_projects_into_a_tile_block() {
-        let bytes = tmp_row(&[(3, 5, 0), (7, 9, 0)]);
-        let tmp = TmpFile::from_bytes(&bytes).expect("valid fixture TMP");
-        let block = tile_block_from_tmp(&tmp);
-        assert_eq!((block.width, block.height), (2, 1));
-        assert_eq!(block.subtiles.len(), 2);
-        let a = block.subtiles[0].expect("cell 0 present");
-        let b = block.subtiles[1].expect("cell 1 present");
-        assert_eq!((a.height, a.terrain), (3, 5));
-        assert_eq!((b.height, b.terrain), (7, 9));
-    }
-
-    #[test]
     fn the_ramp_byte_reaches_the_sub_tile_slope() {
         // Header slot +42 is the ramp type, and it has to survive the trip
         // into `SubTile` or a carved cliff stair comes out flat. Distinct

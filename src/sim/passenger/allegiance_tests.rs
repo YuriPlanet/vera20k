@@ -97,7 +97,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
                 0,
                 10,
             );
-            state.player_control = house["player_control"].as_bool().unwrap();
+            state.set_player_control_for_test(house["player_control"].as_bool().unwrap());
             sim.houses.register(state);
             owner
         })

@@ -346,7 +346,9 @@ impl Simulation {
             && object.helipad
             && let Some(house) = self.houses.get_mut(&owner)
         {
-            house.tracking.add_airport_docks(object.number_of_docks);
+            house
+                .tracking_mut()
+                .add_airport_docks(object.number_of_docks);
         }
         if first_opening {
             self.open_super_weapon_anims(id, damaged, garrisoned, rules);

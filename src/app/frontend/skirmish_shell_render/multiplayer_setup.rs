@@ -1,4 +1,4 @@
-//! BC/BD setup paint using the shared shell compositor and native widgets.
+//! BC/BD/C2/C9 setup paint using the shared shell compositor and native widgets.
 //! Session data is a read-only projection; rendering never changes readiness.
 
 use super::chrome::*;
@@ -36,7 +36,7 @@ pub(crate) fn render_multiplayer_setup(
 ) -> anyhow::Result<()> {
     if let Some((completed, total)) = state
         .frontend
-        .lan_setup_protocol
+        .network_setup_protocol
         .as_ref()
         .and_then(|protocol| protocol.transfer_progress())
     {
@@ -77,7 +77,7 @@ pub(crate) fn render_multiplayer_setup(
             ShellFrameCursor::Hidden,
         );
     }
-    let Some(view) = crate::app::shell_lan_setup::view(state) else {
+    let Some(view) = crate::app::shell_network_setup::view(state) else {
         return Ok(());
     };
     crate::app::input::multiplayer_setup::update_geometry(state);
@@ -87,7 +87,7 @@ pub(crate) fn render_multiplayer_setup(
     let now = Instant::now();
     let exit = crate::app::frontend::shell_transition::shell_exit_wave(
         state,
-        ShellSlideKind::LanSetup { host: view.host },
+        ShellSlideKind::NetworkSetup(view.dialog),
     )
     .cloned();
     let leaving = exit.is_some();
@@ -150,7 +150,7 @@ pub(crate) fn render_multiplayer_setup(
     //72CF40 installs Cooperative setup art for BC/BD; it is independent of
     // the user's intentional RA2 art choice for offline Skirmish.
     if let Some(background) = atlas.lan_background(
-        if view.host { 0xBC } else { 0xBD },
+        view.page().dialog.0,
         if scale.is_retail() { width } else { 800 },
     ) {
         if scale.is_retail() {
@@ -274,6 +274,20 @@ pub(crate) fn render_multiplayer_setup(
                     scale,
                     SHELL_CONTROL_DEPTH,
                 );
+            }
+        }
+        // C2/C9 ping statics 0x754+row, kind-2 images like the acceptance ones.
+        if let Some(rects) = &layout.ping_icons {
+            for (row, icon) in view.ping_icons.iter().enumerate() {
+                if let Some(entry) = icon.and_then(|icon| atlas.wol_ping_icon(icon)) {
+                    push_flag_entry_clipped_centered(
+                        &mut controls,
+                        entry,
+                        rects[row],
+                        scale,
+                        SHELL_CONTROL_DEPTH,
+                    );
+                }
             }
         }
         for (index, key) in [
@@ -468,6 +482,32 @@ pub(crate) fn render_multiplayer_setup(
                 }
             }
         }
+        // C2/C9 0x3ED image button (00612B70, frame type 0): +0x14 wodact
+        // released, +0x18 wouact while pressed, copied 1:1 at the rect's
+        // top-left with no frame or caption (0x6131D7..0x613237).
+        if let Some(rect) = layout.emote
+            && let (Some(released), pressed_art) = atlas.wol_emote_images()
+        {
+            let mut entry = if ui.buttons.is_pressed(EMOTE) {
+                pressed_art.unwrap_or(released)
+            } else {
+                released
+            };
+            let [art_w, art_h] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
+            if art_w > 0.0 && art_h > 0.0 {
+                let draw = [art_w.min(rect.w as f32), art_h.min(rect.h as f32)];
+                entry.uv_size[0] *= draw[0] / art_w;
+                entry.uv_size[1] *= draw[1] / art_h;
+                push_entry_sized(
+                    &mut controls,
+                    entry,
+                    rect.x as f32,
+                    rect.y as f32,
+                    draw,
+                    SHELL_CONTROL_DEPTH,
+                );
+            }
+        }
         texts.extend(crate::render::shell_paint::paint_labels_scaled(
             font,
             &labels,
@@ -548,10 +588,11 @@ pub(crate) fn render_multiplayer_setup(
             art,
             controls,
             texts,
-            label: if view.host {
-                "LAN Host BC"
-            } else {
-                "LAN Guest BD"
+            label: match view.page().dialog.0 {
+                0xBC => "LAN Host BC",
+                0xBD => "LAN Guest BD",
+                0xC2 => "WOL Host C2",
+                _ => "WOL Guest C9",
             },
         },
         ShellFrameArt::Launcher,

@@ -727,8 +727,8 @@ impl Simulation {
         self.answer_batched_scans(rules, overlay_registry);
         let miner_config = rules.map(crate::sim::miner::MinerConfig::from_rules);
         let terrain_spawner_cells = self
-            .production
-            .terrain_animations
+            .terrain_objects
+            .animations()
             .keys()
             .copied()
             .collect::<BTreeSet<_>>();

@@ -289,13 +289,13 @@ impl Simulation {
         let Some(house) = self.houses.get(&owner) else {
             return false;
         };
-        if house.is_defeated || house.multiplay_passive {
+        if house.is_defeated() || house.multiplay_passive() {
             return false;
         }
         if self.session.game_options().short_game {
-            !house.tracking.short_game_alive(base_units)
+            !house.tracking().short_game_alive(base_units)
         } else {
-            !house.tracking.normal_game_alive(build_refinery_2)
+            !house.tracking().normal_game_alive(build_refinery_2)
         }
     }
 
@@ -321,7 +321,7 @@ impl Simulation {
         context: UninitContext<'_>,
     ) -> Option<crate::sim::command::CommandEnvelope> {
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.is_defeated = true;
+            house.mark_defeated();
         }
         // 0x004FC0BC..0x004FC10D: a computer house at the skirmish IQ, defeated
         // under `[AI] Paranoid` in a nonzero game mode, turns the computers
@@ -331,7 +331,7 @@ impl Simulation {
             && game_mode_nonzero
             && rules.general.paranoid
             && self.houses.get(&owner).is_some_and(|house| {
-                house.current_iq == rules.general.max_iq_levels
+                house.current_iq() == rules.general.max_iq_levels
                     && !house.is_controlled_by_human(game_mode_nonzero)
             })
         {
@@ -356,7 +356,7 @@ impl Simulation {
             commit
         } else {
             if let Some(house) = self.houses.get_mut(&owner) {
-                house.map_is_clear = true;
+                house.mark_map_clear();
             }
             None
         };
@@ -385,7 +385,7 @@ impl Simulation {
             .filter(|owner| {
                 self.houses
                     .get(owner)
-                    .is_some_and(|house| !house.is_defeated && !house.multiplay_passive)
+                    .is_some_and(|house| !house.is_defeated() && !house.multiplay_passive())
             })
             .collect();
         let living_humans = alive
@@ -424,8 +424,8 @@ impl Simulation {
             && self
                 .houses
                 .values()
-                .any(|house| !house.is_defeated && house.is_controlled_by_human(true));
-        if !self.houses[&local].is_defeated || cooperative_shared_win {
+                .any(|house| !house.is_defeated() && house.is_controlled_by_human(true));
+        if !self.houses[&local].is_defeated() || cooperative_shared_win {
             self.flag_house_to_win(local, rules, false, effects);
         } else {
             self.flag_house_to_lose(local, rules, false, effects);
@@ -578,7 +578,7 @@ impl Simulation {
                     return false;
                 };
                 let native_country = self.houses[&owner]
-                    .country
+                    .country()
                     .and_then(|country| rules.country_index(self.interner.resolve(country)))
                     .map(|index| i32::from(index.0));
                 let Some(native_country) = native_country else {
@@ -628,7 +628,7 @@ impl Simulation {
         self.session
             .current_house()
             .and_then(|house| self.houses.get(&house))
-            .is_some_and(|house| house.is_defeated)
+            .is_some_and(|house| house.is_defeated())
     }
 
     /// HouseClass cleanup4FC6D0/4FC790/4FC820/4FC8D0. Original Steam

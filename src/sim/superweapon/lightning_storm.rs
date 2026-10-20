@@ -301,7 +301,12 @@ pub(crate) fn start(
         {
             continue;
         }
-        if sim.houses.get(&house).is_none_or(|state| state.is_defeated) || local_player_defeated {
+        if sim
+            .houses
+            .get(&house)
+            .is_none_or(|state| state.is_defeated())
+            || local_player_defeated
+        {
             continue;
         }
         sim.power_states

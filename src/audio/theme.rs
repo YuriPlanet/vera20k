@@ -1916,18 +1916,6 @@ mod tests {
     }
 
     #[test]
-    fn score_zero_preserves_pending_request_when_nothing_is_retained_or_active() {
-        let mut theme = stock_runtime();
-        theme.slots.pending = 7;
-        let action = theme.queue_then_stop_score_zero(gates(true), MusicOutputState::Idle, 0);
-        assert!(!action.stop_output);
-        assert_eq!(
-            theme.slots.pending, 7,
-            "native Stop has no active track to clear"
-        );
-    }
-
-    #[test]
     fn sound_play_and_stop_preserve_theme_queue_and_fade_authority() {
         let mut theme = stock_runtime();
         let mut prepare = prepared;

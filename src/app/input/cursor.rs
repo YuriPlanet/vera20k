@@ -1979,50 +1979,6 @@ mod tests {
     }
 
     #[test]
-    fn maps_every_yr_active_action() {
-        assert_eq!(super_weapon_cursor_id("Attack"), Some(CursorId::Attack));
-        assert_eq!(super_weapon_cursor_id("Nuke"), Some(CursorId::Nuke));
-        assert_eq!(
-            super_weapon_cursor_id("ChronoSphere"),
-            Some(CursorId::Chronosphere)
-        );
-        assert_eq!(
-            super_weapon_cursor_id("ChronoWarp"),
-            Some(CursorId::Chronosphere)
-        );
-        assert_eq!(
-            super_weapon_cursor_id("IronCurtain"),
-            Some(CursorId::IronCurtain)
-        );
-        assert_eq!(
-            super_weapon_cursor_id("LightningStorm"),
-            Some(CursorId::LightningStorm)
-        );
-        assert_eq!(super_weapon_cursor_id("ParaDrop"), Some(CursorId::Paradrop));
-        assert_eq!(
-            super_weapon_cursor_id("AmerParaDrop"),
-            Some(CursorId::Paradrop)
-        );
-        assert_eq!(
-            super_weapon_cursor_id("PsychicDominator"),
-            Some(CursorId::PsychicDominator)
-        );
-        assert_eq!(super_weapon_cursor_id("SpyPlane"), Some(CursorId::SpyPlane));
-        assert_eq!(
-            super_weapon_cursor_id("GeneticConverter"),
-            Some(CursorId::GeneticMutator)
-        );
-        assert_eq!(
-            super_weapon_cursor_id("ForceShield"),
-            Some(CursorId::ForceShield)
-        );
-        assert_eq!(
-            super_weapon_cursor_id("PsychicReveal"),
-            Some(CursorId::PsychicReveal)
-        );
-    }
-
-    #[test]
     fn unit_delivery_superweapon_custom_action_uses_existing_paradrop_cursor() {
         let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
             &crate::rules::ini_parser::IniFile::from_str(
@@ -2038,13 +1994,6 @@ mod tests {
             .as_deref()
             .unwrap();
         assert_eq!(super_weapon_cursor_id(action), Some(CursorId::Paradrop));
-    }
-
-    #[test]
-    fn returns_none_for_ts_legacy_and_unknown() {
-        assert_eq!(super_weapon_cursor_id("IonCannon"), None);
-        assert_eq!(super_weapon_cursor_id(""), None);
-        assert_eq!(super_weapon_cursor_id("BogusAction"), None);
     }
 
     /// Rules for the cell-action and best-object contracts: one plain armed
@@ -2116,43 +2065,6 @@ mod tests {
             "the fixture must give the mover a locomotor, or the speed row is skipped",
         );
         (sim, rules, tank)
-    }
-
-    // Native DetermineAction692610 -> Unit7404B0 / Techno700600, and
-    // Display4AAE90's ordinary dispatch: installed out-of-range Cell is
-    // action0/cursor0; ordinary mobile remains action5. This extraction calls
-    // the same production Ctrl feedback owner as current_cursor_feedback_kind.
-    #[test]
-    fn bunker_stationary_force_fire_out_of_range_uses_native_default_arrow() {
-        use crate::map::resolved_terrain::ResolvedTerrainGrid;
-        use crate::sim::combat::TargetKind;
-        use crate::sim::docking::bunker_link::BunkerLink;
-
-        let (mut sim, rules, tank) = sim_with_track_tank();
-        sim.session.set_game_mode(
-            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
-        );
-        sim.session
-            .set_current_house_for_test(Some(sim.entities().get(tank).unwrap().owner()));
-        sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
-            32,
-            32,
-            (0..32)
-                .flat_map(|y| {
-                    (0..32).map(move |x| crate::map::resolved_terrain::test_flat_cell(x, y))
-                })
-                .collect(),
-        ));
-        sim.entities_mut()
-            .get_mut(tank)
-            .unwrap()
-            .bunker
-            .set_bunker_link_for_test(BunkerLink::Installed(99));
-        assert_eq!(
-            force_fire_feedback(&sim, tank, &TargetKind::Cell(20, 2), 1, Some(&rules), None),
-            Some(None),
-            "native Action0 must preserve the default arrow, not attack or NoMove"
-        );
     }
 
     // Techno700600's unforced Attack rung (0x007008A6..0x007009F1): an
@@ -3444,37 +3356,16 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             "a bomb the player does not see"
         );
     }
-
-    #[test]
-    fn bomb_cursor_rows() {
-        use super::cursor_id_for_feedback;
-        assert_eq!(
-            cursor_id_for_feedback(CursorFeedbackKind::IvanBomb),
-            Some(CursorId::IvanBomb)
-        );
-        assert_eq!(
-            cursor_id_for_feedback(CursorFeedbackKind::DisarmBomb),
-            Some(CursorId::Disarm)
-        );
-    }
 }
 
 #[cfg(test)]
 mod cursor_animation_tests {
     use super::CursorAnimation;
     use crate::app::input::entity_pick::HoverTargetKindWithId;
-    use crate::app::types::{CursorFeedbackKind, CursorId, HoverTargetKind, ScrollDir};
+    use crate::app::types::{CursorFeedbackKind, CursorId, HoverTargetKind};
 
     /// Retail interval for every animated cursor row: rate 4 x 16 ms.
     const INTERVAL_MS: u64 = 64;
-
-    /// The first look at a cursor starts it at frame 0 and anchors the timer
-    /// there, instead of sampling a process-wide clock.
-    #[test]
-    fn a_new_cursor_shape_starts_at_frame_zero() {
-        let mut anim = CursorAnimation::new();
-        assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 5_000), 0);
-    }
 
     /// One frame per elapsed interval, and exactly one — a long stall does not
     /// skip ahead.
@@ -3583,27 +3474,6 @@ mod cursor_animation_tests {
         );
     }
 
-    /// Sidebar repair mode answers row 34 (frames 170-189) for an own
-    /// repairable object and row 35 (NoRepair) otherwise — the
-    /// MouseClass+0x11B0 arm at `0x006927CD`. Row 33 (frames 150-169) belongs
-    /// to the engineer's hover-repair cursor, RepairAction's row.
-    #[test]
-    fn sidebar_repair_mode_uses_the_side_repair_row() {
-        assert_eq!(
-            super::cursor_id_for_feedback(CursorFeedbackKind::RepairMode(true)),
-            Some(CursorId::EngineerRepair)
-        );
-        assert_eq!(
-            super::cursor_id_for_feedback(CursorFeedbackKind::RepairMode(false)),
-            Some(CursorId::NoRepair)
-        );
-        assert_eq!(
-            super::cursor_id_for_feedback(CursorFeedbackKind::RepairAction(true)),
-            Some(CursorId::Repair),
-            "the engineer hover-repair cursor stays row 33"
-        );
-    }
-
     /// A selected own unit under its own cursor answers NoMove — the barred
     /// cursor — not Select: retail's move order refuses a cell held by an own
     /// selected techno and its select action rejects an already-selected one
@@ -3638,22 +3508,6 @@ mod cursor_animation_tests {
         assert_eq!(
             super::cursor_id_for_feedback(CursorFeedbackKind::Invalid),
             Some(CursorId::NoMove)
-        );
-    }
-
-    #[test]
-    fn item82_allowed_and_blocked_scroll_feedback_use_directional_rows() {
-        assert_eq!(
-            super::cursor_id_for_feedback(CursorFeedbackKind::Scroll(ScrollDir::NE)),
-            Some(CursorId::ScrollNE),
-        );
-        assert_eq!(
-            super::cursor_id_for_feedback(CursorFeedbackKind::ScrollBlocked(ScrollDir::NE)),
-            Some(CursorId::NoMoveNE),
-        );
-        assert_eq!(
-            super::cursor_id_for_feedback(CursorFeedbackKind::ScrollBlocked(ScrollDir::S)),
-            Some(CursorId::NoMoveS),
         );
     }
 

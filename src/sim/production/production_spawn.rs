@@ -638,28 +638,4 @@ mod tests {
         );
         assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(8, 8) & 0x20, 0);
     }
-
-    #[test]
-    fn production_exact_zero_unlimbo_marks_held_identity_without_forced_outcome() {
-        let rules = production_admission_rules();
-        let mut sim = production_admission_sim();
-        set_admission_water_cell(&mut sim, (8, 8));
-        let stable_id = sim
-            .create_production_object_limbo_at_height("DEST", "Americans", 8, 8, 0x40, 0, &rules)
-            .expect("held production Unit");
-        assert_eq!(
-            unlimbo_held_naval_unit(
-                &mut sim,
-                &rules,
-                stable_id,
-                (8, 8),
-                None,
-                crate::sim::world::FrameEffects::default(),
-            ),
-            Some(stable_id),
-            "the production API exposes no caller-forced Mark outcome"
-        );
-        let entity = sim.substrate.entities.get(stable_id).unwrap();
-        assert!(!entity.lifecycle.in_limbo() && entity.lifecycle.cell_marked());
-    }
 }

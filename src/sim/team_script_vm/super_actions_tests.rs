@@ -144,7 +144,7 @@ fn replay(row: &Value, plant: bool) -> Replay {
     let owner = sim.interner.intern(OWNER);
     let enemy = sim.interner.intern(ENEMY);
     let mut computer = HouseState::new(owner, 0, None, false, 0, 10);
-    computer.enemy_house = Some(enemy);
+    computer.set_enemy_house_for_test(Some(enemy));
     sim.houses.register(computer);
     sim.houses
         .register(HouseState::new(enemy, 1, None, true, 0, 10));

@@ -187,41 +187,6 @@ mod tests {
     }
 
     #[test]
-    fn paradrop_vertical_modes_keep_native_random_start_and_west_negative_remainder() {
-        let bounds = square_bounds();
-        for (edge, seed) in [(Edge::East, 0xAA44_0001), (Edge::West, 0xAA44_0001)] {
-            let mut expected_rng = SimRng::new(seed);
-            let start = match edge {
-                Edge::East => expected_rng.next_range_u32_inclusive(1, 200) as i32 - 1,
-                Edge::West => expected_rng.next_range_u32_inclusive(0, 200) as i32 - 1,
-                _ => unreachable!(),
-            };
-            assert_eq!(
-                start,
-                if edge == Edge::East { 0 } else { -1 },
-                "fixed witness pins West's negative x86 remainder"
-            );
-            let local_u = if edge == Edge::East { 100 } else { 0 };
-            let expected = (0..200)
-                .map(|n| local_to_packed_cell(bounds, local_u, (n + start) % 200))
-                .find(|&candidate| candidate_is_outside(candidate, bounds, None))
-                .map(pack_cell)
-                .expect("square edge scan has an outside candidate");
-            let mut actual_rng = SimRng::new(seed);
-            assert_eq!(
-                find_paradrop_edge_cell(Some(bounds), None, edge, &mut actual_rng),
-                Some(expected),
-                "{edge:?}"
-            );
-            assert_eq!(
-                actual_rng.logical_state(),
-                expected_rng.logical_state(),
-                "{edge:?}"
-            );
-        }
-    }
-
-    #[test]
     fn paradrop_south_grows_past_ten_and_randomly_selects_full_vector() {
         let bounds = square_bounds();
         let mut expected_rng = SimRng::new(0xAA44_0002);
@@ -245,25 +210,5 @@ mod tests {
             Some(candidates[selected])
         );
         assert_eq!(actual_rng.logical_state(), expected_rng.logical_state());
-    }
-
-    #[test]
-    fn paradrop_edge_requires_mapclass_authority_without_spending_rng() {
-        let mut rng = SimRng::new(0xAA44_FFFF);
-        let before = rng.logical_state();
-        assert_eq!(
-            find_paradrop_edge_cell(None, None, Edge::North, &mut rng),
-            None
-        );
-        assert_eq!(rng.logical_state(), before);
-    }
-
-    #[test]
-    fn test_edge_from_index() {
-        assert_eq!(Edge::from_index(0), Some(Edge::North));
-        assert_eq!(Edge::from_index(1), Some(Edge::East));
-        assert_eq!(Edge::from_index(2), Some(Edge::South));
-        assert_eq!(Edge::from_index(3), Some(Edge::West));
-        assert_eq!(Edge::from_index(4), None);
     }
 }

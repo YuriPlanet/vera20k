@@ -114,14 +114,14 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
     }
     let source = sim.substrate.entities.get(brute).unwrap();
     let owner = source.owner();
-    assert!(sim.houses.get(&owner).unwrap().is_human);
+    assert!(sim.houses.get(&owner).unwrap().is_human());
     assert_eq!(source.attack_target.target(), None);
     let target = sim.substrate.entities.get(tank).unwrap();
     let target_owner = target.owner();
     // Unit EnterIdle738B67..738BD3 picks AreaGuard for this arena's armed,
     // unteamed computer tank: its stock skirmish IQ reaches GuardArea.
     // Techno Unlimbo6F6E2A..6F6E4F promotes that ordinary idle selection.
-    assert!(sim.houses.get(&target_owner).unwrap().current_iq >= rules.general.iq_guard_area);
+    assert!(sim.houses.get(&target_owner).unwrap().current_iq() >= rules.general.iq_guard_area);
     assert_eq!(
         target.mission.current(),
         MissionId::from_known(MissionType::AreaGuard)
@@ -390,22 +390,19 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
     panic!("ordinary stock {weapon_name} Attack must produce a nonlethal tank hit");
 }
 
+/// Stock normal and elite Brutes, then an authored TIRE list: original typed
+/// tail469D40..469E18 constructs VoxelAnim7493B0 at live Bullet GetCoords with
+/// null owner. That scenario authors only the two Smashing list keys; it is
+/// not an unmodified stock Brute effect.
 #[test]
-fn stock_normal_brute_nonlethal_smash_emits_warhead_debris() {
-    brute_smash_emits_debris(false, SmashDebrisExpectation::StockMetallic);
-}
-
-#[test]
-fn stock_elite_brute_nonlethal_smash_emits_warhead_debris() {
-    brute_smash_emits_debris(true, SmashDebrisExpectation::StockMetallic);
-}
-
-/// Original typed tail469D40..469E18 constructs VoxelAnim7493B0 at live
-/// Bullet GetCoords with null owner. This scenario authors only the two
-/// Smashing list keys; it is not an unmodified stock Brute effect.
-#[test]
-fn authored_tire_brute_nonlethal_smash_emits_typed_warhead_debris() {
-    brute_smash_emits_debris(false, SmashDebrisExpectation::AuthoredTire);
+fn brute_nonlethal_smash_emits_stock_and_authored_typed_warhead_debris() {
+    for (elite, expectation) in [
+        (false, SmashDebrisExpectation::StockMetallic),
+        (true, SmashDebrisExpectation::StockMetallic),
+        (false, SmashDebrisExpectation::AuthoredTire),
+    ] {
+        brute_smash_emits_debris(elite, expectation);
+    }
 }
 
 fn native_bounce_fields(body: &crate::sim::bounce::BounceState) -> serde_json::Value {
@@ -879,19 +876,14 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
     }
 }
 
+/// The ordinary tail keeps constructor RNG, IDs and live coordinates; a
+/// retired Bullet keeps storage but runs no detonation tail or cluster RNG; the
+/// authored typed tail keeps RNG, IDs and the complete Bounce state.
 #[test]
-fn original_smashing_tail_preserves_constructor_rng_ids_and_live_coordinates() {
-    compare_native_smashing_tail(false, false);
-}
-
-#[test]
-fn retired_bullet_retains_storage_but_cannot_run_detonation_tail_or_cluster_rng() {
-    compare_native_smashing_tail(true, false);
-}
-
-#[test]
-fn original_authored_typed_smashing_tail_preserves_rng_ids_and_complete_bounce_state() {
-    compare_native_smashing_tail(false, true);
+fn original_smashing_tails_match_native_for_ordinary_retired_and_typed_bullets() {
+    for (retired, typed) in [(false, false), (true, false), (false, true)] {
+        compare_native_smashing_tail(retired, typed);
+    }
 }
 
 /// Original full Unit737C90 -> Techno701900 fatal receiver, with an explicit

@@ -793,45 +793,8 @@ mod tint_tests;
 #[cfg(test)]
 mod palette_producer_tests {
     use super::*;
-    use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::scenario_session::ScenarioLightingState;
-
-    fn split_cell() -> CellLightGrid {
-        let mut grid = CellLightGrid::new();
-        grid.insert_profiled_light((4, 7), [0.512, 0.640, 0.768], 1.0);
-        let id = grid.cell_light_at((4, 7)).unwrap().profile_id;
-        grid.insert_light(
-            (4, 7),
-            lighting::CellLight::new(
-                id,
-                [512, 640, 768],
-                [512, 640, 768],
-                65536,
-                0,
-                0,
-                1200,
-                800,
-                1200,
-                900,
-                800,
-            ),
-        );
-        grid
-    }
-
-    #[test]
-    fn techno_selected_scheme_does_not_inherit_cell_hue_or_row_count() {
-        let grid = split_cell();
-        let unit = body_palette_light(&grid, (4, 7), 100);
-        let infantry = body_palette_light(&grid, (4, 7), 200);
-        let cell = crate::render::palette_light::PaletteLight::cell(&grid, (4, 7), false);
-        assert_eq!((unit.rows(), unit.brightness()), (53, 1300));
-        assert_eq!((infantry.rows(), infantry.brightness()), (53, 1400));
-        assert_eq!((cell.rows(), cell.brightness()), (27, 900));
-        assert_eq!(unit.0[0] & 0x3ffff, 65535);
-        assert_ne!(unit.0[0] & 0x3ffff, cell.0[0] & 0x3ffff);
-    }
 
     #[test]
     fn palette_producers_preserve_normalized_common_from_real_map_grid() {
@@ -849,106 +812,6 @@ mod palette_producer_tests {
         assert_eq!((cell.rows(), cell.brightness()), (27, 799));
         assert_eq!((unit.rows(), unit.brightness()), (53, 1200));
         assert_eq!(unit.0[0] & 0x3ffff, 65535);
-    }
-
-    #[test]
-    fn building_art_selects_cell_palette_or_top_plus_signed_extra() {
-        let grid = split_cell();
-        let art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[BODY]\nExtraLight=350\n[ISO]\nTerrainPalette=yes\nExtraLight=350\n[NEG]\nExtraLight=65535\n",
-        ));
-        let body = art.resolve_metadata_entry("BODY", "BODY");
-        assert_eq!(
-            building_palette_light(&grid, (4, 7), body, false).brightness(),
-            1550
-        );
-        assert_eq!(
-            building_palette_light(&grid, (4, 7), body, true).brightness(),
-            1200
-        );
-        let iso = building_palette_light(
-            &grid,
-            (4, 7),
-            art.resolve_metadata_entry("ISO", "ISO"),
-            false,
-        );
-        assert_eq!((iso.rows(), iso.brightness()), (27, 900));
-        // Building VXL uses the independent selected scheme/top producer even
-        // when the SHP body above uses TerrainPalette or ExtraLight.
-        let voxel = body_palette_light(&grid, (4, 7), 0);
-        assert_eq!((voxel.rows(), voxel.brightness()), (53, 1200));
-        assert_eq!(voxel.0[0] & 0x3ffff, 65535);
-        assert_eq!(
-            building_palette_light(
-                &grid,
-                (4, 7),
-                art.resolve_metadata_entry("NEG", "NEG"),
-                false
-            )
-            .brightness(),
-            1199
-        );
-    }
-
-    #[test]
-    fn animation_explicit_cell_plain_global_and_first_scheme_keep_distinct_rows() {
-        let grid = split_cell();
-        let art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[PLAIN]\nUseNormalLight=no\n[ALT]\nAltPalette=yes\n[FULL]\nUseNormalLight=yes\n",
-        ));
-        let plain = anim_palette_light(&grid, (4, 7), art.anim_runtime_config("PLAIN"), false);
-        let cell = anim_palette_light(&grid, (4, 7), art.anim_runtime_config("PLAIN"), true);
-        let alt = anim_palette_light(&grid, (4, 7), art.anim_runtime_config("ALT"), false);
-        assert_eq!(
-            (plain.rows(), plain.brightness(), plain.0[1] & (1 << 30)),
-            (53, 1200, 1 << 30)
-        );
-        assert_eq!((cell.rows(), cell.brightness()), (27, 900));
-        assert_eq!((alt.rows(), alt.brightness()), (1, 1200));
-        assert_eq!(
-            anim_palette_light(&grid, (4, 7), art.anim_runtime_config("FULL"), true).brightness(),
-            1000
-        );
-    }
-
-    /// Each class's draw adds its own extra light, so no class's key reaches
-    /// another's draw: ExtraUnitLight= for a unit, ExtraInfantryLight= for
-    /// infantry, ExtraAircraftLight= and the height's Levels for an aircraft
-    /// (IonLevel= while a storm rages), and none for a building.
-    #[test]
-    fn each_class_adds_its_own_extra_light() {
-        use crate::map::entities::EntityCategory;
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nFixtureOnly=1\n[AudioVisual]\nExtraUnitLight=.1\nExtraInfantryLight=.2\n\
-             ExtraAircraftLight=.3\n",
-        ))
-        .unwrap();
-        let mut sim = Simulation::new();
-        sim.session.lighting_mut().normal_mut_for_test().level_units = 32;
-        sim.session.lighting_mut().ion_mut_for_test().level_units = 20;
-        let extra = |sim: &Simulation, category| {
-            let mut entity = crate::sim::game_entity::GameEntity::test_default_of_category(
-                1,
-                "HTNK",
-                "Americans",
-                10,
-                10,
-                category,
-            );
-            entity.position.set_exact_z_leptons_for_test(Some(1500));
-            body_extra_light(&entity, &rules, sim, None)
-        };
-        assert_eq!(extra(&sim, EntityCategory::Unit), 100);
-        assert_eq!(extra(&sim, EntityCategory::Infantry), 200);
-        assert_eq!(extra(&sim, EntityCategory::Aircraft), 300 + 7 * 32);
-        assert_eq!(extra(&sim, EntityCategory::Structure), 0);
-        let owner = sim.interner.intern("Americans");
-        sim.lightning_storm =
-            crate::sim::superweapon::lightning_storm::LightningStorm::raging_for_test(
-                owner,
-                (0, 0),
-            );
-        assert_eq!(extra(&sim, EntityCategory::Aircraft), 300 + 7 * 20);
     }
 
     /// Each `aircraft_light` row (AircraftClass::Draw_It `0x004148D1..

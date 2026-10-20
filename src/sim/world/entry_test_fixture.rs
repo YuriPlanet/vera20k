@@ -66,9 +66,11 @@ pub(crate) fn fixture_with_rules_and_fixed_art(
     // Map load also sizes the ore queue stores from the same `[Map] Size`
     // rect (`initialize_native_tiberium_queues`); this map holds no ore.
     let frame = sim.session.binary_frame();
-    sim.production
-        .ore_growth_state
-        .reset_native_tiberium_classes_for_rect((16, 16), rules.tiberium_types.len(), frame);
+    sim.ore_growth_state.reset_native_tiberium_classes_for_rect(
+        (16, 16),
+        rules.tiberium_types.len(),
+        frame,
+    );
     for p in [(15, 15), (16, 15), (17, 14), (17, 15), (17, 16)] {
         assert!(crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (p.0, p.1),

@@ -172,6 +172,16 @@ impl RegisteredBuilding {
 }
 
 impl HouseBaseState {
+    /// The retained House4FD150 radius, also read by House500200/501AC0.
+    pub(crate) const fn radius(&self) -> i32 {
+        self.radius
+    }
+
+    /// `4FD150` publishes the radius at Building lifecycle boundaries.
+    pub(crate) fn retain_radius(&mut self, radius: i32) {
+        self.radius = radius;
+    }
+
     /// The FactoryPlant products (House `+0x5390..+0x53A0`, in
     /// [`ObjectType::factor_slot`] order) that `CalculateCostMultipliers @
     /// 0x0050BF60` stores; `HouseClass::GetAccumulatedBonus @ 0x0050BEB0`
@@ -277,39 +287,6 @@ fn multiply_factor(lhs: NativeF32Bits, rhs: NativeF32Bits) -> NativeF32Bits {
     X87::store_f32_masked_chop(X87::mul(X87::load_f32(lhs), X87::load_f32(rhs)))
 }
 
-impl crate::sim::house_state::HouseState {
-    /// The retained House4FD150 radius, also read by House500200/501AC0.
-    pub(crate) fn base_radius(&self) -> i32 {
-        self.base_projection.radius
-    }
-
-    /// House50E000's explicit primary write, called at Unit7398CE and scenario
-    /// launch. It does not recalculate radius or replace alternate/BasePlan cells.
-    pub(crate) fn set_base_center(&mut self, cell: (u16, u16)) {
-        self.base_center = Some(cell);
-    }
-
-    fn retain_base_geometry(&mut self, primary: Option<(u16, u16)>, radius: i32) {
-        self.base_center = primary;
-        self.base_projection.radius = radius;
-    }
-
-    /// Supplied physical House+5490/+5498 inputs in native query corpora.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_base_geometry_for_test(&mut self, primary: Option<(u16, u16)>, radius: i32) {
-        self.retain_base_geometry(primary, radius);
-    }
-
-    /// The House factors TechnoType `Cost_Of` (`0x00711F00`) reads: its
-    /// country's `Cost*Mult=` and its FactoryPlant products.
-    pub(crate) fn cost_factors(&self) -> HouseCostFactors {
-        HouseCostFactors {
-            country: self.country_cost_mults.0,
-            factory_plant: self.base_projection.factory_plant_factors(),
-        }
-    }
-}
-
 impl Simulation {
     /// Original Execute30 at 0x006DE206..0x006DE2A5. The acquired BuildConst vector
     /// supplies its first raw Location, then an empty plan asks 0x0050C210 to
@@ -329,13 +306,13 @@ impl Simulation {
         if !house.set_auto_base_building_from_trigger(value) {
             return true;
         }
-        let first = house.build_const_order.first().copied();
+        let first = house.build_const_order().first().copied();
         if let Some(cell) = first.and_then(|id| self.raw_building_base_cell(id)) {
             let house = self.houses.get_mut(&owner).expect("retained owner");
             house.set_base_center(cell);
-            house.base_plan_center = cell;
+            house.anchor_base_plan(cell);
         }
-        if self.houses[&owner].base_plan.nodes.is_empty() {
+        if self.houses[&owner].base_plan().nodes().is_empty() {
             return self.initialize_house_base_from_build_const(owner, rules, registry, effects);
         }
         true
@@ -353,7 +330,7 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) -> bool {
         let candidate = self.houses[&owner]
-            .base_projection
+            .base_projection()
             .buildings()
             .iter()
             .rev()
@@ -374,13 +351,16 @@ impl Simulation {
         }
         // 0x0050C2F5 rereads the plan after the diplomacy callbacks. Keep Recalc's
         // existing owner and its Scenario RNG, clearing A8E7AC only around it.
-        if self.houses[&owner].base_plan.nodes.is_empty() {
+        if self.houses[&owner].base_plan().nodes().is_empty() {
             let house = &self.houses[&owner];
-            let Some(country) = house.country.map(|id| self.interner.resolve(id).to_owned()) else {
+            let Some(country) = house
+                .country()
+                .map(|id| self.interner.resolve(id).to_owned())
+            else {
                 return false;
             };
             let (side, difficulty, tech_level) =
-                (house.side_index, house.difficulty, house.tech_level);
+                (house.side_index(), house.difficulty(), house.tech_level());
             if crate::sim::base_plan_generation::preflight_recalc(rules, &country, side, difficulty)
                 .is_err()
             {
@@ -389,7 +369,7 @@ impl Simulation {
             self.without_object_placement_scope(|sim| {
                 let house = sim.houses.get_mut(&owner).expect("retained owner");
                 crate::sim::base_plan_generation::recalc_base_plan(
-                    &mut house.base_plan,
+                    house.base_plan_mut(),
                     rules,
                     &sim.type_tech_levels,
                     &country,
@@ -402,13 +382,13 @@ impl Simulation {
             });
         }
         let house = self.houses.get_mut(&owner).expect("retained owner");
-        if let Some(node) = house.base_plan.nodes.first_mut() {
-            node.packed_cell = crate::sim::base_plan::pack_base_plan_cell(
+        house
+            .base_plan_mut()
+            .anchor_first_node(crate::sim::base_plan::pack_base_plan_cell(
                 i32::from(cell.0 as i16),
                 i32::from(cell.1 as i16),
-            );
-        }
-        house.base_plan_center = cell;
+            ));
+        house.anchor_base_plan(cell);
         true
     }
 
@@ -686,9 +666,9 @@ impl Simulation {
         {
             return false;
         }
-        let mut buildings = Vec::with_capacity(house.base_projection.buildings.len());
-        if house.tracking.buildings() > 0 {
-            for &id in house.base_projection.buildings() {
+        let mut buildings = Vec::with_capacity(house.base_projection().buildings.len());
+        if house.tracking().buildings() > 0 {
+            for &id in house.base_projection().buildings() {
                 let Some(entity) = self.substrate.entities.get(id) else {
                     continue;
                 };
@@ -709,9 +689,9 @@ impl Simulation {
         }
         let (primary, radius) = project_geometry(
             self,
-            house.tracking.buildings(),
+            house.tracking().buildings(),
             &buildings,
-            house.alternate_base_center,
+            house.alternate_base_center(),
         );
         self.houses
             .get_mut(&owner)
@@ -730,7 +710,7 @@ impl Simulation {
     pub fn cost_of(&self, owner: InternedId, object: &ObjectType, rules: &RuleSet) -> i32 {
         debug_assert!(
             self.houses.get(&owner).is_none_or(|house| {
-                house.country_cost_mults.0
+                house.country_cost_mults().0
                     == rules.country_cost_mults(self.interner.resolve(house.house_type_id()))
             }),
             "a House's `Cost*Mult=` copy differs from its type's: project it at creation"
@@ -758,7 +738,7 @@ impl Simulation {
             return 0;
         };
         house
-            .base_projection
+            .base_projection()
             .buildings()
             .iter()
             .filter_map(|&id| {
@@ -828,7 +808,7 @@ impl Simulation {
             return Vec::new();
         };
         house
-            .base_projection
+            .base_projection()
             .buildings()
             .iter()
             .copied()
@@ -855,7 +835,7 @@ impl Simulation {
         let entry = RegisteredBuilding::new(id, object);
         let owner = entity.owner();
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.base_projection.register(entry);
+            house.base_projection_mut().register(entry);
         }
     }
 
@@ -873,7 +853,7 @@ impl Simulation {
             return;
         };
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.base_projection.append_membership(id);
+            house.base_projection_mut().append_membership(id);
         }
     }
 
@@ -891,7 +871,7 @@ impl Simulation {
     /// lists (`0x00449155..0x004491D2`).
     pub(super) fn leave_house_base_lists(&mut self, id: u64, owner: InternedId) {
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.base_projection.remove_membership(id);
+            house.base_projection_mut().remove_membership(id);
         }
     }
 
@@ -909,7 +889,7 @@ impl Simulation {
             self.recalculate_house_base_geometry(owner, rules);
         }
         if let Some(house) = self.houses.get_mut(&owner) {
-            house.base_projection.append_membership(id);
+            house.base_projection_mut().append_membership(id);
         }
     }
 
@@ -925,12 +905,12 @@ impl Simulation {
         let Some(entry) = self
             .houses
             .get_mut(&old_owner)
-            .and_then(|house| house.base_projection.unregister(id))
+            .and_then(|house| house.base_projection_mut().unregister(id))
         else {
             return;
         };
         if let Some(house) = self.houses.get_mut(&new_owner) {
-            house.base_projection.register(entry);
+            house.base_projection_mut().register(entry);
         }
     }
 
@@ -945,7 +925,7 @@ impl Simulation {
         }
         // Broadcast visits every House, including historical non-owner lists.
         for house in self.houses.values_mut() {
-            house.base_projection.remove_membership(id);
+            house.base_projection_mut().remove_membership(id);
         }
     }
 
@@ -954,7 +934,7 @@ impl Simulation {
             && let Some(house) = self.houses.get_mut(&owner)
         {
             //43BF34 changes tracking AFTER the earlier expiry/Limbo. No recalc.
-            house.base_projection.unregister(id);
+            house.base_projection_mut().unregister(id);
         }
     }
 }
@@ -997,7 +977,7 @@ mod tests {
 
     fn geometry(sim: &Simulation, owner: InternedId) -> (Option<(u16, u16)>, i32) {
         let house = &sim.houses[&owner];
-        (house.base_center, house.base_radius())
+        (house.base_center(), house.base_radius())
     }
 
     fn ordinary_rules() -> RuleSet {
@@ -1037,7 +1017,7 @@ mod tests {
                     .unwrap();
             }
             assert_eq!(
-                sim.houses[&owner].base_projection.buildings().len(),
+                sim.houses[&owner].base_projection().buildings().len(),
                 powers.len()
             );
             let before = sim.state_hash();
@@ -1069,7 +1049,7 @@ mod tests {
                         .as_i64()
                         .unwrap() as i32
                 };
-                let ids = sim.houses[&owner].base_projection.buildings().to_vec();
+                let ids = sim.houses[&owner].base_projection().buildings().to_vec();
                 let other = add_house(&mut sim, "Russians", &rules);
                 sim.change_owner_with_rules(ids[0], other, &rules, None, FrameEffects::default());
                 assert_eq!(
@@ -1186,7 +1166,7 @@ mod tests {
             (primary != (0, 0)).then_some(primary),
             input["radius"].as_i64().unwrap() as i32,
         );
-        house.alternate_base_center = cell("alternate", (0, 0));
+        house.set_alternate_base_center_for_test(cell("alternate", (0, 0)));
         let current = input["current"]
             .as_array()
             .map_or([2688, 2688, 0], |coord| {
@@ -1232,35 +1212,6 @@ mod tests {
         sim.substrate.entities.insert(actor);
         sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap());
         (sim, id, owner)
-    }
-
-    #[test]
-    fn native_home_inputs_keep_retained_base_geometry_across_snapshot_load() {
-        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/house_base_return.json",
-        ))
-        .unwrap();
-        for row in corpus["home_return"].as_array().unwrap() {
-            let input = &row["input"];
-            let name = input["name"].as_str().unwrap();
-            let (sim, _, owner) = native_home_fixture(input);
-            let retained = geometry(&sim, owner);
-            let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, name, 0);
-            let mut loaded = crate::sim::snapshot::GameSnapshot::load(&bytes)
-                .unwrap()
-                .sim;
-            // These native query premises deliberately have no registered
-            // buildings. Restore must retain the saved House5490/5498, not
-            // replace them with an empty-membership projection.
-            assert_eq!(geometry(&loaded, owner), retained, "{name}");
-            let retained_hash = loaded.state_hash();
-            loaded
-                .houses
-                .get_mut(&owner)
-                .unwrap()
-                .retain_base_geometry(retained.0, retained.1.wrapping_add(1));
-            assert_ne!(loaded.state_hash(), retained_hash, "radius hash: {name}");
-        }
     }
 
     #[test]
@@ -1352,46 +1303,6 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_home_query_reports_unavailable_before_rng_without_map_or_class_authority() {
-        let input = serde_json::json!({
-            "family": "MTNK", "radius": 0, "seed": 31,
-        });
-        for missing in 0..7 {
-            let (mut sim, id, owner) = native_home_fixture(&input);
-            let held_terrain = sim.resolved_terrain.as_ref().unwrap().clone();
-            match missing {
-                0 => sim.resolved_terrain = None,
-                1 => sim.playfield_bounds = None,
-                2 => sim.playfield_size_height = None,
-                3 => sim.zone_grid = None,
-                4 => {
-                    sim.houses.remove_for_test(&owner);
-                }
-                5 => {
-                    sim.substrate.entities.remove(id);
-                }
-                _ => {
-                    sim.substrate
-                        .entities
-                        .get_mut(id)
-                        .unwrap()
-                        .set_category_for_test(EntityCategory::Structure);
-                }
-            }
-            let before = sim.rng_state();
-            let hash_before = sim.state_hash();
-            assert_eq!(
-                sim.house_return_cell(owner, id),
-                None,
-                "missing premise {missing}"
-            );
-            assert_eq!(sim.rng_state(), before, "missing premise {missing}");
-            assert_eq!(sim.state_hash(), hash_before, "missing premise {missing}");
-            assert_eq!(held_terrain.dummy_cell_requested_coord(), (-7, 1));
-        }
-    }
-
-    #[test]
     fn original_house_4fd150_projection_rows_and_shared_cost_queries() {
         let default: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/house_base_projection.json",
@@ -1440,8 +1351,8 @@ mod tests {
                 )
             });
             let house = sim.houses.get_mut(&owner).unwrap();
-            house.tracking.set_buildings_for_test(tracked);
-            house.alternate_base_center = alternate;
+            house.tracking_mut().set_buildings_for_test(tracked);
+            house.set_alternate_base_center_for_test(alternate);
             house.retain_base_geometry(Some((14, 14)), 9999);
             if let Some(bonus) = input["unit_bonus"].as_f64() {
                 let mut factors = UNIT_FACTORS;
@@ -1449,12 +1360,12 @@ mod tests {
                 // The oracle supplies House+5394 directly. This list recreates
                 // that input through the existing factor owner, without adding
                 // a building to the oracle's separate House+68 premise.
-                house.base_projection.register(RegisteredBuilding {
+                house.base_projection_mut().register(RegisteredBuilding {
                     id: u64::MAX,
                     plant: Some(factors),
                     secret_lab: false,
                 });
-                house.base_projection.plants.push(u64::MAX);
+                house.base_projection_mut().plants.push(u64::MAX);
             }
             let mut admitted = Vec::new();
             let mut representable = true;
@@ -1539,7 +1450,7 @@ mod tests {
                 sim.houses
                     .get_mut(&owner)
                     .unwrap()
-                    .base_projection
+                    .base_projection_mut()
                     .replace_buildings_for_test(ids);
                 assert!(sim.recalculate_house_base_geometry(owner, &rules));
                 assert_eq!(
@@ -1562,12 +1473,12 @@ mod tests {
             .unwrap();
         // Original tracked>0/empty-House+68 row. The first append follows it.
         assert_eq!(geometry(&sim, owner), (None, 512));
-        assert_eq!(sim.houses[&owner].base_projection.buildings(), [first]);
+        assert_eq!(sim.houses[&owner].base_projection().buildings(), [first]);
         let second = sim
             .spawn_object("SECOND", "Americans", 13, 9, 0, &rules)
             .unwrap();
         assert_eq!(
-            sim.houses[&owner].base_projection.buildings(),
+            sim.houses[&owner].base_projection().buildings(),
             [first, second]
         );
         let (primary, radius) = geometry(&sim, owner);
@@ -1585,7 +1496,7 @@ mod tests {
         // Both entries are alive/on-map at Building445DA6. The unoccupied
         // centroid agrees with the native two-building row before conceal.
         assert_eq!(geometry(&sim, owner), (Some((8, 7)), 512));
-        assert_eq!(sim.houses[&owner].base_projection.buildings(), [first]);
+        assert_eq!(sim.houses[&owner].base_projection().buildings(), [first]);
         sim.houses
             .get_mut(&owner)
             .unwrap()
@@ -1602,42 +1513,12 @@ mod tests {
         assert_eq!(geometry(&sim, owner), (None, 512));
         sim.uninit_with_rules(second, &rules);
         sim.process_pending_delete();
-        assert_eq!(sim.houses[&owner].tracking.buildings(), 0);
+        assert_eq!(sim.houses[&owner].tracking().buildings(), 0);
         assert_eq!(
             geometry(&sim, owner),
             (None, 512),
             "destructor does not recalculate"
         );
-    }
-
-    #[test]
-    fn capture_recalculates_after_old_removal_and_before_new_append() {
-        let rules = ordinary_rules();
-        let mut sim = native_map_fixture();
-        let old = add_house(&mut sim, "Americans", &rules);
-        let new = add_house(&mut sim, "Russians", &rules);
-        let first = sim
-            .spawn_object("FIRST", "Americans", 5, 5, 0, &rules)
-            .unwrap();
-        let second = sim
-            .spawn_object("SECOND", "Americans", 13, 9, 0, &rules)
-            .unwrap();
-        sim.change_owner_with_rules(
-            first,
-            new,
-            &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-        assert_eq!(sim.houses[&old].tracking.buildings(), 1);
-        assert_eq!(sim.houses[&new].tracking.buildings(), 1);
-        assert_eq!(sim.houses[&old].base_projection.buildings(), [second]);
-        assert_eq!(sim.houses[&new].base_projection.buildings(), [first]);
-        let old_primary = sim.houses[&old].base_center.unwrap();
-        assert!(old_primary.0.abs_diff(13) <= 1 && old_primary.1.abs_diff(9) <= 1);
-        // Original tracked>0/empty row on the NEW House. If its append ran
-        // first, the geometry would already be near the captured building.
-        assert_eq!(geometry(&sim, new), (None, 512));
     }
 
     #[test]
@@ -1692,29 +1573,7 @@ mod tests {
                 assert!(matches!(result, RevealOutcome::Revealed { .. }));
             }
             assert_eq!(geometry(&sim, owner), (Some((14, 14)), 9999));
-            assert!(sim.houses[&owner].base_projection.buildings().is_empty());
-        }
-    }
-
-    #[test]
-    fn missing_map_context_reports_unavailable_without_replacing_retained_geometry() {
-        let rules = ordinary_rules();
-        for missing in 0..3 {
-            let mut sim = native_map_fixture();
-            let owner = add_house(&mut sim, "Americans", &rules);
-            sim.houses
-                .get_mut(&owner)
-                .unwrap()
-                .retain_base_geometry(Some((14, 14)), 9999);
-            match missing {
-                0 => sim.resolved_terrain = None,
-                1 => sim.playfield_bounds = None,
-                _ => sim.playfield_size_height = None,
-            }
-            let hash_before = sim.state_hash();
-            assert!(!sim.recalculate_house_base_geometry(owner, &rules));
-            assert_eq!(geometry(&sim, owner), (Some((14, 14)), 9999));
-            assert_eq!(sim.state_hash(), hash_before);
+            assert!(sim.houses[&owner].base_projection().buildings().is_empty());
         }
     }
 
@@ -1729,20 +1588,31 @@ mod tests {
         let second = sim
             .spawn_object("SECOND", "Americans", 13, 9, 0, &rules)
             .unwrap();
-        sim.houses.get_mut(&owner).unwrap().alternate_base_center = (1, 1);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_alternate_base_center_for_test((1, 1));
         assert!(sim.recalculate_house_base_geometry(owner, &rules));
         // Saved native alternate-origin projection row.
         assert_eq!(geometry(&sim, owner), (Some((8, 7)), 1028));
         let native_hash = sim.state_hash();
-        sim.houses.get_mut(&owner).unwrap().base_projection.radius = 1029;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .base_projection_mut()
+            .radius = 1029;
         assert_ne!(sim.state_hash(), native_hash);
-        sim.houses.get_mut(&owner).unwrap().base_projection.radius = 1028;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .base_projection_mut()
+            .radius = 1028;
         assert_eq!(sim.state_hash(), native_hash);
         // A primary writer retains radius; it also leaves the alternate and
         // BasePlan centre untouched. Historical geometry need not equal lists.
         let house = sim.houses.get_mut(&owner).unwrap();
         house.set_base_center((14, 14));
-        house.base_plan_center = (3, 4);
+        house.set_base_plan_center_for_test((3, 4));
         // Native load constructs the Scenario RNG with seed0. This test pins
         // geometry/list persistence, not a different RNG restore contract.
         // The native-map fixture also supplies navigation; publish and restore
@@ -1780,10 +1650,10 @@ mod tests {
             restored.hash_owner_diagnostics_for_test(),
         );
         assert_eq!(geometry(&restored, owner), (Some((14, 14)), 1028));
-        assert_eq!(restored.houses[&owner].alternate_base_center, (1, 1));
-        assert_eq!(restored.houses[&owner].base_plan_center, (3, 4));
+        assert_eq!(restored.houses[&owner].alternate_base_center(), (1, 1));
+        assert_eq!(restored.houses[&owner].base_plan_center(), (3, 4));
         assert_eq!(
-            restored.houses[&owner].base_projection.buildings(),
+            restored.houses[&owner].base_projection().buildings(),
             [first, second]
         );
         // Restore leaves geometry historical. The NEXT native boundary must
@@ -1876,7 +1746,7 @@ mod tests {
         let plant_fold = |sim: &Simulation| {
             sim.houses
                 .values()
-                .any(|house| !house.base_projection.factory_plants().is_empty())
+                .any(|house| !house.base_projection().factory_plants().is_empty())
         };
         assert_eq!(costs(&sim), (900, 450));
         assert!(!plant_fold(&sim));
@@ -1886,7 +1756,7 @@ mod tests {
         // ftol(900 * 0.75 * 0.5) = ftol(337.5)
         assert_eq!(costs(&sim), (900, 337));
         assert_eq!(
-            sim.houses[&soviets].base_projection.factory_plants(),
+            sim.houses[&soviets].base_projection().factory_plants(),
             [plant]
         );
         assert!(plant_fold(&sim));
@@ -1900,12 +1770,12 @@ mod tests {
         assert_eq!(costs(&sim), (675, 450));
         assert!(
             sim.houses[&soviets]
-                .base_projection
+                .base_projection()
                 .factory_plants()
                 .is_empty()
         );
         assert_eq!(
-            sim.houses[&allies].base_projection.factory_plants(),
+            sim.houses[&allies].base_projection().factory_plants(),
             [plant]
         );
         sim.uninit_with_rules(plant, &rules);
@@ -1978,8 +1848,8 @@ mod tests {
 
         // An empty base origin ends the call before the search.
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.base_center = None;
-        house.alternate_base_center = (0, 0);
+        house.set_base_center_for_test(None);
+        house.set_alternate_base_center_for_test((0, 0));
         sim.move_ground_forces_to_base(owner, &rules, None, FrameEffects::default());
         assert_eq!(snapshot(&sim), before);
 

@@ -918,7 +918,7 @@ impl Simulation {
         ) else {
             return;
         };
-        house.tracking.absorber_entry(entity);
+        house.tracking_mut().absorber_entry(entity);
     }
 
     /// Successful reveals from a Bio Reactor, SpawnSurvivors or Selling restore
@@ -942,7 +942,7 @@ impl Simulation {
         ) else {
             return;
         };
-        house.tracking.restore_absorbed_infantry(entity);
+        house.tracking_mut().restore_absorbed_infantry(entity);
     }
 }
 

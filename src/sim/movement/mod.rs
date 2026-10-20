@@ -150,10 +150,6 @@ pub use foot_speed::{SpeedRules, owner_current_speed};
 pub use movement_commands::DestinationTiming;
 pub use movement_commands::movement_goal_cell;
 pub(crate) use movement_commands::{can_accept_destination, prepare_walk_destination};
-#[cfg(any(test, feature = "test-support"))]
-pub(crate) use movement_path::{
-    path_search_used_zone_grid_marker, reset_path_search_used_zone_grid_marker,
-};
 pub(crate) use navcom::{set_destination_internal_cell, target_cell_coord, track_stop_moving};
 // Legacy batch tick used by focused movement fixtures.
 #[cfg(any(test, feature = "test-support"))]

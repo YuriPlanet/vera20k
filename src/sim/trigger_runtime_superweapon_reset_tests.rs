@@ -235,7 +235,10 @@ fn superweapon_reset_releases_a_production_chrono_placement_without_destroying_i
         crate::map::resolved_terrain::test_flat_cell,
     ));
     crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "trigger-reset-placement");
-    sim.houses.get_mut(&owner).unwrap().player_control = true;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_player_control_for_test(true);
     let id = sim.interner.get("ChronoSphereSpecial").unwrap();
     let instance = sim
         .super_weapons

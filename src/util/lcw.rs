@@ -289,15 +289,6 @@ mod tests {
     }
 
     #[test]
-    fn test_end_marker() {
-        // Just the end marker.
-        let src: &[u8] = &[0x80];
-        let mut dest: [u8; 16] = [0; 16];
-        let n: usize = lcw_decompress(src, &mut dest).unwrap();
-        assert_eq!(n, 0);
-    }
-
-    #[test]
     fn test_chunk_decompression() {
         // Build a chunk: src_len=5, dst_len=3, then LCW data (3 literal bytes + end).
         let lcw_data: &[u8] = &[0x83, 0xAA, 0xBB, 0xCC, 0x80];

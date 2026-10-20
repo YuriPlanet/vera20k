@@ -301,7 +301,7 @@ impl Fixture {
             entity.has_been_captured.set_for_test(false);
             // The preceding fixture transfer is supplied setup, not this
             // arrival. Consume its identical idle request through the owner.
-            entity.apply_queued_building_body(0, &sim.session.game_options());
+            entity.apply_queued_building_body(0, sim.session.game_options());
         }
         if name == "enemy_selling_refusal" {
             let entity = sim.substrate.entities.get_mut(building).unwrap();
@@ -372,8 +372,8 @@ impl Fixture {
             .zip(&houses)
         {
             let house = sim.houses.get_mut(id).unwrap();
-            house.stats = MatchStatistics::from_totals_for_test(0, 0, 0, 0, 0);
-            house.economy.set_score_for_test(0);
+            house.set_stats_for_test(MatchStatistics::from_totals_for_test(0, 0, 0, 0, 0));
+            house.economy_mut().set_score_for_test(0);
             // Restore only the supplied pre-arrival House1F4 through the
             // existing persistence representation; arrival writes stay with
             // the shared discovery owner and are compared below.
@@ -509,17 +509,17 @@ impl Fixture {
                 .map(|n| int(n) as u32)
                 .sum();
             assert_eq!(
-                house.stats.buildings_killed(),
+                house.stats().buildings_killed(),
                 kills,
                 "{boundary}: capture kills"
             );
             assert_eq!(
-                house.stats.buildings_lost(),
+                house.stats().buildings_lost(),
                 int(&expected["building_losses"]) as u32,
                 "{boundary}: capture loss"
             );
             assert_eq!(
-                house.economy.score(),
+                house.economy().score(),
                 int(&expected["score"]),
                 "{boundary}: shared score"
             );
@@ -535,20 +535,20 @@ impl Fixture {
             );
             assert_eq!(
                 house
-                    .tracking
+                    .tracking()
                     .owned_count(EntityCategory::Structure, type_ref),
                 int(&expected["owned_building_count"]),
                 "{boundary}: owned count"
             );
             assert_eq!(
                 house
-                    .tracking
+                    .tracking()
                     .active_count(EntityCategory::Structure, type_ref),
                 int(&expected["live_building_count"]),
                 "{boundary}: live count"
             );
             assert_eq!(
-                house.tracking.buildings(),
+                house.tracking().buildings(),
                 int(&expected["tracked_ordinary_buildings"]),
                 "{boundary}: tracked buildings"
             );
@@ -559,7 +559,7 @@ impl Fixture {
                 .map(|_| self.building)
                 .collect();
             assert_eq!(
-                house.base_projection.buildings(),
+                house.base_projection().buildings(),
                 list,
                 "{boundary}: ordered House building list"
             );

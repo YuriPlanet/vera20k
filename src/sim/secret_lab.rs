@@ -31,7 +31,7 @@ pub(crate) fn house_grants(
     house: &HouseState,
     requested: &ObjectType,
 ) -> bool {
-    house.base_projection.secret_labs().iter().any(|&id| {
+    house.base_projection().secret_labs().iter().any(|&id| {
         sim.substrate
             .entities
             .get(id)

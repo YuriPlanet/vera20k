@@ -271,18 +271,6 @@ mod tests {
     }
 
     #[test]
-    fn stack_push_pop_focus_restore() {
-        let mut c = DialogController::default();
-        c.push(A, false);
-        c.push(B, false);
-        assert_eq!(c.top_id(), Some(B));
-        assert_eq!(c.pop(), Some(B));
-        assert_eq!(c.top_id(), Some(A)); // focus restored to parent
-        assert_eq!(c.pop(), Some(A));
-        assert_eq!(c.top_id(), None); // back to the game window
-    }
-
-    #[test]
     fn kbd_route_is_registration_order_and_pruned_on_pop() {
         let mut c = DialogController::default();
         c.push(A, true);

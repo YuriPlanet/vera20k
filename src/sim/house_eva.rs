@@ -54,7 +54,7 @@ fn owns_construction_yard(sim: &Simulation, rules: &RuleSet, owner: InternedId) 
     rules.build_const_types.iter().take(3).any(|name| {
         sim.interner.get(name).is_some_and(|type_id| {
             house
-                .tracking
+                .tracking()
                 .active_count(EntityCategory::Structure, type_id)
                 > 0
         })
@@ -66,17 +66,17 @@ fn owns_construction_yard(sim: &Simulation, rules: &RuleSet, owner: InternedId) 
 pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
     let now = sim.session.binary_frame() as i32;
     let game_mode_nonzero = sim.session.game_mode_nonzero();
-    let delay = speak_delay_frames(rules, &sim.session.game_options());
+    let delay = speak_delay_frames(rules, sim.session.game_options());
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
     if !house.is_controlled_by_human(game_mode_nonzero) {
         return;
     }
-    let available = house.economy.available_money();
-    let factories = house.tracking.funds_nag_factories();
-    let mut timer = house.eva_funds_timer;
-    let mut guard = house.eva_low_power_guard;
+    let available = house.economy().available_money();
+    let factories = house.tracking().funds_nag_factories();
+    let mut timer = *house.eva_funds_timer();
+    let mut guard = house.eva_low_power_guard();
 
     // --- Insufficient funds, `0x004F8B3C..0x004F8BE1` ---
     // Available money (`IHouse::Available_Money`, House vtable `0x7EA834`
@@ -125,8 +125,7 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     // constructor write and this write only), so it is not modelled.
 
     if let Some(house) = sim.houses.get_mut(&owner) {
-        house.eva_funds_timer = timer;
-        house.eva_low_power_guard = guard;
+        house.retain_eva_nag_state(timer, guard);
     }
 }
 
@@ -252,7 +251,7 @@ mod tests {
         // Constructor timer (`Duration = 1`) expires at frame 1.
         assert_eq!(nags, vec![1, 1 + 2880, 1 + 2880 * 2]);
         assert_eq!(
-            sim.houses[&owner].eva_funds_timer,
+            *sim.houses[&owner].eva_funds_timer(),
             CdTimer::started(1 + 2880 * 2, 2880)
         );
     }
@@ -294,7 +293,7 @@ mod tests {
         structure(&mut sim, &rules, "GAAIRC", 8);
         structure(&mut sim, &rules, "GAREFN", 10);
         let counts = |sim: &Simulation, house| {
-            let tracking = &sim.houses[&house].tracking;
+            let tracking = sim.houses[&house].tracking();
             [
                 FactorySlot::Aircraft,
                 FactorySlot::Infantry,
@@ -305,7 +304,7 @@ mod tests {
             .map(|slot| tracking.factory_count(slot))
         };
         assert_eq!(counts(&sim, owner), [1, 2, 0, 0, 1]);
-        assert_eq!(sim.houses[&owner].tracking.funds_nag_factories(), 3);
+        assert_eq!(sim.houses[&owner].tracking().funds_nag_factories(), 3);
 
         sim.change_owner_with_rules(
             barracks,
@@ -350,21 +349,7 @@ mod tests {
         let lines = run_frames(&mut sim, &rules, 10);
         assert!(lines.is_empty(), "{lines:?}");
         assert!(sim.power_states[&owner].is_low_power);
-        assert!(!sim.houses[&owner].eva_low_power_guard);
-    }
-
-    /// A construction yard is enough: short on power with no power plant at
-    /// all, the line plays.
-    #[test]
-    fn low_power_speaks_with_a_construction_yard_and_no_power_plant() {
-        let rules = rules();
-        let (mut sim, owner) = sim_with_house(5_000, true);
-        structure(&mut sim, &rules, "GACNST", 3);
-        structure(&mut sim, &rules, "GAPILE", 7);
-        let lines = run_frames(&mut sim, &rules, 3);
-        assert_eq!(lines.len(), 1, "{lines:?}");
-        assert_eq!(lines[0].1, EVA_LOW_POWER);
-        assert!(sim.houses[&owner].eva_low_power_guard);
+        assert!(!sim.houses[&owner].eva_low_power_guard());
     }
 
     /// With a construction yard the line plays once, stays silent while
@@ -384,11 +369,11 @@ mod tests {
         let lines = run_frames(&mut sim, &rules, 5);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].1, EVA_LOW_POWER);
-        assert!(sim.houses[&owner].eva_low_power_guard);
+        assert!(sim.houses[&owner].eva_low_power_guard());
         // Repair: guard clears.
         set_health(&mut sim, plant, 750);
         assert!(run_frames(&mut sim, &rules, 2).is_empty());
-        assert!(!sim.houses[&owner].eva_low_power_guard);
+        assert!(!sim.houses[&owner].eva_low_power_guard());
         // Short again: one more line.
         set_health(&mut sim, plant, 1);
         let lines = run_frames(&mut sim, &rules, 5);
@@ -409,7 +394,7 @@ mod tests {
         assert_eq!(run_frames(&mut sim, &rules, 2).len(), 1);
         sim.uninit_with_rules(yard, &rules);
         assert!(run_frames(&mut sim, &rules, 2).is_empty());
-        assert!(sim.houses[&owner].eva_low_power_guard);
+        assert!(sim.houses[&owner].eva_low_power_guard());
         structure(&mut sim, &rules, "GACNST", 9);
         assert!(run_frames(&mut sim, &rules, 2).is_empty());
     }

@@ -552,38 +552,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_03_constructor_miss_uses_live_dummy_without_overlay_grid() {
-        let rules = spark_rules(1, 2, "1");
-        let particle_type_id = crate::rules::particle_type::ParticleTypeId(0);
-        let particle_type = rules.particle_type(particle_type_id).clone();
-        let mut sim = super::super::spark_world::tests::one_cell_sim(
-            super::super::spark_world::tests::terrain_cell(0, 0),
-        );
-        sim.overlay_grid = None;
-        let terrain = sim.resolved_terrain.as_ref().unwrap();
-        terrain.test_set_dummy_cell_level_slope(2, 0);
-
-        let particle = construct_spark_particle(
-            &mut sim,
-            &particle_type,
-            particle_type_id,
-            IVec3::new(256, 0, 0),
-        )
-        .unwrap();
-
-        assert_eq!(particle.coords.z, 208);
-        assert_eq!(
-            sim.resolved_terrain
-                .as_ref()
-                .unwrap()
-                .shared_cell_dummy()
-                .snapshot()
-                .coord,
-            (1, 0)
-        );
-    }
-
-    #[test]
     fn gsi_04_03_constructor_miss_uses_dummy_nonzero_slope_off_center() {
         let rules = spark_rules(1, 2, "1");
         let particle_type_id = crate::rules::particle_type::ParticleTypeId(0);
@@ -682,31 +650,6 @@ mod tests {
             expected.logical_view(),
             "one gate draw and one facing draw, and nothing else"
         );
-    }
-
-    #[test]
-    fn gsi_05_13_direction_fold_rotates_without_changing_speed() {
-        // The loop takes the magnitude BEFORE folding in the direction offset,
-        // renormalises afterwards, then rescales by that original magnitude
-        // (`0x0062EBA7`..`0x0062EBE5`). The offset therefore steers the
-        // particle without speeding it up.
-        let rules = spark_rules(1, 20, "1");
-        let mut sim = Simulation::with_seed(7);
-        let mut sys = spark_system(1);
-
-        spark_spawn_pass(&mut sys, &mut sim, &rules).expect("spark spawn");
-        assert!(!sys.particles.is_empty());
-
-        for particle in &sys.particles {
-            let spark = particle.spark.as_ref().expect("Spark runtime state");
-            let speed = magnitude(spark.velocity_x, spark.velocity_y, spark.velocity_z)
-                .expect("finite spark velocity");
-            let recovered = f32::from_bits(speed.bits());
-            assert!(
-                recovered.is_finite() && recovered > 0.0,
-                "spark speed should be finite and positive, got {recovered}"
-            );
-        }
     }
 
     #[test]

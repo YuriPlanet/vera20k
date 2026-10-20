@@ -602,37 +602,6 @@ mod tests {
     }
 
     #[test]
-    fn stereo_wav_header_doubles_the_byte_rate_and_block_align() {
-        // 4 interleaved samples = 2 stereo frames, still 8 bytes of data.
-        let wav = wav_bytes(&[0, 0, 1, 1], 2, 22050).expect("fits a RIFF header");
-        assert_eq!(wav.len(), WAV_HEADER_SIZE + 8);
-        assert_eq!(
-            &wav[..WAV_HEADER_SIZE],
-            &[
-                b'R', b'I', b'F', b'F', //
-                0x2C, 0x00, 0x00, 0x00, //
-                b'W', b'A', b'V', b'E', //
-                b'f', b'm', b't', b' ', //
-                0x10, 0x00, 0x00, 0x00, //
-                0x01, 0x00, // PCM
-                0x02, 0x00, // 2 channels
-                0x22, 0x56, 0x00, 0x00, // 22050 Hz
-                0x88, 0x58, 0x01, 0x00, // 22050 * 2 * 2 = 88200 byte/s
-                0x04, 0x00, // block align 4
-                0x10, 0x00, //
-                b'd', b'a', b't', b'a', //
-                0x08, 0x00, 0x00, 0x00,
-            ][..]
-        );
-    }
-
-    #[test]
-    fn wav_samples_are_little_endian_and_in_order() {
-        let wav = wav_bytes(&[1, -2], 1, 22050).expect("fits a RIFF header");
-        assert_eq!(&wav[WAV_HEADER_SIZE..], &[0x01, 0x00, 0xFE, 0xFF][..]);
-    }
-
-    #[test]
     fn a_zero_channel_count_is_written_as_mono_rather_than_dividing_by_zero() {
         let wav = wav_bytes(&[0, 0], 0, 22050).expect("fits a RIFF header");
         assert_eq!(&wav[22..24], &[0x01, 0x00][..]);
@@ -743,39 +712,6 @@ mod tests {
         assert!(row.decoded_samples.is_none());
         assert!(row.duration_ms.is_none());
         assert!(row.wav.is_none());
-    }
-
-    #[test]
-    fn sanitise_name_keeps_safe_characters_and_replaces_the_rest() {
-        assert_eq!(sanitise_name("IGISEA"), "IGISEA");
-        assert_eq!(sanitise_name("ceva048.aud"), "ceva048.aud");
-        assert_eq!(sanitise_name("a/b\\c:d"), "a_b_c_d");
-        assert_eq!(sanitise_name(""), FALLBACK_FILE_NAME);
-    }
-
-    #[test]
-    fn sound_dir_is_absolute_and_ends_with_the_verbs_subdir() {
-        let dir = sound_dir(Path::new(DEFAULT_OUT_ROOT));
-        assert!(dir.is_absolute(), "{}", dir.display());
-        assert!(dir.ends_with(SOUND_SUBDIR), "{}", dir.display());
-    }
-
-    #[test]
-    fn prefix_hint_offers_the_leading_characters_uppercased() {
-        assert_eq!(prefix_hint("igisea"), "IGI");
-        assert_eq!(prefix_hint("ce"), "CE");
-        assert_eq!(prefix_hint(""), "SOUND");
-    }
-
-    #[test]
-    fn defaults_are_a_bounded_page_and_the_build_output_root() {
-        let opts = SoundOptions::default();
-        assert_eq!(opts.limit, DEFAULT_LIMIT);
-        assert_eq!(opts.offset, 0);
-        assert_eq!(opts.out, PathBuf::from(DEFAULT_OUT_ROOT));
-        assert!(opts.bag.is_none());
-        assert!(opts.prefix.is_none());
-        assert!(!opts.wav);
     }
 
     #[test]

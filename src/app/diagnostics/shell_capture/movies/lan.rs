@@ -8,7 +8,7 @@ use crate::app::match_runtime::session::{
     NetworkLoadingRequest, NetworkMapMetadata, NetworkVacancy, SessionMode,
 };
 use crate::app::shell_lan::{self as lobby, LanJoinAcceptance, LanServiceEvent, LanServiceRequest};
-use crate::app::shell_lan_setup::{self as setup, LanSetupEvent, LanSetupRequest};
+use crate::app::shell_network_setup::{self as setup, NetworkSetupEvent, NetworkSetupRequest};
 use crate::skirmish_launch::*;
 use crate::ui::lan_shell::{LanChatLine, LanGameRow, LanPlayerRow};
 use crate::ui::shell::geom::RectPx;
@@ -282,7 +282,7 @@ impl LanCapture {
         MoviesCapture::restore_neutral_pointer(state);
         if state.frontend.shell_route.lan_lobby() {
             lobby::cursor_moved(state);
-        } else if state.frontend.shell_route.lan_setup() {
+        } else if state.frontend.shell_route.network_setup() {
             setup_input::cursor_moved(state);
         }
         self.phase = LanPhase::Settle(SETTLE_FRAMES);
@@ -311,10 +311,10 @@ impl LanCapture {
             },
         })
     }
-    fn drain_requests(&mut self, state: &mut AppState) -> Vec<LanSetupRequest> {
+    fn drain_requests(&mut self, state: &mut AppState) -> Vec<NetworkSetupRequest> {
         let requests = state
             .frontend
-            .lan_setup_protocol
+            .network_setup_protocol
             .as_mut()
             .map(|p| p.take_service_requests())
             .unwrap_or_default();
@@ -385,7 +385,7 @@ impl LanCapture {
         vacancies[7] = NetworkVacancy::Closed;
         setup::service_event(
             state,
-            LanSetupEvent::HostSetup {
+            NetworkSetupEvent::HostSetup {
                 launch,
                 vacancies,
                 map_metadata: self.map_metadata()?,
@@ -441,7 +441,7 @@ impl LanCapture {
         let protocol = row["protocol"].as_i64().context("native protocol")? as i32;
         setup::service_event(
             state,
-            LanSetupEvent::Timing {
+            NetworkSetupEvent::Timing {
                 protocol,
                 response_times: [response, response],
             },
@@ -968,7 +968,7 @@ impl LanCapture {
                 self.settle(state);
             }
             LanPhase::Host
-                if rendered == PresentedShell::LanSetup && setup_settled(state, true) =>
+                if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) =>
             {
                 self.event(frame, "BC steady");
                 if self.target.host_observer() {
@@ -1025,7 +1025,7 @@ impl LanCapture {
                         );
                         ensure!(
                             self.drain_requests(state)
-                                .contains(&LanSetupRequest::PublishOptions),
+                                .contains(&NetworkSetupRequest::PublishOptions),
                             "checkbox omitted host options publication"
                         );
                         self.event(frame, "BC Short Game checkbox icon clicked");
@@ -1059,7 +1059,7 @@ impl LanCapture {
                     _ => {
                         setup::service_event(
                             state,
-                            LanSetupEvent::ParticipantJoined(self.human(false)?),
+                            NetworkSetupEvent::ParticipantJoined(self.human(false)?),
                         )?;
                         if matches!(
                             self.target,
@@ -1075,10 +1075,13 @@ impl LanCapture {
                                 .as_u64()
                                 .context("declared peer color")?
                                 as u8;
-                            setup::service_event(state, LanSetupEvent::ParticipantJoined(second))?;
                             setup::service_event(
                                 state,
-                                LanSetupEvent::MapStatus {
+                                NetworkSetupEvent::ParticipantJoined(second),
+                            )?;
+                            setup::service_event(
+                                state,
+                                NetworkSetupEvent::MapStatus {
                                     index: 2,
                                     status: 1,
                                 },
@@ -1110,7 +1113,7 @@ impl LanCapture {
                             // its raw setup row does not renumber surviving peers.
                             setup::service_event(
                                 state,
-                                LanSetupEvent::PlayerReady {
+                                NetworkSetupEvent::PlayerReady {
                                     index: 2,
                                     accepted: true,
                                 },
@@ -1125,7 +1128,7 @@ impl LanCapture {
                                 .clone();
                             setup::service_event(
                                 state,
-                                LanSetupEvent::ParticipantLeft { index: 1 },
+                                NetworkSetupEvent::ParticipantLeft { index: 1 },
                             )?;
                             let launch = state
                                 .match_state
@@ -1163,7 +1166,7 @@ impl LanCapture {
                                 "removed peer remains in the rendered BC projection"
                             );
                             ensure!(
-                                state.frontend.shell_route.lan_setup()
+                                state.frontend.shell_route.network_setup()
                                     && state
                                         .frontend
                                         .multiplayer_setup
@@ -1182,7 +1185,7 @@ impl LanCapture {
                         if self.target != LanTarget::HostMissingMap {
                             setup::service_event(
                                 state,
-                                LanSetupEvent::MapStatus {
+                                NetworkSetupEvent::MapStatus {
                                     index: 1,
                                     status: 1,
                                 },
@@ -1194,7 +1197,7 @@ impl LanCapture {
                         } else {
                             ensure!(
                                 self.drain_requests(state)
-                                    .contains(&LanSetupRequest::RequestAcceptance),
+                                    .contains(&NetworkSetupRequest::RequestAcceptance),
                                 "host did not request readiness"
                             );
                             if self.target == LanTarget::HostReadiness {
@@ -1210,7 +1213,7 @@ impl LanCapture {
                 self.apply_timing(state, true)?;
                 setup::service_event(
                     state,
-                    LanSetupEvent::PlayerReady {
+                    NetworkSetupEvent::PlayerReady {
                         index: 1,
                         accepted: true,
                     },
@@ -1218,7 +1221,7 @@ impl LanCapture {
                 if self.target == LanTarget::HostObserverGo {
                     setup::service_event(
                         state,
-                        LanSetupEvent::PlayerReady {
+                        NetworkSetupEvent::PlayerReady {
                             index: 2,
                             accepted: true,
                         },
@@ -1232,7 +1235,7 @@ impl LanCapture {
                 ensure!(
                     self.drain_requests(state)
                         .iter()
-                        .any(|r| matches!(r, LanSetupRequest::Go { .. })),
+                        .any(|r| matches!(r, NetworkSetupRequest::Go { .. })),
                     "real second Start did not request GO"
                 );
                 if self.target == LanTarget::HostObserverGo {
@@ -1266,11 +1269,11 @@ impl LanCapture {
                     );
                 }
                 self.admitted = Some(session_receipt(state));
-                setup::service_event(state, LanSetupEvent::GoCompleted)?;
+                setup::service_event(state, NetworkSetupEvent::GoCompleted)?;
                 self.phase = LanPhase::Loading;
             }
             LanPhase::SettingsControl(step)
-                if rendered == PresentedShell::LanSetup && setup_settled(state, true) =>
+                if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) =>
             {
                 use crate::ui::multiplayer_setup::{CREDITS, SPEED, SetupColumn, UNITS};
                 let view = setup::view(state).context("BC settings view")?;
@@ -1415,7 +1418,7 @@ impl LanCapture {
                     );
                     ensure!(
                         self.drain_requests(state)
-                            .contains(&LanSetupRequest::PublishOptions),
+                            .contains(&NetworkSetupRequest::PublishOptions),
                         "trackbar omitted options publication"
                     );
                     self.route
@@ -1430,7 +1433,7 @@ impl LanCapture {
                     let expected = "Setup ready\r\n".encode_utf16().collect::<Vec<_>>();
                     ensure!(
                         self.drain_requests(state)
-                            .contains(&LanSetupRequest::Chat(expected)),
+                            .contains(&NetworkSetupRequest::Chat(expected)),
                         "BC chat Enter omitted native CRLF service payload"
                     );
                     let chat = &state
@@ -1458,7 +1461,7 @@ impl LanCapture {
                 control,
                 index,
                 value,
-            } if rendered == PresentedShell::LanSetup => {
+            } if rendered == PresentedShell::NetworkSetup => {
                 use crate::ui::multiplayer_setup::SetupColumn;
                 let view = setup::view(state).context("presented settings popup")?;
                 let layout = setup_input::layout(state);
@@ -1545,13 +1548,13 @@ impl LanCapture {
                 );
                 ensure!(
                     self.drain_requests(state)
-                        .contains(&LanSetupRequest::PublishOptions),
+                        .contains(&NetworkSetupRequest::PublishOptions),
                     "host combo omitted options publication"
                 );
                 self.phase = LanPhase::SettingsControl(step + 1);
             }
             LanPhase::Guest
-                if rendered == PresentedShell::LanSetup && setup_settled(state, false) =>
+                if rendered == PresentedShell::NetworkSetup && setup_settled(state, false) =>
             {
                 self.assert_guest_order(state, false)?;
                 ensure!(
@@ -1569,7 +1572,7 @@ impl LanCapture {
                 } else {
                     setup::service_event(
                         state,
-                        LanSetupEvent::ParticipantJoined(self.human(true)?),
+                        NetworkSetupEvent::ParticipantJoined(self.human(true)?),
                     )?;
                     self.assert_guest_order(state, true)?;
                     let launch = self.host_options(state)?;
@@ -1594,7 +1597,7 @@ impl LanCapture {
                     );
                     ensure!(
                         self.drain_requests(state)
-                            .contains(&LanSetupRequest::MapStatus(status)),
+                            .contains(&NetworkSetupRequest::MapStatus(status)),
                         "production map availability did not publish K{status}"
                     );
                     ensure!(
@@ -1617,7 +1620,7 @@ impl LanCapture {
                 }
                 LanTarget::StartPrompt | LanTarget::StartPromptAccepted => {
                     self.drain_requests(state);
-                    setup::service_event(state, LanSetupEvent::StartPrompt)?;
+                    setup::service_event(state, NetworkSetupEvent::StartPrompt)?;
                     let view = setup::view(state).context("prompted BD")?;
                     ensure!(
                         view.start_requested
@@ -1660,9 +1663,9 @@ impl LanCapture {
                     setup::service_event(
                         state,
                         if self.target == LanTarget::Kick {
-                            LanSetupEvent::Kicked
+                            NetworkSetupEvent::Kicked
                         } else {
-                            LanSetupEvent::HostLeft
+                            NetworkSetupEvent::HostLeft
                         },
                     )?;
                     self.phase = LanPhase::Returned;
@@ -1672,14 +1675,14 @@ impl LanCapture {
                     setup_button(state, crate::ui::multiplayer_setup::ACCEPT)?;
                     ensure!(
                         self.drain_requests(state)
-                            .contains(&LanSetupRequest::Ready(true)),
+                            .contains(&NetworkSetupRequest::Ready(true)),
                         "real Accept did not emit A1"
                     );
                     self.phase = LanPhase::Accepted;
                 }
             },
             LanPhase::Prompt(started)
-                if rendered == PresentedShell::LanSetup
+                if rendered == PresentedShell::NetworkSetup
                     && setup_settled(state, false)
                     && started.elapsed() >= Duration::from_millis(1100) =>
             {
@@ -1697,7 +1700,7 @@ impl LanCapture {
                     setup_button(state, crate::ui::multiplayer_setup::ACCEPT)?;
                     let requests = self.drain_requests(state);
                     ensure!(
-                        requests == vec![LanSetupRequest::Ready(true)],
+                        requests == vec![NetworkSetupRequest::Ready(true)],
                         "prompted real Accept must emit exactly one A1"
                     );
                     let view = setup::view(state).context("accepted BD")?;
@@ -1726,7 +1729,7 @@ impl LanCapture {
                         ensure!(
                             !self
                                 .drain_requests(state)
-                                .contains(&LanSetupRequest::Ready(false)),
+                                .contains(&NetworkSetupRequest::Ready(false)),
                             "color-only update emitted A0"
                         );
                         self.settle(state);
@@ -1745,7 +1748,7 @@ impl LanCapture {
                         ensure!(
                             self.drain_requests(state)
                                 .iter()
-                                .filter(|request| **request == LanSetupRequest::Ready(false))
+                                .filter(|request| **request == NetworkSetupRequest::Ready(false))
                                 .count()
                                 == 1,
                             "material change must emit exactly one A0"
@@ -1755,14 +1758,14 @@ impl LanCapture {
                     _ => {
                         setup::service_event(
                             state,
-                            LanSetupEvent::HostGo {
+                            NetworkSetupEvent::HostGo {
                                 agreed_seed: self.seed()?,
                                 max_ahead_frames: self.timing()?,
                             },
                         )?;
                         ensure!(
                             self.drain_requests(state).contains(
-                                &LanSetupRequest::PrepareMapForHandoff {
+                                &NetworkSetupRequest::PrepareMapForHandoff {
                                     received_budget: self.timing()?
                                 }
                             ),
@@ -1776,10 +1779,10 @@ impl LanCapture {
                                 | LanTarget::GuestAbortReturn
                                 | LanTarget::RemoteLoadingProgress
                         ) {
-                            setup::service_event(state, LanSetupEvent::GoCompleted)?;
+                            setup::service_event(state, NetworkSetupEvent::GoCompleted)?;
                             self.phase = LanPhase::Loading;
                         } else {
-                            setup::service_event(state, LanSetupEvent::MapTransferStarted)?;
+                            setup::service_event(state, NetworkSetupEvent::MapTransferStarted)?;
                             self.phase = LanPhase::Transfer;
                         }
                     }
@@ -1789,7 +1792,7 @@ impl LanCapture {
                 LanTarget::TransferProgress => {
                     setup::service_event(
                         state,
-                        LanSetupEvent::MapTransferProgress {
+                        NetworkSetupEvent::MapTransferProgress {
                             completed: 219,
                             total: 436,
                         },
@@ -1797,7 +1800,7 @@ impl LanCapture {
                     ensure!(
                         state
                             .frontend
-                            .lan_setup_protocol
+                            .network_setup_protocol
                             .as_ref()
                             .context("transfer owner")?
                             .transfer_progress()
@@ -1810,7 +1813,7 @@ impl LanCapture {
                     self.deliver_map_file(state)?;
                     setup::service_event(
                         state,
-                        LanSetupEvent::MapTransferFinished {
+                        NetworkSetupEvent::MapTransferFinished {
                             transferred_file: Some(TRANSFER_FILE.into()),
                         },
                     )?;
@@ -1819,14 +1822,14 @@ impl LanCapture {
                 _ => {
                     setup::service_event(
                         state,
-                        LanSetupEvent::MapTransferFinished {
+                        NetworkSetupEvent::MapTransferFinished {
                             transferred_file: None,
                         },
                     )?;
                     self.phase = LanPhase::Notice;
                 }
             },
-            LanPhase::Notice if rendered == PresentedShell::LanSetup => {
+            LanPhase::Notice if rendered == PresentedShell::NetworkSetup => {
                 ensure!(
                     state
                         .frontend
@@ -1845,7 +1848,7 @@ impl LanCapture {
                 }
             }
             LanPhase::Chooser
-                if rendered == PresentedShell::LanSetup
+                if rendered == PresentedShell::NetworkSetup
                     && MoviesCapture::slide_settled(state, ShellSlideKind::ChooseMap)
                     && state
                         .frontend
@@ -1880,7 +1883,7 @@ impl LanCapture {
                 }
             }
             LanPhase::ChooserReturn
-                if rendered == PresentedShell::LanSetup && setup_settled(state, true) =>
+                if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) =>
             {
                 ensure!(
                     state
@@ -1899,7 +1902,7 @@ impl LanCapture {
             LanPhase::Returned if rendered == PresentedShell::LanLobby && lobby_settled(state) => {
                 ensure!(
                     state.frontend.multiplayer_setup.is_none()
-                        && state.frontend.lan_setup_protocol.is_none()
+                        && state.frontend.network_setup_protocol.is_none()
                         && state.match_state.session.network_setup().is_none(),
                     "setup owner survived return"
                 );
@@ -2226,12 +2229,17 @@ fn lobby_settled(state: &AppState) -> bool {
         && state.frontend.shell_page_title.is_terminal()
 }
 fn setup_settled(state: &AppState, host: bool) -> bool {
-    MoviesCapture::slide_settled(state, ShellSlideKind::LanSetup { host })
-        && state
-            .frontend
-            .multiplayer_setup
-            .as_ref()
-            .is_some_and(|ui| ui.statics.is_terminal())
+    MoviesCapture::slide_settled(
+        state,
+        ShellSlideKind::NetworkSetup(crate::ui::multiplayer_setup::SetupDialog {
+            host,
+            flavor: crate::ui::multiplayer_setup::SetupFlavor::Lan,
+        }),
+    ) && state
+        .frontend
+        .multiplayer_setup
+        .as_ref()
+        .is_some_and(|ui| ui.statics.is_terminal())
 }
 fn lobby_click(state: &mut AppState, rect: RectPx) {
     set_window_pointer_to_rect_center(state, rect);

@@ -287,11 +287,11 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
         for (name, human) in [("YuriCountry", true), ("Russians", false)] {
             let id = sim.interner.intern(name);
             let mut house = HouseState::new(id, 0, None, human, 0, 10);
-            house.current_iq = if human {
+            house.set_current_iq_for_test(if human {
                 0
             } else {
                 rules.general.max_iq_levels
-            };
+            });
             sim.houses.register(house);
         }
         sim.intern_rule_type_ids(&rules);

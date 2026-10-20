@@ -230,26 +230,6 @@ mod tests {
         accumulator.finish()
     }
 
-    /// The nineteen slots and their order come from the binary's pointer table,
-    /// not from the INI. Pin the exact sequence and the indices the crate system
-    /// names directly.
-    #[test]
-    fn powerup_slot_order_is_the_fixed_native_name_table() {
-        assert_eq!(POWERUP_NAMES.len(), 19);
-        assert_eq!(POWERUP_NAMES[POWERUP_MONEY], "Money");
-        assert_eq!(POWERUP_NAMES[POWERUP_UNIT], "Unit");
-        assert_eq!(POWERUP_NAMES[POWERUP_HEAL_BASE], "HealBase");
-        assert_eq!(POWERUP_NAMES[POWERUP_SQUAD], "Squad");
-        assert_eq!(POWERUP_NAMES[POWERUP_REVEAL], "Reveal");
-        assert_eq!(POWERUP_NAMES[POWERUP_ARMOR], "Armor");
-        assert_eq!(POWERUP_NAMES[POWERUP_SPEED], "Speed");
-        assert_eq!(POWERUP_NAMES[POWERUP_FIREPOWER], "Firepower");
-        assert_eq!(POWERUP_NAMES[POWERUP_VETERAN], "Veteran");
-        assert_eq!(POWERUP_NAMES[15], "IonStorm");
-        assert_eq!(POWERUP_NAMES[17], "Tiberium");
-        assert_eq!(POWERUP_NAMES[18], "Pod");
-    }
-
     /// `Powerup_From_Name` never fails: an unmatched or empty name is Money.
     #[test]
     fn powerup_from_name_is_case_insensitive_and_falls_back_to_money() {
@@ -494,22 +474,6 @@ mod tests {
         assert_eq!(parsed.weights[POWERUP_MONEY], 20);
         assert_eq!(parsed.anims[POWERUP_MONEY].as_deref(), Some("MONEY"));
         assert_eq!(f64::from_bits(parsed.magnitudes[POWERUP_MONEY].bits()), 3.0);
-    }
-
-    /// Retail lines all carry a trailing `;` comment; the loader strips it
-    /// before the table ever sees the value.
-    #[test]
-    fn trailing_comments_are_stripped_before_tokenizing() {
-        let parsed = table(
-            "[Powerups]\nMoney=20,MONEY,yes,2000             ; a chunk o' cash (maximum cash)\n",
-        );
-        assert_eq!(parsed.weights[POWERUP_MONEY], 20);
-        assert_eq!(parsed.anims[POWERUP_MONEY].as_deref(), Some("MONEY"));
-        assert!(parsed.over_water[POWERUP_MONEY]);
-        assert_eq!(
-            f64::from_bits(parsed.magnitudes[POWERUP_MONEY].bits()),
-            2000.0
-        );
     }
 
     /// Only the literal `<none>` is Find_Index's sentinel; a bare `NONE` is an

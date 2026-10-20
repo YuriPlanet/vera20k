@@ -52,11 +52,13 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
                 let owner = sim.interner.intern(&format!("H{slot}"));
                 let country = sim.interner.intern(&format!("C{}", int(country)));
                 let mut house = HouseState::new(owner, slot as u8, Some(country), false, 0, 10);
-                house.strategy_emergency.mode = int(&control["modes_before"][slot]);
-                house.strategy_timer = CdTimer::from_raw(
+                house
+                    .strategy_emergency_mut()
+                    .set_mode_for_test(int(&control["modes_before"][slot]));
+                house.set_strategy_timer_for_test(CdTimer::from_raw(
                     int(&control["strategy_timers_before"][slot][0]),
                     int(&control["strategy_timers_before"][slot][2]),
-                );
+                ));
                 sim.houses.register(house);
                 owner
             })
@@ -164,17 +166,17 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
         assert_eq!(actual, int(&control["result"]) != 0, "{input}");
         for (slot, house) in houses.iter().enumerate() {
             assert_eq!(
-                sim.houses[house].strategy_emergency.mode(),
+                sim.houses[house].strategy_emergency().mode(),
                 int(&control["modes_after"][slot]),
                 "{input}"
             );
             assert_eq!(
-                sim.houses[house].strategy_emergency.all_to_hunt_bias(),
+                sim.houses[house].strategy_emergency().all_to_hunt_bias(),
                 int(&control["latch_after"][slot]) != 0,
                 "{input}"
             );
             assert_eq!(
-                sim.houses[house].strategy_timer,
+                *sim.houses[house].strategy_timer(),
                 CdTimer::from_raw(
                     int(&control["strategy_timers_after"][slot][0]),
                     int(&control["strategy_timers_after"][slot][2])
@@ -419,7 +421,7 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
             }
         }
     }
-    assert!(sim.houses[&owner].strategy_emergency.all_to_hunt_bias());
+    assert!(sim.houses[&owner].strategy_emergency().all_to_hunt_bias());
     // Continue through the existing mission consumer on the selected
     // ordinary armed route. This is Rust integration, not a native full map.
     for &id in &actors {

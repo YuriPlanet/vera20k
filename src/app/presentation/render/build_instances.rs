@@ -1074,13 +1074,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pixel_fx_uses_the_profile_detail_level_nonzero_gate() {
-        assert!(!pixel_fx_enabled_for_detail_level(0));
-        assert!(pixel_fx_enabled_for_detail_level(1));
-        assert!(pixel_fx_enabled_for_detail_level(2));
-    }
-
-    #[test]
     fn positive_terrain_variant_never_falls_back_to_pristine_owner() {
         let pristine = TileKey {
             tile_id: 9,

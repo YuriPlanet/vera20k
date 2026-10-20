@@ -56,7 +56,7 @@ fn team_value(team: LaunchTeam) -> i32 {
 pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let session = &state.match_state.session;
     let launch = session.network_setup()?;
-    let protocol = state.frontend.lan_setup_protocol.as_ref()?;
+    let protocol = state.frontend.network_setup_protocol.as_ref()?;
     let mode = mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
     let host = session.host();
     let local = launch.humans.get(launch.local_player_index)?;
@@ -70,11 +70,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     });
     let capacity = session.network_setup_capacity()?.clamp(0, 8) as usize;
     let observer_row = session.network_observer_row().map(usize::from);
-    let visible_limit = if observer_row == Some(0) && capacity < 8 {
-        capacity + 1
-    } else {
-        capacity
-    };
+    let visible_limit =
+        if observer_row == Some(0) && (capacity as i32) < session.network_row_limit() {
+            capacity + 1
+        } else {
+            capacity
+        };
     let cooperative = mode.class.uses_cooperative_setup();
     let coop = cooperative
         .then(|| {
@@ -347,7 +348,19 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             visible: cooperative,
         },
     ];
+    let dialog = super::dialog(state);
+    // 7A0E50 from 5EA3E0: rows without a node show no ping image.
+    let ping_icons = std::array::from_fn(|row| {
+        dialog.wol().then_some(())?;
+        let human = launch
+            .humans
+            .iter()
+            .find(|human| human.raw_slot_index == Some(row as u8))?;
+        ping_icon(protocol.ping(&human.name)?)
+    });
     Some(SetupView {
+        dialog,
+        ping_icons,
         host,
         locked: protocol.locked,
         accept_enabled: protocol.accept_eligible

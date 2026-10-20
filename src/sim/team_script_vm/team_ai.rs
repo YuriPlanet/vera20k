@@ -564,7 +564,7 @@ impl Simulation {
         let mut best_score = i32::MAX;
         if let Some(house) = self.houses.get(&owner) {
             // 6EA173 iterates the retained House Building array, in order.
-            for &building_id in house.base_projection.buildings() {
+            for &building_id in house.base_projection().buildings() {
                 let Some(building) = self.substrate.entities.get(building_id) else {
                     continue;
                 };

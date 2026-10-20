@@ -1489,7 +1489,7 @@ fn computer_product_at_factory_exit() -> (Simulation, RuleSet) {
     let (mut sim, rules) = factory_per_cell_fixture(true, false, "");
     let owner = sim.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 10);
-    house.base_center = Some((20, 20));
+    house.set_base_center_for_test(Some((20, 20)));
     sim.houses.insert_for_test(house);
     let producer = sim.substrate.entities.get_mut(2).unwrap();
     producer.type_facts.set_foundation_for_test("5x3".into());
@@ -1857,8 +1857,8 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
             "unit_coordinate": [at.x,at.y,at.z],
             "health": unit.health.current(),
             "estimate": unit.estimated_health.get(),
-            "balance": house.economy.credits(),
-            "spent": house.economy.spent_credits(),
+            "balance": house.economy().credits(),
+            "spent": house.economy().spent_credits(),
             "unit_mission": unit.mission.current().raw(),
             "unit_queued": unit.mission.queued().raw(),
             "unit_nav": nav(unit.navigation.nav_com()),
@@ -2132,9 +2132,11 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
             ));
         let house = sim.houses.get_mut(&owner).unwrap();
         house
-            .economy
+            .economy_mut()
             .set_credits_for_test(integer(&before["balance"]));
-        house.economy.set_spent_for_test(integer(&before["spent"]));
+        house
+            .economy_mut()
+            .set_spent_for_test(integer(&before["spent"]));
         sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
         sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
@@ -2566,7 +2568,7 @@ fn retail_unit_on_move(
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let owner = sim.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 10);
-    house.current_iq = iq;
+    house.set_current_iq_for_test(iq);
     sim.houses.register(house);
     let id = sim
         .spawn_object(type_name, "Americans", 10, 10, 0, &rules)

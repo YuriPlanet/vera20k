@@ -139,8 +139,8 @@ fn padded_ai_handle_does_not_turn_an_enemy_refinery_into_an_allied_target() {
             entered = true;
             break;
         }
-        assert_eq!(sim.houses[&computer].economy.credits(), 5000);
-        assert_eq!(sim.houses[&player].economy.credits(), 5000);
+        assert_eq!(sim.houses[&computer].economy().credits(), 5000);
+        assert_eq!(sim.houses[&player].economy().credits(), 5000);
     }
     assert!(
         entered,
@@ -149,8 +149,8 @@ fn padded_ai_handle_does_not_turn_an_enemy_refinery_into_an_allied_target() {
     assert_eq!(cash_entries, 1);
     let sim = scene.sim();
     assert_eq!(sim.entities().get(refinery).unwrap().owner(), computer);
-    assert_eq!(sim.houses[&player].economy.credits(), 7500);
-    assert_eq!(sim.houses[&computer].economy.credits(), 2500);
-    assert_eq!(sim.houses[&computer].economy.spent_credits(), 2500);
-    assert_eq!(sim.houses[&teammate].economy.credits(), 5000);
+    assert_eq!(sim.houses[&player].economy().credits(), 7500);
+    assert_eq!(sim.houses[&computer].economy().credits(), 2500);
+    assert_eq!(sim.houses[&computer].economy().spent_credits(), 2500);
+    assert_eq!(sim.houses[&teammate].economy().credits(), 5000);
 }

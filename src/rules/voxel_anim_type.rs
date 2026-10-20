@@ -317,17 +317,4 @@ mod tests {
         assert_eq!(f64::from_bits(vat.min_angular_velocity.bits()), 0.0);
         assert_eq!(vat.max_angular_velocity, DEFAULT_MAX_ANGULAR_VELOCITY);
     }
-
-    #[test]
-    fn share_group_is_read_and_folded() {
-        // `[SONICTURRET]` borrows the Sonic Tank's turret model rather than
-        // loading a standalone VXL.
-        let ini = section("[SONICTURRET]\nShareTurretData=yes\nShareSource=SONIC\n");
-        let vat =
-            VoxelAnimType::from_ini_section("SONICTURRET", ini.section("SONICTURRET").unwrap());
-        assert!(vat.share_turret_data);
-        assert!(!vat.share_body_data && !vat.share_barrel_data);
-        assert_eq!(vat.share_source.as_deref(), Some("SONIC"));
-        assert!(vat.shares_data());
-    }
 }

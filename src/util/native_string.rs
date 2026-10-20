@@ -161,3 +161,11 @@ pub fn narrow_utf16_c_string(units: impl IntoIterator<Item = u16>) -> Vec<u8> {
         .take_while(|byte| *byte != 0)
         .collect()
 }
+
+/// CRT `_strcmpi` (`CRT__strcmpi`) in the C locale over narrow strings the
+/// engine holds widened ([`widen_bytes`]): each character's low byte, with
+/// `A..Z` folded to lower case, compared unsigned up to the first difference.
+pub fn crt_strcmpi(left: &str, right: &str) -> std::cmp::Ordering {
+    let fold = |c: char| (c as u32 as u8).to_ascii_lowercase();
+    left.chars().map(fold).cmp(right.chars().map(fold))
+}

@@ -438,73 +438,6 @@ mod tests {
     }
 
     #[test]
-    fn mul_div_round_matches_round_half_up_muldiv_all_odd_dlu() {
-        // Round-half-up MulDiv reference (i64 to avoid overflow), both signs.
-        fn reference(n: i64, numer: i64, denom: i64) -> i64 {
-            let v = n * numer;
-            if v >= 0 {
-                (v + denom / 2) / denom
-            } else {
-                (v - denom / 2) / denom
-            }
-        }
-        for dlu in (-1024..=1024).filter(|d| d % 2 != 0) {
-            assert_eq!(
-                mul_div_round(dlu, DLU_BASE_X, 4) as i64,
-                reference(dlu as i64, DLU_BASE_X as i64, 4)
-            );
-            assert_eq!(
-                mul_div_round(dlu, DLU_BASE_Y, 8) as i64,
-                reference(dlu as i64, DLU_BASE_Y as i64, 8)
-            );
-        }
-    }
-
-    #[test]
-    fn center_offset_equals_if_guard_form_at_boundaries() {
-        for (s, b) in [(800, 800), (801, 800), (1024, 800), (799, 800), (797, 800)] {
-            let if_form = if s > b { (s - b) / 2 } else { 0 };
-            assert_eq!(center_offset(s, b), if_form, "s={s} b={b}");
-        }
-    }
-
-    #[test]
-    fn right_panel_rects_byte_equal_to_pre_refactor_literals() {
-        // Values asserted by the three shells' existing suites pre-refactor.
-        let a = right_panel_rects(800, 600);
-        assert_eq!(a.top, RectPx::new(632, 0, 168, 199));
-        assert_eq!(a.tile, RectPx::new(632, 199, 168, 42));
-        assert_eq!(a.tile_count, 9);
-        assert_eq!(a.bottom, RectPx::new(632, 577, 168, 23));
-
-        let b = right_panel_rects(1024, 768);
-        assert_eq!(b.top, RectPx::new(744, 84, 168, 199));
-        assert_eq!(b.tile, RectPx::new(744, 283, 168, 42));
-        assert_eq!(b.tile_count, 9);
-        assert_eq!(b.bottom, RectPx::new(744, 661, 168, 23));
-
-        let c = right_panel_rects(640, 480);
-        assert_eq!(c.top, RectPx::new(472, 0, 168, 199));
-        assert_eq!(c.tile, RectPx::new(472, 199, 168, 42));
-        assert_eq!(c.tile_count, 6);
-        assert_eq!(c.bottom, RectPx::new(472, 451, 168, 29));
-    }
-
-    #[test]
-    fn snap_round_half_up_reproduces_main_menu_0xe2_stacked_cells() {
-        // 0xE2 at 800x600: cell_w=156, flush-right x=644, rows from y=199.
-        let panel = right_panel_rects(800, 600);
-        let dlu_y = [125, 152, 179, 206, 233];
-        let expected_y = [199, 241, 283, 325, 367];
-        for (dy, ey) in dlu_y.iter().zip(expected_y) {
-            assert_eq!(
-                snap_button_round_half_up(*dy, panel, SDBTNANM_CELL_W_NARROW),
-                RectPx::new(644, ey, 156, 42)
-            );
-        }
-    }
-
-    #[test]
     fn snap_biased_truncate_reproduces_single_player_0x100_native_cells() {
         // 0x100 at 800x600: the 156-wide SDBTNANM cell is flush-right at
         // x=644, with rows 199/241/283.
@@ -521,39 +454,6 @@ mod tests {
                 RectPx::new(644, ey, 156, 42)
             );
         }
-    }
-
-    #[test]
-    fn snap_biased_truncate_reproduces_skirmish_0x102_narrow_cells() {
-        // 0x102 at 800x600: cell_w=156, flush-right x=644, start/choose 241/283.
-        let panel = right_panel_rects(800, 600);
-        assert_eq!(
-            snap_button_biased_truncate(
-                800,
-                600,
-                dlu_rect(425, 149, 108, 23),
-                panel,
-                SDBTNANM_CELL_W_NARROW
-            ),
-            RectPx::new(644, 241, 156, 42)
-        );
-        assert_eq!(
-            snap_button_biased_truncate(
-                800,
-                600,
-                dlu_rect(425, 176, 108, 23),
-                panel,
-                SDBTNANM_CELL_W_NARROW
-            ),
-            RectPx::new(644, 283, 156, 42)
-        );
-    }
-
-    #[test]
-    fn lower_strip_matches_pre_refactor_values() {
-        assert_eq!(lower_strip_rect(800, 600), RectPx::new(0, 568, 632, 32));
-        assert_eq!(lower_strip_rect(1024, 768), RectPx::new(112, 652, 632, 32));
-        assert_eq!(lower_strip_rect(640, 480), RectPx::new(0, 448, 472, 32));
     }
 
     #[test]

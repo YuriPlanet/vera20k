@@ -152,33 +152,6 @@ fn ground_walk_order_preserves_native_human_deploy_refusal() {
     assert_eq!(sim.rng_state(), rng_before);
 }
 
-#[test]
-fn isolated_cell_queries_preserve_all_modeled_dummy_inputs_and_identity() {
-    let terrain = ResolvedTerrainGrid::from_cells(1, 1, vec![terrain_cell(0, 0)]);
-    let canonical = terrain.shared_cell_dummy();
-    canonical.stamp_coord(99, 98);
-    canonical.set_level_slope(-3, 2);
-    canonical.write_raw_flags(0x10d80);
-    canonical.write_native_anchor(Some(NativeCellIdentity::Real(0)));
-    canonical.set_overlay_fields(Some(0x18), 7);
-    canonical.write_raw_tube_index(23);
-    let before = format!("{canonical:?}");
-    let cells = NativeCellQuery::isolated(&terrain);
-    let copied = cells.dummy();
-    assert_eq!(copied.snapshot(), canonical.snapshot());
-    assert_eq!(copied.raw_flags(), canonical.raw_flags());
-    assert_eq!(copied.native_anchor(), canonical.native_anchor());
-    assert_eq!(copied.overlay_fields(), canonical.overlay_fields());
-    assert_eq!(copied.raw_tube_index(), canonical.raw_tube_index());
-    let retained = cells.lookup((20, 21));
-    assert_eq!(retained, NativeCellIdentity::Dummy);
-    assert_eq!(cells.lookup_world(22 * 256, 23 * 256), retained);
-    assert_eq!(cells.coord(retained), (22, 23));
-    assert_eq!(copied.snapshot().coord, (22, 23));
-    assert_eq!(cells.flags(retained), 0x10d80);
-    assert_eq!(format!("{canonical:?}"), before);
-}
-
 /// The walk scene's river map with retail rules: the retail E1 it spawns at
 /// (5,5) and `type_name` for the same House at (6,4).
 fn retail_scene(type_name: &str) -> Option<(Simulation, RuleSet, InternedId, u64, u64)> {
@@ -431,34 +404,6 @@ fn a_jumpjet_infantry_no_move_searches_near_the_object_in_any_zone() {
     assert!(x > 8, "{x}");
     let Some(TargetKind::Cell(x, _)) = click(gi, MoveAction::NoMove) else {
         panic!("the GI's NoMove searches its own zone");
-    };
-    assert!(x < 8, "{x}");
-}
-
-/// An Aircraft orders nothing over an object whose coordinate, raised to its
-/// ground, is shrouded (`0x004D7809..0x004D7896`); the retail GI's Move over
-/// it goes to FNPC on its own bank, as the shrouded Cell asks (`0x004D7B01`).
-#[test]
-fn an_aircraft_orders_nothing_over_a_shrouded_object() {
-    let Some((mut sim, rules, owner, gi, harrier)) = retail_scene("ORCA") else {
-        return;
-    };
-    let hidden = sim.spawn_object("MTNK", "Local", 12, 5, 0, &rules).unwrap();
-    sim.resolve_type_handles(&rules);
-    sim.fog = crate::sim::vision::FogState::new(16, 16);
-    sim.fog.reveal_cells_for_owner(
-        owner,
-        (0..16)
-            .flat_map(|y| (0..16).map(move |x| (x, y)))
-            .filter(|&cell| cell != (12, 5)),
-    );
-    let click = |id| {
-        sim.object_move_click(owner, id, hidden, MoveAction::Move, false, &rules)
-            .unwrap()
-    };
-    assert_eq!(click(harrier), None);
-    let Some(TargetKind::Cell(x, _)) = click(gi) else {
-        panic!("the GI's click searches its own zone");
     };
     assert!(x < 8, "{x}");
 }

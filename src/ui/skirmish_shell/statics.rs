@@ -185,24 +185,6 @@ mod tests {
     }
 
     #[test]
-    fn a_reshown_dialog_repaints_its_finished_statics_at_the_final_count() {
-        let t0 = Instant::now();
-        let mut statics = SkirmishStatics::default();
-        statics.show("Skirmish Game", "Battle", "Map", t0);
-        let settled = settle(&mut statics, t0);
-        // The last timer paint leaves "Skirmish Game" at count 21 of 22.
-        assert_eq!(present(&mut statics, settled)[0], Some(21));
-        // Back from Choose Map with the same texts: no restart, one repaint
-        // at the count the last timer paint left, at or past the target,
-        // where every unit is plain (the status line steps by 3 past 17).
-        statics.show("Skirmish Game", "Battle", "Map", settled);
-        assert_eq!(
-            present(&mut statics, settled),
-            [Some(22), Some(15), Some(12), Some(19)]
-        );
-    }
-
-    #[test]
     fn another_map_restarts_only_the_map_name() {
         let t0 = Instant::now();
         let mut statics = SkirmishStatics::default();

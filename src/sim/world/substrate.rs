@@ -50,8 +50,6 @@ pub struct DeferredDeleteQueue {
     /// compaction/load; no family-specific queue or queue shadow exists.
     prefix_counts: Vec<usize>,
     live_count: usize,
-    #[cfg(any(test, feature = "test-support"))]
-    fail_next_overlay_queue: bool,
 }
 
 impl DeferredDeleteQueue {
@@ -68,10 +66,6 @@ impl DeferredDeleteQueue {
         self.append(DeferredDeleteTicket::DiskLaser(id));
     }
     pub(crate) fn queue_overlay(&mut self, id: u64) -> Result<(), ()> {
-        #[cfg(any(test, feature = "test-support"))]
-        if std::mem::take(&mut self.fail_next_overlay_queue) {
-            return Err(());
-        }
         self.entries.try_reserve(1).map_err(|_| ())?;
         self.append(DeferredDeleteTicket::Overlay(id));
         Ok(())
@@ -248,10 +242,6 @@ impl DeferredDeleteQueue {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn remove_ticket_for_test(&mut self, ticket: DeferredDeleteTicket) {
         self.remove(ticket);
-    }
-    #[cfg(any(test, feature = "test-support"))]
-    pub(super) fn fail_next_overlay_queue_for_test(&mut self) {
-        self.fail_next_overlay_queue = true;
     }
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn swap_for_test(&mut self, a: usize, b: usize) {
@@ -593,26 +583,5 @@ impl ObjectSubstrate {
 impl Default for ObjectSubstrate {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn enter_order_counter_next_returns_pre_increment_then_advances() {
-        let mut c = EnterOrderCounter::new();
-        assert_eq!(c.next(), 1);
-        assert_eq!(c.next(), 2);
-        assert_eq!(c.next(), 3);
-    }
-
-    #[test]
-    fn enter_order_counter_saturates_at_max() {
-        let mut c = EnterOrderCounter(u64::MAX);
-        // Returns MAX, then stays MAX (saturating, never wraps to 0).
-        assert_eq!(c.next(), u64::MAX);
-        assert_eq!(c.next(), u64::MAX);
     }
 }

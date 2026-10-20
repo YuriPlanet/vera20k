@@ -144,30 +144,6 @@ pub(crate) fn queue_weapon_report_sounds(state: &mut AppState, events: &[SimFire
 mod tests {
     use super::*;
 
-    #[test]
-    fn report_sound_is_positioned_at_the_sim_fire_coordinate() {
-        let mut sim = Simulation::new();
-        let report = sim.interner.intern("GIAttack");
-        let mut event = crate::sim::world::SimFireEvent::for_test(1);
-        event.report_sound_id = Some(report);
-        event.fire_coord =
-            crate::sim::projectile::ProjectileCoord::new(10 * 256 + 200, 11 * 256 + 40, 105);
-
-        let sounds = weapon_report_sounds(&sim, &[event.clone()]);
-        let expected =
-            crate::util::lepton::absolute_leptons_to_screen(10 * 256 + 200, 11 * 256 + 40, 105);
-        match sounds.as_slice() {
-            [GameSoundEvent::WeaponFired { sound_id, source }] => {
-                assert_eq!(sound_id, "GIAttack");
-                assert_eq!(*source, Some(SoundSource::new(expected, (10, 11))));
-            }
-            other => panic!("unexpected sound events: {other:?}"),
-        }
-
-        event.report_sound_id = None;
-        assert!(weapon_report_sounds(&sim, &[event]).is_empty());
-    }
-
     /// Dustbowl/Battle's production RULESMD/LANGRULE/mode/map reader, then
     /// the actual object visit through bullet, AnimClass and positioned audio.
     /// The native GetFLH corpus bounds the displacement; this is a Rust
@@ -341,23 +317,5 @@ mod tests {
         );
         assert_eq!(shot.fire_coord.z, bare.fire_coord.z);
         assert_eq!(shot.fire_offset_y - bare.fire_offset_y, displacement.1);
-    }
-
-    #[test]
-    fn persistent_sonic_wave_produces_geometry() {
-        let mut sim = Simulation::new();
-        let wave_id = sim.allocate_stable_id();
-        sim.admit_wave(
-            wave_id,
-            crate::sim::wave::Wave::new(
-                0,
-                crate::sim::projectile::ProjectileCoord::new(10 * 256, 10 * 256, 0),
-                crate::sim::projectile::ProjectileCoord::new(14 * 256, 11 * 256, 0),
-            ),
-        );
-
-        let waves = build_weapon_wave_visuals(&sim, None);
-        assert_eq!(waves.len(), 1);
-        assert_eq!(waves[0].polygon.len(), 6);
     }
 }

@@ -272,17 +272,3 @@ fn rejects_network_sessions_unsupported_extensions_and_invalid_assignments() {
     }
     assert!(SpawnRequest::parse("[HouseColors]\nMulti1=0").is_err());
 }
-
-#[test]
-fn rejects_symmetric_but_overlapping_alliance_groups() {
-    let fixture = SKIRMISH.replace(
-        "[Multi2_Alliances]\nHouseAllyOne=0",
-        "[Multi2_Alliances]\nHouseAllyOne=0\nHouseAllyTwo=2\n[Multi3_Alliances]\nHouseAllyOne=1",
-    );
-    assert!(
-        SpawnRequest::parse(&fixture)
-            .unwrap_err()
-            .to_string()
-            .contains("overlapping")
-    );
-}

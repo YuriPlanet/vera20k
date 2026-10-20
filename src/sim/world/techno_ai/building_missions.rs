@@ -230,7 +230,7 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: Option<&Rul
     let archive_less_sale =
         crate::sim::production::archive_less_sale(rules.into(), &object.id, entity);
     let now = sim.session.binary_frame() as i32;
-    let options = &sim.session.game_options();
+    let options = sim.session.game_options();
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.advance_building_body(now, archive_less_sale, has_turret, options);
     }
@@ -257,7 +257,7 @@ pub(super) fn apply_queued_body(sim: &mut Simulation, id: u64) {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.apply_queued_building_body(
             sim.session.binary_frame() as i32,
-            &sim.session.game_options(),
+            sim.session.game_options(),
         );
     }
 }
@@ -1282,7 +1282,7 @@ fn prism_supporter(
     let origin = location(master);
     let attack = MissionId::from_known(MissionType::Attack);
     let mut best: Option<(u64, i32)> = None;
-    for &candidate_id in house.base_projection.buildings() {
+    for &candidate_id in house.base_projection().buildings() {
         let Some(candidate) = sim.substrate.entities.get(candidate_id) else {
             continue;
         };

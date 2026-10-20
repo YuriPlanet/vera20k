@@ -34,7 +34,7 @@ fn explicit_power_toggle_holds_and_resumes_the_existing_paid_factory_head() {
     assert!(sim.go_building_offline(fixture.target, rules, FrameEffects::default()));
     assert!(
         !sim.production
-            .factories
+            .factories()
             .view(fixture.owner, CATEGORY)
             .unwrap()
             .suspended
@@ -42,7 +42,7 @@ fn explicit_power_toggle_holds_and_resumes_the_existing_paid_factory_head() {
     assert!(sim.go_building_offline(fixture.barracks, rules, FrameEffects::default()));
     let held = sim
         .production
-        .factories
+        .factories()
         .view(fixture.owner, CATEGORY)
         .unwrap();
     assert!(held.suspended);
@@ -52,7 +52,7 @@ fn explicit_power_toggle_holds_and_resumes_the_existing_paid_factory_head() {
     assert!(sim.go_building_online(fixture.barracks, rules, FrameEffects::default()));
     let resumed = sim
         .production
-        .factories
+        .factories()
         .view(fixture.owner, CATEGORY)
         .unwrap();
     assert!(!resumed.suspended);
@@ -140,7 +140,7 @@ impl PaidHead {
         for _ in 0..20_000 {
             if sim
                 .production
-                .factories
+                .factories()
                 .view(owner, CATEGORY)
                 .unwrap()
                 .progress
@@ -152,7 +152,7 @@ impl PaidHead {
                 .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
             production::step_factories(sim);
         }
-        let factory = sim.production.factories.view(owner, CATEGORY).unwrap();
+        let factory = sim.production.factories().view(owner, CATEGORY).unwrap();
         assert_eq!(factory.progress, target_stage);
         let original = factory.object.unwrap().entity_id.unwrap();
         let factory_order = factory.construction_order();
@@ -192,7 +192,7 @@ impl PaidHead {
     fn head(&self) -> Value {
         let sim = &self.runtime.simulation;
         let mut value = native_e2_head(
-            &sim.production.factories,
+            sim.production.factories(),
             &sim.houses,
             self.owner,
             self.type_id,
@@ -304,7 +304,7 @@ impl PaidHead {
                 FrameEffects::default(),
             ),
             "declared_successful_delivery_completion" => {
-                assert!(sim.production.factories.complete_production(
+                assert!(sim.production.factories_mut().complete_production(
                     self.owner,
                     CATEGORY,
                     sim.session.binary_frame(),
@@ -321,7 +321,7 @@ impl PaidHead {
                 );
                 let successor = sim
                     .production
-                    .factories
+                    .factories()
                     .view(self.owner, CATEGORY)
                     .unwrap()
                     .object
@@ -364,7 +364,7 @@ impl PaidHead {
                 .runtime
                 .simulation
                 .production
-                .factories
+                .factories()
                 .view(self.owner, CATEGORY)
                 .unwrap()
                 .object
@@ -372,7 +372,11 @@ impl PaidHead {
             let ((), draws) = trace_draws(|| self.operation(phase));
             assert_eq!(self.head(), phase["after"]["factory"], "{label} after");
             let sim = &self.runtime.simulation;
-            let factory = sim.production.factories.view(self.owner, CATEGORY).unwrap();
+            let factory = sim
+                .production
+                .factories()
+                .view(self.owner, CATEGORY)
+                .unwrap();
             assert_eq!(
                 factory.construction_order(),
                 self.factory_order,

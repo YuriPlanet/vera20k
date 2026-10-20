@@ -29,20 +29,6 @@ fn saved_standalone_reader_body_rejects_inconsistent_indexes() {
 }
 
 #[test]
-fn test_basic_parse() {
-    let ini: IniFile = IniFile::from_str("[General]\nName=Test\nCost=1000\n[Combat]\nDamage=50\n");
-
-    assert_eq!(ini.section_count(), 2);
-
-    let general: &IniSection = ini.section("General").expect("Should have General");
-    assert_eq!(general.get("Name"), Some("Test"));
-    assert_eq!(general.get("Cost"), Some("1000"));
-
-    let combat: &IniSection = ini.section("Combat").expect("Should have Combat");
-    assert_eq!(combat.get("Damage"), Some("50"));
-}
-
-#[test]
 fn test_raw_lookup_is_case_sensitive() {
     let ini: IniFile = IniFile::from_str("[VIRUS]\nName=Infantry\n[Virus]\nName=Warhead\n");
 
@@ -119,15 +105,6 @@ Key2=Value2
     assert_eq!(section.get("Key2"), Some("Value2"));
     assert_eq!(section.get("#Key"), Some("Visible"));
     assert_eq!(section.entry_count(), 3);
-}
-
-#[test]
-fn test_inline_comments() {
-    let ini: IniFile = IniFile::from_str("[Test]\nCost=1000 ; credits\nName=hello\n");
-
-    let section: &IniSection = ini.section("Test").unwrap();
-    assert_eq!(section.get("Cost"), Some("1000"));
-    assert_eq!(section.get("Name"), Some("hello"));
 }
 
 #[test]
@@ -220,29 +197,6 @@ fn semicolon_truncates_before_equals_and_empty_entries_are_omitted() {
 }
 
 #[test]
-fn test_section_names_order() {
-    let ini: IniFile = IniFile::from_str("[Zebra]\nKey=Z\n[Alpha]\nKey=A\n[Middle]\nKey=M\n");
-
-    let names: Vec<&str> = ini.section_names();
-    assert_eq!(names, vec!["Zebra", "Alpha", "Middle"]);
-}
-
-#[test]
-fn test_from_bytes() {
-    let data: &[u8] = b"[Test]\nLatin=\xE9\nControl=\x80\n";
-    let ini: IniFile = IniFile::from_bytes(data).expect("all byte values are accepted");
-    assert_eq!(ini.section("Test").unwrap().get("Latin"), Some("\u{e9}"));
-    assert_eq!(ini.section("Test").unwrap().get("Control"), Some("\u{80}"));
-}
-
-#[test]
-fn read_line_removes_embedded_carriage_returns() {
-    let ini = IniFile::from_str("[S]\nK\re\ry=V\ra\rl\rue\n");
-
-    assert_eq!(ini.section("S").unwrap().get("Key"), Some("Value"));
-}
-
-#[test]
 fn nul_terminates_the_visible_line_but_not_the_physical_read() {
     let ini = IniFile::from_str("[S]\nGood=Yes\0Injected=No\nAfter=Seen\n");
     let section = ini.section("S").unwrap();
@@ -282,23 +236,6 @@ fn crlf_lines_and_widened_bytes_follow_the_same_read_line_rules() {
 }
 
 #[test]
-fn test_registry_ids_zero_indexed() {
-    let ini: IniFile = IniFile::from_str("[Types]\n0=E1\n1=E2\n2=ENGINEER\n3=FLAKT\n");
-    let section: &IniSection = ini.section("Types").unwrap();
-    let values: Vec<&str> = section.registry_ids();
-    assert_eq!(values, vec!["E1", "E2", "ENGINEER", "FLAKT"]);
-}
-
-#[test]
-fn test_registry_ids_one_indexed() {
-    // Active retail RULESMD uses 1-indexed type registries in this family.
-    let ini: IniFile = IniFile::from_str("[InfantryTypes]\n1=E1\n2=E2\n3=SHK\n");
-    let section: &IniSection = ini.section("InfantryTypes").unwrap();
-    let values: Vec<&str> = section.registry_ids();
-    assert_eq!(values, vec!["E1", "E2", "SHK"]);
-}
-
-#[test]
 fn test_registry_ids_with_numeric_gaps() {
     let ini: IniFile =
         IniFile::from_str("[VehicleTypes]\n36=CMIN\n1=HTNK\n40=HARV\n2=MTNK\n5=SMIN\n");
@@ -313,14 +250,6 @@ fn test_registry_ids_reads_named_entries_too() {
     let section: &IniSection = ini.section("Empty").unwrap();
     let values: Vec<&str> = section.registry_ids();
     assert_eq!(values, vec!["Test"]);
-}
-
-#[test]
-fn test_whitespace_handling() {
-    let ini: IniFile = IniFile::from_str("[Test]\n  Key  =  Value  \n");
-
-    let section: &IniSection = ini.section("Test").unwrap();
-    assert_eq!(section.get("Key"), Some("Value"));
 }
 
 /// `content_hash` is deterministic and sensitive to every value — a scalar

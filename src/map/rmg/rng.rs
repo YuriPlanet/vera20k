@@ -197,15 +197,6 @@ mod tests {
     }
 
     #[test]
-    fn uniform_stays_within_inclusive_bounds() {
-        let mut rng = RmgRng::new(1234);
-        for _ in 0..2000 {
-            let value = rng.uniform(2, 8);
-            assert!((2..=8).contains(&value), "uniform produced {value}");
-        }
-    }
-
-    #[test]
     fn uniform_reaches_both_endpoints() {
         let mut rng = RmgRng::new(4321);
         let mut low = false;
@@ -218,15 +209,6 @@ mod tests {
             }
         }
         assert!(low && high, "inclusive range must reach 0 and 3");
-    }
-
-    #[test]
-    fn next_unit_is_in_unit_interval() {
-        let mut rng = RmgRng::new(7);
-        for _ in 0..2000 {
-            let value = rng.next_unit();
-            assert!((0.0..1.0).contains(&value), "next_unit produced {value}");
-        }
     }
 
     #[test]

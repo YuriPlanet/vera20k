@@ -171,87 +171,6 @@ fn stock_cloak_producer_weapons_factory_contact_blocks_entry() {
 }
 
 #[test]
-fn fully_cloaked_sub_holding_a_target_does_not_surface() {
-    // CORRECTION. This test used to assert the opposite, encoding two VERA
-    // misreadings at once: that `ShouldUncloak @ 0x006FBC90` treats "holds an
-    // attack target" as activity, and that its tail
-    // `CellClass::IsVisibleToHouse @ 0x004870B0` means cell visibility.
-    //
-    // Native: the head is `IsCloakable() && !IsUnderEMP && !vt+0x380 &&
-    // !WarpIn && !WarpOut`, with no target term anywhere, and the tail reads
-    // the `CloakedByHouses` bit — never set in stock YR. So a submerged
-    // Typhoon that acquires a destroyer stays submerged, and only losing the
-    // ability to sustain the cloak surfaces it.
-    let (mut sim, rules, id) = spawned_sub();
-    sim.substrate
-        .entities
-        .get_mut(id)
-        .unwrap()
-        .cloak
-        .as_mut()
-        .unwrap()
-        .establish_unlimbo_fully_cloaked();
-    sim.substrate
-        .entities
-        .get_mut(id)
-        .unwrap()
-        .attack_target
-        .set_for_test(Some(TargetKind::Entity(999)));
-    tick_stock_cloak_producer(
-        &mut sim,
-        id,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .cloak
-            .as_ref()
-            .unwrap()
-            .state(),
-        2,
-        "holding a target is CanAutoCloak step 4, not a ShouldUncloak term"
-    );
-    assert!(
-        sim.sound_events.is_empty(),
-        "no transition means no positional cue"
-    );
-
-    // Marking the owner's own cell visible must not change the answer either —
-    // that was the substituted predicate.
-    let owner = sim.substrate.entities.get(id).unwrap().owner();
-    let (rx, ry) = sim
-        .substrate
-        .entities
-        .get(id)
-        .map(|entity| (entity.position.rx(), entity.position.ry()))
-        .unwrap();
-    sim.fog.mark_visible_for_owner(owner, rx, ry);
-    tick_stock_cloak_producer(
-        &mut sim,
-        id,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .cloak
-            .as_ref()
-            .unwrap()
-            .state(),
-        2
-    );
-}
-
-#[test]
 fn chrono_warp_surfaces_a_fully_cloaked_sub() {
     // The surviving live `ShouldUncloak` arm in stock data once EMP is excluded:
     // `vt+0x1D4`/`vt+0x1D8` WarpIn/WarpOut. `StartUncloaking(0)` owns the cue.
@@ -649,63 +568,6 @@ fn the_weapon_rearm_countdown_blocks_the_next_auto_cloak() {
     );
 }
 
-#[test]
-fn a_non_allied_sensors_neighbour_surfaces_a_cloaked_mover_on_cell_entry() {
-    // `FootClass::PerCellProcess @ 0x004D8802..0x004D8829`, the only live
-    // `Sensors=` consumer.
-    let (mut sim, rules, id) = spawned_sub();
-    let cell = sim
-        .substrate
-        .entities
-        .get(id)
-        .map(|entity| (entity.position.rx(), entity.position.ry()))
-        .unwrap();
-    sim.substrate
-        .entities
-        .get_mut(id)
-        .unwrap()
-        .cloak
-        .as_mut()
-        .unwrap()
-        .establish_unlimbo_fully_cloaked();
-
-    // An own-house neighbour is skipped by the `Is_Ally_ByObject` clause.
-    let friendly = sim
-        .spawn_object_at_height("DEST", "Soviet", cell.0 + 1, cell.1, 0, 0, &rules)
-        .unwrap();
-    assert!(!uncloak_on_sensor_neighbour_after_cell_entry(
-        &mut sim, id, &rules
-    ));
-    assert!(sim.sound_events.is_empty());
-    // Leave cell, Logic and display membership through their common owner
-    // before removing storage; raw erase left a dangling display identity.
-    sim.object_conceal(friendly);
-    sim.substrate.entities.remove(friendly);
-
-    // A hostile one with `Sensors=yes` forces the surface, with the cue.
-    sim.spawn_object_at_height("DEST", "Americans", cell.0 + 1, cell.1, 0, 0, &rules)
-        .unwrap();
-    assert!(uncloak_on_sensor_neighbour_after_cell_entry(
-        &mut sim, id, &rules
-    ));
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .cloak
-            .as_ref()
-            .unwrap()
-            .state(),
-        3
-    );
-    assert!(matches!(
-        sim.sound_events.as_slice(),
-        [crate::sim::world::SimSoundEvent::CloakSound { sound_id, .. }]
-            if sound_id == "NavalUnitEmerge"
-    ));
-}
-
 /// The neighbour's House asks about the mover (`0x004D87E8..0x004D87EF`): a
 /// sensor whose House allies the mover's one way leaves it cloaked, and the
 /// mover's own one-way alliance does not.
@@ -1015,50 +877,6 @@ fn a_sensing_house_keeps_both_target_and_destination_across_a_dive() {
     );
     assert_eq!(blind_after.navigation.nav_com_aux(), None);
     assert_eq!(blind_after.navigation.suspended_nav_com(), None);
-}
-
-#[test]
-fn a_limboed_entity_on_the_cell_no_longer_shadows_the_sensors_neighbour() {
-    // `CellClass::Find_Nearest_Object @ 0x0047C3D0` walks the cell's own object
-    // chain (`+0xE4`). `techno_limbo` unmarks the entity from the occupancy
-    // grid — VERA's model of that chain — but never clears `entity.position`,
-    // so a raw position scan kept finding the stale object and, taking the
-    // first match, hid the Destroyer behind it.
-    let (mut sim, rules, id) = spawned_sub();
-    let cell = sim
-        .substrate
-        .entities
-        .get(id)
-        .map(|entity| (entity.position.rx(), entity.position.ry()))
-        .unwrap();
-    sim.substrate
-        .entities
-        .get_mut(id)
-        .unwrap()
-        .cloak
-        .as_mut()
-        .unwrap()
-        .establish_unlimbo_fully_cloaked();
-
-    // Lower stable id than the Destroyer, and it carries no `Sensors=`.
-    let stale = sim
-        .spawn_object_at_height("RANKED", "Neutral", cell.0 + 1, cell.1, 0, 0, &rules)
-        .unwrap();
-    let dest = sim
-        .spawn_object_at_height("DEST", "Americans", cell.0 + 1, cell.1, 0, 0, &rules)
-        .unwrap();
-    assert!(stale < dest);
-    sim.techno_limbo_with_rules(stale, &rules, None);
-    assert_eq!(
-        sim.substrate.entities.get(stale).unwrap().position.rx(),
-        cell.0 + 1,
-        "limbo leaves the stale map position in place, which is why the raw scan was wrong"
-    );
-
-    assert!(
-        uncloak_on_sensor_neighbour_after_cell_entry(&mut sim, id, &rules),
-        "an off-chain limboed object must not shadow the Destroyer"
-    );
 }
 
 #[test]

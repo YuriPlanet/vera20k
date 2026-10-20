@@ -19,7 +19,7 @@ use crate::sim::world::{SimSoundEvent, Simulation};
 // inserting `BuildQueueItem`s into the retired `queues_by_owner`.
 use super::tests::{
     arm_build_via, basic_infantry_rules, basic_multi_queue_rules, build_catalog_rules,
-    naval_production_rules, production_modifier_rules, spawn_structure, water_terrain,
+    production_modifier_rules, spawn_structure, water_terrain,
 };
 
 fn factory_constructor_rules() -> RuleSet {
@@ -61,7 +61,7 @@ fn busy_factory_exit_world() -> Option<(Simulation, RuleSet, InternedId)> {
     sim.houses
         .get_mut(&owner)
         .unwrap()
-        .base_projection
+        .base_projection_mut()
         .replace_buildings_for_test(vec![1, 3, 2]);
     sim.production
         .set_primary_factory_for_test(owner, ProductionCategory::Vehicle, 1);
@@ -117,7 +117,7 @@ fn busy_factory_exit_product(
         );
         assert!(
             sim.production
-                .factories
+                .factories_mut()
                 .test_arm_ready(owner, ProductionCategory::Vehicle)
         );
         return super::factory_lifecycle::active_entity_id(sim, owner, ProductionCategory::Vehicle)
@@ -125,7 +125,7 @@ fn busy_factory_exit_product(
     }
     let type_id = sim.intern("MTNK");
     let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), rules);
-    sim.production.factories.create_building_factory(
+    sim.production.factories_mut().create_building_factory(
         1,
         owner,
         ProductionCategory::Vehicle,
@@ -142,7 +142,7 @@ fn busy_factory_exit_product(
         false,
     )
     .unwrap();
-    let factory = sim.production.factories.test_first_mut().unwrap();
+    let factory = sim.production.factories_mut().test_first_mut().unwrap();
     factory.progress = super::PRODUCTION_STEPS;
     factory.balance = 0;
     factory.suspended = true;
@@ -204,7 +204,7 @@ fn busy_factory_exit_player_uses_house_order_without_moving_primary() {
     let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
         return;
     };
-    assert_eq!(sim.houses[&owner].base_projection.buildings(), [1, 3, 2]);
+    assert_eq!(sim.houses[&owner].base_projection().buildings(), [1, 3, 2]);
     assert_eq!(
         sim.substrate
             .entities
@@ -227,7 +227,7 @@ fn busy_factory_exit_player_uses_house_order_without_moving_primary() {
             .next(),
         Some(1)
     );
-    assert!(sim.production.factories.is_empty());
+    assert!(sim.production.factories().is_empty());
     assert!(!sim.object_placement_scope_active());
 }
 
@@ -253,7 +253,7 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
         dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
     });
     let mtnk = sim.intern("MTNK");
-    sim.production.factories.create_building_factory(
+    sim.production.factories_mut().create_building_factory(
         2,
         owner,
         ProductionCategory::Vehicle,
@@ -261,11 +261,11 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
         90,
         700,
     );
-    let attached = sim.production.factories.building_factory(2).cloned();
+    let attached = sim.production.factories().building_factory(2).cloned();
     sim.houses
         .get_mut(&owner)
         .unwrap()
-        .base_projection
+        .base_projection_mut()
         .replace_buildings_for_test(vec![1, 2, 4, 3, 5]);
     let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
     assert!(dispatch_production_changes_for_tests(
@@ -273,11 +273,11 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
     ));
     assert_busy_factory_exit_receiver(&sim, &rules, product, 5);
     assert_eq!(
-        sim.production.factories.building_factory(2),
+        sim.production.factories().building_factory(2),
         attached.as_ref(),
         "any non-null +524 excludes that candidate without changing its factory"
     );
-    assert!(sim.production.factories.building_factory(5).is_none());
+    assert!(sim.production.factories().building_factory(5).is_none());
     assert_eq!(
         sim.production
             .primary_factory_ids(owner, ProductionCategory::Vehicle)
@@ -292,17 +292,17 @@ fn busy_factory_exit_restores_building_attachment_after_success() {
         return;
     };
     let product = busy_factory_exit_product(&mut sim, &rules, owner, true);
-    let registry = sim.production.factories.clone();
-    let credits = sim.houses[&owner].economy.credits();
+    let registry = sim.production.factories().clone();
+    let credits = sim.houses[&owner].economy().credits();
     let next_id = sim.substrate.next_stable_object_id;
     assert_eq!(
         busy_factory_exit_attempt(&mut sim, &rules, owner, product),
         Some(product)
     );
     assert_busy_factory_exit_receiver(&sim, &rules, product, 3);
-    assert_eq!(sim.production.factories, registry);
-    assert!(sim.production.factories.building_factory(3).is_none());
-    assert_eq!(sim.houses[&owner].economy.credits(), credits);
+    assert_eq!(*sim.production.factories(), registry);
+    assert!(sim.production.factories().building_factory(3).is_none());
+    assert_eq!(sim.houses[&owner].economy().credits(), credits);
     assert_eq!(sim.substrate.next_stable_object_id, next_id);
     assert_eq!(
         sim.production
@@ -321,7 +321,7 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     let product = busy_factory_exit_product(&mut sim, &rules, owner, true);
     let mtnk = sim.intern("MTNK");
     let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), &rules);
-    sim.production.factories.create_building_factory(
+    sim.production.factories_mut().create_building_factory(
         3,
         owner,
         ProductionCategory::Vehicle,
@@ -329,37 +329,37 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
         91,
         cost,
     );
-    let registry = sim.production.factories.clone();
-    let source = sim.production.factories.building_factory(1).cloned();
-    let credits = sim.houses[&owner].economy.credits();
+    let registry = sim.production.factories().clone();
+    let source = sim.production.factories().building_factory(1).cloned();
+    let credits = sim.houses[&owner].economy().credits();
     let next_id = sim.substrate.next_stable_object_id;
     for (from, to) in [(1, 3), (1, 1), (4, 2)] {
         assert!(
             !sim.production
-                .factories
+                .factories_mut()
                 .transfer_building_factory_attachment(from, to)
         );
-        assert_eq!(sim.production.factories, registry);
+        assert_eq!(*sim.production.factories(), registry);
     }
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .transfer_building_factory_attachment(1, 2)
     );
-    assert!(sim.production.factories.building_factory(1).is_none());
+    assert!(sim.production.factories().building_factory(1).is_none());
     assert_eq!(
-        sim.production.factories.building_factory(2),
+        sim.production.factories().building_factory(2),
         source.as_ref(),
         "reattachment retains the existing Factory and its held object"
     );
     assert_eq!(source.unwrap().object.unwrap().entity_id, Some(product));
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .transfer_building_factory_attachment(2, 1)
     );
-    assert_eq!(sim.production.factories, registry);
-    assert_eq!(sim.houses[&owner].economy.credits(), credits);
+    assert_eq!(*sim.production.factories(), registry);
+    assert_eq!(sim.houses[&owner].economy().credits(), credits);
     assert_eq!(sim.substrate.next_stable_object_id, next_id);
 }
 
@@ -381,8 +381,8 @@ fn busy_factory_exit_failed_chosen_receiver_returns_once_and_restores_attachment
             .unwrap()
             .lifecycle
             .set_cell_marked(true);
-        let registry = sim.production.factories.clone();
-        let credits = sim.houses[&owner].economy.credits();
+        let registry = sim.production.factories().clone();
+        let credits = sim.houses[&owner].economy().credits();
         let next_id = sim.substrate.next_stable_object_id;
         let rng = (
             sim.main_rng.logical_state(),
@@ -400,9 +400,9 @@ fn busy_factory_exit_failed_chosen_receiver_returns_once_and_restores_attachment
             sim.substrate.entities.get(3).unwrap().archive_target(),
             "the first eligible receiver copies its archive before failing; no later receiver runs"
         );
-        assert_eq!(sim.production.factories, registry);
-        assert!(sim.production.factories.building_factory(3).is_none());
-        assert_eq!(sim.houses[&owner].economy.credits(), credits);
+        assert_eq!(*sim.production.factories(), registry);
+        assert!(sim.production.factories().building_factory(3).is_none());
+        assert_eq!(sim.houses[&owner].economy().credits(), credits);
         assert_eq!(sim.substrate.next_stable_object_id, next_id);
         assert_eq!(
             (
@@ -424,7 +424,7 @@ fn busy_factory_exit_without_an_alternate_refunds_player_product_and_promotes_qu
     sim.houses
         .get_mut(&owner)
         .unwrap()
-        .base_projection
+        .base_projection_mut()
         .replace_buildings_for_test(vec![1]);
     let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
     arm_build_via(
@@ -435,7 +435,7 @@ fn busy_factory_exit_without_an_alternate_refunds_player_product_and_promotes_qu
         ProductionCategory::Vehicle,
         71,
     );
-    let credits = sim.houses[&owner].economy.credits();
+    let credits = sim.houses[&owner].economy().credits();
     let refund = sim.cost_of(owner, rules.object("MTNK").unwrap(), &rules);
     assert!(!dispatch_production_changes_for_tests(
         &mut sim, &rules, None
@@ -444,10 +444,10 @@ fn busy_factory_exit_without_an_alternate_refunds_player_product_and_promotes_qu
     // rows below preserve that boundary. Human HousePlace4FB57F then sees
     // producer+524zero and abandons this paid product, not the queued tail.
     assert!(!sim.substrate.entities.contains(product));
-    assert_eq!(sim.houses[&owner].economy.credits(), credits + refund);
+    assert_eq!(sim.houses[&owner].economy().credits(), credits + refund);
     let factory = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Vehicle)
         .unwrap();
     assert_eq!(factory.progress, 0);
@@ -462,7 +462,7 @@ fn busy_factory_exit_without_an_alternate_refunds_player_product_and_promotes_qu
             .lifecycle
             .in_limbo()
     );
-    assert!(sim.production.factories.building_factory(1).is_none());
+    assert!(sim.production.factories().building_factory(1).is_none());
 }
 
 #[test]
@@ -692,7 +692,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .base_projection
+            .base_projection_mut()
             .replace_buildings_for_test(order);
         sim.production.set_primary_factory_for_test(
             owner,
@@ -706,7 +706,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), &rules);
         for (label, _) in &producer_types {
             if *label != "source" && before["producers"][label]["attachment"] != "0x0" {
-                sim.production.factories.create_building_factory(
+                sim.production.factories_mut().create_building_factory(
                     labels[label],
                     owner,
                     ProductionCategory::Vehicle,
@@ -748,8 +748,8 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         sim.main_rng = serde_json::from_value(row["rng_before"]["main"].clone()).unwrap();
         sim.scenario_rng = serde_json::from_value(row["rng_before"]["scenario"].clone()).unwrap();
         sim.mapgen_rng = serde_json::from_value(row["rng_before"]["mapgen"].clone()).unwrap();
-        let registry = sim.production.factories.clone();
-        let credits = sim.houses[&owner].economy.credits();
+        let registry = sim.production.factories().clone();
+        let credits = sim.houses[&owner].economy().credits();
         let next_id = sim.substrate.next_stable_object_id;
         for (label, id) in &labels {
             assert_eq!(
@@ -842,10 +842,11 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
             );
         }
         assert_eq!(
-            sim.production.factories, registry,
+            *sim.production.factories(),
+            registry,
             "{name}: same Factory values"
         );
-        assert_eq!(sim.houses[&owner].economy.credits(), credits);
+        assert_eq!(sim.houses[&owner].economy().credits(), credits);
         assert_eq!(sim.substrate.next_stable_object_id, next_id);
         assert_eq!(
             sim.production
@@ -861,7 +862,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
                 before["producers"][label]["attachment"]
             );
             assert_eq!(
-                sim.production.factories.building_factory(*id).is_some(),
+                sim.production.factories().building_factory(*id).is_some(),
                 native["attachment"] != "0x0",
                 "{name}: restored attachment for {label}"
             );
@@ -922,7 +923,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
     ));
     let held = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap()
         .object
@@ -938,7 +939,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
             super::step_factories(&mut sim);
 
             sim.production
-                .factories
+                .factories()
                 .view(owner, ProductionCategory::Infantry)
                 .is_some_and(|factory| factory.complete_object().is_some())
         })
@@ -956,7 +957,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
     assert!(!entity.in_logic_vector.is_member());
     let factory = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap();
     assert_eq!(factory.object.unwrap().entity_id, Some(held));
@@ -1002,7 +1003,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
         ));
         assert!(
             sim.production
-                .factories
+                .factories_mut()
                 .test_arm_ready(owner, ProductionCategory::Infantry)
         );
         // This unrelated future event belongs to the scheduler throughout both
@@ -1018,7 +1019,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
     let (mut live, owner, future) = make();
     let held = live
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap()
         .object
@@ -1073,7 +1074,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
     );
     let next = live
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap();
     assert!(next.queue.is_empty());
@@ -1109,7 +1110,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
     assert_eq!(
         replay
             .production
-            .factories
+            .factories()
             .view(owner, ProductionCategory::Infantry)
             .unwrap()
             .object
@@ -1146,7 +1147,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
     ));
     let vehicle = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Vehicle)
         .and_then(|view| view.object.cloned())
         .expect("vehicle constructed at StartProduction");
@@ -1169,7 +1170,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
     ));
     let infantry = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .and_then(|view| view.object.cloned())
         .expect("infantry constructed at StartProduction");
@@ -1210,7 +1211,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
     assert!(sim.substrate.entities.get(e1_id).is_none());
     let promoted = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .and_then(|view| view.object.cloned())
         .expect("E2 promoted through StartNextQueued");
@@ -1285,7 +1286,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
         );
         let object = sim
             .production
-            .factories
+            .factories()
             .view(owner, ProductionCategory::Building)
             .unwrap()
             .object
@@ -1395,9 +1396,9 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
             after["house"]["dirty"][1] == 1,
             "destructor preserves radar dirty"
         );
-        assert_eq!(sim.houses[&owner].tracking.buildings(), 0);
-        assert_eq!(sim.houses[&owner].stats.units_lost(), 0);
-        assert_eq!(sim.houses[&owner].stats.buildings_lost(), 0);
+        assert_eq!(sim.houses[&owner].tracking().buildings(), 0);
+        assert_eq!(sim.houses[&owner].stats().units_lost(), 0);
+        assert_eq!(sim.houses[&owner].stats().buildings_lost(), 0);
         assert!(sim.substrate.pending_delete.is_empty());
         assert!(!sim.object_placement_scope_active());
         for (name, rng) in [
@@ -1447,7 +1448,10 @@ fn a_house_builds_only_up_to_its_own_tech_level() {
     let e1 = sim.interner.intern("E1");
     // CanBuild refuses a type above the house's TechLevel: off the sidebar.
     for (house_tech_level, listed_enabled) in [(0, None), (1, Some(true))] {
-        sim.houses.get_mut(&americans).unwrap().tech_level = house_tech_level;
+        sim.houses
+            .get_mut(&americans)
+            .unwrap()
+            .set_tech_level_for_test(house_tech_level);
         let options = build_options_for_owner(&sim, &rules, "Americans");
         assert_eq!(
             options
@@ -1576,82 +1580,6 @@ fn named_skirmish_owner_uses_country_for_build_permissions() {
     assert!(turret.enabled);
 }
 
-#[test]
-#[ignore = "WIP: MCV deploy build-option unlock not yet landed"]
-fn deployed_mcv_unlocks_building_options_for_named_skirmish_owner() {
-    let mut sim = Simulation::new();
-    let ini = IniFile::from_str(
-        "[Countries]\n0=Americans\n1=Alliance\n2=Russians\n3=Soviet\n[InfantryTypes]\n\
-         [VehicleTypes]\n\
-         0=AMCV\n\
-         [AircraftTypes]\n\
-         [BuildingTypes]\n\
-         0=GACNST\n\
-         1=GAPOWR\n\
-         [AMCV]\n\
-         Strength=450\n\
-         Armor=heavy\n\
-         Speed=5\n\
-         TechLevel=1\n\
-         Owner=Americans\n\
-         DeploysInto=GACNST\n\
-         [GACNST]\n\
-         Name=Construction Yard\n\
-         Cost=3000\n\
-         Strength=1000\n\
-         Armor=wood\n\
-         TechLevel=1\n\
-         Owner=Americans\n\
-         Foundation=4x3\n\
-         Factory=BuildingType\n\
-         [GAPOWR]\n\
-         Name=Power Plant\n\
-         Cost=800\n\
-         Strength=750\n\
-         Armor=wood\n\
-         TechLevel=1\n\
-         Owner=Americans\n\
-         Foundation=2x2\n\
-         Prerequisite=GACNST\n",
-    );
-    let rules = RuleSet::from_ini(&ini).expect("rules should parse");
-    sim.intern_rule_type_ids(&rules);
-    sim.resolve_type_handles(&rules);
-
-    let owner_id = sim.interner.intern("Commander");
-    let country_id = sim.interner.intern("Americans");
-    sim.houses
-        .register(crate::sim::house_state::HouseState::new(
-            owner_id,
-            0,
-            Some(country_id),
-            true,
-            super::production_types::STARTING_CREDITS,
-            10,
-        ));
-    let mcv = sim
-        .spawn_object("AMCV", "Commander", 20, 22, 64, &rules)
-        .expect("MCV should spawn");
-    assert!(sim.deploy_mcv(
-        mcv,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
-
-    for _ in 0..30 {
-        sim.advance_tick(&[], Some(&rules), None, None, 33);
-    }
-
-    let options = build_options_for_owner(&sim, &rules, "Commander");
-    let power = options
-        .iter()
-        .find(|opt| opt.type_id == sim.interner.intern("GAPOWR"))
-        .expect("deployed yard should unlock first building");
-    assert!(power.enabled);
-    assert_eq!(power.reason, None);
-}
-
 /// `Time_To_Build` reads the owner's power (House `+0x53A4`/`+0x53A8`) and the
 /// owner's factory count for the object's class (`0x00500910`).
 #[test]
@@ -1746,97 +1674,6 @@ fn wall_build_time_inputs_carry_the_wall_coefficient() {
     );
     let tower = rules.object("GACNST").expect("GACNST");
     assert!(!super::factory::time_to_build_inputs(&sim, &rules, americans, tower).wall);
-}
-
-#[test]
-fn naval_unit_rally_uses_water_pathing_after_spawn() {
-    let mut sim = Simulation::new();
-    let rules = naval_production_rules();
-    let terrain = water_terrain(32, 32);
-    let grid = PathGrid::from_resolved_terrain(&terrain);
-    sim.install_fixture_path_grid(Some(&grid));
-    sim.resolved_terrain = Some(terrain.clone());
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
-        base: 0,
-        off_fc: -100,
-        off_100: -100,
-        off_104: 200,
-        off_108: 200,
-    });
-    spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 20, 20);
-    sim.substrate
-        .entities
-        .get_mut(1)
-        .unwrap()
-        .set_archive_target(Some(crate::sim::combat::TargetKind::Cell(26, 21)));
-    // spawn_structure supplied the human House and registered this yard in
-    // its native base vector. Keep that identity/membership; only supply funds.
-    let americans_display = sim.interner.get("Americans").unwrap();
-    super::house_for_test(&mut sim, "Americans")
-        .economy
-        .set_credits_for_test(super::production_types::STARTING_CREDITS);
-    assert!(sim.houses[&americans_display].is_human);
-    assert_eq!(
-        sim.houses[&americans_display].base_projection.buildings(),
-        &[1],
-        "the supplied producer remains in the canonical House base vector"
-    );
-    // Arm the native Ship-slot factory directly in the registry, then force it
-    // ready so publication queues the destroyer's next-frame PLACE.
-    arm_build_via(
-        &mut sim,
-        &rules,
-        "Americans",
-        "DEST",
-        ProductionCategory::Ship,
-        0,
-    );
-    let held_id = sim
-        .production
-        .factories
-        .view(americans_display, ProductionCategory::Ship)
-        .and_then(|view| view.object.and_then(|object| object.entity_id))
-        .expect("ship exists in limbo from StartProduction");
-    let rng_before_delivery = sim.scenario_rng.logical_state();
-    assert!(
-        sim.production
-            .factories
-            .test_arm_ready(americans_display, ProductionCategory::Ship)
-    );
-
-    let spawned = dispatch_production_changes_for_tests(&mut sim, &rules, None);
-    assert!(spawned, "completed naval production should spawn the unit");
-    assert_eq!(sim.scenario_rng.logical_state(), rng_before_delivery);
-
-    let ship = sim
-        .substrate
-        .entities
-        .values()
-        .find(|e| {
-            sim.interner
-                .resolve(e.type_ref())
-                .eq_ignore_ascii_case("DEST")
-        })
-        .expect("spawned destroyer");
-    assert_eq!(
-        ship.stable_id(),
-        held_id,
-        "delivery reuses Factory+0x58 identity"
-    );
-    assert_eq!(
-        ship.navigation.nav_com(),
-        Some(crate::sim::components::NavTargetRef::cell(26, 21)),
-        "the selected producer owns the represented rally destination"
-    );
-    assert_eq!(
-        ship.mission.queued(),
-        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
-        "the producer rally queues Move"
-    );
-    assert!(
-        crate::sim::movement::motion_query::is_moving(&ship) == Some(true),
-        "the rally's setter starts the ship"
-    );
 }
 
 /// Retail `[GAAIRC] ForbiddenHouses=Americans` and `[AMRADR]
@@ -1945,19 +1782,19 @@ fn published_completions_dispatch_each_owners_next_frame_place() {
 
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans_id, ProductionCategory::Infantry)
     );
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(soviet_id, ProductionCategory::Infantry)
     );
 
     let spawned = dispatch_production_changes_for_tests(&mut sim, &rules, None);
     assert!(spawned, "At least one queue completion should spawn");
     assert!(
-        sim.production.factories.is_empty(),
+        sim.production.factories().is_empty(),
         "Completed owner factories should be pruned"
     );
 
@@ -1993,85 +1830,6 @@ fn published_completions_dispatch_each_owners_next_frame_place() {
     assert_eq!(soviet, 1);
 }
 
-#[test]
-fn published_completions_dispatch_multiple_categories_for_one_owner() {
-    let mut sim = Simulation::new();
-    super::tests::install_infantry_delivery_fixture_map(&mut sim);
-    let rules = basic_multi_queue_rules();
-
-    spawn_structure(&mut sim, &rules, 1, "Americans", "GAPILE", 10, 10);
-    spawn_structure(&mut sim, &rules, 2, "Americans", "GAWEAP", 14, 10);
-
-    let americans_id = sim.interner.intern("Americans");
-    // P5d: arm both category factories directly in the registry, then force both to the
-    // completed-and-held state, then dispatch their next-frame PLACE events.
-    arm_build_via(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        ProductionCategory::Infantry,
-        0,
-    );
-    arm_build_via(
-        &mut sim,
-        &rules,
-        "Americans",
-        "MTNK",
-        ProductionCategory::Vehicle,
-        1,
-    );
-
-    assert!(
-        sim.production
-            .factories
-            .test_arm_ready(americans_id, ProductionCategory::Infantry)
-    );
-    assert!(
-        sim.production
-            .factories
-            .test_arm_ready(americans_id, ProductionCategory::Vehicle)
-    );
-
-    let spawned = dispatch_production_changes_for_tests(&mut sim, &rules, None);
-    assert!(spawned);
-    assert!(
-        sim.production.factories.is_empty(),
-        "all completed category factories should be pruned"
-    );
-
-    let infantry = sim
-        .substrate
-        .entities
-        .values()
-        .filter(|e| {
-            sim.interner
-                .resolve(e.owner())
-                .eq_ignore_ascii_case("Americans")
-                && sim
-                    .interner
-                    .resolve(e.type_ref())
-                    .eq_ignore_ascii_case("E1")
-        })
-        .count();
-    let vehicles = sim
-        .substrate
-        .entities
-        .values()
-        .filter(|e| {
-            sim.interner
-                .resolve(e.owner())
-                .eq_ignore_ascii_case("Americans")
-                && sim
-                    .interner
-                    .resolve(e.type_ref())
-                    .eq_ignore_ascii_case("MTNK")
-        })
-        .count();
-    assert_eq!(infantry, 1);
-    assert_eq!(vehicles, 1);
-}
-
 /// MapClass Size for the 32x32 exit fixtures below: In_Bounds
 /// (`0x00568300`) admits the cells around a factory at (10, 10), so their
 /// dock Cells fail only on the class entry test. Their `manager_rules`
@@ -2101,7 +1859,7 @@ fn blocked_vehicle_delivery_refunds_disposes_and_promotes_next_item() {
 
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAWEAP", 10, 10);
     super::house_for_test(&mut sim, "Americans")
-        .economy
+        .economy_mut()
         .set_credits_for_test(1000);
 
     let americans_id = sim.interner.intern("Americans");
@@ -2127,7 +1885,7 @@ fn blocked_vehicle_delivery_refunds_disposes_and_promotes_next_item() {
     // (which the water grid blocks).
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans_id, ProductionCategory::Vehicle)
     );
 
@@ -2153,7 +1911,7 @@ fn blocked_vehicle_delivery_refunds_disposes_and_promotes_next_item() {
     assert!(successor > held);
     let factory = sim
         .production
-        .factories
+        .factories()
         .view(americans_id, ProductionCategory::Vehicle)
         .unwrap();
     assert_eq!(factory.progress, 0);
@@ -2197,7 +1955,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
 
     let americans_id = sim.interner.intern("Americans");
     super::house_for_test(&mut sim, "Americans")
-        .economy
+        .economy_mut()
         .set_credits_for_test(50_000);
     // P5d: arm the front MTNK (active) then a second MTNK at a higher stamp (FIFO tail).
     arm_build_via(
@@ -2219,7 +1977,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
 
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans_id, ProductionCategory::Vehicle)
     );
     // test_arm_ready supplies the paid Balance0/post-payment wallet prior.
@@ -2241,7 +1999,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     assert_eq!(sim.owned_object_counts(americans_id).1, owned);
     let factory = sim
         .production
-        .factories
+        .factories()
         .view(americans_id, ProductionCategory::Vehicle)
         .unwrap();
     assert_eq!(factory.progress, 0);
@@ -2260,7 +2018,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     // successor and exercise that object's own next-frame PLACE edge.
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans_id, ProductionCategory::Vehicle)
     );
     assert!(dispatch_production_changes_for_tests(
@@ -2273,7 +2031,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     assert_eq!(sim.owned_object_counts(americans_id).1, owned);
     assert!(
         sim.production
-            .factories
+            .factories()
             .view(americans_id, ProductionCategory::Vehicle)
             .is_none_or(|factory| factory.object.is_none())
     );
@@ -2290,7 +2048,7 @@ fn paused_category_projection_and_factory_charge_remain_independent() {
 
     let americans_id = sim.interner.intern("Americans");
     super::house_for_test(&mut sim, "Americans")
-        .economy
+        .economy_mut()
         .set_credits_for_test(50_000);
     // P5d: arm both category factories directly in the registry.
     arm_build_via(
@@ -2334,12 +2092,12 @@ fn paused_category_projection_and_factory_charge_remain_independent() {
     assert_eq!(vehicle.state, BuildQueueState::Building);
     let infantry = sim
         .production
-        .factories
+        .factories()
         .view(americans_id, ProductionCategory::Infantry)
         .unwrap();
     let vehicle = sim
         .production
-        .factories
+        .factories()
         .view(americans_id, ProductionCategory::Vehicle)
         .unwrap();
     assert_eq!(infantry.progress, 0);
@@ -2358,7 +2116,7 @@ fn cancel_by_type_removes_ready_building_and_refunds() {
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
     // The refund goes to an existing house; a cancel never creates one.
     super::house_for_test(&mut sim, "Americans")
-        .economy
+        .economy_mut()
         .set_credits_for_test(5000);
 
     let americans_id = sim.interner.intern("Americans");
@@ -2373,7 +2131,7 @@ fn cancel_by_type_removes_ready_building_and_refunds() {
     // The fixture finishes the build with its balance paid off.
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans_id, ProductionCategory::Building)
     );
     assert!(!dispatch_production_changes_for_tests(
@@ -2405,7 +2163,7 @@ fn cancel_by_type_removes_ready_building_and_refunds() {
     );
     assert!(
         sim.production
-            .factories
+            .factories()
             .view(americans_id, ProductionCategory::Building)
             .is_none()
     );
@@ -2415,38 +2173,6 @@ fn cancel_by_type_removes_ready_building_and_refunds() {
     let refund = rules.object("GAREFN").map(|o| o.cost).unwrap_or(0);
     assert!(refund > 0, "GAREFN should have a cost");
     assert_eq!(after_credits, before_credits + refund);
-}
-
-/// A build starts without money: nothing on the PRODUCE path checks the wallet
-/// (`HouseClass::Begin_Production @ 0x004FA350`), and the per-step charge in
-/// `step_all` pays for the build as it goes. An empty wallet still starts the
-/// build and is debited nothing.
-#[test]
-fn enqueue_starts_a_build_without_money_and_debits_nothing() {
-    let mut sim = Simulation::new();
-    let rules = basic_multi_queue_rules();
-    spawn_structure(&mut sim, &rules, 1, "Americans", "GAWEAP", 10, 10); // a UnitType war factory
-    super::house_for_test(&mut sim, "Americans")
-        .economy
-        .set_credits_for_test(0);
-    assert!(super::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "MTNK",
-        crate::sim::world::FrameEffects::default(),
-        false,
-    ));
-    assert_eq!(credits_for_owner(&sim, "Americans"), 0);
-    let americans_id = sim.interner.intern("Americans");
-    let mtnk_id = sim.interner.intern("MTNK");
-    let factory = sim
-        .production
-        .factories
-        .view(americans_id, ProductionCategory::Vehicle)
-        .expect("the build starts a factory");
-    assert_eq!(factory.object.map(|o| o.type_id), Some(mtnk_id));
-    assert_eq!(factory.progress, 0);
 }
 
 fn hold_rules() -> RuleSet {
@@ -2469,7 +2195,7 @@ fn hold_world() -> (Simulation, RuleSet, InternedId) {
     let mut sim = Simulation::new();
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAWEAP", 10, 10);
     super::house_for_test(&mut sim, "Americans")
-        .economy
+        .economy_mut()
         .set_credits_for_test(50_000);
     let owner = sim.interner.intern("Americans");
     (sim, rules, owner)
@@ -2495,7 +2221,7 @@ fn only_a_busy_airfield_refuses_its_type() {
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAWEAP", 10, 10);
     spawn_structure(&mut sim, &rules, 2, "Americans", "GAAIRC", 20, 20);
     super::house_for_test(&mut sim, "Americans")
-        .economy
+        .economy_mut()
         .set_credits_for_test(50_000);
     for (building, contact) in [(1, 901), (2, 902)] {
         let contacts = &mut sim
@@ -2549,17 +2275,17 @@ fn completed_same_type_produce_preserves_the_factory_at_build_limit() {
     ));
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(owner, ProductionCategory::Vehicle)
     );
     let before = sim
         .production
-        .factories
+        .factories_mut()
         .test_factory_mut(owner, ProductionCategory::Vehicle)
         .unwrap()
         .clone();
-    let next_order = sim.production.next_enqueue_order;
-    let wallet = sim.houses[&owner].economy.clone();
+    let next_order = sim.production.next_enqueue_order();
+    let wallet = sim.houses[&owner].economy().clone();
     let rng = sim.rng_state();
     sim.session.set_binary_frame_for_test(300);
     assert!(enqueue_by_type(
@@ -2572,13 +2298,13 @@ fn completed_same_type_produce_preserves_the_factory_at_build_limit() {
     ));
     assert_eq!(
         *sim.production
-            .factories
+            .factories_mut()
             .test_factory_mut(owner, ProductionCategory::Vehicle)
             .unwrap(),
         before
     );
-    assert_eq!(sim.production.next_enqueue_order, next_order);
-    assert_eq!(sim.houses[&owner].economy, wallet);
+    assert_eq!(sim.production.next_enqueue_order(), next_order);
+    assert_eq!(*sim.houses[&owner].economy(), wallet);
     assert_eq!(sim.rng_state(), rng);
     assert_eq!(
         queue_view_for_owner(&sim, &rules, "Americans")[0].state,
@@ -2634,7 +2360,7 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
     ));
     let factory = sim
         .production
-        .factories
+        .factories_mut()
         .test_factory_mut(owner, ProductionCategory::Vehicle)
         .unwrap();
     assert!(!factory.suspended);
@@ -2700,7 +2426,7 @@ fn a_produce_past_the_queue_cap_is_refused_with_a_scold() {
     assert_eq!(refusals(&sim), 1);
     let factory = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Vehicle)
         .unwrap();
     assert_eq!(factory.queue.len(), 2);
@@ -2734,7 +2460,7 @@ fn a_producer_without_weapons_factory_takes_the_generic_exit_arm() {
         sim.resolve_type_handles(&rules);
         let owner = sim.intern("Americans");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, human, 50_000, 10);
-        house.base_center = Some((20, 20));
+        house.set_base_center_for_test(Some((20, 20)));
         sim.houses.register(house);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         spawn_structure(&mut sim, &rules, 1, "Americans", "GAWEAP", 12, 12);
@@ -2753,7 +2479,7 @@ fn a_producer_without_weapons_factory_takes_the_generic_exit_arm() {
         );
         assert!(
             sim.production
-                .factories
+                .factories_mut()
                 .test_arm_ready(owner, ProductionCategory::Vehicle)
         );
         let product =
@@ -2851,8 +2577,8 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
         sim.resolve_type_handles(&rules);
         let owner = sim.intern("Americans");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, human, 50_000, 10);
-        house.base_center = Some((20, 20));
-        house.current_iq = iq;
+        house.set_base_center_for_test(Some((20, 20)));
+        house.set_current_iq_for_test(iq);
         sim.houses.register(house);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         spawn_structure(&mut sim, &rules, 1, "Americans", "GAPILE", 12, 12);
@@ -2866,7 +2592,7 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
         );
         assert!(
             sim.production
-                .factories
+                .factories_mut()
                 .test_arm_ready(owner, ProductionCategory::Infantry)
         );
         let product =

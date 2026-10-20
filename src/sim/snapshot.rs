@@ -1195,7 +1195,9 @@ use crate::util::save_codec;
 // the merged-INI float light projection, so v444 cannot use this schema.
 // 445 -> 446: the House array saves its registration order beside the House
 // states; the session no longer carries a separate copy of that order.
-const SNAPSHOT_VERSION: u32 = 446;
+// 446 -> 447: terrain objects and ore growth leave the production state for
+// their own owners (the terrain object store, the ore growth config/state).
+const SNAPSHOT_VERSION: u32 = 447;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1722,7 +1724,7 @@ impl GameSnapshot {
             sim,
             map_hash,
             rules_hash,
-            &sim.session.map_name(),
+            sim.session.map_name(),
             description,
             save_timestamp,
             (
@@ -1983,12 +1985,12 @@ impl RestoredObjectIndex {
             )?;
             highest_id = highest_id.max(registry_id);
         }
-        for (&registry_id, terrain) in &sim.production.terrain_objects {
+        for (&registry_id, terrain) in sim.terrain_objects.objects() {
             Self::register(
                 &mut identities,
                 "TerrainObjectStore",
                 registry_id,
-                terrain.stable_id,
+                terrain.stable_id(),
             )?;
             highest_id = highest_id.max(registry_id);
         }
@@ -2322,7 +2324,7 @@ fn restore_object_references(
             if let Some(TargetKind::Entity(target_id)) = manager.current_target() {
                 require_object_reference(
                     &entity_ids,
-                    &sim.production.terrain_objects,
+                    sim.terrain_objects.objects(),
                     "EntityStore",
                     entity_id,
                     "spawn_manager.current_target",
@@ -2332,7 +2334,7 @@ fn restore_object_references(
             if let Some(TargetKind::Entity(target_id)) = manager.queued_target() {
                 require_object_reference(
                     &entity_ids,
-                    &sim.production.terrain_objects,
+                    sim.terrain_objects.objects(),
                     "EntityStore",
                     entity_id,
                     "spawn_manager.queued_target",
@@ -2371,7 +2373,7 @@ fn restore_object_references(
         if let Some(TargetKind::Entity(target_id)) = entity.attack_target.target() {
             require_object_reference(
                 &entity_ids,
-                &sim.production.terrain_objects,
+                sim.terrain_objects.objects(),
                 "EntityStore",
                 entity_id,
                 "attack_target",
@@ -2381,7 +2383,7 @@ fn restore_object_references(
         if let Some(TargetKind::Entity(target_id)) = entity.suspended_attack_target.target() {
             require_object_reference(
                 &entity_ids,
-                &sim.production.terrain_objects,
+                sim.terrain_objects.objects(),
                 "EntityStore",
                 entity_id,
                 "suspended_attack_target",
@@ -2403,7 +2405,7 @@ fn restore_object_references(
             for target_id in targets.iter().filter_map(|target| target.object_id()) {
                 require_object_reference(
                     &entity_ids,
-                    &sim.production.terrain_objects,
+                    sim.terrain_objects.objects(),
                     "EntityStore",
                     entity_id,
                     field,
@@ -2586,7 +2588,7 @@ fn restore_object_references(
         if let Some(owner_id) = system.owner_entity {
             require_object_reference(
                 &entity_ids,
-                &sim.production.terrain_objects,
+                sim.terrain_objects.objects(),
                 "ParticleSystemStore",
                 system_id,
                 "owner_entity",
@@ -2596,7 +2598,7 @@ fn restore_object_references(
         if let Some(crate::sim::combat::TargetKind::Entity(attached_id)) = system.target_ref {
             require_object_reference(
                 &entity_ids,
-                &sim.production.terrain_objects,
+                sim.terrain_objects.objects(),
                 "ParticleSystemStore",
                 system_id,
                 "target_ref",
@@ -2636,7 +2638,7 @@ fn restore_object_references(
             ProjectileTarget::Terrain(id) => Some((
                 id,
                 "TerrainObjectStore",
-                sim.production.terrain_objects.contains_key(&id),
+                sim.terrain_objects.objects().contains_key(&id),
             )),
             ProjectileTarget::Cell { .. }
             | ProjectileTarget::DummyCell
@@ -2668,7 +2670,7 @@ fn restore_object_references(
         if let Some(TargetKind::Entity(target_id)) = wave.target_ref {
             require_object_reference(
                 &entity_ids,
-                &sim.production.terrain_objects,
+                sim.terrain_objects.objects(),
                 "WaveStore",
                 wave_id,
                 "target_ref",
@@ -2699,7 +2701,7 @@ fn restore_object_references(
     for &object_id in sim.object_custom_sounds.keys() {
         require_object_reference(
             &entity_ids,
-            &sim.production.terrain_objects,
+            sim.terrain_objects.objects(),
             "ObjectCustomSounds",
             object_id,
             "object",
@@ -2718,7 +2720,7 @@ fn restore_object_references(
         )?;
     }
 
-    for factory in sim.production.factories.iter_insertion_ordered() {
+    for factory in sim.production.factories().iter_insertion_ordered() {
         if let Some(object_id) = factory.object.as_ref().and_then(|object| object.entity_id) {
             require_resolved_reference(
                 entity_ids.contains(&object_id),
@@ -2952,31 +2954,31 @@ impl Simulation {
                 }
             }
         }
-        for terrain in self.production.terrain_objects.values() {
-            let in_logic = seen_logic.contains(&terrain.stable_id);
-            let pending_delete = pending_delete_ids.contains(&terrain.stable_id);
+        for terrain in self.terrain_objects.objects().values() {
+            let in_logic = seen_logic.contains(&terrain.stable_id());
+            let pending_delete = pending_delete_ids.contains(&terrain.stable_id());
             if terrain.is_live() && !in_logic {
                 return Err(SnapshotRestoreError::MissingRequiredLogicIdentity {
                     registry: "TerrainObjectStore",
-                    object_id: terrain.stable_id,
+                    object_id: terrain.stable_id(),
                 });
             }
             if !terrain.is_live() && in_logic {
                 return Err(SnapshotRestoreError::InactiveLogicIdentity {
                     registry: "TerrainObjectStore",
-                    object_id: terrain.stable_id,
+                    object_id: terrain.stable_id(),
                 });
             }
             if terrain.is_live() && pending_delete {
                 return Err(SnapshotRestoreError::DeferredDeleteLogicIdentity {
                     registry: "TerrainObjectStore",
-                    object_id: terrain.stable_id,
+                    object_id: terrain.stable_id(),
                 });
             }
             if !terrain.is_live() && !pending_delete {
                 return Err(SnapshotRestoreError::MissingDeferredDeleteIdentity {
                     registry: "TerrainObjectStore",
-                    object_id: terrain.stable_id,
+                    object_id: terrain.stable_id(),
                 });
             }
         }
@@ -3267,8 +3269,8 @@ impl Simulation {
             },
         )?;
         let mut source_object_cells: BTreeSet<(u16, u16)> = self
-            .production
             .terrain_objects
+            .objects()
             .values()
             .filter(|terrain| terrain.is_live())
             .map(crate::sim::terrain_object::TerrainObjectState::cell)
@@ -3279,14 +3281,14 @@ impl Simulation {
                 .occupied_cells_on_layer(crate::sim::movement::locomotor::MovementLayer::Ground),
         );
 
-        let grows = self.production.ore_growth_config.grows;
-        let spreads = self.production.ore_growth_config.spreads;
+        let grows = self.ore_growth_config.grows();
+        let spreads = self.ore_growth_config.spreads();
         let current_frame = self.session.binary_frame();
         // The stores are sized and walked from the native `MapRect` (`[Map]
         // Size`), never the cell-array extent in `session.map_*`. The rect the
         // fresh load rebuilt with is serialized; a zero rect (no rebuild ever
         // ran) falls back to the retained MapClass Size dimensions.
-        let mut native_rect = self.production.ore_growth_state.native_rect();
+        let mut native_rect = self.ore_growth_state.native_rect();
         if native_rect == (0, 0)
             && let (Some(bounds), Some(height)) =
                 (self.playfield_bounds, self.playfield_size_height)
@@ -3297,7 +3299,6 @@ impl Simulation {
             );
         }
         Ok(self
-            .production
             .ore_growth_state
             .rebuild_native_tiberium_queues_from_overlays(
                 overlay_grid,
@@ -3393,12 +3394,8 @@ mod tests {
             sim.session.set_binary_frame_for_test(91);
             sim.session.set_map_width_for_test(size);
             sim.session.set_map_height_for_test(size);
-            sim.production.ore_growth_config = OreGrowthConfig {
-                grows: true,
-                spreads: true,
-                tiberium_grows_flag: false,
-            };
-            sim.production.ore_growth_state = OreGrowthState::new(size, size);
+            sim.ore_growth_config = OreGrowthConfig::for_test(true, true, false);
+            sim.ore_growth_state = OreGrowthState::new(size, size);
             let mut overlays = OverlayGrid::new(size, size);
             for &(rx, ry) in cells {
                 overlays.place_overlay(rx, ry, ore_id, 5);
@@ -3454,13 +3451,18 @@ mod tests {
         fn add_live_terrain_object(sim: &mut Simulation, cell: (u16, u16)) {
             let stable_id = sim.allocate_stable_id();
             let type_ref = sim.interner.intern("TREE01");
-            sim.production.terrain_objects.insert(stable_id, {
-                let mut terrain = TerrainObjectState::for_test(stable_id, type_ref, cell.0, cell.1);
-                terrain.in_logic_vector = true;
-                terrain.occupation_bits = 7;
-                terrain
-            });
-            sim.production.terrain_object_cells.insert(cell, stable_id);
+            sim.terrain_objects
+                .objects_mut_for_test()
+                .insert(stable_id, {
+                    let mut terrain =
+                        TerrainObjectState::for_test(stable_id, type_ref, cell.0, cell.1);
+                    terrain.set_in_logic_vector_for_test(true);
+                    terrain.set_occupation_bits_for_test(7);
+                    terrain
+                });
+            sim.terrain_objects
+                .cell_index_mut_for_test()
+                .insert(cell, stable_id);
             sim.substrate
                 .logic
                 .try_push(stable_id)
@@ -3473,15 +3475,13 @@ mod tests {
             registry: &OverlayTypeRegistry,
             ore_cell: (u16, u16),
         ) {
-            sim.production
-                .ore_growth_state
+            sim.ore_growth_state
                 .reset_native_tiberium_classes(rules.tiberium_types.len(), 7);
             let overlay = sim.overlay_grid.as_ref().expect("fixture overlay grid");
             let resolved = sim.resolved_terrain.as_ref();
             let mut throwaway_rng = SimRng::new(13);
             assert!(
-                sim.production
-                    .ore_growth_state
+                sim.ore_growth_state
                     .add_native_growth_queue_cell(
                         overlay,
                         registry,
@@ -3502,8 +3502,7 @@ mod tests {
                     .is_some()
             );
             assert!(
-                sim.production
-                    .ore_growth_state
+                sim.ore_growth_state
                     .add_native_spread_queue_cell(
                         registry
                             .tiberium_type_for_overlay(
@@ -3555,11 +3554,7 @@ mod tests {
             seed_serialized_queue_state(&mut sim, &rules, &registry, (4, 5));
 
             let mut restored = restore_before_map_authority(&sim);
-            let saved_class = &restored
-                .production
-                .ore_growth_state
-                .native_tiberium_state()
-                .classes[0];
+            let saved_class = &restored.ore_growth_state.native_tiberium_state().classes[0];
             assert_eq!(saved_class.growth_timer.start_frame(), 7);
             assert_ne!(
                 saved_class.growth.heap_entry(0).unwrap().priority_bits,
@@ -3592,11 +3587,7 @@ mod tests {
             assert_eq!(restore_output.native_tiberium_stats.growth_entries, 4);
             assert_eq!(restore_output.native_tiberium_stats.spread_entries, 2);
 
-            let class = &restored
-                .production
-                .ore_growth_state
-                .native_tiberium_state()
-                .classes[0];
+            let class = &restored.ore_growth_state.native_tiberium_state().classes[0];
             assert_eq!(
                 (
                     class.growth_timer.start_frame(),
@@ -3655,7 +3646,6 @@ mod tests {
             {
                 let overlay = sim.overlay_grid.as_ref().expect("fixture overlay grid");
                 let fresh = sim
-                    .production
                     .ore_growth_state
                     .rebuild_native_tiberium_queues_from_overlays(
                         overlay,
@@ -3670,11 +3660,11 @@ mod tests {
                     );
                 assert_eq!(fresh.growth_entries, 2);
             }
-            assert_eq!(sim.production.ore_growth_state.native_rect(), (8, 8));
+            assert_eq!(sim.ore_growth_state.native_rect(), (8, 8));
 
             let mut restored = restore_before_map_authority(&sim);
             assert_eq!(
-                restored.production.ore_growth_state.native_rect(),
+                restored.ore_growth_state.native_rect(),
                 (8, 8),
                 "the rect survives the snapshot"
             );
@@ -3684,11 +3674,7 @@ mod tests {
                 .expect("all map-authority rebuild dependencies");
             assert_eq!(output.native_tiberium_stats.growth_entries, 2);
             assert_eq!(output.native_tiberium_stats.spread_entries, 2);
-            let class = &restored
-                .production
-                .ore_growth_state
-                .native_tiberium_state()
-                .classes[0];
+            let class = &restored.ore_growth_state.native_tiberium_state().classes[0];
             assert_eq!(class.growth_bitmap, BTreeSet::from([(5, 5), (7, 7)]));
             assert_eq!(
                 class.growth.capacity(),
@@ -3705,17 +3691,15 @@ mod tests {
             let (rules, registry, ore_id) = tiberium_fixture();
             let mut sim = base_sim_sized(ore_id, 12, &[(5, 5), (7, 7)]);
             sim.install_playfield_from_map_header(&map_header(8, 8));
-            sim.production
-                .ore_growth_state
-                .set_native_rect_for_tests((0, 0));
+            sim.ore_growth_state.set_native_rect_for_tests((0, 0));
 
             let mut restored = restore_before_map_authority(&sim);
-            assert_eq!(restored.production.ore_growth_state.native_rect(), (0, 0));
+            assert_eq!(restored.ore_growth_state.native_rect(), (0, 0));
             let output = restored
                 .restore_map_authority_after_snapshot_load(&rules, &registry, None)
                 .expect("all map-authority rebuild dependencies");
             assert_eq!(output.native_tiberium_stats.growth_entries, 2);
-            assert_eq!(restored.production.ore_growth_state.native_rect(), (8, 8));
+            assert_eq!(restored.ore_growth_state.native_rect(), (8, 8));
         }
 
         /// Fresh-load `InitGrowthQueues_All @ 0x00722D00` /
@@ -3730,9 +3714,7 @@ mod tests {
             let mut sim = base_sim(ore_id, &[(4, 5), (5, 5)]);
             add_live_terrain_object(&mut sim, (5, 5));
             assert!(
-                !sim.production
-                    .tiberium_spawning_terrain_cells
-                    .contains(&(5, 5)),
+                !sim.terrain_objects.spawning_cells().contains(&(5, 5)),
                 "the tree is not an ore spawner"
             );
 
@@ -3751,11 +3733,7 @@ mod tests {
 
             assert_eq!(stats.growth_entries, 2);
             assert_eq!(stats.spread_entries, 1);
-            let class = &sim
-                .production
-                .ore_growth_state
-                .native_tiberium_state()
-                .classes[0];
+            let class = &sim.ore_growth_state.native_tiberium_state().classes[0];
             assert_eq!(class.growth_bitmap, BTreeSet::from([(4, 5), (5, 5)]));
             assert_eq!(class.spread_bitmap, BTreeSet::from([(4, 5)]));
         }
@@ -3771,23 +3749,15 @@ mod tests {
                 .expect("all map-authority rebuild dependencies");
             restored.resolve_type_handles(&rules);
 
-            let timer_before = restored
-                .production
-                .ore_growth_state
-                .native_tiberium_state()
-                .classes[0]
-                .growth_timer;
+            let timer_before =
+                restored.ore_growth_state.native_tiberium_state().classes[0].growth_timer;
             assert_eq!(
                 (timer_before.start_frame(), timer_before.duration()),
                 (91, 0)
             );
             restored.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
 
-            let class = &restored
-                .production
-                .ore_growth_state
-                .native_tiberium_state()
-                .classes[0];
+            let class = &restored.ore_growth_state.native_tiberium_state().classes[0];
             assert_eq!(
                 (
                     class.growth_timer.start_frame(),
@@ -3809,8 +3779,7 @@ mod tests {
         fn gsi_17_04_missing_dependency_rejects_postload_queue_admission() {
             let (rules, registry, ore_id) = tiberium_fixture();
             let mut sim = base_sim(ore_id, &[(4, 5)]);
-            sim.production
-                .ore_growth_state
+            sim.ore_growth_state
                 .reset_native_tiberium_classes(rules.tiberium_types.len(), 7);
 
             let overlays = sim.overlay_grid.take();
@@ -3828,11 +3797,7 @@ mod tests {
                     component: "ResolvedTerrainGrid",
                 })
             ));
-            let class = &sim
-                .production
-                .ore_growth_state
-                .native_tiberium_state()
-                .classes[0];
+            let class = &sim.ore_growth_state.native_tiberium_state().classes[0];
             assert_eq!(
                 (
                     class.growth_timer.start_frame(),
@@ -4309,71 +4274,6 @@ mod tests {
     }
 
     #[test]
-    fn version_mismatch_is_rejected() {
-        let sim = Simulation::new();
-        let mut bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
-
-        // Product magic and public envelope version occupy the first 12 bytes.
-        let other = SNAPSHOT_VERSION + 1;
-        bytes[12..16].copy_from_slice(&other.to_le_bytes());
-
-        assert!(matches!(
-            GameSnapshot::load(&bytes),
-            Err(SnapshotError::VersionMismatch {
-                expected: SNAPSHOT_VERSION,
-                found,
-            }) if found == other
-        ));
-    }
-
-    #[test]
-    fn free_radar_rejects_v138_before_decoding_the_changed_session() {
-        let bytes = save_codec::serialize(&GameSnapshotHeader {
-            product_magic: SNAPSHOT_PRODUCT_MAGIC,
-            envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            version: 138,
-            description: "pre-FreeRadar header only".into(),
-            map_hash: 1,
-            rules_hash: 2,
-            tick: 0,
-            save_timestamp: 0,
-            map_name: "radar.map".into(),
-        })
-        .unwrap();
-        assert!(matches!(
-            GameSnapshot::load(&bytes),
-            Err(SnapshotError::VersionMismatch {
-                expected: SNAPSHOT_VERSION,
-                found: 138
-            })
-        ));
-    }
-
-    #[test]
-    fn gsi_04_07_v38_header_is_rejected_before_wall_owner_decode() {
-        let bytes = save_codec::serialize(&GameSnapshotHeader {
-            product_magic: SNAPSHOT_PRODUCT_MAGIC,
-            envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            version: 38,
-            description: "v38 fixture".to_string(),
-            map_hash: 1,
-            rules_hash: 2,
-            tick: 3,
-            save_timestamp: 4,
-            map_name: "v38-layout".to_string(),
-        })
-        .expect("serialize v38 header only");
-
-        assert!(matches!(
-            GameSnapshot::load(&bytes),
-            Err(SnapshotError::VersionMismatch {
-                expected: SNAPSHOT_VERSION,
-                found: 38,
-            })
-        ));
-    }
-
-    #[test]
     fn current_header_with_missing_body_reports_deserialization_failure() {
         let bytes = save_codec::serialize(&GameSnapshotHeader {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
@@ -4455,471 +4355,6 @@ mod tests {
                 found,
             }) if found == SNAPSHOT_VERSION - 1
         ));
-    }
-
-    /// Concurrent-slice ladder: radiation took 20 -> 21, ScenarioSession (SC-2)
-    /// took 21 -> 22, S3 (per-object pre-death facing read + idle-Guard authority)
-    /// took 22 -> 23, the S4a authoritative flip (per-object mission commit
-    /// relocated to the AI host) took 23 -> 24, and S4b (the hashed
-    /// `damage_particle_live_until` `+0x308`-equivalent field) took 24 -> 25,
-    /// per-house native AI difficulty took 25 -> 26, and scheduler-owned
-    /// animation persistence took 26 -> 27, and independent serialized lifecycle
-    /// axes plus the pending-delete boundary took 27 -> 28, and exact Mission
-    /// state/readiness schema took 28 -> 29, and the Harvest handler
-    /// absorption (the miner FSM cursor retired into
-    /// `MissionCom.handler_state`) took 29 -> 30. Particle systems reached 34;
-    /// the consolidated Phase-0 persistence schema took 34 -> 35, and
-    /// lifecycle target/animation identity state took 35 -> 36, and omission
-    /// of process-global Main/MapGen RNG state took 36 -> 37, and serialized
-    /// Drive occupation footprints took 37 -> 38, and authoritative wall
-    /// ownership took 38 -> 39, and raw occupation bytes took 39 -> 40. Versions
-    /// 41..46 are a FORK: dev assigned them to MultiplayPassive, passive-acquire
-    /// bookkeeping, the infantry idle timer, the spawn-manager pool, and the
-    /// anim-overlay unit change, while the foundations line assigned the same
-    /// numbers to projectile state, trigger hashing, TeamClass state, piggyback
-    /// persistence, and typed special locomotors. The merge unified both as 47.
-    /// This pins it so a later accidental bump is caught. 47 -> 48 added
-    /// `DriveLocomotionRuntime::occupation_handoff` mid-struct; 48 -> 49 added
-    /// the serialized building hidden-occupation grid and per-entity profile;
-    /// 49 -> 50 added Building base reservations and per-entity spacing;
-    /// 50 -> 51 added airborne spatial-bucket membership and vector order;
-    /// 51 -> 52 added the mutable per-Techno armor multiplier; 52 -> 53 added
-    /// the Psychedelic berserk byte and signed timer; 53 -> 54 added the
-    /// persistent WasAttackedByEnemy byte; 54 -> 55 added per-house CurrentIQ;
-    /// 55 -> 56 added the Techno damage-Smoke ParticleSystem identity; 56 ->
-    /// 57 added controller-owned CaptureManager capacity and victim links; 57
-    /// -> 58 added per-house AngerStruct scores and selected enemy identity;
-    /// 58 -> 59 replaced the lossy C4 timer with the shared signed
-    /// C4/PostMortem timer and nullable retained source; 59 -> 60 added the
-    /// wall-sale command plus house/game-mode receiver inputs; 60 -> 61 added
-    /// ScenarioFlags no-damage; 61 -> 62 added exact object Z and the sole live
-    /// low-bridge TubeMovement payload; 62 -> 63 added the immutable
-    /// `Factory=BuildingType` house-edge callback profile; 63 -> 64 added the
-    /// aggregate per-house SpySat-active latch; 64 -> 65 added persistent
-    /// Scenario lighting transition authority and removed queued storm state;
-    /// 65 -> 66 added synchronized projectile/Techno/locomotor state; 66 -> 67
-    /// added Wave, aircraft-tail, guided-projectile, Cell visibility,
-    /// BuildingLight, and Anim state; 67 -> 68 added projectile collision,
-    /// Wave recorded-cell payloads, infantry owners, and fog/sensor state; 68
-    /// -> 69 added per-cell cloak-owner words; 69 -> 70 removed the terrain,
-    /// projectile, and wave local counters in favor of the global object-id
-    /// source; 70 -> 71 added ProjectileTarget's native null discriminant and
-    /// replaced frozen cell-target coordinates with stable CellClass identity;
-    /// 71 -> 72 added explicit product/public-envelope identity and the save
-    /// description to the common prefix; 72 -> 73 added persistent per-house
-    /// accepted outcome kind, SavourDelay target, and expiry latch; 73 -> 74
-    /// added the serialized pending-command EXIT payload; 74 -> 75 added the
-    /// generic Building delayed-fire signed counter and saved weapon slot; 75
-    /// -> 76 added AnimClass cell-drawer and terrain-attached bytes; 76 -> 77
-    /// added the persistent Foot SHP body-frame counter and Ship-owned
-    /// destination/target/current speed state used by its SHP movement slots;
-    /// 77 -> 78 made living GameEntity Animation timing hash-authoritative;
-    /// 78 -> 79 moved building-overlay finalization before the returned hash
-    /// and made the already-serialized overlay component hash-authoritative;
-    /// 79 -> 80 added the serialized/hash-authoritative terminal score snapshot;
-    /// 80 -> 81 added the pending-command offline GameSpeed transition payload;
-    /// 81 -> 82 made a serialized `AnimClass` coordinate owner-RELATIVE while
-    /// its `owner_entity` is set, matching
-    /// `AnimClass::SetOwnerObject @ 0x00424B50`. The layout is unchanged, so
-    /// old bytes still decode — and would then be re-resolved through the owner
-    /// a whole owner-coordinate away, moving every attached anim and the
-    /// returned hash with it. Cross-version load is refused for that reason;
-    /// 82 -> 83 collapsed `ParticleSystem`'s `marked_for_deletion` and
-    /// `done_spawning` into the single `done_spawning`, which is what
-    /// `ParticleSystemClass+0xF8` actually is — one byte set by the lifetime
-    /// countdown, the spawn cutoff and the spark countdown alike, and read by
-    /// both the spawn gate and the removal predicate. A serialized field is
-    /// gone, so old bytes no longer decode; 84 -> 85 retained signed map Size
-    /// height for action-40 normalization; 85 -> 86 added the mutable
-    /// playfield revision; 86 -> 87 added Techno+0x3D5 membership; 87 -> 88
-    /// added the exact historical sensor deposit needed for later removal;
-    /// 88 -> 89 adds the `ProjectileTarget::DummyCell` pointer kind while the
-    /// process-global dummy contents remain deliberately outside the payload;
-    /// 89 -> 90 adds exact allocated real-cell 0x1180 values to Scenario
-    /// persistence/hash plus the live dummy subset to the canonical hash,
-    /// while retaining the native dummy reconstruct-to-zero load behavior;
-    /// 90 -> 91 adds the held factory object's completion-accounted latch so
-    /// delivery retries cannot replay completion after load; 91 -> 92 adds the
-    /// persisted per-house BaseClass reservation bounds/vector while retaining
-    /// the native reconstruct-cleared reservation dummy mask; 92 -> 93 adds
-    /// House strategy emergency state; 93 -> 94 adds the House last-attacker
-    /// index plus persistent Techno recruitment/archive/base-response state;
-    /// 94 -> 95 adds TeamType priority/base-defence metadata and TeamClass
-    /// response latches/timer state; 95 -> 96 adds the ordered AIMD/map static
-    /// registries retained by TeamScriptVm; 96 -> 97 adds resolved ScriptType
-    /// and TaskForce source provenance; 97 -> 98 adds the resolved typed
-    /// AITrigger owner/object/scalar/mask/weight/difficulty payload; 98 -> 99
-    /// removes the falsely retained AITrigger token-4 scalar after binary
-    /// verification proved that token is required but discarded; 99 -> 100
-    /// adds the three post-load TeamType zone-derivation fields; 100 -> 101
-    /// adds category-distinct resolved TaskForce member identities; 101 -> 102
-    /// adds category-distinct resolved AITrigger token-6 identities; 102 -> 103
-    /// adds WaveClass state and destroyable-cliff replacement CellClass values;
-    /// 103 -> 104 adds the persistent Techno constructor word and authored
-    /// structure-upgrade parent/slot identity; 104 -> 105 adds active/stashed
-    /// Drive/Ship slope-transition state; 105 -> 106 rejects saves that would
-    /// resume under the corrected one-authority 104-lepton Cell ground formula
-    /// despite unchanged wire shape; 106 -> 107 adds unconditional shared-
-    /// dummy level/slope hash authority for active Spark queries; 107 -> 108
-    /// adds the packed House alternate base cell; 108 -> 109 adds the ordered
-    /// House BuildConst vector and immutable entity membership; 109 -> 110
-    /// adds ordered BasePlan state and immutable BuildingType facts; 110 -> 111
-    /// adds the distinct BaseClass plan center; 111 -> 112 adds the three House
-    /// AI activation latches; 112 -> 113 adds House AutocreateAllowed;
-    /// 113 -> 114 adds the raw 256-entry scenario-crate slot table and the
-    /// per-Anim Convert palette selector used by startup crate CellAnim;
-    /// 114 -> 115 adds retained wall-neighbor count authority and begins the
-    /// live shared-dummy overlay pair in the current hash schema; 115 -> 116
-    /// replaces the per-class tiberium heap vectors with the native queue
-    /// stores (entry array, heap of references, capacity) and adds the
-    /// `MapRect` the stores are sized from; 116 -> 117 folds the
-    /// disguise-detect counter plane and the cached `DetectDisguiseRange=`
-    /// deposit radius into the hash schema; 117 -> 118 inserts the
-    /// `UnitClass+0x6AF` turret rotation latch and the `TechnoClass+0x120`
-    /// last-fire frame mid-`GameEntity`, on every entity, which bincode cannot
-    /// decode from a shorter v117 record; 118 -> 119 gives `ProjectileGuidance`
-    /// the native `BulletClass` flight state — `Bullet+0x110` MaxSpeed,
-    /// `BulletTypeClass+0x2D0` Acceleration, the launch-frozen
-    /// `ProximityDetector` reference coordinate, and the `Bullet+0x118/+0x120`
-    /// closing-rate pair — and appends the `Vertical` trajectory variant. All
-    /// five guidance additions (`max_speed`, `acceleration`, `fuse_reference`,
-    /// `closing_frames`, `closing_accumulator_bits`) sit at the END of the
-    /// struct, but a v118 record still stops short of them, so bincode would
-    /// run off the end of every in-flight projectile; 119 -> 120 adds the
-    /// `VoxelAnimClass` debris registry to `ObjectSubstrate` and wires the
-    /// death-side debris producer, which changes both the hash schema and the
-    /// shared RNG cursor at every Techno death whose type authors a POSITIVE
-    /// `MaxDebris=` — the 83 stock sections that author `MaxDebris=0` stop at
-    /// `0x00702291` and still cost the stream nothing; 120 -> 123 moves combat
-    /// explosions off the legacy `WorldEffect` list and into `AnimStore`, so a
-    /// warhead `AnimList=` animation is now a serialized, checksum-folded
-    /// object where it used to be neither. 121 and 122 are skipped because
-    /// unmerged branches already stamp them — 121
-    /// `origin/feature/phase3-map-spatial-close`, 122
-    /// `origin/feature/phase3-map-spatial-integration` — and two branches
-    /// sharing one version number defeat the mismatch guard entirely.
-    /// 123 -> 126 adds the retained homing Inaccurate flag; 124 and 125 are
-    /// reserved by the concurrent parasite and audio-lane changes.
-    /// 130 -> 131 persists the session `TiberiumGrows`/`TiberiumSpreads`
-    /// flag bits and the `OreGrowthConfig` growth-reload selector.
-    /// 131 -> 132 persists the `HouseClass+0x242` harvester no-ore latch.
-    /// 132 -> 133 persists the `HouseClass+0x57D4` funds-nag timer and the
-    /// `[0xA8F040]` low-power guard.
-    #[test]
-    fn current_snapshot_version_includes_voxel_shadow_index() {
-        // 133 -> 134: repair-depot docking layout (see the constant's comment).
-        // 134 -> 135: GameEntity ProduceCash timer + drain link pair (GSI-09.01).
-        // 135 -> 136: explicit retained Infantry terminal lifetime policy.
-        // Separate v137: ordinary ground-coordinate resume invariants.
-        // v138 combines both layouts without accepting prior local v137 saves.
-        // 138 -> 139: map-owned ScenarioSession FreeRadar authority.
-        // 139 -> 140: retained bridge record source Size for native zone lookup.
-        // 140 -> 141: retained real CellClass gap flags400/800.
-        // 141 -> 142: sustained sight and pending 120-frame gap conceal.
-        // 142 -> 143: MCV pending and Drive previous-rotation latches.
-        // 143 -> 144: per-Building operational edge and retained gap deposit.
-        // 145 -> 146: pavement is owned by raw terrain flags, not bridge cells.
-        // 146 -> 147: retain Scenario+214 for subsequent native constructors.
-        // 150 -> 151: Foot also owns applied speed independently of its locomotor.
-        // 151 -> 152: Foot occupation enable and pending fresh Apply1 obligation.
-        // 161 -> 162: Infantry+6DC current-cell entry answer of the failed path.
-        // 162 -> 163: Jumpjet linked type block and flight fields.
-        // 164 -> 165: DriveTrackState::before_first_point, inserted mid-record.
-        // 165 -> 166: Economy owns the sole house credit balance.
-        // 170 -> 171: shared animation bounds and retained HasEngineer.
-        // 173 -> 174: ProductionState drops the resource node map.
-        // 174 -> 175: bridge collapse explosions join the AnimStore.
-        // 180 -> 181: Foot+580 crate multiplier survives save/restore.
-        // 184 -> 185: Fly owns its integer height target and takeoff/landing flags.
-        // 185 -> 186: Aircraft pending ammo survives independently of Attack.
-        // 186 -> 187: object burst position replaces the target-owned count.
-        // 187 -> 188: retained Fly destination XYZ cannot be recovered from cells.
-        // 189 -> 190: Foot neighbor history and retained live counters.
-        // 190 -> 191: Fly cruise mode survives save and locomotor suspension.
-        // 191 -> 192: Fly moving/landing latch/AirportBound and flight attitude.
-        // 192 -> 193: ParasiteClass and the victim's parasite/paralysis fields.
-        // 193 -> 194: Building+6E3 HasBeenCaptured.
-        // 194 -> 195: death anims take the death producers' arguments.
-        // 195 -> 196: mind-control nodes, overload state and victim links.
-        // 196 -> 197: TemporalClass links and the warped object's chain head.
-        // 197 -> 198: the house defeat counts.
-        // 198 -> 199: the Crazy Ivan bomb on its carrier.
-        // 199 -> 200: the Gattling stage, value and turret animation counter.
-        // 200 -> 201: no `last_attacker_id`; TeamType `Suicide=`.
-        // 201 -> 202: the rearm timer on the object.
-        // 202 -> 203: no Simulation copy of CloseEnough.
-        // 203 -> 204: bullet OnBridge, no owner house; house ROF bias; TeamType
-        // `Aggressive=`.
-        // 204 -> 205: bullet `Arcing=`; an anim's bounce body.
-        // 205 -> 206: the retired Chrono dock phases; Techno+0x1F8.
-        // 206 -> 207: the native ore field (Unit+0x6D2, the StageClass).
-        // 207 -> 208: the crash latch and edge; the Fly fall counter.
-        // 208 -> 209: the slave manager and the slave's links and Storage.
-        // 209 -> 210: the retired Jumpjet type-block copy.
-        // 210 -> 211: the construction animation's StageClass on build-ups
-        // and pack-ups.
-        // 211 -> 212: no copy of the last selection's weapon id.
-        // 212 -> 213: Sell's stage in the Selling mission; no undeploy
-        // spawn copy on pack-ups.
-        // 213 -> 214: signed BridgeStrength in serialized bridge state.
-        // 214 -> 215: Terrain retains its placement height across ground changes.
-        // 215 -> 216: the building's AI repair byte; the house's repair
-        // delay, auto-repair latch and its timer.
-        // 216 -> 217: native constructor IDs and signed guided control state.
-        // 217 -> 218: a passenger's `+0x82`; no open-transport weapon override.
-        // 218 -> 219: bridge-layer acquisition and live cell/height-query behavior.
-        // 219 -> 220: the rally point is the factory's ArchiveTarget alone.
-        // 220 -> 221: buildings' Guard and Attack missions.
-        // 221 -> 222: production commands take their envelope's house.
-        // 222 -> 223: no group speed cap on Move orders.
-        // 223 -> 224: live Infantry movement/repair and structural side consumers.
-        // 224 -> 225: Prism forwarding.
-        // 225 -> 226: the factory step timer is the CDTimer a build start arms;
-        // no stored build-time estimates.
-        // 226 -> 227: retained surface-ship sinking and its sound edge.
-        // 227 -> 228: FactoryPlant cost bonuses; no full-cost Balance copy.
-        // 228 -> 229: the native production events; a user hold clears the rate.
-        // 229 -> 230: every building's `+0x388` facing.
-        // 230 -> 231: no AI `mcv_deployed` latch; no terrain `build_blocked`.
-        // 231 -> 232: computer production state on houses and factory buildings.
-        // 232 -> 233: house country cost factors and force values; each
-        // Techno's value arm.
-        // 233 -> 234: the house Strategy timer.
-        // 234 -> 235: house, spawn manager, cloak and disguise timers are
-        // `CdTimer`s.
-        // 235 -> 236: the harvest overlay drops its unread frame count.
-        // 236 -> 237: one body FacingClass per Techno; no facing mirror or target.
-        // 237 -> 238: the computer's teams and their production.
-        // 238 -> 239: each Techno's barrel elevation FacingClass.
-        // 239 -> 240: no raw INI field copy in TeamType metadata.
-        // 240 -> 241: team members, recruitment and script state.
-        // 241 -> 242: the team restart flag and two TeamType keys; no
-        // `sim::ai` state.
-        // 242 -> 243: no locomotor `ROT=` copy.
-        // 243 -> 244: no ground move phase.
-        // 244 -> 245: no retained purifier count.
-        // 245 -> 246: no stored veterancy rank.
-        // 246 -> 247: every overlay grid has a wall plane.
-        // 247 -> 248: one eight-class locomotor enum; no dormant locomotor
-        // states.
-        // 248 -> 249: no dead particle, boarding-phase or garrison-owner
-        // fields.
-        // 249 -> 250: no always-1.0 locomotor speed multiplier.
-        // 250 -> 251: Fly speeds live in the Fly runtime; no air progress or
-        // wobble phase.
-        // 251 -> 252: no entity homing state.
-        // 252 -> 253: no Teleport/Rocket payload copies.
-        // 253 -> 254: no garrison Unloading order intent.
-        // 254 -> 255: entity TooBigToFitUnderBridge/ZFudgeBridge copies removed.
-        // 255 -> 256: no cached GetCurrentSpeed.
-        // 256 -> 257: no bridge group/destroyable/span-damage copies or
-        // inert paradrop latches.
-        // 257 -> 258: the stash saves the complete suspended locomotor.
-        // 258 -> 259: no bridgehead anchor class.
-        // 259 -> 260: no bridge_occupancy or ground enter order.
-        // 260 -> 261: no falling byte beside the parachute descent.
-        // 261 -> 262: retained House radius, Foot688 and inherited Foot68D.
-        // 262 -> 263: no runtime copy of CellClass bridge cell state.
-        // 263 -> 264: shared native StageClass; no Miner/Building clock copies.
-        // 264 -> 265: no parachute altitude beside the Location Z.
-        // 265 -> 266: no Approach depot phase; WaitForDock is pending entry.
-        // 266 -> 267: Infantry water-transition state+6E8.
-        // 267 -> 268: retained Cell targets hash the live fallback coordinate.
-        // 268 -> 269: the native Hover locomotor object.
-        // 269 -> 270: no lane speed ramp, bypasses or adapter flag on a move.
-        // 270 -> 271: no lane wall-refusal memo on a move.
-        // 271 -> 272: no move direction vector or Walk sub-cell destination.
-        // 272 -> 273: Reveal commits every Unlimbo Z; no Fly rebuild.
-        // 273 -> 274: retained coefficient, Team flag, House threat and cache;
-        // retained native base navigation is saved; its live history is hashed.
-        // 274 -> 275: movement targets no longer save route cells.
-        // 275 -> 276: each House saves its type's Speed*Mult.
-        // 276 -> 277: retained native terrain animation probability and timer.
-        // 277 -> 278: lifecycle-owned building body, ready, mission and primary.
-        // 278 -> 279: native Building health sample; dirty House assessment,
-        // retained House discovery/capture notifications and Engineer identity;
-        // and its anchored power-blackout clock/radar projection.
-        // 279 -> 280: Unit deploy flags, Techno animation/landing ownership and
-        // the animation's retained palette source replace the legacy countdown.
-        // 280 -> 281: authoritative weapon/turret pair and saved charge duration.
-        // 281 -> 282: independent depot pending entry and sole MissionCom cadence.
-        // 282 -> 283: private optional turret/barrel recoil components.
-        // 283 -> 284: retained runtime Smudge identities/pending deletion.
-        // 284 -> 285: shared Techno Door/Gate.
-        // 285 -> 286: pending entry, independent repair Stage and Anim completion.
-        // 286 -> 287: the complete Teleport locomotor owns resolved XYZ,
-        // request byte and warp effect, including suspended instances.
-        // 287 -> 288: complete Drive/Ship instance-owned retained state.
-        // 288 -> 289: Factory publication and shared Foot idle latch.
-        // 289 -> 290: independent Foot air tracker/slot Cells and callbacks.
-        // 290 -> 291: the nuclear missile's Anim, Building, House and Bullet
-        // fields.
-        // 291 -> 292: the Chronosphere's Super and Teleport state, the Psychic
-        // Dominator's globals, permanent control and Dominator lighting.
-        // 292 -> 293: the native Rocket locomotor object; no rocket phase
-        // machine; the kamikaze tracker's nodes.
-        // 293 -> 294: the Iron Curtain's tint stage and timer.
-        // 294 -> 295: the nuke flash and NukeAmbientChangeRate= in the
-        // scenario's lighting; a bullet's wait on its NUKE anim.
-        // 295 -> 296: the Force Shield's fade countdown and coordinate.
-        // 296 -> 297: the Lightning Storm's globals and cloud lists; a House's
-        // radar outage timer.
-        // 297 -> 298: canonical cloak query and retained native displacement.
-        // 298 -> 299: the aircraft's paradrop passes; no paradrop carrier
-        // AircraftMission states.
-        // 299 -> 300: infantry death anims with the death producers'
-        // arguments and the killing house; a GENDEATH's end makes its Brute.
-        // 300 -> 301: guidance reads Airburst/Inaccurate/Level from the
-        // collision policy instead of keeping copies.
-        // 301 -> 302: FogState drops its unread v81 generation wire shadow.
-        // 302 -> 303: unread HoverAttack copy and aircraft pad-index copies.
-        // 303 -> 304: a Super's place in the Super timer list.
-        // 304 -> 305: write-only power transition latch and miner return flag.
-        // 305 -> 306: ground bits replace the legacy visibility counters.
-        // 306 -> 307: the session's LocalSize copy.
-        // 307 -> 308: the unread terrain occupation copy.
-        // 308 -> 309: the Factory special item.
-        // 309 -> 310: the dead infantry scatter timer.
-        // 310 -> 311: the legacy dock Launching phase.
-        // 311 -> 312: the house's AirportDocks.
-        // 312 -> 313: the house's one score.
-        // 313 -> 314: the house's factory counters.
-        // 314 -> 315: no ready-building list beside the factories.
-        // 315 -> 316: the native airfield loop replaces the legacy dock FSM.
-        // 316 -> 317: the local owner's retained sidebar insertion history.
-        // 318 -> 319: Guard carries its native post, with one mission owner.
-        // 319 -> 320: Mirage retains only its established timer words.
-        // 320 -> 321: particle constructors retain native IDs and their cursor.
-        // 321 -> 322: campaign Session and complete House initialization state.
-        // 322 -> 323: the Foot building-entry latches.
-        // 323 -> 324: the +0x690 latch and garrison admission order.
-        // 324 -> 325: each entity's turret rotation-sound control latch.
-        // 325 -> 326: each overlay cell's rubble building type.
-        // 326 -> 327: live Tag/Trigger and typed deletion owners, retained
-        // LoadObject registry, and neutral Tactical view/focus metadata.
-        // 327 -> 328: each house's last lost building (+0x54E0).
-        // 328 -> 329: each house's spy gains (+0x2BC..+0x2C0).
-        // 329 -> 330: the move-order adapter keeps no goal (#689).
-        // 330 -> 331: object custom sounds and type-7 action sounds.
-        // 331 -> 332: the C4 order's walk-up intent is gone.
-        // 332 -> 333: the fog's RevealToAll alternate-house sight.
-        // 333 -> 334: the house's war factory count.
-        // 334 -> 335: global Teleport delay and independent carrier relation.
-        // 335 -> 336: saved world resources, local view and Tactical center.
-        // 336 -> 337: Magnetron links and the object's warp credit house.
-        // 337 -> 338: the deactivated latch and the powered-center counts.
-        // 338 -> 339: every bullet's ProximityDetector reference.
-        // 339 -> 340: a bounce body's orientation and rotation quaternions.
-        // 340 -> 341: the Foot MegaMission replaces the OrderIntent goal.
-        // 341 -> 342: the House tech-tree recheck byte.
-        // 342 -> 343: the complete Object fall state.
-        // 343 -> 344: retained deploy-voice suppression and bound voice slots.
-        // 344 -> 345: Smoke scalars and individual Particle AIR identities.
-        // 345 -> 346: Move commands without the queue flag, and MoveToObject.
-        // 346 -> 347: AttackMove tokens and an object MegaDestination.
-        // 347 -> 348: the batched re-path setting and its waiting Foots.
-        // 348 -> 349: no move-order adapter (`MovementTarget`).
-        // 349 -> 350: the request each waiting Foot repeats.
-        // 350 -> 351: the Building's animation art in one record.
-        // 351 -> 352: no locomotor altitude copy; height is the Location Z.
-        // 352 -> 353: each object's infantry house-tracking latches.
-        // 353 -> 354: integrated ALL01 retained Tag/ChronoScreen/House/Team state.
-        // 354 -> 355: the path batch's next capped turn.
-        // 355 -> 356: the Foot navigation list and its loop flag.
-        // 356 -> 357: no voxel HVA or OREGATH frame clock.
-        // 357 -> 358: retained BuildingType TargetCoordOffset.
-        // 358 -> 359: Tesla charger list, weapon latch and Foot intent.
-        // 359 -> 360: retained airstrike managers and aircraft relationships.
-        // 360 -> 361: retained radial launch settings and firing index.
-        // 361 -> 362: Terrain Bullet target identity and reference validation.
-        // 362 -> 363: retained Scenario countdown and sidebar cameo flash deadlines.
-        // 363 -> 364: independent Bullet constructor and installed-weapon fields.
-        // 364 -> 365: retained RadSite creation/update order.
-        // 365 -> 366: process scalable Bullet order and type cadence.
-        // 366 -> 367: synchronized planning nodes, paths and local input mode.
-        // 367 -> 368: retained runtime DistributedFire state.
-        // 368 -> 369: tracked navy and its retained type admission.
-        // 369 -> 370: constructor-assigned VoxelAnim native IDs.
-        // 370 -> 371: retained Parasite grapple progress.
-        // 371 -> 372: authoritative binary32 body angles/rates.
-        // 372 -> 373: retained House last-built type indices.
-        // 373 -> 374: the batched target scan setting.
-        // 374 -> 375: retained CaptureManager overload pip countdown.
-        // 375 -> 376: retained Foot Ammo and chrono reinforcement pending state.
-        // 376 -> 377: retained source cache and independent sight latch.
-        // 377 -> 378: Super recharge override and House offensive target.
-        // 378 -> 379: synchronous Factory lifecycle and sale continuation.
-        // 379 -> 380: live type TechLevels and global constructor chronology.
-        // 380 -> 381: one Factory suspension authority; no duplicate manual bit.
-        // 381 -> 382: retained Secret Lab rules, membership and reward.
-        // 382 -> 383: private Factory+71 automatic-recovery eligibility.
-        // 383 -> 384: retained Weapon damage and Warhead identity in saved rules.
-        // 383 -> 385: retained Drive straight/crush track flag.
-        // 385 -> 386: combined Weapon and Drive layouts.
-        // 385 -> 386: retained primary flags include matching limbo peers.
-        // 386 -> 387: combined Weapon, Drive and Building primary layouts.
-        // 387 -> 388: independent RadSite light clock and source parameters.
-        // 388 -> 389: particle owner-relative offsets have native semantics.
-        // 389 -> 390: retained AV ambient rate/step fields in saved Rules.
-        // 390 -> 391: retained ColorAdd slots and AudioVisual selectors.
-        // 391 -> 392: retained RulesClass survivor divisors.
-        // 392 -> 393: reject cargo with the old mid-track boarding semantics.
-        // 393 -> 394: saved requests/gates, with NoInit clock reset.
-        // 394 -> 395: retained Cheer rate and the appended Cheer command.
-        // 395 -> 396: actual Spark link/target and retained Particle bodies.
-        // 396 -> 397: retained Particle has independent Alive and Limbo.
-        // 397 -> 398: per-family/type produced history for lifetime limits.
-        // 398 -> 399: remove the derived theoretical-power cache.
-        // 399 -> 400: retain the local Power bar projection.
-        // 400 -> 401: retained native House names and their array binding.
-        // 401 -> 402: retain delayed DiskLaser bodies and Rules charge-up.
-        // 402 -> 403: retain pending Map+D4 collapse coordinates/order.
-        // 403 -> 404: retain House capacity and future Building Storage input.
-        // 404 -> 405: retain AudioVisual ChronoBeamColor in processed rules.
-        // 405 -> 406: live ambient Rules writes from Action71/72.
-        // 406 -> 407: the fog's copy of the ally graph is gone.
-        // 407 -> 408: Wave geometry follows FireAt's constructor order.
-        // 408 -> 409: ordered DropZone inputs in saved Rules resources.
-        // 409 -> 410: Command::ForceAttack is gone.
-        // 410 -> 411: preferred Super target kind and House-control pointers.
-        // 411 -> 412: retained vehicle SpeedType in processed Rules.
-        // 412 -> 413: retained Super one-time and provider-loss/hold flags.
-        // 413 -> 414: global GasCloudSys reference and Particle motion words.
-        // 414 -> 415: path-batch code-2 re-path urgencies.
-        // 415 -> 416: Building online latch independent of Temporal.
-        // 416 -> 417: control-node line timers and ordered line settings.
-        // 417 -> 418: campaign score map-rank presentation metadata.
-        // 418 -> 419: the Drive/Ship occupation footprints are gone.
-        // 419 -> 420: Infantry Psycho latch independent of Techno Berserk.
-        // 420 -> 421: process Rules retain TalkBubbleTime.
-        // 421 -> 422: the drain link retains the drainer's DrainAnim.
-        // 422 -> 423: retained weapon blocks and HoldsWhat bindings.
-        // 423 -> 424: retained Type references and Rules DeathWeapon.
-        // 424 -> 425: Scenario cargo flags and the ice-growth byte.
-        // 425 -> 426: the Techno+0x12C Behind indicator Anim.
-        // 426 -> 427: IonBlast process inputs, pending forces and Foot lift.
-        // 427 -> 428: TerminalLifetime keeps only the dying mark.
-        // 428 -> 429: one CellClass+0xEC LandType per saved terrain cell.
-        // 429 -> 430: the remaining Type references and RulesClass Type
-        // pointers and lists.
-        // 430 -> 431: no derived land caches beside that LandType.
-        // 431 -> 432: the Boarding passenger relation is gone.
-        // 432 -> 433: one Object spelling for a NavCom-family pointer.
-        // 433 -> 434: no trigger-record copies in saved scenario resources.
-        // 434 -> 435: Scenario vein switch and shared Scenario pause.
-        // 435 -> 436: retained repair service inputs.
-        // 436 -> 437: independent BuildingLight and retained Spotlight rules.
-        // 437 -> 438: the retained GenericWarhead payload binding.
-        // 438 -> 439: retained Ares building requirement lists.
-        // 439 -> 440: UnitDelivery state and instance base policy.
-        // 440 -> 441: binary64 passenger Size/SizeLimit and signed CargoTotalSize.
-        // 441 -> 442: the Foot-owned crush slowdown / rocking flag.
-        // 442 -> 443: exact session mode, multiplayer launch/observer state,
-        // CompEasyBonus and the House Flag_To_Die latch.
-        // 443 -> 444: retained TechnoType ShadowIndex.
-        // 444 -> 445: retained per-pass BuildingType light integers.
-        // 445 -> 446: the House array's registration order.
-        assert_eq!(super::SNAPSHOT_VERSION, 446);
     }
 
     #[test]
@@ -5077,22 +4512,6 @@ mod tests {
             .passenger_role
             .clear_carrier_relation();
         assert_ne!(restored.state_hash(), before);
-    }
-
-    #[test]
-    fn combined_bridge_membership_history_schema_rejects_separate_layouts() {
-        for version in 153..=174 {
-            let preamble = GameSnapshotPreamble {
-                product_magic: SNAPSHOT_PRODUCT_MAGIC,
-                envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-                version,
-            };
-            let bytes = save_codec::serialize(&preamble).expect("previous layout header");
-            assert!(matches!(
-                GameSnapshot::load(&bytes),
-                Err(SnapshotError::VersionMismatch { expected: SNAPSHOT_VERSION, found }) if found == version
-            ));
-        }
     }
 
     #[test]
@@ -5572,9 +4991,9 @@ mod tests {
         let country = sim.interner.intern("Americans");
         let mut house =
             crate::sim::house_state::HouseState::new(owner, 0, Some(country), false, 0, 10);
-        house.base_center = Some((40, 50));
-        house.alternate_base_center = (93, 106);
-        house.base_plan_center = (19, 21);
+        house.set_base_center_for_test(Some((40, 50)));
+        house.set_alternate_base_center_for_test((93, 106));
+        house.set_base_plan_center_for_test((19, 21));
         sim.houses.register(house);
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
@@ -5586,9 +5005,9 @@ mod tests {
         );
         let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
 
-        assert_eq!(restored.houses[&owner].base_center, Some((40, 50)));
-        assert_eq!(restored.houses[&owner].alternate_base_center, (93, 106));
-        assert_eq!(restored.houses[&owner].base_plan_center, (19, 21));
+        assert_eq!(restored.houses[&owner].base_center(), Some((40, 50)));
+        assert_eq!(restored.houses[&owner].alternate_base_center(), (93, 106));
+        assert_eq!(restored.houses[&owner].base_plan_center(), (19, 21));
         assert_eq!(restored.state_hash(), expected_hash);
     }
 
@@ -5619,7 +5038,10 @@ mod tests {
 
         let default_hash = sim.state_hash();
 
-        sim.houses.get_mut(&owner).unwrap().build_const_order = vec![9, 3];
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_build_const_order_for_test(vec![9, 3]);
         sim.substrate
             .entities
             .get_mut(9)
@@ -5632,7 +5054,7 @@ mod tests {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .build_const_order
+            .build_const_order_mut_for_test()
             .swap(0, 1);
         assert_ne!(
             sim.state_hash(),
@@ -5642,7 +5064,7 @@ mod tests {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .build_const_order
+            .build_const_order_mut_for_test()
             .swap(0, 1);
 
         sim.substrate
@@ -5671,7 +5093,7 @@ mod tests {
         );
         let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
 
-        assert_eq!(restored.houses[&owner].build_const_order, vec![9, 3]);
+        assert_eq!(restored.houses[&owner].build_const_order(), vec![9, 3]);
         assert!(
             restored
                 .substrate
@@ -5690,8 +5112,8 @@ mod tests {
         let owner = sim.interner.intern("Computer1");
         let type_ref = sim.interner.intern("GAPOWR");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 10);
-        house.base_plan.percent_built = -17;
-        house.base_plan.nodes = vec![
+        house.base_plan_mut().set_percent_built_for_test(-17);
+        house.base_plan_mut().set_nodes_for_test(vec![
             crate::sim::base_plan::BasePlanNode {
                 type_or_control: 2,
                 packed_cell: crate::sim::base_plan::pack_base_plan_cell(-4, 9),
@@ -5704,7 +5126,7 @@ mod tests {
                 filled: false,
                 retry_count: 6,
             },
-        ];
+        ]);
         sim.houses.register(house);
         let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
             1,
@@ -5735,9 +5157,12 @@ mod tests {
             super::SNAPSHOT_VERSION
         );
         let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
-        assert_eq!(restored.houses[&owner].base_plan.percent_built, -17);
-        assert_eq!(restored.houses[&owner].base_plan.nodes.len(), 2);
-        assert_eq!(restored.houses[&owner].base_plan.nodes[0].retry_count, -8);
+        assert_eq!(restored.houses[&owner].base_plan().percent_built(), -17);
+        assert_eq!(restored.houses[&owner].base_plan().nodes().len(), 2);
+        assert_eq!(
+            restored.houses[&owner].base_plan().nodes()[0].retry_count,
+            -8
+        );
         let restored_entity = restored.substrate.entities.get(1).unwrap();
         assert_eq!(restored_entity.type_facts.base_plan_type_index(), 2);
         assert!(restored_entity.type_facts.base_plan_is_defense());
@@ -5750,11 +5175,11 @@ mod tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Computer1");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 10_000, 10);
-        house.strategy_emergency.set_state_four();
-        house.strategy_emergency.set_all_to_hunt_bias();
-        house.strategy_emergency.note_building_attack(-17);
-        house.strategy_emergency.note_building_attacker(3);
-        house.strategy_timer.start(12, 106);
+        house.strategy_emergency_mut().set_state_four();
+        house.strategy_emergency_mut().set_all_to_hunt_bias();
+        house.strategy_emergency_mut().note_building_attack(-17);
+        house.strategy_emergency_mut().note_building_attacker(3);
+        house.restart_strategy_timer(12, 106);
         sim.houses.register(house);
         let mut responder =
             crate::sim::game_entity::GameEntity::test_default(1, "E1", "Computer1", 4, 5);
@@ -5865,13 +5290,13 @@ mod tests {
             super::SNAPSHOT_VERSION
         );
         let restored = GameSnapshot::load(&bytes).expect("v102 snapshot").sim;
-        let emergency = &restored.houses[&owner].strategy_emergency;
+        let emergency = restored.houses[&owner].strategy_emergency();
         assert_eq!(emergency.mode(), 4);
         assert!(emergency.all_to_hunt_bias());
         assert_eq!(emergency.last_building_attack_frame(), -17);
         assert_eq!(emergency.last_attacker_house_index(), 3);
         assert_eq!(
-            restored.houses[&owner].strategy_timer,
+            *restored.houses[&owner].strategy_timer(),
             crate::sim::timer::CdTimer::started(12, 106)
         );
         let restored_responder = restored.substrate.entities.get(1).unwrap();
@@ -6738,12 +6163,12 @@ mod tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
         let mut house = HouseState::new(owner, 0, None, false, 10_000, 10);
-        house.is_defeated = true;
+        house.set_is_defeated_for_test(true);
         sim.houses.register(house);
         let bytes = GameSnapshot::save(&sim, 11, 22, "", 33);
         let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
         assert_eq!(restored.restore_after_snapshot_load(), Ok(()));
-        assert!(restored.houses[&owner].is_defeated);
+        assert!(restored.houses[&owner].is_defeated());
         assert!(restored.houses[&owner].outcome().is_none());
     }
 
@@ -6812,7 +6237,7 @@ mod tests {
         let mut sim = Simulation::with_seed(0x242);
         let owner = sim.interner.intern("Americans");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 5_000, 10);
-        house.harvester_no_ore = true;
+        house.set_harvester_no_ore_for_test(true);
         sim.houses.register(house);
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
@@ -6825,7 +6250,7 @@ mod tests {
         let restored = GameSnapshot::load(&bytes)
             .expect("v132 house latch snapshot")
             .sim;
-        assert!(restored.houses[&owner].harvester_no_ore);
+        assert!(restored.houses[&owner].harvester_no_ore());
         assert_eq!(restored.state_hash(), expected_hash);
     }
 
@@ -6837,8 +6262,8 @@ mod tests {
         let mut sim = Simulation::with_seed(0x57D4);
         let owner = sim.interner.intern("Americans");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 5_000, 10);
-        house.eva_funds_timer = crate::sim::timer::CdTimer::started(1_234, 2_880);
-        house.eva_low_power_guard = true;
+        house.set_eva_funds_timer_for_test(crate::sim::timer::CdTimer::started(1_234, 2_880));
+        house.set_eva_low_power_guard_for_test(true);
         sim.houses.register(house);
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
@@ -6852,10 +6277,10 @@ mod tests {
             .expect("v133 house EVA snapshot")
             .sim;
         assert_eq!(
-            restored.houses[&owner].eva_funds_timer,
+            *restored.houses[&owner].eva_funds_timer(),
             crate::sim::timer::CdTimer::started(1_234, 2_880)
         );
-        assert!(restored.houses[&owner].eva_low_power_guard);
+        assert!(restored.houses[&owner].eva_low_power_guard());
         assert_eq!(restored.state_hash(), expected_hash);
     }
 
@@ -6867,8 +6292,8 @@ mod tests {
         let owner = sim.interner.intern("Soviet");
         let gapper = sim.interner.intern("Americans");
         let mut house = crate::sim::house_state::HouseState::new(owner, 1, None, true, 10_000, 10);
-        house.spy_sat_active = true;
-        house.map_is_clear = true;
+        house.set_spy_sat_active_for_test(true);
+        house.set_map_is_clear_for_test(true);
         sim.houses.register(house);
         sim.fog.reveal_all_for_owner(owner);
         crate::sim::vision::apply_gap_generators(
@@ -6891,8 +6316,8 @@ mod tests {
         );
         let restored = GameSnapshot::load(&bytes).expect("v65 SpySat snapshot").sim;
 
-        assert!(restored.houses[&owner].spy_sat_active);
-        assert!(restored.houses[&owner].map_is_clear);
+        assert!(restored.houses[&owner].spy_sat_active());
+        assert!(restored.houses[&owner].map_is_clear());
         assert!(restored.fog.is_cell_revealed(owner, 0, 0));
         assert!(!restored.fog.is_cell_revealed(owner, 6, 6));
         assert_eq!(restored.state_hash(), expected_hash);
@@ -6979,7 +6404,7 @@ mod tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Receiver");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 10);
-        house.player_control = true;
+        house.set_player_control_for_test(true);
         sim.houses.register(house);
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
@@ -6993,9 +6418,15 @@ mod tests {
         // pending-command/house-mode persistence on that post-load cursor.
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
-        sim.houses.get_mut(&owner).unwrap().player_control = false;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_player_control_for_test(false);
         assert_ne!(sim.state_hash(), expected_hash);
-        sim.houses.get_mut(&owner).unwrap().player_control = true;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_player_control_for_test(true);
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
         );
@@ -7012,7 +6443,7 @@ mod tests {
             restored.pending_command_snapshot(),
             sim.pending_command_snapshot()
         );
-        assert!(restored.houses.get(&owner).unwrap().player_control);
+        assert!(restored.houses.get(&owner).unwrap().player_control());
         assert!(restored.session.game_mode_nonzero());
         assert_eq!(restored.state_hash(), expected_hash);
     }
@@ -7086,10 +6517,10 @@ mod tests {
         sim.substrate.next_stable_object_id = 5;
         let owner = sim.interner.intern("ComputerIQ");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 51);
-        house.current_iq = 2;
+        house.set_current_iq_for_test(2);
         let threat_peer = sim.interner.intern("ThreatPeer");
-        house.grudge_scores.insert(threat_peer, 350);
-        house.enemy_house = Some(threat_peer);
+        house.grudge_scores_mut_for_test().insert(threat_peer, 350);
+        house.set_enemy_house_for_test(Some(threat_peer));
         sim.houses.register(house);
         sim.houses
             .register(crate::sim::house_state::HouseState::new(
@@ -7181,26 +6612,35 @@ mod tests {
             .unwrap()
             .ai_sell_repair
             .set_was_attacked_by_enemy_for_test(true);
-        sim.houses.get_mut(&owner).unwrap().current_iq = 1;
-        assert_ne!(sim.state_hash(), expected_hash, "CurrentIQ is hashed");
-        sim.houses.get_mut(&owner).unwrap().current_iq = 2;
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .grudge_scores
+            .set_current_iq_for_test(1);
+        assert_ne!(sim.state_hash(), expected_hash, "CurrentIQ is hashed");
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_current_iq_for_test(2);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .grudge_scores_mut_for_test()
             .insert(threat_peer, 351);
         assert_ne!(sim.state_hash(), expected_hash, "anger score is hashed");
         {
             let house = sim.houses.get_mut(&owner).unwrap();
-            house.grudge_scores.insert(threat_peer, 350);
-            house.enemy_house = None;
+            house.grudge_scores_mut_for_test().insert(threat_peer, 350);
+            house.set_enemy_house_for_test(None);
         }
         assert_ne!(
             sim.state_hash(),
             expected_hash,
             "selected enemy identity is hashed"
         );
-        sim.houses.get_mut(&owner).unwrap().enemy_house = Some(threat_peer);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_enemy_house_for_test(Some(threat_peer));
         sim.substrate
             .entities
             .get_mut(entity_id)
@@ -7267,12 +6707,12 @@ mod tests {
                 .map(|manager| manager.victims().collect::<Vec<_>>()),
             Some(vec![3, 4])
         );
-        assert_eq!(restored.houses.get(&owner).unwrap().current_iq, 2);
+        assert_eq!(restored.houses.get(&owner).unwrap().current_iq(), 2);
         assert_eq!(
-            restored.houses[&owner].grudge_scores.get(&threat_peer),
+            restored.houses[&owner].grudge_scores().get(&threat_peer),
             Some(&350)
         );
-        assert_eq!(restored.houses[&owner].enemy_house, Some(threat_peer));
+        assert_eq!(restored.houses[&owner].enemy_house(), Some(threat_peer));
         assert_eq!(restored.state_hash(), expected_hash);
     }
 
@@ -7785,9 +7225,9 @@ mod tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("AMERICANS");
         let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
-        house.base_reservation.update_bounds(3, 4, 5, 6);
+        house.base_reservation_mut().update_bounds(3, 4, 5, 6);
         house
-            .base_reservation
+            .base_reservation_mut()
             .append_perimeter_cell_if_absent(u32::from(3u16) | (u32::from(4u16) << 16));
         sim.houses.register(house);
         let entity_id = sim.allocate_stable_id();
@@ -7881,9 +7321,9 @@ mod tests {
         assert_eq!(restored.substrate.base_reservations.raw_mask(None, 3, 4), 1);
         assert_eq!(restored.substrate.base_reservations.dummy_mask(), 0);
         let restored_house = restored.houses.get(&owner).expect("restored owner");
-        assert_eq!(restored_house.base_reservation.bounds(), (3, 4, 5, 6));
+        assert_eq!(restored_house.base_reservation().bounds(), (3, 4, 5, 6));
         assert_eq!(
-            restored_house.base_reservation.perimeter_cells(),
+            restored_house.base_reservation().perimeter_cells(),
             &[u32::from(3u16) | (u32::from(4u16) << 16)]
         );
         assert_eq!(
@@ -8346,12 +7786,14 @@ mod tests {
         mark_terrain_raw_occupation(
             &mut sim.substrate.raw_cell_occupation,
             tree.cell(),
-            tree.occupation_bits,
+            tree.occupation_bits(),
         );
-        sim.production
-            .terrain_object_cells
+        sim.terrain_objects
+            .cell_index_mut_for_test()
             .insert(tree.cell(), tree_id);
-        sim.production.terrain_objects.insert(tree_id, tree);
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .insert(tree_id, tree);
         sim.resolved_terrain = Some(terrain);
         assert!(sim.register_terrain_object(tree_id, Some(&rules)));
 
@@ -8420,7 +7862,7 @@ mod tests {
     fn terrain_projectile_target_roundtrip_preserves_identity_coordinate_and_hash_kind() {
         use crate::sim::projectile::ProjectileTarget;
         let (mut sim, _, tree_id, projectile_id) = terrain_target_snapshot_fixture();
-        let coordinate = sim.production.terrain_objects[&tree_id].world_coord();
+        let coordinate = sim.terrain_objects.objects()[&tree_id].world_coord();
         let terrain_hash = sim.state_hash();
         sim.projectiles.get_mut(projectile_id).unwrap().target = ProjectileTarget::Entity(tree_id);
         assert_ne!(
@@ -8438,7 +7880,7 @@ mod tests {
             ProjectileTarget::Terrain(tree_id)
         );
         assert_eq!(
-            restored.production.terrain_objects[&tree_id].world_coord(),
+            restored.terrain_objects.objects()[&tree_id].world_coord(),
             coordinate
         );
         assert_eq!(
@@ -8450,7 +7892,7 @@ mod tests {
             coordinate
         );
         assert_eq!(
-            restored.production.terrain_object_cells.get(&(1, 1)),
+            restored.terrain_objects.cell_index().get(&(1, 1)),
             Some(&tree_id)
         );
     }
@@ -8553,7 +7995,7 @@ mod tests {
         use crate::sim::combat::RAD_NO_ATTACKER;
         use crate::sim::projectile::ProjectileTarget;
         let (mut sim, rules, tree_id, projectile_id) = terrain_target_snapshot_fixture();
-        let coordinate = sim.production.terrain_objects[&tree_id].world_coord();
+        let coordinate = sim.terrain_objects.objects()[&tree_id].world_coord();
         let warhead_id = sim.interner.intern("WH");
         crate::sim::combat::world_receiver::apply_area_damage(
             &mut sim,
@@ -8571,7 +8013,7 @@ mod tests {
             cell_target
         );
         assert!(sim.substrate.pending_delete.contains_object(&tree_id));
-        assert!(!sim.production.terrain_object_cells.contains_key(&(1, 1)));
+        assert!(!sim.terrain_objects.cell_index().contains_key(&(1, 1)));
         let bytes = GameSnapshot::save(&sim, 0, 0, "retired-terrain-target", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         restored.restore_after_snapshot_load().unwrap();
@@ -8580,14 +8022,9 @@ mod tests {
             cell_target
         );
         assert!(restored.substrate.pending_delete.contains_object(&tree_id));
-        assert!(
-            !restored
-                .production
-                .terrain_object_cells
-                .contains_key(&(1, 1))
-        );
+        assert!(!restored.terrain_objects.cell_index().contains_key(&(1, 1)));
         restored.flush_pending_delete();
-        assert!(!restored.production.terrain_objects.contains_key(&tree_id));
+        assert!(!restored.terrain_objects.objects().contains_key(&tree_id));
         assert_eq!(
             restored.projectiles.get(projectile_id).unwrap().target,
             cell_target
@@ -9417,7 +8854,7 @@ mod tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Computer1");
         let mut house = HouseState::new(owner, 0, None, false, 0, 10);
-        house.difficulty = HouseDifficulty::Easy;
+        house.set_difficulty_for_test(HouseDifficulty::Easy);
         sim.houses.register(house);
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // house-difficulty persistence on that same post-load cursor.
@@ -9428,7 +8865,11 @@ mod tests {
         let loaded = GameSnapshot::load(&bytes).expect("load should succeed");
 
         assert_eq!(
-            loaded.sim.houses.get(&owner).map(|house| house.difficulty),
+            loaded
+                .sim
+                .houses
+                .get(&owner)
+                .map(|house| house.difficulty()),
             Some(HouseDifficulty::Easy),
         );
         assert_eq!(loaded.sim.state_hash(), expected_hash);
@@ -9515,27 +8956,6 @@ mod tests {
         assert!(matches!(restored, TargetKind::Cell(50, 50)));
     }
 
-    /// Reveal registers at the tail; a stored-but-unrevealed (limbo) object is
-    /// absent from the active order until revealed. (DRIFT 2 / ledger 9)
-    #[test]
-    fn limbo_object_registers_only_on_reveal() {
-        use crate::sim::game_entity::GameEntity;
-        let mut sim = Simulation::new();
-        // Stored but not revealed: present in the store, absent from the order.
-        sim.substrate
-            .entities
-            .insert(GameEntity::test_default(1, "MTNK", "Americans", 5, 5));
-        assert!(sim.substrate.entities.contains(1));
-        assert!(!sim.live_object_order_snapshot().contains(&1));
-        // Reveal both: tail-append in reveal order, not sorted.
-        sim.substrate
-            .entities
-            .insert(GameEntity::test_default(2, "MTNK", "Americans", 6, 6));
-        sim.register_live_object(2);
-        sim.register_live_object(1);
-        assert_eq!(sim.live_object_order_snapshot(), vec![2, 1]);
-    }
-
     /// The active order is serialized directly and restored verbatim — not
     /// re-derived, not sorted. (ledger 13)
     #[test]
@@ -9554,38 +8974,6 @@ mod tests {
         let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
         let restored = GameSnapshot::load(&bytes).expect("load should succeed").sim;
         assert_eq!(restored.live_object_order_snapshot(), vec![20, 10, 30]);
-    }
-
-    /// After load, membership is rebuilt from the order; a restored member
-    /// unregisters exactly once (no stale entry) and re-registers without
-    /// duplicating (no double-add). Avoids the §3.4 hazard. (ledger 14)
-    #[test]
-    fn saveload_restored_member_removes_cleanly() {
-        use crate::sim::game_entity::GameEntity;
-        let mut sim = Simulation::new();
-        sim.substrate
-            .entities
-            .insert(GameEntity::test_default(1, "MTNK", "Americans", 5, 5));
-        sim.register_live_object(1);
-
-        let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
-        let mut restored = GameSnapshot::load(&bytes).expect("load should succeed").sim;
-        // Real load-path step: membership flags are false straight after deserialize.
-        restored.rebuild_logic_membership();
-
-        // Unregister removes exactly once — no stale entry left behind.
-        restored.unregister_live_object(1);
-        assert!(!restored.live_object_order_snapshot().contains(&1));
-        // Re-register appends once — no double-add.
-        restored.register_live_object(1);
-        assert_eq!(
-            restored
-                .live_object_order_snapshot()
-                .iter()
-                .filter(|&&x| x == 1)
-                .count(),
-            1
-        );
     }
 
     /// Rust snapshots preserve a dead-limbo object's independent state and the
@@ -9723,61 +9111,6 @@ mod tests {
     }
 
     #[test]
-    fn saveload_occupancy_list_order_matches_incremental() {
-        use crate::map::entities::EntityCategory;
-        use crate::sim::game_entity::GameEntity;
-
-        let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-
-        let mut structure = GameEntity::test_default_of_category(
-            100,
-            "GAPOWR",
-            "Americans",
-            5,
-            5,
-            EntityCategory::Structure,
-        );
-        structure.set_owner_for_test(owner);
-        sim.substrate.entities.insert(structure);
-        sim.add_entity_occupancy(100);
-
-        let mut older_mobile = GameEntity::test_default(50, "MTNK", "Americans", 5, 5);
-        older_mobile.set_owner_for_test(owner);
-        older_mobile.set_category_for_test(EntityCategory::Unit);
-        sim.substrate.entities.insert(older_mobile);
-        sim.add_entity_occupancy(50);
-
-        let mut newer_mobile = GameEntity::test_default(10, "HTNK", "Americans", 5, 5);
-        newer_mobile.set_owner_for_test(owner);
-        newer_mobile.set_category_for_test(EntityCategory::Unit);
-        sim.substrate.entities.insert(newer_mobile);
-        sim.add_entity_occupancy(10);
-
-        let incremental = cell_order(&sim, 5, 5, MovementLayer::Ground);
-        assert_eq!(incremental, vec![10, 50, 100]);
-        // Native in-scenario load restarts Scenario RNG from Seed0; isolate
-        // occupancy-order persistence on that same post-load cursor.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
-        let hash_at_save = sim.state_hash();
-
-        let bytes = GameSnapshot::save(&sim, 0, 0, "order_test", 0);
-        let mut restored = GameSnapshot::load(&bytes).expect("load should succeed").sim;
-        rebuild_load_caches(&mut restored, flat_terrain(8, 8));
-
-        assert_eq!(
-            cell_order(&restored, 5, 5, MovementLayer::Ground),
-            incremental,
-            "rebuilt occupancy cache must match the incremental CellClass list order"
-        );
-        assert_eq!(
-            restored.state_hash(),
-            hash_at_save,
-            "cache rebuild must not change authoritative save state"
-        );
-    }
-
-    #[test]
     fn gsi_04_10_destroyed_terrain_snapshot_rebuild_does_not_resurrect_cache() {
         use crate::map::resolved_terrain::zone_class;
         use crate::rules::ini_parser::IniFile;
@@ -9815,9 +9148,9 @@ mod tests {
         let damaged = {
             let mut terrain =
                 TerrainObjectState::for_test(damaged_id, tree_type, damaged_cell.0, damaged_cell.1);
-            terrain.health = 6;
-            terrain.max_health = 10;
-            terrain.occupation_bits = 7;
+            terrain.set_health_for_test(6);
+            terrain.set_max_health_for_test(10);
+            terrain.set_occupation_bits_for_test(7);
             terrain
         };
         let destroyed = {
@@ -9827,9 +9160,9 @@ mod tests {
                 destroyed_cell.0,
                 destroyed_cell.1,
             );
-            terrain.health = 10;
-            terrain.max_health = 10;
-            terrain.occupation_bits = 7;
+            terrain.set_health_for_test(10);
+            terrain.set_max_health_for_test(10);
+            terrain.set_occupation_bits_for_test(7);
             terrain
         };
         let spawner = {
@@ -9839,27 +9172,27 @@ mod tests {
                 spawner_cell.0,
                 spawner_cell.1,
             );
-            terrain.health = 10;
-            terrain.max_health = 10;
-            terrain.occupation_bits = 7;
+            terrain.set_health_for_test(10);
+            terrain.set_max_health_for_test(10);
+            terrain.set_occupation_bits_for_test(7);
             terrain
         };
         for terrain in [&damaged, &destroyed, &spawner] {
-            sim.production
-                .terrain_objects
-                .insert(terrain.stable_id, terrain.clone());
-            assert!(sim.register_terrain_object(terrain.stable_id, None));
-            sim.production
-                .terrain_object_cells
-                .insert(terrain.cell(), terrain.stable_id);
+            sim.terrain_objects
+                .objects_mut_for_test()
+                .insert(terrain.stable_id(), terrain.clone());
+            assert!(sim.register_terrain_object(terrain.stable_id(), None));
+            sim.terrain_objects
+                .cell_index_mut_for_test()
+                .insert(terrain.cell(), terrain.stable_id());
             mark_terrain_raw_occupation(
                 &mut sim.substrate.raw_cell_occupation,
                 terrain.cell(),
-                terrain.occupation_bits,
+                terrain.occupation_bits(),
             );
         }
         sim.substrate.next_stable_object_id = spawner_id + 1;
-        sim.production.terrain_animations.insert(
+        sim.terrain_objects.animations_mut_for_test().insert(
             spawner_cell,
             TerrainAnimationState::new(
                 spawner_type,
@@ -9869,8 +9202,8 @@ mod tests {
                 sim.session.binary_frame(),
             ),
         );
-        sim.production
-            .tiberium_spawning_terrain_cells
+        sim.terrain_objects
+            .spawning_cells_mut_for_test()
             .insert(spawner_cell);
 
         let mut original_occupied_grid = flat_terrain(3, 3);
@@ -9885,7 +9218,7 @@ mod tests {
         sim.resolved_terrain = Some(original_occupied_grid);
 
         let result = damage_terrain_object_at_cell(
-            &mut sim.production,
+            &mut sim.terrain_objects,
             &mut sim.substrate.raw_cell_occupation,
             &rules,
             &sim.interner,
@@ -9917,39 +9250,39 @@ mod tests {
         );
 
         assert_eq!(
-            restored.production.terrain_objects[&destroyed_id].lifecycle,
+            restored.terrain_objects.objects()[&destroyed_id].lifecycle(),
             TerrainObjectLifecycle::Destroyed
         );
         assert!(
             !restored
-                .production
-                .terrain_object_cells
+                .terrain_objects
+                .cell_index()
                 .contains_key(&destroyed_cell)
         );
-        let restored_damaged = &restored.production.terrain_objects[&damaged_id];
-        assert_eq!(restored_damaged.health, 6);
-        assert_eq!(restored_damaged.lifecycle, TerrainObjectLifecycle::Live);
+        let restored_damaged = &restored.terrain_objects.objects()[&damaged_id];
+        assert_eq!(restored_damaged.health(), 6);
+        assert_eq!(restored_damaged.lifecycle(), TerrainObjectLifecycle::Live);
         assert_eq!(restored_damaged.cell(), damaged_cell);
         assert_eq!(
-            restored.production.terrain_object_cells[&damaged_cell],
+            restored.terrain_objects.cell_index()[&damaged_cell],
             damaged_id
         );
-        let restored_spawner = &restored.production.terrain_objects[&spawner_id];
-        assert_eq!(restored_spawner.health, 10);
-        assert_eq!(restored_spawner.lifecycle, TerrainObjectLifecycle::Live);
+        let restored_spawner = &restored.terrain_objects.objects()[&spawner_id];
+        assert_eq!(restored_spawner.health(), 10);
+        assert_eq!(restored_spawner.lifecycle(), TerrainObjectLifecycle::Live);
         assert_eq!(restored_spawner.cell(), spawner_cell);
         assert_eq!(
-            restored.production.terrain_object_cells[&spawner_cell],
+            restored.terrain_objects.cell_index()[&spawner_cell],
             spawner_id
         );
         assert_eq!(
-            restored.production.terrain_animations[&spawner_cell].type_ref(),
+            restored.terrain_objects.animations()[&spawner_cell].type_ref(),
             spawner_type
         );
         assert!(
             restored
-                .production
-                .tiberium_spawning_terrain_cells
+                .terrain_objects
+                .spawning_cells()
                 .contains(&spawner_cell)
         );
         assert_eq!(restored.substrate.next_stable_object_id, spawner_id + 1);
@@ -9985,7 +9318,7 @@ mod tests {
                 .raw_cell_occupation
                 .ground_bits(destroyed_cell.0, destroyed_cell.1)
                 & crate::sim::terrain_object::terrain_raw_occupation_mask(
-                    destroyed.occupation_bits,
+                    destroyed.occupation_bits(),
                 ),
             0
         );
@@ -10010,22 +9343,22 @@ mod tests {
             .expect("health-mutation control snapshot")
             .sim;
         changed_health
-            .production
             .terrain_objects
+            .objects_mut_for_test()
             .get_mut(&damaged_id)
             .expect("damaged Terrain authority")
-            .health = 5;
+            .set_health_for_test(5);
         assert_ne!(changed_health.state_hash(), authoritative_hash);
 
         let mut changed_lifecycle = GameSnapshot::load(&bytes)
             .expect("lifecycle-mutation control snapshot")
             .sim;
         changed_lifecycle
-            .production
             .terrain_objects
+            .objects_mut_for_test()
             .get_mut(&spawner_id)
             .expect("spawning Terrain authority")
-            .lifecycle = TerrainObjectLifecycle::Limbo;
+            .set_lifecycle_for_test(TerrainObjectLifecycle::Limbo);
         assert_ne!(changed_lifecycle.state_hash(), authoritative_hash);
     }
 
@@ -10087,41 +9420,6 @@ mod tests {
 
     // --- Slice 1: reveal/conceal/unlimbo/uninit lifecycle chokepoint ---
 
-    /// `reveal` adds a member; `conceal` removes it from the order but keeps the
-    /// store slot (limbo).
-    #[test]
-    fn reveal_then_conceal_roundtrips_membership() {
-        use crate::sim::game_entity::GameEntity;
-        let mut sim = Simulation::new();
-        let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
-        // test_default interns into the thread-local fixture, whereas Reveal
-        // now reaches the ordinary sight/discovery owners in this Simulation.
-        entity.set_owner_for_test(sim.interner.intern("Americans"));
-        entity.set_type_ref_for_test(sim.interner.intern("MTNK"));
-        sim.substrate.entities.insert(entity);
-        sim.reveal(1);
-        assert!(
-            sim.substrate
-                .entities
-                .get(1)
-                .unwrap()
-                .in_logic_vector
-                .is_member()
-        );
-        assert_eq!(sim.live_object_order_snapshot(), vec![1]);
-        sim.conceal(1);
-        assert!(
-            !sim.substrate
-                .entities
-                .get(1)
-                .unwrap()
-                .in_logic_vector
-                .is_member()
-        );
-        assert!(sim.live_object_order_snapshot().is_empty());
-        assert!(sim.substrate.entities.get(1).is_some()); // conceal keeps the store slot
-    }
-
     /// Slice 3: `unlimbo(ge)` places the entity into BOTH the active order and
     /// occupancy in one atomic call — a caller can never observe it in `logic`
     /// without occupancy, because the method returns only after both. The
@@ -10177,71 +9475,6 @@ mod tests {
         );
     }
 
-    /// `uninit` conceals then frees the store slot.
-    #[test]
-    fn uninit_conceals_then_frees_store_slot() {
-        use crate::sim::game_entity::GameEntity;
-        let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        let mut ge = GameEntity::test_default(2, "MTNK", "Americans", 4, 4);
-        ge.set_owner_for_test(owner);
-        sim.substrate.entities.insert(ge);
-        sim.reveal(2);
-        sim.uninit(2);
-        // Two-phase: resolvable-but-Dying until the drain, off the logic order now.
-        assert!(
-            sim.substrate
-                .entities
-                .get(2)
-                .is_some_and(|e| e.death.is_dying())
-        );
-        assert!(sim.live_object_order_snapshot().is_empty());
-        sim.flush_pending_delete();
-        assert!(sim.substrate.entities.get(2).is_none());
-    }
-
-    /// `despawn_entity` is retained and delegates to `uninit`.
-    #[test]
-    fn despawn_entity_delegates_to_uninit() {
-        use crate::sim::game_entity::GameEntity;
-        let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        let mut ge = GameEntity::test_default(3, "MTNK", "Americans", 6, 6);
-        ge.set_owner_for_test(owner);
-        sim.substrate.entities.insert(ge);
-        sim.reveal(3);
-        sim.despawn_entity(3);
-        // Two-phase: resolvable-but-Dying until the drain, off the logic order now.
-        assert!(
-            sim.substrate
-                .entities
-                .get(3)
-                .is_some_and(|e| e.death.is_dying())
-        );
-        assert!(sim.live_object_order_snapshot().is_empty());
-        sim.flush_pending_delete();
-        assert!(sim.substrate.entities.get(3).is_none());
-    }
-
-    /// The membership invariant holds across a mix of reveal/conceal/uninit.
-    #[test]
-    #[cfg(debug_assertions)]
-    fn lifecycle_keeps_membership_invariant() {
-        use crate::sim::game_entity::GameEntity;
-        let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        for id in [1u64, 2, 3] {
-            let mut ge = GameEntity::test_default(id, "MTNK", "Americans", 5, 5);
-            ge.set_owner_for_test(owner);
-            sim.substrate.entities.insert(ge);
-            sim.reveal(id);
-        }
-        sim.conceal(2);
-        sim.uninit(1);
-        sim.debug_assert_logic_membership_consistent();
-        assert_eq!(sim.live_object_order_snapshot(), vec![3]);
-    }
-
     // --- LogicClass live count-reload pass (scheduler contract) ---
 
     /// Insert an entity into the store and append it to the active order.
@@ -10251,34 +9484,6 @@ mod tests {
             .entities
             .insert(GameEntity::test_default(id, "MTNK", "Americans", 5, 5));
         sim.register_live_object(id);
-    }
-
-    /// An object the body tail-appends during the pass is ticked later in the
-    /// SAME pass, because the live length is re-read after each body call.
-    #[test]
-    fn logic_scheduler_append_during_pass_ticks_new_tail_same_tick() {
-        use crate::sim::game_entity::GameEntity;
-        let mut sim = Simulation::new();
-        spawn_and_register(&mut sim, 1); // A
-        spawn_and_register(&mut sim, 2); // B
-        // C exists in the store but is NOT yet in the active order.
-        sim.substrate
-            .entities
-            .insert(GameEntity::test_default(3, "MTNK", "Americans", 6, 6));
-        assert!(!sim.live_object_order_snapshot().contains(&3));
-
-        let mut visited = Vec::new();
-        sim.for_each_live_object(|sim, id| {
-            visited.push(id);
-            if id == 1 {
-                // A's body reveals C at the tail.
-                sim.register_live_object(3);
-            }
-        });
-
-        // C ran in the same pass, after the old tail.
-        assert_eq!(visited, vec![1, 2, 3]);
-        assert_eq!(sim.live_object_order_snapshot(), vec![1, 2, 3]);
     }
 
     /// Registering the same object twice is a no-op: the order keeps one entry
@@ -10297,94 +9502,6 @@ mod tests {
             }
         });
         assert_eq!(visits, 1);
-    }
-
-    /// When the current object unregisters itself, compaction shifts its
-    /// successor into the just-processed slot; the cursor still advances, so
-    /// that successor is skipped this pass (no index repair).
-    #[test]
-    fn logic_scheduler_self_unregister_uses_compacting_index_semantics() {
-        let mut sim = Simulation::new();
-        spawn_and_register(&mut sim, 1); // A
-        spawn_and_register(&mut sim, 2); // B
-        spawn_and_register(&mut sim, 3); // C
-
-        let mut visited = Vec::new();
-        sim.for_each_live_object(|sim, id| {
-            visited.push(id);
-            if id == 2 {
-                sim.unregister_live_object(2); // B removes itself
-            }
-        });
-
-        // A and B were visited; C (shifted into B's slot) is skipped this pass.
-        assert_eq!(visited, vec![1, 2]);
-        // Order is compacted, order-preserving — B gone, C retained.
-        assert_eq!(sim.live_object_order_snapshot(), vec![1, 3]);
-    }
-
-    /// Premise: a snapshot walk MISSES a same-pass append that the live pass
-    /// catches. This is the drift the live pass exists to remove.
-    #[test]
-    fn logic_scheduler_snapshot_walk_misses_same_pass_append() {
-        use crate::sim::game_entity::GameEntity;
-
-        // Snapshot path: appended object is invisible to this pass.
-        let mut sim = Simulation::new();
-        spawn_and_register(&mut sim, 1);
-        spawn_and_register(&mut sim, 2);
-        sim.substrate
-            .entities
-            .insert(GameEntity::test_default(3, "MTNK", "Americans", 6, 6));
-        let order = sim.live_object_order_snapshot();
-        let mut snapshot_visited = Vec::new();
-        for &id in &order {
-            snapshot_visited.push(id);
-            if id == 1 {
-                sim.register_live_object(3);
-            }
-        }
-        assert_eq!(snapshot_visited, vec![1, 2]); // C missed
-
-        // Live path on an equivalent setup: appended object is visited.
-        let mut sim2 = Simulation::new();
-        spawn_and_register(&mut sim2, 1);
-        spawn_and_register(&mut sim2, 2);
-        sim2.substrate
-            .entities
-            .insert(GameEntity::test_default(3, "MTNK", "Americans", 6, 6));
-        let mut live_visited = Vec::new();
-        sim2.for_each_live_object(|sim, id| {
-            live_visited.push(id);
-            if id == 1 {
-                sim.register_live_object(3);
-            }
-        });
-        assert_eq!(live_visited, vec![1, 2, 3]); // C caught
-
-        assert_ne!(snapshot_visited, live_visited);
-    }
-
-    /// `Command::ForceAttackCell` is serializable (replay/snapshot back-compat).
-    #[test]
-    fn force_attack_cell_command_serializes() {
-        use crate::sim::command::Command;
-        let cmd = Command::ForceAttackCell {
-            attacker_id: 7,
-            target_rx: 100,
-            target_ry: 200,
-        };
-        let bytes = save_codec::serialize(&cmd).expect("serialize should succeed");
-        let restored: Command =
-            save_codec::deserialize(&bytes).expect("deserialize should succeed");
-        assert!(matches!(
-            restored,
-            Command::ForceAttackCell {
-                attacker_id: 7,
-                target_rx: 100,
-                target_ry: 200
-            }
-        ));
     }
 
     /// Literal saved Cell lists survive re-entry order and actual restore.
@@ -10430,5 +9547,471 @@ mod tests {
         assert_eq!(list(&restored), vec![3, 1, 2]);
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(list(&restored), vec![3, 1, 2], "fixup is idempotent");
+    }
+
+    /// Concurrent-slice ladder: radiation took 20 -> 21, ScenarioSession (SC-2)
+    /// took 21 -> 22, S3 (per-object pre-death facing read + idle-Guard authority)
+    /// took 22 -> 23, the S4a authoritative flip (per-object mission commit
+    /// relocated to the AI host) took 23 -> 24, and S4b (the hashed
+    /// `damage_particle_live_until` `+0x308`-equivalent field) took 24 -> 25,
+    /// per-house native AI difficulty took 25 -> 26, and scheduler-owned
+    /// animation persistence took 26 -> 27, and independent serialized lifecycle
+    /// axes plus the pending-delete boundary took 27 -> 28, and exact Mission
+    /// state/readiness schema took 28 -> 29, and the Harvest handler
+    /// absorption (the miner FSM cursor retired into
+    /// `MissionCom.handler_state`) took 29 -> 30. Particle systems reached 34;
+    /// the consolidated Phase-0 persistence schema took 34 -> 35, and
+    /// lifecycle target/animation identity state took 35 -> 36, and omission
+    /// of process-global Main/MapGen RNG state took 36 -> 37, and serialized
+    /// Drive occupation footprints took 37 -> 38, and authoritative wall
+    /// ownership took 38 -> 39, and raw occupation bytes took 39 -> 40. Versions
+    /// 41..46 are a FORK: dev assigned them to MultiplayPassive, passive-acquire
+    /// bookkeeping, the infantry idle timer, the spawn-manager pool, and the
+    /// anim-overlay unit change, while the foundations line assigned the same
+    /// numbers to projectile state, trigger hashing, TeamClass state, piggyback
+    /// persistence, and typed special locomotors. The merge unified both as 47.
+    /// This pins it so a later accidental bump is caught. 47 -> 48 added
+    /// `DriveLocomotionRuntime::occupation_handoff` mid-struct; 48 -> 49 added
+    /// the serialized building hidden-occupation grid and per-entity profile;
+    /// 49 -> 50 added Building base reservations and per-entity spacing;
+    /// 50 -> 51 added airborne spatial-bucket membership and vector order;
+    /// 51 -> 52 added the mutable per-Techno armor multiplier; 52 -> 53 added
+    /// the Psychedelic berserk byte and signed timer; 53 -> 54 added the
+    /// persistent WasAttackedByEnemy byte; 54 -> 55 added per-house CurrentIQ;
+    /// 55 -> 56 added the Techno damage-Smoke ParticleSystem identity; 56 ->
+    /// 57 added controller-owned CaptureManager capacity and victim links; 57
+    /// -> 58 added per-house AngerStruct scores and selected enemy identity;
+    /// 58 -> 59 replaced the lossy C4 timer with the shared signed
+    /// C4/PostMortem timer and nullable retained source; 59 -> 60 added the
+    /// wall-sale command plus house/game-mode receiver inputs; 60 -> 61 added
+    /// ScenarioFlags no-damage; 61 -> 62 added exact object Z and the sole live
+    /// low-bridge TubeMovement payload; 62 -> 63 added the immutable
+    /// `Factory=BuildingType` house-edge callback profile; 63 -> 64 added the
+    /// aggregate per-house SpySat-active latch; 64 -> 65 added persistent
+    /// Scenario lighting transition authority and removed queued storm state;
+    /// 65 -> 66 added synchronized projectile/Techno/locomotor state; 66 -> 67
+    /// added Wave, aircraft-tail, guided-projectile, Cell visibility,
+    /// BuildingLight, and Anim state; 67 -> 68 added projectile collision,
+    /// Wave recorded-cell payloads, infantry owners, and fog/sensor state; 68
+    /// -> 69 added per-cell cloak-owner words; 69 -> 70 removed the terrain,
+    /// projectile, and wave local counters in favor of the global object-id
+    /// source; 70 -> 71 added ProjectileTarget's native null discriminant and
+    /// replaced frozen cell-target coordinates with stable CellClass identity;
+    /// 71 -> 72 added explicit product/public-envelope identity and the save
+    /// description to the common prefix; 72 -> 73 added persistent per-house
+    /// accepted outcome kind, SavourDelay target, and expiry latch; 73 -> 74
+    /// added the serialized pending-command EXIT payload; 74 -> 75 added the
+    /// generic Building delayed-fire signed counter and saved weapon slot; 75
+    /// -> 76 added AnimClass cell-drawer and terrain-attached bytes; 76 -> 77
+    /// added the persistent Foot SHP body-frame counter and Ship-owned
+    /// destination/target/current speed state used by its SHP movement slots;
+    /// 77 -> 78 made living GameEntity Animation timing hash-authoritative;
+    /// 78 -> 79 moved building-overlay finalization before the returned hash
+    /// and made the already-serialized overlay component hash-authoritative;
+    /// 79 -> 80 added the serialized/hash-authoritative terminal score snapshot;
+    /// 80 -> 81 added the pending-command offline GameSpeed transition payload;
+    /// 81 -> 82 made a serialized `AnimClass` coordinate owner-RELATIVE while
+    /// its `owner_entity` is set, matching
+    /// `AnimClass::SetOwnerObject @ 0x00424B50`. The layout is unchanged, so
+    /// old bytes still decode — and would then be re-resolved through the owner
+    /// a whole owner-coordinate away, moving every attached anim and the
+    /// returned hash with it. Cross-version load is refused for that reason;
+    /// 82 -> 83 collapsed `ParticleSystem`'s `marked_for_deletion` and
+    /// `done_spawning` into the single `done_spawning`, which is what
+    /// `ParticleSystemClass+0xF8` actually is — one byte set by the lifetime
+    /// countdown, the spawn cutoff and the spark countdown alike, and read by
+    /// both the spawn gate and the removal predicate. A serialized field is
+    /// gone, so old bytes no longer decode; 84 -> 85 retained signed map Size
+    /// height for action-40 normalization; 85 -> 86 added the mutable
+    /// playfield revision; 86 -> 87 added Techno+0x3D5 membership; 87 -> 88
+    /// added the exact historical sensor deposit needed for later removal;
+    /// 88 -> 89 adds the `ProjectileTarget::DummyCell` pointer kind while the
+    /// process-global dummy contents remain deliberately outside the payload;
+    /// 89 -> 90 adds exact allocated real-cell 0x1180 values to Scenario
+    /// persistence/hash plus the live dummy subset to the canonical hash,
+    /// while retaining the native dummy reconstruct-to-zero load behavior;
+    /// 90 -> 91 adds the held factory object's completion-accounted latch so
+    /// delivery retries cannot replay completion after load; 91 -> 92 adds the
+    /// persisted per-house BaseClass reservation bounds/vector while retaining
+    /// the native reconstruct-cleared reservation dummy mask; 92 -> 93 adds
+    /// House strategy emergency state; 93 -> 94 adds the House last-attacker
+    /// index plus persistent Techno recruitment/archive/base-response state;
+    /// 94 -> 95 adds TeamType priority/base-defence metadata and TeamClass
+    /// response latches/timer state; 95 -> 96 adds the ordered AIMD/map static
+    /// registries retained by TeamScriptVm; 96 -> 97 adds resolved ScriptType
+    /// and TaskForce source provenance; 97 -> 98 adds the resolved typed
+    /// AITrigger owner/object/scalar/mask/weight/difficulty payload; 98 -> 99
+    /// removes the falsely retained AITrigger token-4 scalar after binary
+    /// verification proved that token is required but discarded; 99 -> 100
+    /// adds the three post-load TeamType zone-derivation fields; 100 -> 101
+    /// adds category-distinct resolved TaskForce member identities; 101 -> 102
+    /// adds category-distinct resolved AITrigger token-6 identities; 102 -> 103
+    /// adds WaveClass state and destroyable-cliff replacement CellClass values;
+    /// 103 -> 104 adds the persistent Techno constructor word and authored
+    /// structure-upgrade parent/slot identity; 104 -> 105 adds active/stashed
+    /// Drive/Ship slope-transition state; 105 -> 106 rejects saves that would
+    /// resume under the corrected one-authority 104-lepton Cell ground formula
+    /// despite unchanged wire shape; 106 -> 107 adds unconditional shared-
+    /// dummy level/slope hash authority for active Spark queries; 107 -> 108
+    /// adds the packed House alternate base cell; 108 -> 109 adds the ordered
+    /// House BuildConst vector and immutable entity membership; 109 -> 110
+    /// adds ordered BasePlan state and immutable BuildingType facts; 110 -> 111
+    /// adds the distinct BaseClass plan center; 111 -> 112 adds the three House
+    /// AI activation latches; 112 -> 113 adds House AutocreateAllowed;
+    /// 113 -> 114 adds the raw 256-entry scenario-crate slot table and the
+    /// per-Anim Convert palette selector used by startup crate CellAnim;
+    /// 114 -> 115 adds retained wall-neighbor count authority and begins the
+    /// live shared-dummy overlay pair in the current hash schema; 115 -> 116
+    /// replaces the per-class tiberium heap vectors with the native queue
+    /// stores (entry array, heap of references, capacity) and adds the
+    /// `MapRect` the stores are sized from; 116 -> 117 folds the
+    /// disguise-detect counter plane and the cached `DetectDisguiseRange=`
+    /// deposit radius into the hash schema; 117 -> 118 inserts the
+    /// `UnitClass+0x6AF` turret rotation latch and the `TechnoClass+0x120`
+    /// last-fire frame mid-`GameEntity`, on every entity, which bincode cannot
+    /// decode from a shorter v117 record; 118 -> 119 gives `ProjectileGuidance`
+    /// the native `BulletClass` flight state — `Bullet+0x110` MaxSpeed,
+    /// `BulletTypeClass+0x2D0` Acceleration, the launch-frozen
+    /// `ProximityDetector` reference coordinate, and the `Bullet+0x118/+0x120`
+    /// closing-rate pair — and appends the `Vertical` trajectory variant. All
+    /// five guidance additions (`max_speed`, `acceleration`, `fuse_reference`,
+    /// `closing_frames`, `closing_accumulator_bits`) sit at the END of the
+    /// struct, but a v118 record still stops short of them, so bincode would
+    /// run off the end of every in-flight projectile; 119 -> 120 adds the
+    /// `VoxelAnimClass` debris registry to `ObjectSubstrate` and wires the
+    /// death-side debris producer, which changes both the hash schema and the
+    /// shared RNG cursor at every Techno death whose type authors a POSITIVE
+    /// `MaxDebris=` — the 83 stock sections that author `MaxDebris=0` stop at
+    /// `0x00702291` and still cost the stream nothing; 120 -> 123 moves combat
+    /// explosions off the legacy `WorldEffect` list and into `AnimStore`, so a
+    /// warhead `AnimList=` animation is now a serialized, checksum-folded
+    /// object where it used to be neither. 121 and 122 are skipped because
+    /// unmerged branches already stamp them — 121
+    /// `origin/feature/phase3-map-spatial-close`, 122
+    /// `origin/feature/phase3-map-spatial-integration` — and two branches
+    /// sharing one version number defeat the mismatch guard entirely.
+    /// 123 -> 126 adds the retained homing Inaccurate flag; 124 and 125 are
+    /// reserved by the concurrent parasite and audio-lane changes.
+    /// 130 -> 131 persists the session `TiberiumGrows`/`TiberiumSpreads`
+    /// flag bits and the `OreGrowthConfig` growth-reload selector.
+    /// 131 -> 132 persists the `HouseClass+0x242` harvester no-ore latch.
+    /// 132 -> 133 persists the `HouseClass+0x57D4` funds-nag timer and the
+    /// `[0xA8F040]` low-power guard.
+    #[test]
+    fn current_snapshot_version_includes_voxel_shadow_index() {
+        // 133 -> 134: repair-depot docking layout (see the constant's comment).
+        // 134 -> 135: GameEntity ProduceCash timer + drain link pair (GSI-09.01).
+        // 135 -> 136: explicit retained Infantry terminal lifetime policy.
+        // Separate v137: ordinary ground-coordinate resume invariants.
+        // v138 combines both layouts without accepting prior local v137 saves.
+        // 138 -> 139: map-owned ScenarioSession FreeRadar authority.
+        // 139 -> 140: retained bridge record source Size for native zone lookup.
+        // 140 -> 141: retained real CellClass gap flags400/800.
+        // 141 -> 142: sustained sight and pending 120-frame gap conceal.
+        // 142 -> 143: MCV pending and Drive previous-rotation latches.
+        // 143 -> 144: per-Building operational edge and retained gap deposit.
+        // 145 -> 146: pavement is owned by raw terrain flags, not bridge cells.
+        // 146 -> 147: retain Scenario+214 for subsequent native constructors.
+        // 150 -> 151: Foot also owns applied speed independently of its locomotor.
+        // 151 -> 152: Foot occupation enable and pending fresh Apply1 obligation.
+        // 161 -> 162: Infantry+6DC current-cell entry answer of the failed path.
+        // 162 -> 163: Jumpjet linked type block and flight fields.
+        // 164 -> 165: DriveTrackState::before_first_point, inserted mid-record.
+        // 165 -> 166: Economy owns the sole house credit balance.
+        // 170 -> 171: shared animation bounds and retained HasEngineer.
+        // 173 -> 174: ProductionState drops the resource node map.
+        // 174 -> 175: bridge collapse explosions join the AnimStore.
+        // 180 -> 181: Foot+580 crate multiplier survives save/restore.
+        // 184 -> 185: Fly owns its integer height target and takeoff/landing flags.
+        // 185 -> 186: Aircraft pending ammo survives independently of Attack.
+        // 186 -> 187: object burst position replaces the target-owned count.
+        // 187 -> 188: retained Fly destination XYZ cannot be recovered from cells.
+        // 189 -> 190: Foot neighbor history and retained live counters.
+        // 190 -> 191: Fly cruise mode survives save and locomotor suspension.
+        // 191 -> 192: Fly moving/landing latch/AirportBound and flight attitude.
+        // 192 -> 193: ParasiteClass and the victim's parasite/paralysis fields.
+        // 193 -> 194: Building+6E3 HasBeenCaptured.
+        // 194 -> 195: death anims take the death producers' arguments.
+        // 195 -> 196: mind-control nodes, overload state and victim links.
+        // 196 -> 197: TemporalClass links and the warped object's chain head.
+        // 197 -> 198: the house defeat counts.
+        // 198 -> 199: the Crazy Ivan bomb on its carrier.
+        // 199 -> 200: the Gattling stage, value and turret animation counter.
+        // 200 -> 201: no `last_attacker_id`; TeamType `Suicide=`.
+        // 201 -> 202: the rearm timer on the object.
+        // 202 -> 203: no Simulation copy of CloseEnough.
+        // 203 -> 204: bullet OnBridge, no owner house; house ROF bias; TeamType
+        // `Aggressive=`.
+        // 204 -> 205: bullet `Arcing=`; an anim's bounce body.
+        // 205 -> 206: the retired Chrono dock phases; Techno+0x1F8.
+        // 206 -> 207: the native ore field (Unit+0x6D2, the StageClass).
+        // 207 -> 208: the crash latch and edge; the Fly fall counter.
+        // 208 -> 209: the slave manager and the slave's links and Storage.
+        // 209 -> 210: the retired Jumpjet type-block copy.
+        // 210 -> 211: the construction animation's StageClass on build-ups
+        // and pack-ups.
+        // 211 -> 212: no copy of the last selection's weapon id.
+        // 212 -> 213: Sell's stage in the Selling mission; no undeploy
+        // spawn copy on pack-ups.
+        // 213 -> 214: signed BridgeStrength in serialized bridge state.
+        // 214 -> 215: Terrain retains its placement height across ground changes.
+        // 215 -> 216: the building's AI repair byte; the house's repair
+        // delay, auto-repair latch and its timer.
+        // 216 -> 217: native constructor IDs and signed guided control state.
+        // 217 -> 218: a passenger's `+0x82`; no open-transport weapon override.
+        // 218 -> 219: bridge-layer acquisition and live cell/height-query behavior.
+        // 219 -> 220: the rally point is the factory's ArchiveTarget alone.
+        // 220 -> 221: buildings' Guard and Attack missions.
+        // 221 -> 222: production commands take their envelope's house.
+        // 222 -> 223: no group speed cap on Move orders.
+        // 223 -> 224: live Infantry movement/repair and structural side consumers.
+        // 224 -> 225: Prism forwarding.
+        // 225 -> 226: the factory step timer is the CDTimer a build start arms;
+        // no stored build-time estimates.
+        // 226 -> 227: retained surface-ship sinking and its sound edge.
+        // 227 -> 228: FactoryPlant cost bonuses; no full-cost Balance copy.
+        // 228 -> 229: the native production events; a user hold clears the rate.
+        // 229 -> 230: every building's `+0x388` facing.
+        // 230 -> 231: no AI `mcv_deployed` latch; no terrain `build_blocked`.
+        // 231 -> 232: computer production state on houses and factory buildings.
+        // 232 -> 233: house country cost factors and force values; each
+        // Techno's value arm.
+        // 233 -> 234: the house Strategy timer.
+        // 234 -> 235: house, spawn manager, cloak and disguise timers are
+        // `CdTimer`s.
+        // 235 -> 236: the harvest overlay drops its unread frame count.
+        // 236 -> 237: one body FacingClass per Techno; no facing mirror or target.
+        // 237 -> 238: the computer's teams and their production.
+        // 238 -> 239: each Techno's barrel elevation FacingClass.
+        // 239 -> 240: no raw INI field copy in TeamType metadata.
+        // 240 -> 241: team members, recruitment and script state.
+        // 241 -> 242: the team restart flag and two TeamType keys; no
+        // `sim::ai` state.
+        // 242 -> 243: no locomotor `ROT=` copy.
+        // 243 -> 244: no ground move phase.
+        // 244 -> 245: no retained purifier count.
+        // 245 -> 246: no stored veterancy rank.
+        // 246 -> 247: every overlay grid has a wall plane.
+        // 247 -> 248: one eight-class locomotor enum; no dormant locomotor
+        // states.
+        // 248 -> 249: no dead particle, boarding-phase or garrison-owner
+        // fields.
+        // 249 -> 250: no always-1.0 locomotor speed multiplier.
+        // 250 -> 251: Fly speeds live in the Fly runtime; no air progress or
+        // wobble phase.
+        // 251 -> 252: no entity homing state.
+        // 252 -> 253: no Teleport/Rocket payload copies.
+        // 253 -> 254: no garrison Unloading order intent.
+        // 254 -> 255: entity TooBigToFitUnderBridge/ZFudgeBridge copies removed.
+        // 255 -> 256: no cached GetCurrentSpeed.
+        // 256 -> 257: no bridge group/destroyable/span-damage copies or
+        // inert paradrop latches.
+        // 257 -> 258: the stash saves the complete suspended locomotor.
+        // 258 -> 259: no bridgehead anchor class.
+        // 259 -> 260: no bridge_occupancy or ground enter order.
+        // 260 -> 261: no falling byte beside the parachute descent.
+        // 261 -> 262: retained House radius, Foot688 and inherited Foot68D.
+        // 262 -> 263: no runtime copy of CellClass bridge cell state.
+        // 263 -> 264: shared native StageClass; no Miner/Building clock copies.
+        // 264 -> 265: no parachute altitude beside the Location Z.
+        // 265 -> 266: no Approach depot phase; WaitForDock is pending entry.
+        // 266 -> 267: Infantry water-transition state+6E8.
+        // 267 -> 268: retained Cell targets hash the live fallback coordinate.
+        // 268 -> 269: the native Hover locomotor object.
+        // 269 -> 270: no lane speed ramp, bypasses or adapter flag on a move.
+        // 270 -> 271: no lane wall-refusal memo on a move.
+        // 271 -> 272: no move direction vector or Walk sub-cell destination.
+        // 272 -> 273: Reveal commits every Unlimbo Z; no Fly rebuild.
+        // 273 -> 274: retained coefficient, Team flag, House threat and cache;
+        // retained native base navigation is saved; its live history is hashed.
+        // 274 -> 275: movement targets no longer save route cells.
+        // 275 -> 276: each House saves its type's Speed*Mult.
+        // 276 -> 277: retained native terrain animation probability and timer.
+        // 277 -> 278: lifecycle-owned building body, ready, mission and primary.
+        // 278 -> 279: native Building health sample; dirty House assessment,
+        // retained House discovery/capture notifications and Engineer identity;
+        // and its anchored power-blackout clock/radar projection.
+        // 279 -> 280: Unit deploy flags, Techno animation/landing ownership and
+        // the animation's retained palette source replace the legacy countdown.
+        // 280 -> 281: authoritative weapon/turret pair and saved charge duration.
+        // 281 -> 282: independent depot pending entry and sole MissionCom cadence.
+        // 282 -> 283: private optional turret/barrel recoil components.
+        // 283 -> 284: retained runtime Smudge identities/pending deletion.
+        // 284 -> 285: shared Techno Door/Gate.
+        // 285 -> 286: pending entry, independent repair Stage and Anim completion.
+        // 286 -> 287: the complete Teleport locomotor owns resolved XYZ,
+        // request byte and warp effect, including suspended instances.
+        // 287 -> 288: complete Drive/Ship instance-owned retained state.
+        // 288 -> 289: Factory publication and shared Foot idle latch.
+        // 289 -> 290: independent Foot air tracker/slot Cells and callbacks.
+        // 290 -> 291: the nuclear missile's Anim, Building, House and Bullet
+        // fields.
+        // 291 -> 292: the Chronosphere's Super and Teleport state, the Psychic
+        // Dominator's globals, permanent control and Dominator lighting.
+        // 292 -> 293: the native Rocket locomotor object; no rocket phase
+        // machine; the kamikaze tracker's nodes.
+        // 293 -> 294: the Iron Curtain's tint stage and timer.
+        // 294 -> 295: the nuke flash and NukeAmbientChangeRate= in the
+        // scenario's lighting; a bullet's wait on its NUKE anim.
+        // 295 -> 296: the Force Shield's fade countdown and coordinate.
+        // 296 -> 297: the Lightning Storm's globals and cloud lists; a House's
+        // radar outage timer.
+        // 297 -> 298: canonical cloak query and retained native displacement.
+        // 298 -> 299: the aircraft's paradrop passes; no paradrop carrier
+        // AircraftMission states.
+        // 299 -> 300: infantry death anims with the death producers'
+        // arguments and the killing house; a GENDEATH's end makes its Brute.
+        // 300 -> 301: guidance reads Airburst/Inaccurate/Level from the
+        // collision policy instead of keeping copies.
+        // 301 -> 302: FogState drops its unread v81 generation wire shadow.
+        // 302 -> 303: unread HoverAttack copy and aircraft pad-index copies.
+        // 303 -> 304: a Super's place in the Super timer list.
+        // 304 -> 305: write-only power transition latch and miner return flag.
+        // 305 -> 306: ground bits replace the legacy visibility counters.
+        // 306 -> 307: the session's LocalSize copy.
+        // 307 -> 308: the unread terrain occupation copy.
+        // 308 -> 309: the Factory special item.
+        // 309 -> 310: the dead infantry scatter timer.
+        // 310 -> 311: the legacy dock Launching phase.
+        // 311 -> 312: the house's AirportDocks.
+        // 312 -> 313: the house's one score.
+        // 313 -> 314: the house's factory counters.
+        // 314 -> 315: no ready-building list beside the factories.
+        // 315 -> 316: the native airfield loop replaces the legacy dock FSM.
+        // 316 -> 317: the local owner's retained sidebar insertion history.
+        // 318 -> 319: Guard carries its native post, with one mission owner.
+        // 319 -> 320: Mirage retains only its established timer words.
+        // 320 -> 321: particle constructors retain native IDs and their cursor.
+        // 321 -> 322: campaign Session and complete House initialization state.
+        // 322 -> 323: the Foot building-entry latches.
+        // 323 -> 324: the +0x690 latch and garrison admission order.
+        // 324 -> 325: each entity's turret rotation-sound control latch.
+        // 325 -> 326: each overlay cell's rubble building type.
+        // 326 -> 327: live Tag/Trigger and typed deletion owners, retained
+        // LoadObject registry, and neutral Tactical view/focus metadata.
+        // 327 -> 328: each house's last lost building (+0x54E0).
+        // 328 -> 329: each house's spy gains (+0x2BC..+0x2C0).
+        // 329 -> 330: the move-order adapter keeps no goal (#689).
+        // 330 -> 331: object custom sounds and type-7 action sounds.
+        // 331 -> 332: the C4 order's walk-up intent is gone.
+        // 332 -> 333: the fog's RevealToAll alternate-house sight.
+        // 333 -> 334: the house's war factory count.
+        // 334 -> 335: global Teleport delay and independent carrier relation.
+        // 335 -> 336: saved world resources, local view and Tactical center.
+        // 336 -> 337: Magnetron links and the object's warp credit house.
+        // 337 -> 338: the deactivated latch and the powered-center counts.
+        // 338 -> 339: every bullet's ProximityDetector reference.
+        // 339 -> 340: a bounce body's orientation and rotation quaternions.
+        // 340 -> 341: the Foot MegaMission replaces the OrderIntent goal.
+        // 341 -> 342: the House tech-tree recheck byte.
+        // 342 -> 343: the complete Object fall state.
+        // 343 -> 344: retained deploy-voice suppression and bound voice slots.
+        // 344 -> 345: Smoke scalars and individual Particle AIR identities.
+        // 345 -> 346: Move commands without the queue flag, and MoveToObject.
+        // 346 -> 347: AttackMove tokens and an object MegaDestination.
+        // 347 -> 348: the batched re-path setting and its waiting Foots.
+        // 348 -> 349: no move-order adapter (`MovementTarget`).
+        // 349 -> 350: the request each waiting Foot repeats.
+        // 350 -> 351: the Building's animation art in one record.
+        // 351 -> 352: no locomotor altitude copy; height is the Location Z.
+        // 352 -> 353: each object's infantry house-tracking latches.
+        // 353 -> 354: integrated ALL01 retained Tag/ChronoScreen/House/Team state.
+        // 354 -> 355: the path batch's next capped turn.
+        // 355 -> 356: the Foot navigation list and its loop flag.
+        // 356 -> 357: no voxel HVA or OREGATH frame clock.
+        // 357 -> 358: retained BuildingType TargetCoordOffset.
+        // 358 -> 359: Tesla charger list, weapon latch and Foot intent.
+        // 359 -> 360: retained airstrike managers and aircraft relationships.
+        // 360 -> 361: retained radial launch settings and firing index.
+        // 361 -> 362: Terrain Bullet target identity and reference validation.
+        // 362 -> 363: retained Scenario countdown and sidebar cameo flash deadlines.
+        // 363 -> 364: independent Bullet constructor and installed-weapon fields.
+        // 364 -> 365: retained RadSite creation/update order.
+        // 365 -> 366: process scalable Bullet order and type cadence.
+        // 366 -> 367: synchronized planning nodes, paths and local input mode.
+        // 367 -> 368: retained runtime DistributedFire state.
+        // 368 -> 369: tracked navy and its retained type admission.
+        // 369 -> 370: constructor-assigned VoxelAnim native IDs.
+        // 370 -> 371: retained Parasite grapple progress.
+        // 371 -> 372: authoritative binary32 body angles/rates.
+        // 372 -> 373: retained House last-built type indices.
+        // 373 -> 374: the batched target scan setting.
+        // 374 -> 375: retained CaptureManager overload pip countdown.
+        // 375 -> 376: retained Foot Ammo and chrono reinforcement pending state.
+        // 376 -> 377: retained source cache and independent sight latch.
+        // 377 -> 378: Super recharge override and House offensive target.
+        // 378 -> 379: synchronous Factory lifecycle and sale continuation.
+        // 379 -> 380: live type TechLevels and global constructor chronology.
+        // 380 -> 381: one Factory suspension authority; no duplicate manual bit.
+        // 381 -> 382: retained Secret Lab rules, membership and reward.
+        // 382 -> 383: private Factory+71 automatic-recovery eligibility.
+        // 383 -> 384: retained Weapon damage and Warhead identity in saved rules.
+        // 383 -> 385: retained Drive straight/crush track flag.
+        // 385 -> 386: combined Weapon and Drive layouts.
+        // 385 -> 386: retained primary flags include matching limbo peers.
+        // 386 -> 387: combined Weapon, Drive and Building primary layouts.
+        // 387 -> 388: independent RadSite light clock and source parameters.
+        // 388 -> 389: particle owner-relative offsets have native semantics.
+        // 389 -> 390: retained AV ambient rate/step fields in saved Rules.
+        // 390 -> 391: retained ColorAdd slots and AudioVisual selectors.
+        // 391 -> 392: retained RulesClass survivor divisors.
+        // 392 -> 393: reject cargo with the old mid-track boarding semantics.
+        // 393 -> 394: saved requests/gates, with NoInit clock reset.
+        // 394 -> 395: retained Cheer rate and the appended Cheer command.
+        // 395 -> 396: actual Spark link/target and retained Particle bodies.
+        // 396 -> 397: retained Particle has independent Alive and Limbo.
+        // 397 -> 398: per-family/type produced history for lifetime limits.
+        // 398 -> 399: remove the derived theoretical-power cache.
+        // 399 -> 400: retain the local Power bar projection.
+        // 400 -> 401: retained native House names and their array binding.
+        // 401 -> 402: retain delayed DiskLaser bodies and Rules charge-up.
+        // 402 -> 403: retain pending Map+D4 collapse coordinates/order.
+        // 403 -> 404: retain House capacity and future Building Storage input.
+        // 404 -> 405: retain AudioVisual ChronoBeamColor in processed rules.
+        // 405 -> 406: live ambient Rules writes from Action71/72.
+        // 406 -> 407: the fog's copy of the ally graph is gone.
+        // 407 -> 408: Wave geometry follows FireAt's constructor order.
+        // 408 -> 409: ordered DropZone inputs in saved Rules resources.
+        // 409 -> 410: Command::ForceAttack is gone.
+        // 410 -> 411: preferred Super target kind and House-control pointers.
+        // 411 -> 412: retained vehicle SpeedType in processed Rules.
+        // 412 -> 413: retained Super one-time and provider-loss/hold flags.
+        // 413 -> 414: global GasCloudSys reference and Particle motion words.
+        // 414 -> 415: path-batch code-2 re-path urgencies.
+        // 415 -> 416: Building online latch independent of Temporal.
+        // 416 -> 417: control-node line timers and ordered line settings.
+        // 417 -> 418: campaign score map-rank presentation metadata.
+        // 418 -> 419: the Drive/Ship occupation footprints are gone.
+        // 419 -> 420: Infantry Psycho latch independent of Techno Berserk.
+        // 420 -> 421: process Rules retain TalkBubbleTime.
+        // 421 -> 422: the drain link retains the drainer's DrainAnim.
+        // 422 -> 423: retained weapon blocks and HoldsWhat bindings.
+        // 423 -> 424: retained Type references and Rules DeathWeapon.
+        // 424 -> 425: Scenario cargo flags and the ice-growth byte.
+        // 425 -> 426: the Techno+0x12C Behind indicator Anim.
+        // 426 -> 427: IonBlast process inputs, pending forces and Foot lift.
+        // 427 -> 428: TerminalLifetime keeps only the dying mark.
+        // 428 -> 429: one CellClass+0xEC LandType per saved terrain cell.
+        // 429 -> 430: the remaining Type references and RulesClass Type
+        // pointers and lists.
+        // 430 -> 431: no derived land caches beside that LandType.
+        // 431 -> 432: the Boarding passenger relation is gone.
+        // 432 -> 433: one Object spelling for a NavCom-family pointer.
+        // 433 -> 434: no trigger-record copies in saved scenario resources.
+        // 434 -> 435: Scenario vein switch and shared Scenario pause.
+        // 435 -> 436: retained repair service inputs.
+        // 436 -> 437: independent BuildingLight and retained Spotlight rules.
+        // 437 -> 438: the retained GenericWarhead payload binding.
+        // 438 -> 439: retained Ares building requirement lists.
+        // 439 -> 440: UnitDelivery state and instance base policy.
+        // 440 -> 441: binary64 passenger Size/SizeLimit and signed CargoTotalSize.
+        // 441 -> 442: the Foot-owned crush slowdown / rocking flag.
+        // 442 -> 443: exact session mode, multiplayer launch/observer state,
+        // CompEasyBonus and the House Flag_To_Die latch.
+        // 443 -> 444: retained TechnoType ShadowIndex.
+        // 444 -> 445: retained per-pass BuildingType light integers.
+        // 445 -> 446: the House array's registration order.
+        // 446 -> 447: terrain objects and ore growth have their own owners.
+        assert_eq!(super::SNAPSHOT_VERSION, 447);
     }
 }

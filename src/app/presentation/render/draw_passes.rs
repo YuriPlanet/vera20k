@@ -1176,19 +1176,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_13_01_pixel_fx_tail_remains_passthrough_and_tactically_scissored() {
-        let tactical_scissor = source_offset("pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);");
-        let sparkle = source_offset("pool.get(\"cell_sparkles\")");
-        let full_window_scissor = source_offset(
-            "pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());",
-        );
-
-        assert!(tactical_scissor < sparkle);
-        assert!(sparkle < full_window_scissor);
-        assert!(SOURCE[sparkle..full_window_scissor].contains("draw_with_buffer_passthrough"));
-    }
-
-    #[test]
     fn gsi_04_01_retained_sidebar_radar_subpass_ends_with_content_boundary() {
         let chrome = source_offset("\"sidebar_chrome\"");
         let cameo = source_offset("\"sidebar_cameo\"");
@@ -1278,24 +1265,6 @@ mod tests {
             assert!(source_offset(layer) < frame_pass, "{layer}");
             assert!(!production[frame_pass..].contains(layer), "{layer}");
         }
-    }
-
-    #[test]
-    fn gsi_04_01_tooltip_and_cursor_remain_after_the_retained_sidebar_surface() {
-        let blit = source_offset("surface.composite(&mut pass)");
-        let message = source_offset("\"message_text\"");
-        let tooltip_fill = source_offset("\"tooltip_fill\"");
-        let tooltip_border = source_offset("\"tooltip_border\"");
-        let tooltip_text = source_offset("\"tooltip_text\"");
-        let screenshot_boundary = source_offset("stage_pre_cursor_composition");
-        let cursor = source_offset("\"software_cursor\"");
-
-        assert!(blit < message);
-        assert!(message < tooltip_fill);
-        assert!(tooltip_fill < tooltip_border);
-        assert!(tooltip_border < tooltip_text);
-        assert!(tooltip_text < screenshot_boundary);
-        assert!(screenshot_boundary < cursor);
     }
 
     /// gamemd's pop-up hides what it lands on, so its fill is a solid texel

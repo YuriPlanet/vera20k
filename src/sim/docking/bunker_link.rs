@@ -922,7 +922,7 @@ mod tests {
         let stored = |sim: &Simulation, receiver, rules| {
             assign_target_stored(
                 &sim.substrate.entities,
-                &sim.production.terrain_objects,
+                sim.terrain_objects.objects(),
                 receiver,
                 tank,
                 Some((rules, &sim.interner)),
@@ -939,7 +939,7 @@ mod tests {
         assert_eq!(stored(&sim, 3, &rules), Some(TargetKind::Entity(2)));
         let own = assign_target_stored(
             &sim.substrate.entities,
-            &sim.production.terrain_objects,
+            sim.terrain_objects.objects(),
             3,
             Some(TargetKind::Entity(3)),
             None,

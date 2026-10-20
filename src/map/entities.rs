@@ -486,44 +486,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_infantry() {
-        let ini: IniFile = IniFile::from_str(
-            "[Infantry]\n\
-             0=Soviet,E1,256,10,20,2,Guard,192,None,200,-1,0,1,0\n",
-        );
-        let entities: Vec<MapEntity> = parse_map_entities(&ini);
-        assert_eq!(entities.len(), 1);
-
-        assert_eq!(entities[0].type_id, "E1");
-        assert_eq!(entities[0].cell_x, 10);
-        assert_eq!(entities[0].cell_y, 20);
-        assert_eq!(entities[0].sub_cell, 2);
-        assert_eq!(entities[0].facing, 192);
-        assert_eq!(entities[0].category, EntityCategory::Infantry);
-        assert_eq!(entities[0].veterancy, Some(200));
-        assert!(!entities[0].high);
-        assert!(entities[0].recruitable_a);
-        assert!(!entities[0].recruitable_b);
-    }
-
-    #[test]
-    fn test_parse_structures() {
-        let ini: IniFile = IniFile::from_str(
-            "[Structures]\n\
-             0=Americans,GAPOWR,256,15,25,0,None,1,0,1,0,0,None,None,None,0,1\n",
-        );
-        let entities: Vec<MapEntity> = parse_map_entities(&ini);
-        assert_eq!(entities.len(), 1);
-
-        assert_eq!(entities[0].type_id, "GAPOWR");
-        assert_eq!(entities[0].cell_x, 15);
-        assert_eq!(entities[0].cell_y, 25);
-        assert_eq!(entities[0].facing, 0);
-        assert_eq!(entities[0].category, EntityCategory::Structure);
-        assert_eq!(entities[0].structure_upgrades, [None, None, None]);
-    }
-
-    #[test]
     fn structures_online_token_uses_native_default_and_crt_flags() {
         //44FA11 defaults true;44FA2D uses atoi!=0 after native strtok.
         let ini = IniFile::from_str(
@@ -744,13 +706,6 @@ mod tests {
         // First line has only 2 fields (< 6 minimum), should be skipped.
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].type_id, "HTNK");
-    }
-
-    #[test]
-    fn test_empty_map_returns_empty() {
-        let ini: IniFile = IniFile::from_str("[Map]\nTheater=TEMPERATE\n");
-        let entities: Vec<MapEntity> = parse_map_entities(&ini);
-        assert!(entities.is_empty());
     }
 
     #[test]

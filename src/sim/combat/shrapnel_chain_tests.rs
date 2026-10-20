@@ -174,7 +174,7 @@ impl PrismScene {
             ),
             1
         );
-        self.world.production.terrain_object_cells[&(rx, ry)]
+        self.world.terrain_objects.cell_index()[&(rx, ry)]
     }
 
     fn detonate(&mut self, parent: u64) {
@@ -202,10 +202,10 @@ fn retail_comet_selects_a_terrain_head_and_copies_its_bounce_beam() {
     // first CellSpread offset is (1,-1), before either existing E1 neighbor.
     // Use the map Terrain owner, including its real cell and Logic admission.
     let tree_id = scene.admit_tree(17, 15);
-    let tree = &scene.world.production.terrain_objects[&tree_id];
+    let tree = &scene.world.terrain_objects.objects()[&tree_id];
     let tree_coord = tree.world_coord();
-    let tree_health = tree.health;
-    assert!(tree.is_live() && tree.in_logic_vector);
+    let tree_health = tree.health();
+    assert!(tree.is_live() && tree.in_logic_vector());
     assert_eq!(tree_health, 200, "retail TREE01 uses TreeStrength");
     assert_eq!(
         scene
@@ -262,7 +262,8 @@ fn retail_comet_selects_a_terrain_head_and_copies_its_bounce_beam() {
     assert_eq!(beams[0].from, origin);
     assert_eq!(beams[0].to, tree_coord, "first beam copies Terrain +A4");
     assert_eq!(
-        scene.world.production.terrain_objects[&tree_id].health, tree_health,
+        scene.world.terrain_objects.objects()[&tree_id].health(),
+        tree_health,
         "CometWH Wood=false does not damage the tree"
     );
 }
@@ -281,7 +282,7 @@ fn retail_comet_terrain_child_keeps_construction_height_through_first_logic() {
         .unwrap()
         .level = 6;
     let tree_id = scene.admit_tree(17, 15);
-    let tree_coord = scene.world.production.terrain_objects[&tree_id].world_coord();
+    let tree_coord = scene.world.terrain_objects.objects()[&tree_id].world_coord();
     assert_eq!(tree_coord.z, 624, "native Terrain construction on level6");
     scene
         .world
@@ -332,9 +333,12 @@ fn retail_comet_terrain_child_keeps_construction_height_through_first_logic() {
             tree_coord.z - scene.rules.general.gravity
         )
     );
-    assert_eq!(scene.world.production.terrain_objects[&tree_id].health, 200);
     assert_eq!(
-        scene.world.production.terrain_objects[&tree_id].world_coord(),
+        scene.world.terrain_objects.objects()[&tree_id].health(),
+        200
+    );
+    assert_eq!(
+        scene.world.terrain_objects.objects()[&tree_id].world_coord(),
         tree_coord
     );
 }
@@ -345,7 +349,7 @@ fn retail_elite_comet_terrain_child_recurses_from_its_tree_on_first_logic() {
         return;
     };
     let tree_id = scene.admit_tree(17, 15);
-    let tree_coord = scene.world.production.terrain_objects[&tree_id].world_coord();
+    let tree_coord = scene.world.terrain_objects.objects()[&tree_id].world_coord();
     let parent = scene.launch();
     scene.detonate(parent);
     let child = scene
@@ -378,7 +382,10 @@ fn retail_elite_comet_terrain_child_recurses_from_its_tree_on_first_logic() {
         )),
         "the tree admits its own elite child detonation and ordinary fragment beams"
     );
-    assert_eq!(scene.world.production.terrain_objects[&tree_id].health, 200);
+    assert_eq!(
+        scene.world.terrain_objects.objects()[&tree_id].health(),
+        200
+    );
 }
 
 #[test]
@@ -415,7 +422,7 @@ fn retiring_prism_source_preserves_live_terrain_targets_and_copied_beams() {
             .count(),
         beam_count
     );
-    assert!(scene.world.production.terrain_objects[&tree_id].is_live());
+    assert!(scene.world.terrain_objects.objects()[&tree_id].is_live());
 }
 
 #[test]
@@ -424,7 +431,7 @@ fn stock_shock_repairs_the_live_prism_terrain_child_before_limbo() {
         return;
     };
     let tree_id = scene.admit_tree(17, 15);
-    let tree_coord = scene.world.production.terrain_objects[&tree_id].world_coord();
+    let tree_coord = scene.world.terrain_objects.objects()[&tree_id].world_coord();
     let shock_source = scene
         .world
         .spawn_object("SHK", "Americans", 14, 15, 0, &scene.rules)
@@ -460,7 +467,7 @@ fn stock_shock_repairs_the_live_prism_terrain_child_before_limbo() {
             FrameEffects::default(),
         );
     }
-    assert_eq!(scene.world.production.terrain_objects[&tree_id].health, 25);
+    assert_eq!(scene.world.terrain_objects.objects()[&tree_id].health(), 25);
 
     let parent = scene.launch();
     let spacer = scene.launch_from(spacer_source, TargetKind::Cell(2, 2));
@@ -519,23 +526,17 @@ fn stock_shock_repairs_the_live_prism_terrain_child_before_limbo() {
     assert!(
         !scene
             .world
-            .production
-            .terrain_object_cells
+            .terrain_objects
+            .cell_index()
             .contains_key(&(17, 15))
     );
-    assert!(!scene.world.production.terrain_objects[&tree_id].in_logic_vector);
-    assert!(!scene.world.production.terrain_objects[&tree_id].is_live());
+    assert!(!scene.world.terrain_objects.objects()[&tree_id].in_logic_vector());
+    assert!(!scene.world.terrain_objects.objects()[&tree_id].is_live());
     // Later appended-child AI can already retire the repaired observer in
     // this same pass. Its expiry trace above is the lifetime assertion;
     // the independent source and repeated-expiry tests keep a live observer.
     scene.world.flush_pending_delete();
-    assert!(
-        !scene
-            .world
-            .production
-            .terrain_objects
-            .contains_key(&tree_id)
-    );
+    assert!(!scene.world.terrain_objects.objects().contains_key(&tree_id));
     if let Some(child) = scene.world.projectiles.get(child) {
         assert_eq!(
             child.target,
@@ -602,18 +603,18 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
             .unwrap()
             .level = 2;
         let tree_id = scene.admit_tree(10, 20);
-        let point = scene.world.production.terrain_objects[&tree_id].world_coord();
+        let point = scene.world.terrain_objects.objects()[&tree_id].world_coord();
         assert_eq!(
             point,
             native_coord(&expected["initial"]["target"]["location"])
         );
         scene
             .world
-            .production
             .terrain_objects
+            .objects_mut_for_test()
             .get_mut(&tree_id)
             .unwrap()
-            .health = row["case"]["health"].as_i64().unwrap() as i32;
+            .set_health_for_test(row["case"]["health"].as_i64().unwrap() as i32);
         let weapon = scene.rules.weapon("CometFragment").unwrap();
         let payload = super::combat_tests::payload_from_weapon(
             weapon.damage,
@@ -647,7 +648,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
             bullet,
         );
         let check = |scene: &PrismScene, expected: &serde_json::Value| {
-            let tree = &scene.world.production.terrain_objects[&tree_id];
+            let tree = &scene.world.terrain_objects.objects()[&tree_id];
             let bullet = scene.world.projectiles.get(child).unwrap();
             assert_eq!(
                 bullet.source_id == scene.source,
@@ -661,9 +662,9 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
             assert_eq!(bullet.target, target);
             assert_eq!(tree.is_live(), expected["tree_alive"] == true);
             assert_eq!(!tree.is_live(), expected["tree_limbo"] == true);
-            assert_eq!(tree.in_logic_vector, expected["tree_in_logic"] == true);
+            assert_eq!(tree.in_logic_vector(), expected["tree_in_logic"] == true);
             assert_eq!(
-                scene.world.production.terrain_object_cells.get(&(10, 20)) == Some(&tree_id),
+                scene.world.terrain_objects.cell_index().get(&(10, 20)) == Some(&tree_id),
                 expected["tree_is_ground_head"] == true
             );
         };
@@ -966,10 +967,10 @@ fn shrapnel_children_and_lasers_match_original_spawn_shrapnel() {
                     actor["cell"][0].as_u64().unwrap() as u16,
                     actor["cell"][1].as_u64().unwrap() as u16,
                 );
-                let id = world.production.terrain_object_cells[&cell];
+                let id = world.terrain_objects.cell_index()[&cell];
                 ids.insert(actor["name"].as_str().unwrap(), id);
                 assert_eq!(
-                    world.production.terrain_objects[&id].world_coord(),
+                    world.terrain_objects.objects()[&id].world_coord(),
                     native_coord(&actor["location"]),
                     "{name}: constructed Terrain coordinates"
                 );

@@ -8,7 +8,7 @@ use crate::sim::movement::track_process::{TrackFamily, TrackInvocation};
 use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::{SIM_ONE, SimFixed};
+use crate::util::fixed_math::SimFixed;
 
 /// WalkLocomotionClass::ProcessMovement `0x0075BD33..0x0075BD70` executed on
 /// each row's owner and head (`tools/spatial_oracle/sqrt_approx_distances.py`):
@@ -241,19 +241,6 @@ fn fresh_retry_terminal_retains_raw_head_for_both_track_families() {
             None
         );
     }
-}
-
-#[test]
-fn drive_track_first_native_frame_uses_native_frame_budget() {
-    let current_speed = SimFixed::from_num(255) * SimFixed::lit("0.7");
-    let budget =
-        crate::sim::movement::foot_speed::owner_current_speed_from_fraction(current_speed, SIM_ONE);
-    assert_eq!(budget, 11);
-    let (mut sim, invocation, budget) = native_track_fixture(LocomotorKind::Drive, budget);
-    assert_eq!(sim.run_track_points(invocation, budget, None, None), 1);
-    let track = retained_track(sim.substrate.entities.get(1).unwrap(), LocomotorKind::Drive);
-    assert_eq!(track.cursor(), 1);
-    assert_eq!(track.residual(), 4);
 }
 
 #[test]

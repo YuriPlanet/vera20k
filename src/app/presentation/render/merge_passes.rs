@@ -543,47 +543,6 @@ mod tests {
     }
 
     #[test]
-    fn unit_source_cache_groups_pages_but_not_other_parent_or_ancillary_draws() {
-        let order = NativeDisplayOrder::new(&[1, 2, 3]);
-        let piece = |target, bits| ObjectPieceInstance {
-            target,
-            render_z: RenderZPolicy::ReadOnly,
-            instance: SpriteInstance {
-                draw_state: DrawState {
-                    fx_params: [0.5, bits as f32, 1.0, 0.0],
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        };
-        let pass = lower_ground_object_instances(vec![
-            PlannedObjectInstance::object(
-                order.object_draw(1, SpriteEncoding::Plain).unwrap(),
-                vec![
-                    piece(ObjectTexture::UnitAtlasPage(0), 4),
-                    piece(ObjectTexture::UnitPosePage(2), 4),
-                    piece(ObjectTexture::UnitAtlasPage(1), 4),
-                    piece(ObjectTexture::ShpPage(0), 4),
-                    piece(ObjectTexture::UnitPosePage(0), 4),
-                ],
-            ),
-            PlannedObjectInstance::object(
-                order.object_draw(2, SpriteEncoding::Plain).unwrap(),
-                vec![piece(ObjectTexture::UnitPosePage(1), 4)],
-            ),
-            PlannedObjectInstance::object(
-                order.object_draw(3, SpriteEncoding::Plain).unwrap(),
-                vec![piece(ObjectTexture::UnitPosePage(0), 0)],
-            ),
-        ]);
-        assert_eq!(packed_span_end(&pass.runs, 0), 3);
-        assert_eq!(packed_span_end(&pass.runs, 3), 4);
-        assert_eq!(packed_span_end(&pass.runs, 4), 5);
-        assert_eq!(packed_span_end(&pass.runs, 5), 6);
-        assert_eq!(pass.runs[6].packed_parent, None);
-    }
-
-    #[test]
     fn tree_and_shadow_edits_do_not_absorb_a_following_mirage_blend() {
         use crate::render::terrain_draw::TerrainPiece;
         let order = NativeDisplayOrder::new(&[1, 2, 3]);

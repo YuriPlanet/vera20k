@@ -1,5 +1,5 @@
-//! BC/BD window input adapter. The dialog produces intents; MatchSession and
-//! the LAN lifecycle adapter decide their admission and effects.
+//! BC/BD/C2/C9 window input adapter. The dialog produces intents;
+//! MatchSession and the setup lifecycle adapter decide admission and effects.
 
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
@@ -14,7 +14,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
     let (w, h) = shell_layout::shell_screen_size(state);
     MultiplayerSetupLayout::new(
-        state.match_state.session.host(),
+        crate::app::shell_network_setup::dialog(state),
         w as i32,
         h as i32,
         shell_layout::fills_window(state),
@@ -46,7 +46,7 @@ fn notice_active(state: &AppState) -> bool {
 fn transfer_active(state: &AppState) -> bool {
     state
         .frontend
-        .lan_setup_protocol
+        .network_setup_protocol
         .as_ref()
         .is_some_and(|protocol| protocol.transfer_progress().is_some())
 }
@@ -90,11 +90,11 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         if let Some(key) = code.and_then(App::shell_key_for_code)
             && state.frontend.shell_controller.on_key(key)
         {
-            crate::app::shell_lan_setup::acknowledge_notice(state);
+            crate::app::shell_network_setup::acknowledge_notice(state);
         }
         return;
     }
-    let Some(view) = crate::app::shell_lan_setup::view(state) else {
+    let Some(view) = crate::app::shell_network_setup::view(state) else {
         return;
     };
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
@@ -130,7 +130,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         }
     };
     if let Some(action) = action {
-        crate::app::shell_lan_setup::apply_action(state, action);
+        crate::app::shell_network_setup::apply_action(state, action);
     }
     state.platform.window.request_redraw();
 }
@@ -147,14 +147,14 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         state.platform.window.request_redraw();
         return;
     }
-    let Some(view) = crate::app::shell_lan_setup::view(state) else {
+    let Some(view) = crate::app::shell_network_setup::view(state) else {
         return;
     };
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     let help = layout
         .control_at(&view, x, y)
-        .and_then(|id| tooltip_key(view.host, id))
+        .and_then(|id| tooltip_key(view.dialog, id))
         .and_then(|key| {
             state
                 .process_assets
@@ -194,7 +194,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
             .pointer_moved(geometry, &mut ui.chat.list.top_index, x, y);
     }
     if let Some(action) = action {
-        crate::app::shell_lan_setup::apply_action(state, action);
+        crate::app::shell_network_setup::apply_action(state, action);
     }
     state.platform.window.request_redraw();
 }
@@ -218,12 +218,12 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         } else if state.frontend.shell_controller.on_pointer_up(x, y, &feed)
             == Some(crate::ui::shell::modal::control::OK)
         {
-            crate::app::shell_lan_setup::acknowledge_notice(state);
+            crate::app::shell_network_setup::acknowledge_notice(state);
         }
         state.platform.window.request_redraw();
         return;
     }
-    let Some(view) = crate::app::shell_lan_setup::view(state) else {
+    let Some(view) = crate::app::shell_network_setup::view(state) else {
         return;
     };
     let layout = layout(state);
@@ -324,6 +324,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 ACCEPT => Some(SetupAction::Accept),
                 BACK => Some(SetupAction::Back),
                 CHOOSE_MAP => Some(SetupAction::ChooseMap),
+                EMOTE => Some(SetupAction::Emote),
+                PAGE => Some(SetupAction::Page),
                 _ => None,
             };
         }
@@ -332,7 +334,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         App::play_launcher_options_cue(state, cue);
     }
     if let Some(action) = action {
-        crate::app::shell_lan_setup::apply_action(state, action);
+        crate::app::shell_network_setup::apply_action(state, action);
     }
     state.platform.window.request_redraw();
 }
@@ -346,7 +348,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     if notice_active(state) {
         return None;
     }
-    let Some(view) = crate::app::shell_lan_setup::view(state) else {
+    let Some(view) = crate::app::shell_network_setup::view(state) else {
         return None;
     };
     let layout = layout(state);

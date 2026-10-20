@@ -109,9 +109,9 @@ fn train_toggle_ignores_operands_and_ice_stores_low_byte_without_running_ore() {
     sim.session.set_binary_frame_for_test(73);
     let original_hash = sim.state_hash();
     let previous_rng = rng(&sim);
-    let ore = serde_json::to_value(&sim.production.ore_growth_state).unwrap();
-    let grows = sim.production.ore_growth_config.grows;
-    let spreads = sim.production.ore_growth_config.spreads;
+    let ore = serde_json::to_value(&sim.ore_growth_state).unwrap();
+    let grows = sim.ore_growth_config.grows();
+    let spreads = sim.ore_growth_config.spreads();
     for value in [0, -1, 256, i32::MIN] {
         action(&mut sim, 97, value);
         assert!(sim.session.train_crate());
@@ -135,12 +135,9 @@ fn train_toggle_ignores_operands_and_ice_stores_low_byte_without_running_ore() {
             byte
         );
         assert_eq!(sim.session.ice_growth_enabled(), byte != 0);
-        assert_eq!(sim.production.ore_growth_config.grows, grows);
-        assert_eq!(sim.production.ore_growth_config.spreads, spreads);
-        assert_eq!(
-            serde_json::to_value(&sim.production.ore_growth_state).unwrap(),
-            ore
-        );
+        assert_eq!(sim.ore_growth_config.grows(), grows);
+        assert_eq!(sim.ore_growth_config.spreads(), spreads);
+        assert_eq!(serde_json::to_value(&sim.ore_growth_state).unwrap(), ore);
         assert_eq!(rng(&sim), previous_rng);
         assert_eq!(sim.session.binary_frame(), 73);
     }

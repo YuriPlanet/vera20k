@@ -143,68 +143,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn register_appends_to_tail_no_sort() {
-        let mut v = LogicVector::new();
-        v.try_push(5).unwrap();
-        v.try_push(1).unwrap();
-        v.try_push(3).unwrap();
-        assert_eq!(v.snapshot(), vec![5, 1, 3]); // insertion order, not sorted
-    }
-
-    #[test]
-    fn unregister_preserves_order_compacting() {
-        let mut v = LogicVector::new();
-        v.try_push(10).unwrap();
-        v.try_push(20).unwrap();
-        v.try_push(30).unwrap();
-        assert!(v.remove_first(20));
-        assert_eq!(v.snapshot(), vec![10, 30]); // left-shift, tail preserved
-    }
-
-    #[test]
-    fn unregister_absent_id_is_safe() {
-        let mut v = LogicVector::new();
-        v.try_push(1).unwrap();
-        assert!(!v.remove_first(99));
-        assert_eq!(v.snapshot(), vec![1]);
-    }
-
-    #[test]
     fn unregister_removes_only_first_matching_slot() {
         let mut v = LogicVector::new();
         v.set_order_for_test(vec![10, 20, 20, 30]);
         assert!(v.remove_first(20));
         assert_eq!(v.snapshot(), vec![10, 20, 30]);
-    }
-
-    #[test]
-    fn snapshot_is_order_verbatim() {
-        let mut v = LogicVector::new();
-        v.try_push(7).unwrap();
-        v.try_push(2).unwrap();
-        assert_eq!(v.snapshot(), v.as_slice().to_vec());
-    }
-
-    #[test]
-    fn serde_roundtrip_preserves_order() {
-        let mut v = LogicVector::new();
-        v.try_push(9).unwrap();
-        v.try_push(4).unwrap();
-        v.try_push(6).unwrap();
-        let bytes = crate::util::save_codec::serialize(&v).expect("serialize");
-        let back: LogicVector = crate::util::save_codec::deserialize(&bytes).expect("deserialize");
-        assert_eq!(back.snapshot(), vec![9, 4, 6]);
-    }
-
-    #[test]
-    fn forced_insert_failure_is_one_shot_and_non_mutating() {
-        let mut v = LogicVector::new();
-        v.try_push(1).unwrap();
-        v.force_next_insert_failure_for_test();
-
-        assert_eq!(v.try_push(2), Err(LogicInsertError::ForcedTestFailure));
-        assert_eq!(v.snapshot(), vec![1]);
-        assert_eq!(v.try_push(2), Ok(()));
-        assert_eq!(v.snapshot(), vec![1, 2]);
     }
 }

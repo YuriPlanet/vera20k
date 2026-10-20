@@ -1156,8 +1156,8 @@ mod tests {
             .entities
             .insert(GameEntity::test_default(1, "TEST", "Americans", 5, 5));
         let tree_type = sim.interner.intern("TREE01");
-        sim.production
-            .terrain_objects
+        sim.terrain_objects
+            .objects_mut_for_test()
             .insert(2, TerrainObjectState::for_test(2, tree_type, 7, 5));
         let host = WorldScan {
             sim: &mut sim,

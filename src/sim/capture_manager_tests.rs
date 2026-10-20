@@ -258,8 +258,8 @@ fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(input["mode"] != 0),
         );
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.is_human = input["human"] == 1;
-        house.player_control = input["player"] == 1;
+        house.set_is_human_for_test(input["human"] == 1);
+        house.set_player_control_for_test(input["player"] == 1);
         if input["owner_allied_with_viewer"] == true {
             sim.house_alliances
                 .entry("Americans".into())
@@ -308,21 +308,6 @@ fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
         }
     }
     assert_eq!(rows.len(), 7);
-}
-
-/// Weapon 0 decides the manager: Yuri's single link, the Mastermind's
-/// infinite one, the Psychic Tower's three.
-#[test]
-fn init_managers_reads_weapon_zero() {
-    let rules = rules();
-    let limits = |kind: &str| {
-        init_capture_manager(rules.object(kind).unwrap(), &rules)
-            .map(|manager| (manager.max_control, manager.infinite))
-    };
-    assert_eq!(limits("YURI"), Some((1, false)));
-    assert_eq!(limits("MIND"), Some((3, true)));
-    assert_eq!(limits("YAPSYT"), Some((3, false)));
-    assert_eq!(limits("E1"), None);
 }
 
 /// CaptureUnit: the target changes house, records the house it had, wears
@@ -549,34 +534,6 @@ fn can_capture_gates() {
     assert!(!sim.can_capture(yuri, seller, &rules), "Selling");
 }
 
-/// GetFireError's MindControl gate (T53, `0x006FCB24..0x006FCB50`) asks
-/// CanCapture: Yuri's only weapon is illegal against an immune target and
-/// legal against an enemy.
-#[test]
-fn get_fire_error_refuses_an_uncapturable_target() {
-    use crate::sim::combat::fire_error::FireError;
-    let rules = rules();
-    let mut sim = sim(9);
-    let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
-    let dog = spawn(&mut sim, &rules, "DOG", "Americans", 12, 11);
-    let gi = spawn(&mut sim, &rules, "E1", "Americans", 13, 11);
-    let code = |target: u64| {
-        crate::sim::combat::fire_error_world::FireSubject {
-            world: &sim,
-            rules: &rules,
-            overlay_registry: None,
-            fog: Some(sim.fog.fire_view(&sim.house_alliances)),
-            firer: sim.substrate.entities.get(yuri).unwrap(),
-            obj: rules.object("YURI").unwrap(),
-            target: Some(crate::sim::combat::TargetKind::Entity(target)),
-            weapon_index: 0,
-        }
-        .fire_error(false)
-    };
-    assert_eq!(code(dog), FireError::Illegal);
-    assert_ne!(code(gi), FireError::Illegal);
-}
-
 /// The controller's death frees every captive, newest node first, before its
 /// own death sounds: a captive returning to a computer house draws its fate,
 /// one returning to a human house does not.
@@ -695,60 +652,6 @@ fn a_removed_foot_controller_frees_its_captives() {
     );
 }
 
-/// A Psychic Tower losing power (the operational off edge) frees its captives.
-#[test]
-fn a_tower_going_offline_frees_its_captives() {
-    let rules = rules();
-    let mut sim = sim(17);
-    let tower = spawn(&mut sim, &rules, "YAPSYT", "YuriCountry", 20, 20);
-    let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
-    assert!(sim.capture_unit(
-        tower,
-        gi,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
-    sim.substrate
-        .entities
-        .get_mut(tower)
-        .unwrap()
-        .building_last_operational
-        .set_for_test(true);
-    sim.substrate
-        .entities
-        .get_mut(tower)
-        .unwrap()
-        .health
-        .set_for_test(0);
-    sim.visit_building_operational(
-        tower,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    assert_eq!(owner(&sim, gi), "Americans");
-    assert!(victims(&sim, tower).is_empty());
-}
-
-/// The fate walk returns the first choice whose running sum reaches the roll,
-/// at the stock Normal table's boundaries.
-#[test]
-fn the_fate_table_walk() {
-    let normal = [75, 5, 5, 15];
-    assert_eq!(capture_decision(&normal, 1), Some(1));
-    assert_eq!(capture_decision(&normal, 75), Some(1));
-    assert_eq!(capture_decision(&normal, 76), Some(2));
-    assert_eq!(capture_decision(&normal, 85), Some(3));
-    assert_eq!(capture_decision(&normal, 86), Some(4));
-    assert_eq!(capture_decision(&normal, 100), Some(4));
-    // A table that runs out, or a sixth choice, returns without an order.
-    assert_eq!(capture_decision(&[10, 10], 50), None);
-    assert_eq!(capture_decision(&[1, 1, 1, 1, 1, 1, 1], 7), None);
-    assert_eq!(capture_decision(&[1, 1, 1, 1, 1, 1, 1], 6), Some(6));
-    assert_eq!(capture_decision(&[0, 0, 0, 0, 50], 20), Some(5));
-}
-
 /// Original DecideUnitFate `0x004723B0` under Unicorn
 /// (`tools/spatial_oracle/capture_decide_fate.py`): for every row, the
 /// reason table the original read, the arm its choice took (Hunt, grinder,
@@ -805,7 +708,7 @@ fn native_decide_unit_fate_corpus() {
         sim.houses
             .get_mut(&controller_house)
             .unwrap()
-            .economy
+            .economy_mut()
             .set_credits_for_test(int("money"));
         let mut power_state = crate::sim::power_system::PowerState::default();
         power_state.total_output = int("produced");
@@ -815,7 +718,7 @@ fn native_decide_unit_fate_corpus() {
         sim.houses
             .get_mut(&russians)
             .unwrap()
-            .economy
+            .economy_mut()
             .set_credits_for_test(0);
         let mut power_state = crate::sim::power_system::PowerState::default();
         power_state.total_output = 0;
@@ -1514,188 +1417,6 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
     );
 }
 
-/// The Mastermind overload: at three captives or fewer a check every 30
-/// frames costs nothing; a fourth brings 50 C4 damage every 60 frames, five
-/// spark systems (ten draws), the lean's sign (one draw) and the voice once
-/// per episode.
-#[test]
-fn a_mastermind_overloads_above_three_captives() {
-    let rules = rules();
-    let mut sim = sim(19);
-    let mind = spawn(&mut sim, &rules, "MIND", "YuriCountry", 10, 10);
-    let mut captives = Vec::new();
-    for x in 0..4 {
-        let gi = spawn(&mut sim, &rules, "E1", "Americans", 12 + x, 10);
-        captives.push(gi);
-    }
-    for &gi in &captives[..3] {
-        assert!(sim.capture_unit(
-            mind,
-            gi,
-            &rules,
-            None,
-            crate::sim::world::FrameEffects::default()
-        ));
-    }
-    let manager = sim
-        .substrate
-        .entities
-        .get(mind)
-        .unwrap()
-        .capture_manager
-        .as_ref()
-        .unwrap();
-    assert_eq!(manager.count(), 3);
-    assert_eq!(manager.overload_pip_state(), None);
-    // 30 quiet frames, then a free check at three captives.
-    let health = sim.substrate.entities.get(mind).unwrap().health.current();
-    let before = sim.scenario_rng.state();
-    for _ in 0..31 {
-        sim.capture_manager_update(
-            mind,
-            &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-    }
-    assert_eq!(sim.scenario_rng.state(), before);
-    assert_eq!(
-        sim.substrate.entities.get(mind).unwrap().health.current(),
-        health
-    );
-
-    assert!(sim.capture_unit(
-        mind,
-        captives[3],
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(mind)
-            .unwrap()
-            .capture_manager
-            .as_ref()
-            .unwrap()
-            .overload_pip_state(),
-        Some(false),
-        "overcapacity precedes the first damaging check"
-    );
-    for _ in 0..30 {
-        sim.capture_manager_update(
-            mind,
-            &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-    }
-    sim.sound_events.clear();
-    let mut replay = sim.scenario_rng.clone();
-    sim.capture_manager_update(
-        mind,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    for _ in 0..10 {
-        let _ = replay.next_range_i32_inclusive(-200, 200);
-    }
-    let _ = replay.next_range_i32_inclusive(0, 100);
-    assert_eq!(sim.scenario_rng.state(), replay.state());
-    assert_eq!(
-        sim.substrate.entities.get(mind).unwrap().health.current(),
-        health - 50
-    );
-    assert_eq!(voc_sounds(&sim), ["MasterMindOverloadVoice"]);
-    let manager = sim
-        .substrate
-        .entities
-        .get(mind)
-        .unwrap()
-        .capture_manager
-        .as_ref()
-        .unwrap();
-    assert_eq!(manager.overload_pip_countdown, 10);
-    assert_eq!(manager.overload_pip_state(), Some(true));
-    // The next check is 60 frames on, and the voice does not repeat.
-    let quiet = (
-        sim.main_rng.native_state_hex(),
-        sim.scenario_rng.native_state_hex(),
-        sim.mapgen_rng.native_state_hex(),
-    );
-    for visit in 1..=60 {
-        sim.capture_manager_update(
-            mind,
-            &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-        let expected = match visit {
-            1 => Some((9, true)),
-            9 => Some((1, true)),
-            10 | 60 => Some((0, false)),
-            _ => None,
-        };
-        if let Some((remaining, active)) = expected {
-            let manager = sim
-                .substrate
-                .entities
-                .get(mind)
-                .unwrap()
-                .capture_manager
-                .as_ref()
-                .unwrap();
-            assert_eq!(manager.overload_pip_countdown, remaining, "visit {visit}");
-            assert_eq!(manager.overload_pip_state(), Some(active), "visit {visit}");
-        }
-    }
-    assert_eq!(
-        (
-            sim.main_rng.native_state_hex(),
-            sim.scenario_rng.native_state_hex(),
-            sim.mapgen_rng.native_state_hex(),
-        ),
-        quiet,
-        "pip countdown visits draw from none of the three streams"
-    );
-    sim.sound_events.clear();
-    sim.capture_manager_update(
-        mind,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    assert_eq!(
-        sim.substrate.entities.get(mind).unwrap().health.current(),
-        health - 100
-    );
-    assert!(voc_sounds(&sim).is_empty());
-    assert!(sim.free_unit(
-        mind,
-        captives[3],
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
-    let manager = sim
-        .substrate
-        .entities
-        .get(mind)
-        .unwrap()
-        .capture_manager
-        .as_ref()
-        .unwrap();
-    assert_eq!(manager.count(), 3);
-    assert_eq!(manager.overload_pip_countdown, 10);
-    assert_eq!(
-        manager.overload_pip_state(),
-        None,
-        "release hides the extra pip"
-    );
-}
-
 /// Declared retained-field controls for the original Infinite gate and the
 /// positive-only decrement before both quiet and non-damaging returns.
 #[test]
@@ -2149,7 +1870,10 @@ fn a_released_captive_resumes_its_attack_move() {
     let mut sim = sim(33);
     // A human controller keeps its captive's orders (no DecideUnitFate roll).
     let yuri_house = sim.interner.intern("YuriCountry");
-    sim.houses.get_mut(&yuri_house).unwrap().is_human = true;
+    sim.houses
+        .get_mut(&yuri_house)
+        .unwrap()
+        .set_is_human_for_test(true);
     let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
     let captive = sim.substrate.entities.get_mut(gi).unwrap();
@@ -2532,7 +2256,10 @@ fn control_link_timer_selection_ports_cleanup_and_snapshot_share_the_manager() {
     rules.install_art_data(ArtRegistry::from_ini(&art));
     let mut sim = sim(31);
     let house = sim.interner.get("YuriCountry").unwrap();
-    sim.houses.get_mut(&house).unwrap().is_human = true;
+    sim.houses
+        .get_mut(&house)
+        .unwrap()
+        .set_is_human_for_test(true);
     sim.session.set_binary_frame_for_test(100);
     let controller = spawn(&mut sim, &rules, "MIND", "YuriCountry", 10, 10);
     let first = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);

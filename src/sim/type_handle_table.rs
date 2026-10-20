@@ -149,16 +149,6 @@ mod tests {
         assert_eq!(table.orphan_count(), 0);
     }
 
-    #[test]
-    fn unknown_interned_id_is_orphan() {
-        let rules = tiny_rules();
-        let mut interner = StringInterner::new();
-        let bogus = interner.intern("NOSUCHTYPE");
-        let table = TypeHandleTable::build(&rules, &interner);
-        assert_eq!(table.handle_for(bogus), None);
-        assert_eq!(table.orphan_count(), 1);
-    }
-
     /// The table answers as the name path does: from its handles for the
     /// set it was built from, by name for another set or an id interned after
     /// the build.

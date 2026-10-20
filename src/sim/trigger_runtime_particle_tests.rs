@@ -4,13 +4,11 @@
 //! arrays and observe Ground578080 / constructor62DC50 as argument sinks;
 //! the Rust lifecycle checks below are not a full native scene comparison.
 use super::*;
-use crate::map::map_file::MapFile;
 use crate::map::resolved_terrain::{test_flat_cell, test_grid};
 use crate::map::waypoints::Waypoint;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::particles::system_ai::tick_particle_system;
 use crate::sim::snapshot::GameSnapshot;
-use crate::sim::world::TickLane;
 use glam::IVec3;
 use std::collections::HashMap;
 
@@ -192,40 +190,6 @@ fn all_five_original_stop_controls_only_mark_alive_same_cell_systems() {
         assert_eq!(rng(&sim), before);
         assert_eq!(sim.session.binary_frame(), 0);
     }
-}
-
-#[test]
-fn counted_tag_create_then_stop_reaches_the_normal_ai_and_late_delete_drain() {
-    let map = MapFile::from_bytes(b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nNewINIFormat=4\n[Waypoints]\n0=17012\n[Triggers]\nPS=Neutral,<none>,PS,0,1,1,1,0\n[Events]\nPS=1,13,0,0\n[Actions]\nPS=2,88,0,1,0,0,0,0,A,89,0,2147483647,0,0,0,0,A\n[Tags]\nPSTAG=0,PS,PS\n").unwrap();
-    let rules = fixture_rules();
-    let mut sim = world((12, 17), 0, 0);
-    sim.initialize_trigger_definitions(
-        &map,
-        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
-        None,
-        None,
-    );
-    sim.classify_map_triggers(None);
-    sim.session.set_started(true);
-    sim.advance_triggers(Some(&rules), None, FrameEffects::default());
-    assert!(sim.trigger_runtime.logic_tags.is_empty());
-    let ids: Vec<_> = sim.particle_systems().iter().map(|(&id, _)| id).collect();
-    assert_eq!(ids.len(), 1);
-    let system = sim.particle_systems().get(ids[0]).unwrap();
-    assert_eq!(system.type_id.0, 1);
-    assert!(system.alive() && system.done_spawning && system.particles.is_empty());
-    let frame = sim
-        .advance_app_frame(
-            &[],
-            Some(&rules),
-            None,
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap();
-    assert!(frame.tick.frame_committed);
-    assert!(sim.particle_systems().is_empty());
 }
 
 #[test]

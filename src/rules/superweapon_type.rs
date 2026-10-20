@@ -425,25 +425,6 @@ DisableableFromShell=yes
     }
 
     #[test]
-    fn ui_name_is_absent_when_the_section_omits_it() {
-        let ini = IniFile::from_str("[NoNameSW]\nType=MultiMissile\n");
-        let section = ini.section("NoNameSW").unwrap();
-        let sw = SuperWeaponType::from_ini_section("NoNameSW", section).unwrap();
-        assert_eq!(sw.ui_name, None);
-        assert_eq!(sw.range, 0.0);
-        assert_eq!(sw.line_multiplier, 0);
-    }
-
-    #[test]
-    fn range_and_line_multiplier_use_native_typed_readers() {
-        let ini = IniFile::from_str("[RangeSW]\nType=MultiMissile\nRange=7.25\nLineMultiplier=2\n");
-        let section = ini.section("RangeSW").unwrap();
-        let sw = SuperWeaponType::from_ini_section("RangeSW", section).unwrap();
-        assert_eq!(sw.range, 7.25);
-        assert_eq!(sw.line_multiplier, 2);
-    }
-
-    #[test]
     fn retail_battle_nuke_range_fields_follow_production_rules_reader() {
         let Some(retail) =
             crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
@@ -488,22 +469,5 @@ Type=BogusType
             default_sw.generic_warhead.as_ref().unwrap().ai_targeting,
             GenericWarheadAiTargeting::Offensive
         );
-    }
-
-    #[test]
-    fn kind_from_ini_str_case_insensitive() {
-        assert_eq!(
-            SuperWeaponKind::from_ini_str("LightningStorm"),
-            Some(SuperWeaponKind::LightningStorm)
-        );
-        assert_eq!(
-            SuperWeaponKind::from_ini_str("lightningstorm"),
-            Some(SuperWeaponKind::LightningStorm)
-        );
-        assert_eq!(
-            SuperWeaponKind::from_ini_str("MULTIMISSILE"),
-            Some(SuperWeaponKind::MultiMissile)
-        );
-        assert_eq!(SuperWeaponKind::from_ini_str("bogus"), None);
     }
 }

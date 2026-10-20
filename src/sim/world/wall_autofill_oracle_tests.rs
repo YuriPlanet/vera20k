@@ -418,20 +418,20 @@ impl Scene {
             );
         }
         let house = &self.sim.houses[&self.owner];
-        assert_eq!(house.economy.credits(), int(&state["house"]["credits"]));
+        assert_eq!(house.economy().credits(), int(&state["house"]["credits"]));
         assert_eq!(
-            house.tracking.buildings(),
+            house.tracking().buildings(),
             int(&state["house"]["building_count"])
         );
         assert_eq!(
             house
-                .tracking
+                .tracking()
                 .owned_count(EntityCategory::Structure, self.wall_type),
             0
         );
         assert_eq!(
             house
-                .tracking
+                .tracking()
                 .active_count(EntityCategory::Structure, self.wall_type),
             0
         );

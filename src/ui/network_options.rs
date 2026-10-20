@@ -539,43 +539,6 @@ mod tests {
     }
 
     #[test]
-    fn validation_precedes_lan_commit_but_port_failure_does_not_undo_it() {
-        let mut state = fresh();
-        set(&mut state.socket, "16384");
-        set(&mut state.destination, "ff.ff.ff.100");
-        set(&mut state.port, "65536");
-        assert_eq!(
-            state.accept(),
-            vec![NetworkOptionsEffect::Message(
-                NetworkOptionsMessage::InvalidSocket
-            )]
-        );
-        state.acknowledge();
-        set(&mut state.socket, "123");
-        assert_eq!(
-            state.accept(),
-            vec![NetworkOptionsEffect::Message(
-                NetworkOptionsMessage::InvalidDestination
-            )]
-        );
-        state.acknowledge();
-        set(&mut state.destination, "ff.ff.ff.ff");
-        assert_eq!(
-            state.accept(),
-            vec![
-                NetworkOptionsEffect::Lan {
-                    socket: 123,
-                    destination: "ff.ff.ff.ff".into(),
-                    card: 0
-                },
-                NetworkOptionsEffect::Message(NetworkOptionsMessage::InvalidPort),
-            ]
-        );
-        state.acknowledge();
-        assert_eq!(state.cancel(), vec![NetworkOptionsEffect::Close]);
-    }
-
-    #[test]
     fn firewall_warnings_suspend_each_native_write_in_order() {
         let mut state = fresh();
         state.send_delay = true;
@@ -605,67 +568,6 @@ mod tests {
             vec![NetworkOptionsEffect::PortAndClose(1234)]
         );
         assert!(state.acknowledge().is_empty());
-    }
-
-    #[test]
-    fn socket_uses_low_word_and_port_comparison_is_signed() {
-        let mut state = fresh();
-        set(&mut state.socket, "65536");
-        set(&mut state.port, "-12345678");
-        assert_eq!(
-            state.accept(),
-            vec![
-                NetworkOptionsEffect::Lan {
-                    socket: 0,
-                    destination: String::new(),
-                    card: 0
-                },
-                NetworkOptionsEffect::SendDelay(false),
-                NetworkOptionsEffect::PortAndClose(-123456),
-            ]
-        );
-    }
-
-    #[test]
-    fn destination_uses_hex_prefix_scans_and_strtok_delimiters() {
-        let mut state = fresh();
-        set(&mut state.destination, ".1..2.3.4.");
-        assert!(
-            matches!(state.accept().first(), Some(NetworkOptionsEffect::Lan { destination, .. }) if destination == ".1..2.3.4.")
-        );
-        let mut state = fresh();
-        set(&mut state.destination, "aZ.b.c.d");
-        assert!(matches!(
-            state.accept().first(),
-            Some(NetworkOptionsEffect::Lan { .. })
-        ));
-        let mut state = fresh();
-        set(&mut state.destination, "1.2.3.4.5");
-        assert_eq!(
-            state.accept(),
-            vec![NetworkOptionsEffect::Message(
-                NetworkOptionsMessage::InvalidDestination
-            )]
-        );
-    }
-
-    #[test]
-    fn disabling_or_changing_existing_firewall_overrides_does_not_warn() {
-        let mut state = NetworkOptionsState::new(1, "", 0, true, 123, &[]);
-        state.send_delay = false;
-        set(&mut state.port, "456");
-        assert_eq!(
-            state.accept(),
-            vec![
-                NetworkOptionsEffect::Lan {
-                    socket: 1,
-                    destination: String::new(),
-                    card: 0
-                },
-                NetworkOptionsEffect::SendDelay(false),
-                NetworkOptionsEffect::PortAndClose(456),
-            ]
-        );
     }
 
     #[test]

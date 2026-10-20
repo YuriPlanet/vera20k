@@ -141,7 +141,8 @@ impl Simulation {
     fn debug_local_owner(&self) -> Option<InternedId> {
         self.session.current_house().filter(|owner| {
             self.houses.get(owner).is_some_and(|house| {
-                !house.is_defeated && house.is_controlled_by_human(self.session.game_mode_nonzero())
+                !house.is_defeated()
+                    && house.is_controlled_by_human(self.session.game_mode_nonzero())
             })
         })
     }
@@ -235,13 +236,12 @@ impl Simulation {
         let pending = std::mem::take(&mut self.debug_tools.pending);
         if flags.infinite_money
             && let Some(house) = self.houses.get_mut(&owner)
-            && house.economy.credits() < flags.money_target
+            && house.economy().credits() < flags.money_target
         {
             // Add_Credits is the existing balance owner. Modulo subtraction
             // reaches the bounded target even from a native negative balance.
-            house
-                .economy
-                .add_credits(flags.money_target.wrapping_sub(house.economy.credits()));
+            let shortfall = flags.money_target.wrapping_sub(house.economy().credits());
+            house.economy_mut().add_credits(shortfall);
         }
         if pending & 1 != 0
             && let Some(rules) = rules

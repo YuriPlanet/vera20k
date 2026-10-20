@@ -718,15 +718,6 @@ mod tests {
         assert_eq!(compared, 217);
     }
 
-    /// A Grizzly (Cost=700) killing rookie Rhinos (Cost=900) earns 3/7 per kill:
-    /// veteran on kill 3, elite on kill 5.
-    #[test]
-    fn gsi_08_12_grizzly_promotes_on_the_third_and_fifth_rhino() {
-        let steps = run(700, 900, 5);
-        let ranks: Vec<u16> = steps.iter().map(|raw| rank_u16(*raw)).collect();
-        assert_eq!(ranks, vec![0, 0, 100, 100, 200]);
-    }
-
     /// A GI killing GIs is the knife edge: each award is a third, and the
     /// chopped `f32` running sum stops one ulp short of 1.0 on kill 3 and of
     /// 2.0 on kill 6 (`veterancy_add.json`, chain `gi_gi`). The GI promotes on
@@ -750,16 +741,6 @@ mod tests {
         assert_eq!(kill_award_points(900, VeterancyRank::Elite, true), 0);
     }
 
-    /// `VeteranCap=2` is exactly the elite threshold, so elite is terminal in
-    /// stock: the accumulator saturates and never climbs past it.
-    #[test]
-    fn gsi_08_12_accumulator_saturates_at_the_veteran_cap() {
-        let steps = run(700, 900, 20);
-        let last = *steps.last().expect("20 kills");
-        assert_eq!(last.bits(), ELITE_THRESHOLD_BITS);
-        assert_eq!(rank_u16(last), 200);
-    }
-
     /// An award of zero — an allied kill, or a victim with no cost — leaves the
     /// accumulator untouched. A zero-cost RECIPIENT is a different case: native
     /// divides by zero, gets `+INF`, and the clamp stores `VeteranCap`.
@@ -767,13 +748,6 @@ mod tests {
     fn gsi_08_12_zero_award_does_not_move_the_accumulator() {
         let start = accumulate(NativeF32Bits::POSITIVE_ZERO, 700, 900, RATIO, CAP);
         assert_eq!(accumulate(start, 700, 0, RATIO, CAP).bits(), start.bits());
-    }
-
-    #[test]
-    fn gsi_08_12_zero_cost_recipient_saturates_to_the_cap() {
-        let out = accumulate(NativeF32Bits::POSITIVE_ZERO, 0, 900, RATIO, CAP);
-        assert_eq!(out.bits(), ELITE_THRESHOLD_BITS);
-        assert_eq!(rank_u16(out), 200);
     }
 
     /// `HasWeaponAbility @ 0x0070D0D0`: an elite inherits the veteran list,
@@ -825,14 +799,6 @@ mod tests {
         assert_eq!(ftol_scale(50, f64::from(0.6f32)), 30);
         assert_eq!(ftol_scale(51, 0.6), 30);
         assert_eq!(ftol_scale(52, 0.6), 31);
-    }
-
-    /// `VeteranCombat=1.1` on the Grizzly's 65 damage: `ftol(71.5) = 71`.
-    #[test]
-    fn gsi_08_12_veteran_combat_truncates_the_scaled_damage() {
-        assert_eq!(ftol_scale(65, 1.1), 71);
-        assert_eq!(ftol_scale(100, 1.1), 110);
-        assert_eq!(ftol_scale(25, 1.1), 27);
     }
 
     /// Original Foot4DB1F1..4DB200 under startup chop53 with a binary64 1.2

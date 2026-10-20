@@ -29,7 +29,7 @@ impl Simulation {
         let house = self.houses.get(&owner)?;
         let mut preferred = NO_COORD;
         let mut fallback = NO_COORD;
-        for &id in house.base_projection.buildings().iter().rev() {
+        for &id in house.base_projection().buildings().iter().rev() {
             let Some(entity) = self.substrate.entities.get(id) else {
                 continue;
             };
@@ -50,7 +50,7 @@ impl Simulation {
                 fallback = [point.x, point.y, point.z];
             }
         }
-        if preferred == NO_COORD && fallback == NO_COORD && house.tracking.vehicles() != 0 {
+        if preferred == NO_COORD && fallback == NO_COORD && house.tracking().vehicles() != 0 {
             // UnitClass::Array uses stable removal (7358B3..7358DE). The
             // store's monotone stable handles retain that order independently
             // of Logic's active-object order, including constructor Limbo.

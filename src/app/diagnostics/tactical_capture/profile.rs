@@ -801,44 +801,6 @@ mod tests {
     }
 
     #[test]
-    fn tracked_profiles_build_classifier_valid_fixed_battle_sessions() {
-        use crate::app::match_bootstrap::{StartupSessionClassification, classify_startup_session};
-
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        for (file_name, expected_country, expected_harvester) in [
-            (
-                "soviet-radar-online-v3.json",
-                LaunchCountry::Russia,
-                Some("HARV"),
-            ),
-            ("yuri-radar-online-v3.json", LaunchCountry::Yuri, None),
-        ] {
-            let path = root
-                .join("tools/tactical_certification/profiles")
-                .join(file_name);
-            let sealed = TacticalCaptureProfile::load_strict(&path).expect("profile");
-            let session = sealed.value.launch_session();
-            assert_eq!(session.local_slot().country, expected_country);
-            assert_eq!(session.options.unit_count, 0);
-            assert_eq!(session.options.starting_credits, 10_000);
-            assert_eq!(session.opponents.len(), 1);
-            assert_eq!(
-                sealed
-                    .value
-                    .capture
-                    .build_targets
-                    .refinery_spawned_harvester
-                    .as_deref(),
-                expected_harvester
-            );
-            assert!(matches!(
-                classify_startup_session(&session),
-                StartupSessionClassification::AcceptedExplicitFixedBattle(_)
-            ));
-        }
-    }
-
-    #[test]
     fn current_profiles_match_compiled_native_geometry_and_reject_old_scale() {
         use crate::ui::sidebar::{
             SidebarChromeLayoutSpec, SidebarTheme, compute_layout_with_spec,

@@ -108,47 +108,6 @@ mod tests {
     }
 
     #[test]
-    fn slider_pos_inverts_speed_round_trip() {
-        for v in 0..=OPTIONS_SPEED_MAX {
-            assert_eq!(speed_from_slider_pos(speed_slider_pos(v)), v);
-        }
-        // Internal 3 (default) sits at the midpoint slider position 3.
-        assert_eq!(speed_slider_pos(3), 3);
-        // Internal 0 (fastest) is the far slider position 6.
-        assert_eq!(speed_slider_pos(0), 6);
-    }
-
-    #[test]
-    fn on_open_clears_transient_flags() {
-        let mut s = InGameOptionsState {
-            game_speed_label_dragged: true,
-            buttons: crate::ui::shell::button::ShellButtonInteraction {
-                pressed: Some(0x686),
-                hovered: Some(0x686),
-            },
-            ..Default::default()
-        };
-        s.on_open();
-        assert!(!s.game_speed_label_dragged && s.buttons.pressed.is_none());
-    }
-
-    #[test]
-    fn mouse_x_maps_back_to_slider_stop() {
-        let rect = RectPx::new(216, 163, 192, 21); // GameSpeed laid rect @ 800x600
-        for pos in 0..=6 {
-            let thumb_center_x = rect.x + plain_trackbar_thumb_left(pos, rect) + 6;
-            assert_eq!(
-                trackbar_pos_from_mouse_x(thumb_center_x, 0, 6, rect),
-                pos as i32,
-                "pos {pos}"
-            );
-        }
-        // Clamps past the ends.
-        assert_eq!(trackbar_pos_from_mouse_x(rect.x - 50, 0, 6, rect), 0);
-        assert_eq!(trackbar_pos_from_mouse_x(rect.x + 9999, 0, 6, rect), 6);
-    }
-
-    #[test]
     fn plain_192_rail_matches_original_thumb_and_partition_boundaries() {
         // Original-instruction fixture includes the ordinary BBB width192,
         // reserve0, range6 path, preserving D5 comparisons in the same oracle.

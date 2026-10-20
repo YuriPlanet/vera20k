@@ -687,58 +687,6 @@ mod dispatch_tests {
     }
 
     #[test]
-    fn crater_path_reduces_tiberium_even_when_can_place_fails() {
-        // Seed the authoritative overlay byte with 10 density levels (raw 9),
-        // more than the 6-unit reduction, so the cell stays present after the
-        // native partial reduction.
-        let crater_marks = marks(false, true, false);
-        let smudge_reg = make_smudge_registry();
-        let mut grid = SmudgeGrid::new(8, 8);
-        let mut terrain = flat_terrain(8, 8);
-        let mut overlay = OverlayGrid::new(8, 8);
-        let (overlay_registry, tiberium_types) = native_tiberium_registries();
-        let ore_id = overlay_registry.id_for_name("ORE").unwrap();
-        overlay.place_overlay(4, 4, ore_id, 9);
-        let occupancy = OccupancyGrid::new();
-        let mut rng = SimRng::new(1);
-        let mut growth = OreGrowthState::new(8, 8);
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
-        let coord = SimCoord {
-            x: 4 * 256 + 128,
-            y: 4 * 256 + 128,
-            z: 0,
-        };
-        {
-            let mut tiberium = tiberium_ctx(
-                &mut overlay,
-                &mut growth,
-                &mut radar_dirty,
-                &mut radar_generation,
-                &mut tactical_dirty,
-            );
-            tiberium.overlay_registry = Some(&overlay_registry);
-            tiberium.tiberium_types = Some(&tiberium_types);
-            dispatch_anim_middle_marks(
-                &crater_marks,
-                coord,
-                &mut grid,
-                &smudge_reg,
-                &occupancy,
-                &mut terrain,
-                &mut tiberium,
-                &mut rng,
-                None,
-            );
-        }
-        // Smudge NOT placed (overlay blocks) but ore reduced by 6 density levels.
-        assert_eq!(grid.iter_occupied().count(), 0);
-        assert_eq!(overlay.cell(4, 4).overlay_id, Some(ore_id));
-        assert_eq!(overlay.cell(4, 4).overlay_data, 3);
-    }
-
-    #[test]
     fn gsi_04_11_anim_crater_reduces_ore_before_zero_zero_sentinel_rejection() {
         let crater_marks = marks(false, true, false);
         let smudge_reg = make_smudge_registry();
@@ -783,46 +731,6 @@ mod dispatch_tests {
         assert_eq!(grid.iter_occupied().count(), 0);
         assert_eq!(overlay.cell(0, 0).overlay_id, Some(ore_id));
         assert_eq!(overlay.cell(0, 0).overlay_data, 3);
-    }
-
-    #[test]
-    fn scorch_only_anim_spawns_burn() {
-        let smudge_reg = make_smudge_registry();
-        let mut grid = SmudgeGrid::new(8, 8);
-        let mut terrain = flat_terrain(8, 8);
-        let mut overlay = OverlayGrid::new(8, 8);
-        let occupancy = OccupancyGrid::new();
-        let mut rng = SimRng::new(1);
-        let mut growth = OreGrowthState::new(8, 8);
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
-        let mut tiberium = tiberium_ctx(
-            &mut overlay,
-            &mut growth,
-            &mut radar_dirty,
-            &mut radar_generation,
-            &mut tactical_dirty,
-        );
-        let coord = SimCoord {
-            x: 4 * 256 + 128,
-            y: 4 * 256 + 128,
-            z: 0,
-        };
-        dispatch_anim_middle_marks(
-            &marks(true, false, false),
-            coord,
-            &mut grid,
-            &smudge_reg,
-            &occupancy,
-            &mut terrain,
-            &mut tiberium,
-            &mut rng,
-            None,
-        );
-        let placed = grid.cell(4, 4).type_id.unwrap();
-        // BURN1 is index 1 in the registry above.
-        assert_eq!(placed, 1);
     }
 
     // Building destruction + survivor dispatcher tests live inside

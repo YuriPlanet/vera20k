@@ -100,6 +100,10 @@ pub struct SavedSeedDescriptionEdit {
     pub caret: usize,
     pub first_visible_unit: usize,
     pub focused: bool,
+    /// `ES_PASSWORD`: the paint passes `(style >> 5) & 1` to
+    /// `NewEdit__DrawTextAndCaret` `0x00623880`, which draws every unit as
+    /// `*` (`0x00614FDC..0x00615009`).
+    pub password: bool,
 }
 
 impl SavedSeedDescriptionEdit {
@@ -231,11 +235,28 @@ impl SavedSeedDescriptionEdit {
         String::from_utf16_lossy(&self.units)
     }
 
+    /// The units `start..end` as the NewEdit paints them (masked for
+    /// `ES_PASSWORD`).
+    pub fn painted_range(&self, start: usize, end: usize) -> String {
+        let end = end.min(self.units.len());
+        let start = start.min(end);
+        if self.password {
+            "*".repeat(end - start)
+        } else {
+            String::from_utf16_lossy(&self.units[start..end])
+        }
+    }
+
+    /// The painted text from the first visible unit on.
+    pub fn painted_text(&self) -> String {
+        self.painted_range(self.first_visible_unit, self.units.len())
+    }
+
     /// Keep the insertion point visible using the active font's measured width.
     pub fn scroll_to_caret(&mut self, available: u32, measure: impl Fn(&str) -> u32) {
         self.first_visible_unit = self.first_visible_unit.min(self.caret);
         while self.first_visible_unit < self.caret {
-            let prefix = String::from_utf16_lossy(&self.units[self.first_visible_unit..self.caret]);
+            let prefix = self.painted_range(self.first_visible_unit, self.caret);
             if measure(&prefix) <= available {
                 break;
             }

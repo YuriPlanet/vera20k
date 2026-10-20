@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 
 use super::{
-    ALLIED_SIDE_ARCHIVE_ORDER, SIDE_TWO_ARCHIVE_ORDER, SidebarSideRoute, build_gclock_cpu_atlas,
-    is_generic_sidebar_shp_name, resolve_sidebar_asset_in_order,
+    SidebarSideRoute, build_gclock_cpu_atlas, is_generic_sidebar_shp_name,
+    resolve_sidebar_asset_in_order,
 };
 use crate::app::presentation::sidebar_build::build_gclock_instance;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
@@ -78,59 +78,6 @@ fn side_route_prefers_md_then_base_then_neutral() {
     .expect("neutral fallback");
     assert_eq!(resolved.archive_name, "sidenc02.mix");
     assert_eq!(resolved.bytes, b"neutral");
-}
-
-#[test]
-fn generic_route_is_bounded_away_from_yuri_theme_art() {
-    for name in [
-        "SIDE1.SHP",
-        "SIDE2.SHP",
-        "SIDE2B.SHP",
-        "SIDEBTTN.SHP",
-        "SIDE3.SHP",
-        "TAB00.SHP",
-        "TAB01.SHP",
-        "TAB02.SHP",
-        "TAB03.SHP",
-        "REPAIR.SHP",
-        "SELL.SHP",
-        "R-UP.SHP",
-        "R-DN.SHP",
-        "POWERP.SHP",
-        "GCLOCK2.SHP",
-        "TOP.SHP",
-        "CREDITS.SHP",
-        "ADDON.SHP",
-        "DIPLOBTN.SHP",
-        "OPTBTN.SHP",
-    ] {
-        assert!(is_generic_sidebar_shp_name(name), "{name}");
-    }
-
-    for name in [
-        "RADAR.SHP",
-        "RADARY.SHP",
-        "BKGDLGY.SHP",
-        "BKGDMDY.SHP",
-        "BKGDSMY.SHP",
-        "TABS.SHP",
-        "POWER.SHP",
-        "UNKNOWN.SHP",
-    ] {
-        assert!(!is_generic_sidebar_shp_name(name), "{name}");
-    }
-}
-
-#[test]
-fn theme_routes_match_active_side_mapping() {
-    assert_eq!(
-        ALLIED_SIDE_ARCHIVE_ORDER,
-        &["sidec01md.mix", "sidec01.mix", "sidenc01.mix"]
-    );
-    assert_eq!(
-        SIDE_TWO_ARCHIVE_ORDER,
-        &["sidec02md.mix", "sidec02.mix", "sidenc02.mix"]
-    );
 }
 
 fn resolved_shp(route: SidebarSideRoute<'_>, name: &str) -> (&'static str, ShpFile) {

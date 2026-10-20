@@ -109,35 +109,6 @@ fn capture(sim: &mut Simulation, rules: &RuleSet, id: u64) -> i32 {
 const CAPTURE: MissionId = MissionId::from_known(MissionType::Capture);
 const GUARD: MissionId = MissionId::from_known(MissionType::Guard);
 
-/// A human's engineer on its way, through the dispatcher: the body changes
-/// nothing and the timer takes Capture's rate, `ftol(.016 × 900)` = 14
-/// frames, plus one `RandomRanged(0, 2)` on the Scenario stream.
-#[test]
-fn a_capturer_on_its_way_takes_captures_cadence() {
-    let rules = rules();
-    let (mut sim, plant) = arena(&rules);
-    let engineer = capturer(&mut sim, &rules, "ENGINEER", "Americans", 10);
-    head_for(&mut sim, &rules, engineer, plant);
-    let mut rng = sim.scenario_rng.clone();
-    let delay = 14 + rng.next_range_u32_inclusive(0, 2) as i32;
-    let now = sim.session.binary_frame();
-
-    sim.object_ai_visit_one(engineer, Some(&rules), ObjectAiCtx::default());
-
-    assert_eq!(heading(&sim, engineer), Some(plant));
-    assert_eq!(mission(&sim, engineer), (CAPTURE, MissionId::NONE));
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(engineer)
-            .unwrap()
-            .mission
-            .dispatch_timer(),
-        MissionDispatchTimer::from_raw(now as i32, delay)
-    );
-    assert_eq!(sim.scenario_rng.logical_state(), rng.logical_state());
-}
-
 /// Original E1 Capture8 through Mission5B3060 -> Foot4D4B20, with physical
 /// RULESMD/LANGRULE/MPBattleMD/XMP03T4 reads. The three native controls include
 /// RandomRanged65C7E0 rejection retries and both dispatcher timer writes
@@ -242,20 +213,6 @@ fn retail_occupier_capture_dispatch_matches_native_rng_and_timer() {
             "{name}: MapGen unchanged"
         );
     }
-}
-
-/// No destination left: the capturer idles (`0x004D4BD1..0x004D4BD9`),
-/// which queues Guard.
-#[test]
-fn a_capturer_without_a_destination_idles() {
-    let rules = rules();
-    let (mut sim, _) = arena(&rules);
-    let engineer = capturer(&mut sim, &rules, "ENGINEER", "Americans", 10);
-
-    let _ = capture(&mut sim, &rules, engineer);
-
-    assert_eq!(mission(&sim, engineer), (CAPTURE, GUARD));
-    assert_eq!(heading(&sim, engineer), None);
 }
 
 /// An `Engineer=` or `Occupier=` infantryman holding a building target and

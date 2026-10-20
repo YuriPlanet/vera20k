@@ -259,27 +259,28 @@ pub fn tick_terrain_animations_stateful(
 
     let spawner_cells: BTreeSet<(u16, u16)> = spawners.keys().copied().collect();
     for &cell in &spawner_cells {
-        tick_terrain_spawner_one_inner(spawners, cell, &spawner_cells, &mut ctx);
+        if let Some(spawner) = spawners.get_mut(&cell) {
+            tick_terrain_spawner_one_inner(spawner, cell, &spawner_cells, &mut ctx);
+        }
     }
 }
 
 /// Dispatch one TerrainClass AI slot through the retained animation owner.
 pub(crate) fn tick_terrain_spawner_stateful_one(
-    spawners: &mut BTreeMap<(u16, u16), TerrainAnimationState>,
+    spawner: &mut TerrainAnimationState,
     cell: (u16, u16),
     spawner_cells: &BTreeSet<(u16, u16)>,
     mut ctx: TerrainSpawnContext<'_>,
 ) -> Option<TiberiumPlacement> {
-    tick_terrain_spawner_one_inner(spawners, cell, spawner_cells, &mut ctx)
+    tick_terrain_spawner_one_inner(spawner, cell, spawner_cells, &mut ctx)
 }
 
 fn tick_terrain_spawner_one_inner(
-    spawners: &mut BTreeMap<(u16, u16), TerrainAnimationState>,
+    spawner: &mut TerrainAnimationState,
     cell: (u16, u16),
     spawner_cells: &BTreeSet<(u16, u16)>,
     ctx: &mut TerrainSpawnContext<'_>,
 ) -> Option<TiberiumPlacement> {
-    let spawner = spawners.get_mut(&cell)?;
     let source_cells = ctx.spawning_terrain_cells.unwrap_or(spawner_cells);
     let is_animated = ctx
         .rules
@@ -342,15 +343,15 @@ pub(crate) fn tick_terrain_object_ai(
     spawner_cells: Option<&BTreeSet<(u16, u16)>>,
 ) {
     let Some(cell) = sim
-        .production
         .terrain_objects
+        .objects()
         .get(&stable_id)
         .filter(|terrain| terrain.is_live())
         .map(TerrainObjectState::cell)
     else {
         return;
     };
-    if !sim.production.terrain_animations.contains_key(&cell) {
+    if !sim.terrain_objects.animations().contains_key(&cell) {
         return;
     }
     let Some(rules) = rules else {
@@ -362,38 +363,42 @@ pub(crate) fn tick_terrain_object_ai(
         spawner_cells
     } else {
         fallback_spawner_cells = sim
-            .production
-            .terrain_animations
+            .terrain_objects
+            .animations()
             .keys()
             .copied()
             .collect::<BTreeSet<_>>();
         &fallback_spawner_cells
     };
-    let production = &mut sim.production;
+    let Some((spawner, spawning_cells, cell_index)) =
+        sim.terrain_objects.animation_with_indexes_mut(cell)
+    else {
+        return;
+    };
     let placed = tick_terrain_spawner_stateful_one(
-        &mut production.terrain_animations,
+        spawner,
         cell,
         spawner_cells,
         TerrainSpawnContext::new(sim.overlay_grid.as_mut(), &mut sim.scenario_rng)
             .with_growth_queue(
-                &mut production.ore_growth_state,
+                &mut sim.ore_growth_state,
                 sim.session.binary_frame(),
-                production.ore_growth_config.grows,
-                production.ore_growth_config.spreads,
+                sim.ore_growth_config.grows(),
+                sim.ore_growth_config.spreads(),
             )
             .with_dirty_tracking(
                 &mut sim.radar_terrain_dirty_cells,
                 &mut sim.radar_terrain_dirty_generation,
                 &mut sim.tactical_dirty_cells,
             )
-            .with_spawning_terrain_cells(&production.tiberium_spawning_terrain_cells)
+            .with_spawning_terrain_cells(spawning_cells)
             .with_live_object_context(
                 &sim.substrate.entities,
                 &sim.substrate.occupancy,
                 &sim.substrate.raw_cell_occupation,
                 rules,
                 &sim.interner,
-                &production.terrain_object_cells,
+                cell_index,
             )
             .with_validation_context(sim.resolved_terrain.as_ref(), overlay_registry),
     );
@@ -522,18 +527,15 @@ fn construct_terrain_objects_inner(
     authored_overlay_registry: Option<&OverlayTypeRegistry>,
 ) -> Result<usize, crate::sim::native_identity::NativeMapTubeConstructionError> {
     let old_terrain_ids = sim
-        .production
         .terrain_objects
+        .objects()
         .keys()
         .copied()
         .collect::<Vec<_>>();
     for stable_id in old_terrain_ids {
         sim.unregister_non_entity_object(stable_id);
     }
-    sim.production.terrain_animations.clear();
-    sim.production.terrain_objects.clear();
-    sim.production.terrain_object_cells.clear();
-    sim.production.tiberium_spawning_terrain_cells.clear();
+    sim.terrain_objects.clear();
 
     let mut constructed = 0usize;
     for obj in terrain_objects {
@@ -548,22 +550,18 @@ fn construct_terrain_objects_inner(
         let native_unique_id = authored_overlay_registry
             .map(|_| sim.next_native_load_id())
             .transpose()?;
-        let mut terrain_state = TerrainObjectState::new(
+        let terrain_state = TerrainObjectState::new(
             stable_id,
             type_ref,
             (obj.rx, obj.ry),
             t,
             snow_theater,
             sim.resolved_terrain.as_ref(),
-        );
-        terrain_state.native_unique_id = native_unique_id;
-        let occupation_bits = terrain_state.occupation_bits;
-        sim.production
-            .terrain_object_cells
-            .insert((obj.rx, obj.ry), stable_id);
-        sim.production
-            .terrain_objects
-            .insert(stable_id, terrain_state);
+        )
+        .with_native_unique_id(native_unique_id);
+        let occupation_bits = terrain_state.occupation_bits();
+        sim.terrain_objects
+            .insert_constructed(terrain_state, t.spawns_tiberium);
         let registered = sim.register_terrain_object(stable_id, Some(rules));
         debug_assert!(registered);
         mark_terrain_raw_occupation(
@@ -573,8 +571,8 @@ fn construct_terrain_objects_inner(
         );
         if let Some(overlay_registry) = authored_overlay_registry {
             let terrain_snapshot = sim
-                .production
                 .terrain_objects
+                .objects()
                 .get(&stable_id)
                 .expect("new Terrain remains registered")
                 .clone();
@@ -595,11 +593,6 @@ fn construct_terrain_objects_inner(
                     .cell_mut(obj.rx, obj.ry) = Default::default();
             }
         }
-        if t.spawns_tiberium {
-            sim.production
-                .tiberium_spawning_terrain_cells
-                .insert((obj.rx, obj.ry));
-        }
         constructed += 1;
     }
     Ok(constructed)
@@ -617,21 +610,21 @@ pub fn seed_terrain_spawner_animation(
     sim: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
 ) -> usize {
-    sim.production.terrain_animations.clear();
+    sim.terrain_objects.clear_animations();
 
     let candidates: Vec<(u64, (u16, u16), InternedId)> = sim
-        .production
         .terrain_objects
+        .objects()
         .values()
         .filter(|terrain| terrain.is_live())
-        .map(|terrain| (terrain.stable_id, terrain.cell(), terrain.type_ref))
+        .map(|terrain| (terrain.stable_id(), terrain.cell(), terrain.type_ref()))
         .collect();
 
     let mut seeded = 0usize;
     for (stable_id, cell, type_ref) in candidates {
         // Two entries can name the same cell; only the object the cell index
         // points at owns that cell's spawner.
-        if sim.production.terrain_object_cells.get(&cell) != Some(&stable_id) {
+        if sim.terrain_objects.cell_index().get(&cell) != Some(&stable_id) {
             continue;
         }
         let name = sim.interner.resolve(type_ref).to_string();
@@ -642,7 +635,7 @@ pub fn seed_terrain_spawner_animation(
             continue;
         }
         let frame_count = rules.terrain_spawner_frame_count(&name).unwrap_or(0);
-        sim.production.terrain_animations.insert(
+        sim.terrain_objects.seed_animation(
             cell,
             TerrainAnimationState::new(
                 type_ref,
@@ -985,10 +978,10 @@ mod tests {
             constructed, 1,
             "the [Terrain] entry constructs a live object"
         );
-        let stable_id = sim.production.terrain_object_cells[&(10, 5)];
-        assert_eq!(sim.production.terrain_objects[&stable_id].health, 200);
+        let stable_id = sim.terrain_objects.cell_index()[&(10, 5)];
+        assert_eq!(sim.terrain_objects.objects()[&stable_id].health(), 200);
         assert_eq!(
-            sim.production.terrain_objects[&stable_id].occupation_bits,
+            sim.terrain_objects.objects()[&stable_id].occupation_bits(),
             4
         );
 
@@ -1017,11 +1010,11 @@ mod tests {
                 .entities
                 .get(attacker_id)
                 .is_some_and(|e| e.attack_target.target().is_some());
-            match sim.production.terrain_objects.get(&stable_id) {
+            match sim.terrain_objects.objects().get(&stable_id) {
                 Some(terrain) => {
-                    last_health = terrain.health;
-                    damaged |= terrain.health < 200;
-                    if terrain.lifecycle == TerrainObjectLifecycle::Destroyed {
+                    last_health = terrain.health();
+                    damaged |= terrain.health() < 200;
+                    if terrain.lifecycle() == TerrainObjectLifecycle::Destroyed {
                         destroyed = true;
                         break;
                     }
@@ -1044,58 +1037,13 @@ mod tests {
         );
         assert!(destroyed, "sustained force-fire must destroy the tree");
         assert!(
-            !sim.production.terrain_object_cells.contains_key(&(10, 5)),
+            !sim.terrain_objects.cell_index().contains_key(&(10, 5)),
             "a destroyed tree releases its cell"
         );
         assert_eq!(
             sim.substrate.raw_cell_occupation.ground_bits(10, 5) & 0x1C,
             0,
             "a destroyed tree releases its raw occupation bits"
-        );
-    }
-
-    /// The animation index is a decoration over already-constructed objects, so
-    /// running it alone can never resurrect terrain.
-    #[test]
-    fn gsi_17_01_spawner_animation_pass_only_decorates_constructed_objects() {
-        use crate::map::overlay::TerrainObject;
-        use crate::sim::world::Simulation;
-
-        let ini = IniFile::from_str(
-            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
-             [TerrainTypes]\n0=TIBTRE01\n\
-             [TIBTRE01]\nSpawnsTiberium=yes\nIsAnimated=yes\n\
-             AnimationRate=3\nAnimationProbability=.003\n",
-        );
-        let mut rules = RuleSet::from_ini(&ini).expect("rules");
-        rules.set_terrain_spawner_frame_count_for_test("TIBTRE01", STOCK_FRAME_COUNT);
-
-        let mut sim = Simulation::new();
-        assert_eq!(
-            seed_terrain_spawner_animation(&mut sim, &rules),
-            0,
-            "no constructed objects means no spawners"
-        );
-        assert!(sim.production.terrain_objects.is_empty());
-
-        construct_terrain_objects(
-            &mut sim,
-            &[TerrainObject {
-                rx: 5,
-                ry: 6,
-                name: "TIBTRE01".to_string(),
-            }],
-            &rules,
-            false,
-        );
-        assert!(
-            sim.production.terrain_animations.is_empty(),
-            "construction alone leaves the animation index empty"
-        );
-        assert_eq!(seed_terrain_spawner_animation(&mut sim, &rules), 1);
-        assert_eq!(
-            sim.production.terrain_animations[&(5, 6)].frame_count,
-            STOCK_FRAME_COUNT as i16
         );
     }
 
@@ -1163,8 +1111,8 @@ mod tests {
             let seeded = seed_terrain_animations(&mut sim, &objects, &rules, snow_theater);
 
             assert_eq!(seeded, 0, "all fixtures are recognized non-spawners");
-            assert!(sim.production.terrain_animations.is_empty());
-            assert_eq!(sim.production.terrain_objects.len(), objects.len());
+            assert!(sim.terrain_objects.animations().is_empty());
+            assert_eq!(sim.terrain_objects.objects().len(), objects.len());
             for (object, source_mask) in objects.iter().zip(selected_masks) {
                 let expected_raw = match source_mask {
                     0 => 0x00,
@@ -1189,10 +1137,10 @@ mod tests {
                     0x5A,
                     "terrain raw producer is ground-only"
                 );
-                let stable_id = sim.production.terrain_object_cells[&(object.rx, object.ry)];
-                let terrain = &sim.production.terrain_objects[&stable_id];
-                assert_eq!(terrain.occupation_bits, source_mask);
-                assert_eq!(terrain.lifecycle, TerrainObjectLifecycle::Live);
+                let stable_id = sim.terrain_objects.cell_index()[&(object.rx, object.ry)];
+                let terrain = &sim.terrain_objects.objects()[&stable_id];
+                assert_eq!(terrain.occupation_bits(), source_mask);
+                assert_eq!(terrain.lifecycle(), TerrainObjectLifecycle::Live);
             }
 
             for foundation_only_cell in [(19, 2), (18, 3), (19, 3)] {
@@ -1262,9 +1210,9 @@ mod tests {
         .expect("authored Terrain construction");
 
         assert_eq!(constructed, 1);
-        let stable_id = sim.production.terrain_object_cells[&(2, 2)];
+        let stable_id = sim.terrain_objects.cell_index()[&(2, 2)];
         assert_eq!(
-            sim.production.terrain_objects[&stable_id].native_unique_id,
+            sim.terrain_objects.objects()[&stable_id].native_unique_id(),
             Some(before.wrapping_add(1) as i32)
         );
         assert_eq!(

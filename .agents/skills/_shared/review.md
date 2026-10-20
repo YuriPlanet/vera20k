@@ -1,7 +1,24 @@
 # Independent review
 
-These are the critic rules; AGENTS.md only points here. A critic prompt gives the
-packet and what is specific to the change. It need not restate the rules below.
+These are the critic rules; AGENTS.md only points here. A critic prompt says the
+agent is the critic, names this file and gives the packet and what is specific to
+the change. It need not restate the rules below.
+
+## The critic's job
+
+Find the defects the owner missed that would ship wrong behavior, before the PR
+opens. Real defects found are the measure, not coverage. Look first where a wrong
+result costs most, common paths before rare ones:
+
+1. Gameplay a player can see that differs from active-retail `gamemd.exe`.
+2. Determinism, state authority and lifecycle: a copy, wrapper or competing owner,
+   tick order, timers, persistence.
+3. Native claims without the evidence AGENTS.md requires.
+4. Tests that miss the behavior or only mirror the implementation.
+5. Refactoring opportunities worth their risk.
+
+Stop when more checking is unlikely to change a finding, and list what you did not
+reach as coverage gaps.
 
 ## When
 
@@ -16,7 +33,11 @@ after fixes or revisions, unless the user explicitly asks.
 ## Packet
 
 - The requirement: issue, brief or user request.
-- The commit to review and its diff command (`git -C <checkout> diff <base>...<sha>`).
+- The commit to review, its diff command (`git -C <checkout> diff <base>...<sha>`)
+  and the diff itself: inline when short, otherwise saved to a scratch file.
+- The changed functions, each with the native address and name it ports.
+- The evidence the owner used: Rust files and functions, Ghidra functions, harness
+  docs, retail INI sections.
 - The owner's claims, with their evidence.
 - The actual validation output, including what was not run.
 
@@ -43,10 +64,19 @@ claims that AGENTS.md requires to be executed (numeric kernels, RNG draws, arith
 traps, reported mismatches) but that lack executable evidence. Name useful refactoring
 opportunities with their impact and risks.
 
+Read in few, large pieces: a whole function or file per call, and several searches per
+command (`rg -n 'a|b|c'`, or chained commands). Each call costs about ten seconds
+whatever it returns, so a hundred small reads add minutes without adding depth.
+
 Report actionable findings first, most severe first, each with trigger, consequence and
 source, marked CONFIRMED or PLAUSIBLE; then what was checked and found sound; then
 coverage gaps. Keep it under about 600 words. A scoped pass certifies no wider system.
 Review grants no mutation/publication authority.
+
+CONFIRMED means you traced a concrete trigger to the wrong result in code or native
+evidence. PLAUSIBLE means a specific suspicion you could not finish tracing; say what
+would settle it. Do not report style or wording preferences without a consequence.
+Mark problems the change did not cause as pre-existing, apart from its findings.
 
 ## Owner
 

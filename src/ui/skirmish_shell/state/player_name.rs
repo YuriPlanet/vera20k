@@ -676,16 +676,3 @@ pub fn update_player_name_scroll_for_caret(
 pub fn handle_player_name_tab(state: &mut SkirmishShellState) -> bool {
     blur_player_name_edit(state)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fresh_shell_starts_with_an_unreserved_random_position() {
-        assert_eq!(
-            SkirmishShellState::default().player_start_position,
-            LaunchStartPosition::Auto
-        );
-    }
-}

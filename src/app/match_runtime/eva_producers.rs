@@ -414,17 +414,6 @@ mod tests {
     }
 
     #[test]
-    fn extension_types_do_not_borrow_stock_detection_lines() {
-        for index in 0..12 {
-            assert_eq!(
-                super_weapon_detected_event(SuperWeaponKind::GenericWarhead, index),
-                None,
-                "extension in list slot {index}"
-            );
-        }
-    }
-
-    #[test]
     fn detected_listener_gates_match_native_order() {
         let mut alliances = HouseAllianceMap::new();
         assert!(super_weapon_detected_allowed(

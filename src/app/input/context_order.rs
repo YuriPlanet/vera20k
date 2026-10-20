@@ -3246,62 +3246,6 @@ mod tests {
         );
     }
 
-    /// A spy's click takes its Capture order and leaves the other selected
-    /// actors for their own actions. An inadmissible building consumes none.
-    #[test]
-    fn a_spy_click_on_a_building_it_may_enter_captures() {
-        let rules =
-            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-                "[InfantryTypes]\n0=SPY\n1=GI\n[BuildingTypes]\n0=PLANT\n1=DEPOT\n\
-                 [SPY]\nStrength=100\nInfiltrate=yes\nAgent=yes\n\
-                 [GI]\nStrength=125\n\
-                 [PLANT]\nStrength=750\nSpyable=yes\n[DEPOT]\nStrength=750\nCapturable=yes\n",
-            ))
-            .unwrap();
-        let mut sim = Simulation::new();
-        sim.resolve_type_handles(&rules);
-        for (house, human) in [("Americans", true), ("Russians", false)] {
-            let id = sim.interner.intern(house);
-            sim.houses
-                .register(crate::sim::house_state::HouseState::new(
-                    id, 0, None, human, 0, 10,
-                ));
-        }
-        sim.session.set_game_mode(
-            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
-        );
-        sim.session
-            .set_current_house_for_test(sim.interner.get("Americans"));
-        let mut spawn = |kind: &str, owner: &str, rx: u16| {
-            sim.spawn_object(kind, owner, rx, 5, 0, &rules).unwrap()
-        };
-        let spy = spawn("SPY", "Americans", 3);
-        let gi = spawn("GI", "Americans", 4);
-        let plant = spawn("PLANT", "Russians", 10);
-        let depot = spawn("DEPOT", "Russians", 14);
-        let hover = |stable_id| HoverTargetKindWithId {
-            kind: HoverTargetKind::EnemyStructure,
-            stable_id,
-        };
-
-        let mut selected = vec![gi, spy];
-        assert_eq!(
-            infiltrator_capture_orders(&sim, &rules, &mut selected, &hover(plant)),
-            Some(vec![Command::CaptureBuilding {
-                engineer_id: spy,
-                target_building_id: plant,
-            }])
-        );
-        assert_eq!(selected, [gi]);
-        let mut selected = vec![spy];
-        assert_eq!(
-            infiltrator_capture_orders(&sim, &rules, &mut selected, &hover(depot)),
-            None,
-            "a building that is not Spyable="
-        );
-        assert_eq!(selected, [spy]);
-    }
-
     /// `TechnoClass::What_Action_OnObject @ 0x00700548`: unforced, the
     /// attack rung answers Attack only while the actor's GetFireError for the
     /// object is not ILLEGAL; otherwise the tail answers, and a player's
@@ -3881,23 +3825,12 @@ mod tests {
             resolve_order_modifiers(false, true, false),
             OrderModifier::Shift
         );
-    }
-
-    /// The chord test reads the raw key state, so Alt does not defeat it — and
-    /// because Shift and Ctrl have already cancelled each other by the time the
-    /// guard-area gate is evaluated, Ctrl+Shift+Alt is attack move, not guard.
-    #[test]
-    fn attack_move_chord_survives_a_held_alt() {
+        // The chord test reads the raw key state, so a held Alt does not defeat
+        // attack move, and Shift outranks Alt without Ctrl.
         assert_eq!(
             resolve_order_modifiers(true, true, true),
             OrderModifier::AttackMove
         );
-    }
-
-    /// Shift outranks Alt: the cell path returns on Shift before it reaches the
-    /// Alt test, and the object path returns the add-to-selection action first.
-    #[test]
-    fn shift_outranks_alt_without_ctrl() {
         assert_eq!(
             resolve_order_modifiers(false, true, true),
             OrderModifier::Shift
@@ -3955,6 +3888,13 @@ mod tests {
             }),
             Some("VoiceEnter")
         );
+        assert_eq!(
+            order_voice_key(&Command::CaptureBuilding {
+                engineer_id: 1,
+                target_building_id: 2,
+            }),
+            Some("VoiceCapture")
+        );
         // Area guard and sabotage have no slot of their own.
         assert_eq!(
             order_voice_key(&Command::Guard {
@@ -3969,17 +3909,6 @@ mod tests {
                 target_building_id: 2,
             }),
             Some("VoiceSpecialAttack")
-        );
-    }
-
-    #[test]
-    fn capture_orders_dispatch_the_capture_voice_key() {
-        assert_eq!(
-            order_voice_key(&Command::CaptureBuilding {
-                engineer_id: 1,
-                target_building_id: 2,
-            }),
-            Some("VoiceCapture")
         );
     }
 

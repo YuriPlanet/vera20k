@@ -510,8 +510,8 @@ impl MatchScenario {
         if let Some(local) = sim.session.current_house()
             && let Some(house) = sim.houses.get_mut(&local)
         {
-            house.multiplay_passive = true;
-            taken.extend(house.base_center);
+            house.make_multiplay_passive();
+            taken.extend(house.base_center());
         }
         let computers: Vec<(InternedId, (u16, u16))> = sim
             .houses
@@ -519,7 +519,8 @@ impl MatchScenario {
             .iter()
             .filter_map(|&id| {
                 let house = sim.houses.get(&id)?;
-                (!house.is_human && !house.multiplay_passive).then_some((id, house.base_center?))
+                (!house.is_human() && !house.multiplay_passive())
+                    .then_some((id, house.base_center()?))
             })
             .collect();
         taken.extend(computers.iter().map(|&(_, home)| home));
@@ -582,9 +583,9 @@ impl MatchScenario {
         for (index, &(id, home, computer)) in players.iter().enumerate() {
             let sim = &mut runtime.simulation;
             let state = &sim.houses[&id];
-            let side_index = state.side_index;
+            let side_index = state.side_index();
             let country = state
-                .country
+                .country()
                 .map(|country| sim.interner.resolve(country).to_string())
                 .unwrap_or_default();
             let arsenal = Arsenal::new(
@@ -797,7 +798,7 @@ impl MatchScenario {
             .simulation
             .houses
             .get(&id)
-            .is_none_or(|house| house.is_defeated)
+            .is_none_or(|house| house.is_defeated())
     }
 
     /// Alive and on the map, so that it can take an order.
@@ -983,7 +984,7 @@ impl MatchScenario {
                 runtime
                     .simulation
                     .production
-                    .factories
+                    .factories()
                     .view(id, category)
                     .is_none_or(|factory| factory.queue.len() < QUEUE_DEPTH)
             };
@@ -1122,9 +1123,9 @@ impl MatchScenario {
         let (mut factories, mut queued, mut held, mut low_power) = ([0usize; 3], 0usize, 0, 0);
         for house in &self.houses {
             if let Some(state) = sim.houses.get(&house.id) {
-                credits += i64::from(state.economy.credits());
-                spent += i64::from(state.economy.spent_credits());
-                defeated += usize::from(state.is_defeated);
+                credits += i64::from(state.economy().credits());
+                spent += i64::from(state.economy().spent_credits());
+                defeated += usize::from(state.is_defeated());
             }
             let (output, drain) = vera20k_core::sim::production::power_balance_for_owner(
                 sim,
@@ -1137,7 +1138,7 @@ impl MatchScenario {
                 ProductionCategory::Vehicle,
                 ProductionCategory::Aircraft,
             ] {
-                if let Some(factory) = sim.production.factories.view(house.id, category) {
+                if let Some(factory) = sim.production.factories().view(house.id, category) {
                     queued += factory.queue.len();
                     held += usize::from(factory.on_hold || factory.suspended);
                     factories[if factory.complete_object().is_some() {

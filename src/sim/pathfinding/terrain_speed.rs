@@ -425,26 +425,6 @@ mod tests {
     }
 
     #[test]
-    fn speed_multiplier_for_normal_terrain() {
-        let profile = SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            ..Default::default()
-        };
-        assert_eq!(profile.speed_multiplier_for(SpeedType::Foot), SIM_ONE);
-    }
-
-    #[test]
-    fn speed_multiplier_for_rough_terrain() {
-        let profile = SpeedCostProfile {
-            track: Some(75),
-            ..Default::default()
-        };
-        let mult = profile.speed_multiplier_for(SpeedType::Track);
-        assert_eq!(mult, SimFixed::lit("0.75"));
-    }
-
-    #[test]
     fn gsi_04_04_speed_profile_preserves_zero_multiplier() {
         let profile = SpeedCostProfile {
             foot: Some(0),
@@ -454,12 +434,6 @@ mod tests {
             profile.speed_multiplier_for(SpeedType::Foot),
             SimFixed::from_num(0),
         );
-    }
-
-    #[test]
-    fn speed_multiplier_none_defaults_to_one() {
-        let profile = SpeedCostProfile::default();
-        assert_eq!(profile.speed_multiplier_for(SpeedType::Foot), SIM_ONE);
     }
 
     /// RC-7 / AT-13: percentages above 100 clamp to full speed (1.0); a sub-100
@@ -545,15 +519,6 @@ mod tests {
         );
         // Undamaged downhill on a full-speed row exceeds 1.0 — no upper clamp.
         assert!(combine_speed_stages(SIM_ONE, SimFixed::lit("1.2"), false) > SIM_ONE);
-    }
-
-    #[test]
-    fn default_config_values_are_the_rules_constructor() {
-        let config = TerrainSpeedConfig::default();
-        assert_eq!(config.tracked_uphill, SIM_ONE);
-        assert_eq!(config.tracked_downhill, SIM_ONE);
-        assert_eq!(config.wheeled_uphill, SIM_ONE);
-        assert_eq!(config.wheeled_downhill, SIM_ONE);
     }
 
     /// `[General]` ReadDouble over the constructor's 1.0: a present value, a

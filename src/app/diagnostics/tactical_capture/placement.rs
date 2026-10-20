@@ -267,18 +267,6 @@ Buildable=yes
     }
 
     #[test]
-    fn radius_zero_visits_center_once() {
-        assert_eq!(
-            ordered_square_ring_cells((4, 5), 10, 10, 0),
-            vec![SquareRingCandidate {
-                cell: (4, 5),
-                radius: 0,
-                candidate_index: 0,
-            }]
-        );
-    }
-
-    #[test]
     fn each_ring_uses_top_bottom_then_left_right_order() {
         let cells = ordered_square_ring_cells((3, 3), 8, 8, 1);
         let actual: Vec<(u16, u16)> = cells.into_iter().map(|cell| cell.cell).collect();

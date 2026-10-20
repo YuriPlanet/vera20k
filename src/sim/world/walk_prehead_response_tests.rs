@@ -71,7 +71,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     rules.general.scold_sound = None;
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
-    house.player_control = true;
+    house.set_player_control_for_test(true);
     sim.houses.register(house);
     let id = sim
         .spawn_object("ENGINEER", "Americans", 9, 10, 0, &rules)

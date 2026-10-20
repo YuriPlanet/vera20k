@@ -139,9 +139,9 @@ pub(crate) fn can_build(
         return CanBuild::No;
     }
     #[cfg(feature = "debug-tools")]
-    let exceeds_tech_level = type_tech_level > house.tech_level && !trainer.tech_boost;
+    let exceeds_tech_level = type_tech_level > house.tech_level() && !trainer.tech_boost;
     #[cfg(not(feature = "debug-tools"))]
-    let exceeds_tech_level = type_tech_level > house.tech_level;
+    let exceeds_tech_level = type_tech_level > house.tech_level();
     if exceeds_tech_level {
         return CanBuild::No;
     }
@@ -191,7 +191,7 @@ fn prerequisite_on_map(
                 .as_deref()
                 .and_then(|unit| rules.object_in_category(ObjectCategory::Vehicle, unit))
                 .and_then(|unit| sim.interner.get(&unit.id))
-                .is_some_and(|unit| house.tracking.active_count(EntityCategory::Unit, unit) > 0))
+                .is_some_and(|unit| house.tracking().active_count(EntityCategory::Unit, unit) > 0))
 }
 
 /// The house's on-map count of BuildingType `index` (`HouseClass+0x5550`).
@@ -201,7 +201,7 @@ fn buildings_on_map(sim: &Simulation, rules: &RuleSet, house: &HouseState, index
         .and_then(|building| sim.interner.get(&building.id))
         .map_or(0, |type_id| {
             house
-                .tracking
+                .tracking()
                 .active_count(EntityCategory::Structure, type_id)
         })
 }
@@ -243,7 +243,7 @@ fn build_limit(
     };
     let owned = sim.houses.get(&owner).map_or(0, |house| {
         house
-            .tracking
+            .tracking()
             .owned_count(EntityCategory::from(obj.category), type_id)
     });
     if limit < 1 || owned < limit {
@@ -254,7 +254,7 @@ fn build_limit(
     }
     let in_production =
         sim.production
-            .factories
+            .factories()
             .iter_insertion_ordered()
             .into_iter()
             .any(|factory| {
@@ -294,10 +294,12 @@ pub(crate) fn check_build_limit(
         ObjectCategory::Building => super::ProductionCategory::Building,
         _ => super::production_tech::production_category_for_object(obj),
     };
-    let tracking = sim.houses.get(&owner).map(|house| &house.tracking);
+    let tracking = sim.houses.get(&owner).map(HouseState::tracking);
     let in_factory = |type_id: Option<InternedId>| {
         type_id.map_or(0, |type_id| {
-            sim.production.factories.count_total(owner, strip, type_id)
+            sim.production
+                .factories()
+                .count_total(owner, strip, type_id)
         })
     };
     if obj.category == ObjectCategory::Aircraft && obj.airport_bound {
@@ -381,7 +383,7 @@ pub fn find_factory(
     let selling = MissionId::from_known(MissionType::Selling);
     let naval_unit = obj.category == ObjectCategory::Vehicle && obj.naval;
     let mut candidate = None;
-    for &id in house.base_projection.buildings() {
+    for &id in house.base_projection().buildings() {
         let Some(building) = sim.substrate.entities.get(id) else {
             continue;
         };
@@ -450,7 +452,7 @@ pub(crate) fn initialize_factory_primary(sim: &mut Simulation, id: u64, rules: &
     // A limbo primary does not prevent this admitted building becoming primary.
     let keep = sim.houses.get(&owner).is_some_and(|house| {
         house
-            .base_projection
+            .base_projection()
             .buildings()
             .iter()
             .any(|&candidate_id| {
@@ -522,7 +524,7 @@ pub(crate) fn toggle_factory_primary(sim: &mut Simulation, rules: &RuleSet, id: 
             return false;
         };
         let peers: Vec<_> = house
-            .base_projection
+            .base_projection()
             .buildings()
             .iter()
             .copied()

@@ -78,7 +78,7 @@ fn restore_saved_scenario(
     let map_hash = scenario.map.ini.content_hash();
     let rules_hash = resources.rules.simulation_config_hash();
     let mut restored =
-        GameSnapshot::load_validated(bytes, map_hash, rules_hash, &live.session.map_name())
+        GameSnapshot::load_validated(bytes, map_hash, rules_hash, live.session.map_name())
             .expect("saved retail scenario validates")
             .sim;
     assert_eq!(
@@ -454,7 +454,7 @@ fn retail_bridge_forcefire_chain(vehicle_name: &str, weapon_name: &str, projecti
                 .sim()
                 .houses
                 .get(id)
-                .is_some_and(|house| house.is_human)
+                .is_some_and(|house| house.is_human())
         })
         .expect("ordinary human launch house");
     let owner_name = scenario.sim().interner.resolve(owner).to_owned();

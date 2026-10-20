@@ -234,7 +234,7 @@ fn supplied_world(
     sim.session.set_map_height_for_test(tracker_extent.1);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, None, true, 0, 10);
-    house.player_control = true;
+    house.set_player_control_for_test(true);
     sim.houses.register(house);
     let id = sim
         .construct_object_limbo_at_height(

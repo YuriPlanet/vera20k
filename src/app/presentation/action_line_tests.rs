@@ -129,8 +129,8 @@ fn fixture(row: &Value) -> (Simulation, TargetLineState, TacticalViewport) {
         .set_current_house_for_test(input["local"].as_bool().unwrap_or(true).then_some(owner));
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
     if let Some(flags) = input["campaign_flags"].as_array() {
-        house.is_human = flags[0].as_bool().unwrap();
-        house.player_control = flags[1].as_bool().unwrap();
+        house.set_is_human_for_test(flags[0].as_bool().unwrap());
+        house.set_player_control_for_test(flags[1].as_bool().unwrap());
     }
     sim.houses.register(house);
     sim.session

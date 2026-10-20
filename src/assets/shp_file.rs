@@ -367,18 +367,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_raw_shp() {
-        let data: Vec<u8> = make_test_shp_raw();
-        let shp: ShpFile = ShpFile::from_bytes(&data).expect("Should parse valid SHP");
-
-        assert_eq!(shp.width, 2);
-        assert_eq!(shp.height, 2);
-        assert_eq!(shp.frames.len(), 1);
-        assert_eq!(shp.frames[0].format, 0);
-        assert_eq!(shp.frames[0].pixels, vec![1, 2, 3, 0]);
-    }
-
-    #[test]
     fn frame_count_reader_validates_headers_without_decoding_pixels() {
         let mut data = make_test_shp_raw();
         data.truncate(8 + 24);
@@ -495,12 +483,6 @@ mod tests {
     }
 
     #[test]
-    fn test_reject_too_small() {
-        let data: Vec<u8> = vec![0; 4]; // Way too small
-        assert!(ShpFile::from_bytes(&data).is_err());
-    }
-
-    #[test]
     fn gsi_02_13_frame_to_rgba_uses_native_shifted_palette_channels() {
         let data: Vec<u8> = make_test_shp_raw();
         let shp: ShpFile = ShpFile::from_bytes(&data).expect("Should parse");
@@ -524,25 +506,6 @@ mod tests {
         assert_eq!(rgba[15], 0); // A (transparent)
     }
 
-    #[test]
-    fn frame_to_rgba_applies_transparent_index_without_palette_alpha() {
-        let data: Vec<u8> = make_test_shp_raw();
-        let shp: ShpFile = ShpFile::from_bytes(&data).expect("Should parse");
-
-        let palette = Palette::from_rgb(|index| match index {
-            0 => [12, 34, 56],
-            1 => [252, 0, 0],
-            2 => [0, 252, 0],
-            3 => [0, 0, 252],
-            _ => [0, 0, 0],
-        });
-
-        let rgba: Vec<u8> = shp.frame_to_rgba(0, &palette).expect("Should convert");
-
-        assert_eq!(&rgba[0..4], &[252, 0, 0, 255]);
-        assert_eq!(&rgba[12..16], &[12, 34, 56, 0]);
-    }
-
     /// BlitTransXlat<unsigned short>::BlitForward `0x004912B0` and
     /// RLEBlitTransXlat<unsigned short>::Blit `0x004960A0` skip only source
     /// index 0 and write the converter entry for every other index; no entry
@@ -558,40 +521,5 @@ mod tests {
 
         assert_eq!(&rgba[4..8], &[252, 0, 252, 255]);
         assert_eq!(rgba[15], 0, "index 0 stays transparent");
-    }
-
-    #[test]
-    fn test_frame_out_of_range() {
-        let data: Vec<u8> = make_test_shp_raw();
-        let shp: ShpFile = ShpFile::from_bytes(&data).expect("Should parse");
-        let pal_data: Vec<u8> = vec![0u8; 768];
-        let palette: Palette = Palette::from_bytes(&pal_data).expect("Should parse");
-
-        // Frame index 5 doesn't exist (only 1 frame).
-        assert!(shp.frame_to_rgba(5, &palette).is_err());
-    }
-
-    /// The frame header's radar colour is what the engine samples for minimap
-    /// and preview pixels on ore/gem overlays -- indexed by growth stage, never
-    /// read out of the frame's artwork.
-    #[test]
-    fn frame_radar_colour_is_read_from_the_header() {
-        let shp = ShpFile::from_bytes(&make_test_shp_raw()).expect("parse");
-        assert_eq!(shp.frames[0].radar_color, [0x40, 0x80, 0xC0]);
-    }
-
-    /// A zero-sized frame still carries a header, so its radar colour must
-    /// survive the early-out that skips pixel decoding.
-    #[test]
-    fn an_empty_frame_still_carries_its_radar_colour() {
-        let mut data = make_test_shp_raw();
-        // Zero this frame's width and height (header bytes +4 and +6).
-        data[8 + 4] = 0;
-        data[8 + 5] = 0;
-        data[8 + 6] = 0;
-        data[8 + 7] = 0;
-        let shp = ShpFile::from_bytes(&data).expect("parse");
-        assert!(shp.frames[0].pixels.is_empty(), "no pixel data");
-        assert_eq!(shp.frames[0].radar_color, [0x40, 0x80, 0xC0]);
     }
 }

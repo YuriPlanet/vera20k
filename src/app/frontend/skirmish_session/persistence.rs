@@ -12,12 +12,15 @@ use crate::rules::ini_value::crt_atoi;
 pub enum SetupProfile {
     Skirmish,
     Lan,
+    /// Session+0x284 (`0xA8B4BC`), read at `00698473`, written at `006991EF`.
+    Wol,
 }
 impl SetupProfile {
     const fn section(self) -> &'static str {
         match self {
             Self::Skirmish => "Skirmish",
             Self::Lan => "LAN",
+            Self::Wol => "WonlinePref",
         }
     }
 }
@@ -104,7 +107,8 @@ impl MultiplayerSetupSnapshot {
             crates_appear: defaults.crates_appear,
             slots: std::array::from_fn(|index| {
                 let mut slot = SkirmishPersistedSlot::native_default(index);
-                if profile == SetupProfile::Lan {
+                // 00698456/0069846F: LAN and WOL read with defaults 2/2.
+                if profile != SetupProfile::Skirmish {
                     slot.row_type = 2;
                 }
                 slot
@@ -223,6 +227,19 @@ mod tests {
             mcv_repacks: true,
             crates_appear: true,
         }
+    }
+
+    #[test]
+    fn wol_profile_reads_wonlinepref_with_the_network_open_defaults() {
+        let input = b"[LAN]\nSlot01=4,-2,-2\n[WonlinePref]\nSlot02=3,-2,-2\n";
+        let wol = read_setup_snapshot(input, defaults(), SetupProfile::Wol).unwrap();
+        assert_eq!(wol.slots[0].row_type, 2);
+        assert_eq!(wol.slots[1].row_type, 3);
+        let updated = wol.update_ini_bytes(input);
+        assert!(
+            String::from_utf8_lossy(&updated).contains("[LAN]\nSlot01=4,-2,-2"),
+            "the WOL writer leaves the LAN profile alone"
+        );
     }
 
     #[test]

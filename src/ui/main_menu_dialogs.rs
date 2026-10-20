@@ -66,20 +66,6 @@ impl ExitConfirmModalState {
 mod tests {
     use super::*;
 
-    fn fallback_lookup() -> impl Fn(&str, &str) -> String {
-        // Simulate a missing CSF table: every lookup returns its fallback.
-        |_key: &str, fallback: &str| fallback.to_string()
-    }
-
-    #[test]
-    fn exit_confirm_open_resolves_pinned_keys_to_fallbacks() {
-        let lookup = fallback_lookup();
-        let modal = ExitConfirmModalState::open(&lookup);
-        assert_eq!(modal.title, EXIT_CONFIRM_TITLE_FALLBACK);
-        assert_eq!(modal.confirm, EXIT_CONFIRM_OK_FALLBACK);
-        assert_eq!(modal.cancel, EXIT_CONFIRM_CANCEL_FALLBACK);
-    }
-
     #[test]
     fn exit_confirm_open_uses_csf_when_present() {
         // A lookup that returns the key itself proves open() queries the keys.

@@ -136,7 +136,7 @@ fn a_hunting_computer_aircraft_strikes_storage_in_multiplayer_only() {
         {
             let id = sim.interner.intern(name);
             let mut house = HouseState::new(id, index as u8, None, human, 0, 10);
-            house.multiplay_passive = !human;
+            house.set_multiplay_passive_for_test(!human);
             sim.houses.register(house);
             owners.push(id);
             // Under `ShortGame=` a house without a building is defeated.

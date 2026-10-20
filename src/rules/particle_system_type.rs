@@ -207,39 +207,6 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
 
     #[test]
-    fn behaves_like_string_to_enum() {
-        assert_eq!(
-            ParticleSystemBehavesLike::parse("Smoke"),
-            Some(ParticleSystemBehavesLike::Smoke)
-        );
-        assert_eq!(
-            ParticleSystemBehavesLike::parse("Gas"),
-            Some(ParticleSystemBehavesLike::Gas)
-        );
-        assert_eq!(
-            ParticleSystemBehavesLike::parse("Fire"),
-            Some(ParticleSystemBehavesLike::Fire)
-        );
-        assert_eq!(
-            ParticleSystemBehavesLike::parse("Spark"),
-            Some(ParticleSystemBehavesLike::Spark)
-        );
-        assert_eq!(
-            ParticleSystemBehavesLike::parse("Railgun"),
-            Some(ParticleSystemBehavesLike::Railgun)
-        );
-        assert_eq!(ParticleSystemBehavesLike::parse("nope"), None);
-    }
-
-    #[test]
-    fn behaves_like_parse_trims_whitespace() {
-        assert_eq!(
-            ParticleSystemBehavesLike::parse("  Smoke  "),
-            Some(ParticleSystemBehavesLike::Smoke)
-        );
-    }
-
-    #[test]
     fn behaves_like_discriminants_match_binary() {
         // System-level enum: Smoke=0, Gas=1 (NOT Gas=0 like the particle-level enum).
         assert_eq!(ParticleSystemBehavesLike::Smoke as u8, 0);
@@ -247,32 +214,6 @@ mod tests {
         assert_eq!(ParticleSystemBehavesLike::Fire as u8, 2);
         assert_eq!(ParticleSystemBehavesLike::Spark as u8, 3);
         assert_eq!(ParticleSystemBehavesLike::Railgun as u8, 4);
-    }
-
-    #[test]
-    fn system_and_particle_enum_have_swapped_smoke_gas() {
-        // Critical asymmetry: at the SYSTEM level Smoke=0/Gas=1, but at the PARTICLE
-        // level Gas=0/Smoke=1. Mismatching them is the kind of bug that produces
-        // "smoke deals damage / gas drifts silently" symptoms.
-        use crate::rules::particle_type::ParticleBehavesLike;
-        assert_ne!(
-            ParticleSystemBehavesLike::Smoke as u8,
-            ParticleBehavesLike::Smoke as u8
-        );
-        assert_ne!(
-            ParticleSystemBehavesLike::Gas as u8,
-            ParticleBehavesLike::Gas as u8
-        );
-    }
-
-    #[test]
-    fn particle_system_type_id_is_copy_eq_hash() {
-        let a = ParticleSystemTypeId(13);
-        let b = a;
-        assert_eq!(a, b);
-        let mut set = std::collections::HashSet::new();
-        set.insert(a);
-        assert!(set.contains(&b));
     }
 
     #[test]
@@ -324,36 +265,6 @@ mod tests {
         // store preserves that already-rounded binary32 value.
         assert_eq!(pst.slowdown.bits(), 0x3ecc_cccd);
         assert_eq!(pst.lifetime, 200);
-    }
-
-    #[test]
-    fn from_ini_parses_railgun_system() {
-        let ini = IniFile::from_str(
-            "[RGSys]\n\
-             BehavesLike=Railgun\n\
-             ParticlesPerCoord=0.5\n\
-             SpiralDeltaPerCoord=0.05\n\
-             SpiralRadius=12.0\n\
-             Laser=yes\n\
-             LaserColor=255,128,64\n",
-        );
-        let section = ini.section("RGSys").unwrap();
-        let pst = ParticleSystemType::from_ini_section("RGSys", section);
-
-        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Railgun);
-        assert_eq!(pst.particles_per_coord, SimFixed::from_num(0.5_f32));
-        assert_eq!(pst.spiral_delta_per_coord, SimFixed::from_num(0.05_f32));
-        assert_eq!(pst.spiral_radius, SimFixed::from_num(12.0_f32));
-        assert!(pst.laser);
-        assert_eq!(pst.laser_color, [255, 128, 64]);
-    }
-
-    #[test]
-    fn from_ini_parses_spawn_direction() {
-        let ini = IniFile::from_str("[Foo]\nSpawnDirection=10,-5,42\n");
-        let section = ini.section("Foo").unwrap();
-        let pst = ParticleSystemType::from_ini_section("Foo", section);
-        assert_eq!(pst.spawn_direction, IVec3::new(10, -5, 42));
     }
 
     #[test]

@@ -141,9 +141,9 @@ pub(crate) fn update_team_creation(
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if !house.team_creation.timer.expired(frame)
+    if !house.team_creation().timer.expired(frame)
         || house.is_controlled_by_human(game_mode_nonzero)
-        || house.multiplay_passive
+        || house.multiplay_passive()
     {
         return;
     }
@@ -153,7 +153,7 @@ pub(crate) fn update_team_creation(
     }
     if let Some(house) = sim.houses.get_mut(&owner) {
         let delay = house.difficulty_value(&rules.general.team_delays);
-        house.team_creation.restart(frame, delay);
+        house.team_creation_mut().restart(frame, delay);
     }
 }
 
@@ -210,8 +210,8 @@ pub(crate) fn select_team_types_with(
     let Some(house) = sim.houses.get(&owner) else {
         return Vec::new();
     };
-    let enemy = house.enemy_house;
-    let ratio = house.team_creation.ratio;
+    let enemy = house.enemy_house();
+    let ratio = house.team_creation().ratio;
     let triggers_active = house.ai_activation().ai_triggers_active;
     let team_cap = house.difficulty_value(&rules.general.total_ai_team_cap);
     let max_defensive = house.difficulty_value(&rules.general.maximum_ai_defensive_teams);
@@ -396,7 +396,7 @@ fn is_eligible(
         if !trigger.multiplayer {
             return false;
         }
-        let enabled = match house.difficulty.table_index() {
+        let enabled = match house.difficulty().table_index() {
             0 => trigger.difficulty_enabled[2],
             1 => trigger.difficulty_enabled[1],
             2 => trigger.difficulty_enabled[0],
@@ -417,12 +417,12 @@ fn is_eligible(
         }
     }
     let side_admits = match trigger.side {
-        1 => house.side_index == 0,
-        2 => house.side_index == 1,
-        3 => house.side_index == 2,
+        1 => house.side_index() == 0,
+        2 => house.side_index() == 1,
+        3 => house.side_index() == 2,
         _ => true,
     };
-    if !side_admits || house.tech_level < trigger.threshold {
+    if !side_admits || house.tech_level() < trigger.threshold {
         return false;
     }
     if !condition_holds(sim, rules, trigger, owner, enemy) {
@@ -552,7 +552,7 @@ fn owned_count_holds(
 ) -> bool {
     let count = match (trigger.object_type, sim.houses.get(&house)) {
         (Some(TeamMemberTypeIdentity { category, id }), Some(house)) => house
-            .tracking
+            .tracking()
             .active_count(EntityCategory::from(category), id),
         _ => 0,
     };

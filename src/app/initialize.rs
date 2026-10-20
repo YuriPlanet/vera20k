@@ -634,6 +634,7 @@ impl App {
                 skirmish_modes,
                 loading_session: None,
                 frontend_main_rng: crate::sim::rng::MainRng::new(u64::from(frontend_seed.value)),
+                startup_rng_seed: frontend_seed.value,
                 legacy_crt_rng: crate::util::legacy_crt_rng::LegacyCrtRng::default(),
                 next_match_correlation: 1,
                 random_map_generation: None,
@@ -683,12 +684,16 @@ impl App {
                 campaign: None,
                 campaign_art: None,
                 load_saved_game: None,
-                wol_welcome: None,
+                wol: None,
+                wol_account: Default::default(),
                 network_options: None,
                 lan: None,
                 multiplayer_setup: None,
-                lan_setup_protocol: None,
+                network_setup_protocol: None,
                 wol_welcome_art: None,
+                wol_login_art: None,
+                wol_lobby_art: None,
+                wol_lobby_globals: Default::default(),
                 score_page: None,
                 campaign_score_page: None,
                 score_art: None,
@@ -920,7 +925,7 @@ mod tests {
                     .sim()
                     .houses
                     .values()
-                    .filter(|house| !house.multiplay_passive)
+                    .filter(|house| !house.multiplay_passive())
                     .count(),
                 if previous_empty_opponent { 2 } else { 1 }
             );
@@ -963,7 +968,7 @@ mod tests {
                     assert!(!output.tick.terminal_score_finalized);
                     assert!(loaded.sim().ready_outcome_for_owner(owner).is_none());
                     let house = &loaded.sim().houses[&owner];
-                    assert!(!house.has_won() && !house.has_lost() && !house.is_defeated);
+                    assert!(!house.has_won() && !house.has_lost() && !house.is_defeated());
                     assert!(
                         house.outcome().is_none(),
                         "no hidden false outcome on frame {frame}"

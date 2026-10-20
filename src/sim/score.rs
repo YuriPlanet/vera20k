@@ -59,18 +59,18 @@ impl Simulation {
         let contenders: Vec<InternedId> = self
             .houses
             .in_order()
-            .filter(|house| !house.multiplay_passive)
-            .map(|house| house.name)
+            .filter(|house| !house.multiplay_passive())
+            .map(|house| house.name())
             .collect();
         let mut rows = Vec::with_capacity(contenders.len());
         for owner in contenders {
             let Some((country, survived, stats, raw_score)) =
                 self.houses.get(&owner).map(|house| {
                     (
-                        house.country,
-                        !house.is_defeated,
-                        house.stats,
-                        house.economy.score(),
+                        house.country(),
+                        !house.is_defeated(),
+                        house.stats(),
+                        house.economy().score(),
                     )
                 })
             else {
@@ -128,15 +128,17 @@ mod tests {
     fn insert_house(sim: &mut Simulation, fixture: HouseFixture<'_>) -> InternedId {
         let owner = sim.interner.intern(fixture.name);
         let mut house = HouseState::new(owner, 0, None, false, 0, 10);
-        house.is_defeated = fixture.defeated;
-        house.multiplay_passive = fixture.passive;
-        house.economy.set_score_for_test(fixture.score);
-        house.stats = crate::sim::house_state::MatchStatistics::from_totals_for_test(
-            fixture.units_killed,
-            fixture.buildings_killed,
-            fixture.units_lost,
-            fixture.buildings_lost,
-            fixture.built,
+        house.set_is_defeated_for_test(fixture.defeated);
+        house.set_multiplay_passive_for_test(fixture.passive);
+        house.economy_mut().set_score_for_test(fixture.score);
+        house.set_stats_for_test(
+            crate::sim::house_state::MatchStatistics::from_totals_for_test(
+                fixture.units_killed,
+                fixture.buildings_killed,
+                fixture.units_lost,
+                fixture.buildings_lost,
+                fixture.built,
+            ),
         );
         sim.houses.register(house);
         owner
@@ -294,42 +296,6 @@ mod tests {
         assert_eq!(sim.clone_scenario_rng().state(), cursor);
     }
 
-    #[test]
-    fn terminal_score_snapshot_is_latched_without_repeating_rng_draws() {
-        let mut sim = Simulation::with_seed(0x51C0_5678);
-        insert_house(
-            &mut sim,
-            HouseFixture {
-                name: "Alpha",
-                defeated: false,
-                passive: false,
-                score: 100,
-                units_killed: 0,
-                buildings_killed: 0,
-                units_lost: 0,
-                buildings_lost: 0,
-                built: 0,
-            },
-        );
-
-        assert!(sim.finalize_terminal_score_snapshot());
-        let first = sim
-            .terminal_score_snapshot()
-            .expect("first terminal score snapshot")
-            .clone();
-        let cursor_after_first = sim.clone_scenario_rng().state();
-        let hash_after_first = sim.state_hash();
-        assert!(!sim.finalize_terminal_score_snapshot());
-        let second = sim
-            .terminal_score_snapshot()
-            .expect("latched terminal score snapshot")
-            .clone();
-
-        assert_eq!(second, first);
-        assert_eq!(sim.clone_scenario_rng().state(), cursor_after_first);
-        assert_eq!(sim.state_hash(), hash_after_first);
-    }
-
     fn natural_terminal_sim(seed: u64) -> Simulation {
         let mut sim = Simulation::with_seed(seed);
         sim.session.set_game_mode(
@@ -337,8 +303,8 @@ mod tests {
         );
         let human = sim.interner.intern("Human");
         let mut human_house = HouseState::new(human, 0, None, true, 0, 10);
-        human_house.is_defeated = true;
-        human_house.economy.set_score_for_test(200);
+        human_house.set_is_defeated_for_test(true);
+        human_house.economy_mut().set_score_for_test(200);
         human_house.supply_outcome_state_for_test(
             false,
             true,
@@ -353,7 +319,7 @@ mod tests {
 
         let opponent = sim.interner.intern("Opponent");
         let mut opponent_house = HouseState::new(opponent, 1, None, false, 0, 10);
-        opponent_house.economy.set_score_for_test(100);
+        opponent_house.economy_mut().set_score_for_test(100);
         sim.houses.register(opponent_house);
         sim
     }

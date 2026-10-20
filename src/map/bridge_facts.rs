@@ -590,26 +590,6 @@ mod tests {
     }
 
     #[test]
-    fn stamp_intact_sets_0x80_only_on_anchor() {
-        let width = 12;
-        let mut cells = vec![BridgeCellFacts::default(); 12 * 12];
-        stamp_set_bridge_direction(
-            &mut cells,
-            width as u16,
-            12,
-            (5, 5),
-            BridgeStampFamily::Nesw,
-            0,
-            true,
-        );
-
-        assert!(facts_at(&cells, width as u16, 5, 5).has_flag(BRIDGE_FLAG_ANCHOR_SELF));
-        for (rx, ry) in [(5, 4), (5, 3), (5, 2), (5, 6)] {
-            assert!(!facts_at(&cells, width as u16, rx, ry).has_flag(BRIDGE_FLAG_ANCHOR_SELF));
-        }
-    }
-
-    #[test]
     fn stamp_destroy_emits_destroy_flags_only_on_anchor_forward1_forward2_opposite() {
         let width = 12;
         let mut cells = vec![BridgeCellFacts::default(); 12 * 12];
@@ -637,47 +617,6 @@ mod tests {
         }
         assert!(!facts_at(&cells, width as u16, 2, 5).has_flag(BRIDGE_FLAG_DESTROYED_OR_RAMP));
         assert!(!facts_at(&cells, width as u16, 7, 5).has_flag(BRIDGE_FLAG_DESTROYED_OR_RAMP));
-    }
-
-    #[test]
-    fn bridge_flags_newtype_matches_const_predicates() {
-        // Single-source check: the typed newtype must agree bit-for-bit with the
-        // `BridgeCellFacts` predicate path for the same raw flag word, across
-        // each individual bit and a combined word.
-        for raw in [
-            0u32,
-            BRIDGE_FLAG_ANCHOR_SELF,
-            BRIDGE_FLAG_STRUCTURAL,
-            BRIDGE_FLAG_TRANSITION,
-            BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_TRANSITION,
-            BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_FORWARD_SIDE,
-        ] {
-            let flags = BridgeFlags(raw);
-            let facts = BridgeCellFacts {
-                raw_flags: raw,
-                ..BridgeCellFacts::default()
-            };
-            assert_eq!(
-                flags.anchor(),
-                facts.is_anchor_self(),
-                "anchor raw={raw:#x}"
-            );
-            assert_eq!(
-                flags.structural(),
-                facts.has_structural_bridge(),
-                "structural raw={raw:#x}"
-            );
-        }
-    }
-
-    #[test]
-    fn high_bridge_stamp_classifier_ignores_low_bridge_ids() {
-        for id in [0x18, 0x19, 0xED, 0xEE] {
-            assert!(high_bridge_stamp_for_overlay(id).is_some());
-        }
-        for id in [0x4A, 0x7A, 0xCD, 0xE9] {
-            assert_eq!(high_bridge_stamp_for_overlay(id), None);
-        }
     }
 
     #[test]

@@ -71,11 +71,6 @@ impl LoadingProgressState {
         }
     }
 
-    #[cfg(test)]
-    pub fn max_value(&self) -> f64 {
-        self.max_value
-    }
-
     pub fn current_value(&self) -> f64 {
         self.current_value
     }

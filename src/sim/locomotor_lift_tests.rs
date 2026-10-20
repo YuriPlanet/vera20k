@@ -212,7 +212,7 @@ fn retail_tank_let_go_over_a_unit_crashes_onto_it() {
     let below = spawn(&mut sim, &rules, "AMCV", "Americans", 13, 16);
     let below_health = entity(&sim, below).health.current();
     let americans = sim.interner.get("Americans").unwrap();
-    let kills = sim.houses[&americans].stats.units_killed();
+    let kills = sim.houses[&americans].stats().units_killed();
 
     assert!(
         run_until(&mut sim, &rules, &grid, 600, |sim| {
@@ -257,7 +257,7 @@ fn retail_tank_let_go_over_a_unit_crashes_onto_it() {
         "the fall hurts the Unit below"
     );
     assert_eq!(
-        sim.houses[&americans].stats.units_killed(),
+        sim.houses[&americans].stats().units_killed(),
         kills + 2,
         "the bullet and the drop's credit each book the kill"
     );

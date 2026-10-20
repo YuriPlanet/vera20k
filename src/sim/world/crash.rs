@@ -581,7 +581,10 @@ impl Simulation {
             let object = self.object_type(entity.type_ref(), rules);
             let voice = object.and_then(|object| object.voice_crashing.clone());
             let crashing_sound = object.and_then(|object| object.crashing_sound.clone());
-            let human = self.houses.get(&owner).is_some_and(|house| house.is_human);
+            let human = self
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.is_human());
             if let Some(voice) = voice
                 && human
             {

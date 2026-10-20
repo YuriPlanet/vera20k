@@ -944,7 +944,7 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
         .expect("retail HARV Dock reader")
         .clone();
     let base = scene.sim().houses[&owner]
-        .base_center
+        .base_center()
         .expect("starting house base center");
     let candidates: Vec<_> = scene
         .sim()
@@ -977,11 +977,9 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
         .expect("an accepted map-placed refinery near the starting base");
     assert!(scene.sim().substrate.entities.get(refinery).is_some());
     assert!(
-        scene.sim().houses[&owner].tracking.owns_any_building([scene
-            .sim()
-            .interner
-            .get(&dock)
-            .unwrap()])
+        scene.sim().houses[&owner]
+            .tracking()
+            .owns_any_building([scene.sim().interner.get(&dock).unwrap()])
     );
     let miner = scene
         .runtime

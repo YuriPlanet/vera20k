@@ -61,6 +61,15 @@ const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
 /// Owner-draw preload 61F7FD..61F857 -> PCX cache 6B9D00 (embedded palette).
 /// BB 5EE200 selects observer art; 5DAFE0 selects host/accepted glyphs.
 const LAN_PCX_NAMES: [&str; 4] = ["wolnob.pcx", "wolob.pcx", "wolhost.pcx", "wolacpt.pcx"];
+/// WOL setup C2/C9 art: ping statics 004E34A0 and the 0x3ED emote images
+/// (0x49C wodact, 0x4AA wouact, C2 `0x791231`).
+const WOL_SETUP_PCX_NAMES: [&str; 5] = [
+    "pingg.pcx",
+    "pingy.pcx",
+    "pingr.pcx",
+    "wodact.pcx",
+    "wouact.pcx",
+];
 const LAN_SETUP_SHAPE: &str = "MnScrnLCoopGameSetup.shp";
 const LAN_SETUP_PALETTE: &str = "MnScrnLCoopGameSetup.PAL";
 
@@ -102,6 +111,7 @@ pub struct SkirmishShellChromeAtlas {
     pub generic_background_large_mnscrnl_shell: Option<SkirmishShellChromeEntry>,
     lan_setup_backgrounds: [Option<SkirmishShellChromeEntry>; 2],
     lan_icons: [Option<SkirmishShellChromeEntry>; 4],
+    wol_setup_icons: [Option<SkirmishShellChromeEntry>; 5],
     pub lower_side_640_lwscrns: Option<SkirmishShellChromeEntry>,
     pub lower_side_large_lwscrnl: Option<SkirmishShellChromeEntry>,
     mode_two_dialog_backgrounds: [Option<SkirmishShellChromeEntry>; 4],
@@ -144,6 +154,7 @@ pub struct SkirmishShellChromeAtlas {
     pub combo_face_118: Option<SkirmishShellChromeEntry>,
     pub combo_face_42: Option<SkirmishShellChromeEntry>,
     pub combo_face_39: Option<SkirmishShellChromeEntry>,
+    pub combo_face_213: Option<SkirmishShellChromeEntry>,
     pub combo_face_117: Option<SkirmishShellChromeEntry>,
     pub combo_face_44: Option<SkirmishShellChromeEntry>,
     pub combo_face_38: Option<SkirmishShellChromeEntry>,
@@ -179,6 +190,7 @@ pub struct ControlChrome {
     pub combo_face_118: Option<SkirmishShellChromeEntry>,
     pub combo_face_42: Option<SkirmishShellChromeEntry>,
     pub combo_face_39: Option<SkirmishShellChromeEntry>,
+    pub combo_face_213: Option<SkirmishShellChromeEntry>,
     pub combo_face_117: Option<SkirmishShellChromeEntry>,
     pub combo_face_44: Option<SkirmishShellChromeEntry>,
     pub combo_face_38: Option<SkirmishShellChromeEntry>,
@@ -205,8 +217,9 @@ impl SkirmishShellChromeAtlas {
         match (dialog_id, width) {
             (0xBB, 640) => self.generic_background_640_mnscrns_shell,
             (0xBB, _) => self.generic_background_large_mnscrnl_shell,
-            (0xBC | 0xBD, 640) => self.lan_setup_backgrounds[0],
-            (0xBC | 0xBD, 800) => self.lan_setup_backgrounds[1],
+            // 60CF00 gives WOL C2/C9 the same 72D030 setup art as BC/BD.
+            (0xBC | 0xBD | 0xC2 | 0xC9, 640) => self.lan_setup_backgrounds[0],
+            (0xBC | 0xBD | 0xC2 | 0xC9, 800) => self.lan_setup_backgrounds[1],
             _ => None,
         }
     }
@@ -223,6 +236,25 @@ impl SkirmishShellChromeAtlas {
             .iter()
             .find(|(file, _)| file.eq_ignore_ascii_case(name))
             .map(|(_, entry)| *entry)
+    }
+
+    /// 004E34A0 ping image 0/1/2: pingg, pingy, pingr.
+    pub fn wol_ping_icon(&self, icon: u8) -> Option<SkirmishShellChromeEntry> {
+        self.wol_setup_icons
+            .get(usize::from(icon))
+            .copied()
+            .flatten()
+    }
+
+    /// C2/C9 0x3ED images: element+0x14 (`wodact`, message 0x49C) and
+    /// element+0x18 (`wouact`, message 0x4AA).
+    pub fn wol_emote_images(
+        &self,
+    ) -> (
+        Option<SkirmishShellChromeEntry>,
+        Option<SkirmishShellChromeEntry>,
+    ) {
+        (self.wol_setup_icons[3], self.wol_setup_icons[4])
     }
 
     /// BB5DAFE0 gives the host glyph precedence, then accepted, else no icon.
@@ -270,6 +302,7 @@ impl SkirmishShellChromeAtlas {
             combo_face_118: self.combo_face_118,
             combo_face_42: self.combo_face_42,
             combo_face_39: self.combo_face_39,
+            combo_face_213: self.combo_face_213,
             combo_face_117: self.combo_face_117,
             combo_face_44: self.combo_face_44,
             combo_face_38: self.combo_face_38,
@@ -601,6 +634,8 @@ pub fn build_skirmish_shell_chrome_atlas(
         ("lan_combo_face_118", 118),
         ("lan_combo_face_42", 42),
         ("lan_combo_face_39", 39),
+        // WOL login 0x10F's nickname combo 0x628 (executed width 213).
+        ("wol_combo_face_213", 213),
     ] {
         rendered.push(render_primitive_bevel_entry(
             label,
@@ -620,7 +655,7 @@ pub fn build_skirmish_shell_chrome_atlas(
     for name in SKIRMISH_FLAG_PCX_NAMES {
         push_optional(&mut rendered, render_flag_pcx_entry(assets, name), name);
     }
-    for name in LAN_PCX_NAMES {
+    for name in LAN_PCX_NAMES.into_iter().chain(WOL_SETUP_PCX_NAMES) {
         // 6B9D00 packs embedded PCX palette to display RGB565; list images
         // and kind-2 statics compare the same packed magenta key as flags.
         push_optional(&mut rendered, render_flag_pcx_entry(assets, name), name);
@@ -679,6 +714,7 @@ pub fn build_skirmish_shell_chrome_atlas(
             by_label.get("mnscrnlcoopgamesetup.shp").copied(),
         ],
         lan_icons: LAN_PCX_NAMES.map(|name| by_label.get(name).copied()),
+        wol_setup_icons: WOL_SETUP_PCX_NAMES.map(|name| by_label.get(name).copied()),
         lower_side_640_lwscrns: by_label.get("lwscrns.shp").copied(),
         lower_side_large_lwscrnl: by_label.get("lwscrnl.shp").copied(),
         mode_two_dialog_backgrounds: MODE_TWO_DIALOG_ART.map(|(name, _)| {
@@ -725,6 +761,7 @@ pub fn build_skirmish_shell_chrome_atlas(
         combo_face_118: by_label.get("lan_combo_face_118").copied(),
         combo_face_42: by_label.get("lan_combo_face_42").copied(),
         combo_face_39: by_label.get("lan_combo_face_39").copied(),
+        combo_face_213: by_label.get("wol_combo_face_213").copied(),
         combo_face_117: by_label.get("skirmish_combo_face_117").copied(),
         combo_face_44: by_label.get("skirmish_combo_face_44").copied(),
         combo_face_38: by_label.get("skirmish_combo_face_38").copied(),

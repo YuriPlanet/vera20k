@@ -143,28 +143,28 @@ fn assert_houses(
             actual.native_unique_id(),
             Some(i32_at(expected, "id").wrapping_add(id_offset))
         );
-        assert_eq!(actual.side_index as i32, i32_at(expected, "side"));
+        assert_eq!(actual.side_index() as i32, i32_at(expected, "side"));
         assert_eq!(
-            actual.country.map(|id| sim.interner.resolve(id)),
+            actual.country().map(|id| sim.interner.resolve(id)),
             expected["country"].as_str()
         );
-        assert_eq!(actual.is_human, expected["human"].as_bool().unwrap());
+        assert_eq!(actual.is_human(), expected["human"].as_bool().unwrap());
         assert_eq!(
-            actual.player_control,
+            actual.player_control(),
             expected["player_control"].as_bool().unwrap()
         );
-        assert_eq!(actual.difficulty as i32, i32_at(expected, "difficulty"));
-        assert_eq!(actual.tech_level, i32_at(expected, "tech_level"));
-        assert_eq!(actual.current_iq, i32_at(expected, "iq"));
-        assert_eq!(actual.authored_iq, i32_at(expected, "iq"));
+        assert_eq!(actual.difficulty() as i32, i32_at(expected, "difficulty"));
+        assert_eq!(actual.tech_level(), i32_at(expected, "tech_level"));
+        assert_eq!(actual.current_iq(), i32_at(expected, "iq"));
+        assert_eq!(actual.authored_iq(), i32_at(expected, "iq"));
         assert_eq!(
-            actual.economy.scenario_credits(),
+            actual.economy().scenario_credits(),
             i32_at(expected, "scenario_credits")
         );
-        assert_eq!(actual.economy.credits(), i32_at(expected, "balance"));
+        assert_eq!(actual.economy().credits(), i32_at(expected, "balance"));
         assert_eq!(actual.authored_edge(), i32_at(expected, "edge"));
         assert_eq!(
-            actual.team_creation.ratio(),
+            actual.team_creation().ratio(),
             i32_at(expected, "ratio_ai_trigger_team")
         );
         assert_eq!(
@@ -197,7 +197,7 @@ fn assert_houses(
             ["start", "duration", "initial_delay"]
                 .map(|key| i32_at(&expected["attack_timer"], key))
         );
-        let timer = actual.team_creation.timer();
+        let timer = actual.team_creation().timer();
         assert_eq!(
             [timer.start_frame(), timer.duration()],
             ["start", "duration"].map(|key| i32_at(&expected["team_timer"], key))
@@ -367,8 +367,8 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
             sim.houses[&current].scalar_difficulty_biases()
         );
         assert_eq!(
-            restored.economy.scenario_credits(),
-            sim.houses[&current].economy.scenario_credits()
+            restored.economy().scenario_credits(),
+            sim.houses[&current].economy().scenario_credits()
         );
         if let Some(filename) = row["filename"].as_str() {
             let map = MapFile::from_bytes(assets.get_ref(filename).unwrap()).unwrap();
@@ -423,7 +423,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                 row["rng_after"]["mapgen"].as_str().unwrap()
             );
             assert!(
-                fresh.entities().is_empty() && fresh.production.terrain_objects.is_empty(),
+                fresh.entities().is_empty() && fresh.terrain_objects.objects().is_empty(),
                 "the actual House generation completes before Fill and every object section"
             );
         }

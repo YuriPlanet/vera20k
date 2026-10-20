@@ -683,7 +683,7 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
             .is_none_or(|entity| entity.health.current() == 0 && !entity.lifecycle.object_alive()),
         "DestroyAttached finishes before the outer receiver returns"
     );
-    let losses_after_kill = sim.houses[&owner].stats.buildings_lost();
+    let losses_after_kill = sim.houses[&owner].stats().buildings_lost();
     let raised: Vec<_> = sim
         .trigger_runtime
         .dispatch_trace
@@ -737,7 +737,10 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
     );
     sim.commit_direct_damage_receiver(&rules, Some(&overlays), hit, FrameEffects::default());
     sim.flush_pending_delete();
-    assert_eq!(sim.houses[&owner].stats.buildings_lost(), losses_after_kill);
+    assert_eq!(
+        sim.houses[&owner].stats().buildings_lost(),
+        losses_after_kill
+    );
     assert_eq!(
         sim.lifecycle_test_events_for_test().iter().filter(|event| {
             matches!(event, LifecycleTestEvent::RecordKillBookkeeping { stable_id } if *stable_id == victim)

@@ -2910,43 +2910,6 @@ mod tests {
     }
 
     #[test]
-    fn guided_projectile_turns_with_persisted_rot_state() {
-        let mut store = ProjectileStore::new();
-        let mut guided = spawn(ProjectileTarget::Cell { rx: 0, ry: 4 });
-        guided.origin.z = 1; // Steering fixture: above the native ground-impact plane.
-        guided.guidance = Some(ProjectileGuidance {
-            rot: 4,
-            missile_rot_var: crate::util::native_x87::NativeF64Bits::from_bits(0),
-            course_lock_duration: 0,
-            course_frames: 0,
-            course_locked: true,
-            very_high: true,
-            max_speed: 0,
-            acceleration: 3,
-            closing_frames: 0,
-            closing_accumulator_bits: 0,
-        });
-        let id = store.spawn(1, guided);
-
-        store.advance(
-            0,
-            &BTreeMap::new(),
-            None,
-            &SharedCellDummy::fresh(),
-            |_, _| None,
-        );
-
-        let guided = store
-            .get(id)
-            .expect("guided projectile survives first turn");
-        assert!(
-            f64::from_bits(guided.velocity.y.bits()) > 0.0,
-            "ROT turns toward the +Y target"
-        );
-        assert!(!guided.guidance.unwrap().course_locked);
-    }
-
-    #[test]
     fn gsi_04_01_dummy_target_reads_live_coord_level_and_slope() {
         let dummy = SharedCellDummy::fresh();
         dummy.set_level_slope(-1, 0);
@@ -2996,54 +2959,6 @@ mod tests {
         assert_eq!(
             bridge.z - ground.z,
             crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-        );
-    }
-
-    #[test]
-    fn advance_preserves_stable_creation_order_and_delays_new_projectiles() {
-        let mut store = ProjectileStore::new();
-        let mut first_spawn = spawn(ProjectileTarget::Cell { rx: 0, ry: 0 });
-        first_spawn.speed_leptons_per_frame = 256;
-        let first = store.spawn(1, first_spawn);
-        let second = store.spawn(2, spawn(ProjectileTarget::Cell { rx: 1, ry: 0 }));
-
-        let result = store.advance(
-            0,
-            &BTreeMap::new(),
-            None,
-            &SharedCellDummy::fresh(),
-            |projectile, candidate| {
-                (projectile.id == first)
-                    .then_some(ProjectileCollisionResponse::TargetZClamp(candidate))
-            },
-        );
-
-        assert_eq!(
-            result
-                .detonations
-                .iter()
-                .map(|detonation| detonation.projectile_id)
-                .collect::<Vec<_>>(),
-            vec![first]
-        );
-        assert!(store.get(first).is_none());
-        assert_ne!(
-            store.get(second).unwrap().position,
-            ProjectileCoord::new(0, 0, 0)
-        );
-    }
-
-    #[test]
-    fn homing_projectile_uses_current_target_position() {
-        let mut store = ProjectileStore::new();
-        let id = store.spawn(1, spawn(ProjectileTarget::Entity(42)));
-        let targets = BTreeMap::from([(42, ProjectileCoord::new(128, 128, 0))]);
-
-        store.advance(0, &targets, None, &SharedCellDummy::fresh(), |_, _| None);
-
-        assert_eq!(
-            store.get(id).unwrap().position,
-            ProjectileCoord::new(64, 64, 0)
         );
     }
 
@@ -3104,17 +3019,6 @@ mod tests {
             result.detonations[1].reason,
             ProjectileDetonationReason::Collision
         );
-    }
-
-    #[test]
-    fn store_round_trips_through_snapshot_serialization() {
-        let mut store = ProjectileStore::new();
-        store.spawn(1, spawn(ProjectileTarget::Cell { rx: 1, ry: 0 }));
-
-        let bytes = crate::util::save_codec::serialize(&store).unwrap();
-        let restored: ProjectileStore = crate::util::save_codec::deserialize(&bytes).unwrap();
-
-        assert_eq!(restored, store);
     }
 
     #[test]

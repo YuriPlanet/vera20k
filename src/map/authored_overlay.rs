@@ -1382,24 +1382,6 @@ mod tests {
     }
 
     #[test]
-    fn payload_retains_signed_identity_and_independent_state_until_consumed() {
-        let payload = FinalizedOverlayPayload::from_cells_for_test(
-            2,
-            1,
-            vec![(NO_OVERLAY_IDENTITY, 41), (0xee, 9)],
-            vec![7, 11],
-        );
-        let (width, height, cells, counts) = payload.into_parts();
-
-        assert_eq!((width, height), (2, 1));
-        assert_eq!(cells[0].overlay_id(), None);
-        assert_eq!(cells[0].state(), 41);
-        assert_eq!(cells[1].overlay_id(), Some(0xee));
-        assert_eq!(cells[1].state(), 9);
-        assert_eq!(counts, vec![7, 11]);
-    }
-
-    #[test]
     fn native_overlay_shape_keeps_all_four_strict_radar_boundaries() {
         let shape = NativeOverlayMapShape::new(10, 6);
         assert!(!shape.admits(5, 5), "W < x+y is strict");

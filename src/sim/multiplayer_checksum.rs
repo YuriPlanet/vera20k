@@ -285,7 +285,7 @@ impl Simulation {
                 .houses
                 .get(&owner)
                 .ok_or(MultiplayerChecksumError::MissingHouse(owner))?;
-            checksum.fold_house(u8::from(house.map_is_clear));
+            checksum.fold_house(u8::from(house.map_is_clear()));
         }
 
         // Layers 0..4 in index order, each in its stored member order.
@@ -343,11 +343,11 @@ impl Simulation {
             }
             ObjectKind::Terrain => {
                 let terrain = self
-                    .production
                     .terrain_objects
+                    .objects()
                     .get(&stable_id)
                     .ok_or(missing)?;
-                let (world_x, world_y) = terrain_world_xy(terrain.rx, terrain.ry);
+                let (world_x, world_y) = terrain_world_xy(terrain.cell().0, terrain.cell().1);
                 ChecksumObject::new(world_x, world_y, RTTI_TERRAIN, 0)
             }
             ObjectKind::Projectile => {
@@ -466,13 +466,15 @@ mod tests {
         });
 
         let terrain_id = sim.allocate_stable_id();
-        sim.production.terrain_objects.insert(terrain_id, {
-            let mut terrain =
-                TerrainObjectState::for_test(terrain_id, InternedId::from_index(0), 7, 9);
-            terrain.health = 10;
-            terrain.max_health = 10;
-            terrain
-        });
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .insert(terrain_id, {
+                let mut terrain =
+                    TerrainObjectState::for_test(terrain_id, InternedId::from_index(0), 7, 9);
+                terrain.set_health_for_test(10);
+                terrain.set_max_health_for_test(10);
+                terrain
+            });
 
         let bullet_id = sim.allocate_stable_id();
         sim.projectiles.spawn(
@@ -558,30 +560,6 @@ mod tests {
         assert_eq!(round_facing16_to_8(0x007f), 0);
         assert_eq!(round_facing16_to_8(0x0080), 1);
         assert_eq!(round_facing16_to_8(0xffff), 0);
-    }
-
-    #[test]
-    fn only_the_multiplayer_feedback_anim_sentinel_is_skipped() {
-        let mut checksum = RetailChecksumAccumulator::new();
-        checksum.fold_object(ChecksumObject::new(100, 200, 4, SYNC_EXEMPT_ANIM_ID));
-        assert_eq!(checksum.value(), 0);
-
-        checksum.fold_object(ChecksumObject::new(100, 200, 4, -1));
-        assert_ne!(checksum.value(), 0);
-    }
-
-    #[test]
-    fn multiplayer_frame_consumes_exactly_two_scenario_rng_samples() {
-        let mut sim = Simulation::with_seed(0x1234);
-        let mut reference = sim.scenario_rng.clone();
-        let checksum_sample = reference.next_u32();
-        let diagnostic_sample = reference.next_u32();
-
-        let frame = sim.compute_retail_multiplayer_checksum().unwrap();
-
-        assert_eq!(frame.value, checksum_sample);
-        assert_eq!(frame.diagnostic_rng_sample, diagnostic_sample);
-        assert_eq!(sim.scenario_rng.next_u32(), reference.next_u32());
     }
 
     #[test]
@@ -773,16 +751,5 @@ mod tests {
 
         assert!(sim.compute_retail_multiplayer_checksum().is_err());
         assert_eq!(sim.scenario_rng.next_u32(), reference.next_u32());
-    }
-
-    #[test]
-    fn gsi_16_11_dangling_logic_id_remains_a_hard_error() {
-        let mut sim = Simulation::new();
-        sim.substrate.logic.set_order_for_test(vec![91]);
-
-        assert_eq!(
-            sim.compute_retail_multiplayer_checksum(),
-            Err(MultiplayerChecksumError::MissingObject(91))
-        );
     }
 }

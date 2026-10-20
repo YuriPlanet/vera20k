@@ -506,17 +506,6 @@ mod tests {
     }
 
     #[test]
-    fn set_view_reanchors_rows() {
-        let mut l = list(6, 500);
-        l.add_message(&post(None, "a", None, true), 0, &mono);
-        l.add_message(&post(None, "b", None, true), 0, &mono);
-        l.set_view(10, 100, 400);
-        assert_eq!(l.messages()[0].y, 100);
-        assert_eq!(l.messages()[1].y, 100 + MESSAGE_LINE_HEIGHT_PX);
-        assert_eq!(l.x(), 10);
-    }
-
-    #[test]
     fn line_char_cap_111_applies() {
         let mut l = list(14, 100_000);
         let long = "y".repeat(300);

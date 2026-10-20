@@ -539,13 +539,10 @@ fn entire_grapple(elite: bool) {
 }
 
 #[test]
-fn stock_normal_squid_grapple_rolls_bites_culls_and_retires_the_ship() {
-    entire_grapple(false);
-}
-
-#[test]
-fn stock_elite_squid_grapple_rolls_bites_culls_and_retires_the_ship() {
-    entire_grapple(true);
+fn stock_normal_and_elite_squid_grapples_roll_bite_cull_and_retire_the_ship() {
+    for elite in [false, true] {
+        entire_grapple(elite);
+    }
 }
 
 #[test]

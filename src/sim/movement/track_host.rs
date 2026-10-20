@@ -1443,7 +1443,7 @@ fn unit_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> MissionTy
     let wide = sim
         .houses
         .get(&entity.owner())
-        .is_some_and(|house| house.current_iq >= rules.general.iq_guard_area)
+        .is_some_and(|house| house.current_iq() >= rules.general.iq_guard_area)
         || sim
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| {

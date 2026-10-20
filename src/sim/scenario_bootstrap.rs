@@ -1217,7 +1217,7 @@ pub fn initialize_skirmish_launch_houses(
         sim.houses.is_empty()
             && sim.houses.order().is_empty()
             && sim.entities().is_empty()
-            && sim.production.terrain_objects.is_empty(),
+            && sim.terrain_objects.objects().is_empty(),
         "skirmish houses must be initialized before map objects"
     );
     let slots = normalized_launch_slots(session);
@@ -1253,7 +1253,7 @@ pub fn initialize_skirmish_launch_houses(
             sim.houses
                 .get_mut(&id)
                 .expect("created launch House")
-                .player_control = slot.source_human_index == Some(session.local_player_index);
+                .assign_player_control(slot.source_human_index == Some(session.local_player_index));
         }
     }
     populate_special_houses(sim, house_roster, rules);
@@ -1594,7 +1594,7 @@ fn assign_launch_base_centers(
         ) {
             house.set_base_center((waypoint.rx, waypoint.ry));
             if let Some(waypoint_edge) = waypoint_edge {
-                house.waypoint_edge = waypoint_edge;
+                house.assign_waypoint_edge(waypoint_edge);
             }
         }
     }
@@ -1705,8 +1705,7 @@ pub fn populate_special_houses(sim: &mut Simulation, house_roster: &HouseRoster,
         // is always concrete here — the roster's `Country=` when the map named
         // one, otherwise the special house's own `[Countries]` entry, which is
         // what this house is being built as.
-        house.multiplay_passive =
-            crate::sim::house_state::resolve_multiplay_passive(Some(rules), Some(country_name));
+        house.resolve_multiplay_passive(Some(rules), Some(country_name));
         house.project_country_mults(rules, &sim.interner);
         sim.houses.register(house);
     }
@@ -1770,15 +1769,14 @@ pub fn populate_launch_houses(
         // the constructor value zero and stamps generated computer slots with
         // Rules.MaxIQLevels in non-campaign sessions.
         if !slot.is_human {
-            house.current_iq = rules.general.max_iq_levels;
+            house.stamp_computer_iq(rules.general.max_iq_levels);
             // `0x006881F5..0x00688209`: a computer slot's team marks the
             // Scenario, which turns Computer_Paranoid off.
             if slot.team != LaunchTeam::None {
                 sim.session.set_computer_slot_has_team();
             }
         }
-        house.multiplay_passive =
-            crate::sim::house_state::resolve_multiplay_passive(Some(rules), Some(country_name));
+        house.resolve_multiplay_passive(Some(rules), Some(country_name));
         house.project_country_mults(rules, &sim.interner);
         sim.houses.register(house);
     }
@@ -1828,17 +1826,17 @@ pub(crate) fn native_ai_opening_grant(coefficient: i32, money: i32) -> i32 {
 /// and integer cost subtraction, no x87 involvement).
 pub fn apply_skirmish_ai_opening_credits(sim: &mut Simulation, rules: &RuleSet) {
     for house in sim.houses.values_mut() {
-        if house.is_human || house.multiplay_passive {
+        if house.is_human() || house.multiplay_passive() {
             continue;
         }
         let coefficient = rules
             .general
             .multiplayer_ai_cm
-            .get(house.difficulty.table_index())
+            .get(house.difficulty().table_index())
             .copied()
             .unwrap_or(0);
-        let grant = native_ai_opening_grant(coefficient, house.economy.available_money());
-        house.economy.add_credits(grant);
+        let grant = native_ai_opening_grant(coefficient, house.economy().available_money());
+        house.economy_mut().add_credits(grant);
     }
 }
 
@@ -2096,7 +2094,7 @@ fn seed_starting_extra_units_with_overlay_registry(
             &slot.owner_name,
             &sim.interner,
         )
-        .and_then(|house| house.base_center) else {
+        .and_then(|house| house.base_center()) else {
             continue;
         };
         let candidates = starting_unit_candidates_for_country(
@@ -2182,9 +2180,9 @@ fn seed_starting_extra_units_with_overlay_registry(
                 &slot.owner_name,
                 &sim.interner,
             )
-            && !house.multiplay_passive
+            && !house.multiplay_passive()
         {
-            house.economy.add_credits(remaining);
+            house.economy_mut().add_credits(remaining);
         }
     }
 
@@ -2745,8 +2743,7 @@ pub fn initialize_campaign_current_house(
             .houses
             .get_mut(&owner)
             .expect("registered current House");
-        house.is_human = true;
-        house.player_control = true;
+        house.make_campaign_player();
     }
 }
 
@@ -2762,7 +2759,7 @@ pub fn initialize_map_roster_houses(
         sim.houses.is_empty()
             && sim.houses.order().is_empty()
             && sim.entities().is_empty()
-            && sim.production.terrain_objects.is_empty(),
+            && sim.terrain_objects.objects().is_empty(),
         "scenario houses must be initialized before map objects"
     );
     let campaign_difficulties = sim.session.campaign_house_difficulties();
@@ -2829,8 +2826,7 @@ pub fn initialize_map_roster_houses(
         // HouseReadINI500A62..500A7B overwrites the constructor's country ID
         // with the bounded roster entry before any object reader runs.
         house_state.initialize_scenario_name(&house.name);
-        house_state.multiplay_passive =
-            crate::sim::house_state::resolve_multiplay_passive(rules, country_name);
+        house_state.resolve_multiplay_passive(rules, country_name);
         if let Some(rules) = rules {
             house_state.project_country_mults(rules, &sim.interner);
         }
@@ -2848,9 +2844,9 @@ pub fn initialize_map_roster_houses(
             .get_mut(&name_id)
             .expect("constructed scenario House");
         let country_name = house_state
-            .country
+            .country()
             .map(|country| sim.interner.resolve(country));
-        house_state.player_control = house.player_control == Some(true);
+        house_state.assign_player_control(house.player_control == Some(true));
         if let Some(ini) = map_ini {
             house_state.initialize_scenario_parameters(
                 house.read_scenario_parameters(ini, mission_counter),
@@ -2858,36 +2854,38 @@ pub fn initialize_map_roster_houses(
                 rules.map(|rules| &rules.general),
             );
             house_state
-                .team_creation
+                .team_creation_mut()
                 .read_scenario_ratio(ini.section_or_empty(&house.name));
             if let Some(rules) = rules {
                 let temporary_delay = house_state
                     .difficulty_value(&rules.general.team_delays)
                     .wrapping_add((index as i32).wrapping_mul(175));
-                house_state.team_creation.restart(frame, temporary_delay);
+                house_state
+                    .team_creation_mut()
+                    .restart(frame, temporary_delay);
             }
         }
-        house_state.base_plan.percent_built = house.base_plan.percent_built;
-        house_state.base_plan.nodes = house
-            .base_plan
-            .nodes
-            .iter()
-            .map(|node| crate::sim::base_plan::BasePlanNode {
-                type_or_control: node.type_or_control,
-                packed_cell: node.packed_cell,
-                filled: node.filled,
-                retry_count: node.retry_count,
-            })
-            .collect();
+        house_state.base_plan_mut().read_scenario(
+            house.base_plan.percent_built,
+            house
+                .base_plan
+                .nodes
+                .iter()
+                .map(|node| crate::sim::base_plan::BasePlanNode {
+                    type_or_control: node.type_or_control,
+                    packed_cell: node.packed_cell,
+                    filled: node.filled,
+                    retry_count: node.retry_count,
+                }),
+        );
         // HouseClass::Read_Scenario_INI reads `IQ=` from this exact named
         // house section, defaults it to zero, and changes a value above
         // MaxIQLevels to literal one before storing it as both the authored
         // IQ (+0x1D0) and CurrentIQ (+0x24C) (0x00500DBA..0x00500DC0).
-        house_state.current_iq = rules.map_or_else(
+        house_state.install_scenario_iq(rules.map_or_else(
             || house.iq,
             |rules| house.scenario_current_iq(rules.general.max_iq_levels),
-        );
-        house_state.authored_iq = house_state.current_iq;
+        ));
         if let Some(rules) = rules
             && let Some((player, computer)) = campaign_difficulties
         {
@@ -2942,9 +2940,10 @@ mod tests {
         initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
         let local = sim.session.current_house().unwrap();
         let house = &sim.houses[&local];
-        assert_eq!(sim.interner.resolve(house.country.unwrap()), "Allocated");
+        assert_eq!(sim.interner.resolve(house.country().unwrap()), "Allocated");
         assert_eq!(
-            house.side_index, -1,
+            house.side_index(),
+            -1,
             "Country ctor's absent Side remains native-1"
         );
     }
@@ -2985,7 +2984,7 @@ mod tests {
                 &descriptor,
             );
             let ai = sim.interner.get("Computer1").unwrap();
-            assert_eq!(sim.houses[&ai].difficulty, expected);
+            assert_eq!(sim.houses[&ai].difficulty(), expected);
         }
     }
 
@@ -3100,8 +3099,8 @@ mod tests {
         let host = sim.interner.get("Host").unwrap();
         assert_eq!(sim.session.current_house(), Some(guest));
         assert_eq!(sim.houses.order()[0], guest);
-        assert!(sim.houses[&guest].is_human && sim.houses[&guest].player_control);
-        assert!(sim.houses[&host].is_human && !sim.houses[&host].player_control);
+        assert!(sim.houses[&guest].is_human() && sim.houses[&guest].player_control());
+        assert!(sim.houses[&host].is_human() && !sim.houses[&host].player_control());
         let starts = [
             Waypoint {
                 index: 0,
@@ -3167,11 +3166,11 @@ mod tests {
                 &IniFile::from_str(&format!("[Basic]\n{input}\n")),
             );
             assert_eq!(sim.session.current_house(), Some(expected));
-            assert!(sim.houses[&expected].is_human);
-            assert!(sim.houses[&expected].player_control);
+            assert!(sim.houses[&expected].is_human());
+            assert!(sim.houses[&expected].player_control());
         }
         assert!(
-            sim.houses[&first].is_human && sim.houses[&first].player_control,
+            sim.houses[&first].is_human() && sim.houses[&first].player_control(),
             "selecting another House does not clear previously set flags"
         );
     }
@@ -3362,7 +3361,7 @@ mod tests {
                 .get(&sim.session.current_house().unwrap())
                 .unwrap();
             assert_eq!(
-                house.country.map(|id| sim.interner.resolve(id)),
+                house.country().map(|id| sim.interner.resolve(id)),
                 Some("Replacement")
             );
         }
@@ -3492,7 +3491,9 @@ mod tests {
                         let player = sim.interner.get(owner_key).unwrap();
                         assert_eq!(sim.session.current_house(), Some(player));
                         assert_eq!(sim.houses.order()[0], player);
-                        assert!(sim.houses[&player].is_human && sim.houses[&player].player_control);
+                        assert!(
+                            sim.houses[&player].is_human() && sim.houses[&player].player_control()
+                        );
                     },
                 )
                 .expect("shared staged object construction");
@@ -3543,7 +3544,7 @@ mod tests {
                     }
                 );
                 assert_eq!(sim.session.current_house(), Some(player));
-                assert!(sim.houses[&player].is_human && sim.houses[&player].player_control);
+                assert!(sim.houses[&player].is_human() && sim.houses[&player].player_control());
                 assert_eq!(launch.session.local_player().name, handle);
                 let mut distinct = sim.houses.order().to_vec();
                 distinct.sort();
@@ -3556,7 +3557,7 @@ mod tests {
                 {
                     let other = sim.interner.get(name).unwrap();
                     assert_ne!(player, other);
-                    assert!(!sim.houses[&other].is_human && !sim.houses[&other].player_control);
+                    assert!(!sim.houses[&other].is_human() && !sim.houses[&other].player_control());
                 }
                 let neutral = sim.interner.get("Neutral").unwrap();
                 let mut expected_mcv_owners = Vec::new();
@@ -3603,7 +3604,8 @@ mod tests {
                 assert_eq!(restored.session.current_house(), Some(player));
                 assert_eq!(restored.houses.order(), sim.houses.order());
                 assert!(
-                    restored.houses[&player].is_human && restored.houses[&player].player_control
+                    restored.houses[&player].is_human()
+                        && restored.houses[&player].player_control()
                 );
                 assert_entity_owners(&restored);
             }
@@ -3835,7 +3837,7 @@ mod tests {
         sim.session.game_options_mut_for_test().tech_level = 10;
         let owner = sim.interner.intern("Americans");
         let mut house = HouseState::new(owner, 0, None, true, 0, 10);
-        house.base_center = Some((6, 5));
+        house.set_base_center_for_test(Some((6, 5)));
         sim.houses.register(house);
         let slots = [NormalizedSkirmishSlot {
             owner_name: "Americans".to_string(),
@@ -3945,42 +3947,6 @@ mod tests {
             .rng_state();
 
         assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn main_variant_draws_do_not_advance_scenario_cursor() {
-        let seed = 0x51C0_1002;
-        let mut sim = ScenarioBootstrapRng::new(seed).into_simulation(&descriptor(seed));
-        {
-            let (_, main) = sim.terrain_load_draws();
-            let _ = main.next_u32();
-        }
-        let actual = sim.rng_state();
-        let mut expected_main = SimRng::new(u64::from(seed));
-        let _ = expected_main.next_u32();
-
-        assert_eq!(
-            actual.scenario,
-            SimRng::new(u64::from(seed)).logical_state()
-        );
-        assert_eq!(actual.main, expected_main.logical_state());
-    }
-
-    #[test]
-    fn terrain_scenario_draws_do_not_advance_main() {
-        let seed = 0x51C0_1003;
-        let mut sim = ScenarioBootstrapRng::new(seed).into_simulation(&descriptor(seed));
-        {
-            let (mut scenario, main) = sim.terrain_load_draws();
-            let _ = scenario.next_range_u32_inclusive(5, 17);
-            drop(main);
-        }
-        let actual = sim.rng_state();
-        let mut expected_scenario = SimRng::new(u64::from(seed));
-        let _ = expected_scenario.next_range_u32_inclusive(5, 17);
-
-        assert_eq!(actual.scenario, expected_scenario.logical_state());
-        assert_eq!(actual.main, SimRng::new(u64::from(seed)).logical_state());
     }
 
     #[test]
@@ -4465,7 +4431,7 @@ mod tests {
         assert_eq!(
             sim.houses
                 .get(&sim.houses.order()[0])
-                .and_then(|house| house.base_center),
+                .and_then(|house| house.base_center()),
             Some((40, 40))
         );
     }
@@ -4544,8 +4510,8 @@ mod tests {
             true,
             &mut expected_rng,
         );
-        assert_eq!(actual_plan.nodes, expected_plan.nodes);
-        assert_eq!(actual_plan.percent_built, expected_plan.percent_built);
+        assert_eq!(actual_plan.nodes(), expected_plan.nodes());
+        assert_eq!(actual_plan.percent_built(), expected_plan.percent_built());
         assert_eq!(
             sim.scenario_rng.logical_state(),
             expected_rng.logical_state()

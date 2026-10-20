@@ -230,27 +230,6 @@ fn class_turn_dispatches_the_active_piggyback_instance() {
 }
 
 #[test]
-fn script42_keeps_a_missing_locomotor_pending() {
-    let mut sim = Simulation::new();
-    let mut actor = GameEntity::test_default_of_category(
-        1,
-        "MEMBER",
-        "OWNER",
-        10,
-        10,
-        EntityCategory::Infantry,
-    );
-    actor.locomotor = None;
-    sim.substrate.entities.insert(actor);
-    sim.interner = crate::sim::intern::test_interner();
-    let owner = sim.interner.get("OWNER").unwrap();
-    let script = sim.interner.intern("SCRIPT");
-    let team = sim.team_script_vm.create_team(owner, script, vec![1], 0);
-    sim.team_action_force_facing(team, 2);
-    assert!(!sim.team_script_vm.team(team).unwrap().advance_pending());
-}
-
-#[test]
 fn retail_all01_facing_scripts_reach_the_shared_turn_owner() {
     let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;

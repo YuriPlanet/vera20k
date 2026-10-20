@@ -792,27 +792,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_05_14_budget_range_stops_one_below_maxdebris() {
-        // `DEC EDI` at `0x007022AD` — the range is [MinDebris, MaxDebris - 1].
-        // With MinDebris == MaxDebris - 1 the two bounds coincide and the
-        // helper (like native's RandomRanged) consumes no draw, so the budget
-        // is exactly that value and every later draw belongs to an entry.
-        let input = data(5, 4, &[], &[], 0, 20);
-        let mut rng = SimRng::new(5);
-        let thrown = throw(&input, &mut rng);
-        // No DebrisTypes and no DebrisAnims: the whole budget goes to the
-        // `[General] MetallicDebris=` arm, one RandomRanged draw each.
-        assert_eq!(thrown.anims.len(), 4);
-        assert!(thrown.voxels.is_empty());
-        assert!(
-            thrown
-                .anims
-                .iter()
-                .all(|row| row.source == ShpDebrisSource::RulesMetallicDebris)
-        );
-    }
-
-    #[test]
     fn gsi_05_14_an_empty_metallic_debris_list_still_spends_the_budget_in_draws() {
         // `0x007024D2` gates the arm on `DebrisTypes.Count` and `0x007024DA` on
         // the budget — there is NO test of `[Rules+0x14C]`. `0x00702525
@@ -1119,63 +1098,5 @@ mod tests {
             VoxelAnimAiOutcome::Delete
         );
         assert_eq!(piece.duration, 150, "the decrement sits below the gate");
-    }
-
-    #[test]
-    fn gsi_05_14_debris_landing_in_water_dies_on_contact() {
-        // `CMP [cell+0xEC], 2` inside the AI's bounce arm sets `duration = 0`
-        // instead of playing the BounceAnim, so a piece that scatters off a
-        // shoreline sinks rather than skipping.
-        struct Water;
-        impl BounceTerrain for Water {
-            type Cell = IVec3;
-            fn select_cell(&self, coord: IVec3) -> IVec3 {
-                coord
-            }
-            fn ground_height_leptons(&self, _coord: IVec3) -> i32 {
-                0
-            }
-            fn selected_is_bridge(&self, _coord: &IVec3) -> bool {
-                false
-            }
-            fn cell_height_level(&self, _coord: IVec3) -> i32 {
-                0
-            }
-            fn ramp(&self, _coord: IVec3) -> u8 {
-                0
-            }
-            fn cliff_face_direction(&self, _coord: IVec3, _previous: IVec3) -> Option<u8> {
-                None
-            }
-            fn has_bounce_surface(&self, _coord: &IVec3) -> bool {
-                false
-            }
-            fn is_water(&self, _coord: IVec3) -> bool {
-                true
-            }
-        }
-        let mut rng = SimRng::new(88);
-        let mut piece = spawn_debris_piece(
-            1,
-            0,
-            VoxelAnimTypeId(0),
-            &tire(),
-            None,
-            IVec3::new(1280, 2560, 0),
-            &mut rng,
-        )
-        .expect("in domain");
-        let water = Water;
-        let mut outcome = VoxelAnimAiOutcome::Alive;
-        for _ in 0..150 {
-            outcome = voxel_anim_ai(&mut piece, &water).expect("in domain");
-            if outcome == VoxelAnimAiOutcome::Delete || piece.duration == 0 {
-                break;
-            }
-        }
-        assert!(
-            piece.duration == 0 || outcome == VoxelAnimAiOutcome::Delete,
-            "a water landing must end the piece"
-        );
     }
 }

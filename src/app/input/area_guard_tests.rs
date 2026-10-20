@@ -120,7 +120,7 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
             10_000,
             10,
         );
-        house.player_control = actor["player_control"].as_u64().unwrap() != 0;
+        house.set_player_control_for_test(actor["player_control"].as_u64().unwrap() != 0);
         sim.houses.register(house);
         if pointer == current_house {
             sim.session.set_current_house_for_test(Some(owner));

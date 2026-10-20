@@ -149,7 +149,7 @@ fn build_world(seed: u32, per_category: u16, structures: u16) -> Simulation {
         let owner = sim.interner.intern(owner_name);
         let mut house = HouseState::new(owner, *side, None, index == 0, 10_000, 10);
         // Raw-inserted entities would otherwise resolve the match on tick 1.
-        house.multiplay_passive = true;
+        house.make_multiplay_passive();
         sim.houses.register(house);
 
         let (hx, hy) = homes[index];
