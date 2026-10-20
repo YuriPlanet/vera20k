@@ -3005,6 +3005,15 @@ mod tests {
     #[test]
     fn starting_country_candidate_lists_match_original_owner_only_admission() {
         let (corpus, rules) = starting_country_native_fixture(false);
+        for row in corpus["type_inputs"].as_array().unwrap() {
+            let object = rules.object(row["id"].as_str().unwrap()).unwrap();
+            assert_eq!(
+                rules.house_type_mask(&object.owner),
+                row["owner_mask"].as_u64().unwrap() as u32,
+                "{} Owner mask",
+                row["id"],
+            );
+        }
         for country in corpus["country_inputs"].as_array().unwrap() {
             let id = country["id"].as_str().unwrap();
             let candidates = starting_unit_candidates_for_country(
@@ -3103,6 +3112,67 @@ mod tests {
                 ),
                 row["budget"].as_i64().unwrap() as i32,
                 "{}",
+                row["name"],
+            );
+        }
+    }
+
+    #[test]
+    fn starting_country_native_qualifier_sentinels_reach_shared_consumers() {
+        let corpus =
+            crate::test_fixture::json("tools/rules_oracle/session_country_starting_ownership.json");
+        let gate = &corpus["qualifier_gates"];
+        let mut source = String::from("[Countries]\n");
+        for (index, id) in gate["sentinel_registry_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            source.push_str(&format!("{index}={}\n", id.as_str().unwrap()));
+        }
+        let type_id = gate["type_id"].as_str().unwrap();
+        source.push_str(&format!(
+            "[VehicleTypes]\n0={type_id}\n[{type_id}]\nTechLevel=1\n"
+        ));
+        for row in gate["rows"].as_array().unwrap() {
+            let mut ini = IniFile::from_str(&source);
+            ini.merge(&IniFile::from_str(gate["owner_layer"].as_str().unwrap()));
+            ini.merge(&IniFile::from_str(row["physical_layer"].as_str().unwrap()));
+            let rules = RuleSet::from_ini(&ini).unwrap();
+            let object = rules.object(type_id).unwrap();
+            assert_eq!(
+                rules.house_type_mask(&object.owner),
+                gate["owner_mask"].as_u64().unwrap() as u32
+            );
+            let index =
+                crate::rules::ruleset::CountryIdx(gate["actual_index"].as_u64().unwrap() as u16);
+            assert_eq!(
+                crate::sim::ai_buildable::candidate_allowed(
+                    object,
+                    crate::sim::ai_buildable::country_bit(index),
+                    gate["planned_side"].as_i64().unwrap() as i32,
+                    true,
+                    &rules,
+                ),
+                row["first_buildable_result"].as_str() == Some(type_id),
+                "{} FirstBuildable",
+                row["name"],
+            );
+            // Only the original qualifier region is a native CanBuild
+            // golden. Other production gates are open in this Rust scene.
+            let mut sim = Simulation::new();
+            let owner = sim.interner.intern("QualifierHouse");
+            let country = sim
+                .interner
+                .intern(gate["actual_country"].as_str().unwrap());
+            sim.houses
+                .register(HouseState::new(owner, -1, Some(country), false, 0, 10));
+            assert_eq!(
+                crate::sim::production::can_build(&sim, &rules, owner, object, false, false)
+                    == crate::sim::production::CanBuild::Yes,
+                row["can_build_qualifier_gate"].as_bool().unwrap(),
+                "{} CanBuild qualifier integration",
                 row["name"],
             );
         }

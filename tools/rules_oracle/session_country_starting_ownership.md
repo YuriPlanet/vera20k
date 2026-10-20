@@ -66,6 +66,11 @@ output, cost calculation, original code or ownership decision is supplied.
 The controls distinguish exact ID, different-case ID, different-case Name alias,
 unknown Owner, opposite ParentCountry, deliberately failing Required/Forbidden
 qualifiers, BaseUnit exclusion, participant union and Country-passive removal.
+Two further native-read types have `Owner=<none>` and `Owner=<random>`;
+their observed stored Owner masks are respectively `0` and `0x40000000`.
+Both have AllowedToStart=yes, TechLevel1 and Cost10000, yet neither enters the
+actual Country0/1 lists or budgets. These cases detect a shared mask reader
+incorrectly treating `<none>` as Country0 or discarding the native random bit.
 Candidate lists come from actual native vector contents. Five native budget
 results are preserved; the passive cases follow a real additional physical
 Country reader pass using the saved `passive_layer` string.
@@ -90,5 +95,50 @@ subtracts cost at `0x5D73EF..0x5D73F3`, then sets initial veterancy and mission.
 The outer routine additionally draws Scenario `0..65535` at `0x5D6FFE` after
 all Houses, including the zero-budget path. Placement, mission timers, object
 destruction/detach and those downstream RNG effects are not certified here.
-Special `<random>`/`<none>` Owner-token behavior belongs to the shared mask
-reader and is not covered by this ordinary-token corpus.
+Other special-token forms and mask consumers remain outside this starting-unit
+comparison; the shared reader owns their semantics.
+
+## Adjacent country qualifier sentinels
+
+The separate `qualifier_gates` controls preserve the original starting-unit
+candidate and budget observations. A fresh full UnitType constructor and the
+same physical reader blocks establish Required/Forbidden masks; neither the
+mask nor admission result is supplied. A singleton generic-type array is passed
+through whole `FirstBuildable @ 0x5051E0`. Constructor PlannedForSide=-1 and
+supplied shell SuperWeapons=true bound this witness to the common fields; it
+does not exercise Building-only superweapon policy. Owner includes both
+Americans and Alliance, so parent and actual identities independently pass.
+`qualifier_gates.owner_layer` saves that exact physical input;
+`owner_mask` is the native reader result and `actual_index` is read from
+Country `+0xB8`, used by both qualifier gates. Each row's `physical_layer`
+saves the subsequent qualifier INI input and `first_buildable_result` saves
+the whole native function's output.
+
+The native sentinel is **-1 (`0xFFFFFFFF`), not zero**. FirstBuildable tests it
+at `0x505236` (Required) and `0x505259` (Forbidden). The matching CanBuild
+tests are `0x4F79EA` and `0x4F7A7D`. Required mask0 rejects: it matches no
+actual-country or alternate-owner bit. Forbidden mask0 does not reject.
+
+Six executed controls record both whole FirstBuildable output and the original
+CanBuild qualifier block's exit:
+
+| Physical read | Required mask | Forbidden mask | Both qualifier decisions |
+| --- | --- | --- | --- |
+| Omitted on fresh constructor | FFFFFFFF | FFFFFFFF | Pass |
+| Both `<none>` | 0 | 0 | Reject |
+| Both unknown | 0 | 0 | Reject |
+| Actual Required, Forbidden `<none>` | 2 | 0 | Pass |
+| Actual Required and Forbidden | 2 | 2 | Reject |
+| Actual Required, all32 existing Countries forbidden | 2 | FFFFFFFF | Pass |
+
+The last control appends thirty short Country IDs through original `6722F0`.
+The exact saved78-byte comma list resolves through the physical reader to
+FFFFFFFF, despite being nonempty. Thus rejecting every nonempty Forbidden list
+whose mask intersects the Country bit would contradict native admission.
+
+The CanBuild witness starts at `0x4F79E4`, with supplied House/type registers
+and zero alternate-owner masks, and stops before pass `0x4F7A9A` or rejection
+`0x4F7994`. It is a country-qualifier comparison, not execution of preceding
+prerequisites, subsequent factory/build-limit policy or the whole CanBuild
+return. These additional controls leave all three RNG states unchanged and
+execute no simulation timer or detach path.

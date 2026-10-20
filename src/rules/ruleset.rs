@@ -6660,6 +6660,22 @@ impl RuleSet {
         country.build_time_mults[object.factor_slot()]
     }
 
+    /// The token/OR tail of INI ReadOwners4750D0 through48DEB0. Only -1
+    /// is rejected; <random> (-2) contributes bit30. Trigger's <none> ->0
+    /// override does not apply. The production list reader owns capacity
+    /// and tokenization; the retained Country registry owns name lookup.
+    /// Native controls: tools/rules_oracle/session_country_starting_ownership.json.
+    pub fn house_type_mask(&self, tokens: &[String]) -> u32 {
+        tokens.iter().fold(0u32, |mask, token| {
+            let index = house_type_index_of_name(token, self.country_lookup_members());
+            if index == -1 {
+                mask
+            } else {
+                mask | 1u32.wrapping_shl(index as u32)
+            }
+        })
+    }
+
     /// Resolve a country name to its stable `[Countries]` registration index.
     pub fn country_index(&self, id: &str) -> Option<CountryIdx> {
         self.country_indices.get(&id.to_ascii_uppercase()).copied()

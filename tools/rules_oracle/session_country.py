@@ -63,17 +63,25 @@ def starting_ownership_root():
  for name,alias,parent in [('Americans','AmericaAlias','Alliance'),('Alliance','AllianceAlias','Americans')]:
   root+=f'[{name}]\nName={alias}\nParentCountry={parent}\nMultiplay=yes\nMultiplayPassive=no\n'
  types=[('V_CASE','americans',101),('V_PARENT','Alliance',901),('V_UNKNOWN','Unknown',10000),
-  ('V_BASE','Americans',10000),('I_ALIAS','AMERICAALIAS',200),('I_EXACT','Americans',302),('I_PARENT','Alliance',402)]
+  ('V_BASE','Americans',10000),('I_ALIAS','AMERICAALIAS',200),('I_EXACT','Americans',302),('I_PARENT','Alliance',402),
+  ('I_NONE','<none>',10000),('I_RANDOM','<random>',10000)]
  for name,owner,cost in types:
   required,forbidden=('Americans','Alliance') if owner=='Alliance' else ('Alliance','Americans')
   root+=f'[{name}]\nOwner={owner}\nRequiredHouses={required}\nForbiddenHouses={forbidden}\nTechLevel=1\nCost={cost}\nAllowedToStartInMultiplayer=yes\n'
  return root,types
 
 
-def starting_ownership_types(m,rootini,types):
+def starting_ownership_type_block(m,pointer,rootini,begin,end):
  from tools.native_oracle import run_checked
  from tools.spatial_oracle.building_body_rules import SP
  from unicorn.x86_const import UC_X86_REG_ESP,UC_X86_REG_EBP,UC_X86_REG_EBX,UC_X86_REG_ESI,UC_X86_REG_EDI
+ m.u.mem_write(SP,bytes(0x200));m.u.reg_write(UC_X86_REG_ESP,SP)
+ for reg,value in [(UC_X86_REG_EBP,pointer),(UC_X86_REG_EBX,pointer+0x24),
+   (UC_X86_REG_ESI,rootini),(UC_X86_REG_EDI,rootini)]:m.u.reg_write(reg,value)
+ run_checked(m.u,begin,end,context=dict(case='starting-ownership-type',type=m.string(pointer+0x24),block=f'{begin:08X}'))
+
+
+def starting_ownership_types(m,rootini,types):
  # Original translation-unit initializers establish the actual vector vtables,
  # increment and empty state; constructors then enroll their own native slots.
  m.invoke(0x4E7460,0);m.invoke(0x4E7560,0)
@@ -84,14 +92,57 @@ def starting_ownership_types(m,rootini,types):
   # Exact retained-default/store blocks from the common TechnoType reader.
   # Full weapon/image/production readers are outside this admission corpus.
   for begin,end in [(0x7149E1,0x7149FB),(0x714522,0x71458A),(0x71469F,0x7146B9),(0x714C44,0x714C65)]:
-   m.u.mem_write(SP,bytes(0x200));m.u.reg_write(UC_X86_REG_ESP,SP)
-   for reg,value in [(UC_X86_REG_EBP,pointer),(UC_X86_REG_EBX,pointer+0x24),
-     (UC_X86_REG_ESI,rootini),(UC_X86_REG_EDI,rootini)]:m.u.reg_write(reg,value)
-   run_checked(m.u,begin,end,context=dict(case='starting-ownership-type',type=name,block=f'{begin:08X}'))
+   starting_ownership_type_block(m,pointer,rootini,begin,end)
   rows.append(dict(id=name,owner_mask=m.read32(pointer+0x6CC),required_mask=m.read32(pointer+0xDA0),
    forbidden_mask=m.read32(pointer+0xDA4),tech_level=signed(m.read32(pointer+0x634)),
    cost=signed(m.read32(pointer+0x610)),allowed_to_start=bool(m.u.mem_read(pointer+0x6D5,1)[0])))
  return pointers,rows
+
+
+def starting_ownership_qualifier_gates(m,house):
+ from tools.native_oracle import run_checked
+ from tools.spatial_oracle.building_body_rules import SP,dwords
+ from unicorn.x86_const import UC_X86_REG_ESP,UC_X86_REG_EBP,UC_X86_REG_EDI,UC_X86_REG_EIP
+ pointer=m.alloc(0x1100);m.invoke(0x7470D0,pointer,(m.cstring('REQ_CONTROL'),))
+ owner_layer='[REQ_CONTROL]\nOwner=Americans,Alliance\n'
+ owner_ini=ini(m,owner_layer)
+ starting_ownership_type_block(m,pointer,owner_ini,0x7149E1,0x7149FB)
+ items=m.alloc(4);m.u.mem_write(items,dwords(pointer));vector=m.alloc(24)
+ m.u.mem_write(vector,dwords(0x7EB6D4,items,1,1,1,10))
+ # Keep the documented shell superweapon gate open, so this generic Type
+ # witness never reads Building-only fields after the qualifier/side gates.
+ m.u.mem_write(0xA8B263,b'\x01')
+ # Append thirty short existing-country IDs through the actual physical
+ # master reader. The complete32-name list fits the native128-byte reader.
+ extra_country_layer='[Countries]\n'+''.join(f'{index}={name}\n' for index,name in enumerate('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123'))
+ m.invoke(0x6722F0,m.read32(0x8871E0),(ini(m,extra_country_layer),))
+ sentinel_registry_ids=[m.string(m.read32(m.read32(0xA83C9C)+index*4)+0x24) for index in range(m.read32(0xA83CA8))]
+ all_countries=','.join(sentinel_registry_ids)
+ assert len(sentinel_registry_ids)==32 and len(all_countries)<128
+ rows=[]
+ for name,required,forbidden in [('default_omitted',None,None),('explicit_none','<none>','<none>'),
+   ('explicit_unknown','Unknown','Unknown'),('actual_required','Alliance','<none>'),
+   ('actual_forbidden','Alliance','Alliance'),('nonempty_all_forbidden','Alliance',all_countries)]:
+  body='[REQ_CONTROL]\nName=KeepSection\n'
+  if required is not None:body+='RequiredHouses='+required+'\n'
+  if forbidden is not None:body+='ForbiddenHouses='+forbidden+'\n'
+  layer=ini(m,body)
+  starting_ownership_type_block(m,pointer,layer,0x714522,0x71458A)
+  result=m.invoke(0x5051E0,house,(vector,))
+  m.u.mem_write(SP,bytes(0x200));m.u.reg_write(UC_X86_REG_ESP,SP)
+  m.u.reg_write(UC_X86_REG_EBP,house);m.u.reg_write(UC_X86_REG_EDI,pointer)
+  run_checked(m.u,0x4F79E4,(0x4F7994,0x4F7A9A),required_addresses=(0x4F79EA,),
+   context=dict(case='can-build-country-qualifier-gate',name=name))
+  stop=m.u.reg_read(UC_X86_REG_EIP)
+  rows.append(dict(name=name,physical_layer=body,required_mask=m.read32(pointer+0xDA0),
+   forbidden_mask=m.read32(pointer+0xDA4),first_buildable_result=m.string(result+0x24) if result else None,
+   can_build_qualifier_gate=stop==0x4F7A9A,can_build_stop=f'{stop:08X}'))
+ country=m.read32(house+0x34)
+ return dict(type_id='REQ_CONTROL',owner='Americans,Alliance',owner_layer=owner_layer,owner_mask=m.read32(pointer+0x6CC),
+  actual_country=m.string(country+0x24),actual_index=signed(m.read32(country+0xB8)),owner_parent=m.string(country+0x98),
+  extra_country_layer=extra_country_layer,sentinel_registry_ids=sentinel_registry_ids,
+  planned_side=signed(m.read32(pointer+0x6D0)),alternate_owner_masks=[m.read32(house+off) for off in (0x2C4,0x2C8,0x2CC,0x2D0)],
+  rows=rows)
 
 
 def generate_starting_ownership():
@@ -162,29 +213,34 @@ def generate_starting_ownership():
    rows.append(dict(name=name,participants=participants,alliance_passive=passive,
     actual_country_mask=m.read32(sp+0x10),budget=signed(m.u.reg_read(UC_X86_REG_EBP))))
    assert rng==m.rng_state()
+  qualifier_gates=starting_ownership_qualifier_gates(m,houses['Alliance'])
+  assert rng==m.rng_state()
   m.u.hook_del(hook);assert not rng_entries;m.check_code()
   return dict(schema_version=1,selected_binary_sha256=hashlib.sha256(configured_gamemd().read_bytes()).hexdigest(),
    root=root,passive_layer=passive_layer,country_inputs=country_inputs,
    base_units=['V_BASE'],tech_level=10,unit_count=4,type_inputs=type_rows,
    candidate_lists=candidate_lists,candidate_house_tech_controls=candidate_house_tech_controls,
-   budget_rows=rows,rng_entries=rng_entries,rng_unchanged=True,
+   budget_rows=rows,qualifier_gates=qualifier_gates,rng_entries=rng_entries,rng_unchanged=True,
    rng_state_sha256={name:hashlib.sha256(bytes.fromhex(raw)).hexdigest() for name,raw in rng.items()})
  finally:m.close()
 
 
 def starting_ownership_metadata():
  from tools.native_oracle import provenance
- return provenance(scope='Original starting-extra candidate admission and starting-force shared budget prefixes',
+ return provenance(scope='Original starting-extra admission/shared budget and adjacent FirstBuildable/CanBuild country qualifier gates',
   assumptions=[
    'Synthetic physical INI bytes; whole original Rules665650, Countries6722F0 and live Country virtual+64 readers. Both Countries deliberately have opposite ParentCountry. Original Unit/Infantry vector initializers and full type constructors enroll native registry order. Selected common Owner/RequiredHouses/ForbiddenHouses/TechLevel/Cost/AllowedToStart reader blocks execute; other type readers are excluded.',
+   'Two additional types read exact Owner=<none> and Owner=<random> through the same original Owner reader. Their stored mask values are observed, not supplied. Both have AllowedToStart=yes, TechLevel1 and Cost10000; the ordinary candidate and budget results exclude them.',
    'Consumer House storage supplies Country pointer and TechLevel10, plus a separate American HouseTechLevel0 candidate control while global TechLevel remains10; selected House registry membership, BaseUnit pointer list, global TechLevel10 and unit_count4 are explicit continuation inputs. House/Scenario construction, full PrepareSession and full Rules Process are excluded. A retained physical Country reader sets Alliance MultiplayPassive for two budget controls.',
+   'Six independent qualifier controls follow the completed starting-unit observations. A fresh full UnitType constructor plus actual retained physical RequiredHouses/ForbiddenHouses reader produces omitted, none, unknown, actual-country and nonempty-all32-country masks. Original6722F0 appends thirty short Country IDs; the saved complete32-name list fits128 bytes. Full FirstBuildable5051E0 executes with a singleton generic-type vector, PlannedForSide=-1 from its constructor and supplied shell SuperWeapons=true. The original CanBuild qualifier block4F79E4 executes through pass4F7A9A or rejection4F7994 with supplied House/type registers and zero alternate-owner masks; preceding/following CanBuild gates and whole CanBuild return are excluded.',
    'Candidate5D70F0 executes through5D72AB, then resumes original vector cleanup5D743E to return. Budget5D6D80 executes through5D6ED6 before any per-House callbacks. Both are bounded instruction regions, not whole starting-force creation, RNG selection, placement, world lifecycle or renderer parity. Full three-stream RNG states are compared unchanged; their hashes and raw/ranged draw-entry visits are retained. No timer write or detach call occurs in these executed admission/arithmetic paths; downstream spawn/mission effects are excluded.'],
   substitutions=['Existing RetailRulesHistory physical-file/Windows/heap platform transport only. No original code, INI parser output, mask decision, cost arithmetic or RNG result is patched. The synthetic input catalog rejects undeclared resource requests.'],
   entry_points={'countries':0x6722F0,'country_body':0x511850,'unit_constructor':0x7470D0,
    'infantry_constructor':0x5236A0,'owner_reader':0x7149E1,'qualifiers_and_tech_level_reader':0x714522,
    'cost_reader':0x71469F,'allowed_to_start_reader':0x714C44,
    'candidate_prefix':0x5D70F0,'candidate_stop':0x5D72AB,'candidate_cleanup':0x5D743E,
-   'budget_prefix':0x5D6D80,'budget_stop':0x5D6ED6})
+   'budget_prefix':0x5D6D80,'budget_stop':0x5D6ED6,'first_buildable':0x5051E0,
+   'can_build_qualifier_start':0x4F79E4,'can_build_qualifier_pass':0x4F7A9A,'can_build_qualifier_reject':0x4F7994})
 
 if __name__=='__main__':
  from tools.native_oracle import finish_vectors,provenance
