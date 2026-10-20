@@ -25,26 +25,64 @@ fn expand(root: &str, files: &[(&str, &str)]) -> ExpandedIni {
 }
 
 #[test]
-fn ini_directives_nested_current_and_later_include_precedence() {
+fn ini_directives_ares_nested_descendants_and_later_includes_override_parents() {
     let root = "[#include]\n10=late.ini\n2=early.ini\n[Unit]\nOwner=root\n";
     let result = expand(
         root,
         &[
             (
                 "early.ini",
-                "[#include]\n0=base.ini\n[Unit]\nOwner=early\nValue=early\n",
+                "[#include]\n0=base.ini\n[Unit]\nOwner=early\nValue=early\nNested=early\n",
             ),
-            ("base.ini", "[Unit]\nOwner=base\nInherited=yes\n"),
+            (
+                "base.ini",
+                "[Unit]\nOwner=base\nInherited=yes\nNested=base\n",
+            ),
             ("late.ini", "[Unit]\nOwner=late\nValue=late\n"),
         ],
     );
     assert!(result.diagnostics.is_empty());
-    assert_eq!(text(&result.ini, "Unit", "Owner").as_deref(), Some("root"));
+    assert_eq!(text(&result.ini, "Unit", "Owner").as_deref(), Some("late"));
     assert_eq!(text(&result.ini, "Unit", "Value").as_deref(), Some("late"));
+    assert_eq!(text(&result.ini, "Unit", "Nested").as_deref(), Some("base"));
     assert_eq!(
         text(&result.ini, "Unit", "Inherited").as_deref(),
         Some("yes")
     );
+}
+
+#[test]
+fn ini_directives_ares_documented_included_strength_overrides_root() {
+    // Official Ares example, not a golden captured from an Ares DLL:
+    // https://ares-developers.github.io/Ares-docs/new/misc/include.html
+    let result = expand(
+        "[#include]\n1=rules_infantry.ini\n[E1]\nStrength=200\nRootOnly=yes\n",
+        &[("rules_infantry.ini", "[E1]\nStrength=300\n")],
+    );
+    assert!(result.diagnostics.is_empty());
+    assert_eq!(
+        result.ini.section_or_empty("E1").read_int("Strength", -1),
+        300
+    );
+    assert_eq!(text(&result.ini, "E1", "RootOnly").as_deref(), Some("yes"));
+}
+
+#[test]
+fn ini_directives_dollar_include_retains_current_document_priority() {
+    let result = expand(
+        "[$Include]\n0=child.ini\n[Unit]\nValue=root\n",
+        &[
+            (
+                "child.ini",
+                "[$Include]\n0=base.ini\n[Unit]\nValue=child\nOther=child\n",
+            ),
+            ("base.ini", "[Unit]\nValue=base\nOther=base\nDeep=yes\n"),
+        ],
+    );
+    assert!(result.diagnostics.is_empty());
+    assert_eq!(text(&result.ini, "Unit", "Value").as_deref(), Some("root"));
+    assert_eq!(text(&result.ini, "Unit", "Other").as_deref(), Some("child"));
+    assert_eq!(text(&result.ini, "Unit", "Deep").as_deref(), Some("yes"));
 }
 
 #[test]
@@ -602,7 +640,10 @@ fn ini_directives_reach_the_existing_ordered_type_processor_and_fixed_art() {
         "types.ini",
         b"[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\n",
     );
-    dir.write("artmd.ini", b"[#include]\n0=art-extra.ini\n");
+    dir.write(
+        "artmd.ini",
+        b"[#include]\n0=art-extra.ini\n[TEST]\nVoxel=no\n",
+    );
     dir.write("art-extra.ini", b"[TEST]\nVoxel=yes\n");
     dir.write("mode.ini", b"[#include]\n0=mode-extra.ini\n");
     dir.write("mode-extra.ini", b"[General]\nBuildSpeed=.9\n");
@@ -618,7 +659,7 @@ fn ini_directives_reach_the_existing_ordered_type_processor_and_fixed_art() {
         )
         .unwrap();
     let (rules, _, art, _) = loaded.into_parts();
-    assert_eq!(rules.object("TEST").unwrap().strength, 250);
+    assert_eq!(rules.object("TEST").unwrap().strength, 100);
     assert_eq!(
         rules.production.build_speed.bits(),
         f64::from(0.9_f32).to_bits()
