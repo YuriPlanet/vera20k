@@ -2204,8 +2204,23 @@ mod tests {
         };
         let mut rules = fixture.rules;
         assert_eq!(rules.general.behind.as_deref(), Some("BEHIND"));
-        // The fixture binds no SHPs; a stand-in frame count binds BEHIND.
-        rules.bind_anim_frame_count_for_test("BEHIND", 19);
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        // Use the loader's actual root list and physical SHP. A stand-in count
+        // concealed the missing Behind root and let this test pass without art.
+        let roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
+        rules.bind_anim_class_assets(&roots, &assets, "tem", "TEMPERATE");
+        assert_eq!(
+            rules
+                .art()
+                .anim_runtime_config("BEHIND")
+                .unwrap()
+                .raw_shp_frame_count,
+            Some(18),
+            "the retail marker must bind before Techno AI can construct it"
+        );
         assert!(
             rules
                 .object("MTNK")
