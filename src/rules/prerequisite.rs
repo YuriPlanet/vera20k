@@ -82,29 +82,58 @@ impl PrerequisiteGroup {
     }
 }
 
-/// One parsed entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One parsed entry. Ares extends the same index space; it does not recursively
+/// expand generic members while parsing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Prerequisite {
     Group(PrerequisiteGroup),
     /// A BuildingType, by its native array index.
     Building(i32),
+    /// An enabled Ares custom group, by its full catalog index (at least six).
+    GenericGroup(u32),
 }
 
-/// One list from `tokens`, the key's `read_list(key, 0x80)`; `None` keeps
-/// `prior`. A group name wins over a BuildingType of the same name.
+impl Prerequisite {
+    /// The full Ares catalog slot, including the original six groups.
+    pub(crate) fn group_index(self) -> Option<usize> {
+        match self {
+            Self::Group(group) => Some(group.index()),
+            Self::GenericGroup(index) => Some(index as usize),
+            Self::Building(_) => None,
+        }
+    }
+}
+
+/// One list from the production `read_list`; `None` keeps `prior`.
+/// Retail's six group names win a BuildingType collision. A reached Ares
+/// catalog selects Parse100085F0 instead, where a BuildingType wins.
 pub(crate) fn parse_prerequisites(
     tokens: Option<Vec<&str>>,
     prior: &[Prerequisite],
     building_index: impl Fn(&str) -> Option<i32>,
+    ares: Option<&crate::rules::ares_prerequisites::GenericPrerequisites>,
 ) -> Vec<Prerequisite> {
     let Some(tokens) = tokens else {
         return prior.to_vec();
     };
+    #[cfg(not(feature = "ares"))]
+    let _ = ares;
     tokens
         .into_iter()
-        .filter_map(|token| match PrerequisiteGroup::from_token(token) {
-            Some(group) => Some(Prerequisite::Group(group)),
-            None => building_index(token).map(Prerequisite::Building),
+        .filter_map(|token| {
+            // Ares 3.0 Parse @ 0x100085F0 replaces the retail parser.
+            // Execution evidence: rules_oracle/ares_prerequisites.json's
+            // building_before_group_name and group_lookup_case_insensitive.
+            #[cfg(feature = "ares")]
+            if let Some(groups) = ares {
+                return building_index(token)
+                    .map(Prerequisite::Building)
+                    .or_else(|| groups.group_entry(token));
+            }
+            match PrerequisiteGroup::from_token(token) {
+                Some(group) => Some(Prerequisite::Group(group)),
+                None => building_index(token).map(Prerequisite::Building),
+            }
         })
         .collect()
 }
@@ -115,10 +144,27 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use serde_json::Value;
 
+    #[cfg(not(feature = "ares"))]
+    #[test]
+    fn retail_build_ignores_generic_definitions_and_keeps_group_precedence() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=POWER\n1=A\n\
+             [VehicleTypes]\n0=UNIT\n\
+             [GenericPrerequisites]\ncustom=A\n\
+             [UNIT]\nPrerequisite=custom,POWER\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            rules.object("UNIT").unwrap().prerequisite,
+            [Prerequisite::Group(PrerequisiteGroup::Power)]
+        );
+    }
+
     fn code(entry: Prerequisite) -> i64 {
         match entry {
             Prerequisite::Group(group) => -(group.index() as i64) - 1,
             Prerequisite::Building(index) => i64::from(index),
+            Prerequisite::GenericGroup(index) => -1 - i64::from(index),
         }
     }
 
@@ -240,6 +286,7 @@ mod tests {
                 ini.section("T").unwrap().read_list("Prerequisite", 0x80),
                 &prior,
                 index,
+                None,
             );
             let expected: Vec<i64> = row["expected"]
                 .as_array()

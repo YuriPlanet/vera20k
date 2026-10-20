@@ -241,7 +241,7 @@ def image_sha256() -> str:
     return NATIVE_SHA256
 
 
-def _sections(data: bytes):
+def _sections(data: bytes, *, image_base: int = IMAGE_BASE, image_size: int = IMAGE_SIZE):
     if len(data) < 0x40:
         raise OracleError("Truncated PE DOS header")
     pe = struct.unpack_from("<I", data, 0x3C)[0]
@@ -256,13 +256,13 @@ def _sections(data: bytes):
         raise OracleError("Truncated PE section table")
     if (data[:2] != b"MZ" or data[pe:pe + 4] != b"PE\0\0" or machine != 0x14C
             or struct.unpack_from("<H", data, optional)[0] != 0x10B
-            or struct.unpack_from("<I", data, optional + 28)[0] != IMAGE_BASE):
-        raise OracleError("Expected a PE32 x86 image at 0x00400000")
+            or struct.unpack_from("<I", data, optional + 28)[0] != image_base):
+        raise OracleError(f"Expected a PE32 x86 image at 0x{image_base:08X}")
     for index in range(count):
         offset = optional + optional_size + index * 40
         virtual_size, rva, raw_size, raw_ptr = struct.unpack_from("<IIII", data, offset + 8)
         flags = struct.unpack_from("<I", data, offset + 36)[0]
-        if rva + max(virtual_size, raw_size) > IMAGE_SIZE or raw_ptr + raw_size > len(data):
+        if rva + max(virtual_size, raw_size) > image_size or raw_ptr + raw_size > len(data):
             raise OracleError("PE section exceeds the fixture mapping")
         yield rva, raw_ptr, raw_size, virtual_size, flags
 
@@ -303,12 +303,28 @@ def load_image(uc: Uc) -> None:
     does not authorize treating patched code or supplied call results as native.
     """
     data = image_bytes()
-    sections = list(_sections(data))
-    uc.mem_map(IMAGE_BASE, IMAGE_SIZE)
-    uc.mem_write(IMAGE_BASE, data[:0x1000])
+    map_pe32_image(uc, data, image_base=IMAGE_BASE, image_size=IMAGE_SIZE,
+                   header_size=min(0x1000, len(data)))
+
+
+def map_pe32_image(uc: Uc, data: bytes, *, image_base: int, image_size: int,
+                   header_size: int) -> None:
+    """Map caller-identified PE32 bytes at their preferred base; no relocations.
+
+    DLL fixture users supply explicit bounds and header length; no Windows
+    loader, imports, TLS or runtime initialization is implied. This shares the
+    section parser without changing stock executable selection or validation.
+    """
+    if (image_base < 0 or image_base % 0x1000 or image_size <= 0
+            or image_size % 0x1000 or image_base + image_size > 0x100000000
+            or not 0 < header_size <= min(len(data), image_size)):
+        raise OracleError("Invalid explicit PE mapping bounds")
+    sections = list(_sections(data, image_base=image_base, image_size=image_size))
+    uc.mem_map(image_base, image_size)
+    uc.mem_write(image_base, data[:header_size])
     for rva, raw_ptr, raw_size, _, _ in sections:
         if raw_size:
-            uc.mem_write(IMAGE_BASE + rva, data[raw_ptr:raw_ptr + raw_size])
+            uc.mem_write(image_base + rva, data[raw_ptr:raw_ptr + raw_size])
 
 
 def run_checked(uc: Uc, begin: int, end: int | tuple[int, ...], *,

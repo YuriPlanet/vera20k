@@ -1346,6 +1346,22 @@ impl Simulation {
                 self.session.binary_frame(),
             );
         }
+        // Ares3.0 FootPut hook4D7221 ->1004E780 follows successful
+        // locomotor Put and precedes owner discovery4D722F. Declaration
+        // membership alone requests the owner's existing House+1FC pass.
+        if crate::rules::ARES_ENABLED
+            && let Some(rules) = context.rules()
+            && let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
+                (entity.category() != EntityCategory::Structure
+                    && rules.is_ares_prerequisite_alternate(
+                        entity.category().into(),
+                        self.interner.resolve(entity.type_ref()),
+                    ))
+                .then_some(entity.owner())
+            })
+        {
+            self.houses.request_house_tech_tree_recheck(owner);
+        }
         // ObjectUnlimbo5F4FB4 Mark/CellPUT has already run. Foot4D722F calls
         // +198(owner) next; only afterward Infantry51E0EF clears +41B for
         // exactly Sight=0. Never move these producers before the Mark call.
@@ -1739,17 +1755,35 @@ impl Simulation {
                     // including an Event48-only chain's no-match traversal.
                     self.dispatch_object_tag_event(stable_id, 4, Some(stable_id), None, context);
                 }
-                //6F4A1D reloads owner AFTER synchronous Tag actions.
-                if let Some(owner) = self
-                    .substrate
-                    .entities
-                    .get(stable_id)
-                    .map(|entity| entity.owner())
-                    && let Some(house) = self.houses.get_mut(&owner)
-                {
-                    house.notify_discovered_by_current_house();
-                }
             }
+        }
+        // Ares3.0's successful discovery sites6F4A1D/6F4A37 share1004E840.
+        // The live owner is read after Tag callbacks, before the conditional
+        //1F4 notification; repeated discovery returned before either site.
+        if crate::rules::ARES_ENABLED
+            && let Some(rules) = context.rules()
+            && let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
+                (entity.category() != EntityCategory::Structure
+                    && rules.is_ares_prerequisite_alternate(
+                        entity.category().into(),
+                        self.interner.resolve(entity.type_ref()),
+                    ))
+                .then_some(entity.owner())
+            })
+        {
+            self.houses.request_house_tech_tree_recheck(owner);
+        }
+        //6F4A1D reloads owner AFTER synchronous Tag actions.
+        if current
+            && !history.owned_by_current_house
+            && let Some(owner) = self
+                .substrate
+                .entities
+                .get(stable_id)
+                .map(|entity| entity.owner())
+            && let Some(house) = self.houses.get_mut(&owner)
+        {
+            house.notify_discovered_by_current_house();
         }
         true
     }
@@ -6034,6 +6068,23 @@ impl Simulation {
         // Source: original gamemd;
         // executed composed action7 cleanup: spatial_oracle/team_creation.
         if foot && (game_state as u8) != 0 {
+            // Ares3.0's Unit7357F6/Infantry517DF2/Aircraft4140EB hooks
+            // run after the existing GameState/type/build-limit gates and
+            // before LeaveTeam/RemoveTracking. Every declared alternate
+            // requests a pass, even while another copy remains tracked.
+            if crate::rules::ARES_ENABLED
+                && let Some(rules) = context.rules()
+                && let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
+                    rules
+                        .is_ares_prerequisite_alternate(
+                            entity.category().into(),
+                            self.interner.resolve(entity.type_ref()),
+                        )
+                        .then_some(entity.owner())
+                })
+            {
+                self.houses.request_house_tech_tree_recheck(owner);
+            }
             self.leave_team(stable_id, false, context.rules(), context.effects());
         }
         if self.substrate.particle_systems.contains_key(stable_id) {
@@ -6420,3 +6471,7 @@ impl crate::sim::world::ObjectSubstrate {
 #[cfg(test)]
 #[path = "foot_archive_expiry_tests.rs"]
 mod foot_archive_expiry_tests;
+
+#[cfg(test)]
+#[path = "ares_prerequisite_lifecycle_tests.rs"]
+mod ares_prerequisite_lifecycle_tests;

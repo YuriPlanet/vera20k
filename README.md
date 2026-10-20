@@ -108,6 +108,8 @@ Include/inheritance expansion is also active only in Ares gameplay builds. The e
 read-only `asset ini-expand` probe remains available independently. Saves retain the
 build capability and cannot load in the other mode, even with identical retail INIs.
 This is partial Rust-native compatibility, not Ares DLL loading or general mod support.
+The enabled build also supports [generic production prerequisites](docs/ares-prerequisites.md),
+including alternate owned types and installed-upgrade qualification.
 
 To launch single-player YR skirmishes or campaigns through a dedicated CnCNet
 client, see the [offline client setup](integrations/cncnet/README.md). This needs

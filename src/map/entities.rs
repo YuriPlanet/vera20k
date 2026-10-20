@@ -51,6 +51,18 @@ impl From<crate::rules::object_type::ObjectCategory> for EntityCategory {
     }
 }
 
+impl From<EntityCategory> for crate::rules::object_type::ObjectCategory {
+    /// The type registry of an object's actual constructed class.
+    fn from(category: EntityCategory) -> Self {
+        match category {
+            EntityCategory::Infantry => Self::Infantry,
+            EntityCategory::Unit => Self::Vehicle,
+            EntityCategory::Aircraft => Self::Aircraft,
+            EntityCategory::Structure => Self::Building,
+        }
+    }
+}
+
 /// A single entity placement parsed from a map file.
 ///
 /// Contains the minimum data needed to spawn an ECS entity.

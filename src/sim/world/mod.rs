@@ -5975,6 +5975,30 @@ impl Simulation {
             && let Some(house) = self.houses.get_mut(&new_owner)
         {
             house.tracking_mut().add_tracking(entity);
+        }
+        // Ares3.0 ChangeOwner7015EB ->1004E7F0 follows the two tracking
+        // calls and precedes both the capture stats and owner pointer store.
+        // Buildings retain their own existing44936E/449379 recheck tail.
+        if crate::rules::ARES_ENABLED
+            && category != EntityCategory::Structure
+            && let Some(rules) = rules
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| {
+                    rules.is_ares_prerequisite_alternate(
+                        entity.category().into(),
+                        self.interner.resolve(entity.type_ref()),
+                    )
+                })
+        {
+            self.houses.request_house_tech_tree_recheck(old_owner);
+            self.houses.request_house_tech_tree_recheck(new_owner);
+        }
+        if let Some(entity) = self.substrate.entities.get(stable_id)
+            && let Some(house) = self.houses.get_mut(&new_owner)
+        {
             //701607..70164D: DontScore suppresses this captured-object
             //count, not the preceding old-House price addition.
             if !entity.tracking_facts.dont_score() {

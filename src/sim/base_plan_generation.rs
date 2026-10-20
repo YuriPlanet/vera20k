@@ -292,25 +292,46 @@ pub(crate) fn prerequisites_satisfied(
     present: &[&ObjectType],
     rules: &RuleSet,
 ) -> bool {
-    candidate.prerequisite.iter().all(|entry| match *entry {
-        Prerequisite::Building(index) => present.iter().any(|ty| ty.base_plan_type_index == index),
-        Prerequisite::Group(group) => {
-            let family = match group {
-                PrerequisiteGroup::Power => &rules.build_power_types,
-                PrerequisiteGroup::Factory => &rules.build_weapons_types,
-                PrerequisiteGroup::Barracks => &rules.build_barracks_types,
-                PrerequisiteGroup::Radar => &rules.build_radar_types,
-                PrerequisiteGroup::Tech => &rules.build_tech_types,
-                PrerequisiteGroup::Proc => &rules.build_refinery_types,
-            };
-            present.iter().any(|ty| {
-                family
-                    .iter()
-                    .any(|type_id| type_id.eq_ignore_ascii_case(&ty.id))
-            })
+    candidate.prerequisite.iter().all(|entry| {
+        #[cfg(feature = "ares")]
+        if let Some(group) = rules.ares_prerequisite_group(*entry) {
+            // Ares3.0 hook505360 -> ListContainsAll10008370 inspects only
+            // immediate building members. Runtime alternates are unread;
+            // a negative member code cannot match a BuildingType index.
+            return group.members().iter().any(|member| match *member {
+                Prerequisite::Building(index) => {
+                    present.iter().any(|ty| ty.base_plan_type_index == index)
+                }
+                Prerequisite::Group(_) | Prerequisite::GenericGroup(_) => false,
+            });
+        }
+        match *entry {
+            Prerequisite::Building(index) => {
+                present.iter().any(|ty| ty.base_plan_type_index == index)
+            }
+            Prerequisite::Group(group) => {
+                let family = match group {
+                    PrerequisiteGroup::Power => &rules.build_power_types,
+                    PrerequisiteGroup::Factory => &rules.build_weapons_types,
+                    PrerequisiteGroup::Barracks => &rules.build_barracks_types,
+                    PrerequisiteGroup::Radar => &rules.build_radar_types,
+                    PrerequisiteGroup::Tech => &rules.build_tech_types,
+                    PrerequisiteGroup::Proc => &rules.build_refinery_types,
+                };
+                present.iter().any(|ty| {
+                    family
+                        .iter()
+                        .any(|type_id| type_id.eq_ignore_ascii_case(&ty.id))
+                })
+            }
+            Prerequisite::GenericGroup(_) => false,
         }
     })
 }
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "base_plan_generation_ares_tests.rs"]
+mod ares_tests;
 
 #[cfg(test)]
 mod tests {
@@ -479,13 +500,18 @@ mod tests {
 
     #[test]
     fn recalc_prerequisites_cover_families_explicit_identity_and_pass_boundary() {
-        let rules = basic_rules(
-            "7=EXPLICIT\n8=ALLREQ\n9=A\n10=B",
-            "[EXPLICIT]\nOwner=Americans\nFoundation=1x1\n\
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nPrerequisitePower=POW\nPrerequisiteFactory=WEAP\n\
+             PrerequisiteBarracks=BAR\nPrerequisiteRadar=RAD\nPrerequisiteTech=TECH\nPrerequisiteProc=REF\n\
+             [AI]\nBuildPower=POW\nBuildWeapons=WEAP\nBuildBarracks=BAR\n\
+             BuildRadar=RAD\nBuildTech=TECH\nBuildRefinery=REF\n\
+             [BuildingTypes]\n0=CON\n1=POW\n2=REF\n3=BAR\n4=WEAP\n5=RAD\n6=TECH\n\
+             7=EXPLICIT\n8=ALLREQ\n9=A\n10=B\n\
+             [EXPLICIT]\nOwner=Americans\nFoundation=1x1\n\
              [ALLREQ]\nOwner=Americans\nPrerequisite=POWER,FACTORY,BARRACKS,RADAR,TECH,PROC,EXPLICIT\nFoundation=1x1\n\
              [A]\nOwner=Americans\nFoundation=1x1\n\
              [B]\nOwner=Americans\nPrerequisite=A\nFoundation=1x1\n",
-        );
+        )).unwrap();
         let get = |id| {
             rules
                 .object_in_category(ObjectCategory::Building, id)

@@ -8,10 +8,25 @@ use crate::rules::ini_parser::IniFile;
 use crate::sim::production::{ProductionCategory, construct_active_factory_fixture};
 use serde_json::{Value, json};
 
+#[cfg(feature = "ares")]
+#[path = "can_build_ares_tests.rs"]
+mod ares_tests;
+
 fn rows(section: &str) -> Vec<Value> {
     let data: Value =
         serde_json::from_str(crate::test_fixture::text("tools/can_build_oracle.json")).unwrap();
     data[section].as_array().unwrap().clone()
+}
+
+fn comparable_can_build_rows() -> impl Iterator<Item = Value> {
+    rows("can_build").into_iter().filter(|row| {
+        // These gamemd controls intentionally differ from Ares100082B0's
+        // positive specific count and CountOwnedNow100032F0's tracked
+        // alternates. The Ares corpus covers those component boundaries.
+        !crate::rules::ARES_ENABLED
+            || (row["proc_alternate"].is_null()
+                && row["name"].as_str() != Some("BuildingType count negative"))
+    })
 }
 
 fn int(value: &Value) -> i32 {
@@ -310,6 +325,7 @@ fn upgrade_prerequisite_world() -> (Simulation, RuleSet, InternedId) {
 /// even when an earlier host carries the prerequisite. Its fixed three-type
 /// scan does not read the upgrade count or compare PowersUpBuilding's name.
 #[test]
+#[cfg(not(feature = "ares"))]
 fn upgrade_prerequisite_uses_house_order_and_all_three_type_slots() {
     let (mut sim, rules, owner) = upgrade_prerequisite_world();
     let product = rules.object("Q").unwrap();
@@ -384,7 +400,7 @@ fn upgrade_prerequisite_skips_limbo_offline_and_both_selling_missions() {
 
 #[test]
 fn can_build_matches_the_original() {
-    for row in rows("can_build") {
+    for row in comparable_can_build_rows() {
         let rules = rules_for(&row);
         let (sim, owner) = sim_for(&row, &rules);
         let args = row["args"].as_array().unwrap();
@@ -464,7 +480,7 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
 
 #[test]
 fn can_build_after_runtime_tech_level_change_matches_original_current_value_controls() {
-    for row in rows("can_build") {
+    for row in comparable_can_build_rows() {
         let native_tech_level = row["type"]["tech"].as_i64().unwrap_or(1) as i32;
         let mut initial = row.clone();
         // The original corpus's current value comes from the trigger owner,
@@ -512,11 +528,9 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let on_map = |sim: &mut Simulation, house, category, name: &str, count| {
         let type_id = sim.interner.get(name).unwrap();
-        sim.houses
-            .get_mut(&house)
-            .unwrap()
-            .tracking_mut()
-            .set_active_for_test(category, type_id, count);
+        let tracking = sim.houses.get_mut(&house).unwrap().tracking_mut();
+        tracking.set_active_for_test(category, type_id, count);
+        tracking.set_owned_for_test(category, type_id, count);
     };
 
     let yuri = sim.interner.intern("YuriCountry");

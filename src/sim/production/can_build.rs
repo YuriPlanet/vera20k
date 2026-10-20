@@ -97,12 +97,19 @@ pub(crate) fn can_build(
     let Some(house) = sim.houses.get(&owner) else {
         return CanBuild::No;
     };
-    // `CounterClass::GetItemCount @ 0x0049FAE0` at a group's negative code
-    // reads before the counter array: the residual in
-    // `crate::rules::prerequisite`.
-    let override_on_map = obj.prerequisite_override.iter().any(|entry| match *entry {
-        Prerequisite::Building(index) => buildings_on_map(sim, rules, house, index) > 0,
-        Prerequisite::Group(_) => false,
+    let override_on_map = obj.prerequisite_override.iter().any(|&entry| {
+        if crate::rules::ARES_ENABLED {
+            // Ares3.0 qualification10021FF0 calls
+            // HouseOwnsAny100081E0 at100220C0, before its human/AI split.
+            prerequisite_on_map(sim, rules, house, entry)
+        } else {
+            // A negative stock-group code reads before the vanilla counter
+            // array: the residual in `crate::rules::prerequisite`.
+            match entry {
+                Prerequisite::Building(index) => buildings_on_map(sim, rules, house, index) > 0,
+                Prerequisite::Group(_) | Prerequisite::GenericGroup(_) => false,
+            }
+        }
     });
     // House4F78E4..4F7925 scans House+110 and calls459840. This
     // shortcut precedes all ordinary tech/country/prerequisite gates, for
@@ -166,47 +173,40 @@ pub(crate) fn can_build(
 /// count is not zero (`0x004F7E50..0x004F7E5E`). A BuildingType with nonempty
 /// `PowersUpBuilding=` instead asks only the last eligible House building's
 /// three installed types (`0x004F7DF8..0x004F7E4E`).
+/// Ares3.0 HouseOwnsAll10008110 and HouseOwnsAny100081E0 use retained
+/// generic definitions, then Specific100082B0 for each direct/member building
+/// and CountOwnedNow100032F0 for runtime alternates. Saved executable controls:
+/// `tools/rules_oracle/ares_prerequisites.json`.
 fn prerequisite_on_map(
     sim: &Simulation,
     rules: &RuleSet,
     house: &HouseState,
     entry: Prerequisite,
 ) -> bool {
+    #[cfg(feature = "ares")]
+    if let Some(group) = rules.ares_prerequisite_group(entry) {
+        // Ares3.0 HouseOwnsAll10008110/Any100081E0 call Specific100082B0
+        // for each immediate building member; generic codes do not recurse.
+        return group.members().iter().any(|member| match *member {
+            Prerequisite::Building(index) => specific_prerequisite_on_map(sim, rules, house, index),
+            Prerequisite::Group(_) | Prerequisite::GenericGroup(_) => false,
+        }) || group.alternates().iter().any(|alternate| {
+            sim.interner.get(alternate.id()).is_some_and(|id| {
+                // CountOwnedNow100032F0 reads ctor-to-dtor tracking. Limbo
+                // does not remove it;1000819F tests nonzero, not positive.
+                house
+                    .tracking()
+                    .owned_count(EntityCategory::from(alternate.category()), id)
+                    != 0
+            })
+        });
+    }
     let group = match entry {
         Prerequisite::Building(index) => {
-            let Some(building_type) = rules.building_type_at(index) else {
-                return false;
-            };
-            if building_type.building_upgrade().host().is_none() {
-                return buildings_on_map(sim, rules, house, index) != 0;
-            }
-            let Some(type_id) = sim.interner.get(&building_type.id) else {
-                return false;
-            };
-            // Steam gamemd:4F7DF8..4F7E4E walks House+6C backwards, skips only limbo,
-            // offline and either Selling selector, then checks all three
-            // Building+5EC types. A miss stops; count/host type/HP are unread.
-            let selling = MissionId::from_known(MissionType::Selling);
-            return house
-                .base_projection()
-                .buildings()
-                .iter()
-                .rev()
-                .filter_map(|&id| sim.substrate.entities.get(id))
-                .find(|building| {
-                    !building.lifecycle.in_limbo()
-                        && building.building_online()
-                        && building.mission.current() != selling
-                        && building.mission.queued() != selling
-                })
-                .is_some_and(|building| {
-                    building
-                        .building_upgrades()
-                        .types()
-                        .contains(&Some(type_id))
-                });
+            return specific_prerequisite_on_map(sim, rules, house, index);
         }
         Prerequisite::Group(group) => group,
+        Prerequisite::GenericGroup(_) => return false,
     };
     rules
         .prerequisite_list(group)
@@ -215,7 +215,7 @@ fn prerequisite_on_map(
             Prerequisite::Building(index) => buildings_on_map(sim, rules, house, index) > 0,
             // A group's code reads before the counter array: the residual in
             // `crate::rules::prerequisite`.
-            Prerequisite::Group(_) => false,
+            Prerequisite::Group(_) | Prerequisite::GenericGroup(_) => false,
         })
         || (group == PrerequisiteGroup::Proc
             && rules
@@ -225,6 +225,85 @@ fn prerequisite_on_map(
                 .and_then(|unit| rules.object_in_category(ObjectCategory::Vehicle, unit))
                 .and_then(|unit| sim.interner.get(&unit.id))
                 .is_some_and(|unit| house.tracking().active_count(EntityCategory::Unit, unit) > 0))
+}
+
+/// One building reference in gamemd4F7DF8..4F7E5E, or Ares3.0
+/// HouseOwnsSpecific100082B0. Generic members call this same owner.
+fn specific_prerequisite_on_map(
+    sim: &Simulation,
+    rules: &RuleSet,
+    house: &HouseState,
+    index: i32,
+) -> bool {
+    let Some(building_type) = rules.building_type_at(index) else {
+        return false;
+    };
+    let count = buildings_on_map(sim, rules, house, index);
+    if crate::rules::ARES_ENABLED && count > 0 {
+        // Ares HouseOwnsSpecific100082B0 accepts a positive direct/member
+        // count before PowersUpBuilding, including a separately on-map upgrade.
+        return true;
+    }
+    if building_type.building_upgrade().host().is_none() {
+        return !crate::rules::ARES_ENABLED && count != 0;
+    }
+    let Some(type_id) = sim.interner.get(&building_type.id) else {
+        return false;
+    };
+    if crate::rules::ARES_ENABLED {
+        // Ares HouseOwnsSpecific100082B0 resolves the declared host, requires
+        // its active count>0, then scans every House+6C building of that type. It reads
+        // all three installed slots and no HP/limbo/online/Selling/count gate.
+        let Some(host) = building_type
+            .building_upgrade()
+            .host()
+            .and_then(|name| rules.object_in_category(ObjectCategory::Building, name))
+            .and_then(|host| sim.interner.get(&host.id))
+        else {
+            return false;
+        };
+        if house
+            .tracking()
+            .active_count(EntityCategory::Structure, host)
+            <= 0
+        {
+            return false;
+        }
+        return house
+            .base_projection()
+            .buildings()
+            .iter()
+            .filter_map(|&id| sim.substrate.entities.get(id))
+            .any(|building| {
+                building.type_ref() == host
+                    && building
+                        .building_upgrades()
+                        .types()
+                        .contains(&Some(type_id))
+            });
+    }
+    // Steam gamemd:4F7DF8..4F7E4E walks House+6C backwards, skips only limbo,
+    // offline and either Selling selector, then checks all three
+    // Building+5EC types. A miss stops; count/host type/HP are unread.
+    let selling = MissionId::from_known(MissionType::Selling);
+    house
+        .base_projection()
+        .buildings()
+        .iter()
+        .rev()
+        .filter_map(|&id| sim.substrate.entities.get(id))
+        .find(|building| {
+            !building.lifecycle.in_limbo()
+                && building.building_online()
+                && building.mission.current() != selling
+                && building.mission.queued() != selling
+        })
+        .is_some_and(|building| {
+            building
+                .building_upgrades()
+                .types()
+                .contains(&Some(type_id))
+        })
 }
 
 /// The house's on-map count of BuildingType `index` (`HouseClass+0x5550`).
