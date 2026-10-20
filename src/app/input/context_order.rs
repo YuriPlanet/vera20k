@@ -2443,16 +2443,17 @@ pub(super) fn is_simple_deploy_unit(
     entity.category() == EntityCategory::Unit && object.is_simple_deployer
 }
 
-/// Infantry51EC14..51EC9F and Unit740015..74003F produce NoDeploy30,
-/// rather than a self action: deployed/transitioning infantry with a deploy
-/// weapon, or an empty mobile transport. The D-key's receiver is separate.
+/// Infantry51EC14..51EC9F blocks Doing27..31 only when Type+6C4
+/// (UndeployDelay) > -1; Type+6A8 (DeployFireWeapon) is unrelated.
+/// Unit740015..74003F blocks an empty mobile transport. Both answer
+/// NoDeploy30 rather than a self action. The D-key's receiver is separate.
 fn self_deploy_is_blocked(
     entity: &crate::sim::game_entity::GameEntity,
     object: &crate::rules::object_type::ObjectType,
 ) -> bool {
     (entity.category() == EntityCategory::Infantry
         && object.deployer
-        && object.deploy_fire_weapon >= 0
+        && object.undeploy_delay > -1
         && entity
             .infantry_sprite_pose()
             .is_some_and(|(doing, _)| (27..=31).contains(&doing)))

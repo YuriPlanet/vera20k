@@ -381,55 +381,177 @@ fn native_infantry_weapon_suffix_controls_match_shared_action_owner() {
     }
 }
 
+/// Native Infantry WhatAction reads Type+6C4 (UndeployDelay), not
+/// Type+6A8 (DeployFireWeapon), at 51EC39/51EC79. A self action remains
+/// available throughout Doing27..31 when the delay is -1. The native
+/// 51EB81..51ED10 controls also cover the adjacent Doing26/32 boundaries.
 #[test]
-fn deployed_infantry_self_hover_refuses_a_second_deploy_click() {
+fn retail_infantry_self_click_admission_uses_undeploy_delay() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
-    let mut sim = arena(&retail.rules);
-    let actor = sim
-        .spawn_object("E1", "Americans", 16, 16, 64, &retail.rules)
-        .unwrap();
-    assert!(sim.apply_command(
-        "Americans",
-        &crate::sim::command::Command::ToggleInfantryDeploy { entity_id: actor },
-        Some(&retail.rules)
-    ));
-    for _ in 0..32 {
-        sim.advance_tick(&[], Some(&retail.rules), None, None, 67);
-        if sim.entities().get(actor).unwrap().infantry_deploy_doing() {
-            break;
+    for (name, delay) in [
+        ("E1", -1),
+        ("GGI", -1),
+        ("DESO", -1),
+        ("YURI", 150),
+        ("YURIPR", 75),
+    ] {
+        let rules = &retail.rules;
+        let object = rules.object(name).unwrap();
+        assert!(object.deployer && object.deploy_fire, "{name}");
+        assert_eq!(object.undeploy_delay, delay, "{name}");
+        assert_eq!(
+            object.deploy_fire_weapon, 1,
+            "the unrelated selector: {name}"
+        );
+        let mut sim = arena(rules);
+        let actor = sim
+            .spawn_object(name, "Americans", 16, 16, 64, rules)
+            .unwrap();
+        let owner = sim.session().current_house().unwrap();
+        let hover = HoverTargetKindWithId {
+            stable_id: actor,
+            kind: HoverTargetKind::FriendlyUnit,
+        };
+        for (doing, delayed_refusal) in [
+            (0, false),
+            (26, false),
+            (27, true),
+            (28, true),
+            (29, true),
+            (30, true),
+            (31, true),
+            (32, false),
+        ] {
+            sim.entities_mut_for_test()
+                .get_mut(actor)
+                .unwrap()
+                .mission_leaf
+                .set_infantry_doing_verified(doing)
+                .unwrap();
+            let refused = delay >= 0 && delayed_refusal;
+            let expected = if refused {
+                CursorId::NoDeploy
+            } else {
+                CursorId::Deploy
+            };
+            for modifier in [
+                OrderModifier::Normal,
+                OrderModifier::ForceFire,
+                OrderModifier::ForceMove,
+                OrderModifier::GuardArea,
+                OrderModifier::AttackMove,
+            ] {
+                assert_eq!(
+                    cursor_id_for_feedback(capability_cursor_for_hover(
+                        &sim,
+                        &[actor],
+                        Some(actor),
+                        &hover,
+                        Some(rules),
+                        None,
+                        modifier,
+                        false,
+                        false,
+                    )),
+                    Some(expected),
+                    "{name} Doing{doing} {modifier:?}"
+                );
+            }
+            assert_eq!(
+                super::super::context_order::self_click_command(
+                    &sim,
+                    rules,
+                    None,
+                    owner,
+                    &[actor],
+                    Some(&hover),
+                    false,
+                ),
+                (!refused).then_some(crate::sim::command::Command::ToggleInfantryDeploy {
+                    entity_id: actor,
+                }),
+                "{name} Doing{doing}"
+            );
         }
     }
-    assert!(sim.entities().get(actor).unwrap().infantry_deploy_doing());
-    let hover = HoverTargetKindWithId {
-        stable_id: actor,
-        kind: HoverTargetKind::FriendlyUnit,
+}
+
+/// The second click on a lone selected infantryman takes the shared self
+/// action. Drive the actual DEPLOY receiver and animation completion both
+/// ways, rather than treating a cursor change as a completed undeployment.
+#[test]
+fn retail_gi_guardian_and_desolator_self_clicks_complete_both_deployment_directions() {
+    fn advance_to(sim: &mut Simulation, rules: &RuleSet, actor: u64, doing: i32) {
+        for _ in 0..256 {
+            if sim
+                .entities()
+                .get(actor)
+                .unwrap()
+                .infantry_sprite_pose()
+                .is_some_and(|pose| pose.0 == doing)
+            {
+                return;
+            }
+            sim.advance_tick(&[], Some(rules), None, None, 67);
+        }
+        panic!(
+            "deployment did not reach Doing{doing}: {:?}",
+            sim.entities().get(actor).unwrap().infantry_sprite_pose()
+        );
+    }
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
     };
-    assert_eq!(
-        cursor_id_for_feedback(capability_cursor_for_hover(
-            &sim,
-            &[actor],
-            Some(actor),
-            &hover,
-            Some(&retail.rules),
-            None,
-            OrderModifier::Normal,
-            false,
-            false
-        )),
-        Some(CursorId::NoDeploy)
-    );
-    assert_eq!(
-        super::super::context_order::self_click_command(
-            &sim,
-            &retail.rules,
-            None,
-            sim.session().current_house().unwrap(),
-            &[actor],
-            Some(&hover),
-            false
-        ),
-        None
-    );
+    let rules = &retail.rules;
+    for name in ["E1", "GGI", "DESO"] {
+        let mut sim = arena(rules);
+        let actor = sim
+            .spawn_object(name, "Americans", 16, 16, 64, rules)
+            .unwrap();
+        let owner = sim.session().current_house().unwrap();
+        let hover = HoverTargetKindWithId {
+            stable_id: actor,
+            kind: HoverTargetKind::FriendlyUnit,
+        };
+        for destination_doing in [28, 0] {
+            assert_eq!(
+                cursor_id_for_feedback(capability_cursor_for_hover(
+                    &sim,
+                    &[actor],
+                    Some(actor),
+                    &hover,
+                    Some(rules),
+                    None,
+                    OrderModifier::Normal,
+                    false,
+                    false,
+                )),
+                Some(CursorId::Deploy),
+                "{name}: click toward Doing{destination_doing}"
+            );
+            let command = super::super::context_order::self_click_command(
+                &sim,
+                rules,
+                None,
+                owner,
+                &[actor],
+                Some(&hover),
+                false,
+            )
+            .unwrap_or_else(|| {
+                panic!("{name}: self-click toward Doing{destination_doing} refused")
+            });
+            assert!(
+                sim.apply_command("Americans", &command, Some(rules)),
+                "{name}"
+            );
+            advance_to(&mut sim, rules, actor, destination_doing);
+        }
+        assert!(
+            !sim.entities().get(actor).unwrap().infantry_deploy_doing(),
+            "{name}"
+        );
+    }
 }
