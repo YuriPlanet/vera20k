@@ -1963,14 +1963,19 @@ fn native_all01_super_charge_dispatch_uses_retail_type_and_retained_operands() {
         }
         for name in &rules.super_weapon_order {
             let id = sim.interner.intern(name);
-            sim.super_weapons.entry(owner).or_default().insert(
-                id,
-                SuperWeaponInstance::new(id, owner, sim.session.binary_frame() as i32),
-            );
+            sim.super_weapons
+                .map_mut_for_test()
+                .entry(owner)
+                .or_default()
+                .insert(
+                    id,
+                    SuperWeaponInstance::new(id, owner, sim.session.binary_frame() as i32),
+                );
         }
         let id = sim.interner.get(dominator_name).unwrap();
         let instance = sim
             .super_weapons
+            .map_mut_for_test()
             .get_mut(&owner)
             .unwrap()
             .get_mut(&id)

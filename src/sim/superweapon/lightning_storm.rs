@@ -218,7 +218,7 @@ pub(super) fn launch(
         (rx as i16, ry as i16),
         Some(owner),
     );
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx,
@@ -280,7 +280,7 @@ pub(crate) fn start(
         return;
     }
 
-    sim.sound_events.push(SimSoundEvent::RadarEvent {
+    sim.sound_events.emit(SimSoundEvent::RadarEvent {
         radar: RadarEventRequest::new(RadarEventType::ImpactSilent, cell.0 as u16, cell.1 as u16),
     });
     let frame = sim.session.binary_frame();
@@ -310,18 +310,17 @@ pub(crate) fn start(
             continue;
         }
         sim.power_states
-            .entry(house)
-            .or_default()
+            .house_mut(house)
             .start_radar_outage(frame, duration);
     }
     if let Some(player) = sim.session.current_house()
         && sim.houses.contains_key(&player)
     {
-        sim.power_states.entry(player).or_default().recheck_radar();
+        sim.power_states.house_mut(player).recheck_radar();
     }
     sim.update_lighting();
     if rules.general.lightning_print_text {
-        sim.sound_events.push(SimSoundEvent::LightningStormBegan);
+        sim.sound_events.emit(SimSoundEvent::LightningStormBegan);
     }
     // The full-screen redraw (`0x0053A082`) is presentation.
 }
@@ -421,7 +420,7 @@ pub(super) fn process(
         } else if storm.deferment % APPROACHING_INTERVAL == 0 && rules.general.lightning_print_text
         {
             sim.sound_events
-                .push(SimSoundEvent::LightningStormApproaching);
+                .emit(SimSoundEvent::LightningStormApproaching);
         }
     }
     bridge_changed
@@ -635,7 +634,7 @@ pub(super) fn ground_strike(
             z: strike[2],
         }
         .to_cell_sub_z();
-        sim.sound_events.push(SimSoundEvent::VocAt {
+        sim.sound_events.emit(SimSoundEvent::VocAt {
             sound_id: sounds[pick as usize].clone(),
             audible_to: None,
             rx,
@@ -668,7 +667,7 @@ pub(super) fn ground_strike(
     if let Some(warhead) = warhead {
         let warhead_ref = sim.interner.intern(&general.lightning_warhead);
         sim.combat_light_requests
-            .push(crate::sim::combat::CombatLightRequest::Impact {
+            .emit(crate::sim::combat::CombatLightRequest::Impact {
                 target_id: None,
                 damage: general.lightning_damage,
                 warhead_ref,

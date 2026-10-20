@@ -421,6 +421,7 @@ impl Fixture {
             power["power_dirty"] = json!(native["dirty"][0] == 1);
             power["radar_dirty"] = json!(native["dirty"][1] == 1);
             sim.power_states
+                .map_mut_for_test()
                 .insert(*house, serde_json::from_value(power).unwrap());
         }
         sim.scenario_rng =

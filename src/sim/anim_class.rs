@@ -1613,7 +1613,7 @@ impl Simulation {
                 // `MapClass::InitCellAttributes @ 0x00568BB0` reaches the
                 // scalar destructor4228E0: Release406060, no StopSound.
                 self.sound_events
-                    .push(SimSoundEvent::ObjectSoundReleased { owner: id });
+                    .emit(SimSoundEvent::ObjectSoundReleased { owner: id });
             }
             self.conceal_anim(id);
             self.substrate.pending_delete.remove_object(id);
@@ -2121,12 +2121,12 @@ impl Simulation {
         // playing; StopAndClear405D40 would cut it off. Original execution:
         // tools/rules_oracle/bridge_child_sound.{py,json,md}.
         self.sound_events
-            .push(SimSoundEvent::ObjectSoundReleased { owner: id });
+            .emit(SimSoundEvent::ObjectSoundReleased { owner: id });
         if let Some(stop_sound_id) = stop_sound {
             // Native425618 plays StopSound after releasing the Report. The
             // preceding release removes this owner's handle, so the existing
             // stop/play consumer cannot interrupt the released Report.
-            self.sound_events.push(SimSoundEvent::AnimationStopped {
+            self.sound_events.emit(SimSoundEvent::AnimationStopped {
                 anim_id: id,
                 stop_sound_id: Some(stop_sound_id),
                 world,
@@ -2162,7 +2162,7 @@ impl Simulation {
         self.substrate.clear_building_anim_reference(id);
         if sound_active {
             self.sound_events
-                .push(SimSoundEvent::ObjectSoundReleased { owner: id });
+                .emit(SimSoundEvent::ObjectSoundReleased { owner: id });
         }
         self.conceal_anim(id);
         self.substrate.pending_delete.remove_object(id);
@@ -2319,7 +2319,7 @@ impl Simulation {
         let mut changed = false;
         if self.anim(id).and_then(|anim| anim.owner_entity) == Some(expired_id) {
             self.lifecycle_outputs
-                .push(LifecycleOutput::DisplayRemove { stable_id: id });
+                .emit(LifecycleOutput::DisplayRemove { stable_id: id });
             self.substrate.display.remove(id);
             self.substrate.release_anim_owner_reference(id);
             self.substrate.mark_anim_display(id, false);
@@ -2894,7 +2894,7 @@ impl Simulation {
                     frame_effects,
                 );
                 self.combat_light_requests
-                    .push(crate::sim::combat::CombatLightRequest::Impact {
+                    .emit(crate::sim::combat::CombatLightRequest::Impact {
                         target_id: None,
                         damage,
                         warhead_ref,
@@ -3088,7 +3088,7 @@ impl Simulation {
             if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.start_sound_active = true;
             }
-            self.sound_events.push(SimSoundEvent::AnimationStarted {
+            self.sound_events.emit(SimSoundEvent::AnimationStarted {
                 anim_id: id,
                 sound_id: sound_name,
                 world,
@@ -3098,7 +3098,7 @@ impl Simulation {
             // set or the new type has no StartSound. A late TAction41 flag
             // never cancels the constructor's sound before this later Start.
             if let Some(world) = self.anim_absolute_coord(id) {
-                self.sound_events.push(SimSoundEvent::AnimationStopped {
+                self.sound_events.emit(SimSoundEvent::AnimationStopped {
                     anim_id: id,
                     stop_sound_id: None,
                     world,
@@ -3736,7 +3736,7 @@ mod tests {
             .flatten()
             .map(|id| (*id, sim.anim(*id).unwrap().world_coord))
             .collect();
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.uninit_with_rules(building_id, &rules);
         // TechnoLimbo6F6C6B reaches Release even on its empty4A4 handle.
         // Attached-owner expiry still must not destroy any Anim sound.
@@ -5748,7 +5748,7 @@ mod tests {
             .unwrap();
         let world = sim.anim_absolute_coord(id).unwrap();
         let stop = sim.interner.intern("ENDCUE");
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.destroy_anim(id, &rules);
         sim.destroy_anim(id, &rules);
         // Original4255D5 releases +1A0 before425618 plays the optional
@@ -6261,7 +6261,7 @@ mod tests {
             .health
             .set_for_test(50);
         sim.update_building_damage_fire(building_id, &rules);
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.substrate
             .entities
             .get_mut(building_id)
@@ -6403,7 +6403,7 @@ mod tests {
         assert!(!sim.fog.is_cell_revealed(player, 20, 20));
         let other = sim.interner.get("Other").unwrap();
         assert!(!sim.fog.is_cell_revealed(other, 10, 10));
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
         assert!(!sim.anim(id).unwrap().runtime.first_ai_guard);
         assert!(
@@ -6457,7 +6457,7 @@ mod tests {
                     0
                 }
             );
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
             let rng = sim.rng_state();
             sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
             let anim = sim.anim(id).unwrap();

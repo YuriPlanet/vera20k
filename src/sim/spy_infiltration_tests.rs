@@ -121,6 +121,7 @@ pub fn replay(row: &Value) -> Replay {
     house.set_spy_sat_active_for_test(flag(&row["owner"]["spy_sat"]));
     house.set_map_is_clear_for_test(true);
     sim.power_states
+        .map_mut_for_test()
         .insert(owner, PowerState::settled_for_test());
     if let Some(state) = row["super"].as_object() {
         let sw = sim.interner.intern("SW0");
@@ -130,13 +131,14 @@ pub fn replay(row: &Value) -> Replay {
         instance.set_charge_start_tick_for_test(int(&state["start"]));
         instance.set_charge_duration_for_test(int(&state["duration"]));
         sim.super_weapons
+            .map_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(sw, instance);
     }
     sim.session
         .set_binary_frame_for_test(int(&row["frame"]) as u32);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     let spy = if flag(&row["own"]) {
         owner
     } else {
@@ -425,7 +427,7 @@ fn run_until(
     for _ in 0..frames {
         let commands = sim.take_due_commands();
         sim.advance_tick(&commands, Some(rules), Some(grid), None, 33);
-        events.append(&mut sim.sound_events);
+        events.extend(sim.sound_events.take_for_test());
         if done(sim) {
             return true;
         }

@@ -42,13 +42,33 @@ pub(crate) struct OreTwinkleReceipt {
     pub(crate) particle_system_id_consumed: bool,
 }
 
+/// `DAT_00A8ED78` analogue for this fresh load: whether a post-load setup
+/// (`FUN_00684C30`) has constructed the GasCloudSys `ParticleSystemClass`
+/// since `Clear_Scene` nulled it. A generated launch constructs it inside the
+/// synthetic `Full_Init`'s setup before any generator constructor; the later
+/// post-`Post_Map_Init` setup then skips. Set once per load, never cleared.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct PostLoadGasCloud {
+    constructed: bool,
+}
+
+impl PostLoadGasCloud {
+    pub(crate) fn is_constructed(self) -> bool {
+        self.constructed
+    }
+
+    fn mark_constructed(&mut self) {
+        self.constructed = true;
+    }
+}
+
 impl Simulation {
     /// Spend the GasCloudSys `ParticleSystemClass @ 0x0062DC50` native ID the
     /// first time a post-load setup runs after `Clear_Scene` nulled
     /// `DAT_00A8ED78`. Returns whether this call spent the native ID.
     /// The ordinary particle owner retains the live GasCloudSys and children.
     pub fn construct_post_load_particle_system_id(&mut self, rules: &RuleSet) -> bool {
-        if self.post_load_particle_system_constructed
+        if self.post_load_particle_system_constructed.is_constructed()
             || self.particle_systems().gas_cloud_system().is_some()
         {
             return false;
@@ -61,7 +81,8 @@ impl Simulation {
             // reservation. Retail processing always registers GasCloudSys.
             let _ = self.native_unique_ids.as_mut().unwrap().next_id();
         }
-        self.post_load_particle_system_constructed = true;
+        self.post_load_particle_system_constructed
+            .mark_constructed();
         true
     }
 

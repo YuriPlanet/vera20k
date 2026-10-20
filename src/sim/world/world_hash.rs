@@ -841,7 +841,7 @@ impl Simulation {
     }
 
     fn hash_terminal_score_snapshot(&self, hasher: &mut impl Hasher) {
-        let Some(snapshot) = self.terminal_score_snapshot.as_ref() else {
+        let Some(snapshot) = self.terminal_score_snapshot.snapshot() else {
             return;
         };
         b"terminal-score-v1".hash(hasher);
@@ -1225,7 +1225,7 @@ impl Simulation {
     /// Hash per-player power states for deterministic replay.
     fn hash_power_states(&self, hasher: &mut impl Hasher) {
         // BTreeMap<InternedId, _> iterates in deterministic sorted order.
-        for (owner_id, state) in &self.power_states {
+        for (owner_id, state) in self.power_states.iter() {
             owner_id.hash(hasher);
             state.total_output().hash(hasher);
             state.total_drain().hash(hasher);
@@ -1342,7 +1342,7 @@ impl Simulation {
     /// Hash per-house superweapon state and active lightning storm.
     fn hash_super_weapons(&self, hasher: &mut impl Hasher) {
         self.unit_deliveries.hash_state(hasher);
-        for (owner, weapons) in &self.super_weapons {
+        for (owner, weapons) in self.super_weapons.iter() {
             owner.hash(hasher);
             for (type_id, inst) in weapons {
                 type_id.hash(hasher);

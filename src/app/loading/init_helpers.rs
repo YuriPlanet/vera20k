@@ -898,7 +898,7 @@ mod tests {
             sim.sound_events(),
             [SimSoundEvent::AnimationStarted { anim_id, .. }] if *anim_id == ids[0]
         ));
-        assert_eq!(sim.sound_events_mut_for_test().drain(..).count(), 1);
+        assert_eq!(sim.take_sound_events_for_test().len(), 1);
         assert!(sim.sound_events().is_empty());
 
         // Native load resets Scenario RNG to Seed(0); isolate persistence of

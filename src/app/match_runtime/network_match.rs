@@ -66,6 +66,13 @@ pub(crate) enum NetworkMatchEvent {
     /// Kick proposal packet `0x1C` from `voter` against `target`, both
     /// participant indices; queued like `[0x00A8BB28]`.
     KickVote { voter: usize, target: usize },
+    /// Participant `source_index`'s EVENT_ALLY toward the House at
+    /// registration index `house_index`: it executes at the current frame
+    /// as if received.
+    PeerAlly {
+        source_index: usize,
+        house_index: i32,
+    },
     /// Chat packet `0x0C` from participant `source_index`.
     Chat { source_index: usize, text: String },
 }
@@ -231,6 +238,27 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkMatchEvent) -> a
                 .network_wait
                 .received_votes
                 .push_back((voter, target));
+        }
+        NetworkMatchEvent::PeerAlly {
+            source_index,
+            house_index,
+        } => {
+            let owner = state
+                .match_state
+                .session
+                .network_source_owner(source_index)
+                .ok_or_else(|| anyhow::anyhow!("no participant {source_index}"))?;
+            let runtime = state
+                .match_state
+                .sim_runtime
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("no running match"))?;
+            crate::app::input::commands::schedule_command_in_sim(
+                &mut runtime.simulation,
+                &owner,
+                crate::sim::command::Command::Ally { house_index },
+            )
+            .ok_or_else(|| anyhow::anyhow!("ALLY for {owner} was not queued"))?;
         }
         NetworkMatchEvent::Chat { source_index, text } => {
             crate::app::input::chat::receive(state, source_index, &text);

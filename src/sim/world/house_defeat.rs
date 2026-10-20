@@ -151,10 +151,10 @@ impl Simulation {
                     crate::sim::production::construction_options_for_owner(self, rules, owner)
                 {
                     self.lifecycle_outputs
-                        .push(super::LifecycleOutput::SidebarConstructionOption { owner, type_id });
+                        .emit(super::LifecycleOutput::SidebarConstructionOption { owner, type_id });
                 }
                 self.lifecycle_outputs
-                    .push(super::LifecycleOutput::SidebarRecalculated { owner });
+                    .emit(super::LifecycleOutput::SidebarRecalculated { owner });
             }
             // Strip recalculation precedes4F92F6/4F92FD's Super
             // revoke/grant passes. Carry generated ABANDON events
@@ -360,8 +360,7 @@ impl Simulation {
                 .leave_local_planning(self, context.rules());
             self.reveal_entire_map(Some(owner), context);
             self.power_states
-                .entry(owner)
-                .or_default()
+                .house_mut(owner)
                 .set_tactical_map_available();
             commit
         } else {
@@ -372,7 +371,7 @@ impl Simulation {
         };
         if self.session.observer_house() != Some(owner) {
             self.sound_events
-                .push(SimSoundEvent::PlayerDefeated { house: owner });
+                .emit(SimSoundEvent::PlayerDefeated { house: owner });
         }
         self.complete_multiplayer_after_defeat(context.rules(), context.effects());
         planning_commit
@@ -559,7 +558,7 @@ impl Simulation {
             return;
         }
         self.sound_events
-            .push(SimSoundEvent::MatchOutcome { owner, kind });
+            .emit(SimSoundEvent::MatchOutcome { owner, kind });
         //752700 is reached synchronously before the Flag call returns.
         effects.flush_sound(self, rules);
     }

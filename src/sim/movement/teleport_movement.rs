@@ -64,7 +64,7 @@ impl crate::sim::world::Simulation {
         if let Some(name) = name {
             let sound_id = self.interner.intern(&name);
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::ChronoTeleport { sound_id, rx, ry });
+                .emit(crate::sim::world::SimSoundEvent::ChronoTeleport { sound_id, rx, ry });
         }
     }
 

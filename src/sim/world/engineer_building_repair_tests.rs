@@ -388,6 +388,7 @@ impl Fixture {
             state["power_dirty"] = json!(prior["dirty"][0] == 1);
             state["radar_dirty"] = json!(prior["dirty"][1] == 1);
             sim.power_states
+                .map_mut_for_test()
                 .insert(*id, serde_json::from_value(state).unwrap());
         }
         // The native witness supplies constructor-cleared discovery history
@@ -399,7 +400,7 @@ impl Fixture {
         discovery
             .set_discovered_by_current_house_for_test(history["discovered_by_current_house"] == 1);
         discovery.set_discovered_by_other_house_for_test(history["discovered_by_other_house"] == 1);
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         Self {
             sim,
             rules,

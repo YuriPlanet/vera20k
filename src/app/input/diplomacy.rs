@@ -349,14 +349,11 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             // Common type2 button 0x0061374B..0x00613771: click at button-down.
             App::play_skirmish_shell_generic_click_sound(state);
         }
-        if let Some(DiplomacyControl::Chat(row)) = over {
-            toggle_chat_box(state, row);
+        match over {
+            Some(DiplomacyControl::Chat(row)) => toggle_chat_box(state, row),
+            Some(DiplomacyControl::Allies(row)) => press_allies_box(state, row),
+            _ => {}
         }
-        // RESIDUAL: an enabled Allies box (a human row while the local
-        // player is active, LAN/WOL only) would queue the ALLY event
-        // (0x00731840, EventClass type 3); VERA's simulation has no ALLY
-        // event yet, so the click does nothing. Disabled boxes take no
-        // input, which covers every skirmish row.
     } else if state
         .match_state
         .match_presentation
@@ -368,6 +365,104 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         // 0x006581AD: Return ends the modal; State_Machine leaves state 8.
         App::enter_in_game_menu_state(state, InGameMenuState::Closed);
     }
+}
+
+/// A press on an enabled Allies box. The checkbox proc flips the box and
+/// plays GUICheckboxSound; dialog 0x73 flips it straight back
+/// (`0x00658245..0x00658261`) and calls `Ally` with the row's House
+/// (`0x00658269`). The box shows the sim's mask again at the next refresh,
+/// so VERA, which draws the box from the mask, keeps no box state. A hidden
+/// or disabled box takes no click.
+fn press_allies_box(state: &mut AppState, row: usize) {
+    let Some(allies) = view(state)
+        .rows
+        .get(row)
+        .and_then(|row| row.as_ref()?.allies)
+    else {
+        return;
+    };
+    if !allies.enabled {
+        return;
+    }
+    let Some(house) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let sim = &runtime.simulation;
+        let player = sim.houses().index_of(sim.session().current_house()?)?;
+        sim.houses()
+            .order()
+            .get(house_for_row(row, player))
+            .copied()
+    }) else {
+        return;
+    };
+    let sound = state
+        .rules()
+        .and_then(|rules| rules.general.gui_checkbox_sound.clone());
+    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    ally(state, house);
+}
+
+/// `Ally 0x00731840`: queue EVENT_ALLY toward `house` for the player's
+/// House. Gates (`0x00731840..0x00731877`): a nonzero GameMode, the
+/// Scenario's FixedAlliance bit (`0x400`) clear, AlliesAllowed and
+/// AllyChangeAllowed. FixedAlliance has no VERA field: no skirmish or LAN
+/// writer sets it (`SpecialClass::Init 0x006B8AE0` clears it).
+/// RESIDUAL: a full OutList (128 records, `[0xA802C8]`) drops the event
+/// natively; VERA's queue has no such cap.
+pub(crate) fn ally(state: &mut AppState, house: InternedId) {
+    let Some(local) = crate::app::input::commands::preferred_local_owner_name(state) else {
+        return;
+    };
+    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+        return;
+    };
+    let rules = &runtime.resources.rules;
+    let sim = &mut runtime.simulation;
+    if !sim.session().game_mode_nonzero()
+        || !rules.general.allies_allowed
+        || !rules.general.ally_change_allowed
+    {
+        return;
+    }
+    let Some(index) = sim.houses().index_of(house) else {
+        return;
+    };
+    crate::app::input::commands::schedule_command_in_sim(
+        sim,
+        &local,
+        crate::sim::command::Command::Ally {
+            house_index: index as i32,
+        },
+    );
+}
+
+/// `AllianceCommandClass::Execute 0x00536F20` → `0x007318F0`: toggle the
+/// alliance with the owner of the first selected object, when the player is
+/// not defeated and that owner is another human House; then `Ally`'s gates.
+pub(crate) fn toggle_alliance_hotkey(state: &mut AppState) {
+    let first = crate::app::input::dispatch::selected_stable_ids_in_order(
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|runtime| &runtime.simulation),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    )
+    .first()
+    .copied();
+    let Some(owner) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let sim = &runtime.simulation;
+        let local = sim.session().current_house()?;
+        if sim.houses().get(&local)?.is_defeated() {
+            return None;
+        }
+        let owner = sim.entities().get(first?)?.owner();
+        (owner != local && sim.houses().get(&owner)?.is_human()).then_some(owner)
+    }) else {
+        return;
+    };
+    ally(state, owner);
 }
 
 /// A press on an enabled chat box: the checkbox proc flips its state, plays

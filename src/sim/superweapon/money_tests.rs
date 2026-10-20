@@ -65,6 +65,7 @@ fn ready(
         sim, rules, owner, id, once
     ));
     sim.super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&id)
@@ -73,7 +74,7 @@ fn ready(
             rules.super_weapon(name).unwrap(),
             sim.session.binary_frame(),
         );
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     id
 }
 
@@ -210,6 +211,7 @@ fn superweapon_money_unready_or_charge_drain_does_not_pay() {
         let id = ready(&mut sim, &rules, owner, "Reveal", false);
         if extra.is_empty() {
             sim.super_weapons
+                .map_mut_for_test()
                 .get_mut(&owner)
                 .unwrap()
                 .get_mut(&id)
@@ -229,7 +231,7 @@ fn superweapon_money_busy_storm_refuses_without_a_second_charge() {
     let (mut sim, owner) = world(&rules, 1000, true);
     let id = ready(&mut sim, &rules, owner, "Storm", false);
     superweapon::lightning_storm::start(&mut sim, &rules, 180, 250, (3, 3), Some(owner));
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     let before = sim.state_hash();
     assert!(!fire(&mut sim, &rules, owner, id, (10, 10)));
     assert_eq!(sim.state_hash(), before);
@@ -412,7 +414,7 @@ fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
         let source = ready(&mut sim, &rules, owner, "Sphere", false);
         let mut admitted = Vec::new();
         for _ in 0..3 {
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
             admitted.push(fire(&mut sim, &rules, owner, source, (10, 10)));
             sim.session
                 .set_binary_frame_for_test(sim.session.binary_frame() + 1);

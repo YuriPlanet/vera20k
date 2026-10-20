@@ -624,7 +624,7 @@ fn mcv_deploy_sound_occurs_once_with_conversion_at_the_source_cell() {
         for _ in 0..50 {
             // Repeated D while waiting must not repeat the conversion cue.
             let command = (yards(&sim) == 0).then_some(Command::DeployMcv { entity_id: id });
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
             let result = tick(&mut sim, &rules, command);
             let cues: Vec<_> = sim
                 .sound_events

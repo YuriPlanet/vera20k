@@ -882,7 +882,7 @@ pub(crate) fn commit_entities(
                 {
                     let coordinate =
                         crate::sim::movement::ground_pose::position_world_coord(&target.position);
-                    world.sound_events.push(SimSoundEvent::VocAtCoord {
+                    world.sound_events.emit(SimSoundEvent::VocAtCoord {
                         sound_id: sound_id.to_owned(),
                         coordinate,
                         //702734/70277D PUSH0 before each750E20;
@@ -917,7 +917,7 @@ pub(crate) fn commit_entities(
             let mut position = target.position;
             position.put_location(coord);
             if sound_enabled {
-                world.sound_events.push(SimSoundEvent::voc_at(
+                world.sound_events.emit(SimSoundEvent::voc_at(
                     object.voice_feedback[index].clone(),
                     &position,
                 ));
@@ -1158,7 +1158,7 @@ pub(crate) fn commit_entities(
         {
             let coordinate =
                 crate::sim::movement::ground_pose::position_world_coord(&target.position);
-            world.sound_events.push(SimSoundEvent::VocAtCoord {
+            world.sound_events.emit(SimSoundEvent::VocAtCoord {
                 sound_id: sound_id.to_owned(),
                 coordinate,
                 //4426E1 PUSH0 before750E20 at442706 (same executed owner).

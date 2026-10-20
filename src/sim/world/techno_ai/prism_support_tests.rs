@@ -208,7 +208,7 @@ impl Fixture {
             .spawn_object("SHED", "Russians", 15, 12, 0, &rules)
             .unwrap();
         // No power state: every tower is operational until `unpower`.
-        sim.power_states.clear();
+        sim.power_states.map_mut_for_test().clear();
         sim.session.set_binary_frame_for_test(FRAME as u32);
         for &id in &spawned {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -361,7 +361,10 @@ impl Fixture {
         let mut power_state = crate::sim::power_system::PowerState::default();
         power_state.set_total_output_for_test(0);
         power_state.set_total_drain_for_test(75);
-        self.sim.power_states.insert(self.owner, power_state);
+        self.sim
+            .power_states
+            .map_mut_for_test()
+            .insert(self.owner, power_state);
     }
 
     /// `state` after the call: count, delayed-fire mode and countdown, rearm

@@ -372,7 +372,7 @@ impl Simulation {
                 self.reveal_sight_to_current_house(id, rules);
             }
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::RadarEvent {
+                .emit(crate::sim::world::SimSoundEvent::RadarEvent {
                     radar: crate::sim::radar::RadarEventRequest::new(
                         crate::sim::radar::RadarEventType::ConstructionComplete,
                         cell.0,

@@ -299,11 +299,7 @@ fn click_fire(
         sim.release_super_anim(owner, sw_type_id);
     }
     let frame = sim.session.binary_frame();
-    if let Some(instance) = sim
-        .super_weapons
-        .get_mut(&owner)
-        .and_then(|weapons| weapons.get_mut(&sw_type_id))
-    {
+    if let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type_id) {
         if selecting_paid_source {
             // Selection neither consumes a one-time grant nor starts recharge.
             instance.is_ready = false;
@@ -333,12 +329,12 @@ fn click_fire_admission(
     }
     if sw.kind == SuperWeaponKind::LightningStorm && super::lightning_storm::has_deferment(sim) {
         sim.sound_events
-            .push(SimSoundEvent::LightningStormRefused { owner });
+            .emit(SimSoundEvent::LightningStormRefused { owner });
         return false;
     }
     if sw.kind == SuperWeaponKind::PsychicDominator && super::psychic_dominator::active(sim) {
         sim.sound_events
-            .push(SimSoundEvent::PsychicDominatorRefused { owner });
+            .emit(SimSoundEvent::PsychicDominatorRefused { owner });
         return false;
     }
     true
@@ -473,7 +469,7 @@ fn super_instance(
     owner: InternedId,
     sw_type: InternedId,
 ) -> Option<&mut super::SuperWeaponInstance> {
-    sim.super_weapons.get_mut(&owner)?.get_mut(&sw_type)
+    sim.super_weapons.instance_mut(&owner, &sw_type)
 }
 
 /// `HouseClass @ 0x004FAF00` for `house`, given the fired Super's type and

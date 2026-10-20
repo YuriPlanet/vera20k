@@ -438,7 +438,7 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
         smoke
     });
     sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     (sim, rules, smoke)
 }
 
@@ -599,7 +599,7 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
         for frame in row["frames"].as_array().unwrap() {
             let now = frame["frame"].as_u64().unwrap();
             sim.session.set_binary_frame_for_test(now as u32);
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
             let placed_before = sim
                 .substrate
                 .entities
@@ -861,7 +861,7 @@ fn a_sale_s_first_visit_stops_the_repair() {
         );
         let mut frames = Vec::new();
         for index in 0..2 {
-            s.sim.sound_events.clear();
+            s.sim.sound_events.clear_for_test();
             let grid = s.sim.path_grid_snapshot();
             let commands = if index == 0 {
                 std::slice::from_ref(&sale_order)

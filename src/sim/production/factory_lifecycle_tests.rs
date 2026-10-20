@@ -44,7 +44,7 @@ fn refused_begin_still_publishes_the_local_prediction_gate_transition() {
     assert!(sim.entities().is_empty());
     assert_eq!(*sim.houses[&owner].economy(), before_wallet);
 
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     sim.session.set_current_house_for_test(None);
     assert!(!enqueue_by_type(
         &mut sim,
@@ -580,7 +580,7 @@ fn record_last_built_uses_class_fallbacks_type_overrides_and_the_existing_tech_o
                 .in_limbo()
         );
         let object = super::factory_lifecycle::BuiltObject::capture(&sim, product);
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let house = sim.houses.get_mut(&owner).unwrap();
         house.take_tech_recheck();
         assert!(!house.tech_recheck_pending());

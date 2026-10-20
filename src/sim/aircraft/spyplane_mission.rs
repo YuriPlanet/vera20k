@@ -162,6 +162,6 @@ fn snapshot(sim: &mut Simulation, id: u64, rules: &RuleSet, sound: bool) {
         && let Some(plane) = sim.substrate.entities.get(id)
     {
         let event = SimSoundEvent::voc_at(camera, &plane.position);
-        sim.sound_events.push(event);
+        sim.sound_events.emit(event);
     }
 }

@@ -1508,7 +1508,7 @@ pub(crate) fn mission_repair(
             // Local+41A is resolved by the app, as for ToggleRepair4470B7.
             // Original44C507 announces before the service animation writes.
             let owner = sim.substrate.entities.get(depot)?.owner();
-            sim.sound_events.push(SimSoundEvent::Repairing { owner });
+            sim.sound_events.emit(SimSoundEvent::Repairing { owner });
             sim.substrate
                 .entities
                 .get_mut(depot)?
@@ -1587,7 +1587,7 @@ pub(crate) fn mission_repair(
                 // a nonzero shortfall remains silent. Client filters +41A.
                 let owner = sim.substrate.entities.get(depot)?.owner();
                 if crate::sim::credit_income::available_money(sim, owner) == 0 {
-                    sim.sound_events.push(SimSoundEvent::HouseEva {
+                    sim.sound_events.emit(SimSoundEvent::HouseEva {
                         owner,
                         event: "EVA_InsufficientFunds",
                     });
@@ -1604,7 +1604,7 @@ pub(crate) fn mission_repair(
                 // client's type8 radar admission; simulation publishes the
                 // request and the app resolves local ownership and admission.
                 let building = sim.substrate.entities.get(depot)?;
-                sim.sound_events.push(SimSoundEvent::UnitRepaired {
+                sim.sound_events.emit(SimSoundEvent::UnitRepaired {
                     owner: building.owner(),
                     radar: crate::sim::radar::RadarEventRequest::new(
                         crate::sim::radar::RadarEventType::UnitRepaired,

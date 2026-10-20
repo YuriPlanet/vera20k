@@ -541,7 +541,7 @@ impl Duel {
     }
 
     fn tick(&mut self) {
-        self.sim.fire_events.clear();
+        self.sim.fire_events.clear_for_test();
         self.before = self.sim.projectiles.iter().map(|(&id, _)| id).collect();
         let commands = self.sim.take_due_commands();
         self.sim

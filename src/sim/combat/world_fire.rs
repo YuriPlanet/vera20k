@@ -2649,7 +2649,7 @@ pub(crate) fn tick_combat(
     if sound_enabled {
         let sink = &mut world.sound_events;
         for (die_id, rx, ry) in effects.death_sounds.drain(..) {
-            sink.push(SimSoundEvent::EntityDied {
+            sink.emit(SimSoundEvent::EntityDied {
                 die_sound_id: die_id,
                 rx,
                 ry,

@@ -34,7 +34,7 @@ impl Simulation {
             };
             let sound_id = self.interner.intern(sound);
             self.sound_events
-                .push(super::SimSoundEvent::AircraftPhase { sound_id, world });
+                .emit(super::SimSoundEvent::AircraftPhase { sound_id, world });
         }
     }
 
@@ -180,7 +180,7 @@ impl Simulation {
             {
                 let sound_id = self.interner.intern(&sound);
                 self.sound_events
-                    .push(super::SimSoundEvent::AircraftPhase { sound_id, world });
+                    .emit(super::SimSoundEvent::AircraftPhase { sound_id, world });
             }
         }
         let Some(entity) = self.substrate.entities.get(id) else {

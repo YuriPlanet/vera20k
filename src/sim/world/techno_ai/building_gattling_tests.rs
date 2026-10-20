@@ -665,8 +665,8 @@ fn gattling_cadence_matches_the_original() {
             for _ in 0..count(native_events, "rng", Some("main")) {
                 main.next_u32();
             }
-            sim.fire_events.clear();
-            sim.sound_events.clear();
+            sim.fire_events.clear_for_test();
+            sim.sound_events.clear_for_test();
             sim.advance_tick(&[], Some(&rules), None, None, 67);
             assert_eq!(u64::from(sim.session.binary_frame() - start), k, "{name}");
 

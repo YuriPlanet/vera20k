@@ -8,6 +8,10 @@
 //! graph: fog, fire and scan readers borrow it, so a later reader in the
 //! same frame sees each write as native's single mask does.
 //!
+//! The ALLY event (`EventClass::Execute 0x004C6DEE`) is the only announced
+//! caller; its human line and the local EVA voice leave as
+//! `SimSoundEvent::AllianceChanged` (`announce_alliance`).
+//!
 //! Evidence: instruction reading of `HouseClass::Can_Ally @ 0x00501540`,
 //! `HouseClass::Make_Ally @ 0x004F9B70`, `HouseClass::Make_Enemy @
 //! 0x004F9F90`, `HouseClass::Computer_Paranoid @ 0x00501640` and its skirmish
@@ -58,11 +62,8 @@
 //!   shroud them; VERA's can. Frequency: late game, rare.
 //! - The brackets' gap callbacks (`+0x418`, `+0x414`) stay with the Gap
 //!   Generator owner's per-frame materialization, which reads the ally graph.
-//! - The human-only alliance messages and EVA lines (`0x004F9D4E..
-//!   0x004F9F35`, `0x004FA0E4..0x004FA1D5`) and the radar redraw
-//!   (`0x004F42F0`) are not represented. No VERA producer makes a human
-//!   house ally or break an alliance: the ALLY event (`0x004C6E08`) and the
-//!   diplomacy dialog (#1274) are not ported.
+//! - The radar redraw (`0x004F42F0`) is presentation; the app re-reads the
+//!   graph and fog each frame.
 //! - IsParanoid (`+0x24A`, `0x005016D5`) has no reader and is not stored.
 
 use crate::map::houses::{HouseAllianceMap, HouseRoster, normalize_house_name};
@@ -241,16 +242,17 @@ impl Simulation {
                 };
                 // Itself too: CanAlly refuses it.
                 if peer.is_controlled_by_human(game_mode_nonzero) {
-                    self.make_enemy(owner, other, rules);
+                    self.make_enemy(owner, other, rules, false);
                 } else {
-                    self.make_ally(owner, other, rules, registry, effects);
+                    self.make_ally(owner, other, rules, registry, effects, false);
                 }
             }
         }
     }
 
-    /// `HouseClass::Make_Ally @ 0x004F9B70` for its live and initialization
-    /// callers, which pass no announcement.
+    /// `HouseClass::Make_Ally @ 0x004F9B70`. Only the ALLY event passes
+    /// `announce` (`0x004C6E1E`); Paranoid, the triggers and the launch
+    /// alliances pass 0.
     pub(crate) fn make_ally(
         &mut self,
         owner: InternedId,
@@ -258,6 +260,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
+        announce: bool,
     ) {
         // Keep the live and initialization arms in this same graph owner.
         if !self.can_ally(owner, other, rules) {
@@ -340,6 +343,7 @@ impl Simulation {
                         self.assign_target_represented(id, None, Some(rules), registry, effects);
                 }
             }
+            self.announce_alliance(owner, other, true, announce);
         }
         // 0x004F9F46..0x004F9F4F: both arms end in the re-admission bracket.
         self.admit_allied_building_sight(
@@ -349,9 +353,15 @@ impl Simulation {
         );
     }
 
-    /// `HouseClass::Make_Enemy @ 0x004F9F90` for its live callers, which
-    /// pass no announcement.
-    pub(crate) fn make_enemy(&mut self, owner: InternedId, other: InternedId, rules: &RuleSet) {
+    /// `HouseClass::Make_Enemy @ 0x004F9F90`. Only the ALLY event passes
+    /// `announce` (`0x004C6E08`).
+    pub(crate) fn make_enemy(
+        &mut self,
+        owner: InternedId,
+        other: InternedId,
+        rules: &RuleSet,
+        announce: bool,
+    ) {
         // The current graph/anger writes also run during initialization.
         // Initial saved-mask stores 0x004FA03A/0x004FA0B0 share the map-INI export
         // boundary documented by MakeAlly; they are not a second live graph.
@@ -409,12 +419,13 @@ impl Simulation {
         // 0x004FA067..0x004FA0DF: the other house breaks its side too, then
         // rescans its enemy: native passes it as both house and peer, and a
         // house holds no anger node of its own.
-        if is_ally_by_object(
+        let both = is_ally_by_object(
             Some(self.house_alliances.as_map()),
             &self.interner,
             other,
             owner,
-        ) {
+        );
+        if both {
             self.set_ally_bit(other, owner, false);
             self.rebuild_house_spatial_threat(other, rules);
             update_anger_nodes(
@@ -425,6 +436,84 @@ impl Simulation {
                 other,
                 1,
             );
+        }
+        if !self.object_placement_scope_active() {
+            self.announce_alliance(owner, other, false, announce && both);
+        }
+    }
+
+    /// The human tail of MakeAlly (`0x004F9D4E..0x004F9F35`) and MakeEnemy
+    /// (`0x004FA0E4..0x004FA1D5`), outside initialization. Every client
+    /// prints `TXT_HAS_ALLIED` / `TXT_AT_WAR` with both UI names when the
+    /// sender is human in a nonzero mode (MakeAlly also needs a target that
+    /// is not MultiplayPassive). The EVA line depends on the local House, so
+    /// it is chosen here, at the call, against the graph as it now stands.
+    /// `voice` is `announce`, and for a break also that both sides broke.
+    fn announce_alliance(
+        &mut self,
+        owner: InternedId,
+        other: InternedId,
+        formed: bool,
+        voice: bool,
+    ) {
+        let game_mode_nonzero = self.session.game_mode_nonzero();
+        let human = self
+            .houses
+            .get(&owner)
+            .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+        let passive_target = self
+            .houses
+            .get(&other)
+            .is_some_and(|house| house.multiplay_passive());
+        let line = game_mode_nonzero && human && (!formed || !passive_target);
+        let local = self.session.current_house();
+        let allied = |asker, house| {
+            is_ally_by_object(
+                Some(self.house_alliances.as_map()),
+                &self.interner,
+                asker,
+                house,
+            )
+        };
+        // Every voice sits inside the line's gate (0x004F9D72..0x004F9D8D and
+        // 0x004FA0EB..0x004FA106 jump past both).
+        let eva = match (voice && line, formed, local) {
+            (false, _, _) | (_, _, None) => None,
+            // 0x004F9E01..0x004F9E85: the alliance is now mutual.
+            (true, true, Some(local)) if allied(other, owner) => {
+                if self.local_player_defeated() {
+                    None
+                } else if allied(local, other) && allied(local, owner) {
+                    Some(crate::sim::world::AllianceEva::Formed)
+                } else {
+                    Some(crate::sim::world::AllianceEva::EnemyFormed)
+                }
+            }
+            // 0x004F9E8A..0x004F9F35: one way, only the two Houses hear it.
+            (true, true, Some(local)) if game_mode_nonzero && local == owner => {
+                Some(crate::sim::world::AllianceEva::Requesting)
+            }
+            (true, true, Some(local)) if game_mode_nonzero && local == other => {
+                Some(crate::sim::world::AllianceEva::Requested)
+            }
+            (true, true, _) => None,
+            // 0x004FA186..0x004FA1D5.
+            (true, false, Some(local))
+                if game_mode_nonzero && (local == owner || local == other) =>
+            {
+                Some(crate::sim::world::AllianceEva::Broken)
+            }
+            (true, false, _) => None,
+        };
+        if line || eva.is_some() {
+            self.sound_events
+                .emit(crate::sim::world::SimSoundEvent::AllianceChanged {
+                    owner,
+                    other,
+                    formed,
+                    line,
+                    eva,
+                });
         }
     }
 

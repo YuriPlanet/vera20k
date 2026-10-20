@@ -227,6 +227,83 @@ fn strength_receiver_event(
     ))
 }
 
+/// A House's super weapons, keyed by type.
+pub(crate) type HouseSuperWeapons = std::collections::BTreeMap<InternedId, SuperWeaponInstance>;
+
+/// Every House's super weapons. The HouseClass constructor's Supers vector
+/// ([`construct_house_supers`]) installs a House's set once; nothing adds or
+/// removes a type afterwards, and instances change only through their own
+/// operations.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct SuperWeapons {
+    by_house: std::collections::BTreeMap<InternedId, HouseSuperWeapons>,
+}
+
+impl SuperWeapons {
+    pub(crate) fn get(&self, house: &InternedId) -> Option<&HouseSuperWeapons> {
+        self.by_house.get(house)
+    }
+
+    pub(crate) fn instance_mut(
+        &mut self,
+        house: &InternedId,
+        ty: &InternedId,
+    ) -> Option<&mut SuperWeaponInstance> {
+        self.by_house.get_mut(house)?.get_mut(ty)
+    }
+
+    /// A House's instances in type order; the set itself stays fixed.
+    #[cfg(feature = "debug-tools")]
+    pub(crate) fn house_instances_mut(
+        &mut self,
+        house: &InternedId,
+    ) -> impl Iterator<Item = (&InternedId, &mut SuperWeaponInstance)> {
+        self.by_house
+            .get_mut(house)
+            .into_iter()
+            .flat_map(|supers| supers.iter_mut())
+    }
+
+    pub(crate) fn iter(
+        &self,
+    ) -> std::collections::btree_map::Iter<'_, InternedId, HouseSuperWeapons> {
+        self.by_house.iter()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.by_house.is_empty()
+    }
+
+    /// The HouseClass constructor's Supers vector: each House's set, once.
+    fn install_house(&mut self, house: InternedId, supers: HouseSuperWeapons) {
+        assert!(
+            self.by_house.insert(house, supers).is_none(),
+            "a House constructs its Supers once"
+        );
+    }
+
+    /// Read view for the app.
+    pub(crate) fn as_map(&self) -> &std::collections::BTreeMap<InternedId, HouseSuperWeapons> {
+        &self.by_house
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn map_mut_for_test(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<InternedId, HouseSuperWeapons> {
+        &mut self.by_house
+    }
+}
+
+impl std::ops::Index<&InternedId> for SuperWeapons {
+    type Output = HouseSuperWeapons;
+
+    fn index(&self, house: &InternedId) -> &HouseSuperWeapons {
+        &self.by_house[house]
+    }
+}
+
 /// Per-house, per-superweapon-type runtime state.
 ///
 /// Tracks charging progress, readiness, and power suspension.
@@ -797,11 +874,7 @@ pub(crate) fn reset_super(sim: &mut Simulation, rules: &RuleSet, owner: Interned
     }
     sim.release_super_anim(owner, type_id);
     let frame = sim.session.binary_frame();
-    if let Some(instance) = sim
-        .super_weapons
-        .get_mut(&owner)
-        .and_then(|weapons| weapons.get_mut(&type_id))
-    {
+    if let Some(instance) = sim.super_weapons.instance_mut(&owner, &type_id) {
         instance.reset(sw, frame);
     }
 }
@@ -915,8 +988,8 @@ pub(crate) fn supers_of_kind_remaining(
 /// The place a Super joining the timer list takes: after every place taken.
 fn next_timer_place(sim: &Simulation) -> u32 {
     sim.super_weapons
-        .values()
-        .flat_map(|weapons| weapons.values())
+        .iter()
+        .flat_map(|(_, weapons)| weapons.values())
         .filter_map(|instance| instance.timer_place)
         .max()
         .map_or(0, |place| place + 1)
@@ -1079,8 +1152,7 @@ pub(crate) fn tick_house_superweapon_instances(
         let (fade, ready) = {
             let instance = sim
                 .super_weapons
-                .get_mut(&owner)
-                .and_then(|weapons| weapons.get_mut(&type_id))
+                .instance_mut(&owner, &type_id)
                 .expect("selected retained Super");
             // The fade head precedes the granted/held/readiness gates.
             let fade = instance.step_fade();
@@ -1101,7 +1173,7 @@ pub(crate) fn tick_house_superweapon_instances(
         {
             let (rx, ry, sub_x, sub_y, _) =
                 crate::sim::anim_class::AnimWorldCoord { x, y, z }.to_cell_sub_z();
-            sim.sound_events.push(SimSoundEvent::VocAt {
+            sim.sound_events.emit(SimSoundEvent::VocAt {
                 sound_id,
                 audible_to: None,
                 rx,
@@ -1112,7 +1184,7 @@ pub(crate) fn tick_house_superweapon_instances(
             });
         }
         if ready {
-            sim.sound_events.push(SimSoundEvent::SuperWeaponReady {
+            sim.sound_events.emit(SimSoundEvent::SuperWeaponReady {
                 owner,
                 sw_type: type_id,
             });
@@ -1148,10 +1220,7 @@ pub(crate) fn construct_house_supers(
             "distinct Super type registry"
         );
     }
-    assert!(
-        sim.super_weapons.insert(owner, supers).is_none(),
-        "a House constructs its Supers once"
-    );
+    sim.super_weapons.install_house(owner, supers);
 }
 
 /// Supers are constructed by the scenario House owner before map objects.
@@ -1345,8 +1414,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
         let changed = {
             let instance = sim
                 .super_weapons
-                .get_mut(&owner)
-                .and_then(|weapons| weapons.get_mut(&type_id))
+                .instance_mut(&owner, &type_id)
                 .expect("selected retained Super");
             let hold = super_hold(
                 instance,
@@ -1368,7 +1436,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
         if changed {
             sim.houses.request_house_tech_tree_recheck(owner);
             sim.sound_events
-                .push(SimSoundEvent::SuperWeaponStatusChanged {
+                .emit(SimSoundEvent::SuperWeaponStatusChanged {
                     owner,
                     sw_type: type_id,
                 });
@@ -1379,7 +1447,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
     {
         sim.release_super_anim(owner, selection.source);
         sim.sound_events
-            .push(SimSoundEvent::SuperWeaponStatusChanged {
+            .emit(SimSoundEvent::SuperWeaponStatusChanged {
                 owner,
                 sw_type: selection.destination,
             });
@@ -1474,11 +1542,7 @@ fn grant_super(
         return false;
     };
     let place = next_timer_place(sim);
-    let Some(instance) = sim
-        .super_weapons
-        .get_mut(&owner)
-        .and_then(|weapons| weapons.get_mut(&type_id))
-    else {
+    let Some(instance) = sim.super_weapons.instance_mut(&owner, &type_id) else {
         return false;
     };
     if !instance.apply_grant_state(sw, sim.session.binary_frame(), one_time, on_hold) {
@@ -1513,9 +1577,7 @@ pub(crate) fn trigger_grant_super(
     grant_super(sim, rules, owner, type_id, one_time, false);
     if !one_time {
         sim.super_weapons
-            .get_mut(&owner)
-            .unwrap()
-            .get_mut(&type_id)
+            .instance_mut(&owner, &type_id)
             .unwrap()
             .can_lose = false;
     }

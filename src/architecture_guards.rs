@@ -14,7 +14,7 @@
 //! The ui rule also forbids the retired skirmish_scenarios root. These checks
 //! preserve the current layout rather than describing future migration work.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -829,4 +829,356 @@ fn macro_arguments<'a>(source: &'a str, code: &str, start: usize) -> &'a str {
         }
     }
     panic!("unclosed argument list at byte {start}")
+}
+
+/// Each non-private slot of the simulation's composition roots is typed as an
+/// owner: a struct whose fields are all private, so other modules change its
+/// state only through its operations. A raw container, primitive, enum or
+/// open struct in a root slot would let any module write that state directly.
+/// `Option`, `Box`, `Arc` and `Rc` wrappers are looked through.
+#[test]
+fn composition_root_slots_are_owner_types() {
+    const ROOTS: &[(&str, &str)] = &[
+        ("sim/world/mod.rs", "Simulation"),
+        ("sim/world/substrate.rs", "ObjectSubstrate"),
+        ("sim/game_entity.rs", "GameEntity"),
+    ];
+    // Root slots that are not owner structs, each with its reason.
+    const PINNED: &[(&str, &str, &str)] = &[
+        (
+            "Simulation",
+            "substrate",
+            "the object root, whose own slots are checked as ObjectSubstrate",
+        ),
+        (
+            "GameEntity",
+            "mission_leaf",
+            "an enum of owner leaves, built once at entity construction; only fixtures replace it",
+        ),
+    ];
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let files = source_files(&src_root);
+    // Parsed from the blanked source: `strip_test_items` works per line and
+    // does not end a gated struct field, so `cfg(test)` items and fields are
+    // dropped here instead.
+    let mut structs: BTreeMap<String, Vec<Vec<FieldDecl>>> = BTreeMap::new();
+    for file in files.iter().filter(|file| file.production.is_some()) {
+        for (name, fields) in struct_definitions(&file.blanked) {
+            structs.entry(name).or_default().push(fields);
+        }
+    }
+    let mut violations = Vec::new();
+    let mut pins_used = BTreeSet::new();
+    for &(rel, root) in ROOTS {
+        let file = files
+            .iter()
+            .find(|file| file.rel == rel)
+            .unwrap_or_else(|| panic!("{rel} exists"));
+        let (_, fields) = struct_definitions(&file.blanked)
+            .into_iter()
+            .find(|(name, _)| name == root)
+            .unwrap_or_else(|| panic!("struct {root} in {rel}"));
+        for field in fields.iter().filter(|field| field.non_private) {
+            if PINNED
+                .iter()
+                .any(|&(pinned_root, slot, _)| pinned_root == root && slot == field.name)
+            {
+                pins_used.insert((root, field.name.clone()));
+                continue;
+            }
+            if let Err(why) = owner_type_verdict(&structs, &field.ty) {
+                violations.push(format!("{root}.{}: `{}` {why}", field.name, field.ty));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "composition-root slots that are not owner types: {violations:#?}\n\
+         Give the state an owner struct with private fields and rule-named \
+         operations, or pin the slot here with its reason."
+    );
+    let stale: Vec<_> = PINNED
+        .iter()
+        .filter(|&&(root, slot, _)| !pins_used.contains(&(root, slot.to_string())))
+        .collect();
+    assert!(stale.is_empty(), "stale PINNED entr(ies): {stale:?}");
+}
+
+#[test]
+fn slot_type_scan_reads_wrappers_tuples_and_visibility() {
+    let code = "pub struct A<T> where T: Copy { pub(crate) x: Option<Arc<B>>, #[serde(skip)] y: Vec<(u8, u16)>,\n\
+                #[cfg(test)] pub z: u8 }\n\
+                struct B(pub u8, C);\n\
+                pub(crate) struct C;\n\
+                #[cfg(any(test, feature = \"x\"))]\n\
+                struct D<P, Q> { pub open: P, q: Q }\n\
+                #[cfg(test)]\n\
+                mod tests { struct E { pub open: u8 } }\n";
+    let defs = struct_definitions(code);
+    let names: Vec<_> = defs.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["A", "B", "C"]);
+    let a = &defs[0].1;
+    assert_eq!(a.len(), 2, "the cfg(test) field is not a production slot");
+    assert_eq!((a[0].non_private, a[0].name.as_str()), (true, "x"));
+    assert_eq!(
+        (a[1].non_private, a[1].ty.as_str()),
+        (false, "Vec<(u8, u16)>")
+    );
+    assert_eq!(slot_base_type(&a[0].ty), "B");
+    assert!(defs[1].1[0].non_private && !defs[1].1[1].non_private);
+    assert!(defs[2].1.is_empty());
+    let structs: BTreeMap<String, Vec<Vec<FieldDecl>>> = defs
+        .into_iter()
+        .map(|(name, fields)| (name, vec![fields]))
+        .collect();
+    assert!(owner_type_verdict(&structs, "Option<C>").is_ok());
+    assert!(owner_type_verdict(&structs, "crate::x::B").is_err());
+    assert!(owner_type_verdict(&structs, "BTreeMap<u8, C>").is_err());
+    assert!(owner_type_verdict(&structs, "SomeEnum").is_err());
+}
+
+struct FieldDecl {
+    non_private: bool,
+    name: String,
+    ty: String,
+}
+
+/// Whether a slot of type `ty` is an owner struct, or why not.
+fn owner_type_verdict(
+    structs: &BTreeMap<String, Vec<Vec<FieldDecl>>>,
+    ty: &str,
+) -> Result<(), String> {
+    const RAW: &[&str] = &[
+        "Vec", "VecDeque", "BTreeMap", "BTreeSet", "HashMap", "HashSet", "String", "bool", "char",
+        "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
+        "f32", "f64",
+    ];
+    let base = slot_base_type(ty);
+    if base.is_empty() || base.starts_with(['(', '[', '&']) || RAW.contains(&base) {
+        return Err("is a raw value or container".to_string());
+    }
+    let Some(definitions) = structs.get(base) else {
+        return Err("is not a struct (an enum, alias or foreign type)".to_string());
+    };
+    let open: Vec<&str> = definitions
+        .iter()
+        .flatten()
+        .filter(|field| field.non_private)
+        .map(|field| field.name.as_str())
+        .collect();
+    if open.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("has non-private fields {open:?}"))
+    }
+}
+
+/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc` and paths.
+fn slot_base_type(ty: &str) -> &str {
+    let mut ty = ty.trim();
+    loop {
+        let (path, generics) = ty.find('<').map_or((ty, ""), |at| ty.split_at(at));
+        let last = path.rsplit("::").next().unwrap_or(path).trim();
+        if ["Option", "Box", "Arc", "Rc"].contains(&last)
+            && generics.starts_with('<')
+            && generics.ends_with('>')
+        {
+            ty = generics[1..generics.len() - 1].trim();
+        } else {
+            return last;
+        }
+    }
+}
+
+/// Every production `struct` item in blanked `code`, with its production
+/// fields in order. Tuple fields are named by position; unit structs have
+/// none. Items and fields gated on `cfg(test)` or `cfg(any(test, ..))` are
+/// skipped.
+fn struct_definitions(code: &str) -> Vec<(String, Vec<FieldDecl>)> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let gated = cfg_test_items(code);
+    let mut out = Vec::new();
+    for (at, _) in code.match_indices("struct") {
+        let end = at + "struct".len();
+        if gated.iter().any(|&(start, stop)| start <= at && at < stop)
+            || (at > 0 && is_ident(bytes[at - 1]))
+            || !bytes.get(end).is_some_and(u8::is_ascii_whitespace)
+        {
+            continue;
+        }
+        let name_start = end + code[end..].len() - code[end..].trim_start().len();
+        let name_len = code[name_start..]
+            .bytes()
+            .take_while(|&b| is_ident(b))
+            .count();
+        if name_len == 0 {
+            continue;
+        }
+        let name = &code[name_start..name_start + name_len];
+        // The body opens at the first `{`, `(` or `;` outside the generics.
+        let mut depth = 0i32;
+        let mut open = None;
+        let mut prev = 0u8;
+        for (offset, b) in code[name_start + name_len..].bytes().enumerate() {
+            match b {
+                b'<' => depth += 1,
+                b'>' if prev != b'-' => depth -= 1,
+                b'{' | b'(' | b';' if depth == 0 => {
+                    open = Some((name_start + name_len + offset, b));
+                    break;
+                }
+                _ => {}
+            }
+            prev = b;
+        }
+        let Some((open_at, open_byte)) = open else {
+            continue;
+        };
+        if open_byte == b';' {
+            out.push((name.to_string(), Vec::new()));
+            continue;
+        }
+        let close_byte = if open_byte == b'{' { b'}' } else { b')' };
+        let mut nesting = 0i32;
+        let mut close_at = None;
+        for (offset, b) in code[open_at..].bytes().enumerate() {
+            if b == open_byte {
+                nesting += 1;
+            } else if b == close_byte {
+                nesting -= 1;
+                if nesting == 0 {
+                    close_at = Some(open_at + offset);
+                    break;
+                }
+            }
+        }
+        let Some(close_at) = close_at else {
+            continue;
+        };
+        let named = open_byte == b'{';
+        let fields = split_top_level(&code[open_at + 1..close_at])
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, part)| parse_field_decl(part, named, index))
+            .collect();
+        out.push((name.to_string(), fields));
+    }
+    out
+}
+
+/// `text` split at commas outside brackets, braces, parentheses and generics.
+fn split_top_level(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0;
+    let mut prev = 0u8;
+    for (at, b) in text.bytes().enumerate() {
+        match b {
+            b'(' | b'[' | b'{' | b'<' => depth += 1,
+            b'>' if prev == b'-' => {}
+            b')' | b']' | b'}' | b'>' => depth -= 1,
+            b',' if depth == 0 => {
+                parts.push(&text[start..at]);
+                start = at + 1;
+            }
+            _ => {}
+        }
+        prev = b;
+    }
+    parts.push(&text[start..]);
+    parts
+}
+
+fn parse_field_decl(part: &str, named: bool, index: usize) -> Option<FieldDecl> {
+    let mut rest = part.trim();
+    // Attributes such as `#[serde(skip)]` precede the field.
+    while let Some(after) = rest.strip_prefix("#[") {
+        let mut depth = 1i32;
+        let close = after.bytes().position(|b| {
+            match b {
+                b'[' => depth += 1,
+                b']' => depth -= 1,
+                _ => {}
+            }
+            depth == 0
+        })?;
+        if is_cfg_test(&after[..close]) {
+            return None;
+        }
+        rest = after[close + 1..].trim_start();
+    }
+    if rest.is_empty() {
+        return None;
+    }
+    let non_private = rest.starts_with("pub") && rest[3..].starts_with([' ', '\t', '\n', '(']);
+    if non_private {
+        rest = rest[3..].trim_start();
+        if rest.starts_with('(') {
+            rest = rest[rest.find(')')? + 1..].trim_start();
+        }
+    }
+    let (name, ty) = if named {
+        let (name, ty) = rest.split_once(':')?;
+        (name.trim().to_string(), ty)
+    } else {
+        (index.to_string(), rest)
+    };
+    Some(FieldDecl {
+        non_private,
+        name,
+        ty: ty.split_whitespace().collect::<Vec<_>>().join(" "),
+    })
+}
+
+/// Whether an attribute's contents gate on tests.
+fn is_cfg_test(attribute: &str) -> bool {
+    ["cfg(test", "cfg(any(test", "cfg(all(test"]
+        .iter()
+        .any(|gate| attribute.trim_start().starts_with(gate))
+}
+
+/// Byte ranges of the items in blanked `code` gated on tests: from the
+/// attribute to the item's `;` or `,`, or to the close of its block.
+fn cfg_test_items(code: &str) -> Vec<(usize, usize)> {
+    let mut items = Vec::new();
+    for (at, _) in code.match_indices("#[") {
+        let Some(close) = code[at..].find(']') else {
+            continue;
+        };
+        if !is_cfg_test(&code[at + 2..at + close]) {
+            continue;
+        }
+        let start = at + close + 1;
+        let mut depth = 0i32;
+        let mut prev = 0u8;
+        for (offset, b) in code[start..].bytes().enumerate() {
+            match b {
+                b'(' | b'[' | b'<' => depth += 1,
+                b'>' if prev == b'-' => {}
+                b')' | b']' | b'>' => depth -= 1,
+                b';' | b',' if depth == 0 => {
+                    items.push((at, start + offset));
+                    break;
+                }
+                b'{' if depth == 0 => {
+                    let mut nesting = 0i32;
+                    let block_end = code[start + offset..].bytes().position(|b| {
+                        match b {
+                            b'{' => nesting += 1,
+                            b'}' => nesting -= 1,
+                            _ => {}
+                        }
+                        nesting == 0
+                    });
+                    items.push((at, block_end.map_or(code.len(), |end| start + offset + end)));
+                    break;
+                }
+                b'}' if depth == 0 => break,
+                _ => {}
+            }
+            prev = b;
+        }
+    }
+    items
 }

@@ -331,6 +331,12 @@ fn retail_allies_allowed_layers_by_mode_and_rows_take_the_playable_countries() {
     assert!(!layered(None).general.allies_allowed);
     assert!(layered(Some("mpbattlemd.ini")).general.allies_allowed);
     assert!(!layered(Some("mpfreeforallmd.ini")).general.allies_allowed);
+    // AllyChangeAllowed: RULESMD yes, kept by Battle; Team Game says no, so
+    // both ALLY producers refuse there (0x00731877, 0x00731989).
+    assert!(layered(None).general.ally_change_allowed);
+    assert!(layered(Some("mpbattlemd.ini")).general.ally_change_allowed);
+    let team = layered(Some("mpteammd.ini"));
+    assert!(team.general.allies_allowed && !team.general.ally_change_allowed);
     let rules = layered(Some("mpbattlemd.ini"));
     for country in [
         "Americans",

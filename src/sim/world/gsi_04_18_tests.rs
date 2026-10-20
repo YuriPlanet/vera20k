@@ -122,7 +122,8 @@ fn set_missions(entity: &mut GameEntity, current: MissionId, queued: MissionId) 
 }
 
 fn take_centered_cues(sim: &mut Simulation) -> Vec<String> {
-    std::mem::take(&mut sim.sound_events)
+    sim.sound_events
+        .take_for_test()
         .into_iter()
         .filter_map(|event| match event {
             SimSoundEvent::VocCentered { sound_id } => Some(sound_id),
@@ -224,7 +225,11 @@ fn gsi_04_18_remote_unbound_and_retained_active_uplinks_are_silent() {
 fn gsi_04_18_spy_sat_candidate_is_independent_of_low_or_offline_power() {
     let (mut sim, rules, owner) = fixture();
     insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
-    let power = sim.power_states.entry(owner).or_default();
+    let power = sim
+        .power_states
+        .map_mut_for_test()
+        .entry(owner)
+        .or_default();
     power.set_is_low_power_for_test(true);
     power.start_blackout(sim.session.binary_frame(), 30);
 

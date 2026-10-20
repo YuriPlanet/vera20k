@@ -289,7 +289,7 @@ fn native_sinking_sound_readers_and_reachable_edges_match() {
         sim.main_rng = SimRng::new(1).into();
         sim.scenario_rng = SimRng::new(1);
         sim.mapgen_rng = SimRng::new(1);
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.sinking_edge_sounds(id, &rules);
         let events: Vec<_> = sim
             .sound_events

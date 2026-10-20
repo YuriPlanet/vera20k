@@ -841,7 +841,7 @@ fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
 /// idempotent). Once on Guard the Harvest handler is no longer dispatched;
 /// what brings a miner back is `UnitClass::Mission_Guard @ 0x00740810` (the
 /// chrono arms in `techno_ai/mission_handlers.rs`) or a player order
-/// (`Command::HarvestCell` / `MinerReturn`, EventClass MEGAMISSION →
+/// (`Command::HarvestCell` / MEGAMISSION Enter, EventClass MEGAMISSION →
 /// `Queue_Mission(mission, 0)` at `0x004C73B9`). A human war miner therefore
 /// parks on Guard until re-ordered — native behaviour.
 ///
@@ -858,8 +858,8 @@ fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
 /// `House+0x242` is clear — and the scan miss that led here has just set it,
 /// with no clearing writer. What keeps a native AI economy alive after that
 /// is house/team logic (`AI_Choose_Unit` reading `+0x242`, team recruitment),
-/// none of which VERA runs yet (`sim/ai.rs` never issues `HarvestCell`/
-/// `MinerReturn` and skips harvesters). Until that lane lands, an AI-house
+/// none of which VERA runs yet (`sim/ai.rs` never issues `HarvestCell` or a
+/// refinery Enter and skips harvesters). Until that lane lands, an AI-house
 /// miner does not park: state 4 drops straight back into the state-0 scan,
 /// which on a miss re-arms the same fixed 105-frame wait (the pre-Guard-park
 /// perpetual re-scan cadence, `House+0x242` still written native-true on

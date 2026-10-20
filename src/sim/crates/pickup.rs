@@ -52,7 +52,7 @@ use crate::sim::components::{DriveCoord, Position};
 use crate::sim::intern::InternedId;
 use crate::sim::rng::SimRng;
 use crate::sim::world::FrameEffects;
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::{FrameChannel, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::NativeF64Bits;
 
@@ -194,7 +194,7 @@ fn crate_land_type(sim: &Simulation, cell: (i16, i16)) -> u8 {
 /// the house and the app applies that test. Reveal (`0x0048202D..0x0048203C`)
 /// plays it for everyone.
 fn play_crate_sound(
-    sound_events: &mut Vec<SimSoundEvent>,
+    sound_events: &mut FrameChannel<SimSoundEvent>,
     sound: Option<&str>,
     heard_by: Option<InternedId>,
     cell: (i16, i16),
@@ -214,7 +214,7 @@ fn play_crate_sound(
         SimFixed::from_num(128),
         SimFixed::from_num(128),
     );
-    sound_events.push(SimSoundEvent::voc_at_for(
+    sound_events.emit(SimSoundEvent::voc_at_for(
         sound.to_owned(),
         heard_by.map(|owner| [owner, owner]),
         &position,
@@ -226,12 +226,12 @@ fn play_crate_sound(
 /// app's local test. Retail `evamd.ini` defines none of the three names, so
 /// they resolve to silence there as natively.
 fn announce_upgrade(
-    sound_events: &mut Vec<SimSoundEvent>,
+    sound_events: &mut FrameChannel<SimSoundEvent>,
     owners: &[InternedId],
     event: &'static str,
 ) {
     for &owner in owners {
-        sound_events.push(SimSoundEvent::HouseEva { owner, event });
+        sound_events.emit(SimSoundEvent::HouseEva { owner, event });
     }
 }
 

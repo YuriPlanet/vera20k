@@ -642,7 +642,7 @@ fn crash_fall_matches_native_frames_to_the_impact() {
         let start = sim.session.binary_frame();
         for (n, frame) in frames.iter().enumerate() {
             sim.session.set_binary_frame_for_test(start + n as u32);
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
             let impact = n + 1 == frames.len();
             let expected: Vec<i32> = frame["xyz"]
                 .as_array()
@@ -1164,7 +1164,7 @@ fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
         impact_booms: 0,
     };
     for frame in 1..40 {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let booms_before = sim
             .substrate
             .anims

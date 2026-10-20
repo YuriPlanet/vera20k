@@ -29,7 +29,9 @@ impl Fixture {
                 .unwrap()
         });
         let owner = sim.interner.intern("Americans");
-        sim.power_states.insert(owner, PowerState::default());
+        sim.power_states
+            .map_mut_for_test()
+            .insert(owner, PowerState::default());
         Some(Self {
             sim,
             rules,

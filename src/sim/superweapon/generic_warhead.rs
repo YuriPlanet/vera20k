@@ -85,7 +85,7 @@ pub(super) fn launch(
     {
         crate::sim::world::damage_consequences::admit_explosion_effect(sim, rules, effect);
     }
-    sim.combat_light_requests.push(CombatLightRequest::Impact {
+    sim.combat_light_requests.emit(CombatLightRequest::Impact {
         target_id: None,
         damage: settings.damage,
         warhead_ref,
@@ -93,7 +93,7 @@ pub(super) fn launch(
         force_create: false,
         flags: 0,
     });
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx: cell.0,

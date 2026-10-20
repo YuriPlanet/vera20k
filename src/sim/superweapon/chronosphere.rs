@@ -89,8 +89,7 @@ impl Simulation {
     pub(crate) fn release_super_anim(&mut self, owner: InternedId, sw_type: InternedId) {
         let Some(anim) = self
             .super_weapons
-            .get_mut(&owner)
-            .and_then(|weapons| weapons.get_mut(&sw_type))
+            .instance_mut(&owner, &sw_type)
             .and_then(|instance| instance.placement_anim.take())
         else {
             return;
@@ -116,11 +115,7 @@ fn create_chrono_anim(
     sim.release_super_anim(owner, sw_type);
     let coords = [x, y, z.wrapping_add(CHRONO_ANIM_Z_LIFT)];
     let anim = super::spawn_super_anim(sim, rules, &rules.general.chrono_placement_anim, coords);
-    if let Some(instance) = sim
-        .super_weapons
-        .get_mut(&owner)
-        .and_then(|weapons| weapons.get_mut(&sw_type))
-    {
+    if let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type) {
         instance.placement_anim = anim;
     }
 }
@@ -139,11 +134,7 @@ pub(super) fn launch_source(
     sw_type: InternedId,
     cell: (u16, u16),
 ) {
-    let Some(instance) = sim
-        .super_weapons
-        .get_mut(&owner)
-        .and_then(|weapons| weapons.get_mut(&sw_type))
-    else {
+    let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type) else {
         return;
     };
     if !instance.is_ready {
@@ -153,7 +144,7 @@ pub(super) fn launch_source(
     let mut coords = deck_coords(sim, cell);
     coords[2] = coords[2].wrapping_add(CHRONO_ANIM_Z_LIFT);
     create_chrono_anim(sim, rules, owner, sw_type, coords);
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx: cell.0,
@@ -193,7 +184,7 @@ pub(super) fn launch_warp(
         return;
     };
     for (rx, ry) in [source, target] {
-        sim.sound_events.push(SimSoundEvent::RadarEvent {
+        sim.sound_events.emit(SimSoundEvent::RadarEvent {
             radar: RadarEventRequest::new(RadarEventType::ImpactSilent, rx, ry),
         });
     }
@@ -233,7 +224,7 @@ pub(super) fn launch_warp(
             next = live_successor(sim, id, (rx, ry), layer);
         }
     }
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx: target.0,

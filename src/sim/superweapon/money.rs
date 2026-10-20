@@ -61,7 +61,7 @@ pub(super) fn admit(
     }
     if sim.houses.contains_key(&owner) {
         sim.sound_events
-            .push(SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type });
+            .emit(SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type });
     }
     false
 }

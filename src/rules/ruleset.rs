@@ -670,6 +670,11 @@ pub struct GeneralRules {
     /// `sim::house_diplomacy`). Retail RULESMD says no; the Battle mode's
     /// MPBATTLEMD layers yes over it.
     pub allies_allowed: bool,
+    /// `[MultiplayerDialogSettings] AllyChangeAllowed=` (`Rules+0x14BB`,
+    /// ReadBool at `0x00672175` over the constructor's 1, `0x00667202` /
+    /// `0x006672F9`). Only the two ALLY producers read it (`0x00731840`,
+    /// `0x007318F0`). Retail RULESMD says yes; Team Game's MPTEAMMD says no.
+    pub ally_change_allowed: bool,
     /// `[AI] CompEasyBonus=`: Rules+17E3 starts true in constructor667727.
     /// ReadAI673CFD..673D1D uses ReadBool5295F0 with the retained byte,
     /// after AirstripLimit and before Paranoid, independently of General.
@@ -2331,6 +2336,7 @@ impl Default for GeneralRules {
             reveal_by_height: true,
             ally_reveal: true,
             allies_allowed: false,
+            ally_change_allowed: true,
             comp_easy_bonus: true,
             paranoid: true,
             tunnel_speed: SimFixed::from_num(6.0_f32),
@@ -3180,6 +3186,9 @@ impl GeneralRules {
         let allies_allowed = ini
             .section_or_empty("MultiplayerDialogSettings")
             .read_bool("AlliesAllowed", defaults.allies_allowed);
+        let ally_change_allowed = ini
+            .section_or_empty("MultiplayerDialogSettings")
+            .read_bool("AllyChangeAllowed", defaults.ally_change_allowed);
         let attack_delay = ai.read_double("AttackDelay", defaults.attack_delay);
         let path_delay = ai.read_double("PathDelay", defaults.path_delay);
         let blockage_path_delay_ticks =
@@ -3220,6 +3229,7 @@ impl GeneralRules {
                 bomb_attach_sound,
                 ally_reveal,
                 allies_allowed,
+                ally_change_allowed,
                 paranoid,
                 psychic_reveal_activate_sound,
                 psychic_reveal_radius,
@@ -3412,6 +3422,7 @@ impl GeneralRules {
             reveal_by_height: general.read_bool("RevealByHeight", true),
             ally_reveal,
             allies_allowed,
+            ally_change_allowed,
             comp_easy_bonus: defaults.comp_easy_bonus,
             paranoid,
             tunnel_speed: SimFixed::from_num(general.read_double("TunnelSpeed", 6.0) as f32),

@@ -137,7 +137,7 @@ impl Simulation {
         //50C905/50C90B: centered cue follows every member callback, even
         //when the registry is empty or every infantry refuses the action.
         if let Some(sound_id) = rules.general.cheer_sound() {
-            self.sound_events.push(SimSoundEvent::VocCentered {
+            self.sound_events.emit(SimSoundEvent::VocCentered {
                 sound_id: sound_id.to_owned(),
             });
             effects.flush_sound(self, Some(rules));
@@ -498,8 +498,32 @@ impl Simulation {
         command_owner: crate::sim::intern::InternedId,
         house_index: i32,
     ) -> Option<CommandRecord> {
-        let mut record =
-            self.encode_header_event(command_owner, crate::sim::command::REMOVE_PLAYER_OPCODE)?;
+        self.encode_house_index_event(
+            command_owner,
+            crate::sim::command::REMOVE_PLAYER_OPCODE,
+            house_index,
+        )
+    }
+
+    /// EVENT_ALLY's record: the header House is the sender, the dword
+    /// payload the other House's index (`0x00731877..0x007318C8`).
+    pub fn encode_ally_record(
+        &self,
+        command_owner: crate::sim::intern::InternedId,
+        house_index: i32,
+    ) -> Option<CommandRecord> {
+        self.encode_house_index_event(command_owner, crate::sim::command::ALLY_OPCODE, house_index)
+    }
+
+    /// `EventClass(house, type, index)` (`0x004C6720`): a header event
+    /// whose dword payload is a House index.
+    fn encode_house_index_event(
+        &self,
+        command_owner: crate::sim::intern::InternedId,
+        opcode: u8,
+        house_index: i32,
+    ) -> Option<CommandRecord> {
+        let mut record = self.encode_header_event(command_owner, opcode)?;
         record.payload_mut()[..4].copy_from_slice(&house_index.to_le_bytes());
         Some(record)
     }
@@ -659,19 +683,21 @@ impl Simulation {
                 .then(|| CommandEnvelope::new(owner, execute_tick, Command::ExitMatch));
         }
 
-        if record.opcode() == crate::sim::command::REMOVE_PLAYER_OPCODE {
+        let house_index_event: Option<fn(i32) -> Command> = match record.opcode() {
+            crate::sim::command::REMOVE_PLAYER_OPCODE => {
+                Some(|house_index| Command::RemovePlayer { house_index })
+            }
+            crate::sim::command::ALLY_OPCODE => Some(|house_index| Command::Ally { house_index }),
+            _ => None,
+        };
+        if let Some(command) = house_index_event {
             let house_index = usize::try_from(record.house_id()).ok()?;
             let owner = *self.houses.order().get(house_index)?;
-            let removed = i32::from_le_bytes(record.payload()[..4].try_into().ok()?);
-            return self.houses.contains_key(&owner).then(|| {
-                CommandEnvelope::new(
-                    owner,
-                    execute_tick,
-                    Command::RemovePlayer {
-                        house_index: removed,
-                    },
-                )
-            });
+            let other = i32::from_le_bytes(record.payload()[..4].try_into().ok()?);
+            return self
+                .houses
+                .contains_key(&owner)
+                .then(|| CommandEnvelope::new(owner, execute_tick, command(other)));
         }
 
         if record.opcode() == crate::sim::command::DESTRUCT_OPCODE {
@@ -819,7 +845,7 @@ impl Simulation {
             && rules.general.sell_sound.is_some()
             && let Some(receiver) = self.interner.get(command_owner)
         {
-            self.sound_events.push(SimSoundEvent::WallSold { receiver });
+            self.sound_events.emit(SimSoundEvent::WallSold { receiver });
         }
         let _discarded_actual_cost = rules.building_actual_cost(wall_type);
 
@@ -1512,7 +1538,11 @@ impl Simulation {
                 }
                 // A Simulation without a current House (diagnostic and replay
                 // drivers) has no remote senders.
-                if self.session.current_house().is_none_or(|local| local == owner) {
+                if self
+                    .session
+                    .current_house()
+                    .is_none_or(|local| local == owner)
+                {
                     // The local sender's EventClass__Execute (0x004C7903)
                     // writes the termination byte at 0x004C7917. The app
                     // consumes the owner-tagged edge after this tail.
@@ -1530,6 +1560,30 @@ impl Simulation {
             }
             Command::MoveFlash { rx, ry } => {
                 rules.is_some_and(|rules| self.spawn_move_flash(rules, (*rx, *ry)))
+            }
+            Command::Ally { house_index } => {
+                // EventClass::Execute 0x004C6DEE..0x004C6E23: no admission
+                // gate; the sender toggles on its own mask, announced.
+                let (Some(owner), Some(other), Some(rules)) = (
+                    self.interner.get(command_owner),
+                    usize::try_from(*house_index)
+                        .ok()
+                        .and_then(|index| self.houses.order().get(index).copied()),
+                    rules,
+                ) else {
+                    return false;
+                };
+                if crate::sim::combat::combat_weapon::is_ally_by_object(
+                    Some(self.house_alliances()),
+                    &self.interner,
+                    owner,
+                    other,
+                ) {
+                    self.make_enemy(owner, other, rules, true);
+                } else {
+                    self.make_ally(owner, other, rules, overlay_registry, frame_effects, true);
+                }
+                true
             }
             Command::RemovePlayer { house_index } => {
                 // EventClass::Execute 0x004C7B73: IsHumanControlled
@@ -2352,7 +2406,7 @@ impl Simulation {
             && let Some(sound_id) = self.selection_voice_request(rules, stable_id, voice_latch)
         {
             let sound_id = sound_id.to_owned();
-            self.sound_events.push(SimSoundEvent::UnitVoiceRequested {
+            self.sound_events.emit(SimSoundEvent::UnitVoiceRequested {
                 owner: stable_id,
                 sound_id,
             });

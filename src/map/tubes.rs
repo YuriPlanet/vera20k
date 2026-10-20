@@ -68,21 +68,64 @@ pub struct NativeMapTubeReceipt {
     pub entries: Vec<ConstructedMapTube>,
 }
 
-/// Consumed-once ownership state for the raw `[Tubes]` boundary.
+/// Consumed-once ownership of the raw `[Tubes]` boundary: a fresh map read
+/// installs one receipt, and terrain binding takes it once.
 #[derive(Debug, Default)]
-pub(crate) enum NativeMapTubesState {
+pub(crate) struct NativeMapTubes {
+    state: NativeMapTubesState,
+}
+
+#[derive(Debug, Default)]
+enum NativeMapTubesState {
     #[default]
     Unconstructed,
     Pending(NativeMapTubeReceipt),
     Bound,
 }
 
-impl NativeMapTubesState {
+/// Why the `[Tubes]` receipt cannot be taken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeMapTubesTakeError {
+    NotConstructed,
+    AlreadyBound,
+}
+
+impl NativeMapTubes {
+    pub(crate) fn is_unconstructed(&self) -> bool {
+        matches!(self.state, NativeMapTubesState::Unconstructed)
+    }
+
+    /// Install the map read's empty receipt for construction to fill.
+    pub(crate) fn install_receipt(&mut self) -> &mut NativeMapTubeReceipt {
+        assert!(self.is_unconstructed(), "one [Tubes] receipt per map read");
+        self.state = NativeMapTubesState::Pending(NativeMapTubeReceipt::default());
+        let NativeMapTubesState::Pending(receipt) = &mut self.state else {
+            unreachable!("fresh Tube receipt was installed immediately above")
+        };
+        receipt
+    }
+
+    /// Terrain binding's one take of the constructed receipt.
+    pub(crate) fn take_receipt(&mut self) -> Result<NativeMapTubeReceipt, NativeMapTubesTakeError> {
+        match &self.state {
+            NativeMapTubesState::Unconstructed => Err(NativeMapTubesTakeError::NotConstructed),
+            NativeMapTubesState::Bound => Err(NativeMapTubesTakeError::AlreadyBound),
+            NativeMapTubesState::Pending(_) => {
+                let NativeMapTubesState::Pending(receipt) =
+                    std::mem::replace(&mut self.state, NativeMapTubesState::Bound)
+                else {
+                    unreachable!("matched Pending above")
+                };
+                Ok(receipt)
+            }
+        }
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn as_ref(&self) -> Option<&NativeMapTubeReceipt> {
-        match self {
-            Self::Pending(receipt) => Some(receipt),
-            Self::Unconstructed | Self::Bound => None,
+        match &self.state {
+            NativeMapTubesState::Pending(receipt) => Some(receipt),
+            NativeMapTubesState::Unconstructed | NativeMapTubesState::Bound => None,
         }
     }
 }

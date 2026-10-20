@@ -5,7 +5,7 @@
 //! preincrement it; they neither search for nor prevent duplicate values.
 
 use crate::map::tubes::{
-    NativeMapTubeReceipt, NativeMapTubesState, RawTubeSection, TubeConstructionError,
+    NativeMapTubeReceipt, NativeMapTubesTakeError, RawTubeSection, TubeConstructionError,
     construct_raw_tube_section,
 };
 use crate::rules::ini_parser::IniFile;
@@ -211,7 +211,7 @@ impl Simulation {
         map_ini: &IniFile,
         mut allocate: impl FnMut(usize) -> bool,
     ) -> Result<(), NativeMapTubeConstructionError> {
-        if !matches!(self.native_map_tubes, NativeMapTubesState::Unconstructed) {
+        if !self.native_map_tubes.is_unconstructed() {
             return Err(NativeMapTubeConstructionError::ReceiptAlreadyInstalled);
         }
         let cursor = self
@@ -221,10 +221,7 @@ impl Simulation {
         cursor.reserve_map_read_from_saved()?;
 
         let raw_section = RawTubeSection::from_ini(map_ini);
-        self.native_map_tubes = NativeMapTubesState::Pending(NativeMapTubeReceipt::default());
-        let NativeMapTubesState::Pending(receipt) = &mut self.native_map_tubes else {
-            unreachable!("fresh Tube receipt was installed immediately above")
-        };
+        let receipt = self.native_map_tubes.install_receipt();
         let mut assign_native_id = || cursor.next_id();
         construct_raw_tube_section(raw_section, receipt, &mut allocate, &mut assign_native_id)?;
         Ok(())
@@ -233,17 +230,16 @@ impl Simulation {
     pub(crate) fn take_native_map_tubes_receipt(
         &mut self,
     ) -> Result<NativeMapTubeReceipt, NativeMapTubeConstructionError> {
-        match std::mem::replace(&mut self.native_map_tubes, NativeMapTubesState::Bound) {
-            NativeMapTubesState::Pending(receipt) => Ok(receipt),
-            NativeMapTubesState::Unconstructed => {
-                self.native_map_tubes = NativeMapTubesState::Unconstructed;
-                Err(NativeMapTubeConstructionError::ReceiptNotConstructed)
-            }
-            NativeMapTubesState::Bound => {
-                self.native_map_tubes = NativeMapTubesState::Bound;
-                Err(NativeMapTubeConstructionError::ReceiptAlreadyBound)
-            }
-        }
+        self.native_map_tubes
+            .take_receipt()
+            .map_err(|error| match error {
+                NativeMapTubesTakeError::NotConstructed => {
+                    NativeMapTubeConstructionError::ReceiptNotConstructed
+                }
+                NativeMapTubesTakeError::AlreadyBound => {
+                    NativeMapTubeConstructionError::ReceiptAlreadyBound
+                }
+            })
     }
 }
 

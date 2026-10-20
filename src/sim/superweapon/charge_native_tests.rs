@@ -146,13 +146,18 @@ fn grant_percentage_hold_release_and_ai_match_original_histories() {
         let type_id = sim.interner.intern("PsychicDominatorSpecial");
         sim.houses
             .register(HouseState::new(owner, 2, None, false, 0, 10));
-        sim.super_weapons.entry(owner).or_default().insert(
-            type_id,
-            SuperWeaponInstance::new(type_id, owner, grant_frame),
-        );
+        sim.super_weapons
+            .map_mut_for_test()
+            .entry(owner)
+            .or_default()
+            .insert(
+                type_id,
+                SuperWeaponInstance::new(type_id, owner, grant_frame),
+            );
         sim.spawn_object("YAPPET", "Confederation", 10, 10, 0, &rules)
             .unwrap();
         sim.power_states
+            .map_mut_for_test()
             .entry(owner)
             .or_default()
             .set_is_low_power_for_test(low_power);
@@ -179,6 +184,7 @@ fn grant_percentage_hold_release_and_ai_match_original_histories() {
                 "execute129" => {
                     let changed = sim
                         .super_weapons
+                        .map_mut_for_test()
                         .get_mut(&owner)
                         .unwrap()
                         .get_mut(&type_id)
@@ -189,6 +195,7 @@ fn grant_percentage_hold_release_and_ai_match_original_histories() {
                 "first_hold" | "repeat_hold" | "release_hold" => {
                     let changed = sim
                         .super_weapons
+                        .map_mut_for_test()
                         .get_mut(&owner)
                         .unwrap()
                         .get_mut(&type_id)
@@ -257,6 +264,7 @@ fn house_hold_pass_matches_original_retained_power_histories() {
         instance.is_ready = first["ready"].as_bool().unwrap();
         instance.is_suspended = first["held"].as_bool().unwrap();
         sim.super_weapons
+            .map_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(type_id, instance);
@@ -282,7 +290,11 @@ fn house_hold_pass_matches_original_retained_power_histories() {
             // The original pass reads retained House output/drain. Its
             // low branch is observed in native control flow, not recomputed
             // by a second ratio implementation in this comparison fixture.
-            let power = sim.power_states.entry(owner).or_default();
+            let power = sim
+                .power_states
+                .map_mut_for_test()
+                .entry(owner)
+                .or_default();
             power.set_total_output_for_test(int(row, "retained_output"));
             power.set_total_drain_for_test(int(row, "retained_drain"));
             power.set_is_low_power_for_test(row["low_power_before_call"].as_bool().unwrap());
@@ -360,6 +372,7 @@ fn house_power_edge_holds_after_reactor_sample_in_the_same_frame() {
     sim.houses
         .register(HouseState::new(owner, 2, None, false, 0, 10));
     sim.super_weapons
+        .map_mut_for_test()
         .entry(owner)
         .or_default()
         .insert(type_id, SuperWeaponInstance::new(type_id, owner, 0));
@@ -387,6 +400,7 @@ fn house_power_edge_holds_after_reactor_sample_in_the_same_frame() {
         .set_binary_frame_for_test(int(receiver, "frame") as u32);
     let sw = rules.super_weapon("PsychicDominatorSpecial").unwrap();
     sim.super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&type_id)

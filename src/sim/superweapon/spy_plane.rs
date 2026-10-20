@@ -49,7 +49,7 @@ pub(super) fn launch(
     (rx, ry): (u16, u16),
     frame_effects: FrameEffects<'_>,
 ) -> bool {
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx,

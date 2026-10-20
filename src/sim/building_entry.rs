@@ -307,7 +307,7 @@ impl Simulation {
                 )
             {
                 self.sound_events
-                    .push(SimSoundEvent::voc_at_world_coord(sound_id, entry_world));
+                    .emit(SimSoundEvent::voc_at_world_coord(sound_id, entry_world));
                 effects.flush_sound(self, Some(rules));
             }
         }
@@ -349,7 +349,7 @@ impl Simulation {
                 && let Some(foot) = self.substrate.entities.get(id)
             {
                 let coordinate = object_get_coords(foot, self.resolved_terrain.as_ref());
-                self.sound_events.push(SimSoundEvent::voc_at_world_coord(
+                self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
                     sound_id,
                     crate::sim::anim_class::AnimWorldCoord {
                         x: coordinate.x,

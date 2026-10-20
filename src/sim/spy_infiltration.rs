@@ -116,8 +116,7 @@ impl Simulation {
         } else if object.power > 0 {
             let frame = self.session.binary_frame();
             self.power_states
-                .entry(owner)
-                .or_default()
+                .house_mut(owner)
                 .start_blackout(frame, rules.general.spy_power_blackout);
             InfiltrationEffect::Power
         } else if rules.is_build_tech(&object.id) {
@@ -155,7 +154,7 @@ impl Simulation {
             InfiltrationEffect::None
         };
         if self.owner_is_human(owner) || self.owner_is_human(infiltrator) {
-            self.sound_events.push(SimSoundEvent::BuildingInfiltrated {
+            self.sound_events.emit(SimSoundEvent::BuildingInfiltrated {
                 owner,
                 infiltrator,
                 effect,

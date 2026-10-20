@@ -824,7 +824,7 @@ fn terminal_master_frame_visits_class_sequence_before_exit_without_frame_commit(
 fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() {
     let mut sim = Simulation::new();
     sim.hash_state_every(std::num::NonZeroU64::MIN);
-    sim.sound_events.push(SimSoundEvent::AnimationStarted {
+    sim.sound_events.emit(SimSoundEvent::AnimationStarted {
         anim_id: 9,
         sound_id: "WaterfallLoop".to_owned(),
         world: crate::sim::anim_class::AnimWorldCoord {
@@ -4043,7 +4043,7 @@ fn gsi_01_04_house_rung_owns_savour_deadline_and_emits_one_transition_edge() {
         "only the current player's accepted victory emits its EVA edge"
     );
 
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.session.set_tick_for_test(35);
     sim.session.set_binary_frame_for_test(35);
     check_defeat_now(&mut sim, Some(&rules));
@@ -8804,7 +8804,7 @@ fn engineer_capture_of_an_ordinary_building_requests_the_radar_event() {
     );
 
     // A second capture one cell away publishes its own request as well.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.announce_engineer_capture(2, player, &rules);
     assert_eq!(
         captured_events(&sim),
@@ -8899,7 +8899,7 @@ fn defeat_of_a_non_passive_house_emits_player_defeated() {
     );
 
     // A house already flagged defeated is not announced again.
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     check_defeat_now(&mut sim, Some(&rules));
     assert!(
         sim.sound_events

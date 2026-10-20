@@ -50,7 +50,7 @@ impl Simulation {
         // 6E24BD..6E250B: Flash48A620, then AreaDamage489280. Rules remain
         // immutable during a VERA action; both consume the same selected WH.
         let warhead_ref = self.interner.intern(&warhead.id);
-        self.combat_light_requests.push(CombatLightRequest::Impact {
+        self.combat_light_requests.emit(CombatLightRequest::Impact {
             target_id: None,
             damage,
             warhead_ref,

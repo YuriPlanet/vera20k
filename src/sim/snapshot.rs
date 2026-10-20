@@ -4790,7 +4790,6 @@ mod tests {
         );
 
         let mut sound_events = Vec::new();
-        let mut lifecycle_requests = Vec::new();
         crate::sim::movement::tick_movement_with_grids(
             &mut restored.substrate.entities,
             Some(&[1]),
@@ -4808,7 +4807,6 @@ mod tests {
             &mut restored.interner,
             None,
             &mut sound_events,
-            &mut lifecycle_requests,
         );
         assert_eq!(
             restored
@@ -6118,7 +6116,7 @@ mod tests {
             .get_mut(&owner)
             .expect("house")
             .supply_allow_win_tag_state(0, crate::sim::timer::CdTimer::started(100, 90));
-        original.sound_events.push(SimSoundEvent::MatchOutcome {
+        original.sound_events.emit(SimSoundEvent::MatchOutcome {
             owner,
             kind: HouseOutcomeKind::Victory,
         });

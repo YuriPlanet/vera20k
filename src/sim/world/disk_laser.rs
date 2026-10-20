@@ -341,7 +341,7 @@ impl Simulation {
                         source.techno_ctor_random_word(),
                     )
                 {
-                    self.sound_events.push(SimSoundEvent::voc_at_world_coord(
+                    self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
                         report.to_owned(),
                         AnimWorldCoord {
                             x: first.x,
@@ -356,7 +356,7 @@ impl Simulation {
                 if shot.step == 0
                     && let Some(sound) = rules.general.disk_laser_charge_up()
                 {
-                    self.sound_events.push(SimSoundEvent::voc_at_world_coord(
+                    self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
                         sound.to_owned(),
                         AnimWorldCoord {
                             x: first.x,

@@ -160,7 +160,7 @@ pub(crate) fn create(
     let phase = world.main_rng.next_range_i32_inclusive(0, 256);
     world
         .lifecycle_outputs
-        .push(crate::sim::world::LifecycleOutput::ElectricBoltCreated(
+        .emit(crate::sim::world::LifecycleOutput::ElectricBoltCreated(
             ElectricBoltBirth {
                 frame: world.session.binary_frame() as i32,
                 from,

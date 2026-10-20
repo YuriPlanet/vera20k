@@ -120,7 +120,11 @@ impl PaidHead {
         };
         // JoinedFixture's declared retained House power input. This is not an
         // assessment or an online/factory answer; the real rate owner reads it.
-        let power = sim.power_states.entry(owner).or_default();
+        let power = sim
+            .power_states
+            .map_mut_for_test()
+            .entry(owner)
+            .or_default();
         power.set_total_output_for_test(99);
         power.set_total_drain_for_test(0);
         assert!(sim.recheck_house_tech_tree(owner, rules).is_empty());

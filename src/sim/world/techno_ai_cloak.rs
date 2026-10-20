@@ -527,7 +527,7 @@ pub(crate) fn emit_configured_cloak_sound(sim: &mut Simulation, id: u64, rules: 
         return;
     };
     sim.sound_events
-        .push(crate::sim::world::SimSoundEvent::cloak_sound(
+        .emit(crate::sim::world::SimSoundEvent::cloak_sound(
             sound_name.to_owned(),
             &position,
         ));

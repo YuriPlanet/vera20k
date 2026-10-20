@@ -110,6 +110,10 @@ pub enum LanTarget {
     /// The kick-vote match won by the remaining human: the multiplayer
     /// score dialog 0x108 under `GUI:MultiplayerScore`.
     Score,
+    /// Alliances in a three-player match: the host ticks the peer's Allies
+    /// box, the peer's ALLY answers, and 0x73 shows the box checked with the
+    /// partner mark after both `TXT_HAS_ALLIED` lines.
+    IngameAlly,
     /// In-battle chat: a received line, the peer's Diplomacy chat box
     /// cleared, an Enter line that goes nowhere, a `\` line to everyone and
     /// a Backspace (allies) line left open on the frame.
@@ -189,6 +193,7 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("lan-ingame-outvoted", LanTarget::Outvoted),
     ("lan-score", LanTarget::Score),
     ("lan-ingame-chat", LanTarget::IngameChat),
+    ("lan-ingame-ally", LanTarget::IngameAlly),
     ("lan-host-observe", LanTarget::HostObserve),
     ("lan-host-observe-offered", LanTarget::HostObserveOffered),
     (
@@ -299,6 +304,8 @@ enum LanPhase {
     ScoreWait,
     /// In-battle chat step `n` (one per frame).
     Chat(u8),
+    /// Alliance step `n`; a step may wait several frames.
+    Ally(u8),
     /// The peer resumed at `tick`: waiting for 0xEA to close and a frame.
     Resumed {
         tick: u64,
@@ -1188,6 +1195,7 @@ impl LanCapture {
                                 | LanTarget::ParticipantLeft
                                 | LanTarget::HostObserve
                                 | LanTarget::HostObserveOffered
+                                | LanTarget::IngameAlly
                         ) {
                             let mut second = self.human(false)?;
                             second.name = self.inputs["observer_peer"]["name"]
@@ -2246,6 +2254,10 @@ impl LanCapture {
                     self.phase = LanPhase::Chat(0);
                     return self.chat_step(state, frame, 0);
                 }
+                if self.target == LanTarget::IngameAlly {
+                    self.phase = LanPhase::Ally(0);
+                    return self.ally_step(state, frame, 0);
+                }
                 if self.target == LanTarget::HostDiplomacy {
                     super::super::skirmish::press_diplomacy_tab(state)?;
                     let view = crate::app::input::diplomacy::view(state);
@@ -2843,7 +2855,149 @@ impl LanCapture {
                 }
             }
             LanPhase::Chat(step) => self.chat_step(state, frame, step)?,
+            LanPhase::Ally(step) => self.ally_step(state, frame, step)?,
             LanPhase::Settle(n) if n > 0 => self.phase = LanPhase::Settle(n - 1),
+            _ => {}
+        }
+        Ok(())
+    }
+    /// One frame of the alliance capture.
+    fn ally_step(&mut self, state: &mut AppState, frame: u32, step: u8) -> Result<()> {
+        use crate::app::input::diplomacy;
+        use crate::ui::shell::diplomacy::DiplomacyControl;
+        let allied = |state: &AppState, asker: usize, other: usize| -> Result<bool> {
+            let sim = &state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .context("running match")?
+                .simulation;
+            let order = sim.houses().order();
+            Ok(crate::sim::combat::combat_weapon::is_ally_by_object(
+                Some(sim.house_alliances()),
+                sim.interner(),
+                order[asker],
+                order[other],
+            ))
+        };
+        let row = |state: &AppState| {
+            diplomacy::view(state).rows[1]
+                .as_ref()
+                .and_then(|row| row.allies)
+        };
+        match step {
+            0 => {
+                super::super::skirmish::press_diplomacy_tab(state)?;
+                self.phase = LanPhase::Ally(1);
+            }
+            1 => {
+                let layout = diplomacy::layout(state).context("0x73 has no hit geometry")?;
+                let before = row(state).context("no Allies box on the peer row")?;
+                ensure!(
+                    before.enabled && !before.checked && !before.partner,
+                    "peer Allies box {before:?}"
+                );
+                let point = set_window_pointer_to_rect_center(
+                    state,
+                    layout.control_rect(DiplomacyControl::Allies(1)),
+                );
+                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+                for edge in [
+                    winit::event::ElementState::Pressed,
+                    winit::event::ElementState::Released,
+                ] {
+                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
+                }
+                ensure!(
+                    row(state) == Some(before),
+                    "the box changed before the event executed"
+                );
+                // The open dialog runs network-modal frames, which hold the
+                // queued event; Return lets it execute.
+                let back = set_window_pointer_to_rect_center(
+                    state,
+                    layout.control_rect(DiplomacyControl::Return),
+                );
+                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+                for edge in [
+                    winit::event::ElementState::Pressed,
+                    winit::event::ElementState::Released,
+                ] {
+                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
+                }
+                self.route
+                    .push(json!({"frame":frame,"action":"Allies box pressed, Return",
+                    "point":point,"return":back}));
+                self.phase = LanPhase::Ally(2);
+            }
+            2 => {
+                if !allied(state, 0, 1)? {
+                    return Ok(());
+                }
+                ensure!(!allied(state, 1, 0)?, "the alliance formed both ways");
+                crate::app::match_runtime::network_match::service_event(
+                    state,
+                    crate::app::match_runtime::network_match::NetworkMatchEvent::PeerAlly {
+                        source_index: 1,
+                        house_index: 0,
+                    },
+                )?;
+                self.route.push(json!({"frame":frame,
+                    "action":"ALLY executed; controlled peer ALLY delivered"}));
+                self.phase = LanPhase::Ally(3);
+            }
+            3 => {
+                if !allied(state, 1, 0)? {
+                    return Ok(());
+                }
+                let sim = &state
+                    .match_state
+                    .sim_runtime
+                    .as_ref()
+                    .context("running match")?
+                    .simulation;
+                let order = sim.houses().order().to_vec();
+                let name = |index: usize| {
+                    crate::app::presentation::house_ui::house_ui_name(state, order[index])
+                        .unwrap_or_default()
+                };
+                let template = App::csf_label(state, "TXT_HAS_ALLIED", "TXT_HAS_ALLIED");
+                let line = |a: usize, b: usize| {
+                    crate::assets::csf_file::format_csf(
+                        &template,
+                        &[
+                            crate::assets::csf_file::CsfArg::Str(&name(a)),
+                            crate::assets::csf_file::CsfArg::Str(&name(b)),
+                        ],
+                    )
+                };
+                let rows: Vec<String> = state
+                    .match_state
+                    .match_presentation
+                    .message_list
+                    .messages()
+                    .iter()
+                    .map(|message| message.text.clone())
+                    .collect();
+                let squash = |text: &str| text.split_whitespace().collect::<String>();
+                let joined = squash(&rows.concat());
+                ensure!(
+                    joined.contains(&squash(&line(0, 1))) && joined.contains(&squash(&line(1, 0))),
+                    "alliance lines missing: {rows:?}"
+                );
+                self.route
+                    .push(json!({"frame":frame,"action":"mutual alliance","rows":rows}));
+                super::super::skirmish::press_diplomacy_tab(state)?;
+                self.phase = LanPhase::Ally(4);
+            }
+            4 => {
+                let after = row(state).context("no Allies box")?;
+                ensure!(after.checked && after.partner, "mutual box {after:?}");
+                self.route
+                    .push(json!({"frame":frame,"action":"0x73 reopened",
+                    "box":{"checked":after.checked,"partner":after.partner}}));
+                self.phase = LanPhase::Settle(2);
+            }
             _ => {}
         }
         Ok(())
@@ -2993,11 +3147,12 @@ impl LanCapture {
         }
         Ok(())
     }
-    /// The three-human Observe captures.
+    /// The three-player captures: Observe and the alliance, which needs a
+    /// House left to fight (Can_Ally 0x005015C2..0x00501638).
     fn observe(&self) -> bool {
         matches!(
             self.target,
-            LanTarget::HostObserve | LanTarget::HostObserveOffered
+            LanTarget::HostObserve | LanTarget::HostObserveOffered | LanTarget::IngameAlly
         )
     }
     fn abort_return(&self) -> bool {
@@ -3014,6 +3169,7 @@ impl LanCapture {
                 | LanTarget::Outvoted
                 | LanTarget::Score
                 | LanTarget::IngameChat
+                | LanTarget::IngameAlly
                 | LanTarget::HostObserve
                 | LanTarget::HostObserveOffered
                 | LanTarget::GuestAbortReturn

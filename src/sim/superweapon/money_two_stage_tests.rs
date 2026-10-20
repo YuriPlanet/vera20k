@@ -60,7 +60,7 @@ fn superweapon_money_two_stage_settles_source_once_not_destination() {
         );
         assert!(sim.paid_super_weapon_selection(owner).is_none());
         let hash = sim.state_hash();
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         assert!(!complete(&mut sim, &rules, owner, ticket, (16, 16)));
         assert_eq!(sim.state_hash(), hash);
         assert!(sim.sound_events.is_empty());
@@ -100,7 +100,7 @@ fn superweapon_money_two_stage_unaffordable_final_is_atomic_and_retryable() {
     assert!(fire(&mut sim, &rules, owner, source, (10, 10)));
     let ticket = sim.paid_super_weapon_selection(owner).unwrap();
     crate::sim::credit_income::spend_money(&mut sim.houses, owner, 1);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     let hash = sim.state_hash();
     assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
     assert_eq!(sim.state_hash(), hash);
@@ -267,17 +267,14 @@ fn superweapon_money_two_stage_provider_loss_and_power_hold_retire_ticket() {
             .unwrap();
         let source = ready(&mut sim, &rules, owner, "Sphere", false);
         sim.super_weapons
-            .get_mut(&owner)
-            .unwrap()
-            .get_mut(&source)
+            .instance_mut(&owner, &source)
             .unwrap()
             .can_lose = true;
         assert!(fire(&mut sim, &rules, owner, source, (10, 10)));
         let ticket = sim.paid_super_weapon_selection(owner).unwrap();
         if held {
             sim.power_states
-                .entry(owner)
-                .or_default()
+                .house_mut(owner)
                 .set_is_low_power_for_test(true);
         } else {
             sim.substrate.entities.remove(provider);
@@ -287,8 +284,7 @@ fn superweapon_money_two_stage_provider_loss_and_power_hold_retire_ticket() {
         superweapon::update_owned_supers(&mut sim, &rules, owner);
         assert!(sim.paid_super_weapon_selection(owner).is_none());
         sim.power_states
-            .entry(owner)
-            .or_default()
+            .house_mut(owner)
             .set_is_low_power_for_test(false);
         ready(&mut sim, &rules, owner, "Sphere", false);
         assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
@@ -429,9 +425,7 @@ fn superweapon_money_two_stage_other_power_and_sequence_exhaustion_cannot_reuse_
     assert!(sim.paid_super_weapon_selection(owner).is_none());
     assert!(!complete(&mut sim, &rules, owner, old, (15, 15)));
     sim.super_weapons
-        .get_mut(&owner)
-        .unwrap()
-        .get_mut(&source)
+        .instance_mut(&owner, &source)
         .unwrap()
         .paid_sequence = u64::MAX;
     let hash = sim.state_hash();
@@ -501,17 +495,13 @@ fn superweapon_money_two_stage_restore_rejects_corrupt_lifecycle_records() {
         match corruption {
             0 => {
                 sim.super_weapons
-                    .get_mut(&owner)
-                    .unwrap()
-                    .get_mut(&source)
+                    .instance_mut(&owner, &source)
                     .unwrap()
                     .paid_sequence = 0
             }
             1 => {
                 sim.super_weapons
-                    .get_mut(&owner)
-                    .unwrap()
-                    .get_mut(&source)
+                    .instance_mut(&owner, &source)
                     .unwrap()
                     .paid_selection = Some(PaidSuperWeaponSelection {
                     source: other,
@@ -520,9 +510,7 @@ fn superweapon_money_two_stage_restore_rejects_corrupt_lifecycle_records() {
             }
             2 => {
                 sim.super_weapons
-                    .get_mut(&owner)
-                    .unwrap()
-                    .get_mut(&source)
+                    .instance_mut(&owner, &source)
                     .unwrap()
                     .paid_selection = Some(PaidSuperWeaponSelection {
                     destination: missing,
@@ -530,12 +518,7 @@ fn superweapon_money_two_stage_restore_rejects_corrupt_lifecycle_records() {
                 })
             }
             3 => {
-                let instance = sim
-                    .super_weapons
-                    .get_mut(&owner)
-                    .unwrap()
-                    .get_mut(&other)
-                    .unwrap();
+                let instance = sim.super_weapons.instance_mut(&owner, &other).unwrap();
                 instance.paid_sequence = 1;
                 instance.paid_selection = Some(PaidSuperWeaponSelection {
                     source: other,

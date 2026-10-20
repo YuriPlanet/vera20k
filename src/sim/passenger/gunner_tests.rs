@@ -668,7 +668,7 @@ fn retail_gi_ifv_fires_its_selected_weapon_without_changing_the_turret() {
     ));
     let mut fired = false;
     for _ in 0..120 {
-        sim.fire_events.clear();
+        sim.fire_events.clear_for_test();
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
         assert_selection(&sim, ifv, (2, 1));
         if let Some(event) = sim
@@ -759,7 +759,7 @@ fn temporal_attack_arena(rules: &RuleSet) -> (Simulation, PathGrid, u64, u64, u6
     ));
     let mut fired = false;
     for _ in 0..120 {
-        sim.fire_events.clear();
+        sim.fire_events.clear_for_test();
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
         fired |= sim.fire_events.iter().any(|event| event.attacker_id == ifv);
         if fired && entity(&sim, target).temporal.is_warped() {
@@ -804,7 +804,7 @@ fn retail_boarding_plays_the_transports_enter_transport_sound() {
     ));
     let location =
         crate::sim::movement::ground_pose::position_world_coord(&entity(&sim, ifv).position);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     for _ in 0..180 {
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 33);
         if entity(&sim, passenger).passenger_role.is_inside_transport() {

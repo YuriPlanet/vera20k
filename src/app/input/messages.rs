@@ -222,6 +222,14 @@ pub(crate) enum HudMessage {
     /// MPlayer_Defeated's line for a non-observer House (`0x004FC271`,
     /// `0x004FC34F`).
     PlayerDefeated(crate::sim::intern::InternedId),
+    /// MakeAlly's `TXT_HAS_ALLIED` or MakeEnemy's `TXT_AT_WAR` (owner,
+    /// other) in the owner's HouseType colour (`0x004F9D4E..0x004F9DFC`,
+    /// `0x004FA0E4..0x004FA175`).
+    Alliance {
+        owner: crate::sim::intern::InternedId,
+        other: crate::sim::intern::InternedId,
+        formed: bool,
+    },
 }
 
 impl HudMessage {
@@ -230,6 +238,8 @@ impl HudMessage {
             Self::LowPower => "TXT_LOW_POWER", // original House4F8D4A
             Self::SuperWeapon(key) => key,
             Self::PlayerDefeated(_) => "TXT_PLAYER_DEFEATED",
+            Self::Alliance { formed: true, .. } => "TXT_HAS_ALLIED",
+            Self::Alliance { formed: false, .. } => "TXT_AT_WAR",
         }
     }
 
@@ -237,7 +247,7 @@ impl HudMessage {
         match self {
             // House4F8D20..31 uses the same MessageDelay*900/ftol as
             // TAction11; these are 16 ms clock buckets, never speed normalized.
-            Self::LowPower | Self::PlayerDefeated(_) => {
+            Self::LowPower | Self::PlayerDefeated(_) | Self::Alliance { .. } => {
                 message_delay_timeout_ms(rules.general.message_delay_minutes)
             }
             Self::SuperWeapon(_) => Some(SUPER_WEAPON_MESSAGE_TIMEOUT_MS),
@@ -274,6 +284,15 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         post_house_line(state, message.csf_key(), house, HouseLineColor::Player);
         return;
     }
+    if let HudMessage::Alliance { owner, other, .. } = message {
+        post_house_names_line(
+            state,
+            message.csf_key(),
+            &[owner, other],
+            HouseLineColor::Country,
+        );
+        return;
+    }
     let Some(rules) = state.rules() else {
         return;
     };
@@ -307,7 +326,24 @@ pub(crate) fn post_house_line(
     house: crate::sim::intern::InternedId,
     color: HouseLineColor,
 ) {
-    let Some(name) = crate::app::presentation::house_ui::house_ui_name(state, house) else {
+    post_house_names_line(state, key, &[house], color);
+}
+
+/// [`post_house_line`] with one `%s` per House, coloured by the first.
+fn post_house_names_line(
+    state: &mut AppState,
+    key: &str,
+    houses: &[crate::sim::intern::InternedId],
+    color: HouseLineColor,
+) {
+    let Some(names) = houses
+        .iter()
+        .map(|&house| crate::app::presentation::house_ui::house_ui_name(state, house))
+        .collect::<Option<Vec<String>>>()
+    else {
+        return;
+    };
+    let Some(&house) = houses.first() else {
         return;
     };
     let Some(sim) = state
@@ -341,10 +377,11 @@ pub(crate) fn post_house_line(
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
     let template = crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned();
-    let text = crate::assets::csf_file::format_csf(
-        &template,
-        &[crate::assets::csf_file::CsfArg::Str(&name)],
-    );
+    let args: Vec<crate::assets::csf_file::CsfArg<'_>> = names
+        .iter()
+        .map(|name| crate::assets::csf_file::CsfArg::Str(name))
+        .collect();
+    let text = crate::assets::csf_file::format_csf(&template, &args);
     post_resolved_message(
         state,
         &crate::ui::messages::MessagePost {

@@ -1084,22 +1084,6 @@ impl Simulation {
             sim.temporal_release_if_warping(stable_id);
         }
 
-        let mut lifecycle_requests = std::mem::take(&mut sim.pending_lifecycle_requests);
-        for request in lifecycle_requests.drain(..) {
-            if let Some(rules) = rules {
-                sim.apply_lifecycle_request_with_rules(
-                    request,
-                    rules,
-                    overlay_registry,
-                    object_ctx.effects,
-                );
-            } else {
-                sim.apply_lifecycle_request(request);
-            }
-        }
-        debug_assert!(lifecycle_requests.is_empty());
-        sim.pending_lifecycle_requests = lifecycle_requests;
-
         sim.tick_move_sound_after_process(stable_id, body_frame_before_process, rules);
         if let Some(rules) = rules {
             sim.sinking_edge_sounds(stable_id, rules);

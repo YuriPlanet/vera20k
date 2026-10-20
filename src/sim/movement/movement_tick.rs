@@ -23,8 +23,6 @@ use crate::rules::locomotor_type::{LocomotorKind, MovementZone};
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::entity_store::{EntityStore, TouchReader};
 use crate::sim::infantry;
-#[cfg(any(test, feature = "test-support"))]
-use crate::sim::lifecycle_request::LifecycleRequest;
 use crate::sim::pathfinding::PathGrid;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
@@ -801,7 +799,6 @@ pub(crate) fn tick_movement_with_grids(
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     sound_events: &mut Vec<crate::sim::world::SimSoundEvent>,
-    lifecycle_requests: &mut Vec<LifecycleRequest>,
 ) -> MovementTickStats {
     // This adapter owns only fixture assembly and result transfer. Runtime
     // state is moved, not mirrored; every entity reaches the production host.
@@ -824,14 +821,6 @@ pub(crate) fn tick_movement_with_grids(
         .unwrap_or_else(|| sim.substrate.entities.keys_sorted());
     let mut stats = MovementTickStats::default();
     for id in order {
-        // The full object turn applies these lifecycle requests before the
-        // next object. Component fixtures retain them for inspection, so an
-        // already requested victim must not receive another movement visit.
-        if sim.pending_lifecycle_requests.iter().any(|request| {
-            matches!(request, LifecycleRequest::Uninit { stable_id, .. } if *stable_id == id)
-        }) {
-            continue;
-        }
         stats.merge(
             sim.process_ground_locomotor_stats_for_test(id, rules, None)
                 .expect("fixture reached an unsupported production movement receiver"),
@@ -842,8 +831,7 @@ pub(crate) fn tick_movement_with_grids(
     *raw_cell_occupation = sim.substrate.raw_cell_occupation;
     *interner = sim.interner;
     *rng = sim.scenario_rng;
-    sound_events.append(&mut sim.sound_events);
-    lifecycle_requests.append(&mut sim.pending_lifecycle_requests);
+    sound_events.extend(sim.sound_events.take_for_test());
     stats
 }
 

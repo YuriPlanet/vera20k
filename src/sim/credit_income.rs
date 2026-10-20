@@ -894,6 +894,7 @@ mod tests {
             (false, -1, 5, true),
         ] {
             sim.power_states
+                .map_mut_for_test()
                 .entry(owner)
                 .or_default()
                 .start_blackout(0, if outage { 1000 } else { 0 });

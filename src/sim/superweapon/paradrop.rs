@@ -102,7 +102,7 @@ pub(crate) fn launch(
     if !super::is_charged(sim, owner, sw_type) {
         return false;
     }
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx: target_rx,

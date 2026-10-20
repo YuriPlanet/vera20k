@@ -302,7 +302,7 @@ pub(crate) fn emit_bunker_wall_sound(sim: &mut Simulation, building_id: u64, up:
         return;
     };
     let (rx, ry) = (b.position.rx(), b.position.ry());
-    sim.sound_events.push(if up {
+    sim.sound_events.emit(if up {
         SimSoundEvent::BunkerWallsUp { rx, ry }
     } else {
         SimSoundEvent::BunkerWallsDown { rx, ry }
@@ -906,7 +906,7 @@ mod tests {
         spawn_tank(&mut sim, 1, "Americans", "TANK");
         assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
         install_bunker_link(&mut sim, 2, 1, &rules);
-        sim.sound_events.clear(); // drop the install up-sound; assert on down events
+        sim.sound_events.clear_for_test(); // drop the install up-sound; assert on down events
         sim
     }
 

@@ -1553,7 +1553,7 @@ impl Simulation {
         }
         self.submit_entity_display(stable_id, context.rules, context.terrain());
         self.lifecycle_outputs
-            .push(LifecycleOutput::RevealDisplay { stable_id });
+            .emit(LifecycleOutput::RevealDisplay { stable_id });
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::RevealDisplayBoundary);
 
@@ -3291,12 +3291,12 @@ impl Simulation {
         // whole-world atlas coverage scan for every child retirement.
         if self.substrate.entities.contains(stable_id) {
             self.lifecycle_outputs
-                .push(LifecycleOutput::DisplayRemove { stable_id });
+                .emit(LifecycleOutput::DisplayRemove { stable_id });
         }
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDisplayBoundary);
         self.lifecycle_outputs
-            .push(LifecycleOutput::DetachAttachedAnims { stable_id });
+            .emit(LifecycleOutput::DetachAttachedAnims { stable_id });
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealAnimBoundary);
         // ObjectConceal5F4D81 hard-stops the AmbientSound handle (+3C) and
@@ -3319,12 +3319,12 @@ impl Simulation {
             .is_some_and(|entity| entity.removal_facts.dirty_rect_eligible());
         if dirty_rect_eligible {
             self.lifecycle_outputs
-                .push(LifecycleOutput::DirtyTacticalRect { stable_id });
+                .emit(LifecycleOutput::DirtyTacticalRect { stable_id });
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDirtyTacticalRectBoundary);
         }
         self.lifecycle_outputs
-            .push(LifecycleOutput::ClearDrawnState { stable_id });
+            .emit(LifecycleOutput::ClearDrawnState { stable_id });
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealClearDrawnStateBoundary);
 
@@ -3345,7 +3345,7 @@ impl Simulation {
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealLimboSet);
         self.lifecycle_outputs
-            .push(LifecycleOutput::ClearRedraw { stable_id });
+            .emit(LifecycleOutput::ClearRedraw { stable_id });
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealClearRedrawBoundary);
         ConcealOutcome::Concealed
@@ -3518,7 +3518,7 @@ impl Simulation {
             })
         {
             self.sound_events
-                .push(super::SimSoundEvent::ObjectSoundDetached { owner: stable_id });
+                .emit(super::SimSoundEvent::ObjectSoundDetached { owner: stable_id });
         }
         self.substrate
             .release_foot_air_tracker_before_limbo(stable_id);
@@ -5484,7 +5484,7 @@ impl Simulation {
         // Tactical/Logic expiry and eventual DisplayRemove/Alive writes.
         if expired_owner.is_some() {
             self.lifecycle_outputs
-                .push(LifecycleOutput::ObjectPointerExpired {
+                .emit(LifecycleOutput::ObjectPointerExpired {
                     stable_id: expired_id,
                 });
         }
@@ -5794,7 +5794,7 @@ impl Simulation {
             // Building destructor43BD27 releases the construction SoundClass
             //(+6A0) before the delegated Techno destructor removes tracking.
             self.sound_events
-                .push(super::SimSoundEvent::ObjectSoundReleased { owner: stable_id });
+                .emit(super::SimSoundEvent::ObjectSoundReleased { owner: stable_id });
             // The delegated Techno destructor also tears down the turret
             // rotation loop's `+0x488` handle; this object's own UnInit Limbo
             // released it already, and a structure that never limbos never
@@ -5915,7 +5915,7 @@ impl Simulation {
             .is_some_and(|entity| entity.category() != EntityCategory::Structure)
         {
             self.sound_events
-                .push(super::SimSoundEvent::ObjectSoundReleased { owner: stable_id });
+                .emit(super::SimSoundEvent::ObjectSoundReleased { owner: stable_id });
         }
         // Foot's Parasite destructor6293E0 destroys its held Anim and clears
         // progress; it neither invents a release nor rewrites the host's HP.
@@ -5929,7 +5929,7 @@ impl Simulation {
         // the same stream as AI visits and those Anim sound callbacks.
         if self.substrate.entities.contains(stable_id) {
             self.sound_events
-                .push(super::SimSoundEvent::UnitVoiceDestroyed { owner: stable_id });
+                .emit(super::SimSoundEvent::UnitVoiceDestroyed { owner: stable_id });
         }
         // Techno destructor6F4667..6F4679 UnInits its Behind Anim, then
         //6F467F..6F4691 its retained deploy Anim. Pointer-expiry may already
@@ -5992,7 +5992,7 @@ impl Simulation {
         let projectile = self.projectiles.remove(stable_id);
         if projectile.is_some() {
             self.lifecycle_outputs
-                .push(LifecycleOutput::LineTrailDetached { stable_id });
+                .emit(LifecycleOutput::LineTrailDetached { stable_id });
         }
         let wave = self.waves.remove(stable_id);
         let smudge = self

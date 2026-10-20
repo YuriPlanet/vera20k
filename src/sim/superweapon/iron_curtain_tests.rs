@@ -105,7 +105,7 @@ fn waypoint_curtain_uses_ground_spread_order_including_warped_foot() {
                     ry: waypoint_cell.1,
                 },
             )]));
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         OBSERVED.set(Some(Vec::new()));
         assert!(super::at_waypoint(
             &mut sim,
@@ -381,13 +381,14 @@ fn the_launch_matches_native() {
         let charged = row["charged"] == true;
         if !charged {
             sim.super_weapons
+                .map_mut_for_test()
                 .get_mut(&owner)
                 .unwrap()
                 .get_mut(&sw_type)
                 .unwrap()
                 .is_ready = false;
         }
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let frame = sim.session.binary_frame() as i32;
         let cell = (target.0 as u16, target.1 as u16);
         let paralysis_before: Vec<Option<(i32, i32)>> = ids
@@ -723,7 +724,7 @@ fn curtained_infantry_die_and_announce_each_loss() {
     let second = spawn(&mut sim, "E1", 11);
     let tank = spawn(&mut sim, "MTNK", 9);
     let sw_type = charge_super(&mut sim, owner, IRON_CURTAIN);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     assert!(launch(
         &mut sim,
         &rules,

@@ -378,7 +378,7 @@ impl Simulation {
             && let Some(sound_id) = rules.general.scold_sound.clone()
         {
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::VocCentered { sound_id });
+                .emit(crate::sim::world::SimSoundEvent::VocCentered { sound_id });
         }
     }
 

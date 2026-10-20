@@ -190,13 +190,14 @@ fn the_launch_matches_native() {
         let charged = row["charged"] == true;
         if !charged {
             sim.super_weapons
+                .map_mut_for_test()
                 .get_mut(&owner)
                 .unwrap()
                 .get_mut(&sw_type)
                 .unwrap()
                 .is_ready = false;
         }
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         let cell = (target.0 as u16, target.1 as u16);
         OBSERVED.set(Some(Vec::new()));
         let launched = launch(

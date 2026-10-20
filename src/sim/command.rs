@@ -33,6 +33,10 @@ pub const DESTRUCT_OPCODE: u8 = 0x08;
 /// carries the removed House's index as its dword payload. DestroyConnection
 /// queues it for a lost connection mid-match (`0x005DA898`).
 pub const REMOVE_PLAYER_OPCODE: u8 = 0x23;
+/// EVENT_ALLY: `EventClass(house, 3, index)` (`0x004C6720`) carries the
+/// other House's index as its dword payload. The Diplomacy Allies box
+/// (`Ally 0x00731840`) and the ToggleAlliance hotkey (`0x007318F0`) queue it.
+pub const ALLY_OPCODE: u8 = 0x03;
 /// House-wide Cheer, issued by AllToCheer730F30.
 pub const CHEER_OPCODE: u8 = 0x2d;
 /// Native `EventClass` opcode for a MegaMission order envelope.
@@ -825,6 +829,11 @@ pub enum Command {
     /// as a command so the anim stays a product of the input stream.
     /// Appended to preserve existing serialized variant indices.
     MoveFlash { rx: u16, ry: u16 },
+    /// EVENT_ALLY toward the House at registration index `house_index`
+    /// (`EventClass::Execute 0x004C6DEE`): the command House breaks an
+    /// alliance it holds, else offers one, announced. Appended to preserve
+    /// existing serialized variant indices.
+    Ally { house_index: i32 },
     /// VERA extension: the saved one-use source selection, not native
     /// SPECIAL_PLACE. Appended to preserve existing command discriminants.
     CompletePaidSuperWeapon {

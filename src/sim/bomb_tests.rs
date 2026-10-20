@@ -478,7 +478,7 @@ fn native_world(input: &serde_json::Value, rules: &RuleSet) -> NativeWorld {
         sim.substrate.entities.get_mut(ids[slot]).unwrap().bomb = Some(bomb);
         sim.bombs.carriers.insert(ids[slot]);
     }
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     NativeWorld { sim, ids, houses }
 }
 

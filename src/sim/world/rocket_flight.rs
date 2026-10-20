@@ -169,7 +169,7 @@ impl RocketHost for RocketProcessHost<'_> {
             return;
         };
         let event = super::SimSoundEvent::voc_at(sound, &owner.position);
-        self.sim.sound_events.push(event);
+        self.sim.sound_events.emit(event);
     }
     fn structural_bridge_floor(&self) -> Option<i32> {
         let terrain = self.sim.resolved_terrain.as_ref()?;
@@ -200,7 +200,7 @@ impl RocketHost for RocketProcessHost<'_> {
         let warhead_ref = self.sim.interner.intern(warhead);
         self.sim
             .combat_light_requests
-            .push(crate::sim::combat::CombatLightRequest::Impact {
+            .emit(crate::sim::combat::CombatLightRequest::Impact {
                 target_id: None,
                 damage,
                 warhead_ref,

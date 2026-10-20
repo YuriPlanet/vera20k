@@ -44,6 +44,7 @@ fn reset_world(
     let id = sim.interner.get("NukeSpecial").unwrap();
     let instance = sim
         .super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&id)
@@ -65,6 +66,7 @@ fn reset_world(
         .unwrap()
         .set_preferred_super_weapon_target(cell(&input["other_preferred"]));
     sim.super_weapons
+        .map_mut_for_test()
         .get_mut(&other)
         .unwrap()
         .get_mut(&id)
@@ -242,6 +244,7 @@ fn superweapon_reset_releases_a_production_chrono_placement_without_destroying_i
     let id = sim.interner.get("ChronoSphereSpecial").unwrap();
     let instance = sim
         .super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&id)

@@ -275,7 +275,7 @@ fn with_world<R>(
     world.overlay_grid = overlay_grid.as_deref().cloned();
     world.resolved_terrain = terrain.as_deref().cloned();
     if let Some(events) = sound_sink.as_deref_mut() {
-        world.sound_events = std::mem::take(events);
+        world.sound_events.emit_all(std::mem::take(events));
     }
     let mut run = world_receiver::ReceiverRun::default();
     if let Some(handled) = handled_deaths.as_deref_mut() {
@@ -347,7 +347,7 @@ fn with_world<R>(
         *grid = world.resolved_terrain.expect("supplied terrain retained");
     }
     if let Some(events) = sound_sink {
-        *events = world.sound_events;
+        *events = world.sound_events.take_for_test();
     }
     result
 }
@@ -836,7 +836,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
             world.session.set_no_damage_for_test(scenario_no_damage);
             world.session.set_binary_frame_for_test(binary_frame);
-            world.power_states = power_states.clone();
+            *world.power_states.map_mut_for_test() = power_states.clone();
             world.bridge_state = bridge_state.cloned();
             if let Some(fog) = fog {
                 world.fog = fog.clone();
@@ -895,7 +895,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
             );
             result
                 .consequences
-                .prepend_live_fire_events_for_test(std::mem::take(&mut world.fire_events));
+                .prepend_live_fire_events_for_test(world.fire_events.take_for_test());
             // The same frame's tail: the shots' bullets take their first AI
             // (an Inviso one detonates). Bullets still in flight are handed
             // back as their admission records.
@@ -910,7 +910,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
             {
                 if world.receiver_fixture.as_ref().unwrap().sound_enabled {
                     for (die_sound_id, rx, ry) in effects.death_sounds.drain(..) {
-                        world.sound_events.push(SimSoundEvent::EntityDied {
+                        world.sound_events.emit(SimSoundEvent::EntityDied {
                             die_sound_id,
                             rx,
                             ry,

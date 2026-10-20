@@ -1003,7 +1003,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
     expected_rng.next_range_u32_inclusive(0, 2);
     let successful_state = expected_rng.logical_state();
 
-    sim.power_states.insert(
+    sim.power_states.map_mut_for_test().insert(
         owner,
         crate::sim::power_system::PowerState::settled_for_test(),
     );
@@ -1120,7 +1120,7 @@ fn a_bio_reactor_unlimbo_failure_keeps_the_placement_draw_and_restores_cargo() {
         .unwrap()
         .lifecycle
         .set_cell_marked_for_test(true);
-    sim.power_states.insert(
+    sim.power_states.map_mut_for_test().insert(
         owner,
         crate::sim::power_system::PowerState::settled_for_test(),
     );
@@ -1502,7 +1502,7 @@ fn a_bio_reactor_unload_only_dirties_power_for_positive_extra_power() {
         let owner = sim.interner.get("YuriCountry").unwrap();
         let reactor = spawn(&mut sim, &rules, "YAPOWR", "YuriCountry", 16, 10);
         absorb(&mut sim, &rules, reactor, 1);
-        sim.power_states.insert(
+        sim.power_states.map_mut_for_test().insert(
             owner,
             crate::sim::power_system::PowerState::settled_for_test(),
         );
@@ -1921,7 +1921,7 @@ fn occupants_are_admitted_in_order_and_a_human_drops_its_seek() {
             true,
         );
     }
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
 
     for id in [first, second] {
         assert!(crate::sim::passenger::add_garrison_occupant(

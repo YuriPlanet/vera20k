@@ -309,22 +309,27 @@ impl Simulation {
         })
     }
 
-    /// What a human player's object makes of a Select over a `Grinding=`
-    /// building (`+0x16AD`): Grind (0xB) or NoEnter (0x1F), shown as the
-    /// Enter and NoEnter rows (`SetCursorFromAction 0x004AB555`,
+    /// What a human player's object makes of a Select over a friendly
+    /// building in its class row: Enter (3), Grind (0xB) or NoEnter (0x1F),
+    /// shown as the Enter and NoEnter rows (`SetCursorFromAction 0x004AB555`,
     /// `0x004AB382`). Both class rows run only for base action Select (7),
     /// which the caller establishes (the input layer's base-action owner).
-    /// - A Unit asks CAN_LOAD ([`Self::unit_building_click_action`]).
+    /// - A Unit asks CAN_LOAD of any building
+    ///   ([`Self::unit_building_click_action`]): a refinery, Service Depot,
+    ///   Tank Bunker or Grinder that admits it.
     /// - An Infantryman takes `InfantryClass::What_Action_OnObject`'s grinder
-    ///   row (`0x0051F0AF..0x0051F111`) without asking: a building that is
-    ///   not 1x1-with-undeploy (IsStrange vt+0x80, `0x00457620`) answers
-    ///   Grind when the player owns it (GetOwningHouse `+0x21C` against
-    ///   PlayerPtr `0x00A83D4C`), else NoEnter. An Engineer's own arm
-    ///   answers before it ([`Self::engineer_building_action`]).
+    ///   row (`0x0051F0AF..0x0051F111`) without asking: a `Grinding=`
+    ///   building (`+0x16AD`) that is not 1x1-with-undeploy (IsStrange
+    ///   vt+0x80, `0x00457620`) answers Grind when the player owns it
+    ///   (GetOwningHouse `+0x21C` against PlayerPtr `0x00A83D4C`), else
+    ///   NoEnter. An Engineer's own arm answers before it
+    ///   ([`Self::engineer_building_action`]); its other building rows have
+    ///   their own owners.
     ///
-    /// Foot ClickedAction (`0x004D774F`) turns Grind into mission Eaten with
-    /// the building as Destination; NoEnter orders nothing.
-    pub fn grinder_click_action(
+    /// Foot ClickedAction (`0x004D74E0`) turns Enter into mission Enter and
+    /// Grind into mission Eaten, each with the building as Destination, for a
+    /// receiver the player may order (vt+0xA0); NoEnter orders nothing.
+    pub fn building_click_action(
         &self,
         actor_id: u64,
         target_id: u64,
@@ -332,20 +337,20 @@ impl Simulation {
     ) -> Option<BuildingClickAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let target = self.substrate.entities.get(target_id)?;
-        let target_obj = self.object_type(target.type_ref(), rules)?;
-        if target.category() != EntityCategory::Structure || !target_obj.grinding {
-            return None;
-        }
         match actor.category() {
             EntityCategory::Unit => self.unit_building_click_action(actor_id, target_id, rules),
-            EntityCategory::Infantry
-                if self.house_is_human_player(actor.owner())
-                    && !target_obj.is_1x1_with_undeploy() =>
-            {
-                Some(if self.session.current_house() == Some(target.owner()) {
-                    BuildingClickAction::Grind
-                } else {
-                    BuildingClickAction::NoEnter
+            EntityCategory::Infantry => {
+                let target_obj = self.object_type(target.type_ref(), rules)?;
+                (target.category() == EntityCategory::Structure
+                    && target_obj.grinding
+                    && self.house_is_human_player(actor.owner())
+                    && !target_obj.is_1x1_with_undeploy())
+                .then(|| {
+                    if self.session.current_house() == Some(target.owner()) {
+                        BuildingClickAction::Grind
+                    } else {
+                        BuildingClickAction::NoEnter
+                    }
                 })
             }
             _ => None,
@@ -640,7 +645,7 @@ impl Simulation {
                 cell.1,
             )
         });
-        self.sound_events.push(SimSoundEvent::BridgeRepaired {
+        self.sound_events.emit(SimSoundEvent::BridgeRepaired {
             rx: building_cell.0,
             ry: building_cell.1,
             radar,
@@ -704,7 +709,7 @@ impl Simulation {
                 ry,
             )
         });
-        self.sound_events.push(SimSoundEvent::BuildingCaptured {
+        self.sound_events.emit(SimSoundEvent::BuildingCaptured {
             old_owner,
             new_owner,
             tech_building,

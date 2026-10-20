@@ -450,7 +450,7 @@ impl Simulation {
         };
         if let Some(sound) = flags.crush_sound.as_ref() {
             self.sound_events
-                .push(crate::sim::world::SimSoundEvent::wall_crushed(
+                .emit(crate::sim::world::SimSoundEvent::wall_crushed(
                     sound.clone(),
                     &actor.position,
                 ));

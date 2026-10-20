@@ -573,10 +573,11 @@ fn what_action_on_cell(
 /// 2. Infantry class capabilities, then admitted weapon cursor overrides.
 /// 3. Engineer capturing: selected Engineer hovering capturable enemy building.
 /// 4. Engineer repairing: selected Engineer hovering damaged friendly building.
+///    Then building entry: a Unit's Select over a friendly building whose
+///    CAN_LOAD admits it, or an Infantryman's over a Grinder (Enter/NoEnter).
 /// 5. Infantry boarding: selected infantry hovering friendly transport (Passengers>0).
 /// 6. Infantry garrisoning: selected Occupier infantry hovering friendly CanBeOccupied building.
 /// 7. Admitted friendly Attack: consume the shared Techno grant and class action.
-/// 8. Harvester docking: selected miner hovering a friendly refinery that admits it (action 3).
 /// 9. Generic friendly/enemy/in-range/out-of-range fallback.
 pub(super) fn capability_cursor_for_hover(
     sim: &crate::sim::world::Simulation,
@@ -678,7 +679,7 @@ pub(super) fn capability_cursor_for_hover(
             .and_then(|e| rules.and_then(|r| sim.interner().object_type(e.type_ref(), r)))
             .is_some_and(|obj| obj.ivan);
     if let Some(best_id) = best_id
-        && let (Some(sel_entity), Some(sel_obj)) = (
+        && let (Some(sel_entity), Some(_)) = (
             sim.entities().get(best_id),
             sim.entities()
                 .get(best_id)
@@ -708,15 +709,16 @@ pub(super) fn capability_cursor_for_hover(
             };
         }
 
-        // Grinder: a Unit's or Infantryman's Select over a Grinding= building
-        // (`context_order::grinder_action`).
+        // A Unit's Select over a friendly building it may enter (refinery,
+        // Service Depot, Tank Bunker, Grinder), or an Infantryman's over a
+        // Grinding= building (`context_order::building_entry_action`).
         if !matches!(
             modifier,
             OrderModifier::ForceFire | OrderModifier::ForceMove | OrderModifier::GuardArea
         ) && !(modifier == OrderModifier::AttackMove && force_move_key)
             && matches!(hover.kind, HoverTargetKind::FriendlyStructure)
             && let Some(action) = rules.and_then(|rules| {
-                super::context_order::grinder_action(
+                super::context_order::building_entry_action(
                     sim,
                     rules,
                     best_id,
@@ -855,47 +857,6 @@ pub(super) fn capability_cursor_for_hover(
                 .unwrap_or_else(|| {
                     ivan_attack_feedback(kind, best_is_ivan, hovered_entity, hovered_obj)
                 });
-        }
-
-        // 8. Harvester docking — selected miner hovering own/ally refinery
-        //    whose CAN_LOAD admits it: What_Action's Enter (action 3,
-        //    `Simulation::unit_building_click_action`). Refinery detection
-        //    from RuleSet::is_refinery_type, as the click pipeline in
-        //    `input::context_order` routes it.
-        if sel_entity.miner.is_some()
-            && matches!(hover.kind, HoverTargetKind::FriendlyStructure)
-            && hovered_entity.is_some_and(|e| {
-                rules.is_some_and(|r| {
-                    r.is_refinery_type(sim.interner().resolve(e.type_ref()))
-                        && sim.unit_building_click_action(best_id, hover.stable_id, r)
-                            == Some(crate::sim::world::BuildingClickAction::Enter)
-                })
-            })
-        {
-            return CursorFeedbackKind::Enter;
-        }
-
-        // Service depot — a damaged own vehicle over an own UnitRepair
-        // building shows the enter/dock cursor (the click issues
-        // RepairAtDepot; see `input::context_order`).
-        if sel_entity.category() == EntityCategory::Unit
-            && sel_entity.health.current() < sel_obj.strength
-            && matches!(hover.kind, HoverTargetKind::FriendlyStructure)
-            && hovered_obj.is_some_and(|o| o.unit_repair)
-        {
-            return CursorFeedbackKind::Enter;
-        }
-
-        // Tank bunker — an own bunkerable vehicle over an own EMPTY tank
-        // bunker shows the enter cursor (the click issues EnterBunker).
-        if matches!(hover.kind, HoverTargetKind::FriendlyStructure)
-            && hovered_entity
-                .is_some_and(|he| he.bunker_runtime.is_some() && he.bunker.occupant().is_none())
-            && rules.is_some_and(|r| {
-                crate::sim::docking::bunker_link::can_auto_deploy_here(sim, best_id, r)
-            })
-        {
-            return CursorFeedbackKind::Enter;
         }
     }
 

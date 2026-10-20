@@ -317,8 +317,7 @@ fn test_drive_arrival_clears_navcom_same_tick() {
 
     // A track that ends at the owner destination stops immediately: the owner
     // destination pair clears on the SAME movement tick, not a deferred pass.
-    let mut lifecycle_requests = Vec::new();
-    tick_movement(&mut entities, &mut test_interner(), &mut lifecycle_requests);
+    tick_movement(&mut entities, &mut test_interner());
     let entity = entities.get(1).expect("entity exists");
     assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
     assert_eq!(entity.navigation.nav_com(), None);
@@ -1396,7 +1395,6 @@ fn gsi_04_10_crusher_and_omnicrusher_never_enter_or_crush_a_terrain_object_cell(
         );
         entities.insert(tank);
 
-        let mut lifecycle_requests = Vec::new();
         let mut occupancy = OccupancyGrid::new();
         let mut rng = SimRng::new(0);
         let mut interner = test_interner();
@@ -1409,9 +1407,7 @@ fn gsi_04_10_crusher_and_omnicrusher_never_enter_or_crush_a_terrain_object_cell(
                 &mut rng,
                 tick,
                 &mut interner,
-                &mut lifecycle_requests,
             );
-            assert!(lifecycle_requests.is_empty());
             let p = &entities.get(1).expect("tank exists").position;
             assert_ne!(
                 (p.rx(), p.ry()),

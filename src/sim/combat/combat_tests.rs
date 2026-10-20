@@ -8289,7 +8289,7 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
             ai_counter: mission.ai_counter(),
             dispatch_timer: MissionDispatchTimer::at_frame(frame),
         });
-        sim.fire_events.clear();
+        sim.fire_events.clear_for_test();
         let first_tail = sim.next_stable_object_id();
         sim.object_ai_visit_one(
             deso,

@@ -430,7 +430,7 @@ fn a_single_link_controller_releases_its_victim_first() {
         .ring_anim
         .unwrap();
     let mut replay = sim.scenario_rng.clone();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
 
     assert!(sim.capture_unit(
         yuri,
@@ -566,7 +566,7 @@ fn the_controllers_death_frees_its_captives_newest_first() {
         crate::sim::world::FrameEffects::default()
     ));
     let mut replay = sim.scenario_rng.clone();
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
 
     let warhead = sim.interner.intern("KILLWH");
     let hit = EntityDamageEvent::direct_receiver(
@@ -627,7 +627,7 @@ fn a_captives_death_drops_its_node_silently() {
         None,
         crate::sim::world::FrameEffects::default()
     ));
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     sim.uninit_with_rules(gi, &rules);
     assert!(victims(&sim, tower).is_empty());
     assert!(voc_sounds(&sim).is_empty());
@@ -720,7 +720,9 @@ fn native_decide_unit_fate_corpus() {
         let mut power_state = crate::sim::power_system::PowerState::default();
         power_state.set_total_output_for_test(int("produced"));
         power_state.set_total_drain_for_test(int("drained"));
-        sim.power_states.insert(controller_house, power_state);
+        sim.power_states
+            .map_mut_for_test()
+            .insert(controller_house, power_state);
         let russians = sim.interner.get("Russians").unwrap();
         sim.houses
             .get_mut(&russians)
@@ -730,7 +732,9 @@ fn native_decide_unit_fate_corpus() {
         let mut power_state = crate::sim::power_system::PowerState::default();
         power_state.set_total_output_for_test(0);
         power_state.set_total_drain_for_test(100);
-        sim.power_states.insert(russians, power_state);
+        sim.power_states
+            .map_mut_for_test()
+            .insert(russians, power_state);
         let seed = input["seed"].as_u64().unwrap();
         sim.scenario_rng = SimRng::new(seed);
         assert_ne!(queued_mission(&sim, unit), Some(MissionType::Hunt));
@@ -994,7 +998,7 @@ fn native_overload_update_corpus() {
             }
             let health = sim.substrate.entities.get(mind).unwrap().health.current();
             let systems: Vec<u64> = sim.particle_systems().iter().map(|(&id, _)| id).collect();
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
 
             sim.capture_manager_update(
                 mind,
@@ -1734,7 +1738,7 @@ fn a_controlled_mcv_cannot_deploy_and_a_controlled_yard_cannot_repack() {
         .unwrap()
         .mcv_deploy_pending
         .set_for_test(true);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     assert!(!sim.deploy_mcv(
         mcv,
         &rules,
@@ -1815,7 +1819,7 @@ fn selling_a_psychic_tower_frees_its_captives() {
         None,
         crate::sim::world::FrameEffects::default()
     ));
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
 
     assert!(crate::sim::production::sell_building_now_for_test(
         &mut sim, &rules, tower
@@ -1961,7 +1965,7 @@ fn a_captive_boarding_an_absorber_is_freed_first() {
             .slot(0),
         Some(reactor)
     );
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     // PerCellProcess boards from the absorber's own foundation cell once
     // the queued Enter is current.
     let now = sim.session.binary_frame();

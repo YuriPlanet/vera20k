@@ -475,7 +475,7 @@ fn land_tail(
         let location = ground_pose::object_location(plane_entity, sim.resolved_terrain.as_ref());
         observe(Observed::PlayAt([location.x, location.y, location.z]));
     }
-    sim.sound_events.push(SimSoundEvent::ChuteSound {
+    sim.sound_events.emit(SimSoundEvent::ChuteSound {
         rx: plane_entity.position.rx(),
         ry: plane_entity.position.ry(),
     });

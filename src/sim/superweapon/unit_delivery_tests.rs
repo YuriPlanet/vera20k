@@ -71,6 +71,7 @@ fn charge(sim: &mut Simulation, rules: &RuleSet, owner: &str) -> (InternedId, In
     assert!(trigger_grant_super(sim, rules, owner, sw, false));
     let instance = sim
         .super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&sw)
@@ -295,8 +296,8 @@ fn unit_delivery_pending_save_restores_deadline_payload_and_one_shot_completion(
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(restored.unit_deliveries, original.unit_deliveries);
-    restored.sound_events.clear();
-    original.sound_events.clear();
+    restored.sound_events.clear_for_test();
+    original.sound_events.clear_for_test();
     for frame in [19, 20, 21] {
         for sim in [&mut original, &mut restored] {
             sim.session.set_binary_frame_for_test(frame);
@@ -517,7 +518,7 @@ fn unit_delivery_civilian_uses_first_existing_house_not_first_country() {
         let second = sim.interner.get("CIVTWO").unwrap();
         if remove_first {
             sim.houses.remove_for_test(&first);
-            sim.super_weapons.remove(&first);
+            sim.super_weapons.map_mut_for_test().remove(&first);
         } else {
             let first_index = sim
                 .houses

@@ -2751,7 +2751,7 @@ fn lifecycle_authority_second_reveal_is_idempotent() {
         }
     );
     let first_position = sim.substrate.entities.get(1).unwrap().position;
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     sim.lifecycle_test_events.clear();
 
     assert_eq!(
@@ -2787,11 +2787,11 @@ fn lifecycle_authority_conceal_without_dirty_eligibility_still_clears_drawn_stat
     let mut sim = Simulation::new();
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     let _ = sim.reveal(1);
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
 
     let _ = sim.object_conceal(1);
     assert_eq!(
-        sim.lifecycle_outputs,
+        sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
             LifecycleOutput::DisplayRemove { stable_id: 1 },
@@ -2813,11 +2813,11 @@ fn lifecycle_authority_conceal_dirty_eligibility_emits_dirty_before_drawn_clear(
         .removal_facts
         .set_dirty_rect_eligible_for_test(true);
     let _ = sim.reveal(1);
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
 
     let _ = sim.object_conceal(1);
     assert_eq!(
-        sim.lifecycle_outputs,
+        sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
             LifecycleOutput::DisplayRemove { stable_id: 1 },

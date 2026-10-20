@@ -374,7 +374,7 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         if let (Some(sound), Some(entity)) = (sound, self.substrate.entities.get(source)) {
-            self.sound_events.push(SimSoundEvent::voc_at_for(
+            self.sound_events.emit(SimSoundEvent::voc_at_for(
                 sound.to_owned(),
                 audible_to,
                 &entity.position,

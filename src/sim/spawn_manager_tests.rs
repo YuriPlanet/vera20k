@@ -2566,7 +2566,7 @@ CurleyShuffle=yes
         {
             manager.set_target(Some(TargetKind::Entity(target)));
         }
-        sim.fire_events.clear();
+        sim.fire_events.clear_for_test();
         sim.advance_tick(&[], Some(&rules), None, None, 67);
         let frame = sim.session.binary_frame();
         for event in sim

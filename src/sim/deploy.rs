@@ -399,7 +399,7 @@ impl Simulation {
         };
         let (rx, ry) = (actor.position.rx(), actor.position.ry());
         let sound_id = self.interner.intern(sound);
-        self.sound_events.push(if requested == 27 {
+        self.sound_events.emit(if requested == 27 {
             SimSoundEvent::EntityDeployed {
                 deploy_sound_id: sound_id,
                 rx,

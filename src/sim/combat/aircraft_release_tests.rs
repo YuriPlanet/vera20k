@@ -113,7 +113,10 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
 fn dispatch(sim: &mut Simulation, rules: &RuleSet) -> Vec<SimFireEvent> {
     let before = sim.fire_events.len();
     crate::sim::aircraft::tick_aircraft_missions(sim, rules);
-    sim.fire_events.split_off(before)
+    let mut events = sim.fire_events.take_for_test();
+    let fired = events.split_off(before);
+    sim.fire_events.emit_all(events);
+    fired
 }
 
 #[test]

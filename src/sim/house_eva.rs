@@ -90,7 +90,7 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     // flash. VERA paints the sidebar every frame, so this invalidation-only
     // timer needs no second state owner. Raw native save bytes are separate.
     if timer.expired(now) && available < FUNDS_NAG_CREDITS && factories > 0 {
-        sim.sound_events.push(SimSoundEvent::HouseEva {
+        sim.sound_events.emit(SimSoundEvent::HouseEva {
             owner,
             event: EVA_INSUFFICIENT_FUNDS,
         });
@@ -114,7 +114,7 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     if !short {
         guard = false;
     } else if owns_construction_yard(sim, rules, owner) && !guard {
-        sim.sound_events.push(SimSoundEvent::HouseEva {
+        sim.sound_events.emit(SimSoundEvent::HouseEva {
             owner,
             event: EVA_LOW_POWER,
         });
@@ -188,7 +188,8 @@ mod tests {
 
     fn house_lines(sim: &mut Simulation) -> Vec<&'static str> {
         sim.sound_events
-            .drain(..)
+            .take_for_test()
+            .into_iter()
             .filter_map(|event| match event {
                 SimSoundEvent::HouseEva { event, .. } => Some(event),
                 _ => None,

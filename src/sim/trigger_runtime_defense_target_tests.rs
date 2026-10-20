@@ -181,6 +181,7 @@ fn scripted_alerts_drive_the_original_force_shield_timing_controls() {
         // Original controls supply ready, ungranted Supers: observe the actual
         // AI -> Fire_SW call; ClickFire then refuses, so nothing launches.
         sim.super_weapons
+            .map_mut_for_test()
             .get_mut(&owner)
             .unwrap()
             .get_mut(&shield)

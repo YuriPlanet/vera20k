@@ -2289,7 +2289,7 @@ impl Simulation {
             // non-`ResourceGatherer=` unit; a blocked Slave Miner is silent.
             if !resource_gatherer {
                 self.sound_events
-                    .push(SimSoundEvent::CannotDeployHere { owner: owner_id });
+                    .emit(SimSoundEvent::CannotDeployHere { owner: owner_id });
             }
             // `0x00739573..0x0073957A`: +0x68C cleared, Queue_Mission(Guard, 0).
             self.substrate
@@ -2601,7 +2601,7 @@ impl Simulation {
         // PlaceBuilding -> uplace (RULESMD.INI / SOUNDMD.INI).
         if let Some((sound, rx, ry)) = deploy_cue {
             let deploy_sound_id = self.interner.intern(&sound);
-            self.sound_events.push(SimSoundEvent::EntityDeployed {
+            self.sound_events.emit(SimSoundEvent::EntityDeployed {
                 deploy_sound_id,
                 rx,
                 ry,

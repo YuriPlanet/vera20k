@@ -67,7 +67,7 @@ impl Simulation {
         self.set_building_stuff_enabled(id, false, rules);
         //4523DE speaks before509140; the online arm reverses that order.
         if self.house_is_human_player(owner) {
-            self.sound_events.push(SimSoundEvent::HouseEva {
+            self.sound_events.emit(SimSoundEvent::HouseEva {
                 event: "EVA_BuildingOffLine",
                 owner,
             });
@@ -110,7 +110,7 @@ impl Simulation {
             crate::sim::production::update_factory_queue(self, rules, owner, category, effects);
         }
         if self.house_is_human_player(owner) {
-            self.sound_events.push(SimSoundEvent::HouseEva {
+            self.sound_events.emit(SimSoundEvent::HouseEva {
                 event: "EVA_BuildingOnLine",
                 owner,
             });

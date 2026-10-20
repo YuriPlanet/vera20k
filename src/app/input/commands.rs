@@ -965,6 +965,7 @@ pub(crate) fn schedule_command_in_sim(
                 | Command::ExitMatch
                 | Command::Destruct
                 | Command::RemovePlayer { .. }
+                | Command::Ally { .. }
         )
     {
         return None;
@@ -1009,6 +1010,10 @@ pub(crate) fn schedule_command_in_sim(
         }
         Command::RemovePlayer { house_index } => {
             let record = sim.encode_remove_player_record(owner_id, house_index)?;
+            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+        }
+        Command::Ally { house_index } => {
+            let record = sim.encode_ally_record(owner_id, house_index)?;
             SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
         }
         Command::SellWallAtCell { x, y } => {
@@ -1170,12 +1175,12 @@ mod tests {
     };
 
     use crate::map::entities::EntityCategory;
-    use crate::sim::intern::InternedId;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::combat::{Health, TargetKind};
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
+    use crate::sim::intern::InternedId;
     use crate::sim::world::Simulation;
 
     #[test]
@@ -1380,6 +1385,23 @@ mod tests {
         run_due(&mut sim);
         assert!(sim.houses()[&peer].is_to_die());
         assert!(!sim.houses()[&ai].is_to_die());
+    }
+
+    #[test]
+    fn the_ally_record_carries_the_other_house_index_through_the_queue() {
+        // Ally 0x00731877..0x007318C8: EventClass(PlayerPtr, 3, index).
+        let (mut sim, local, peer) = two_human_sim();
+        let record = sim.encode_ally_record(local, 1).unwrap();
+        assert_eq!(record.opcode(), crate::sim::command::ALLY_OPCODE);
+        assert_eq!(&record.payload()[..4], &1i32.to_le_bytes());
+        schedule_command_in_sim(&mut sim, "Local", Command::Ally { house_index: 1 }).unwrap();
+        let due = sim.take_due_commands();
+        assert!(matches!(
+            due.as_slice(),
+            [envelope] if envelope.owner == local
+                && envelope.payload == Command::Ally { house_index: 1 }
+        ));
+        let _ = peer;
     }
 
     #[test]

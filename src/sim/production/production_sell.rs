@@ -204,7 +204,7 @@ pub(crate) fn sell_back(
         SellOrder::Computer if selling || c4 => return false,
         SellOrder::Computer => begin_selling(sim, rules, id, false),
     }
-    sim.sound_events.push(SimSoundEvent::SellClick { owner });
+    sim.sound_events.emit(SimSoundEvent::SellClick { owner });
     true
 }
 
@@ -359,7 +359,7 @@ pub fn sell_stage_zero(
         // Select before native44AA3D HandleReturnedSlaves.
         if let Some(sound_id) = sim.deploy_voice_request(rules, id, true) {
             let sound_id = sound_id.to_owned();
-            sim.sound_events.push(SimSoundEvent::UnitVoiceRequested {
+            sim.sound_events.emit(SimSoundEvent::UnitVoiceRequested {
                 owner: id,
                 sound_id,
             });
@@ -373,7 +373,7 @@ pub fn sell_stage_zero(
         });
         if let Some((sound, rx, ry)) = sound {
             let deploy_sound_id = sim.interner.intern(&sound);
-            sim.sound_events.push(SimSoundEvent::EntityDeployed {
+            sim.sound_events.emit(SimSoundEvent::EntityDeployed {
                 deploy_sound_id,
                 rx,
                 ry,
@@ -531,11 +531,11 @@ fn sale_sounds(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         && let Some(sound) = rules.general.sell_sound.clone()
     {
         sim.sound_events
-            .push(SimSoundEvent::voc_at_for(sound, audible_to, &position));
+            .emit(SimSoundEvent::voc_at_for(sound, audible_to, &position));
     }
     if let Some(sound) = packup {
         sim.sound_events
-            .push(SimSoundEvent::voc_at_for(sound, audible_to, &position));
+            .emit(SimSoundEvent::voc_at_for(sound, audible_to, &position));
     }
 }
 
@@ -569,7 +569,7 @@ pub(crate) fn sell_complete(
     let _ = sim.assign_target_represented(id, None, Some(rules), registry, frame_effects);
     if !undeploys {
         sim.sound_events
-            .push(SimSoundEvent::StructureSold { owner });
+            .emit(SimSoundEvent::StructureSold { owner });
     }
     if qualifying_undeploy(sim, rules, id) {
         sim.finish_undeploy(id, rules, registry, frame_effects);

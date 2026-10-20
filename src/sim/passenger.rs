@@ -984,7 +984,7 @@ pub(crate) fn board_passenger(
         {
             let coordinate =
                 crate::sim::movement::ground_pose::position_world_coord(&transport.position);
-            sim.sound_events.push(SimSoundEvent::VocAtCoord {
+            sim.sound_events.emit(SimSoundEvent::VocAtCoord {
                 sound_id,
                 coordinate,
                 flags: 0,
@@ -993,7 +993,7 @@ pub(crate) fn board_passenger(
         }
     }
     if let Some((sound_id, coordinate)) = bio_reactor_entry_sound {
-        sim.sound_events.push(SimSoundEvent::voc_at_world_coord(
+        sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
             sound_id,
             crate::sim::anim_class::AnimWorldCoord {
                 x: coordinate.x,
@@ -1099,9 +1099,9 @@ pub fn add_garrison_occupant(
     if count == 1 {
         let _ = sim.mark_entity_refresh(building_id);
         sim.sound_events
-            .push(SimSoundEvent::StructureGarrisoned { owner });
+            .emit(SimSoundEvent::StructureGarrisoned { owner });
         sim.sound_events
-            .push(SimSoundEvent::BuildingGarrisonedSfx { owner, rx, ry });
+            .emit(SimSoundEvent::BuildingGarrisonedSfx { owner, rx, ry });
     }
     if sim.houses.get(&owner).is_some_and(|house| house.is_human())
         && let Some(pax) = sim.substrate.entities.get_mut(pax_id)
@@ -1402,10 +1402,10 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
             //configured sound plays even if the following radar event fails.
             if let Some(sound_id) = rules.general.building_abandoned_sound.clone() {
                 sim.sound_events
-                    .push(SimSoundEvent::VocCentered { sound_id });
+                    .emit(SimSoundEvent::VocCentered { sound_id });
             }
             let building = sim.substrate.entities.get(building_id).unwrap();
-            sim.sound_events.push(SimSoundEvent::StructureAbandoned {
+            sim.sound_events.emit(SimSoundEvent::StructureAbandoned {
                 owner: current_owner,
                 radar: crate::sim::radar::RadarEventRequest::new(
                     crate::sim::radar::RadarEventType::StructureAbandoned,

@@ -1147,7 +1147,7 @@ impl Simulation {
                 self.planning
                     .paths
                     .retain(|_, path| !path.nodes.is_empty() || path.executing);
-                self.lifecycle_outputs.push(
+                self.lifecycle_outputs.emit(
                     super::lifecycle::LifecycleOutput::PlanningNodeDeleted {
                         owner,
                         node_id: node,
@@ -1160,7 +1160,7 @@ impl Simulation {
                 let accepted = self.planning_append(owner, record);
                 if accepted {
                     self.sound_events
-                        .push(super::SimSoundEvent::PlanningNodeAdded { owner });
+                        .emit(super::SimSoundEvent::PlanningNodeAdded { owner });
                 }
                 accepted
             }

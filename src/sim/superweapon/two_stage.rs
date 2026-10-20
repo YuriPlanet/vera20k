@@ -48,7 +48,7 @@ pub(super) fn destination_for_source(
 
 impl Simulation {
     pub(crate) fn validate_paid_super_weapon_selections(&self) -> Result<(), &'static str> {
-        for (owner, weapons) in &self.super_weapons {
+        for (owner, weapons) in self.super_weapons.iter() {
             let mut pending = false;
             for (source, instance) in weapons {
                 let Some(ticket) = instance.paid_selection else {
@@ -115,11 +115,7 @@ impl Simulation {
         owner: InternedId,
         selection: PaidSuperWeaponSelection,
     ) -> bool {
-        let Some(instance) = self
-            .super_weapons
-            .get_mut(&owner)
-            .and_then(|weapons| weapons.get_mut(&selection.source))
-        else {
+        let Some(instance) = self.super_weapons.instance_mut(&owner, &selection.source) else {
             return false;
         };
         if instance.paid_selection != Some(selection) {
@@ -131,7 +127,7 @@ impl Simulation {
         }
         self.release_super_anim(owner, selection.source);
         self.sound_events
-            .push(SimSoundEvent::SuperWeaponStatusChanged {
+            .emit(SimSoundEvent::SuperWeaponStatusChanged {
                 owner,
                 sw_type: selection.destination,
             });

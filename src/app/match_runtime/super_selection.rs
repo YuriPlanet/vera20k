@@ -221,7 +221,7 @@ mod tests {
             Some("Americans"),
         );
         assert_eq!(targeting, warp_selected());
-        sim.sound_events_mut_for_test().clear();
+        sim.take_sound_events_for_test();
         assert!(sim.apply_command(
             "Americans",
             &Command::CancelPaidSuperWeapon { selection: ticket },
@@ -247,7 +247,7 @@ mod tests {
         assert_eq!(sim.houses()[&owner].economy().credits(), 0);
         // Source -> cancel -> same source again before presentation catches
         // up: the older cancel event must not erase the new destination.
-        sim.sound_events_mut_for_test().clear();
+        sim.take_sound_events_for_test();
         let first = sim
             .next_paid_super_weapon_selection(&rules, owner, source)
             .unwrap();
@@ -685,7 +685,7 @@ mod tests {
         // selection, then the client hides its anims.
         let mut frame = |sim: &mut Simulation, targeting: &mut Option<TargetingMode>| {
             step(sim, &rules);
-            let events = std::mem::take(sim.sound_events_mut_for_test());
+            let events = sim.take_sound_events_for_test();
             follow_selection_writes(targeting, &events, sim, &rules, Some("Americans"));
             let warp = chrono_warp_selected(targeting.as_ref(), &rules);
             hide_placement_anims(&mut hidden, sim, warp, Some("Americans"), &mut output);

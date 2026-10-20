@@ -225,7 +225,7 @@ mod tests {
             )
             .unwrap();
             for _ in 0..300 {
-                sim.fire_events_mut_for_test().clear();
+                sim.clear_fire_events_for_test();
                 let before: std::collections::BTreeSet<_> =
                     sim.projectiles().iter().map(|(&id, _)| id).collect();
                 sim.advance_tick(&[], Some(rules), None, None, 67);

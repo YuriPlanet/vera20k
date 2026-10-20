@@ -151,7 +151,7 @@ pub(crate) fn launch(
     };
     // The existing launch event retires the player's armed selection now,
     // not when the delivery later appears. The placement cue is separate.
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx: cell.0,
@@ -204,7 +204,7 @@ fn apply(
             request.cell.0,
             request.cell.1,
         );
-        sim.sound_events.push(SimSoundEvent::voc_at_world_coord(
+        sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
             sound.clone(),
             crate::sim::anim_class::AnimWorldCoord {
                 x: ground.x,

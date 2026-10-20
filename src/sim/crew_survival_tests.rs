@@ -347,7 +347,7 @@ fn a_captured_building_remembers_it() {
         .unwrap()
         .repairing
         .set_for_test(true);
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     let russians = sim.interner.intern("Russians");
     sim.change_owner_with_rules(
         id,
@@ -1733,7 +1733,7 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
             .selection
             .set_selected_for_test(true);
         let before = sim.substrate.entities.keys_sorted();
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         kill_with(&mut sim, &rules, None, mcv, "Super", ORDINARY);
         for crewman in new_ids(&sim, &before) {
             if type_name(&sim, crewman) != "E1" {

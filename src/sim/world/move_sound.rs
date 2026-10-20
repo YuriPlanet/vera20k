@@ -74,13 +74,13 @@ impl Simulation {
                 let world = Self::movement_sound_world(entity);
                 // 0x4DAA91 hard-stops any prior sound on the shared Foot handle,
                 // then 0x4DAACB draws Main once even for a singleton vector.
-                self.sound_events.push(SimSoundEvent::AnimationStopped {
+                self.sound_events.emit(SimSoundEvent::AnimationStopped {
                     anim_id: stable_id,
                     stop_sound_id: None,
                     world,
                 });
                 let index = self.main_rng.next_u32() as usize % sounds.len();
-                self.sound_events.push(SimSoundEvent::AnimationStarted {
+                self.sound_events.emit(SimSoundEvent::AnimationStarted {
                     anim_id: stable_id,
                     sound_id: sounds[index].clone(),
                     world,
@@ -98,7 +98,7 @@ impl Simulation {
                 // 0x4DAB2B Release (0x406060) lets a one-shot play out. It is distinct
                 // from the Stop405D40 before a new selection and Limbo405FD0.
                 self.sound_events
-                    .push(SimSoundEvent::ObjectSoundReleased { owner: stable_id });
+                    .emit(SimSoundEvent::ObjectSoundReleased { owner: stable_id });
                 entity.move_sound = MoveSoundState::default();
             } else {
                 entity.move_sound.countdown = state.countdown.wrapping_sub(1);

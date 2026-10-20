@@ -121,7 +121,7 @@ impl Simulation {
             },
             ..Default::default()
         };
-        for power in self.power_states.values_mut() {
+        for (_, power) in self.power_states.iter_mut() {
             power.set_debug_full_power(false);
         }
         if let Some(owner) = old_tech_owner {
@@ -199,7 +199,7 @@ impl Simulation {
         let old = self.debug_tools.flags;
         self.debug_tools.flags = flags;
         self.debug_tools.owner = Some(owner);
-        for (&id, power) in &mut self.power_states {
+        for (&id, power) in self.power_states.iter_mut() {
             power.set_debug_full_power(id == owner && flags.infinite_power);
         }
         if old.tech_all != flags.tech_all || old.tech_boost != flags.tech_boost {
@@ -284,10 +284,9 @@ impl Simulation {
         }
         if pending & 4 != 0
             && let Some(rules) = rules
-            && let Some(weapons) = self.super_weapons.get_mut(&owner)
         {
             let frame = self.session.binary_frame();
-            for (type_id, instance) in weapons {
+            for (type_id, instance) in self.super_weapons.house_instances_mut(&owner) {
                 if let Some(sw) = rules.super_weapon(self.interner.resolve(*type_id)) {
                     instance.debug_charge_full(sw, frame);
                 }
@@ -466,7 +465,11 @@ mod tests {
     #[test]
     fn context_change_drops_pending_actions_and_power_without_corrupting_totals() {
         let (mut sim, owner) = offline();
-        let power = sim.power_states.entry(owner).or_default();
+        let power = sim
+            .power_states
+            .map_mut_for_test()
+            .entry(owner)
+            .or_default();
         power.set_total_output_for_test(100);
         power.set_total_drain_for_test(200);
         power.set_is_low_power_for_test(true);
@@ -732,6 +735,7 @@ mod tests {
         let mut instance = crate::sim::superweapon::SuperWeaponInstance::new(ty, owner, 0);
         instance.set_is_active_for_test(true);
         sim.super_weapons
+            .map_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(ty, instance);
@@ -741,6 +745,7 @@ mod tests {
         assert!(sim.super_weapons[&owner][&ty].is_ready());
         let instance = sim
             .super_weapons
+            .map_mut_for_test()
             .get_mut(&owner)
             .unwrap()
             .get_mut(&ty)
@@ -776,7 +781,7 @@ mod tests {
             false,
         );
         sim.substrate.entities.insert(entity);
-        sim.power_states.insert(
+        sim.power_states.map_mut_for_test().insert(
             owner,
             crate::sim::power_system::PowerState::settled_for_test(),
         );
@@ -785,7 +790,7 @@ mod tests {
         assert_eq!(sim.entities().get(1).unwrap().health.current(), 100);
         assert!(sim.power_states[&owner].power_recheck_for_test());
         assert!(sim.power_states[&owner].radar_recheck_for_test());
-        sim.power_states.insert(
+        sim.power_states.map_mut_for_test().insert(
             owner,
             crate::sim::power_system::PowerState::settled_for_test(),
         );

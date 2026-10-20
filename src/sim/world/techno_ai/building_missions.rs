@@ -363,7 +363,7 @@ fn mission_construction(
             let sound_id = sim.interner.intern(sound);
             if let Some(world) = sim.anim_owner_coords(id) {
                 sim.sound_events
-                    .push(crate::sim::world::SimSoundEvent::ObjectSoundStarted {
+                    .emit(crate::sim::world::SimSoundEvent::ObjectSoundStarted {
                         owner: id,
                         sound_id,
                         world,
@@ -399,7 +399,7 @@ fn mission_construction(
         //465AF0 clears the shared type's loaded Buildup cache in native; VERA
         //keeps immutable retail metadata, while drawing reads BState/Stage.
         sim.sound_events
-            .push(crate::sim::world::SimSoundEvent::ObjectSoundReleased { owner: id });
+            .emit(crate::sim::world::SimSoundEvent::ObjectSoundReleased { owner: id });
     }
     1
 }

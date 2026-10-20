@@ -1678,7 +1678,7 @@ impl Simulation {
             && let Some(entity) = self.substrate.entities.get(slave)
         {
             self.sound_events
-                .push(SimSoundEvent::voc_at(sound, &entity.position));
+                .emit(SimSoundEvent::voc_at(sound, &entity.position));
         }
     }
 

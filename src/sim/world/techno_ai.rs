@@ -1082,7 +1082,7 @@ fn veterancy_promotion_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         }
     };
     let sound_id = sound.map(|name| sim.interner.intern(name));
-    sim.sound_events.push(super::SimSoundEvent::UnitPromoted {
+    sim.sound_events.emit(super::SimSoundEvent::UnitPromoted {
         owner,
         sound_id,
         rx,
@@ -2844,7 +2844,7 @@ mod tests {
         assert_eq!(unit_voice_facts(&sim), vec![(9, false), (3, false)]);
 
         // No pending owners means no per-actor output for the whole live walk.
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         sim.prepare_unit_voice_visits(Default::default());
         sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
         assert!(unit_voice_facts(&sim).is_empty());
@@ -3787,7 +3787,7 @@ mod tests {
         let mut power = crate::sim::power_system::PowerState::default();
         power.set_total_drain_for_test(100);
         power.set_is_low_power_for_test(true);
-        sim.power_states.insert(owner, power);
+        sim.power_states.map_mut_for_test().insert(owner, power);
 
         let before = sim.scenario_rng.state();
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());

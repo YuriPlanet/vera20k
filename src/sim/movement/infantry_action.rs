@@ -320,7 +320,7 @@ impl Simulation {
                 let location =
                     super::ground_pose::object_location(actor, self.resolved_terrain.as_ref());
                 self.sound_events
-                    .push(crate::sim::world::SimSoundEvent::VocAt {
+                    .emit(crate::sim::world::SimSoundEvent::VocAt {
                         sound_id: sound_id.clone(),
                         audible_to: None,
                         rx: actor.position.rx(),

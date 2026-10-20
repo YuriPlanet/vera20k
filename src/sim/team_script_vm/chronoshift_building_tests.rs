@@ -127,6 +127,7 @@ fn source(scene: &mut Replay) -> &mut SuperWeaponInstance {
     scene
         .sim
         .super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&id)

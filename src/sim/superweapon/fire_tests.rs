@@ -116,6 +116,7 @@ fn click_fire_matches_native() {
         instance.charge_start_tick = int(&row["start"]);
         instance.charge_duration = int(&row["left"]);
         sim.super_weapons
+            .map_mut_for_test()
             .entry(owner)
             .or_default()
             .insert(sw_type_id, instance);
