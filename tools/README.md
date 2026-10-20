@@ -113,8 +113,18 @@ checkout (the parent of the common Git directory), never the worktree's own `tar
 A checkout therefore has one cache whichever session builds it, as long as every
 session either leaves the variable unset or points it at that same directory; the
 runner notes on stderr when the registry holds another cache for the checkout.
-The first build compiles dependencies into this namespace, costing time and disk;
-subsequent builds reuse it. Existing shared caches are neither deleted nor trusted.
+The first build of a profile (`debug`, `fast` or `release`) in a checkout's cache
+starts from the registry and git dependency units of another live checkout's cache,
+preferring one built from the same `Cargo.lock`, then the most recently used. The
+runner copies them under both locks, as copy-on-write clones where the filesystem
+supports them (APFS, Btrfs, XFS) and plain copies elsewhere, keeping timestamps, and
+prints one `Seeded ...` line. Cargo then reuses every unit whose name and fingerprint
+match and builds the rest. Workspace crates and incremental sessions are never
+copied: Cargo judges them by this checkout's source timestamps, so a copy could pass
+for a build of different source. Cross-target builds are not seeded, and a failed seed
+leaves Cargo to build what it lacks ([_cargo_seed.py](_cargo_seed.py)). Retention
+counts a clone's blocks in full; free space, which the reserve measures, shows the
+real cost. Existing shared caches are neither deleted nor trusted.
 `--target-dir`, `--manifest-path`, `--config` and `--message-format` are reserved
 by the runner. Other Cargo/test arguments and the caller's environment pass through.
 Tests must select `--lib`. The runner does not give a new worktree the ignored `ini/`
@@ -146,7 +156,8 @@ worktree, so the runner starts one only when it can matter:
   (labelled builds also measure the saved-artifact volume).
 - **After compiling**, also after failed builds, at most once every two hours
   (`AUTOMATIC_INTERVAL_SECONDS`), or at once when a volume is below the minimum
-  or cannot be measured. Any applied pass counts, including one that ended
+  or cannot be measured, or when a cache has been abandoned (below) since the
+  newest applied pass. Any applied pass counts, including one that ended
   blocked or partial; a dry run does not. `--trim-cache` always runs one.
 - **Skipped** while the newest applied pass found nothing removable, finished
   within that interval and nothing deciding removability has changed since:
@@ -185,7 +196,7 @@ The owner records every new target (including failed, unlabelled, check and cust
 target invocations) in `owned-builds/cache-roots.json`. Historical labelled roots
 are adopted only when their live checkout/common Git directory and namespace
 prove ownership. A registered cache whose checkout no longer exists is abandoned
-once it has been idle an hour (`ABANDONED_SECONDS`), it sits in this repository's
+once it has been idle ten minutes (`ABANDONED_SECONDS`), it sits in this repository's
 cache root under its checkout's namespace, and no run holds that checkout's lock.
 Every pass then removes the Cargo profile output in it, whatever the budgets, apart
 from files a preserved or latest build still names; its latest record goes first,

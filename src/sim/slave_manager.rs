@@ -72,7 +72,7 @@
 //!   deploy) or on Area Guard past the Unit kick. Effect: retail resets or
 //!   starts the hunt, VERA does not. Frequency: rare. Downstream: none.
 //! - The Slave Miner carries a Miner component (`MinerKind::Slave`) as
-//!   VERA's order marker: input issues HarvestCell for it where native
+//!   VERA's order marker: input issues the Harvest order for it where native
 //!   `UnitClass::What_Action` gives the Harvest action to a
 //!   ResourceGatherer/ResourceDestination type. The dispatch treats it as
 //!   the plain Unit it is natively (`techno_ai/mission_handlers.rs`).

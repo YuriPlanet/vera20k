@@ -3479,7 +3479,8 @@ class MapObservationTests(unittest.TestCase):
         self.production_profile()
         self.profile['commands'] = [
             {'issue_after_step': 0, 'owner': 'Computer1',
-             'payload': {'RepairAtDepot': {'entity_id': 7, 'depot_id': 1}}},
+             'payload': {'MegaMission': {'entity_id': 7, 'mission': 'Enter', 'target': None,
+                                         'destination': {'Entity': 1}}}},
             {'issue_after_step': 2, 'owner': 'Computer1',
              'payload': {'SellBuilding': {'entity_id': 9}}}]
         self.profile_path.write_text(json.dumps(self.profile))
@@ -3488,7 +3489,7 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual([row['payload'] for row in report['capture']['observations']['commands']],
                          [row['payload'] for row in self.profile['commands']])
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
-        for index, variant, key in ((0, 'RepairAtDepot', 'depot_id'),
+        for index, variant, key in ((0, 'MegaMission', 'entity_id'),
                                     (1, 'SellBuilding', 'entity_id')):
             with self.subTest(variant=variant):
                 self.output = self.root / f'changed-{variant}'
@@ -4047,6 +4048,15 @@ class MapObservationTests(unittest.TestCase):
                 report = self.run_capture()
                 self.assertEqual(report['status'], 'INVALID', report)
 
+    def test_a_megamission_destination_selector_is_a_symbolic_reference(self):
+        selector = {'type_id': 'NADEPT', 'owner': 'Computer1'}
+        payload = {'MegaMission': {'entity_id': 7, 'mission': 'Enter', 'target': None,
+                                   'destination': {'Entity': selector}}}
+        self.assertEqual(observation._symbolic_requests(payload, 'payload'),
+                         {'/MegaMission/destination/Entity': selector})
+        payload['MegaMission']['destination'] = {'Entity': 1811}
+        self.assertEqual(observation._symbolic_requests(payload, 'payload'), {})
+
     def test_symbolic_bindings_cost_samples_and_cannot_enter_legacy_profiles(self):
         self.symbolic_profile()
         self.change = self.resolve_symbolic_receipt
@@ -4172,7 +4182,8 @@ class MapObservationTests(unittest.TestCase):
         self.scripted_profile()
         self.profile['commands'] = [
             {'issue_after_step': 0, 'owner': 'Computer1',
-             'payload': {'EnterTransport': {'passenger_id': 2, 'transport_id': 1}}},
+             'payload': {'MegaMission': {'entity_id': 2, 'mission': 'Enter', 'target': None,
+                                         'destination': {'Entity': 1}}}},
             {'issue_after_step': 0, 'owner': 'Computer1',
              'payload': {'Select': {'entity_ids': [1, 2], 'additive': False}}},
             {'issue_after_step': 2, 'owner': 'Computer1',

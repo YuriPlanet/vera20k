@@ -255,7 +255,7 @@ impl App {
                 .startup_splash
                 .as_ref()
                 .expect("active startup splash exists");
-            startup_splash::render_and_present(
+            let presented = startup_splash::render_and_present(
                 &state.renderer.gpu,
                 &state.renderer.batch_renderer,
                 &state.renderer.shell_surface_presenter,
@@ -263,12 +263,16 @@ impl App {
                 &state.renderer.fps_overlay,
                 splash,
             )?;
-            state
-                .frontend
-                .startup_splash
-                .as_mut()
-                .expect("active startup splash exists")
-                .mark_presented(Instant::now());
+            if presented {
+                state
+                    .frontend
+                    .startup_splash
+                    .as_mut()
+                    .expect("active startup splash exists")
+                    .mark_presented(Instant::now());
+            } else {
+                Self::follow_window_size(state);
+            }
             return Ok(());
         }
         state.frontend.startup_splash = None;
@@ -318,12 +322,15 @@ impl App {
             crate::app::frontend::shell_transition::MainMenuFirstPaintPoll::Acquire => {}
         }
 
-        let output: wgpu::SurfaceTexture = state
+        let Some(output) = state
             .renderer
             .gpu
-            .surface
-            .get_current_texture()
-            .map_err(|e| anyhow::anyhow!("Surface texture: {}", e))?;
+            .acquire_frame()
+            .map_err(|e| anyhow::anyhow!("Surface texture: {}", e))?
+        else {
+            Self::follow_window_size(state);
+            return Ok(());
+        };
         let view: wgpu::TextureView = output.texture.create_view(&Default::default());
         let mut encoder: wgpu::CommandEncoder =
             state

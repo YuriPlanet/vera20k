@@ -85,7 +85,7 @@ MAX_OBSERVATION_SAMPLES = 100_000
 MAX_RECEIPT_BYTES = 128 * 1024 * 1024
 ORDER_VARIANTS = frozenset(('Select', 'Move', 'Stop', 'Attack', 'Guard',
                             'DeployMcv', 'ForceAttackCell', 'CaptureBuilding', 'ToggleRepair',
-                            'EnterTransport', 'UnloadPassengers', 'RepairAtDepot', 'SellBuilding', 'SetRally', 'PlantC4',
+                            'MegaMission', 'UnloadPassengers', 'SellBuilding', 'SetRally', 'PlantC4',
                             'LaunchSuperWeapon', 'TogglePrimaryFactory'))
 PRODUCTION_VARIANTS = frozenset(('QueueProduction', 'PlaceReadyBuilding'))
 EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe_types',
@@ -429,6 +429,9 @@ def _symbolic_requests(payload: Mapping[str, Any], label: str) -> dict[str, Any]
                 references[pointer] = _binding_name(value, f'{label}{pointer}')
             elif field.endswith('_id') and field not in ('type_id', 'sw_type_id') and isinstance(value, dict):
                 references[pointer] = value
+            elif (variant == 'MegaMission' and field == 'destination' and isinstance(value, dict)
+                  and isinstance(value.get('Entity'), dict)):
+                references[f'{pointer}/Entity'] = value['Entity']
             elif field in ('entity_ids', 'producer_ids') and isinstance(value, list):
                 references.update((f'{pointer}/{index}', item)
                                   for index, item in enumerate(value) if isinstance(item, dict))

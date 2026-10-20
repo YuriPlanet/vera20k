@@ -924,28 +924,46 @@ class CacheTests(unittest.TestCase):
     def test_automatic_pass_is_due_without_a_recent_applied_pass(self):
         policy = cache.CachePolicy(1 << 40, 1 << 40, 0)
         volumes = [self.target]
-        self.assertTrue(cache.retention_due(self.store, policy, volumes))
+        self.assertTrue(cache.retention_due(self.root, self.store, policy, volumes))
         self.trim(policy, dry_run=True)  # A preview trims nothing.
-        self.assertTrue(cache.retention_due(self.store, policy, volumes))
+        self.assertTrue(cache.retention_due(self.root, self.store, policy, volumes))
         finished = self.trim(policy)['finished_unix']
-        self.assertFalse(cache.retention_due(self.store, policy, volumes))
+        self.assertFalse(cache.retention_due(self.root, self.store, policy, volumes))
         for later, due in ((cache.AUTOMATIC_INTERVAL_SECONDS - 1, False),
                            (cache.AUTOMATIC_INTERVAL_SECONDS, True), (-1, True)):
             with self.subTest(later=later), patch.object(cache.time, 'time', return_value=finished + later):
-                self.assertEqual(cache.retention_due(self.store, policy, volumes), due)
+                self.assertEqual(cache.retention_due(self.root, self.store, policy, volumes), due)
         (self.store / 'retention' / f'{time.time_ns()}-00000000.json').write_text('{broken')
-        self.assertTrue(cache.retention_due(self.store, policy, volumes))
+        self.assertTrue(cache.retention_due(self.root, self.store, policy, volumes))
+
+    def test_a_newly_abandoned_cache_makes_a_pass_due_once(self):
+        policy = cache.CachePolicy(1 << 40, 1 << 40, 0)
+        volumes = [self.target]
+        self.trim(policy)
+        self.assertFalse(cache.retention_due(self.root, self.store, policy, volumes))
+        gone = self.abandoned()
+        required = self.put(gone, 'debug/deps/required.rcgu.o')
+        self.assertTrue(cache.retention_due(self.root, self.store, policy, volumes))
+        binary, _ = self.label()
+        result = self.trim(policy, dependencies=lambda executable: {required} if executable == binary else set())
+        self.assertEqual(result['abandoned_roots'], [str(gone)], result)
+        # A saved build still names a file in it: that pass left the cache, and
+        # the next build starts no pass for it.
+        self.assertTrue(required.exists())
+        self.assertFalse(cache.retention_due(self.root, self.store, policy, volumes))
+        self.abandoned('also-gone')
+        self.assertTrue(cache.retention_due(self.root, self.store, policy, volumes))
 
     def test_short_or_unmeasured_reserve_makes_a_pass_due_despite_a_recent_one(self):
         policy = cache.CachePolicy(1 << 40, 1 << 40, 4096)
         volumes = [self.target]
         with patch.object(cache.shutil, 'disk_usage', return_value=SimpleNamespace(free=4096)):
             self.trim(policy)
-            self.assertFalse(cache.retention_due(self.store, policy, volumes))
+            self.assertFalse(cache.retention_due(self.root, self.store, policy, volumes))
         with patch.object(cache.shutil, 'disk_usage', return_value=SimpleNamespace(free=4095)):
-            self.assertTrue(cache.retention_due(self.store, policy, volumes))
+            self.assertTrue(cache.retention_due(self.root, self.store, policy, volumes))
         with patch.object(cache.shutil, 'disk_usage', side_effect=OSError('volume unavailable')):
-            self.assertTrue(cache.retention_due(self.store, policy, volumes))
+            self.assertTrue(cache.retention_due(self.root, self.store, policy, volumes))
 
     def test_automatic_pass_that_found_nothing_removable_repeats_only_after_a_change(self):
         policy = cache.CachePolicy(1 << 40, 1 << 40, 1 << 62)  # Every volume is short.

@@ -596,14 +596,14 @@ impl PassengerRole {
     }
 }
 
-/// The admission of a garrison order and of the typed
-/// [`crate::sim::command::Command::EnterTransport`] (#2242): a
-/// `CanBeOccupied=` building asks its CanBeOccupiedBy owner; any other
-/// carrier needs `Passengers=` above 0, the passenger's house allied with the
-/// carrier's, and the carrier's CAN_LOAD
-/// ([`crate::sim::radio::receive::can_load_query`], each class receiver's
-/// answer) ROGER. The click and cursor ask the full passenger rows instead
-/// ([`crate::sim::world::Simulation::entry_click_action`]).
+/// Whether `passenger_id` may enter `transport_id`: a `CanBeOccupied=`
+/// building asks its CanBeOccupiedBy owner; any other carrier needs
+/// `Passengers=` above 0, the passenger's house allied with the carrier's,
+/// and the carrier's CAN_LOAD ([`crate::sim::radio::receive::can_load_query`],
+/// each class receiver's answer) ROGER. The garrison click and cursor ask it
+/// of a `CanBeOccupied=` building, and a spy's Capture click leaves a building
+/// it may enter to the entry rows. The entry click and cursor ask the full
+/// passenger rows instead ([`crate::sim::world::Simulation::entry_click_action`]).
 pub fn can_enter_transport(
     sim: &Simulation,
     rules: &RuleSet,

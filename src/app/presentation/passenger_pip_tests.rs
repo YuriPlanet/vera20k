@@ -92,10 +92,11 @@ fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
         assert_eq!(frames(&sim, rules, transport, None), empty);
         assert!(sim.apply_command(
             OWNER,
-            &Command::EnterTransport {
-                passenger_id: passenger,
-                transport_id: transport,
-            },
+            &Command::clicked_mission(
+                passenger,
+                crate::sim::mission::MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(transport)
+            ),
             Some(rules)
         ));
         let grid = sim.path_grid_snapshot().unwrap();

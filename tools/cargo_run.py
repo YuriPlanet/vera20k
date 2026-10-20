@@ -457,6 +457,7 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
 
 def _run(root: Path, args: list[str], label: str | None, timeout: float, policy, times: RunTimes) -> int:
     from tools._cargo_cache import CachePolicy, register_locked, automatic_locked, retention_due
+    from tools._cargo_seed import profile_directory, seed
     policy = policy if policy is not None else CachePolicy.from_env()
     args = cargo_args(args, label)
     if label:
@@ -510,6 +511,15 @@ def _run(root: Path, args: list[str], label: str | None, timeout: float, policy,
                 f'{policy.min_free_bytes / (1024 ** 3):.2f} GiB required. '
                 'Review owned superseded builds and the cache retention receipt '
                 'before retrying; protected files were preserved.')
+        # A profile's first build in this cache starts from another cache's
+        # dependency outputs; see tools/_cargo_seed.py.
+        if (profile := profile_directory(options)) and not (target / profile).exists():
+            try:
+                if summary := seed(root, store, target, profile):
+                    print(summary, file=sys.stderr, flush=True)
+            except (OSError, ValueError) as error:
+                print(f'Cache seeding stopped ({error}); Cargo builds what it lacks',
+                      file=sys.stderr, flush=True)
         artifacts = set()
         try:
             hashes = {}
@@ -575,7 +585,7 @@ def _run(root: Path, args: list[str], label: str | None, timeout: float, policy,
                 print(f'Preserved build: {output}', flush=True)
         finally:
             register_locked(root, store, target, artifacts)
-            if retention_due(store, policy, volumes):
+            if retention_due(root, store, policy, volumes):
                 with times.timing('cache retention'):
                     automatic_locked(root, store, policy)
         shared.close()

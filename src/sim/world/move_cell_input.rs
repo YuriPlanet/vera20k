@@ -10,6 +10,7 @@ use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::terrain_rules::LandType;
 use crate::sim::cell_kernel::{CellCoordinate, cell_center};
 use crate::sim::cell_rect::{PlayfieldBounds, cell_is_in_playfield_height_aware_in_query};
 use crate::sim::combat::TargetKind;
@@ -36,6 +37,11 @@ pub enum MoveAction {
     /// Action 2: the barred cursor. A click still resolves a destination
     /// (`0x004D8065`, `0x004D77BD`).
     NoMove,
+    /// Action 6, on a Cell only: a Unit's harvest rungs turn its Move into
+    /// Harvest (`0x007405F5..0x007406C3`). ClickedAction's case 6 sends
+    /// ClickedMission Harvest with the Cell as Destination and no Target
+    /// (`0x004D7E8E`), before the MoveFlash and the Cell resolver.
+    Harvest,
 }
 
 impl MoveAction {
@@ -44,6 +50,7 @@ impl MoveAction {
             Self::None => 0,
             Self::Move => 1,
             Self::NoMove => 2,
+            Self::Harvest => 6,
         }
     }
 }
@@ -85,7 +92,10 @@ impl Simulation {
     /// - Foot turns any answer but 0 over a shrouded Cell centre into Move for
     ///   a MoveToShroud type inside the playfield, else NoMove
     ///   (`0x004DDE64..0x004DDEBE`);
-    /// - a Unit's Move becomes 0 while it is deployed, deploying or
+    /// - a Unit's Move over a Cell whose centre is not shrouded
+    ///   (`0x0074056E..0x007405EF`) becomes Harvest where its type gathers
+    ///   that Cell's Land ([`unit_harvests_land`], `0x007405F5..0x007406C3`);
+    /// - a Unit's other Move becomes 0 while it is deployed, deploying or
     ///   undeploying (6E0/6E1/6E2, `0x00740709..0x00740727`), so its deployed
     ///   IsSimpleDeployer arm (`0x00740752..0x00740767`) finds no Move;
     /// - an Infantry Deployer in Doing27..30 turns Move into NoMove
@@ -96,13 +106,12 @@ impl Simulation {
     /// Not modelled, each answering another action where native reaches it:
     /// the planning rung (Ctrl+Alt or +0x43A, `0x00700815..0x007008A3`); the
     /// attack rungs (`0x007008A6..0x00700AB4`), which callers ask first
-    /// (Ctrl's forced shot, and [`Self::cell_attack_rung_admits`]); a Unit
-    /// harvester over ore or weeds
-    /// (`0x007405F5..0x007406C3`, app-side in the cursor and the click); a
-    /// tube entrance (Unit `0x007406CF`, Infantry `0x0051F9AC`); a JumpJet
+    /// (Ctrl's forced shot, and [`Self::cell_attack_rung_admits`]); a tube
+    /// entrance (Unit `0x007406CF`, Infantry `0x0051F9AC`); a JumpJet
     /// soldier over a tube's neighbourhood, which answers 0
-    /// (`0x0051F860..0x0051F8A6`); the fogged-object scans; and DirectRocker
-    /// (`+0x2A8`, `0x00700617`), which nothing in retail sets.
+    /// (`0x0051F860..0x0051F8A6`); the fogged-object scans, among them the
+    /// harvest rungs' fogged overlay (`0x0074052A..0x0074056C`); and
+    /// DirectRocker (`+0x2A8`, `0x00700617`), which nothing in retail sets.
     pub fn cell_move_action(
         &self,
         viewer: InternedId,
@@ -158,8 +167,9 @@ impl Simulation {
                 )
             })?
         };
-        if action != MoveAction::None && clicked_cell_shrouded(&self.fog, &cells, viewer, clicked)?
-        {
+        let shrouded = action != MoveAction::None
+            && clicked_cell_shrouded(&self.fog, &cells, viewer, clicked)?;
+        if shrouded {
             action = if object.move_to_shroud && in_playfield {
                 MoveAction::Move
             } else {
@@ -167,8 +177,14 @@ impl Simulation {
             };
         }
         match entity.category() {
-            EntityCategory::Unit if action == MoveAction::Move && entity.is_deployed() => {
-                action = MoveAction::None;
+            // Unit asks IsShrouded again at the same Cell centre; the harvest
+            // rungs return before the deploy rung.
+            EntityCategory::Unit if action == MoveAction::Move => {
+                if !shrouded && unit_harvests_land(object, cells.land_type(cells.lookup(clicked))) {
+                    action = MoveAction::Harvest;
+                } else if entity.is_deployed() {
+                    action = MoveAction::None;
+                }
             }
             EntityCategory::Infantry => {
                 if action == MoveAction::Move && object.deployer && entity.infantry_deploy_doing() {
@@ -395,9 +411,9 @@ impl Simulation {
     }
 
     /// `MapClass::IsShrouded @ 0x00586360` for `viewer` at a clicked Cell's
-    /// coordinate, as Foot What_Action's shroud rung asks it and as the Unit
-    /// harvest arms' gate does (`0x007405C1..0x007405E6`), which the app
-    /// still answers for the cursor and the click.
+    /// coordinate, as Foot What_Action's shroud rung and the Unit harvest
+    /// rungs' gate ask it ([`Self::cell_move_action`]); the cursor asks it for
+    /// a Building's harvest rung and the Cell attack rung.
     pub fn clicked_cell_is_shrouded(
         &self,
         viewer: InternedId,
@@ -424,7 +440,9 @@ impl Simulation {
     /// whatever the locomotor. Refused before it:
     /// - action 0, which ClickedAction has no arm for (`0x004D7DCC..0x004D7DD2`);
     /// - NoMove for a deployed (6E0) Unit (`0x0073891D..0x00738933`) or for an
-    ///   Infantry in Doing27..30 (`0x0051F25D..0x0051F285`).
+    ///   Infantry in Doing27..30 (`0x0051F25D..0x0051F285`);
+    /// - Harvest, whose case 6 sends ClickedMission Harvest instead
+    ///   (`0x004D7E8E`), which the click producers send first.
     ///
     /// ClickedAction's outside-playfield refusal (`0x004D7DB3..0x004D7DBF`)
     /// never fires: outside the playfield What_Action answers NoMove or 0.
@@ -459,7 +477,7 @@ impl Simulation {
             .get(id)
             .ok_or("Cell click receiver disappeared")?;
         let refused = match action {
-            MoveAction::None => true,
+            MoveAction::None | MoveAction::Harvest => true,
             MoveAction::NoMove => match entity.category() {
                 EntityCategory::Unit => entity.is_fully_deployed(),
                 EntityCategory::Infantry => entity.infantry_deploy_doing(),
@@ -720,7 +738,8 @@ impl Simulation {
             .ok_or("Move click receiver lacks its type")?;
         let action = self.foot_object_class_action(viewer, id, target, action, rules, None);
         let refused = match action {
-            MoveAction::None => true,
+            // Harvest is a Cell answer only.
+            MoveAction::None | MoveAction::Harvest => true,
             MoveAction::NoMove => match entity.category() {
                 EntityCategory::Aircraft => true,
                 EntityCategory::Unit => target == id,
@@ -1023,6 +1042,18 @@ fn clicked_cell_shrouded(
         viewer,
         clicked_coordinate(cells, clicked)?,
     ))
+}
+
+/// UnitClass What_Action's harvest rungs (`0x007405F5..0x007406C3`), by the
+/// Cell's Land (CellClass+0xEC): Tiberium for a `Harvester=` type
+/// (UnitType+0xE0E) or one both `ResourceGatherer=` and
+/// `ResourceDestination=` (TechnoType+0x5EC, +0x5ED), and Weeds for a
+/// `Weeder=` type (UnitType+0xE0F).
+fn unit_harvests_land(object: &crate::rules::object_type::ObjectType, land: i32) -> bool {
+    let land_is = |land_type: LandType| land == i32::from(land_type.as_index());
+    (land_is(LandType::Tiberium)
+        && (object.harvester || (object.resource_gatherer && object.resource_destination)))
+        || (land_is(LandType::Weeds) && object.weeder)
 }
 
 /// A clicked Cell's centre on its ground, raised to a bridge deck: the

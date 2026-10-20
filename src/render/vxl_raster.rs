@@ -595,6 +595,10 @@ pub struct VxlRenderParams {
     /// Kept as a field rather than a constant because the asset contact-sheet
     /// tool magnifies deliberately; production always leaves it at 1.0.
     pub scale: f32,
+    /// The drawn TechnoType's `UseBuffer=` (0xB43180 during `0x00706ED0`):
+    /// rasterize through the depth-tested leaves (`vxl_native`). False for
+    /// every draw outside TechnoClass's voxel body, turret and barrel.
+    pub use_buffer: bool,
     /// Ambient light intensity for fallback N·L shading. Default: 0.6.
     pub ambient: f32,
     /// Diffuse light intensity for fallback N·L shading. Default: 0.4.
@@ -621,6 +625,7 @@ impl Default for VxlRenderParams {
             lighting: VxlLighting::BlinnPhong,
             barrel_pitch: 0,
             scale: 1.0,
+            use_buffer: false,
             ambient: 0.6,
             diffuse: 0.4,
             light_dir,
@@ -798,7 +803,8 @@ pub fn native_vxl_draw_bounds(
 ) -> Option<[i32; 4]> {
     let draw_matrix = voxel_params_draw_rotation(params, voxel_facing_step(params.facing));
     if params.scale == 1.0 && vxl.limbs.iter().all(|limb| limb.native_spans.is_some()) {
-        let geometry = native::prepare_geometry(vxl, hva, params.frame, draw_matrix)?;
+        let geometry =
+            native::prepare_geometry(vxl, hva, params.frame, draw_matrix, params.use_buffer)?;
         let [x, y, _, _, width, height] = geometry.rect;
         return Some([x, y, width, height]);
     }

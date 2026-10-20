@@ -274,7 +274,7 @@ fn a_move_order_empties_the_list() {
     assert_eq!(list(&sim, id), (vec![], true));
 }
 
-/// A miner's HarvestCell order takes the same Foot clears.
+/// A miner's Harvest order takes the same Foot clears.
 #[test]
 fn a_harvest_order_empties_the_list() {
     let Some((mut sim, rules)) = retail_world(true) else {
@@ -289,11 +289,11 @@ fn a_harvest_order_empties_the_list() {
         .unwrap()
         .navigation
         .set_nav_list_for_test(vec![A, B], true);
-    let order = crate::sim::command::Command::HarvestCell {
-        entity_id: id,
-        target_rx: 12,
-        target_ry: 12,
-    };
+    let order = crate::sim::command::Command::clicked_mission(
+        id,
+        MissionType::Harvest,
+        TargetKind::Cell(12, 12),
+    );
     assert!(sim.apply_command("Americans", &order, Some(&rules)));
     assert_eq!(list(&sim, id), (vec![], true));
 }

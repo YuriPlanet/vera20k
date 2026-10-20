@@ -450,7 +450,7 @@ fn mixed_cargo_dumps_ore_then_gems_fifteen_frames_apart() {
     assert_eq!(paid[1].0 - paid[0].0, 15);
 }
 
-/// A player refinery order in the middle of an unload (`Command::MinerReturn`):
+/// A player refinery order in the middle of an unload (MEGAMISSION Enter):
 /// the MEGAMISSION breaks the link and tether (`0x004C72E8..0x004C7342`), and
 /// the Enter arm's DOCKING (`0x00741DDA`) links the refinery again, whose pad
 /// arm finds the miner already there and tethers it (`0x0043CA71..`). The
@@ -463,10 +463,11 @@ fn a_refinery_order_mid_unload_redocks_and_pays() {
     run_until_unloading(&mut s);
     assert!(s.sim.apply_command(
         "Americans",
-        &crate::sim::command::Command::MinerReturn {
-            entity_id: s.miner,
-            target_refinery_id: Some(s.refinery),
-        },
+        &crate::sim::command::Command::clicked_mission(
+            s.miner,
+            MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(s.refinery)
+        ),
         Some(&s.rules),
     ));
     let after_order = sample(&s, s.miner);
@@ -531,10 +532,11 @@ fn an_order_to_a_busy_refinery_waits_nearby_and_docks_on_enter_after_it_frees() 
         .unwrap();
     assert!(s.sim.apply_command(
         "Americans",
-        &crate::sim::command::Command::MinerReturn {
-            entity_id: second,
-            target_refinery_id: Some(s.refinery),
-        },
+        &crate::sim::command::Command::clicked_mission(
+            second,
+            MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(s.refinery)
+        ),
         Some(&s.rules),
     ));
     let waiter = s.sim.substrate.entities.get(second).unwrap();

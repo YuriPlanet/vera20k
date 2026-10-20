@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
     1,
     33621247
   ],
-  "scope": "Four synthetic VXL models at eight facings: ordinary/reverse-Z, no HVA and long bounds; full native buffers and metadata",
+  "scope": "Four synthetic VXL models at eight facings: ordinary/reverse-Z, no HVA and long bounds; full native buffers and metadata. The same models at four facings with UseBuffer (0xB43180) set: reversed section order and the depth-tested leaves, with their depth maps",
   "assumptions": [
     "original x87 0E7F and original startup camera/light/viewer initializers",
     "immutable generated VXL/HVA/VPL files, normal mode 4, frame zero, unmirrored opaque Render core",
     "all sections submitted including empty; original HVA scaling uses limb zero",
     "native loader, normal loop, bounding corners, section exchange sort and both 7DF9C0/7DFAE0 execute",
     "zero VPL output, raw run/skip/duplicate grouping, unequal limb scales and empty section are intentional test inputs",
-    "no-HVA model carries nonidentity tailer transforms and ten empty prefix runs in one section"
+    "no-HVA model carries nonidentity tailer transforms and ten empty prefix runs in one section",
+    "UseBuffer models write 0xB43180 = 1 after the Init_Game slice zeroes it, as 706ED0 does at 706F12; 753E00 then clears the depth map 0xB1D5E0 itself, and its contents after the draw are recorded"
   ],
   "substitutions": [
     "file vtable open/read/seek/close over bounded immutable input bytes",
@@ -28,7 +28,10 @@
     "sort_rasterize": "0x00754510",
     "section_prepare": "0x00756590",
     "forward": "0x007DF9C0",
-    "backward": "0x007DFAE0"
+    "backward": "0x007DFAE0",
+    "use_buffer_forward": "0x00757980",
+    "use_buffer_backward": "0x00757BF0"
   },
-  "payload_sha256": "2e9b69b0a4240e7f82db76179ffbbce9ae45936955f12757075023636b2f5f13"
+  "replay_command": "python -m tools.voxel_oracle.raster_fixtures",
+  "payload_sha256": "eba18871b8ecbf953333d123d647c90a5a82152dd37d8439a3cf47e9dcf56285"
 }

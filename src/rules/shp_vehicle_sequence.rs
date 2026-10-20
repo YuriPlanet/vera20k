@@ -468,6 +468,7 @@ mod tests {
             start_sound: None,
             extra_light: 0,
             terrain_palette: false,
+            use_buffer: false,
             queueing_cell: [0, 0],
             pads: Vec::new(),
             damage_fire_offsets: Vec::new(),

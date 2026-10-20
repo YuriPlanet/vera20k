@@ -90,8 +90,8 @@ impl BunkerLinks {
 /// Native callers: the bunker's radio receiver (`0x0043C512`, CAN_LOAD's
 /// Bunker arm in [`crate::sim::radio::receive::can_load`]; `0x0043C86A`)
 /// and `FootClass::EnterTankBunker` (`0x004DFF4F`,
-/// [`Simulation::foot_enter_tank_bunker`]). VERA's EnterBunker order and the
-/// app's cursor and click order ask it too.
+/// [`Simulation::foot_enter_tank_bunker`]). The app's cursor and click
+/// admission query the same receiver; the MEGAMISSION event runs its setters.
 pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> bool {
     let Some(unit) = sim.substrate.entities.get(unit_id) else {
         return false;

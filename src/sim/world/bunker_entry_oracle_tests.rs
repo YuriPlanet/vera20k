@@ -58,10 +58,11 @@ fn stock_tank_bunker_entry_contacts_before_arrival_then_installs() {
         .unwrap();
     assert!(sim.apply_command(
         "Americans",
-        &Command::EnterBunker {
-            unit_id: tank,
-            bunker_id: bunker,
-        },
+        &Command::clicked_mission(
+            tank,
+            MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(bunker),
+        ),
         Some(&rules),
     ));
 
@@ -173,10 +174,11 @@ fn stock_tank_bunker_stop_releases_the_approach_for_another_tank() {
         .unwrap();
     assert!(sim.apply_command(
         "Americans",
-        &Command::EnterBunker {
-            unit_id: first,
-            bunker_id: bunker
-        },
+        &Command::clicked_mission(
+            first,
+            MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(bunker),
+        ),
         Some(&rules)
     ));
     assert_eq!(
@@ -222,10 +224,11 @@ fn stock_tank_bunker_stop_releases_the_approach_for_another_tank() {
     );
     assert!(sim.apply_command(
         "Americans",
-        &Command::EnterBunker {
-            unit_id: second,
-            bunker_id: bunker
-        },
+        &Command::clicked_mission(
+            second,
+            MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(bunker),
+        ),
         Some(&rules)
     ));
     assert_eq!(

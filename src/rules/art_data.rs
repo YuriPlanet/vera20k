@@ -202,6 +202,12 @@ pub struct ArtEntry {
     pub extra_light: i32,
     /// BuildingType +0x1702, art parser 004612B4: use the cell ISO Convert.
     pub terrain_palette: bool,
+    /// `UseBuffer=` (TechnoType `+0xDAC`): constructor `0x00710AF0` writes
+    /// false; `TechnoTypeClass::ReadINI` (`0x0071576F..0x0071578D`) reads it
+    /// with ReadBool (`0x005295F0`) from the ART INI under the type's own ID,
+    /// not its `Image=`, the current byte as default. Read through
+    /// [`ArtRegistry::use_buffer`]; it selects the depth-tested voxel raster.
+    pub use_buffer: bool,
     /// `QueueingCell=` (BuildingType+0x1618/+0x161C): `ReadMinMax @ 0x00529880`
     /// on the ARTMD section at `0x00461506`, default `(0, 0)`. Mission_Harvest
     /// adds the low words to the dock's NW cell for the waiting miner's staging
@@ -1310,6 +1316,7 @@ impl ArtRegistry {
                     start_sound,
                     extra_light,
                     terrain_palette: section.read_bool("TerrainPalette", false),
+                    use_buffer: section.read_bool("UseBuffer", false),
                     queueing_cell,
                     pads,
                     damage_fire_offsets,
@@ -1616,6 +1623,14 @@ impl ArtRegistry {
             .get(&type_id.to_uppercase())
             .copied()
             .unwrap_or(true)
+    }
+
+    /// A TechnoType's `UseBuffer=`, from the ART section named by its exact
+    /// type ID ([`ArtEntry::use_buffer`]); false without that section.
+    pub fn use_buffer(&self, type_id: &str) -> bool {
+        self.entries
+            .get(type_id)
+            .is_some_and(|entry| entry.use_buffer)
     }
 
     /// Hidden-occupancy height from art.ini `OccupyHeight=`.

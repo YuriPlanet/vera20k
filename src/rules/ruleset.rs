@@ -6826,11 +6826,6 @@ impl RuleSet {
             .is_some_and(|handle| self.ares_prerequisite_alternates.contains(handle))
     }
 
-    /// Whether a structure type is marked as a refinery in rules.ini.
-    pub fn is_refinery_type(&self, structure_id: &str) -> bool {
-        self.object(structure_id).is_some_and(|obj| obj.refinery)
-    }
-
     /// Resolve BuildingType FreeUnit, read by Grand_Opening446AA9. The native
     /// tail does not require Refinery; the type reader has already allocated
     /// a referenced UnitType, including names absent from VehicleTypes.
@@ -9171,8 +9166,8 @@ MutateWarhead=MyMutate\n\
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
 
-        assert!(rules.is_refinery_type("modproc"));
-        assert!(!rules.is_refinery_type("FAKEREF"));
+        assert!(rules.object("modproc").is_some_and(|obj| obj.refinery));
+        assert!(!rules.object("FAKEREF").is_some_and(|obj| obj.refinery));
         assert_eq!(rules.building_free_unit("MODPROC"), Some("MODHARV"));
         assert!(rules.harvester_can_dock_at("modharv", "MODPROC"));
         assert!(!rules.harvester_can_dock_at("modharv", "GAREFN"));
@@ -9196,7 +9191,7 @@ MutateWarhead=MyMutate\n\
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
 
-        assert!(rules.is_refinery_type("MODPROC"));
+        assert!(rules.object("MODPROC").is_some_and(|obj| obj.refinery));
         assert_eq!(rules.building_free_unit("MODPROC"), Some("UNKNOWN"));
         assert!(
             rules.type_handle("UNKNOWN").is_some(),

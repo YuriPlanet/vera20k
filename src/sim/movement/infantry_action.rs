@@ -679,6 +679,99 @@ impl Simulation {
         }
     }
 
+    /// `InfantryClass::Movement_Actions`' recovery (`0x00520FAF..0x00521144`),
+    /// after the stopped Move prefix. An infantryman whose NavCom (`+0x5A4`)
+    /// lies in a zone he cannot reach drops it with Assign_Destination(NULL,
+    /// 1) (vt+0x480). The NavCom's cell comes from its vt+0x4C coordinate for
+    /// him. The test is `MapClass::Can_Reach_Zone @ 0x0056D100` from his
+    /// navigation cell ([`Self::foot_can_reach_navigation_cell`]).
+    ///
+    /// He keeps the NavCom when:
+    /// - his failed-path byte (`+0x6DC`) is set and his Can_Enter_Cell
+    ///   (`0x0051BF90`) answers 7 for the cell of his navigation coordinate
+    ///   (vt+0x1C4 `0x005F6A10`), with no direction, level or source cell;
+    /// - his locomotor is moving (ILocomotion `+0x10`);
+    /// - he is tethered (`+0x418`);
+    /// - he is outside the playfield (`+0x3D5`);
+    /// - his type has `Infiltrate=` (`+0xEBE`);
+    /// - his Get_Mission is Enter.
+    ///
+    /// The arm reads in that order and draws no RNG.
+    fn infantry_drop_unreachable_nav_com(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<(), String> {
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return Ok(());
+        };
+        let Some(nav_com) = actor.navigation.nav_com() else {
+            return Ok(());
+        };
+        let destination = super::navcom::nav_target_coordinate(
+            nav_com,
+            Some(id),
+            self,
+            self.resolved_terrain.as_ref(),
+            Some((rules, &self.interner)),
+        )?;
+        if actor
+            .infantry
+            .as_ref()
+            .is_some_and(|infantry| infantry.cell_entry_blocked())
+        {
+            let terrain = self
+                .resolved_terrain
+                .as_ref()
+                .ok_or("the recovery requires map cells")?;
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let here = super::foot_path::coord_cell(self.foot_navigation_coordinate(id)?);
+            let answer = self.infantry_can_enter(
+                id,
+                cells.lookup(here),
+                super::infantry_entry::InfantryEntryArgs {
+                    direction: -1,
+                    height: -1,
+                    previous_cell: None,
+                },
+                rules,
+                registry,
+            )?;
+            if answer == super::infantry_entry::InfantryEntryClass::Impassable7 {
+                return Ok(());
+            }
+        }
+        let actor = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("the recovery's infantryman disappeared")?;
+        if super::motion_query::is_moving(actor) != Some(false)
+            || actor.tether.partner().is_some()
+            || !actor.in_playfield()
+            || self.foot_can_reach_navigation_cell(id, destination, rules)?
+        {
+            return Ok(());
+        }
+        let actor = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("the recovery's infantryman disappeared")?;
+        if self
+            .interner
+            .object_type(actor.type_ref(), rules)
+            .is_some_and(|object| object.infiltrate)
+            || actor.mission.effective().known() == Some(crate::sim::mission::MissionType::Enter)
+        {
+            return Ok(());
+        }
+        self.assign_null_destination(id, Some(rules), registry, effects);
+        Ok(())
+    }
+
     /// The locomotion action tail of `0x00520F40` (`0x00521144..0x0052130F`),
     /// which `InfantryClass::AI` runs after the sequencer (`0x0051BF7B`), for
     /// an infantryman whose Doing owns its sequence.
@@ -702,8 +795,8 @@ impl Simulation {
     ///
     /// The stopped Move prefix520F40..520FAF reuses the class destination
     /// and idle owners. Its NavNULL arm consumes the archived factory rally
-    /// after Walk has released the barracks contact. The remaining recovery
-    /// branches520FB0..521144 are separate residuals, not approximated here.
+    /// after Walk has released the barracks contact. The unreachable-NavCom
+    /// recovery follows it ([`Self::infantry_drop_unreachable_nav_com`]).
     ///
     /// Nothing here tests Health: a corpse reaches the tail, and Do_Action
     /// refuses its unforced requests for the death action
@@ -743,6 +836,9 @@ impl Simulation {
             } else {
                 self.infantry_enter_idle_mode(id, rules, registry, effects);
             }
+        }
+        if let Err(cause) = self.infantry_drop_unreachable_nav_com(id, rules, registry, effects) {
+            log::debug!("Infantry {id} unreachable NavCom recovery: {cause}");
         }
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -969,3 +1065,7 @@ mod tests;
 #[cfg(test)]
 #[path = "infantry_water_action_tests.rs"]
 mod water_tests;
+
+#[cfg(test)]
+#[path = "infantry_unreachable_navcom_tests.rs"]
+mod unreachable_navcom_tests;

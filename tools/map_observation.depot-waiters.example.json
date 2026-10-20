@@ -465,9 +465,13 @@
       "issue_after_step": 6020,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "RepairAtDepot": {
+        "MegaMission": {
           "entity_id": 1375,
-          "depot_id": 1985
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 1985
+          }
         }
       }
     },
@@ -475,9 +479,13 @@
       "issue_after_step": 6040,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "RepairAtDepot": {
+        "MegaMission": {
           "entity_id": 1376,
-          "depot_id": 1985
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 1985
+          }
         }
       }
     },
@@ -485,9 +493,13 @@
       "issue_after_step": 6040,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "RepairAtDepot": {
+        "MegaMission": {
           "entity_id": 1377,
-          "depot_id": 1985
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 1985
+          }
         }
       }
     }

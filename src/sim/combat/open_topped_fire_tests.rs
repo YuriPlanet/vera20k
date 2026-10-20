@@ -107,7 +107,7 @@ fn retail_dustbowl_battle_fortress_boarded(riders: u16) -> Fortress {
     fortress
 }
 
-/// Exercise the player's EnterTransport, class setter, Walk/Teleport arrival
+/// Exercise the player's Enter order, class setter, Walk/Teleport arrival
 /// and OpenTopped registration, rather than fabricating cargo.
 fn board_infantry(fortress: &mut Fortress, kind: &str) -> u64 {
     let (x, y) = fortress.cell;
@@ -129,10 +129,7 @@ fn board_infantry(fortress: &mut Fortress, kind: &str) -> u64 {
     sim.resolve_type_handles(&resources.rules);
     let enter = order(
         fortress,
-        Command::EnterTransport {
-            passenger_id: rider,
-            transport_id: fortress.bfrt,
-        },
+        Command::clicked_mission(rider, MissionType::Enter, TargetKind::Entity(fortress.bfrt)),
     );
     retail_frame(&mut fortress.scenario, vec![enter]);
     for _ in 0..300 {
@@ -538,7 +535,7 @@ fn retail_dustbowl_battle_fortress_riders_force_fire_at_the_ground() {
 }
 
 /// A GI ordered into an empty Battle Fortress from two cells away walks in
-/// (production `EnterTransport`) and boards. Inside, it keeps the Fortress's
+/// (the player's MEGAMISSION Enter) and boards. Inside, it keeps the Fortress's
 /// coordinate frame after frame and leaves no infantry occupation on the cells
 /// it crossed: its walk does not carry on from inside the transport.
 #[test]
@@ -568,10 +565,7 @@ fn retail_dustbowl_battle_fortress_rider_walks_in_and_stays_put() {
     };
     let enter = order(
         &fortress,
-        Command::EnterTransport {
-            passenger_id: gi,
-            transport_id: bfrt,
-        },
+        Command::clicked_mission(gi, MissionType::Enter, TargetKind::Entity(bfrt)),
     );
     retail_frame(&mut fortress.scenario, vec![enter]);
     let inside = |fortress: &Fortress| {

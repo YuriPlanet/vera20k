@@ -150,10 +150,11 @@ fn stock_bio_reactor_pips_follow_boarding_cargo_head_departure_and_selection() {
     ] {
         assert!(sim.apply_command(
             OWNER,
-            &Command::EnterTransport {
-                passenger_id: passenger,
-                transport_id: reactor
-            },
+            &Command::clicked_mission(
+                passenger,
+                crate::sim::mission::MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(reactor)
+            ),
             Some(rules),
         ));
         for _ in 0..480 {

@@ -350,6 +350,9 @@ impl App {
             None
         };
         if let Some(splash) = startup_splash.as_mut() {
+            // Surface acquisition can be transient before the first event-loop
+            // redraw. A splash that did not reach the screen stays unarmed for
+            // the frame loop to retry.
             match startup_splash::render_and_present(
                 &gpu,
                 &batch_renderer,
@@ -358,10 +361,11 @@ impl App {
                 &fps_overlay,
                 splash,
             ) {
-                Ok(()) => splash.mark_presented(Instant::now()),
+                Ok(true) => splash.mark_presented(Instant::now()),
+                Ok(false) => {
+                    log::warn!("Initial retail startup splash present deferred: no surface frame");
+                }
                 Err(err) => {
-                    // Surface acquisition can be transient before the first
-                    // event-loop redraw. Keep the unarmed splash for retry.
                     log::warn!("Initial retail startup splash present deferred: {err:#}");
                 }
             }

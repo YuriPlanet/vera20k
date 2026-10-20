@@ -153,6 +153,36 @@ impl App {
         }
     }
 
+    /// After a frame could not be taken, fit the surface to the window's size
+    /// as it is now. Resize events normally keep the two in step, but a
+    /// swapchain still stale after its reconfigure can be sized for a window
+    /// size no event reported, and only the window's own size frees it. winit
+    /// 0.30.12's Windows `set_fullscreen` notes such a race: marking the window
+    /// full screen sends resize messages with the old size. A sealed capture
+    /// keeps its fixed surface, and a minimised window has no size to fit.
+    pub(super) fn follow_window_size(state: &mut AppState) {
+        if state.platform.capture_client_size.is_some() {
+            return;
+        }
+        let size = state.platform.window.inner_size();
+        let config = &state.renderer.gpu.config;
+        if size.width == 0
+            || size.height == 0
+            || (size.width, size.height) == (config.width, config.height)
+        {
+            return;
+        }
+        log::warn!(
+            "Window is {}x{} but its surface is {}x{}; fitting the surface to the window",
+            size.width,
+            size.height,
+            config.width,
+            config.height
+        );
+        Self::resize_surface_for_window_size(state, size);
+        crate::app::input::cursor::apply_cursor_confinement(state);
+    }
+
     fn campaign_score_animation_deadline(state: &AppState) -> Option<Instant> {
         if Self::campaign_score_shell_active(state) {
             state

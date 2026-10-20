@@ -1229,10 +1229,14 @@ use crate::util::save_codec;
 // references in typed TechnoType prerequisites.
 // 460 -> 461: a Tiberium queue's heap is the shared native heap: its slots
 // lose the unused slot 0 and its size word replaces the queue's capacity.
-// 461 -> 462: bunker entry uses radio contacts, removing the separate
+// 461 -> 462: Command::MinerReturn, RepairAtDepot, EnterTransport, EnterBunker
+// and HarvestCell are gone (each was the MEGAMISSION event under a second
+// name), which renumbers the later Command variants in pending
+// CommandEnvelope payloads.
+// 462 -> 463: bunker entry uses radio contacts, removing the separate
 // Approaching link, ArriveWait enum variant and installing_unit payload.
 // Enum ordinals and the positional building runtime payload both change.
-const SNAPSHOT_VERSION: u32 = 462;
+const SNAPSHOT_VERSION: u32 = 463;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -10233,7 +10237,8 @@ mod tests {
         // 458 -> 459: the retained Rules/build extension capability.
         // 459 -> 460: retained generic prerequisite definitions.
         // 460 -> 461: Tiberium queues hold the shared native heap.
-        // 461 -> 462: remove duplicate bunker approach state.
-        assert_eq!(super::SNAPSHOT_VERSION, 462);
+        // 461 -> 462: the typed Enter and Harvest commands are gone.
+        // 462 -> 463: remove duplicate bunker approach state.
+        assert_eq!(super::SNAPSHOT_VERSION, 463);
     }
 }

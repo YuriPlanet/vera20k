@@ -842,3 +842,34 @@ fn animation_image25_matches_original_reader_and_loader_selection() {
         );
     }
 }
+
+/// TechnoTypeClass::ReadINI reads `UseBuffer=` from the ART section named by
+/// the type's own ID (`0x0071577B`), never the `Image=` section it draws.
+#[test]
+fn use_buffer_reads_the_type_id_section() {
+    let ini = IniFile::from_str(
+        "[SCHP]\nUseBuffer=yes\n[ALIAS]\nImage=SCHP\n[OFF]\nUseBuffer=no\n[ODD]\nUseBuffer=on\n",
+    );
+    let reg = ArtRegistry::from_ini(&ini);
+    assert!(reg.use_buffer("SCHP"));
+    assert!(!reg.use_buffer("ALIAS"), "the Image= section is not read");
+    assert!(!reg.use_buffer("OFF"));
+    // ReadBool keeps the constructor's false for a first character outside 1TY0FN.
+    assert!(!reg.use_buffer("ODD"));
+    assert!(!reg.use_buffer("MISSING"));
+}
+
+#[test]
+fn retail_use_buffer_types_are_the_four_helicopters() {
+    let Some((_, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let reg = ArtRegistry::from_ini(&art_ini);
+    let mut flagged: Vec<&str> = art_ini
+        .section_names()
+        .into_iter()
+        .filter(|name| reg.use_buffer(name))
+        .collect();
+    flagged.sort_unstable();
+    assert_eq!(flagged, ["HIND", "SCHD", "SCHP", "SHAD"]);
+}
