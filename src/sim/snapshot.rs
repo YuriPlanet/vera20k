@@ -10078,6 +10078,7 @@ mod tests {
         // 452 -> 453: a building's NoSurvivor byte.
         // 453 -> 454: the House left-game flag.
         // 454 -> 455: BunkerState::WallsUp.
-        assert_eq!(super::SNAPSHOT_VERSION, 455);
+        // 455 -> 456: retained per-pass Warhead Verses table.
+        assert_eq!(super::SNAPSHOT_VERSION, 456);
     }
 }
