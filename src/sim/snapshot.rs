@@ -1237,7 +1237,9 @@ use crate::util::save_codec;
 // Warhead extension records; the capability metadata header still starts at 459.
 // 463 -> 464: the retained type registry keeps each InfantryType's
 // ReadSequenceData sound pairs from every reached pass.
-const SNAPSHOT_VERSION: u32 = 464;
+// 464 -> 465: retain Techno's constructor house independently of its current
+// owner; Building ChangeOwner uses it to decide the computer capture sale.
+const SNAPSHOT_VERSION: u32 = 465;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -8982,6 +8984,43 @@ mod tests {
     }
 
     #[test]
+    fn constructor_owner_survives_transfers_and_snapshot_restore() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::game_entity::GameEntity;
+
+        let mut sim = Simulation::new();
+        let initial = sim.interner.intern("Americans");
+        let current = sim.interner.intern("Russians");
+        let type_ref = sim.interner.intern("GAPOWR");
+        let mut entity = GameEntity::test_default_of_category(
+            1,
+            "GAPOWR",
+            "Americans",
+            5,
+            5,
+            EntityCategory::Structure,
+        );
+        entity.set_owner_for_test(initial);
+        entity.set_type_ref_for_test(type_ref);
+        sim.substrate.entities.insert(entity);
+        sim.substrate.entities.change_owner(1, current);
+        // Match the scenario RNG's post-load seed reset for this state-only
+        // snapshot test. Physical resumed capture is tested separately.
+        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        let expected_hash = sim.state_hash();
+        let bytes = GameSnapshot::save(&sim, 0, 0, "captured-owner", 0);
+        let mut loaded = GameSnapshot::load(&bytes).expect("load constructor owner");
+        let restored = loaded.sim.substrate.entities.get(1).unwrap();
+        assert_eq!(restored.owner(), current);
+        assert_eq!(restored.initial_owner(), initial);
+        assert_eq!(loaded.sim.state_hash(), expected_hash);
+        loaded.sim.substrate.entities.change_owner(1, initial);
+        let recaptured = loaded.sim.substrate.entities.get(1).unwrap();
+        assert_eq!(recaptured.owner(), initial);
+        assert_eq!(recaptured.initial_owner(), initial);
+    }
+
+    #[test]
     fn entity_construction_frame_round_trips_as_dispatch_start() {
         use crate::map::entities::EntityCategory;
         use crate::sim::combat::Health;
@@ -10213,6 +10252,7 @@ mod tests {
         // 461 -> 462: the typed Enter and Harvest commands are gone.
         // 462 -> 463: retained armor IDs and Ares warhead extension records.
         // 463 -> 464: retained InfantryType sequence sound pairs.
-        assert_eq!(super::SNAPSHOT_VERSION, 464);
+        // 464 -> 465: retained Techno constructor house for capture-sale policy.
+        assert_eq!(super::SNAPSHOT_VERSION, 465);
     }
 }

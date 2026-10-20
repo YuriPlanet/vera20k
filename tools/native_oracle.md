@@ -1,5 +1,22 @@
 # Native comparison workflow
 
+### Computer sale of captured buildings
+
+`python -m tools.spatial_oracle.captured_building_sale --check` executes the
+original Engineer order/Walk/capture path through Building ChangeOwner's sale
+handoff, with additional bounded controls for its predicates, C4, Buildup and
+upgrade refunds. The real Building constructor establishes the initial House;
+the current owner may subsequently change without replacing that identity.
+The input setup, original call sites and explicit fixture boundaries are in
+[`captured_building_sale.md`](spatial_oracle/captured_building_sale.md).
+
+The corpus stops before the Selling mission visits. The retail Rust tests in
+`world::ai_captured_building_sale_tests` supply an ordinary AI Capture order,
+observe Engineer movement, and run the captured plant's sale through its
+refund/removal. A second test captures, saves/loads, and recaptures the plant
+for its constructor House, which keeps it. These compose the rebuilt engine;
+they do not execute autonomous native Team/Hunt planning or original SAV load.
+
 ### Selected-weapon target-scan bound
 
 `python -m tools.spatial_oracle.threat_scan_bound --check` compares 65 original

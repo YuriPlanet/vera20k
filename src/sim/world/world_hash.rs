@@ -1733,6 +1733,13 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         animation.finished().hash(hasher);
     }
     entity.owner().hash(hasher);
+    // Techno+14C survives ChangeOwner and controls an AI building capture's
+    // automatic sale. Preserve the untouched-owner stream, but distinguish
+    // objects transferred from different constructor houses.
+    if entity.initial_owner() != entity.owner() {
+        b"techno-initial-owner-v1".hash(hasher);
+        entity.initial_owner().hash(hasher);
+    }
     entity.health.current().hash(hasher);
     entity.estimated_health.get().hash(hasher);
     entity.type_ref().hash(hasher);
@@ -2567,6 +2574,38 @@ mod lifecycle_hash_tests {
         let before = sim.state_hash();
         mutate(sim.substrate.entities.get_mut(1).expect("fixture entity"));
         assert_ne!(before, sim.state_hash());
+    }
+
+    #[test]
+    fn constructor_owner_distinguishes_otherwise_identical_transferred_entities() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::intern::test_intern;
+
+        let hash_for = |initial: &str| {
+            let mut sim = Simulation::new();
+            sim.substrate
+                .entities
+                .insert(GameEntity::test_default_of_category(
+                    1,
+                    "GAPOWR",
+                    initial,
+                    5,
+                    5,
+                    EntityCategory::Structure,
+                ));
+            sim.substrate
+                .entities
+                .change_owner(1, test_intern("Russians"));
+            sim.state_hash()
+        };
+        // All three objects now belong to Russia. Constructor ownership still
+        // changes what a later capture back to America will do.
+        let american = hash_for("Americans");
+        let neutral = hash_for("Neutral");
+        let russian = hash_for("Russians");
+        assert_ne!(american, neutral);
+        assert_ne!(american, russian);
+        assert_ne!(neutral, russian);
     }
 
     #[test]
