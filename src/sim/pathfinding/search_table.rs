@@ -1,5 +1,11 @@
 //! Search scratch that forgets every entry at once.
 
+// Inverted bounds are deliberate: the first write replaces both through min/max.
+const EMPTY_DIRTY_RANGE: std::ops::Range<usize> = std::ops::Range {
+    start: usize::MAX,
+    end: 0,
+};
+
 /// Per-index values that one search writes and reads, reused across searches.
 ///
 /// An entry belongs to the running search only while its bit is set, and
@@ -23,7 +29,7 @@ impl<T> Default for SearchTable<T> {
     fn default() -> Self {
         Self {
             written: Vec::new(),
-            dirty: usize::MAX..0,
+            dirty: EMPTY_DIRTY_RANGE,
             values: Vec::new(),
         }
     }
@@ -38,7 +44,7 @@ impl<T: Copy> SearchTable<T> {
         }
         let end = self.dirty.end.min(self.written.len());
         self.written[self.dirty.start.min(end)..end].fill(0);
-        self.dirty = usize::MAX..0;
+        self.dirty = EMPTY_DIRTY_RANGE;
         self.written.resize(len.div_ceil(64), 0);
     }
 
