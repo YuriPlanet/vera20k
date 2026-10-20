@@ -110,6 +110,7 @@ pub(super) fn follow_selection_writes(
             .super_weapon(sim.interner().resolve(*sw_type))
             .map(|sw| sw.kind)
         {
+            #[cfg(feature = "ares")]
             Some(SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery) => {
                 // Ares new-type cleanup only clears the fired selection:
                 // an automatic launch must not disarm a different SW.
@@ -183,6 +184,7 @@ mod tests {
         Some(TargetingMode::SuperWeapon("ChronoWarpSpecial".to_string()))
     }
 
+    #[cfg(feature = "ares")]
     #[test]
     fn paid_superweapon_selection_tracks_the_ticket_and_never_revives_cancelled_source() {
         use crate::sim::command::Command;
@@ -280,6 +282,7 @@ mod tests {
         assert_eq!(targeting, warp_selected());
     }
 
+    #[cfg(feature = "ares")]
     #[test]
     fn extensions_only_clear_the_matching_local_selection() {
         for kind in ["GenericWarhead", "UnitDelivery"] {

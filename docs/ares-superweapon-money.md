@@ -1,5 +1,8 @@
 # Superweapon Money.Amount
 
+Requires an explicit `--features ares` build. Default builds do not read or execute
+these extensions; see [build capability](../README.md#customization).
+
 ```ini
 [SuperWeaponTypes]
 0=PaidScan

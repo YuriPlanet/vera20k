@@ -6,6 +6,7 @@
 //! preserve already-constructed registry state rather than rolling back.
 
 use crate::rules::color_add::{ColorAddSelectors, ColorAddTable};
+use crate::rules::compatibility::RulesCompatibility;
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::error::RulesError;
 use crate::rules::gunner_turrets::GunnerTurrets;
@@ -22,7 +23,9 @@ use crate::rules::projectile_type::ProjectileArtState;
 use crate::rules::rules_type_references::{DEFAULT_PARTICLE_SYSTEMS, RulesTypeReferences};
 use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules};
 use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
-use crate::rules::superweapon_type::{DeliveryOwner, DeliveryType, UnitDeliveryRules};
+use crate::rules::superweapon_type::UnitDeliveryRules;
+#[cfg(feature = "ares")]
+use crate::rules::superweapon_type::{DeliveryOwner, DeliveryType};
 use crate::util::native_x87::NativeF64Bits;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -478,6 +481,13 @@ pub struct ProcessedRulesLayers {
 }
 
 impl ProcessedRulesLayers {
+    /// Read-only projection of the retained registry's build capability.
+    pub(crate) fn compatibility(&self) -> RulesCompatibility {
+        self.native_type_construction_trace
+            .registry_state
+            .compatibility
+    }
+
     pub(crate) fn native_registry_state(&self) -> &NativeRulesRegistryState {
         self.native_type_construction_trace.registry_state()
     }
@@ -502,6 +512,21 @@ impl ProcessedRulesLayers {
     /// Reject indexes before any projection can dereference a saved type slot.
     pub(crate) fn validate_saved_state(&self) -> Result<(), RulesError> {
         let registry = &self.native_type_construction_trace.registry_state;
+        if !registry.compatibility.matches_build() {
+            return Err(RulesError::InvalidSavedState(
+                "saved Rules require a different compiled Ares capability",
+            ));
+        }
+        #[cfg(not(feature = "ares"))]
+        if registry.families.values().flatten().any(|member| {
+            member.super_weapon_building_requirements.is_some()
+                || member.generic_super_weapon_warhead.is_some()
+                || member.unit_delivery.is_some()
+        }) {
+            return Err(RulesError::InvalidSavedState(
+                "saved Rules contain disabled Ares extension state",
+            ));
+        }
         registry.validate_techno_type_order()?;
         let families = &registry.families;
         let projectile_count = families
@@ -1557,6 +1582,8 @@ impl NativeTypeConstructionTrace {
 /// RulesClass scalars share this process lifetime and survive Type resets.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct NativeRulesRegistryState {
+    /// Build capability is retained with the Rules owner, never selected by INI.
+    compatibility: RulesCompatibility,
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
     /// TechnoTypeClass::Array A8EB04/countA8EB10. Each pair points to the
     /// existing family member; names alone cannot distinguish repeated native
@@ -1627,6 +1654,7 @@ impl Default for NativeRulesRegistryState {
         // RulesClass constructor values; `GeneralRules::default` owns them.
         let general = crate::rules::ruleset::GeneralRules::default();
         Self {
+            compatibility: RulesCompatibility::default(),
             families: HashMap::new(),
             techno_type_order: Vec::new(),
             tiberiums: Vec::new(),
@@ -2477,6 +2505,7 @@ impl ProcessedType {
 
 #[derive(Debug)]
 struct RulesPassProcessor {
+    compatibility: RulesCompatibility,
     ordinary: Option<IniFile>,
     crate_rules: CrateRules,
     powerups: PowerupsAccumulator,
@@ -2539,6 +2568,7 @@ impl Default for RulesPassProcessor {
 impl RulesPassProcessor {
     fn with_registry_state(registry_state: NativeRulesRegistryState) -> Self {
         Self {
+            compatibility: registry_state.compatibility,
             families: registry_state.families,
             techno_type_order: registry_state.techno_type_order,
             tiberiums: registry_state.tiberiums,
@@ -2886,6 +2916,7 @@ impl RulesPassProcessor {
     /// (for example `,,,` or only exact `none` sentinels).
     /// Ares pointer vectors look up existing types at this exact read point.
     /// ReadString/strtok retain the native 2048-byte, comma-only list policy.
+    #[cfg(feature = "ares")]
     fn resolve_existing_list_from(
         &self,
         section: &IniSection,
@@ -3408,95 +3439,109 @@ impl RulesPassProcessor {
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_aux_building = building;
                 }
-                // Ares ValueableVector<BuildingTypeClass*> uses Find, not
-                // FindOrAllocate (Utilities/TemplateDef.h::parse_values and
-                // Utilities/Parser.h::Parser<T,1>, Ares 4f1d9299). Unknown
-                // tokens are skipped; each nonempty read replaces the list.
-                let auxiliary = self.resolve_existing_list_from(
-                    &raw,
-                    "SW.AuxBuildings",
-                    RulesTypeFamily::Building,
-                    0x800,
-                );
-                let negative = self.resolve_existing_list_from(
-                    &raw,
-                    "SW.NegBuildings",
-                    RulesTypeFamily::Building,
-                    0x800,
-                );
-                if auxiliary.is_some() || negative.is_some() {
-                    let requirements = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
-                        .super_weapon_building_requirements
-                        .get_or_insert_default();
-                    if let Some(auxiliary) = auxiliary {
-                        requirements.auxiliary = auxiliary;
-                    }
-                    if let Some(negative) = negative {
-                        requirements.negative = negative;
-                    }
-                }
-                if effective
-                    .read_name("Type", 0x28)
-                    .is_some_and(|kind| kind.eq_ignore_ascii_case("GenericWarhead"))
-                    && let Some(warhead) =
-                        self.resolve_scalar_from(&raw, "SW.Warhead", RulesTypeFamily::Warhead, 0x80)
+                #[cfg(feature = "ares")]
                 {
-                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
-                        .generic_super_weapon_warhead = warhead;
-                }
-                if raw
-                    .read_name("Type", 0x28)
-                    .is_some_and(|kind| kind.eq_ignore_ascii_case("UnitDelivery"))
-                    || self.families[&RulesTypeFamily::SuperWeapon][index]
-                        .unit_delivery
-                        .is_some()
-                {
-                    let types = raw.read_list("Deliver.Types", 2048).map(|tokens| {
-                        tokens
-                            .into_iter()
-                            .filter_map(|token| {
-                                let matches: Vec<_> = [
-                                    (RulesTypeFamily::Infantry, ObjectCategory::Infantry),
-                                    (RulesTypeFamily::Vehicle, ObjectCategory::Vehicle),
-                                    (RulesTypeFamily::Aircraft, ObjectCategory::Aircraft),
-                                    (RulesTypeFamily::Building, ObjectCategory::Building),
-                                ]
+                    // Ares ValueableVector<BuildingTypeClass*> uses Find, not
+                    // FindOrAllocate (Utilities/TemplateDef.h::parse_values and
+                    // Utilities/Parser.h::Parser<T,1>, Ares 4f1d9299). Unknown
+                    // tokens are skipped; each nonempty read replaces the list.
+                    let auxiliary = self.resolve_existing_list_from(
+                        &raw,
+                        "SW.AuxBuildings",
+                        RulesTypeFamily::Building,
+                        0x800,
+                    );
+                    let negative = self.resolve_existing_list_from(
+                        &raw,
+                        "SW.NegBuildings",
+                        RulesTypeFamily::Building,
+                        0x800,
+                    );
+                    if auxiliary.is_some() || negative.is_some() {
+                        let requirements = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .super_weapon_building_requirements
+                            .get_or_insert_default();
+                        if let Some(auxiliary) = auxiliary {
+                            requirements.auxiliary = auxiliary;
+                        }
+                        if let Some(negative) = negative {
+                            requirements.negative = negative;
+                        }
+                    }
+                    if effective
+                        .read_name("Type", 0x28)
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("GenericWarhead"))
+                        && let Some(warhead) = self.resolve_scalar_from(
+                            &raw,
+                            "SW.Warhead",
+                            RulesTypeFamily::Warhead,
+                            0x80,
+                        )
+                    {
+                        self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .generic_super_weapon_warhead = warhead;
+                    }
+                    if raw
+                        .read_name("Type", 0x28)
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("UnitDelivery"))
+                        || self.families[&RulesTypeFamily::SuperWeapon][index]
+                            .unit_delivery
+                            .is_some()
+                    {
+                        let types = raw.read_list("Deliver.Types", 2048).map(|tokens| {
+                            tokens
                                 .into_iter()
-                                .filter_map(|(family, category)| {
-                                    self.find_existing(family, token).map(|index| DeliveryType {
-                                        category,
-                                        id: self.families[&family][index].native_stored_id.clone(),
+                                .filter_map(|token| {
+                                    let matches: Vec<_> = [
+                                        (RulesTypeFamily::Infantry, ObjectCategory::Infantry),
+                                        (RulesTypeFamily::Vehicle, ObjectCategory::Vehicle),
+                                        (RulesTypeFamily::Aircraft, ObjectCategory::Aircraft),
+                                        (RulesTypeFamily::Building, ObjectCategory::Building),
+                                    ]
+                                    .into_iter()
+                                    .filter_map(|(family, category)| {
+                                        self.find_existing(family, token).map(|index| {
+                                            DeliveryType {
+                                                category,
+                                                id: self.families[&family][index]
+                                                    .native_stored_id
+                                                    .clone(),
+                                            }
+                                        })
                                     })
+                                    .collect();
+                                    // Do not silently bind an ambiguous cross-category ID
+                                    // to an unrelated type. Unknown/none tokens add none.
+                                    (matches.len() == 1)
+                                        .then(|| matches.into_iter().next().unwrap())
                                 })
-                                .collect();
-                                // Do not silently bind an ambiguous cross-category ID
-                                // to an unrelated type. Unknown/none tokens add none.
-                                (matches.len() == 1).then(|| matches.into_iter().next().unwrap())
-                            })
-                            .collect()
-                    });
-                    let state = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
-                        .unit_delivery
-                        .get_or_insert_default();
-                    if let Some(types) = types {
-                        state.types = types;
+                                .collect()
+                        });
+                        let state = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .unit_delivery
+                            .get_or_insert_default();
+                        if let Some(types) = types {
+                            state.types = types;
+                        }
+                        let delay = raw.read_int("SW.Deferment", state.deferment);
+                        state.deferment = if delay < 0 { 20 } else { delay };
+                        state.base_normal = raw.read_bool("Deliver.BaseNormal", state.base_normal);
+                        if let Some(owner) = raw.read_name("Deliver.Owner", 2048) {
+                            state.owner = match owner.to_ascii_lowercase().as_str() {
+                                "invoker" => DeliveryOwner::Invoker,
+                                "neutral" => DeliveryOwner::Neutral,
+                                "special" => DeliveryOwner::Special,
+                                "civilian" => DeliveryOwner::Civilian,
+                                _ => state.owner,
+                            };
+                        }
+                        // Activation sound resolves against the fixed SOUNDMD catalog
+                        // in RuleSet::bind_type_sound_references, using this type's
+                        // retained INI read history rather than an unresolved name.
                     }
-                    let delay = raw.read_int("SW.Deferment", state.deferment);
-                    state.deferment = if delay < 0 { 20 } else { delay };
-                    state.base_normal = raw.read_bool("Deliver.BaseNormal", state.base_normal);
-                    if let Some(owner) = raw.read_name("Deliver.Owner", 2048) {
-                        state.owner = match owner.to_ascii_lowercase().as_str() {
-                            "invoker" => DeliveryOwner::Invoker,
-                            "neutral" => DeliveryOwner::Neutral,
-                            "special" => DeliveryOwner::Special,
-                            "civilian" => DeliveryOwner::Civilian,
-                            _ => state.owner,
-                        };
-                    }
-                    // Activation sound resolves against the fixed SOUNDMD catalog
-                    // in RuleSet::bind_type_sound_references, using this type's
-                    // retained INI read history rather than an unresolved name.
                 }
+                #[cfg(not(feature = "ares"))]
+                let _ = effective;
             }
             index += 1;
         }
@@ -4503,6 +4548,7 @@ impl RulesPassProcessor {
                 events: self.native_type_construction_events,
                 allocated_super_weapon_type_count,
                 registry_state: NativeRulesRegistryState {
+                    compatibility: self.compatibility,
                     families: self.families,
                     techno_type_order: self.techno_type_order,
                     tiberiums: self.tiberiums,

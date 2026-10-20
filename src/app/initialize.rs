@@ -158,7 +158,11 @@ impl App {
         // is itself full screen). The resize that ends the animation re-fits
         // the surface.
         let mut window_attrs: WindowAttributes = WindowAttributes::default()
-            .with_title("RA2 Engine")
+            .with_title(if crate::rules::ARES_ENABLED {
+                "RA2 Engine [Ares]"
+            } else {
+                "RA2 Engine"
+            })
             .with_inner_size(inner_size)
             .with_resizable(!capture)
             .with_fullscreen(

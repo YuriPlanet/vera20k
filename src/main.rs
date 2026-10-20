@@ -24,6 +24,7 @@ fn main() -> Result<()> {
     vera20k::util::logging::install_panic_hook(log_path.as_deref());
 
     log::info!("RA2 Engine starting");
+    log::info!("Ares support compiled in: {}", vera20k::rules::ARES_ENABLED);
     if let Some(path) = &log_path {
         log::info!("Log file: {}", path.display());
     }

@@ -501,7 +501,7 @@ impl SaveRepository {
     /// `LoadOptionsClass__HasLoadableSave` `0x00559C20`.
     pub(crate) fn has_browser_entry(&self) -> bool {
         self.readable_entries()
-            .any(|(entry, _)| entry.header.is_current_version())
+            .any(|(entry, _)| entry.header.is_compatible())
     }
 
     /// Saves whose header reads, with their file time, in directory order.

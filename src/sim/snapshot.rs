@@ -22,6 +22,7 @@ pub mod scenario_resources;
 use saved_local_view::SavedLocalView;
 use scenario_resources::{SavedScenarioResources, SavedScenarioResourcesRef};
 
+use crate::rules::compatibility::RulesCompatibility;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 use crate::util::save_codec;
@@ -1219,7 +1220,10 @@ use crate::util::save_codec;
 // 456 -> 457: the retained type registry stores Warhead+0xA0 after each
 // reached ReadINI, including its per-layer literal default; its positional
 // payload and the effective rules configuration hash change.
-const SNAPSHOT_VERSION: u32 = 457;
+// 458 is reserved by the independent building-upgrade change (#2295).
+// 457 -> 459: retain the build's extension capability in Rules and the save
+// header; reject cross-capability saves before deserializing Simulation.
+const SNAPSHOT_VERSION: u32 = 459;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1355,6 +1359,8 @@ pub struct GameSnapshot {
     pub save_timestamp: u64,
     /// Map name at save time — stored in header for quick preview.
     pub map_name: String,
+    /// Capability of the retained Rules owner, or this build for synthetic saves.
+    compatibility: RulesCompatibility,
     /// The full authoritative simulation state (caches excluded via serde skip).
     pub sim: Simulation,
     /// Presentation-owned Techno+3CA waterline shorts by stable entity ID.
@@ -1384,6 +1390,22 @@ pub struct GameSnapshotHeader {
     pub tick: u64,
     pub save_timestamp: u64,
     pub map_name: String,
+    compatibility: RulesCompatibility,
+}
+
+/// The metadata prefix used before the capability marker. An incompatible
+/// schema remains listable; its absent mode is never used to admit a load.
+#[derive(Deserialize)]
+struct LegacyGameSnapshotHeader {
+    product_magic: [u8; 8],
+    envelope_version: u32,
+    version: u32,
+    description: String,
+    map_hash: u64,
+    rules_hash: u64,
+    tick: u64,
+    save_timestamp: u64,
+    map_name: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1406,6 +1428,11 @@ pub enum SnapshotError {
     EnvelopeVersionMismatch { expected: u32, found: u32 },
     #[error("snapshot version {found} does not match expected {expected}")]
     VersionMismatch { expected: u32, found: u32 },
+    #[error("snapshot capability {found:?} does not match this build's {expected:?}")]
+    CapabilityMismatch {
+        expected: RulesCompatibility,
+        found: RulesCompatibility,
+    },
     #[error("map hash {found:#018x} does not match active map {expected:#018x}")]
     MapMismatch { expected: u64, found: u64 },
     #[error("rules hash {found:#018x} does not match active rules {expected:#018x}")]
@@ -1656,6 +1683,7 @@ struct GameSnapshotRef<'a> {
     tick: u64,
     save_timestamp: u64,
     map_name: String,
+    compatibility: RulesCompatibility,
     sim: &'a Simulation,
     sinking_waterlines: &'a [(u64, i16)],
     sidebar_order: Option<&'a SavedSidebarOrder>,
@@ -1692,6 +1720,10 @@ impl GameSnapshot {
             tick: sim.session.tick(),
             save_timestamp,
             map_name: map_name.to_string(),
+            compatibility: scenario_resources
+                .map_or_else(RulesCompatibility::default, |resources| {
+                    resources.compatibility()
+                }),
             sim,
             sinking_waterlines,
             sidebar_order,
@@ -1905,14 +1937,38 @@ impl GameSnapshot {
                 found: preamble.version,
             });
         }
-        Ok(save_codec::deserialize(bytes)?)
+        let header: GameSnapshotHeader = save_codec::deserialize(bytes)?;
+        if !header.compatibility.matches_build() {
+            return Err(SnapshotError::CapabilityMismatch {
+                expected: RulesCompatibility::default(),
+                found: header.compatibility,
+            });
+        }
+        Ok(header)
     }
 
     /// SaveInfo681840/559ED0 reads metadata even when its internal version is
     /// incompatible. Browser5596A0 sorts those rows before5599DF hides them;
     /// full load still requires the strict current-version header above.
     pub fn read_metadata(bytes: &[u8]) -> Result<GameSnapshotHeader, SnapshotError> {
-        Self::read_preamble(bytes)?;
+        let preamble = Self::read_preamble(bytes)?;
+        if preamble.version < 459 {
+            let header: LegacyGameSnapshotHeader = save_codec::deserialize(bytes)?;
+            return Ok(GameSnapshotHeader {
+                product_magic: header.product_magic,
+                envelope_version: header.envelope_version,
+                version: header.version,
+                description: header.description,
+                map_hash: header.map_hash,
+                rules_hash: header.rules_hash,
+                tick: header.tick,
+                save_timestamp: header.save_timestamp,
+                map_name: header.map_name,
+                // The schema mismatch always rejects this row. The old format
+                // did not record a capability and cannot certify either mode.
+                compatibility: RulesCompatibility::Retail,
+            });
+        }
         Ok(save_codec::deserialize(bytes)?)
     }
 
@@ -1936,8 +1992,12 @@ impl GameSnapshot {
 }
 
 impl GameSnapshotHeader {
-    pub fn is_current_version(&self) -> bool {
-        self.version == SNAPSHOT_VERSION
+    pub fn compatibility(&self) -> RulesCompatibility {
+        self.compatibility
+    }
+
+    pub fn is_compatible(&self) -> bool {
+        self.version == SNAPSHOT_VERSION && self.compatibility.matches_build()
     }
 }
 
@@ -2787,6 +2847,11 @@ impl Simulation {
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
     pub fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+        for (_, entity) in self.substrate.entities.iter_sorted() {
+            entity
+                .validate_ares_build_compatibility()
+                .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
+        }
         self.validate_paid_super_weapon_selections()
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
         self.unit_deliveries
@@ -4299,6 +4364,7 @@ mod tests {
             tick: 3,
             save_timestamp: 4,
             map_name: "current-layout".to_string(),
+            compatibility: RulesCompatibility::default(),
         })
         .expect("serialize current header only");
 
@@ -4320,8 +4386,60 @@ mod tests {
         assert_eq!(header.product_magic, SNAPSHOT_PRODUCT_MAGIC);
         assert_eq!(header.envelope_version, SNAPSHOT_ENVELOPE_VERSION);
         assert_eq!(header.version, SNAPSHOT_VERSION);
+        assert_eq!(header.compatibility, RulesCompatibility::default());
         assert_eq!(header.description, "Hold the northern ridge");
         assert_eq!(header.map_name, "OFFICIAL.MAP");
+    }
+
+    #[test]
+    fn snapshot_capability_rejects_foreign_mode_before_body_decode() {
+        let bytes = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "synthetic", 0);
+        let mut header = GameSnapshot::read_header(&bytes).unwrap();
+        header.compatibility = match RulesCompatibility::default() {
+            RulesCompatibility::Retail => RulesCompatibility::Ares,
+            RulesCompatibility::Ares => RulesCompatibility::Retail,
+        };
+        // A complete header with no body proves capability admission runs before
+        // Simulation deserialization, even without bound scenario resources.
+        let bytes = save_codec::serialize(&header).unwrap();
+        for result in [
+            GameSnapshot::load(&bytes),
+            GameSnapshot::load_with_resources(&bytes),
+        ] {
+            assert!(matches!(
+                result,
+                Err(SnapshotError::CapabilityMismatch { expected, found })
+                    if expected == RulesCompatibility::default() && found == header.compatibility
+            ));
+        }
+        let metadata = GameSnapshot::read_metadata(&bytes).unwrap();
+        assert_eq!(metadata.compatibility, header.compatibility);
+        assert!(!metadata.is_compatible());
+    }
+
+    #[test]
+    fn snapshot_capability_keeps_legacy_metadata_readable_without_admitting_it() {
+        let bytes = save_codec::serialize(&(
+            SNAPSHOT_PRODUCT_MAGIC,
+            SNAPSHOT_ENVELOPE_VERSION,
+            457_u32,
+            "older layout",
+            1_u64,
+            2_u64,
+            3_u64,
+            4_u64,
+            "OLD.MAP",
+        ))
+        .unwrap();
+        let header = GameSnapshot::read_metadata(&bytes).unwrap();
+        assert_eq!(header.version, 457);
+        assert_eq!(header.description, "older layout");
+        assert_eq!(header.map_name, "OLD.MAP");
+        assert!(!header.is_compatible());
+        assert!(matches!(
+            GameSnapshot::read_header(&bytes),
+            Err(SnapshotError::VersionMismatch { found: 457, .. })
+        ));
     }
 
     #[test]
@@ -10088,6 +10206,7 @@ mod tests {
         // 454 -> 455: BunkerState::WallsUp.
         // 455 -> 456: saved paid two-stage selections and ticketed commands.
         // 456 -> 457: retained per-pass Warhead Verses table.
-        assert_eq!(super::SNAPSHOT_VERSION, 457);
+        // 458 belongs to #2295; 459 retains the Rules/build capability.
+        assert_eq!(super::SNAPSHOT_VERSION, 459);
     }
 }

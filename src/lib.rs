@@ -12,6 +12,13 @@ pub use vera20k_core::{
     assets, headless_scenario, map, net, rules, sim, skirmish_launch, skirmish_modes, util,
 };
 
+// Cargo unifies dependency features across a workspace. Refuse a client built
+// without its Ares consumers when another package enables the core capability.
+const _: () = assert!(
+    cfg!(feature = "ares") == rules::ARES_ENABLED,
+    "enable Ares through the vera20k package's ares feature"
+);
+
 // Opaque process-RNG cursor receipt shared by map generation and simulation.
 use vera20k_core::rng_continuation;
 

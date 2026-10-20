@@ -847,13 +847,51 @@ mod gunner;
 mod simple_deploy;
 mod voxel_recoil;
 
+#[cfg(all(test, not(feature = "ares")))]
+#[test]
+fn default_build_rejects_saved_delivery_base_override_and_keeps_base_space() {
+    let mut entity = GameEntity::test_default_of_category(
+        1,
+        "YARD",
+        "Americans",
+        20,
+        20,
+        EntityCategory::Structure,
+    );
+    assert!(entity.validate_ares_build_compatibility().is_ok());
+    entity.unit_delivery_no_base = true;
+    assert_eq!(
+        entity.validate_ares_build_compatibility(),
+        Err("delivery base overrides require a build with the ares feature")
+    );
+    assert!(entity.unit_delivery_provides_base_space());
+}
+
 impl GameEntity {
+    #[cfg(feature = "ares")]
     pub(crate) fn set_unit_delivery_base_normal(&mut self, base_normal: bool) {
         self.unit_delivery_no_base = self.category() == EntityCategory::Structure && !base_normal;
     }
 
+    /// Saved extension effects must be admitted by the build that resumes them.
+    /// Keep the raw delivery override private to its entity owner.
+    pub(crate) fn validate_ares_build_compatibility(&self) -> Result<(), &'static str> {
+        #[cfg(not(feature = "ares"))]
+        if self.unit_delivery_no_base {
+            return Err("delivery base overrides require a build with the ares feature");
+        }
+        Ok(())
+    }
+
     pub(crate) fn unit_delivery_provides_base_space(&self) -> bool {
-        !self.unit_delivery_no_base
+        #[cfg(feature = "ares")]
+        {
+            !self.unit_delivery_no_base
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            true
+        }
     }
 
     /// Infantry519524/51958A and Unit73CEF3 subtract Foot+6B4 in DrawIt.

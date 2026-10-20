@@ -18,6 +18,7 @@ use crate::util::save_codec;
 
 const NEAREST_PLANT: i32 = 2 << 16;
 
+#[cfg(feature = "ares")]
 #[test]
 fn action56_paid_pair_settles_the_shared_wallet_once_after_destination() {
     for amount in [-500, 500] {

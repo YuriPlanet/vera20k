@@ -96,7 +96,9 @@ impl SuperWeaponKind {
             "geneticconverter" => Some(Self::GeneticConverter),
             "forceshield" => Some(Self::ForceShield),
             "psychicreveal" => Some(Self::PsychicReveal),
+            #[cfg(feature = "ares")]
             "unitdelivery" => Some(Self::UnitDelivery),
+            #[cfg(feature = "ares")]
             "genericwarhead" => Some(Self::GenericWarhead),
             _ => None,
         }
@@ -217,6 +219,7 @@ pub struct SuperWeaponType {
 impl SuperWeaponType {
     /// Parse a SuperWeaponType from a rules.ini section
     /// (`SuperWeaponTypeClass::ReadINI`, reads `0x006CEA6D`-`0x006CEDB1`).
+    /// Ares extensions require the explicit `ares` build feature.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Option<Self> {
         // Native reads Range and LineMultiplier before Type. The constructor
         // owns the zero defaults; keep the same current-value defaults here.
@@ -224,6 +227,13 @@ impl SuperWeaponType {
         let line_multiplier = section.read_int("LineMultiplier", 0);
         // ReadString 0x28 ahead of the kind lookup (`0x006CEC2D`).
         let kind = SuperWeaponKind::from_ini_str(section.read_name("Type", 0x28)?)?;
+        #[cfg(feature = "ares")]
+        let extension_kind = matches!(
+            kind,
+            SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
+        );
+        #[cfg(not(feature = "ares"))]
+        let extension_kind = false;
         Some(Self {
             id: id.to_string(),
             // AbstractTypeClass `UIName=`, ReadString 0x20 (`0x00410AFB`).
@@ -251,7 +261,9 @@ impl SuperWeaponType {
             // InitializeConstants supplies an Attack cursor. Stock ReadAction
             // keeps its 0x20-byte ReadString (`0x00474EE0`).
             action: match kind {
+                #[cfg(feature = "ares")]
                 SuperWeaponKind::GenericWarhead => Some("Attack".to_string()),
+                #[cfg(feature = "ares")]
                 SuperWeaponKind::UnitDelivery => Some(
                     section
                         .read_name("Action", 0x20)
@@ -271,19 +283,10 @@ impl SuperWeaponType {
             use_charge_drain: section.read_bool("UseChargeDrain", false),
             // Ares LoadFromINIFile derives these from the new type's Flags,
             // not user tags. GenericWarhead is an ordinary one-click type.
-            pre_click: !matches!(
-                kind,
-                SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
-            ) && section.read_bool("PreClick", false),
-            post_click: !matches!(
-                kind,
-                SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
-            ) && section.read_bool("PostClick", false),
+            pre_click: !extension_kind && section.read_bool("PreClick", false),
+            post_click: !extension_kind && section.read_bool("PostClick", false),
             // ReadString 0x28 (`0x006CEC98`).
-            pre_dependent: if matches!(
-                kind,
-                SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
-            ) {
+            pre_dependent: if extension_kind {
                 -1
             } else {
                 section
@@ -296,13 +299,19 @@ impl SuperWeaponType {
             weapon_type: None,
             aux_building: None,
             building_requirements: None,
+            #[cfg(feature = "ares")]
             money_amount: section.read_ares_int("Money.Amount", 0),
+            #[cfg(not(feature = "ares"))]
+            money_amount: 0,
             insufficient_funds_eva: None,
             unit_delivery: None,
             special_sound: section.read_name("SpecialSound", 0x80).map(str::to_string),
             start_sound: section.read_name("StartSound", 0x80).map(str::to_string),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
             manual_control: section.read_bool("ManualControl", false),
+            #[cfg(not(feature = "ares"))]
+            generic_warhead: None,
+            #[cfg(feature = "ares")]
             generic_warhead: (kind == SuperWeaponKind::GenericWarhead).then(|| {
                 let ai_targeting = match section.read_name("SW.AITargeting", 0x40) {
                     None => GenericWarheadAiTargeting::Offensive,
@@ -384,6 +393,7 @@ pub struct SuperWeaponBuildingRequirements {
 }
 
 impl SuperWeaponBuildingRequirements {
+    #[cfg(feature = "ares")]
     pub fn allows(&self, mut present: impl FnMut(&str) -> bool) -> bool {
         (self.auxiliary.is_empty() || self.auxiliary.iter().any(|id| present(id)))
             && !self.negative.iter().any(|id| present(id))
@@ -447,6 +457,7 @@ Type=BogusType
         assert!(SuperWeaponType::from_ini_section("BogusWeapon", section).is_none());
     }
 
+    #[cfg(feature = "ares")]
     #[test]
     fn parse_ares_generic_warhead() {
         let ini =
@@ -469,5 +480,29 @@ Type=BogusType
             default_sw.generic_warhead.as_ref().unwrap().ai_targeting,
             GenericWarheadAiTargeting::Offensive
         );
+    }
+
+    #[cfg(not(feature = "ares"))]
+    #[test]
+    fn default_build_rejects_extension_kinds_and_ignores_money_tags() {
+        let ini = IniFile::from_str(
+            "[Strike]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.Damage=75\n\
+             [Delivery]\nType=UnitDelivery\nDeliver.Types=UNIT\n\
+             [Reveal]\nType=PsychicReveal\nMoney.Amount=-500\nRechargeTime=2\n\
+             Action=PsychicReveal\nRange=7\nLineMultiplier=2\nSW.RequiresTarget=unknown-mask\n",
+        );
+        for id in ["Strike", "Delivery"] {
+            assert!(SuperWeaponType::from_ini_section(id, ini.section(id).unwrap()).is_none());
+        }
+        let stock = SuperWeaponType::from_ini_section("Reveal", ini.section("Reveal").unwrap())
+            .expect("native types remain available with extension tags present");
+        assert_eq!(stock.kind, SuperWeaponKind::PsychicReveal);
+        assert_eq!(stock.recharge_time_frames, 1800);
+        assert_eq!(stock.action.as_deref(), Some("PsychicReveal"));
+        assert_eq!(stock.range, 7.0);
+        assert_eq!(stock.line_multiplier, 2);
+        assert_eq!(stock.money_amount, 0);
+        assert!(stock.generic_warhead.is_none());
+        assert!(stock.unit_delivery.is_none());
     }
 }

@@ -194,6 +194,7 @@ fn native_superweapon_cameo_controls_match_modes_and_requests() {
 #[path = "superweapon_cameo_retail_tests.rs"]
 mod retail_tests;
 
+#[cfg(feature = "ares")]
 #[test]
 fn delivery_missing_or_custom_action_arms_the_real_cameo_targeting_path() {
     for action in ["", "Action=Custom\n"] {
@@ -231,6 +232,7 @@ fn delivery_missing_or_custom_action_arms_the_real_cameo_targeting_path() {
     }
 }
 
+#[cfg(feature = "ares")]
 #[test]
 fn superweapon_money_cameo_refuses_before_target_or_direct_launch_but_allows_right_cancel() {
     for action in ["PsychicReveal", "None"] {

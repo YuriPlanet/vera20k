@@ -6,6 +6,7 @@
 //! from their existing world owners. It never spends charge or changes fog/RNG.
 //! Source mapping and intentional adaptations: docs/ares-generic-warhead.md.
 
+#[cfg(feature = "ares")]
 use crate::rules::ini_parser::IniSection;
 use crate::util::native_x87::NativeF64Bits;
 
@@ -25,10 +26,12 @@ impl TargetMask {
     pub const ALL_CONTENTS: Self = Self(60);
     pub const ALL: Self = Self(255);
 
+    #[cfg(feature = "ares")]
     fn intersects(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }
 
+    #[cfg(feature = "ares")]
     pub fn parse(raw: &str) -> Result<Self, String> {
         parse_mask(raw, |token| {
             Some(match token {
@@ -58,10 +61,12 @@ impl HouseMask {
     pub const ALLIES: Self = Self(2);
     pub const ENEMIES: Self = Self(4);
 
+    #[cfg(feature = "ares")]
     fn intersects(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }
 
+    #[cfg(feature = "ares")]
     pub fn parse(raw: &str) -> Result<Self, String> {
         parse_mask(raw, |token| {
             Some(match token {
@@ -80,6 +85,7 @@ impl HouseMask {
 
 // ra2-mono accepts composable aliases as well as the canonical Ares tokens.
 // Preserve those aliases, but never turn an unknown token into no restriction.
+#[cfg(feature = "ares")]
 fn parse_mask(raw: &str, bit: impl Fn(&str) -> Option<u8>) -> Result<u8, String> {
     let mut mask = 0;
     for token in raw
@@ -103,6 +109,7 @@ pub struct TargetRequirements {
     pub house: Result<HouseMask, String>,
 }
 
+#[cfg(feature = "ares")]
 impl TargetRequirements {
     pub fn parse(target: &str, house: &str) -> Self {
         Self {
@@ -122,6 +129,7 @@ pub struct SuperWeaponTargeting {
     pub range_maximum: NativeF64Bits,
 }
 
+#[cfg(feature = "ares")]
 impl SuperWeaponTargeting {
     pub fn from_ini(section: &IniSection) -> Self {
         let range = |key| {
@@ -191,6 +199,7 @@ pub struct LaunchSite {
     pub range_maximum_override: Option<f64>,
 }
 
+#[cfg(feature = "ares")]
 impl LaunchSite {
     pub fn admits(self, target: (i32, i32), range: (f64, f64)) -> bool {
         let minimum = self.range_minimum_override.unwrap_or(range.0);
@@ -208,6 +217,7 @@ impl LaunchSite {
     }
 }
 
+#[cfg(feature = "ares")]
 fn valid_range((minimum, maximum): (f64, f64)) -> bool {
     minimum.is_finite()
         && maximum.is_finite()
@@ -230,6 +240,7 @@ pub struct TargetPreflightInput<'a> {
 
 /// Port of Evaluate: same ordered gates and rejection categories. A missing
 /// terrain/visibility observation is not invented as water or shroud.
+#[cfg(feature = "ares")]
 pub fn evaluate_target(input: &TargetPreflightInput<'_>) -> Result<(), TargetReject> {
     let target_mask = input
         .requirements
@@ -314,6 +325,6 @@ pub fn evaluate_target(input: &TargetPreflightInput<'_>) -> Result<(), TargetRej
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ares"))]
 #[path = "superweapon_targeting_tests.rs"]
 mod tests;

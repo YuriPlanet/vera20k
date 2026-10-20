@@ -8,19 +8,30 @@
 //! existing Object entry/Unlimbo transactions, and VERA frame/identity-based
 //! deterministic placement seeds. This is not an Ares RNG/order oracle.
 
+#[cfg(feature = "ares")]
 use super::targeting::on_map;
+#[cfg(feature = "ares")]
 use crate::rules::object_type::ObjectCategory;
+#[cfg(feature = "ares")]
 use crate::rules::overlay_types::OverlayTypeRegistry;
+#[cfg(feature = "ares")]
 use crate::rules::ruleset::RuleSet;
-use crate::rules::superweapon_type::{DeliveryOwner, DeliveryType, SuperWeaponType};
+use crate::rules::superweapon_type::DeliveryType;
+#[cfg(feature = "ares")]
+use crate::rules::superweapon_type::{DeliveryOwner, SuperWeaponType};
+#[cfg(feature = "ares")]
 use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
+#[cfg(feature = "ares")]
 use crate::sim::mission::{MissionId, MissionType};
+#[cfg(feature = "ares")]
 use crate::sim::state_hasher::StateHasher;
-use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
+use crate::sim::world::Simulation;
+#[cfg(feature = "ares")]
+use crate::sim::world::{FrameEffects, SimSoundEvent};
 use std::hash::{Hash, Hasher};
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ares"))]
 #[path = "unit_delivery_tests.rs"]
 mod tests;
 
@@ -50,6 +61,10 @@ impl UnitDeliveryState {
     }
 
     pub(crate) fn validate(&self, sim: &Simulation) -> Result<(), &'static str> {
+        #[cfg(not(feature = "ares"))]
+        if !self.pending.is_empty() {
+            return Err("pending deliveries require a build with the ares feature");
+        }
         if self.pending.iter().any(|delivery| {
             !sim.houses.contains_key(&delivery.owner)
                 || delivery.types.is_empty()
@@ -64,6 +79,38 @@ impl UnitDeliveryState {
     }
 }
 
+#[cfg(all(test, not(feature = "ares")))]
+#[test]
+fn default_build_rejects_pending_unit_delivery_state() {
+    let mut sim = Simulation::with_seed(0);
+    let owner = sim.interner.intern("Americans");
+    let sw_type = sim.interner.intern("Delivery");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    let mut state = UnitDeliveryState::default();
+    assert!(state.validate(&sim).is_ok());
+    state.pending.push(PendingDelivery {
+        sw_type,
+        owner,
+        cell: (20, 20),
+        issued_frame: 0,
+        due_frame: 20,
+        types: vec![DeliveryType {
+            category: crate::rules::object_type::ObjectCategory::Vehicle,
+            id: "MTNK".into(),
+        }],
+        base_normal: true,
+        activation_sound: None,
+    });
+    assert_eq!(
+        state.validate(&sim),
+        Err("pending deliveries require a build with the ares feature")
+    );
+}
+
+#[cfg(feature = "ares")]
 fn delivery_owner(
     sim: &Simulation,
     rules: &RuleSet,
@@ -89,6 +136,7 @@ fn delivery_owner(
 
 /// Reject malformed extension requests before the common Fire_SW transaction.
 /// Lack of a free landing site is an effect-time outcome, not this admission.
+#[cfg(feature = "ares")]
 pub(crate) fn admits(
     sim: &Simulation,
     rules: &RuleSet,
@@ -100,6 +148,7 @@ pub(crate) fn admits(
 }
 
 /// Target-independent preflight is also shared with the AI before search/RNG.
+#[cfg(feature = "ares")]
 pub(crate) fn configured(
     sim: &Simulation,
     rules: &RuleSet,
@@ -120,6 +169,7 @@ pub(crate) fn configured(
         })
 }
 
+#[cfg(feature = "ares")]
 pub(crate) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -164,6 +214,7 @@ pub(crate) fn launch(
     }
 }
 
+#[cfg(feature = "ares")]
 pub(crate) fn tick(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -185,6 +236,7 @@ pub(crate) fn tick(
     sim.unit_deliveries.pending = retained;
 }
 
+#[cfg(feature = "ares")]
 fn apply(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -218,6 +270,7 @@ fn apply(
     }
 }
 
+#[cfg(feature = "ares")]
 fn place(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -369,6 +422,7 @@ fn place(
 
 /// Contributor-reported ResolveSupportSpawnRingOffset order, retained as
 /// VERA's deterministic placement policy; not an executed donor/Ares oracle.
+#[cfg(feature = "ares")]
 fn ring_offset(step: i32, radius: i32) -> (i32, i32) {
     if radius == 0 {
         return (0, 0);

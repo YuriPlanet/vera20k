@@ -35,9 +35,15 @@ pub struct SelectedIni {
 }
 
 pub fn select_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni, String> {
-    select_ini_with_options(assets, name, DirectiveOptions::default())
+    if crate::rules::ARES_ENABLED {
+        select_ini_with_options(assets, name, DirectiveOptions::default())
+    } else {
+        select_physical_ini(assets, name)
+    }
 }
 
+/// Explicit file-composition probe. Tool callers may inspect extension syntax
+/// independently of the gameplay capability selected at compile time.
 pub fn select_ini_with_options(
     assets: &AssetManager,
     name: &str,

@@ -1824,9 +1824,11 @@ pub(crate) fn toggle_cursor_confinement(state: &mut AppState) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "ares")]
+    use super::super_weapon_cursor_id;
     use super::{
         ActionDistanceTarget, capability_cursor_for_hover, empty_cell_cursor, force_fire_feedback,
-        select_best_for_action, super_weapon_cursor_id, what_action_on_cell,
+        select_best_for_action, what_action_on_cell,
     };
     use crate::app::input::entity_pick::HoverTargetKindWithId;
     use crate::app::types::{CursorFeedbackKind, CursorId, HoverTargetKind};
@@ -1986,6 +1988,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ares")]
     #[test]
     fn unit_delivery_superweapon_custom_action_uses_existing_paradrop_cursor() {
         let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(

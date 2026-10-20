@@ -86,8 +86,21 @@ and playtesting. Agents follow [AGENTS.md](AGENTS.md).
 
 ## Customization
 
-Optional features (e.g. Ares) should be configurable through INI files, with client toggles
-where appropriate.
+Ares compatibility is an optional build capability. Default builds use the retail
+readers and dispatch; an INI or client setting cannot enable omitted extensions.
+Build the supported extensions explicitly:
+
+```sh
+python -m tools.cargo_run -- build -p vera20k --profile fast --bin vera20k --features ares
+```
+
+Omit `--features ares` for a build without the extensions. Ares builds identify
+themselves in the window title and startup log. Supported INI keys configure
+existing GenericWarhead, UnitDelivery, superweapon building gates and money behavior;
+Include/inheritance expansion is also active only in Ares gameplay builds. The explicit
+read-only `asset ini-expand` probe remains available independently. Saves retain the
+build capability and cannot load in the other mode, even with identical retail INIs.
+This is partial Rust-native compatibility, not Ares DLL loading or general mod support.
 
 To launch single-player YR skirmishes or campaigns through a dedicated CnCNet
 client, see the [offline client setup](integrations/cncnet/README.md). This needs

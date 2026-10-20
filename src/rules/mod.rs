@@ -103,6 +103,9 @@
 //! - rules/ does NOT depend on (outside tests): sim/, render/, ui/, audio/, net/
 
 pub mod airstrike;
+/// Whether this binary includes the supported Ares extensions. INIs cannot change it.
+pub const ARES_ENABLED: bool = cfg!(feature = "ares");
+pub mod compatibility;
 pub mod animation_sequence;
 pub mod art_data;
 pub mod bridge_warheads;
