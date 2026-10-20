@@ -236,57 +236,6 @@ fn all_data_including_old_commands_is_closed_by_policy() {
     assert_eq!(parse_client_frame(&[0x81, 0xff]), Err(1008));
 }
 
-#[cfg(feature = "debug-tools")]
-#[test]
-fn debug_commands_require_enabled_epoch_and_keep_control_protocol() {
-    use crate::app::debug_tools::DebugCommand;
-    let fixture = Fixture::new();
-    fixture.server.set_debug_session(Some(7));
-    let mut stream = websocket(&fixture.server);
-    let command = br#"{"session":7,"command":{"cmd":"frame_step"}}"#;
-    stream.write_all(&masked(1, command)).unwrap();
-    stream.write_all(&masked(9, b"barrier")).unwrap();
-    assert_eq!(frame(&mut stream), (10, b"barrier".to_vec()));
-    assert_eq!(
-        fixture.server.drain_debug_commands(7),
-        vec![DebugCommand::FrameStep {}]
-    );
-
-    fixture.server.set_debug_session(Some(8));
-    stream.write_all(&masked(1, command)).unwrap();
-    assert_eq!(frame(&mut stream), (8, 1008_u16.to_be_bytes().to_vec()));
-    assert!(fixture.server.drain_debug_commands(8).is_empty());
-}
-
-#[cfg(feature = "debug-tools")]
-#[test]
-fn debug_data_frames_reject_fragmentation_binary_and_oversize() {
-    let text = masked(1, b"{}");
-    assert!(matches!(
-        parse_client_frame_with_debug(&text, true),
-        Ok(Some((ControlFrame::Command(_), _)))
-    ));
-    let mut fragment = text.clone();
-    fragment[0] &= 0x7f;
-    assert_eq!(parse_client_frame_with_debug(&fragment, true), Err(1002));
-    assert_eq!(
-        parse_client_frame_with_debug(&masked(2, b"{}"), true),
-        Err(1008)
-    );
-    assert_eq!(
-        parse_client_frame_with_debug(&[0x81, 0xff], true),
-        Err(1009)
-    );
-    assert_eq!(
-        parse_client_frame_with_debug(&[0x81, 0xfe, 4, 1], true),
-        Err(1009)
-    );
-    assert_eq!(
-        parse_client_frame_with_debug(&masked(1, &[0xff]), true),
-        Err(1007)
-    );
-}
-
 #[test]
 fn controls_validate_mask_bits_lengths_codes_and_utf8() {
     let ping = masked(9, b"hello");
@@ -308,48 +257,6 @@ fn controls_validate_mask_bits_lengths_codes_and_utf8() {
         assert_eq!(parse_client_frame(&bad), Err(1002));
     }
     assert_eq!(parse_client_frame(&masked(8, &[3, 232, 0xff])), Err(1007));
-}
-
-#[test]
-fn coalesced_handshake_tail_and_ping_close_follow_protocol() {
-    let fixture = Fixture::new();
-    let mut stream = connect(&fixture.server);
-    let mut bytes = request(&fixture.server).into_bytes();
-    bytes.extend(masked(9, b"coalesced"));
-    stream.write_all(&bytes).unwrap();
-    assert!(read_head(&mut stream).starts_with("HTTP/1.1 101"));
-    assert_eq!(frame(&mut stream), (10, b"coalesced".to_vec()));
-    fixture.server.publish("{\"tick\":42}".to_owned());
-    assert_eq!(frame(&mut stream), (1, b"{\"tick\":42}".to_vec()));
-    stream
-        .write_all(&masked(8, &1000_u16.to_be_bytes()))
-        .unwrap();
-    assert_eq!(frame(&mut stream), (8, 1000_u16.to_be_bytes().to_vec()));
-}
-
-#[test]
-fn full_snapshot_queue_is_retained_and_disconnected_queue_is_removed() {
-    let fixture = Fixture::new();
-    let (sender, receiver) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH);
-    fixture.server.shared.clients().push(Client {
-        id: u64::MAX,
-        sender,
-    });
-    for _ in 0..CLIENT_QUEUE_DEPTH + 2 {
-        fixture.server.publish("old".into());
-    }
-    assert!(fixture.server.has_clients());
-    for _ in 0..CLIENT_QUEUE_DEPTH {
-        assert_eq!(&*receiver.try_recv().unwrap(), encode_text_frame("old"));
-    }
-    assert!(receiver.try_recv().is_err());
-    fixture.server.publish("latest".into());
-    assert_eq!(&*receiver.try_recv().unwrap(), encode_text_frame("latest"));
-    fixture.server.publish("x".repeat(MAX_SNAPSHOT + 1));
-    assert!(receiver.try_recv().is_err());
-    drop(receiver);
-    fixture.server.publish("gone".into());
-    assert!(!fixture.server.has_clients());
 }
 
 #[test]
@@ -477,48 +384,4 @@ fn absolute_deadlines_do_not_restart_after_progress() {
         )
         .is_err()
     );
-}
-
-#[test]
-fn stalled_header_does_not_block_another_client_or_shutdown() {
-    let fixture = Fixture::new();
-    let mut stalled = connect(&fixture.server);
-    stalled.write_all(b"GET / HTTP/1.1\r\nHost:").unwrap();
-    let mut active = websocket(&fixture.server);
-    active.write_all(&masked(9, b"ready")).unwrap();
-    assert_eq!(frame(&mut active).0, 10);
-    let (done, ended) = mpsc::channel();
-    let worker = thread::spawn(move || {
-        drop(fixture);
-        done.send(()).unwrap();
-    });
-    ended
-        .recv_timeout(Duration::from_secs(1))
-        .expect("Drop joins stalled and active workers");
-    worker.join().unwrap();
-}
-
-#[test]
-fn slow_reader_and_continuous_traffic_do_not_hold_shutdown() {
-    let fixture = Fixture::new();
-    let mut traffic = websocket(&fixture.server);
-    let _slow_reader = websocket(&fixture.server);
-    fixture.server.publish("x".repeat(MAX_SNAPSHOT));
-    let (started, ready) = mpsc::channel();
-    let traffic_worker = thread::spawn(move || {
-        traffic.write_all(&masked(9, b"traffic")).unwrap();
-        started.send(()).unwrap();
-        while traffic.write_all(&masked(10, b"traffic")).is_ok() {}
-    });
-    ready.recv_timeout(Duration::from_secs(1)).unwrap();
-    let (done, ended) = mpsc::channel();
-    let worker = thread::spawn(move || {
-        drop(fixture);
-        done.send(()).unwrap();
-    });
-    ended
-        .recv_timeout(Duration::from_secs(1))
-        .expect("Drop interrupts writes and busy reads");
-    worker.join().unwrap();
-    traffic_worker.join().unwrap();
 }

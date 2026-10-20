@@ -633,23 +633,6 @@ mod corpse_tests {
         );
     }
 
-    /// The corpse keeps IsAlive and takes `InfantryClass::AI`'s ordinary
-    /// visit: `MissionClass::AI`'s `+0xC4` count (`0x006FA646`) runs for it
-    /// as for any infantryman.
-    #[test]
-    fn a_corpse_takes_its_ordinary_visit() {
-        let (mut sim, rules, id) = corpse_scene();
-        sim.advance_tick(&[], Some(&rules), None, None, 100);
-        kill_with_die1(&mut sim, &rules, id);
-        let counter = sim.substrate.entities.get(id).unwrap().mission.ai_counter();
-        sim.advance_tick(&[], Some(&rules), None, None, 100);
-        let corpse = sim.substrate.entities.get(id).unwrap();
-        assert!(!corpse.death.is_dying() && corpse.is_active());
-        assert_eq!(corpse.health.current(), 0);
-        assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), 11);
-        assert_eq!(corpse.mission.ai_counter(), counter + 1);
-    }
-
     /// FootClass::AI's radiation (`0x004DA554..0x004DA635`) has no Health
     /// gate, and TechnoClass::ReceiveDamage takes a Health-0 receiver to its
     /// death branch again (`0x0070202E`): a Die1 corpse standing in

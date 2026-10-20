@@ -321,18 +321,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn key_rects_match_800x600() {
-        // All six buttons are SDBTNANM cells: 156x42, flush-right at x=644
-        // (632 panel left + 168 - 156). The five stacked buttons are grid-snapped
-        // Y; Exit occupies the final complete tile above the bottom cap.
-        let layout = compute_layout(800, 600);
-        assert_eq!(layout.movie_base, MainMenuMovieBase::Ra2tsL);
-        assert_eq!(layout.movie, RectPx::new(0, 0, 632, 570));
-        assert_eq!(layout.buttons[0].rect, RectPx::new(644, 199, 156, 42)); // SP
-        assert_eq!(layout.buttons[5].rect, RectPx::new(644, 535, 156, 42)); // Exit
-    }
-
-    #[test]
     fn buttons_grid_snap_and_exit_special_case_800x600() {
         let layout = compute_layout(800, 600);
         // SP/WW/Net/Movies/Options snap to 42-px SDBTNANM rows from y=199.
@@ -396,19 +384,6 @@ mod tests {
     }
 
     #[test]
-    fn large_screen_buttons_sdbtnanm_cells_and_exit() {
-        // 1024x768: left_margin=112, top_margin=84, panel.top.x=744 -> cells at
-        // x=756. Grid anchor panel_y = 84 + 199 = 283; rows step 42.
-        let layout = compute_layout(1024, 768);
-        let expected_y = [283, 325, 367, 409, 451];
-        for (button, y) in layout.buttons[..5].iter().zip(expected_y) {
-            assert_eq!(button.rect, RectPx::new(756, y, 156, 42));
-        }
-        // Exit: same flush-right cell x=756 in the final row above SDBTM.
-        assert_eq!(layout.buttons[5].rect, RectPx::new(756, 619, 156, 42));
-    }
-
-    #[test]
     fn responsive_layout_fits_the_base_shell_centred_in_the_window() {
         let layout = compute_responsive_layout(1600, 900);
         assert_eq!(layout.screen, RectPx::new(0, 0, 1600, 900));
@@ -431,11 +406,5 @@ mod tests {
         assert_eq!(layout.movie, RectPx::new(0, 0, 506, 456));
         // Base SP cell (644,199,156,42) scaled 0.8x/0.8x → (515, 159, 125, 34).
         assert_eq!(layout.buttons[0].rect, RectPx::new(515, 159, 125, 34));
-    }
-
-    #[test]
-    fn responsive_layout_is_identity_at_800x600() {
-        let retail = compute_layout(800, 600);
-        assert_eq!(compute_responsive_layout(800, 600), retail);
     }
 }

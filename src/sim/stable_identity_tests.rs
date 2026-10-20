@@ -21,8 +21,8 @@ use crate::sim::world::Simulation;
 fn terrain(stable_id: u64) -> TerrainObjectState {
     {
         let mut terrain = TerrainObjectState::for_test(stable_id, InternedId::from_index(0), 3, 4);
-        terrain.health = 10;
-        terrain.max_health = 10;
+        terrain.set_health_for_test(10);
+        terrain.set_max_health_for_test(10);
         terrain
     }
 }
@@ -83,8 +83,8 @@ fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
         1
     );
     let terrain_id = *sim
-        .production
         .terrain_objects
+        .objects()
         .keys()
         .next()
         .expect("constructed terrain");
@@ -120,12 +120,7 @@ fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
 
     assert_eq!(restored.state_hash(), hash_before);
     assert!(restored.substrate.entities.contains(entity_id));
-    assert!(
-        restored
-            .production
-            .terrain_objects
-            .contains_key(&terrain_id)
-    );
+    assert!(restored.terrain_objects.objects().contains_key(&terrain_id));
     assert_eq!(
         restored.projectiles.get(projectile_id).unwrap().id,
         projectile_id
@@ -145,7 +140,10 @@ fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
 #[test]
 fn gsi_05_01_restore_rejects_zero_ids_in_each_added_store() {
     let mut terrain_sim = Simulation::new();
-    terrain_sim.production.terrain_objects.insert(0, terrain(0));
+    terrain_sim
+        .terrain_objects
+        .objects_mut_for_test()
+        .insert(0, terrain(0));
     assert_eq!(
         terrain_sim.restore_after_snapshot_load(),
         Err(SnapshotRestoreError::ReservedObjectId {
@@ -184,8 +182,8 @@ fn gsi_05_01_restore_rejects_mismatch_duplicate_and_counter_behind() {
     let mut mismatch = Simulation::new();
     let registry_id = mismatch.allocate_stable_id();
     mismatch
-        .production
         .terrain_objects
+        .objects_mut_for_test()
         .insert(registry_id, terrain(registry_id + 1));
     assert_eq!(
         mismatch.restore_after_snapshot_load(),

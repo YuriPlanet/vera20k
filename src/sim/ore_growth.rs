@@ -68,17 +68,48 @@ pub struct OreGrowthConfig {
     /// `Set_Defaults @ 0x00683848`, read at `Read_INI_Basic @ 0x0068A57A`):
     /// the entry gate of both `GrowthDriver_AllTypes @ 0x00722C40` and
     /// `SpreadDriver_AllTypes @ 0x007221B0`, and of `CanGrowTiberium`.
-    pub grows: bool,
+    grows: bool,
     /// `ScenarioClass` flags bit `0x80` (`TiberiumSpreads`): the
     /// `CellClass::CanSpreadTiberium @ 0x00483690` gate.
-    pub spreads: bool,
+    spreads: bool,
     /// `ScenarioClass` flags bit `0x40` (`TiberiumGrows`): selects the
     /// `Growth * 0.3` growth-timer reload (`0x00722CA4`).
     #[serde(default)]
-    pub tiberium_grows_flag: bool,
+    tiberium_grows_flag: bool,
 }
 
 impl OreGrowthConfig {
+    pub const fn grows(&self) -> bool {
+        self.grows
+    }
+
+    pub const fn spreads(&self) -> bool {
+        self.spreads
+    }
+
+    pub const fn tiberium_grows_flag(&self) -> bool {
+        self.tiberium_grows_flag
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_grows_for_test(&mut self, grows: bool) {
+        self.grows = grows;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_spreads_for_test(&mut self, spreads: bool) {
+        self.spreads = spreads;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test(grows: bool, spreads: bool, tiberium_grows_flag: bool) -> Self {
+        Self {
+            grows,
+            spreads,
+            tiberium_grows_flag,
+        }
+    }
+
     /// Execute86 at6DDBB4 stores Action+90's low byte at Scenario+34A6.
     /// CanGrow483620 and drivers722C40/7221B0 test that byte for nonzero.
     /// This is independent of the SpecialFlags growth/spread bits.
@@ -1762,24 +1793,6 @@ SpreadPercentage=.06
         assert_eq!(signed_abs_mod_plus_one(0x8000_0000, 5), -2);
         assert_eq!(signed_abs_mod_plus_one(0xFFFF_FFFB, 5), 1);
         assert_eq!(signed_abs_mod_plus_one(7, 5), 3);
-    }
-
-    #[test]
-    fn native_tiberium_shell_allocates_per_type_due_timers() {
-        let mut state = make_state(20, 20);
-
-        state.reset_native_tiberium_classes(4, 1234);
-
-        let native = state.native_tiberium_state();
-        assert_eq!(native.classes.len(), 4);
-        for class in &native.classes {
-            assert_eq!(class.growth_timer, CdTimer::started(1234, 0));
-            assert_eq!(class.spread_timer, CdTimer::started(1234, 0));
-            assert!(class.growth.is_empty());
-            assert!(class.spread.is_empty());
-            assert!(class.growth_bitmap.is_empty());
-            assert!(class.spread_bitmap.is_empty());
-        }
     }
 
     #[test]

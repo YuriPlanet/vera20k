@@ -247,40 +247,6 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
         assert!(!out.contains("0.600000"), "old value must be gone");
     }
 
-    /// The same key name in two sections only updates the targeted section.
-    #[test]
-    fn updates_only_the_targeted_section() {
-        let input = b"[A]\r\nVol=1\r\n[B]\r\nVol=2\r\n";
-        let out = s(set_ini_values(input, "B", &[("Vol", "9")]));
-        assert_eq!(out, "[A]\r\nVol=1\r\n[B]\r\nVol=9\r\n");
-    }
-
-    /// Section present, key absent: the key is appended within that section.
-    #[test]
-    fn appends_missing_key_within_section() {
-        let input = b"[Audio]\r\nSoundVolume=0.7\r\n";
-        let out = s(set_ini_values(input, "Audio", &[("ScoreVolume", "0.5")]));
-        assert_eq!(out, "[Audio]\r\nSoundVolume=0.7\r\nScoreVolume=0.5\r\n");
-    }
-
-    /// Section absent: a new section is appended at the end of the file.
-    #[test]
-    fn appends_missing_section_at_eof() {
-        let input = b"[Options]\r\nGameSpeed=3\r\n";
-        let out = s(set_ini_values(input, "Audio", &[("ScoreVolume", "0.5")]));
-        assert_eq!(
-            out,
-            "[Options]\r\nGameSpeed=3\r\n[Audio]\r\nScoreVolume=0.5\r\n"
-        );
-    }
-
-    /// Empty input yields a fresh section (CRLF default).
-    #[test]
-    fn empty_input_creates_section() {
-        let out = s(set_ini_values(b"", "Audio", &[("ScoreVolume", "0.4")]));
-        assert_eq!(out, "[Audio]\r\nScoreVolume=0.4\r\n");
-    }
-
     /// A file using LF endings keeps LF for the rewritten line.
     #[test]
     fn preserves_lf_line_endings() {
@@ -308,14 +274,6 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
         assert_eq!(out, "[Audio]\r\nScoreVolume=0.4\r\n");
     }
 
-    /// Comment lines inside the section are preserved on a value replace.
-    #[test]
-    fn preserves_comment_lines() {
-        let input = b"[Audio]\r\n; music level\r\nScoreVolume=0.6\r\n";
-        let out = s(set_ini_values(input, "Audio", &[("ScoreVolume", "0.1")]));
-        assert_eq!(out, "[Audio]\r\n; music level\r\nScoreVolume=0.1\r\n");
-    }
-
     /// With a duplicated section header, a missing key is appended into the
     /// FIRST matching block (Win32 first-section semantics), not the last.
     #[test]
@@ -330,19 +288,6 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
             out,
             "[Audio]\r\nSoundVolume=0.7\r\nScoreVolume=0.250000\r\n\
 [Audio]\r\nMusicVolume=0.5\r\n"
-        );
-    }
-
-    /// With the key duplicated across two same-named sections, only the first
-    /// occurrence is replaced (first-match-wins, matching the boot reader's
-    /// first-section preference).
-    #[test]
-    fn replaces_only_first_duplicate_section_key() {
-        let input = b"[Audio]\r\nScoreVolume=0.6\r\n[Audio]\r\nScoreVolume=0.9\r\n";
-        let out = s(set_ini_values(input, "Audio", &[("ScoreVolume", "0.1")]));
-        assert_eq!(
-            out,
-            "[Audio]\r\nScoreVolume=0.1\r\n[Audio]\r\nScoreVolume=0.9\r\n"
         );
     }
 

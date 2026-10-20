@@ -30,7 +30,8 @@
 //!   weakest quadrant (`0x00507A0B..0x00507A20`, `sim::ai_base_site`), for the
 //!   node's own type when it has one (the WallTower), else the pick. No site
 //!   fails the choice.
-//! - The writes ([`write_nodes`], `0x00507A4C..0x00507B7B`).
+//! - The writes ([`crate::sim::base_plan::BasePlanState::place_defense`],
+//!   `0x00507A4C..0x00507B7B`).
 //!
 //! The grids, the threat shares (`+0x1609C..+0x160A4`, which only this call
 //! writes before reading) and the grid pointer (`+0x16060`, cleared on every
@@ -62,7 +63,7 @@
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_buildable::owner_allows;
-use crate::sim::base_plan::{BasePlanNode, pack_base_plan_cell};
+use crate::sim::base_plan::pack_base_plan_cell;
 use crate::sim::base_plan_generation::prerequisites_satisfied;
 use crate::sim::house_tracking::ForceValues;
 use crate::sim::intern::InternedId;
@@ -340,9 +341,9 @@ impl<'r> DefenseChoice<'r> {
         index: usize,
     ) -> Option<Self> {
         let house = sim.houses.get(&owner)?;
-        let node_type = house.base_plan.nodes.get(index)?.type_or_control;
+        let node_type = house.base_plan().nodes().get(index)?.type_or_control;
         let buildings = house
-            .base_projection
+            .base_projection()
             .buildings()
             .iter()
             .filter_map(|&id| {
@@ -359,21 +360,21 @@ impl<'r> DefenseChoice<'r> {
             sim.interner.resolve(house.house_type_id()),
         );
         let enemy = house
-            .enemy_house
+            .enemy_house()
             .and_then(|enemy| sim.houses.get(&enemy))
-            .map(|enemy| enemy.tracking.force_values());
+            .map(|enemy| enemy.tracking().force_values());
         let fudge = house.difficulty_value(&rules.general.ai_force_prediction_fudge);
-        let (x, y) = house.base_plan_center;
+        let (x, y) = house.base_plan_center();
         Some(Self {
             rules,
             center: (x as i16, y as i16),
-            bounds: house.base_reservation.bounds(),
+            bounds: house.base_reservation().bounds(),
             buildings,
-            side_index: house.side_index,
+            side_index: house.side_index(),
             country_bit,
-            tech_level: house.tech_level,
+            tech_level: house.tech_level(),
             candidate_tech_levels: rules
-                .base_defense_types(house.side_index)
+                .base_defense_types(house.side_index())
                 .iter()
                 .map(|id| {
                     rules
@@ -551,33 +552,6 @@ fn weighted_pick<'r>(
     })
 }
 
-/// `0x00507A4C..0x00507B7B`: a `-1` node becomes the defense at `site`; a
-/// WallTower node takes `site`, and hands the defense and `site` to the next
-/// node when that is `-1`.
-pub(crate) fn write_nodes(
-    nodes: &mut [BasePlanNode],
-    index: usize,
-    defense: &ObjectType,
-    site: (i16, i16),
-) {
-    let packed = pack_base_plan_cell(i32::from(site.0), i32::from(site.1));
-    let Some(node) = nodes.get_mut(index) else {
-        return;
-    };
-    if node.type_or_control < 0 {
-        node.type_or_control = defense.base_plan_type_index;
-        node.packed_cell = packed;
-        return;
-    }
-    node.packed_cell = packed;
-    if let Some(next) = nodes.get_mut(index + 1)
-        && next.type_or_control == -1
-    {
-        next.type_or_control = defense.base_plan_type_index;
-        next.packed_cell = packed;
-    }
-}
-
 /// `HouseClass::AI_ChooseNextProduction @ 0x00506EF0` for house `owner`'s
 /// node at `index`, without a perimeter vector: whether the node now holds
 /// a defense (or the WallTower its cell).
@@ -610,7 +584,11 @@ pub(crate) fn choose_next_production(
         return false;
     }
     if let Some(house) = sim.houses.get_mut(&owner) {
-        write_nodes(&mut house.base_plan.nodes, index, pick.defense, site);
+        house.base_plan_mut().place_defense(
+            index,
+            pick.defense.base_plan_type_index,
+            pack_base_plan_cell(i32::from(site.0), i32::from(site.1)),
+        );
     }
     true
 }

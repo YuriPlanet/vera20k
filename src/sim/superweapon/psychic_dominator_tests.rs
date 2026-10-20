@@ -435,7 +435,7 @@ fn update_lighting_matches_native() {
 
         sim.update_lighting();
 
-        let lighting = &sim.session.lighting();
+        let lighting = sim.session.lighting();
         assert_eq!(lighting.target_ambient(), int(&row["target"]), "{row}");
         let recalc = &row["events"][0];
         assert_eq!(recalc[0], "recalc");
@@ -499,7 +499,7 @@ fn ambient_step_matches_native() {
 
         sim.tick_scenario_lighting_transition(&rules);
 
-        let lighting = &sim.session.lighting();
+        let lighting = sim.session.lighting();
         assert_eq!(
             (lighting.target_ambient(), lighting.current_ambient()),
             (int(&row["target_after"]), int(&row["current_after"])),
@@ -819,7 +819,10 @@ fn retail_computer_aims_its_dominator_at_the_group() {
     };
     let (rules, mut sim, americans) = world_with(rules, 64, &[]);
     let russians: InternedId = sim.interner.intern("Russians");
-    sim.houses.get_mut(&russians).unwrap().enemy_house = Some(americans);
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_enemy_house_for_test(Some(americans));
     let lone = spawn(&mut sim, &rules, "MTNK", "Americans", (20, 20));
     let group = [
         spawn(&mut sim, &rules, "E1", "Americans", (40, 40)),

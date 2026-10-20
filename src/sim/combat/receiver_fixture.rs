@@ -282,7 +282,7 @@ fn with_world<R>(
     }
     if let Some(area) = terrain_area.as_deref_mut() {
         area.swap_authority(
-            &mut world.production,
+            &mut world.terrain_objects,
             &mut world.substrate.raw_cell_occupation,
         );
         (run.navigation_changed_cells, run.finalizing_terrain) = area.take_fixture_progress();
@@ -316,7 +316,7 @@ fn with_world<R>(
     }
     if let Some(area) = terrain_area {
         area.swap_authority(
-            &mut world.production,
+            &mut world.terrain_objects,
             &mut world.substrate.raw_cell_occupation,
         );
         area.restore_fixture_progress(run.navigation_changed_cells, run.finalizing_terrain);
@@ -703,8 +703,8 @@ pub(crate) fn emit_projectile_detonations(
             world.session.set_no_damage_for_test(scenario_no_damage);
             world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
             if let Some(view) = terrain_objects {
-                world.production.terrain_objects = view.objects.clone();
-                world.production.terrain_object_cells = view.cells.clone();
+                *world.terrain_objects.objects_mut_for_test() = view.objects.clone();
+                *world.terrain_objects.cell_index_mut_for_test() = view.cells.clone();
             }
             world.house_alliances = house_alliances.clone();
             world.bridge_state = bridge_state.cloned();
@@ -763,8 +763,8 @@ pub(crate) fn resolve_attacker_fire(
             world.session.set_no_damage_for_test(scenario_no_damage);
             world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
             if let Some(view) = terrain_objects {
-                world.production.terrain_objects = view.objects.clone();
-                world.production.terrain_object_cells = view.cells.clone();
+                *world.terrain_objects.objects_mut_for_test() = view.objects.clone();
+                *world.terrain_objects.cell_index_mut_for_test() = view.cells.clone();
             }
             world.session.set_binary_frame_for_test(binary_frame);
             world.receiver_fixture.as_mut().unwrap().current_tick = u64::from(binary_frame);

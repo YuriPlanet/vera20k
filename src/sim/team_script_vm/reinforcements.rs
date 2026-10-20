@@ -505,7 +505,7 @@ impl Simulation {
                 return false;
             };
             let (authored, waypoint) = self.houses.get(&owner).map_or((-1, 0), |house| {
-                (house.authored_edge(), house.waypoint_edge)
+                (house.authored_edge(), house.waypoint_edge())
             });
             let Some(cell) =
                 self.aircraft_edge_cell(Edge::authored_or_waypoint(authored, waypoint))

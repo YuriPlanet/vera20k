@@ -1,7 +1,7 @@
 //! Live CellClass object-list and overlay queries shared by bridge, debris,
 //! cell-entry and movement callbacks.
 //!
-//! Occupancy owns entity list order; ProductionState owns Terrain membership;
+//! Occupancy owns entity list order; TerrainObjectStore owns Terrain membership;
 //! OverlayGrid owns a real cell's overlay. This view adds no stored links.
 //! Callers choose the native before/after-hit continuation point
 //! (BlowUpBridge47DD96 versus AnimClass423A83).
@@ -51,7 +51,7 @@ impl Simulation {
             cell.0,
             cell.1,
             layer,
-            self.production.terrain_object_cells.get(&cell).copied(),
+            self.terrain_objects.cell_index().get(&cell).copied(),
         )
     }
 
@@ -70,9 +70,9 @@ impl Simulation {
                 entity.lifecycle.cell_marked().then_some((cell, layer))
             }
             CellObjectMember::Terrain(id) => {
-                let terrain = self.production.terrain_objects.get(&id)?;
+                let terrain = self.terrain_objects.objects().get(&id)?;
                 (terrain.is_live()
-                    && self.production.terrain_object_cells.get(&terrain.cell()) == Some(&id))
+                    && self.terrain_objects.cell_index().get(&terrain.cell()) == Some(&id))
                 .then_some((terrain.cell(), MovementLayer::Ground))
             }
         }

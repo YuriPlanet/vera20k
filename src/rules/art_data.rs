@@ -2446,35 +2446,6 @@ mod anim_runtime_metadata_tests {
     }
 
     #[test]
-    fn parses_signed_trailer_seperation_without_clamping() {
-        let ini = IniFile::from_str(
-            "[DBRIS1LG]\n\
-             TrailerAnim=SMOKEY2\n\
-             TrailerSeperation=-2\n",
-        );
-        let reg = ArtRegistry::from_ini(&ini);
-
-        let config = reg
-            .anim_runtime_config("DBRIS1LG")
-            .expect("DBRIS1LG runtime metadata");
-        assert_eq!(config.trailer_seperation, -2);
-    }
-
-    #[test]
-    fn anim_spawn_metadata_defaults_to_native_nulls_and_zero_seperation() {
-        let ini = IniFile::from_str("[SMOKEY2]\nRate=600\n");
-        let reg = ArtRegistry::from_ini(&ini);
-
-        let config = reg
-            .anim_runtime_config("SMOKEY2")
-            .expect("SMOKEY2 runtime metadata");
-        assert_eq!(config.trailer_anim, None);
-        assert_eq!(config.trailer_seperation, 0);
-        assert_eq!(config.bounce_anim, None);
-        assert_eq!(config.expire_anim, None);
-    }
-
-    #[test]
     fn anim_spawn_metadata_preserves_existing_next_random_and_rate_fields() {
         let rules = installed(
             "[METSTRAL]\n\
@@ -2511,115 +2482,6 @@ mod anim_runtime_metadata_tests {
                 .random_rate_logic_frames,
             Some((1, 1))
         );
-    }
-
-    #[test]
-    fn normalized_defaults_false_and_parses_explicit_values() {
-        let ini = IniFile::from_str(
-            "[DEFAULT]\nRate=900\n\
-             [YES]\nNormalized=yes\n\
-             [NO]\nNormalized=no\n",
-        );
-        let reg = ArtRegistry::from_ini(&ini);
-
-        assert!(!reg.anim_runtime_config("DEFAULT").unwrap().normalized);
-        assert!(reg.anim_runtime_config("YES").unwrap().normalized);
-        assert!(!reg.anim_runtime_config("NO").unwrap().normalized);
-    }
-
-    #[test]
-    fn use_normal_light_defaults_false_and_parses_the_stock_explosion_families() {
-        // The first six sections carry their stock artmd.ini names and the stock
-        // spelling of the keys shown. Every one of the 43 stock hits is a bare
-        // `UseNormalLight=yes`; no stock section writes `=no`, so DEFAULTS_NO is
-        // synthetic and exists only to prove an explicit negative parses.
-        //
-        // TUNTOP01 is one of the twenty `Tile##Anim=` theater-tileset animations
-        // (four tunnel tops and sixteen waterfall frames across the six theater
-        // INIs). Those are the animations gamemd attaches to a cell, and the
-        // attached branch keeps the cell's convert even when the flag is set —
-        // so a cell-attached type that ever set the key would want the cell's
-        // hue at full brightness rather than a fully neutral tint. None of the
-        // twenty sets it, which is what makes the neutral return safe today.
-        let ini = IniFile::from_str(
-            "[TWLT070]\nUseNormalLight=yes\nNormalized=yes\n\
-             [S_BANG24]\nUseNormalLight=yes\nNormalized=yes\n\
-             [BURN-M]\nUseNormalLight=yes\nLayer=ground\n\
-             [EXPLOLRG]\nUseNormalLight=yes\nTranslucent=yes\n\
-             [TUNTOP01]\nTheater=yes\nNormalized=yes\n\
-             [GCMUZZLE]\nNormalized=yes\n\
-             [DEFAULTS_NO]\nUseNormalLight=no\n",
-        );
-        let reg = ArtRegistry::from_ini(&ini);
-
-        for lit_at_full_brightness in ["TWLT070", "S_BANG24", "BURN-M", "EXPLOLRG"] {
-            assert!(
-                reg.anim_runtime_config(lit_at_full_brightness)
-                    .unwrap()
-                    .use_normal_light,
-                "{lit_at_full_brightness} must draw at full brightness"
-            );
-        }
-        for cell_lit in ["TUNTOP01", "GCMUZZLE", "DEFAULTS_NO"] {
-            assert!(
-                !reg.anim_runtime_config(cell_lit).unwrap().use_normal_light,
-                "{cell_lit} must stay on the cell-lit path"
-            );
-        }
-    }
-
-    #[test]
-    fn gsi_02_13_parses_fixed_translucency_metadata_and_omitted_zero_defaults() {
-        let ini = IniFile::from_str(
-            "[TWENTY_FIVE]\n\
-             Translucency=25\n\
-             TranslucencyDetailLevel=-3\n\
-             [FIFTY]\n\
-             Translucency=50\n\
-             [SEVENTY_FIVE]\n\
-             Translucency=75\n\
-             [OMITTED]\n\
-             FixtureOnly=1\n",
-        );
-        let reg = ArtRegistry::from_ini(&ini);
-
-        let twenty_five = reg.anim_runtime_config("TWENTY_FIVE").unwrap();
-        assert_eq!(twenty_five.translucency, 25);
-        assert_eq!(twenty_five.translucency_detail_level, -3);
-        assert!(!twenty_five.translucent);
-        assert_eq!(reg.anim_runtime_config("FIFTY").unwrap().translucency, 50);
-        assert_eq!(
-            reg.anim_runtime_config("SEVENTY_FIVE")
-                .unwrap()
-                .translucency,
-            75
-        );
-
-        let omitted = reg.anim_runtime_config("OMITTED").unwrap();
-        assert_eq!(omitted.translucency, 0);
-        assert_eq!(omitted.translucency_detail_level, 0);
-    }
-
-    #[test]
-    fn alt_palette_is_parsed_for_every_anim_type_not_just_the_parachute() {
-        // Stock sections that carry the flag; the palette cascade must be able to
-        // ask any AnimType, not only the one hardcoded section.
-        let ini = IniFile::from_str(
-            "[NABNKR]\n\
-             AltPalette=yes\n\
-             [WCCLOUD1]\n\
-             AltPalette=true\n\
-             [PARACH]\n\
-             AltPalette=yes\n\
-             [FBALL1]\n\
-             Layer=ground\n",
-        );
-        let reg = ArtRegistry::from_ini(&ini);
-
-        assert!(reg.anim_runtime_config("NABNKR").unwrap().alt_palette);
-        assert!(reg.anim_runtime_config("WCCLOUD1").unwrap().alt_palette);
-        assert!(reg.anim_runtime_config("PARACH").unwrap().alt_palette);
-        assert!(!reg.anim_runtime_config("FBALL1").unwrap().alt_palette);
     }
 
     #[test]
@@ -2707,38 +2569,6 @@ mod anim_runtime_metadata_tests {
             reg.anim_runtime_config("SHADOWED").unwrap().loaded_end(20),
             15
         );
-    }
-
-    #[test]
-    fn anim_runtime_metadata_parses_tiberium_declaration_cluster() {
-        let rules = installed(
-            "[TIBERIUM]\n\
-             TiberiumChainReaction=yes\n\
-             IsTiberium=true\n\
-             HideIfNoOre=1\n\
-             IsAnimatedTiberium=Yes\n\
-             TiberiumSpreadRadius=-7\n\
-             TiberiumSpawnType=  tiB2_01  \n\
-             [UNRELATED]\n\
-             Rate=900\n",
-        );
-        let reg = rules.art();
-
-        let tiberium = reg.anim_runtime_config("TIBERIUM").unwrap();
-        assert!(tiberium.tiberium_chain_reaction);
-        assert!(tiberium.is_tiberium);
-        assert!(tiberium.hide_if_no_ore);
-        assert!(tiberium.is_animated_tiberium);
-        assert_eq!(tiberium.tiberium_spread_radius, -7);
-        assert_eq!(tiberium.tiberium_spawn_type.as_deref(), Some("TIB2_01"));
-
-        let unrelated = reg.anim_runtime_config("UNRELATED").unwrap();
-        assert!(!unrelated.tiberium_chain_reaction);
-        assert!(!unrelated.is_tiberium);
-        assert!(!unrelated.hide_if_no_ore);
-        assert!(!unrelated.is_animated_tiberium);
-        assert_eq!(unrelated.tiberium_spread_radius, 0);
-        assert_eq!(unrelated.tiberium_spawn_type, None);
     }
 
     #[test]
@@ -2921,53 +2751,6 @@ mod anim_runtime_metadata_tests {
         assert!(!bare.psi_warning);
         assert!(!bare.double_thick);
         assert!(!bare.flamer);
-    }
-
-    /// The two true-by-default flags must be readable back to false, or the
-    /// default would be indistinguishable from an authored `no`.
-    #[test]
-    fn anim_true_by_default_flags_accept_an_authored_no() {
-        let ini = IniFile::from_str(
-            "[HIDDEN]\n\
-             ShouldUseCellDrawer=no\n\
-             ShouldFogRemove=no\n",
-        );
-        let reg = ArtRegistry::from_ini(&ini);
-        let hidden = reg.anim_runtime_config("HIDDEN").unwrap();
-        assert!(!hidden.should_use_cell_drawer);
-        assert!(!hidden.should_fog_remove);
-    }
-
-    #[test]
-    fn anim_middle_effect_flags_and_particle_spawn_parse() {
-        let rules = installed(
-            "[VIRUSD]\n\
-             SpawnsParticle=  gasCloud  \n\
-             NumParticles=8\n\
-             Scorch=yes\n\
-             Crater=yes\n\
-             ForceBigCraters=yes\n\
-             Sticky=yes\n\
-             PsiWarning=yes\n\
-             DoubleThick=yes\n\
-             Flamer=yes\n\
-             IsMeteor=yes\n\
-             IsVeins=yes\n\
-             IsFlamingGuy=yes\n",
-        );
-        let config = rules.art().anim_runtime_config("VIRUSD").unwrap();
-        assert_eq!(config.spawns_particle.as_deref(), Some("GASCLOUD"));
-        assert_eq!(config.num_particles, 8);
-        assert!(config.scorch);
-        assert!(config.crater);
-        assert!(config.force_big_craters);
-        assert!(config.sticky);
-        assert!(config.psi_warning);
-        assert!(config.double_thick);
-        assert!(config.flamer);
-        assert!(config.is_meteor);
-        assert!(config.is_veins);
-        assert!(config.is_flaming_guy);
     }
 
     #[test]

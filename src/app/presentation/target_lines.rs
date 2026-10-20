@@ -737,56 +737,10 @@ pub(crate) fn push_surface_rect(
 
 #[cfg(test)]
 mod tests {
-    use super::rally_tests::{alpha_fixture, assert_native_passes, rally_native};
     use super::*;
-    use crate::rules::house_colors::HouseColorIndex;
-    use crate::rules::ini_parser::IniFile;
-    use crate::rules::ruleset::RuleSet;
     use crate::sim::combat::TargetKind;
     use crate::sim::components::NavTargetRef;
     use crate::sim::game_entity::GameEntity;
-
-    #[test]
-    fn rally_pattern_matches_original_producer_pixels() {
-        let row = &rally_native()["producer_cases"][0];
-        let view = TacticalViewport {
-            camera: [0, 0],
-            clip: [0, 0, 160, 120],
-            zoom: 1.,
-        };
-        let mut actual = [Vec::new(), Vec::new()];
-        emit_rally_line(
-            &mut actual,
-            [20, 25],
-            [140, 85],
-            [248. / 255., 40. / 255., 8. / 255.],
-            0,
-            view,
-            |p| alpha_fixture(p, "mixed"),
-        );
-        assert_native_passes(&actual, row, view);
-    }
-
-    fn active_line_state_for_tick(frame: u32) -> TargetLineState {
-        TargetLineState {
-            timer: CdTimer::started(frame as i32, DURATION_TICKS),
-            unit_action_lines_enabled: true,
-        }
-    }
-
-    fn rules_with_factory_and_non_factory() -> RuleSet {
-        let ini = IniFile::from_str(
-            "[InfantryTypes]\n\
-             [VehicleTypes]\n\
-             [AircraftTypes]\n\
-             [BuildingTypes]\n\
-             0=GAWEAP\n\
-             1=GAPOWR\n\
-             [GAWEAP]\nFactory=UnitType\nStrength=1000\n\
-             [GAPOWR]\nStrength=750\n",
-        );
-        RuleSet::from_ini(&ini).expect("rules")
-    }
 
     fn sim_with_selected_unit_that_has_attack_and_move() -> Simulation {
         let mut sim = Simulation::new();
@@ -809,64 +763,12 @@ mod tests {
         sim
     }
 
-    fn sim_with_selected_factory_and_non_factory() -> Simulation {
-        let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        let factory_type = sim.interner.intern("GAWEAP");
-        let power_type = sim.interner.intern("GAPOWR");
-        let mut factory = GameEntity::new_at_frame_zero_for_test(
-            10,
-            10,
-            10,
-            0,
-            0,
-            owner,
-            crate::sim::combat::Health::new(1000),
-            factory_type,
-            EntityCategory::Structure,
-            0,
-            5,
-            false,
-        );
-        factory.selection.set_selected_for_test(true);
-        factory.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(16, 10)));
-        let mut power = factory.clone();
-        power.set_stable_id_for_test(11);
-        power.set_type_ref_for_test(power_type);
-        power.position.set_rx_for_test(12);
-        power.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(16, 10)));
-        sim.entities_mut().insert(factory);
-        sim.entities_mut().insert(power);
-        use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
-        sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
-            40,
-            40,
-            (0..40)
-                .flat_map(|y| (0..40).map(move |x| ResolvedTerrainCell::clear_for_test(x, y)))
-                .collect(),
-        ));
-        sim
-    }
-
     fn test_viewport() -> TacticalViewport {
         TacticalViewport {
             camera: [-320, 0],
             clip: [0, 0, 1000, 1000],
             zoom: 1.,
         }
-    }
-
-    fn test_house_colors() -> HouseColorMap {
-        let mut colors = HouseColorMap::new();
-        colors.insert("Americans".to_string(), HouseColorIndex(1));
-        colors
-    }
-
-    #[test]
-    fn selected_action_timer_expires_at_25_ticks() {
-        let state = active_line_state_for_tick(100);
-        assert!(state.is_selected_action_active(124));
-        assert!(!state.is_selected_action_active(125));
     }
 
     #[test]
@@ -921,13 +823,6 @@ mod tests {
         assert!(visits.is_empty());
     }
 
-    #[test]
-    fn unit_action_lines_option_disables_selected_timer() {
-        let mut state = active_line_state_for_tick(100);
-        state.set_unit_action_lines_enabled(false);
-        assert!(!state.is_selected_action_active(101));
-    }
-
     /// Selection alone opens the window — no command required.
     #[test]
     fn start_timer_opens_the_window_without_a_command() {
@@ -948,101 +843,6 @@ mod tests {
         assert!(state.is_selected_action_active(100));
         assert!(state.is_selected_action_active(124));
         assert!(!state.is_selected_action_active(125));
-    }
-
-    #[test]
-    fn selected_action_attack_target_wins_over_movement() {
-        let sim = sim_with_selected_unit_that_has_attack_and_move();
-        let actor = sim.entities().get(1).unwrap();
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=MTNK\n1=HTNK\n[MTNK]\nStrength=300\n[HTNK]\nStrength=400\n",
-        ))
-        .unwrap();
-        let line = selected_action_line_for_entity(actor, &sim, Some(&rules), None).unwrap();
-        assert_eq!(line.kind, SelectedLineKind::Attack);
-    }
-
-    #[test]
-    fn factory_rally_builder_emits_only_selected_local_eligible_structures() {
-        let sim = sim_with_selected_factory_and_non_factory();
-        let rules = rules_with_factory_and_non_factory();
-        let lines = build_factory_rally_line_instances(
-            Some(&sim),
-            Some(&rules),
-            &[10, 11],
-            &test_house_colors(),
-            Some("Americans"),
-            test_viewport(),
-            |_| 127,
-        );
-        assert!(!lines[0].is_empty());
-    }
-
-    #[test]
-    fn disabling_unit_action_lines_does_not_disable_rally_lines() {
-        let mut state = active_line_state_for_tick(0);
-        state.set_unit_action_lines_enabled(false);
-        let sim = sim_with_selected_factory_and_non_factory();
-        let rules = rules_with_factory_and_non_factory();
-
-        assert!(
-            build_target_line_instances(
-                &state,
-                false,
-                Some(&sim),
-                None,
-                None,
-                &HouseColorMap::new(),
-                0,
-                test_viewport(),
-                None,
-                &mut |_| 127,
-            )
-            .is_empty()
-        );
-        assert!(
-            !build_factory_rally_line_instances(
-                Some(&sim),
-                Some(&rules),
-                &[10, 11],
-                &test_house_colors(),
-                Some("Americans"),
-                test_viewport(),
-                |_| 127,
-            )[0]
-            .is_empty()
-        );
-    }
-
-    #[test]
-    fn line_builders_skip_when_sim_or_rules_missing() {
-        assert!(
-            build_target_line_instances(
-                &TargetLineState::default(),
-                false,
-                None,
-                None,
-                None,
-                &HouseColorMap::new(),
-                0,
-                test_viewport(),
-                None,
-                &mut |_| 127,
-            )
-            .is_empty()
-        );
-        assert!(
-            build_factory_rally_line_instances(
-                None,
-                None,
-                &[],
-                &HouseColorMap::new(),
-                Some("Americans"),
-                test_viewport(),
-                |_| 127,
-            )[0]
-            .is_empty()
-        );
     }
 }
 

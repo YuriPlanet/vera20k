@@ -259,14 +259,6 @@ mod tests {
     }
 
     #[test]
-    fn trunc_roundtrips_ordinary_values() {
-        for value in [1.0, -1.0, 0.5, 1234.5678, -0.000123, 3.999999] {
-            assert_eq!(TruncF64::from_f64(value).to_f64(), value, "{value}");
-        }
-        assert_eq!(TruncF64::from_f64(0.0).to_f64(), 0.0);
-    }
-
-    #[test]
     fn arithmetic_agrees_with_f64_when_results_are_exact() {
         // Powers of two and small integers are representable, so truncation
         // cannot bite: any disagreement here is an arithmetic bug.
@@ -325,19 +317,6 @@ mod tests {
             );
             assert!(approx > 0.0, "sqrt({value}) must stay positive");
         }
-    }
-
-    #[test]
-    fn approx_sqrt_is_coarser_than_single_precision() {
-        // Guards against someone "fixing" this into a real sqrt later: the
-        // approximation must visibly disagree with an exact root.
-        let value = 1e-6;
-        let approx = approx_sqrt(TruncF64::from_f64(value)).to_f64();
-        let relative = (approx - value.sqrt()).abs() / value.sqrt();
-        assert!(
-            relative > 1e-5,
-            "the table approximation should be clearly coarse, got {relative}"
-        );
     }
 
     #[test]

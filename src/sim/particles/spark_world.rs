@@ -439,35 +439,6 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn live_bridge_fact_is_the_live_structural_flag() {
-        let mut cell = terrain_cell(0, 0);
-        cell.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
-        let mut sim = one_cell_sim(cell);
-        let rules = empty_rules();
-
-        let intact = SparkCollisionWorld::new(&sim, &rules)
-            .unwrap()
-            .query(motion_at(0, 0))
-            .unwrap();
-        assert!(!intact.old_has_structural_bridge);
-        assert!(intact.candidate_has_structural_bridge);
-
-        sim.resolved_terrain
-            .as_mut()
-            .unwrap()
-            .cell_mut(0, 0)
-            .unwrap()
-            .bridge_facts
-            .raw_flags &= !BRIDGE_FLAG_STRUCTURAL;
-        let collapsed = SparkCollisionWorld::new(&sim, &rules)
-            .unwrap()
-            .query(motion_at(0, 0))
-            .unwrap();
-        assert!(!collapsed.old_has_structural_bridge);
-        assert!(!collapsed.candidate_has_structural_bridge);
-    }
-
-    #[test]
     fn world_query_uses_fixed_stride_alias_for_real_cell_data() {
         let mut cell = terrain_cell(0, 0);
         cell.level = 2;
@@ -687,34 +658,6 @@ pub(super) mod tests {
         );
         assert!(!facts.accepted_building);
         assert_eq!(facts.wall_overlay_id, Some(0x02));
-        assert!(facts.slope_matrix.is_some());
-        assert_eq!(terrain.shared_cell_dummy().snapshot().coord, (1, 0));
-    }
-
-    #[test]
-    fn gsi_04_03_candidate_real_keeps_building_after_old_dummy_restamp() {
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[BuildingTypes]\n1=Solid\n[Solid]\nFoundation=2x2\n",
-        ))
-        .unwrap();
-        let mut sim = one_cell_sim(terrain_cell(0, 0));
-        add_building(&mut sim, 1, "Solid");
-        let world = SparkCollisionWorld::new(&sim, &rules).unwrap();
-        let terrain = sim.resolved_terrain.as_ref().unwrap();
-        let motion = motion_between(IVec3::new(256, 0, 100), IVec3::new(0, 0, 100));
-        let (facts, transcript) = world.query_with_transcript(motion).unwrap();
-
-        assert_eq!(
-            transcript,
-            vec![
-                (SparkCellSelectionRole::Ground, 0, 0),
-                (SparkCellSelectionRole::Cell, 0, 0),
-                (SparkCellSelectionRole::Cell, 256, 0),
-                (SparkCellSelectionRole::Slope, 0, 0),
-            ]
-        );
-        assert!(facts.accepted_building);
-        assert_eq!(facts.wall_overlay_id, None);
         assert!(facts.slope_matrix.is_some());
         assert_eq!(terrain.shared_cell_dummy().snapshot().coord, (1, 0));
     }

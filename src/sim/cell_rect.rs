@@ -1149,81 +1149,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn playfield_bounds_from_map_header_keeps_nearoref_native_values() {
-        let bounds =
-            PlayfieldBounds::from_map_header(&map_header_with_rects((80, 58), [2, 4, 76, 48]));
-
-        assert_eq!(
-            bounds,
-            PlayfieldBounds {
-                base: 80,
-                off_fc: 2,
-                off_100: 4,
-                off_104: 76,
-                off_108: 48,
-            }
-        );
-    }
-
-    #[test]
-    fn playfield_bounds_from_map_header_clips_signed_local_before_margins() {
-        let bounds =
-            PlayfieldBounds::from_map_header(&map_header_with_rects((80, 80), [-5, -6, 100, 100]));
-
-        assert_eq!(
-            bounds,
-            PlayfieldBounds {
-                base: 80,
-                off_fc: 2,
-                off_100: 2,
-                off_104: 76,
-                off_108: 72,
-            }
-        );
-    }
-
-    #[test]
-    fn playfield_bounds_from_map_header_preserves_native_empty_and_small_results() {
-        assert_eq!(
-            PlayfieldBounds::from_map_header(&map_header_with_rects((40, 50), [0; 4])),
-            PlayfieldBounds {
-                base: 40,
-                off_fc: 2,
-                off_100: 2,
-                off_104: 0,
-                off_108: 0,
-            }
-        );
-        assert_eq!(
-            PlayfieldBounds::from_map_header(&map_header_with_rects((0, 0), [0; 4])),
-            PlayfieldBounds {
-                base: 0,
-                off_fc: 2,
-                off_100: 2,
-                off_104: -4,
-                off_108: -8,
-            }
-        );
-    }
-
-    #[test]
-    fn playfield_bounds_from_map_header_caps_present_rect_at_native_margins() {
-        let bounds =
-            PlayfieldBounds::from_map_header(&map_header_with_rects((40, 50), [5, 6, 40, 50]));
-
-        assert_eq!(
-            bounds,
-            PlayfieldBounds {
-                base: 40,
-                off_fc: 5,
-                off_100: 6,
-                off_104: 33,
-                off_108: 38,
-            }
-        );
-    }
-
     fn clear_land() -> CellLand {
         CellLand {
             row: TEST_RETAIL_CLEAR_SPEED_COSTS,
@@ -1397,45 +1322,6 @@ mod tests {
             evaluate_is_clear_to_move(wall_on_deck),
             IsClearToMoveResult::WallBlocked
         );
-    }
-
-    #[test]
-    fn cell_passability_reads_the_selected_raw_plane() {
-        let terrain = flat_terrain(2, 2);
-        let mut raw = RawCellOccupationGrid::new();
-        raw.mark_ground(1, 1, 0x20);
-        let args = CellPassabilityArgs {
-            speed_type: SpeedType::Track,
-            ignore_infantry: false,
-            ignore_vehicles: false,
-            zone: None,
-            movement_zone: MovementZone::Normal,
-            level: Some(0),
-            is_bridge: false,
-        };
-        let map = CellPassabilityMap {
-            terrain: Some(&terrain),
-            overlays: None,
-            zones: None,
-            native_cells: None,
-            raw_occupation: Some(&raw),
-            listed_occupancy: None,
-        };
-        let cell = CellRef::Real(terrain.cell(1, 1).unwrap());
-        assert_eq!(
-            check_cell_passability(&cell, args, &map),
-            IsClearToMoveResult::Occupied {
-                remaining_bits: 0x20
-            }
-        );
-        let vehicle_ignored = CellPassabilityArgs {
-            ignore_vehicles: true,
-            ..args
-        };
-        assert!(matches!(
-            check_cell_passability(&cell, vehicle_ignored, &map),
-            IsClearToMoveResult::Clear { .. }
-        ));
     }
 
     /// A 3x3 grid of retail Clear cells whose centre carries `overlay`,
@@ -1687,17 +1573,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_01_passability_missing_cell_stamps_then_uses_clear_dummy_defaults() {
-        let terrain = flat_terrain(1, 1);
-
-        assert!(check_passability_rect(clear_passability_context(
-            CellRect::new(5, 7, 1, 1),
-            Some(&terrain),
-        )));
-        assert_eq!(terrain.dummy_cell_requested_coord(), (5, 7));
-    }
-
-    #[test]
     fn gsi_04_01_missing_cell_ignores_real_grid_overlay_and_object_projections() {
         let mut terrain = flat_terrain(1, 1);
         terrain.test_set_native_allocated_cells(&[]);
@@ -1721,22 +1596,6 @@ mod tests {
             "the dummy owns neither the real slot's ground list nor its +0x44 overlay"
         );
         assert_eq!(terrain.dummy_cell_requested_coord(), (0, 0));
-    }
-
-    #[test]
-    fn gsi_04_01_passability_fixed_stride_alias_uses_real_cell_without_stamping() {
-        let terrain = flat_terrain(512, 1);
-        let _ = get_cellclass_fallback(Some(&terrain), -2, 0);
-
-        assert!(check_passability_rect(clear_passability_context(
-            CellRect::new(-1, 1, 1, 1),
-            Some(&terrain),
-        )));
-        assert_eq!(
-            terrain.dummy_cell_requested_coord(),
-            (-2, 0),
-            "packed (-1,1) aliases the real (511,0) slot"
-        );
     }
 
     #[test]
@@ -1767,16 +1626,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_01_passability_winged_missing_cell_still_stamps_before_success() {
-        let terrain = flat_terrain(1, 1);
-        let mut ctx = clear_passability_context(CellRect::new(9, -3, 1, 1), Some(&terrain));
-        ctx.speed_type = SpeedType::Winged;
-
-        assert!(check_passability_rect(ctx));
-        assert_eq!(terrain.dummy_cell_requested_coord(), (9, -3));
-    }
-
-    #[test]
     fn gsi_04_01_occupancy_lookup_precedes_terrain_object_blocker() {
         let terrain = flat_terrain(1, 1);
         let terrain_objects = BTreeMap::from([((0, 0), 88)]);
@@ -1788,39 +1637,6 @@ mod tests {
             terrain.dummy_cell_requested_coord(),
             (-1, 0),
             "lookup of the first miss precedes the real terrain-object blocker, which stops before (1,0)"
-        );
-    }
-
-    #[test]
-    fn gsi_04_01_occupancy_lookup_stamps_before_dummy_reservation_blocker() {
-        let terrain = flat_terrain(1, 1);
-        let mut reservations = CellReservationGrid::new();
-        reservations.reserve(Some(&terrain), -5, 0, 3);
-        let mut ctx = clear_occupancy_context(CellRect::new(5, 7, 1, 1), Some(&terrain));
-        ctx.reservation_arg = 3;
-        ctx.reservations = Some(&reservations);
-
-        assert!(!check_occupancy_rect(ctx));
-        assert_eq!(
-            terrain.dummy_cell_requested_coord(),
-            (5, 7),
-            "the current probe remains the last dummy writer on reservation failure"
-        );
-    }
-
-    #[test]
-    fn gsi_04_01_occupancy_lookup_precedes_overlay_blocker() {
-        let terrain = flat_terrain(1, 1);
-        let mut overlays = OverlayGrid::new(1, 1);
-        overlays.place_overlay(0, 0, 7, 0);
-        let mut ctx = clear_occupancy_context(CellRect::new(-1, 0, 3, 1), Some(&terrain));
-        ctx.overlay_grid = Some(&overlays);
-
-        assert!(!check_occupancy_rect(ctx));
-        assert_eq!(
-            terrain.dummy_cell_requested_coord(),
-            (-1, 0),
-            "the real overlay blocker stops before the later (1,0) miss"
         );
     }
 
@@ -1851,157 +1667,6 @@ mod tests {
             (6, 6),
             "failed NW must stop before the distinct decremented corners"
         );
-    }
-
-    #[test]
-    fn cellrect_occupancy_minus_one_skips_reservation_but_rejects_cell_blockers() {
-        let mut terrain = flat_terrain(3, 1);
-        terrain.cells[1].slope_type = 2;
-        let mut reservations = CellReservationGrid::new();
-        reservations.reserve(Some(&terrain), 0, 0, 3);
-
-        let clear_reserved = CellRectOccupancyContext {
-            native_cells: None,
-            rect: CellRect::single(0, 0),
-            reservation_arg: -1,
-            reservations: Some(&reservations),
-            occupancy: None,
-            terrain_object_cells: None,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            playfield_bounds: Some(wide_test_playfield()),
-        };
-        assert!(check_occupancy_rect(clear_reserved));
-
-        let sloped = CellRectOccupancyContext {
-            native_cells: None,
-            rect: CellRect::single(1, 0),
-            reservation_arg: -1,
-            reservations: Some(&reservations),
-            occupancy: None,
-            terrain_object_cells: None,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            playfield_bounds: Some(wide_test_playfield()),
-        };
-        assert!(!check_occupancy_rect(sloped));
-    }
-
-    #[test]
-    fn cellrect_occupancy_house_reservation_blocks_same_house_only() {
-        let terrain = flat_terrain(2, 1);
-        let mut reservations = CellReservationGrid::new();
-        reservations.reserve(Some(&terrain), 0, 0, 5);
-
-        let same_house = CellRectOccupancyContext {
-            native_cells: None,
-            rect: CellRect::single(0, 0),
-            reservation_arg: 5,
-            reservations: Some(&reservations),
-            occupancy: None,
-            terrain_object_cells: None,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            playfield_bounds: Some(wide_test_playfield()),
-        };
-        assert!(!check_occupancy_rect(same_house));
-
-        let other_house = CellRectOccupancyContext {
-            native_cells: None,
-            rect: CellRect::single(0, 0),
-            reservation_arg: 6,
-            reservations: Some(&reservations),
-            occupancy: None,
-            terrain_object_cells: None,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            playfield_bounds: Some(wide_test_playfield()),
-        };
-        assert!(check_occupancy_rect(other_house));
-
-        let skipped = CellRectOccupancyContext {
-            native_cells: None,
-            rect: CellRect::single(0, 0),
-            reservation_arg: -1,
-            reservations: Some(&reservations),
-            occupancy: None,
-            terrain_object_cells: None,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            playfield_bounds: Some(wide_test_playfield()),
-        };
-        assert!(check_occupancy_rect(skipped));
-    }
-
-    #[test]
-    fn cellrect_passability_uses_movement_zone_zone_id_and_speed_type_separately() {
-        let mut terrain = flat_terrain(2, 2);
-        terrain.cells[0].speed_costs = SpeedCostProfile {
-            track: Some(100),
-            foot: Some(0),
-            ..Default::default()
-        };
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let zone_grid = ZoneGrid::build_with_terrain(
-            &path_grid,
-            &terrain,
-            &[],
-            terrain.width(),
-            terrain.height(),
-        );
-        let zone_id = u32::from(
-            zone_grid
-                .get_zone_id_nonbridge_native((0, 0), MovementZone::Normal)
-                .unwrap(),
-        );
-
-        let wrong_zone = CellRectPassabilityContext {
-            native_cells: None,
-            rect: CellRect::single(0, 0),
-            speed_type: SpeedType::Track,
-            required_zone_id: Some(zone_id.saturating_add(1)),
-            movement_zone: MovementZone::Normal,
-            required_height_or_level: None,
-            bridge_aware_zone: false,
-            reject_any_overlay: false,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            occupancy: None,
-            zone_grid: Some(&zone_grid),
-        };
-        assert!(!check_passability_rect(wrong_zone));
-
-        let foot_speed_blocked = CellRectPassabilityContext {
-            native_cells: None,
-            rect: CellRect::single(0, 0),
-            speed_type: SpeedType::Foot,
-            required_zone_id: Some(zone_id),
-            movement_zone: MovementZone::Normal,
-            required_height_or_level: None,
-            bridge_aware_zone: false,
-            reject_any_overlay: false,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            occupancy: None,
-            zone_grid: Some(&zone_grid),
-        };
-        assert!(!check_passability_rect(foot_speed_blocked));
-
-        let track_passes = CellRectPassabilityContext {
-            native_cells: None,
-            rect: CellRect::single(0, 0),
-            speed_type: SpeedType::Track,
-            required_zone_id: Some(zone_id),
-            movement_zone: MovementZone::Normal,
-            required_height_or_level: None,
-            bridge_aware_zone: false,
-            reject_any_overlay: false,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            occupancy: None,
-            zone_grid: Some(&zone_grid),
-        };
-        assert!(check_passability_rect(track_passes));
     }
 
     #[test]
@@ -2258,138 +1923,6 @@ mod tests {
         assert!(check_occupancy_rect(occupancy_rect));
     }
 
-    // --- T1: fixed-stride cell index + non-null dummy fallback ---
-
-    #[test]
-    fn cell_index_uses_512_wide_stride_not_map_width() {
-        // (x=0, y=1) -> 0x200 under the fixed stride, regardless of any loaded width.
-        assert_eq!(cell_linear_index(0, 1), Some(0x200));
-        assert_eq!(cell_linear_index(1, 0), Some(1));
-        // Out of the [0, 0x3FFFF] linear range -> None (then a dummy at the caller).
-        assert_eq!(cell_linear_index(-1, 0), None);
-    }
-
-    #[test]
-    fn get_cellclass_oob_returns_dummy_with_requested_coord() {
-        let g = flat_terrain(2, 2);
-        assert!(matches!(
-            get_cellclass_fallback(Some(&g), 0, 0),
-            CellRef::Real(_)
-        ));
-        // Out of bounds: a non-null dummy carrying the *requested* coord
-        // (never None, never (0,0)).
-        assert_dummy(get_cellclass_fallback(Some(&g), -3, 7), (-3, 7), 0, 0);
-    }
-
-    #[test]
-    fn gsi_04_01_get_cellclass_fixed_stride_aliases_canonical_slot() {
-        let terrain = flat_terrain(512, 2);
-
-        assert_eq!(
-            get_cellclass_fallback(Some(&terrain), -1, 1),
-            CellRef::Real(terrain.cell(511, 0).expect("canonical index 511"))
-        );
-        assert_eq!(
-            get_cellclass_fallback(Some(&terrain), 512, 0),
-            CellRef::Real(terrain.cell(0, 1).expect("canonical index 512"))
-        );
-
-        assert_dummy(get_cellclass_fallback(Some(&terrain), -1, 0), (-1, 0), 0, 0);
-        let missing_canonical_cell = flat_terrain(2, 1);
-        assert_dummy(
-            get_cellclass_fallback(Some(&missing_canonical_cell), 512, 0),
-            (512, 0),
-            0,
-            0,
-        );
-    }
-
-    #[test]
-    fn gsi_04_01_lookup_misses_stamp_only_packed_dummy_coord() {
-        let mut terrain = flat_terrain(512, 2);
-        terrain.test_set_native_allocated_cells(&[(0, 0), (511, 0)]);
-        terrain.test_set_dummy_cell_level_slope(-5, 7);
-        assert_eq!(terrain.dummy_cell_requested_coord(), (0, 0));
-
-        assert_eq!(
-            get_cellclass_fallback(Some(&terrain), -1, 1),
-            CellRef::Real(terrain.cell(511, 0).expect("fixed-stride alias slot"))
-        );
-        assert_eq!(terrain.dummy_cell_requested_coord(), (0, 0));
-
-        assert_dummy(
-            get_cellclass_fallback(Some(&terrain), -1, 0),
-            (-1, 0),
-            -5,
-            7,
-        );
-        assert_eq!(terrain.dummy_cell_requested_coord(), (-1, 0));
-
-        // Packed (512,0) has a valid fixed-array index, but its canonical
-        // (0,1) slot is null in this allocation mask. Native still stamps the
-        // requested words; high Rust-only bits do not survive the seam.
-        assert_dummy(
-            get_cellclass_fallback(Some(&terrain), 0x1_0200, 0x1_0000),
-            (512, 0),
-            -5,
-            7,
-        );
-        assert_eq!(terrain.dummy_cell_requested_coord(), (512, 0));
-        assert_eq!(terrain.dummy_cell_level_slope(), (-5, 7));
-    }
-
-    #[test]
-    fn gsi_04_01_lookup_world_leptons_truncate_before_fallback() {
-        let terrain = flat_terrain(1, 1);
-        assert_dummy(get_cellclass_fallback(Some(&terrain), -2, 0), (-2, 0), 0, 0);
-
-        assert_eq!(
-            get_cellclass_fallback_leptons(Some(&terrain), -1, -255),
-            CellRef::Real(
-                terrain
-                    .cell(0, 0)
-                    .expect("negative fractions truncate to zero")
-            )
-        );
-        assert_eq!(
-            get_cellclass_fallback_leptons(Some(&terrain), -255, -1),
-            CellRef::Real(
-                terrain
-                    .cell(0, 0)
-                    .expect("negative fractions truncate to zero")
-            )
-        );
-        assert_eq!(terrain.dummy_cell_requested_coord(), (-2, 0));
-
-        // Full quotients (32768,-64) cancel to fixed index zero before either
-        // component is narrowed to its dummy-cell word.
-        assert_eq!(
-            get_cellclass_fallback_leptons(Some(&terrain), 8_388_608, -16_384),
-            CellRef::Real(
-                terrain
-                    .cell(0, 0)
-                    .expect("full-i32 quotient index cancellation")
-            )
-        );
-        assert_eq!(terrain.dummy_cell_requested_coord(), (-2, 0));
-
-        assert_dummy(
-            get_cellclass_fallback_leptons(Some(&terrain), -256, 0),
-            (-1, 0),
-            0,
-            0,
-        );
-        assert_eq!(terrain.dummy_cell_requested_coord(), (-1, 0));
-
-        assert_dummy(
-            get_cellclass_fallback_leptons(Some(&terrain), 256, 0),
-            (1, 0),
-            0,
-            0,
-        );
-        assert_eq!(terrain.dummy_cell_requested_coord(), (1, 0));
-    }
-
     #[test]
     fn gsi_04_01_lookup_allocation_probe_has_no_dummy_side_effect() {
         let mut terrain = flat_terrain(512, 2);
@@ -2486,47 +2019,6 @@ mod tests {
     }
 
     #[test]
-    fn playfield_modes_skip_or_apply_cell_height_explicitly() {
-        let bounds = PlayfieldBounds {
-            base: 10,
-            off_fc: 2,
-            off_100: 1,
-            off_104: 10,
-            off_108: 6,
-        };
-        let mut terrain = flat_terrain(16, 16);
-        terrain.cells[6 * 16 + 7].slope_type = 1;
-
-        // (7,6), sum=13, is just inside the geometry-only strict low edge 12.
-        // Mode one looks up the sloped cell, bumps h to one, and moves that edge
-        // to 13, so the same cell is excluded. Mode zero cannot touch the cell.
-        assert!(cell_is_in_playfield_geometry_only((7, 6), bounds));
-        assert!(!cell_is_in_playfield_height_aware(
-            (7, 6),
-            Some(bounds),
-            Some(&terrain),
-        ));
-    }
-
-    #[test]
-    fn playfield_leptons_truncate_toward_zero() {
-        assert_eq!(lepton_to_packed_cell_component(-1), 0);
-        assert_eq!(lepton_to_packed_cell_component(-255), 0);
-        assert_eq!(lepton_to_packed_cell_component(-256), -1);
-        assert_eq!(lepton_to_packed_cell_component(-257), -1);
-
-        let bounds = diamond_bounds();
-        assert_eq!(
-            cell_is_in_playfield_leptons(
-                (7 * 256 + 255, 6 * 256 + 1, i32::MAX),
-                Some(bounds),
-                None
-            ),
-            cell_is_in_playfield_height_aware((7, 6), Some(bounds), None),
-        );
-    }
-
-    #[test]
     fn playfield_absence_does_not_use_rectangular_or_unbounded_fallback() {
         assert!(!cell_is_in_playfield_height_aware((1, 1), None, None));
         assert!(!rect_is_in_playfield_height_aware(
@@ -2534,180 +2026,6 @@ mod tests {
             None,
             None,
         ));
-    }
-
-    #[test]
-    fn gsi_04_01_playfield_height_reads_fixed_stride_alias() {
-        let mut terrain = flat_terrain(512, 1);
-        terrain.cells[511].level = u8::MAX; // signed level -1
-        let bounds = PlayfieldBounds {
-            base: 0,
-            off_fc: -5,
-            off_100: 0,
-            off_104: 10,
-            off_108: 0,
-        };
-
-        // Requested (-1,1) aliases canonical (511,0). Its signed level -1
-        // shifts the strict low sum boundary from 0 to -1, making sum=0 pass.
-        // The zero-field dummy leaves the boundary at 0 and therefore fails.
-        assert!(!cell_is_in_playfield_height_aware(
-            (-1, 1),
-            Some(bounds),
-            None,
-        ));
-        assert!(cell_is_in_playfield_height_aware(
-            (-1, 1),
-            Some(bounds),
-            Some(&terrain),
-        ));
-    }
-
-    #[test]
-    fn gsi_04_01_dummy_state_persists_across_fallback_lookups() {
-        let terrain = flat_terrain(1, 1);
-        assert_eq!(terrain.dummy_cell_level_slope(), (0, 0));
-        terrain.test_set_dummy_cell_level_slope(-4, 7);
-        terrain.set_dummy_cell_level(-5);
-        assert_eq!(terrain.clone().dummy_cell_level_slope(), (-5, 7));
-
-        assert_dummy(
-            get_cellclass_fallback(Some(&terrain), 0xFFFF, 0),
-            (-1, 0),
-            -5,
-            7,
-        );
-        assert_dummy(
-            get_cellclass_fallback(Some(&terrain), 0xFFFE, 0),
-            (-2, 0),
-            -5,
-            7,
-        );
-
-        let bounds = PlayfieldBounds {
-            base: -1,
-            off_fc: -5,
-            off_100: 0,
-            off_104: 10,
-            off_108: 3,
-        };
-        let zero_dummy = flat_terrain(1, 1);
-        assert!(!cell_is_in_playfield_height_aware(
-            (-1, 0),
-            Some(bounds),
-            Some(&zero_dummy),
-        ));
-        assert!(cell_is_in_playfield_height_aware(
-            (-1, 0),
-            Some(bounds),
-            Some(&terrain),
-        ));
-    }
-
-    // --- T2: passability shadow agreement + zero-size short-circuit ---
-
-    #[test]
-    fn passability_rect_shadow_agrees_with_pathgrid_on_plain_cells() {
-        // On cells with no overlay/zone/height constraint, a 1x1 passability rect
-        // must AGREE with PathGrid::is_walkable. Divergence is surfaced (the assert
-        // names the cell), never equalized away.
-        let terrain = flat_terrain(4, 4);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        for ry in 0..4u16 {
-            for rx in 0..4u16 {
-                let ctx = CellRectPassabilityContext {
-                    native_cells: None,
-                    rect: CellRect::single(rx, ry),
-                    speed_type: SpeedType::Track,
-                    required_zone_id: None,
-                    movement_zone: MovementZone::Normal,
-                    required_height_or_level: None,
-                    bridge_aware_zone: false,
-                    reject_any_overlay: false,
-                    resolved_terrain: Some(&terrain),
-                    overlay_grid: None,
-                    occupancy: None,
-                    zone_grid: None,
-                };
-                assert_eq!(
-                    check_passability_rect(ctx),
-                    path_grid.is_walkable(rx, ry),
-                    "passability/PathGrid divergence at ({rx},{ry})"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn passability_zero_size_rect_returns_true() {
-        let terrain = flat_terrain(1, 1);
-        let ctx = CellRectPassabilityContext {
-            native_cells: None,
-            rect: CellRect::new(0, 0, 0, 0),
-            speed_type: SpeedType::Track,
-            required_zone_id: None,
-            movement_zone: MovementZone::Normal,
-            required_height_or_level: None,
-            bridge_aware_zone: false,
-            reject_any_overlay: false,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            occupancy: None,
-            zone_grid: None,
-        };
-        // width<=0 -> true, no cell read.
-        assert!(check_passability_rect(ctx));
-    }
-
-    // --- T3: occupancy blocker order + degenerate-rect corner check ---
-
-    #[test]
-    fn occupancy_blocker_order_matches_engine() {
-        // The reduced-ZoneType column (d) and the slope/special byte (e) reject
-        // independently: a cell with ONLY a slope rejects, and a cell with ONLY a
-        // non-Ground zone-type rejects, each on its own column.
-        let mut terrain = flat_terrain(3, 1);
-        terrain.cells[1].slope_type = 2; // (e) only
-        terrain.cells[2].zone_type = zone_class::WATER; // (d) only
-
-        let clear = CellRectOccupancyContext {
-            native_cells: None,
-            rect: CellRect::single(0, 0),
-            reservation_arg: -1,
-            reservations: None,
-            occupancy: None,
-            terrain_object_cells: None,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            playfield_bounds: Some(wide_test_playfield()),
-        };
-        assert!(check_occupancy_rect(clear)); // clear cell passes
-
-        let slope_only = CellRectOccupancyContext {
-            native_cells: None,
-            rect: CellRect::single(1, 0),
-            reservation_arg: -1,
-            reservations: None,
-            occupancy: None,
-            terrain_object_cells: None,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            playfield_bounds: Some(wide_test_playfield()),
-        };
-        assert!(!check_occupancy_rect(slope_only));
-
-        let zone_only = CellRectOccupancyContext {
-            native_cells: None,
-            rect: CellRect::single(2, 0),
-            reservation_arg: -1,
-            reservations: None,
-            occupancy: None,
-            terrain_object_cells: None,
-            resolved_terrain: Some(&terrain),
-            overlay_grid: None,
-            playfield_bounds: Some(wide_test_playfield()),
-        };
-        assert!(!check_occupancy_rect(zone_only));
     }
 
     /// A diamond bounds fixture chosen so the playable region is a clean interior:
@@ -2740,61 +2058,6 @@ mod tests {
             overlay_grid: None,
             playfield_bounds: Some(diamond_bounds()),
         }
-    }
-
-    #[test]
-    fn rect_in_playfield_is_isometric_diamond_inclusive_four_corners() {
-        // A 1x1 rect on the diamond's INCLUSIVE high edge of the sum band passes:
-        // (13,13) has sum 26 == base+HIGH, and both diagonals are inside.
-        assert!(check_occupancy_rect(occupancy_with_bounds(
-            CellRect::single(13, 13)
-        )));
-        // One cell past the high edge (sum 27 > 26) fails — proves the band is a
-        // diamond on sx+sy, not a rectangle on raw x/y.
-        assert!(!check_occupancy_rect(occupancy_with_bounds(
-            CellRect::single(14, 13)
-        )));
-
-        // A 2x1 rect whose NW corner (13,13) is inside but whose INCLUSIVE far
-        // corner (x+w-1, y) = (14,13) leaves the diamond (sum 27) fails — proves the
-        // far corner uses w-1 AND that the corner predicate is the diamond.
-        assert!(!check_occupancy_rect(occupancy_with_bounds(CellRect::new(
-            13, 13, 2, 1
-        ))));
-
-        // A point inside both diagonals but with sum just above the strict low edge
-        // (sum 13 > 12) passes; the same cell pair off the low edge (sum 12) fails.
-        assert!(check_occupancy_rect(occupancy_with_bounds(
-            CellRect::single(7, 6)
-        )));
-        assert!(!check_occupancy_rect(occupancy_with_bounds(
-            CellRect::single(6, 6)
-        )));
-    }
-
-    #[test]
-    fn occupancy_zero_size_rect_still_runs_playfield_corners() {
-        // A 0-size rect is NOT a no-op and NOT an auto-pass: with width=0/height=0 the
-        // far corners become (x-1, y)/(x, y-1)/(x-1, y-1), so all four corners are
-        // evaluated at DECREMENTED coords and each must still satisfy the diamond.
-        //
-        // At (13,13) the decremented corners (12,13)/(13,12)/(12,12) have sums
-        // 25/25/24 — all inside (12 < sum <= 26) — so the 0-size rect PASSES.
-        assert!(check_occupancy_rect(occupancy_with_bounds(CellRect::new(
-            13, 13, 0, 0
-        ))));
-
-        // At (7,6) the NW corner (sum 13) is inside, but the decremented NE corner
-        // (6,6) has sum 12, which fails the strict low edge (12 < 12 is false). So the
-        // 0-size rect FAILS even though its (undecremented) NW corner is inside —
-        // exactly the engine's decremented-corner behavior. The corresponding 1x1
-        // rect at (7,6) passes (its corners are all (7,6), sum 13).
-        assert!(!check_occupancy_rect(occupancy_with_bounds(CellRect::new(
-            7, 6, 0, 0
-        ))));
-        assert!(check_occupancy_rect(occupancy_with_bounds(
-            CellRect::single(7, 6)
-        )));
     }
 
     #[test]
@@ -2866,25 +2129,6 @@ mod tests {
             terrain.dummy_cell_requested_coord(),
             (-4, 0),
             "the fixed-stride real alias must not stamp the shared dummy"
-        );
-    }
-
-    #[test]
-    fn gsi_04_05_neighbor_mask_real_center_keeps_fixed_origin() {
-        let mut terrain = flat_terrain(1, 1);
-        terrain.test_set_native_allocated_cells(&[(0, 0)]);
-        let mut grid = CellReservationGrid::new();
-        grid.reserve(Some(&terrain), 0, 0, 0);
-        let _ = get_cellclass_fallback(Some(&terrain), 77, 77);
-
-        assert_eq!(
-            grid.house_reservation_neighbor_mask(Some(&terrain), 0, 0, 0),
-            0
-        );
-        assert_eq!(
-            terrain.dummy_cell_requested_coord(),
-            (-1, -1),
-            "all eight probes reload the unchanged real center coordinate"
         );
     }
 

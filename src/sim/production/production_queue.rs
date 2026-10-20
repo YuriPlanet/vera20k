@@ -128,7 +128,7 @@ pub fn has_build_option_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str
 /// Within tab3, native entry-array order and saturated OutList transport remain
 /// recorded residuals; one infantry factory has no cross-category ambiguity.
 pub fn publish_production_changes(sim: &mut Simulation, rules: &RuleSet) {
-    let mut completed = sim.production.factories.take_changed_completed_keys();
+    let mut completed = sim.production.factories_mut().take_changed_completed_keys();
     completed.sort_by_key(|(_, category)| match category {
         ProductionCategory::Building => 0,
         ProductionCategory::Defense => 1,
@@ -138,7 +138,7 @@ pub fn publish_production_changes(sim: &mut Simulation, rules: &RuleSet) {
     for (owner, category) in completed {
         let Some(type_id) = sim
             .production
-            .factories
+            .factories()
             .view(owner, category)
             .and_then(|factory| factory.object.map(|object| object.type_id))
         else {
@@ -249,7 +249,7 @@ pub(in crate::sim) fn exit_produced_object(
     }
     ai_base_building::economy_state_machine(sim, rules, owner_id, false);
     if let Some(house) = sim.houses.get_mut(&owner_id) {
-        house.ai_unit_choices.clear(kind);
+        house.ai_unit_choices_mut().clear(kind);
     }
     if kind == UnitChoiceKind::Aircraft {
         let airport_bound = product_type.airport_bound;
@@ -430,7 +430,7 @@ fn exit_land(
             return BuildingExit::Failed;
         };
         let Some(alternate_id) = house
-            .base_projection
+            .base_projection()
             .buildings()
             .iter()
             .copied()
@@ -440,7 +440,7 @@ fn exit_land(
                         && id != producer_id
                         && candidate.mission.effective().known()
                             == Some(crate::sim::mission::MissionType::Guard)
-                        && sim.production.factories.building_factory(id).is_none()
+                        && sim.production.factories().building_factory(id).is_none()
                 })
             })
         else {
@@ -451,13 +451,13 @@ fn exit_land(
         //+524 can be NULL. Do not move that House factory to a building.
         let attached = sim
             .production
-            .factories
+            .factories()
             .building_factory(producer_id)
             .is_some();
         if attached
             && !sim
                 .production
-                .factories
+                .factories_mut()
                 .transfer_building_factory_attachment(producer_id, alternate_id)
         {
             return BuildingExit::Failed;
@@ -473,7 +473,7 @@ fn exit_land(
         if attached {
             assert!(
                 sim.production
-                    .factories
+                    .factories_mut()
                     .transfer_building_factory_attachment(alternate_id, producer_id),
                 "ExitObject must restore its lent factory attachment"
             );
@@ -661,7 +661,7 @@ fn exit_cloning_vat_copies(
     let vat_ids = sim
         .houses
         .get(&owner)
-        .map(|house| house.base_projection.buildings().to_vec())
+        .map(|house| house.base_projection().buildings().to_vec())
         .unwrap_or_default();
     for vat_id in vat_ids {
         let Some((vat_owner, is_cloning_vat)) =
@@ -1006,7 +1006,7 @@ pub fn queue_view_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> V
     // (category, stamp, type_id, state, progress); progress feeds only the
     // test-support view field.
     let mut items: Vec<(ProductionCategory, u64, InternedId, BuildQueueState, u16)> = Vec::new();
-    for f in sim.production.factories.iter_insertion_ordered() {
+    for f in sim.production.factories().iter_insertion_ordered() {
         if f.owner != owner_id {
             continue;
         }
@@ -1065,7 +1065,7 @@ pub fn ready_buildings_for_owner(
     [ProductionCategory::Building, ProductionCategory::Defense]
         .into_iter()
         .filter_map(|category| {
-            let factory = sim.production.factories.view(owner_id, category)?;
+            let factory = sim.production.factories().view(owner_id, category)?;
             let type_id = factory.complete_object()?.type_id;
             let type_str = sim.interner.resolve(type_id);
             let obj = rules.object(type_str)?;

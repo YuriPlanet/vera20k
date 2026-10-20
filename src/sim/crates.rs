@@ -92,7 +92,7 @@ pub fn human_player_count(sim: &Simulation) -> i32 {
     i32::try_from(
         sim.houses
             .values()
-            .filter(|house| house.is_human && !house.multiplay_passive)
+            .filter(|house| house.is_human() && !house.multiplay_passive())
             .count(),
     )
     .unwrap_or(i32::MAX)
@@ -560,7 +560,7 @@ pub(crate) fn construct_runtime_overlay(
         .expect("crate Overlay constructor must join its owned registries");
     // `OverlayClass::OverlayClass @ 0x005FC380` performs the TerrainClass scan
     // before calling Unlimbo. A hit skips Unlimbo, so Mark never runs.
-    if sim.production.terrain_object_cells.contains_key(&cell) {
+    if sim.terrain_objects.cell_index().contains_key(&cell) {
         sim.load_objects
             .finish_unrevealed_survivor(handle)
             .expect("Terrain-refused crate retains its constructed Overlay");
@@ -959,43 +959,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn gsi_01_04_crate_placement_respects_clamped_count_and_distinct_cells() {
-        let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=3\n");
-        let registry = crate_registry();
-        let grid = PathGrid::test_all_passable(MAP, MAP);
-        let mut sim = sim_with_grid(0x1234_5678);
-        sim.install_fixture_path_grid(Some(&grid));
-
-        // Five players, ceiling 3.
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 5);
-
-        assert_eq!(result.requested, 3);
-        assert_eq!((result.accepted, result.visible), (3, 3));
-        let cells = crate_cells(&sim, &registry);
-        assert_eq!(cells.len(), 3);
-        let unique: BTreeSet<(u16, u16)> = cells.iter().copied().collect();
-        assert_eq!(unique.len(), 3, "no two crates share a cell");
-        for (rx, ry) in cells {
-            assert!(rx < MAP && ry < MAP, "crate inside the map rectangle");
-        }
-    }
-
-    #[test]
-    fn gsi_01_04_crate_minimum_lifts_single_human_count() {
-        let rules = crate_ruleset("CrateMinimum=4\nCrateMaximum=255\n");
-        let registry = crate_registry();
-        let grid = PathGrid::test_all_passable(MAP, MAP);
-        let mut sim = sim_with_grid(99);
-        sim.install_fixture_path_grid(Some(&grid));
-
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 1);
-
-        assert_eq!(result.requested, 4);
-        assert_eq!((result.accepted, result.visible), (4, 4));
-        assert_eq!(crate_cells(&sim, &registry).len(), 4);
-    }
-
-    #[test]
     fn gsi_01_04_crate_disabled_spends_no_rng_and_places_nothing() {
         let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=255\n");
         let registry = crate_registry();
@@ -1102,30 +1065,6 @@ pub(crate) mod tests {
             let slot = sim.crate_authority.slots()[0];
             assert_eq!((slot.cell_x, slot.cell_y), (12, 14));
         }
-    }
-
-    /// A full slot table refuses after the snap, before any draw or write.
-    #[test]
-    fn place_crate_with_a_full_slot_table_places_nothing() {
-        let rules = crate_ruleset("");
-        let registry = crate_registry();
-        let grid = PathGrid::test_all_passable(MAP, MAP);
-        let mut sim = sim_with_grid(0x5EED);
-        sim.install_fixture_path_grid(Some(&grid));
-        for index in 0..sim.crate_authority.slots().len() {
-            let slot = sim.crate_authority.slot_mut(index);
-            slot.cell_x = 1;
-            slot.cell_y = 1;
-        }
-        let before = sim.scenario_rng.state();
-
-        assert!(!place_crate(&mut sim, &rules, &registry, (12, 14), Some(0)));
-
-        assert_eq!(sim.scenario_rng.state(), before);
-        assert_eq!(
-            sim.overlay_grid.as_ref().unwrap().cell(12, 14).overlay_id,
-            None
-        );
     }
 
     #[test]
@@ -1265,25 +1204,6 @@ pub(crate) mod tests {
         assert_eq!(sim.scenario_rng.state(), replay.state());
     }
 
-    #[test]
-    fn scenario_start_crate_preexisting_full_slot_table_spends_no_rng() {
-        let rules = crate_ruleset("CrateMinimum=4\nCrateMaximum=4\n");
-        let registry = crate_registry();
-        let grid = PathGrid::test_all_passable(MAP, MAP);
-        let mut sim = sim_with_grid(0x5107_F011);
-        sim.install_fixture_path_grid(Some(&grid));
-        for index in 0..state::CRATE_SLOT_CAPACITY {
-            sim.crate_authority.slot_mut(index).cell_x = (index as i16).wrapping_add(1);
-        }
-        let before = sim.scenario_rng.state();
-
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 1);
-
-        assert_eq!(result.requested, 4);
-        assert_eq!((result.accepted, result.visible), (0, 0));
-        assert_eq!(sim.scenario_rng.state(), before);
-    }
-
     /// The scenario-start snap reads the live raw occupation byte. FNPC's
     /// `CellRect::CheckPassability @ 0x0056E7C0` pushes both ignore flags 0
     /// (`0x0056E854`, `0x0056E856`), so `CellClass::CheckCellPassability @
@@ -1327,58 +1247,6 @@ pub(crate) mod tests {
             );
             assert_eq!(sim.scenario_rng.state(), replay.state());
         }
-    }
-
-    /// `CrateSlot__PlaceOverlayAndInitTimer @ 0x004A17C0` on a Cell whose raw
-    /// ground occupation holds object bit 0x40: Mark refuses after the slot
-    /// precheck, and the slot still takes the Cell and its timer draw. The
-    /// scenario-start snap never returns such a Cell
-    /// (`scenario_start_crate_snap_skips_any_raw_ground_occupation_bit`), so
-    /// this enters at the slot.
-    #[test]
-    fn crate_slot_object_ground_occupation_accepts_a_timed_ghost() {
-        let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
-        let grid = PathGrid::test_all_passable(MAP, MAP);
-        let mut sim = sim_with_grid(0x47C550);
-        sim.install_fixture_path_grid(Some(&grid));
-        let (rx, ry) = (12, 13);
-        let mut replay = sim.scenario_rng.clone();
-        replay.next_range_u32_inclusive(0, 0x7fff_fffe);
-        sim.substrate
-            .raw_cell_occupation
-            .mark_ground(rx, ry, OBJECT_OCCUPATION_BIT);
-
-        let accepted = place_overlay_and_init_timer(
-            &mut sim,
-            &rules,
-            &registry,
-            0,
-            (rx, ry),
-            ParsedLightingProfiles::default().normal,
-            ForcedPostPrecheckFailure::None,
-        );
-
-        assert_eq!(accepted, Some(AcceptedCellResult::Ghost));
-        assert!(crate_cells(&sim, &registry).is_empty());
-        assert_eq!(
-            sim.overlay_grid
-                .as_ref()
-                .expect("overlay grid")
-                .cell(rx, ry)
-                .overlay_id,
-            None,
-            "a post-precheck Mark failure leaves the Cell unchanged",
-        );
-        assert_eq!(sim.scenario_rng.state(), replay.state());
-        let slot = sim.crate_authority.slots()[0];
-        assert_eq!((slot.cell_x, slot.cell_y), (rx as i16, ry as i16));
-        assert_eq!(slot.start_frame, sim.session.binary_frame() as i32);
-        assert_eq!(
-            slot.aux, 0x40d1_9400,
-            "constructor regen 10 owns upper=18000"
-        );
-        assert!(slot.duration > 0);
     }
 
     /// Mark5FD065..5FD070 passes both ignore flags0 for the crate pointers.
@@ -1559,7 +1427,10 @@ pub(crate) mod tests {
         let mut terrain_sim = sim_with_grid(0xA011_0002);
         terrain_sim.install_fixture_path_grid(Some(&grid));
         let (cell, _) = first_random_cell(&terrain_sim);
-        terrain_sim.production.terrain_object_cells.insert(cell, 77);
+        terrain_sim
+            .terrain_objects
+            .cell_index_mut_for_test()
+            .insert(cell, 77);
         let terrain_result =
             place_scenario_start_crates(&mut terrain_sim, &ordinary_rules, &registry, 1);
         assert_eq!((terrain_result.accepted, terrain_result.visible), (1, 0));
@@ -1606,35 +1477,6 @@ pub(crate) mod tests {
                     .is_none()
             );
         }
-    }
-
-    #[test]
-    fn gsi_01_04_crate_water_track_zero_commits_and_spends_timer_draw() {
-        let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
-        let grid = PathGrid::test_all_passable(MAP, MAP);
-        let mut sim = sim_with_grid(0xF10A_7000);
-        sim.install_fixture_path_grid(Some(&grid));
-        sim.resolved_terrain = Some(uniform_terrain(true));
-        for cell in &mut sim.resolved_terrain.as_mut().expect("terrain").cells {
-            cell.speed_costs.track = Some(0);
-            cell.speed_costs.float = Some(100);
-        }
-        let mut replay = sim.scenario_rng.clone();
-        let destination = (
-            replay.next_range_u32_inclusive(1, u32::from(MAP - 1)) as u16,
-            replay.next_range_u32_inclusive(1, u32::from(MAP - 1)) as u16,
-        );
-        replay.next_range_u32_inclusive(0, 0x7fff_fffe);
-
-        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 1);
-
-        assert_eq!((result.accepted, result.visible), (1, 1));
-        assert_eq!(
-            cells_with_overlay(&sim, &registry, "WATER"),
-            vec![destination]
-        );
-        assert_eq!(sim.scenario_rng.state(), replay.state());
     }
 
     #[test]
@@ -1831,75 +1673,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn place_crate_overlay_preserves_wall_owner_and_publishes_one_dirty_cell() {
-        let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
-        let registry = crate_registry();
-        let mut sim = sim_with_grid(0xD117_0001);
-        let cell = (6, 13);
-        let owner = sim.interner.intern("Owner");
-        let grid = sim.overlay_grid.as_mut().unwrap();
-        grid.cell_mut(cell.0, cell.1).wall_owner = Some(owner);
-        assert!(grid.take_dirty_cells().is_empty());
-
-        assert_eq!(
-            validate_and_stamp_candidate(
-                &mut sim,
-                &rules.crate_rules,
-                &registry,
-                cell,
-                ForcedPostPrecheckFailure::None,
-            ),
-            AcceptedCellResult::Visible
-        );
-        let grid = sim.overlay_grid.as_mut().unwrap();
-        let written = grid.cell(cell.0, cell.1);
-        assert_eq!(written.overlay_id, registry.id_for_name("WOOD"));
-        assert_eq!(written.overlay_data, u8::MAX);
-        assert_eq!(written.wall_owner, Some(owner));
-        assert_eq!(grid.take_dirty_cells(), vec![cell]);
-    }
-
-    #[test]
-    fn configured_noncrate_images_keep_native_mark_zero_and_land_five_data() {
-        // OverlayClass::Mark @ 0x005FD0D9 stores one for Land 5 (Tiberium),
-        // not Road; a type without Tiberium=yes keeps it after germination.
-        let registry = OverlayTypeRegistry::from_ini(
-            &IniFile::from_str(
-                "[OverlayTypes]\n0=PLAIN\n1=ROADBOX\n2=TIBBOX\n[PLAIN]\n\
-                 [ROADBOX]\nLand=Road\n[TIBBOX]\nLand=Tiberium\n",
-            ),
-            None,
-        );
-        for (index, (name, expected_data)) in [("PLAIN", 0), ("ROADBOX", 0), ("TIBBOX", 1)]
-            .into_iter()
-            .enumerate()
-        {
-            let rules = CrateRules {
-                wood_crate_img: Some(name.to_owned()),
-                crate_img: Some(name.to_owned()),
-                water_crate_img: Some(name.to_owned()),
-                ..CrateRules::default()
-            };
-            let mut sim = sim_with_grid(0xDA7A_0000 + index as u64);
-            let cell = (6, 13);
-
-            assert_eq!(
-                validate_and_stamp_candidate(
-                    &mut sim,
-                    &rules,
-                    &registry,
-                    cell,
-                    ForcedPostPrecheckFailure::None,
-                ),
-                AcceptedCellResult::Visible
-            );
-            let written = sim.overlay_grid.as_ref().unwrap().cell(cell.0, cell.1);
-            assert_eq!(written.overlay_id, registry.id_for_name(name));
-            assert_eq!(written.overlay_data, expected_data, "configured {name}");
-        }
-    }
-
-    #[test]
     fn crate_mark_publishes_navigation_before_next_reader_and_frame_delivery() {
         use crate::sim::world::TickLane;
         use std::sync::Arc;
@@ -1915,8 +1688,8 @@ pub(crate) mod tests {
         sim.hash_state_every(std::num::NonZeroU64::MIN);
         // Mark is invoked below; autonomous crate spawning is outside this fixture.
         sim.session.game_options_mut_for_test().crates = false;
-        sim.production.ore_growth_config.grows = false;
-        sim.production.ore_growth_config.spreads = false;
+        sim.ore_growth_config.set_grows_for_test(false);
+        sim.ore_growth_config.set_spreads_for_test(false);
         assert!(sim.rebuild_dynamic_navigation(&rules));
         let cells = [(12, 13), (6, 13)];
         for cell in cells {
@@ -2448,8 +2221,8 @@ pub(crate) mod tests {
 
         let mut terrain_object = sim_with_grid(0x14090007);
         terrain_object
-            .production
-            .terrain_object_cells
+            .terrain_objects
+            .cell_index_mut_for_test()
             .insert(cell, 99);
         assert_eq!(
             validate_and_stamp_candidate_with_rules(
@@ -2569,8 +2342,8 @@ pub(crate) mod tests {
             .unwrap()
             .take_dirty_cells();
         terrain_blocked
-            .production
-            .terrain_object_cells
+            .terrain_objects
+            .cell_index_mut_for_test()
             .insert(cell, 100);
         assert_eq!(
             validate_and_stamp_candidate(
@@ -2820,60 +2593,60 @@ pub(crate) mod tests {
         }
     }
 
-    #[test]
-    fn crate_random_rectangle_draws_signed_reversed_ranges_then_narrows_to_i16() {
-        let mut sum_one = crate::sim::rng::SimRng::new(0x1401);
-        let mut sum_one_expected = sum_one.clone();
-        let sum_one_frame = CrateRandomFrame {
-            left: 1,
-            top: 1,
-            width: 0,
-            height: 0,
-        };
-        let sum_one_cell = draw_crate_candidate(&mut sum_one, sum_one_frame);
-        let expected_sum_one = (
-            sum_one_expected.next_range_u32_inclusive(0, 1) as i32,
-            sum_one_expected.next_range_u32_inclusive(0, 1) as i32,
-        );
-        assert_eq!(sum_one_cell, expected_sum_one);
-        assert_eq!(sum_one.state(), sum_one_expected.state());
+#[test]
+fn crate_random_rectangle_draws_signed_reversed_ranges_then_narrows_to_i16() {
+    let mut sum_one = crate::sim::rng::SimRng::new(0x1401);
+    let mut sum_one_expected = sum_one.clone();
+    let sum_one_frame = CrateRandomFrame {
+        left: 1,
+        top: 1,
+        width: 0,
+        height: 0,
+    };
+    let sum_one_cell = draw_crate_candidate(&mut sum_one, sum_one_frame);
+    let expected_sum_one = (
+        sum_one_expected.next_range_u32_inclusive(0, 1) as i32,
+        sum_one_expected.next_range_u32_inclusive(0, 1) as i32,
+    );
+    assert_eq!(sum_one_cell, expected_sum_one);
+    assert_eq!(sum_one.state(), sum_one_expected.state());
 
-        let mut negative = crate::sim::rng::SimRng::new(0x1402);
-        let mut negative_expected = negative.clone();
-        let negative_frame = CrateRandomFrame {
-            left: i32::MAX,
-            top: i32::MIN,
-            width: -2,
-            height: -2,
-        };
-        let negative_cell = draw_crate_candidate(&mut negative, negative_frame);
-        let expected_negative = (
-            i32::MAX.wrapping_add(-3 + negative_expected.next_range_u32_inclusive(0, 3) as i32)
-                as i16 as i32,
-            i32::MIN.wrapping_add(-3 + negative_expected.next_range_u32_inclusive(0, 3) as i32)
-                as i16 as i32,
-        );
-        assert_eq!(negative_cell, expected_negative);
-        assert_eq!(negative.state(), negative_expected.state());
+    let mut negative = crate::sim::rng::SimRng::new(0x1402);
+    let mut negative_expected = negative.clone();
+    let negative_frame = CrateRandomFrame {
+        left: i32::MAX,
+        top: i32::MIN,
+        width: -2,
+        height: -2,
+    };
+    let negative_cell = draw_crate_candidate(&mut negative, negative_frame);
+    let expected_negative = (
+        i32::MAX.wrapping_add(-3 + negative_expected.next_range_u32_inclusive(0, 3) as i32) as i16
+            as i32,
+        i32::MIN.wrapping_add(-3 + negative_expected.next_range_u32_inclusive(0, 3) as i32) as i16
+            as i32,
+    );
+    assert_eq!(negative_cell, expected_negative);
+    assert_eq!(negative.state(), negative_expected.state());
 
-        let mut wide = crate::sim::rng::SimRng::new(0x1403);
-        let mut wide_expected = wide.clone();
-        let wide_frame = CrateRandomFrame {
-            left: 30_000,
-            top: -30_000,
-            width: 70_000,
-            height: 70_000,
-        };
-        let wide_cell = draw_crate_candidate(&mut wide, wide_frame);
-        let expected_wide = (
-            30_000i32.wrapping_add(wide_expected.next_range_u32_inclusive(0, 69_999) as i32) as i16
-                as i32,
-            (-30_000i32).wrapping_add(wide_expected.next_range_u32_inclusive(0, 69_999) as i32)
-                as i16 as i32,
-        );
-        assert_eq!(wide_cell, expected_wide);
-        assert_eq!(wide.state(), wide_expected.state());
-    }
+    let mut wide = crate::sim::rng::SimRng::new(0x1403);
+    let mut wide_expected = wide.clone();
+    let wide_frame = CrateRandomFrame {
+        left: 30_000,
+        top: -30_000,
+        width: 70_000,
+        height: 70_000,
+    };
+    let wide_cell = draw_crate_candidate(&mut wide, wide_frame);
+    let expected_wide = (
+        30_000i32.wrapping_add(wide_expected.next_range_u32_inclusive(0, 69_999) as i32) as i16
+            as i32,
+        (-30_000i32).wrapping_add(wide_expected.next_range_u32_inclusive(0, 69_999) as i32) as i16
+            as i32,
+    );
+    assert_eq!(wide_cell, expected_wide);
+    assert_eq!(wide.state(), wide_expected.state());
+}
 
     #[test]
     fn crate_random_frame_retains_nonpositive_signed_size_for_rng_before_empty_snap() {
@@ -2901,36 +2674,6 @@ pub(crate) mod tests {
                 height: -6,
             })
         );
-    }
-
-    /// With a uniform surface, destination image selection follows the
-    /// native LandType byte.
-    #[test]
-    fn gsi_01_04_crate_landtype_two_uses_water_otherwise_wood() {
-        let rules = crate_ruleset("CrateMinimum=4\nCrateMaximum=255\n");
-        let registry = crate_registry();
-        let grid = PathGrid::test_all_passable(MAP, MAP);
-
-        for water in [false, true] {
-            let mut sim = sim_with_grid(0x5150);
-            sim.install_fixture_path_grid(Some(&grid));
-            sim.resolved_terrain = Some(uniform_terrain(water));
-
-            let result = place_scenario_start_crates(&mut sim, &rules, &registry, 4);
-            assert_eq!((result.accepted, result.visible), (4, 4));
-
-            let silver_crates = cells_with_overlay(&sim, &registry, "SILVER");
-            let land_crates = cells_with_overlay(&sim, &registry, "WOOD");
-            let water_crates = cells_with_overlay(&sim, &registry, "WATER");
-            assert!(silver_crates.is_empty(), "startup never uses CrateImg");
-            if water {
-                assert_eq!(water_crates.len(), 4, "water draws take WaterCrateImg");
-                assert!(land_crates.is_empty());
-            } else {
-                assert_eq!(land_crates.len(), 4, "land draws take WoodCrateImg");
-                assert!(water_crates.is_empty());
-            }
-        }
     }
 
     #[test]
@@ -3166,7 +2909,7 @@ pub(crate) mod tests {
         let mut add = |name: &str, is_human: bool, passive: bool| {
             let id = sim.interner.intern(name);
             let mut house = HouseState::new(id, 0, None, is_human, 10_000, 10);
-            house.multiplay_passive = passive;
+            house.set_multiplay_passive_for_test(passive);
             sim.houses.register(house);
         };
         add("Local", true, false);

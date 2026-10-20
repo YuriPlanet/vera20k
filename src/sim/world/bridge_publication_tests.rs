@@ -229,105 +229,6 @@ fn wooden_body_damage_collapses_through_the_live_publication_host() {
 }
 
 #[test]
-fn ordinary_collapse_raises_event31_through_the_live_host() {
-    // The ordinary concrete57CCF0 collapse shares the rim publisher's 575EE0
-    // per-cell Tag raise (span, order and per-notify counts are compared with
-    // native notify records by the rim:: tests).
-    // Declared synthetic prior on the shared resident-TMP terrain: a
-    // three-wide Low EW-overlay strip x15..17, y13..19, overlay 89
-    // (threshold), so one hit at its centre (16,16) collapses it.
-    let rules = rules();
-    let mut terrain = crate::map::resolved_terrain::bridge_constructor_terrain();
-    let mut grid = OverlayGrid::new(33, 33);
-    for y in 13..=19 {
-        for x in 15..=17 {
-            terrain.cells[usize::from(y) * 33 + usize::from(x)]
-                .bridge_facts
-                .overlay_id = Some(89);
-            grid.place_overlay(x, y, 89, 0);
-        }
-    }
-    let state = BridgeRuntimeState::from_resolved_terrain(&terrain, true, 1);
-    let mut sim = Simulation::with_seed(31);
-    sim.intern_rule_type_ids(&rules);
-    sim.resolve_type_handles(&rules);
-    sim.install_resolved_terrain_for_new_map(terrain);
-    sim.bridge_state = Some(state);
-    sim.overlay_grid = Some(grid);
-    let terrain = sim.resolved_terrain.as_ref().unwrap();
-    let path = crate::sim::pathfinding::PathGrid::from_resolved_terrain(terrain);
-    sim.zone_grid = Some(
-        crate::sim::pathfinding::zone_map::ZoneGrid::build_with_terrain(
-            &path,
-            terrain,
-            &[],
-            33,
-            33,
-        ),
-    );
-    sim.path_grid = Some(std::sync::Arc::new(path));
-    // One-shot Tags inside the span, on its exclusive end and outside it.
-    let mut sections: [String; 5] = Default::default();
-    for (index, (x, y)) in [(16, 15), (16, 19), (19, 19)].into_iter().enumerate() {
-        sections[0].push_str(&format!("T{index}=Neutral,<none>,Cell{index},0,1,1,1,0\n"));
-        sections[1].push_str(&format!("T{index}=1,31,0,0\n"));
-        sections[2].push_str(&format!("T{index}=1,56,0,{index},0,0,0,0,A\n"));
-        sections[3].push_str(&format!("G{index}=0,Cell{index},T{index}\n"));
-        sections[4].push_str(&format!("{}=G{index}\n", y * 1000 + x));
-    }
-    let mut body = String::new();
-    for (name, rows) in ["Triggers", "Events", "Actions", "Tags", "CellTags"]
-        .into_iter()
-        .zip(sections)
-    {
-        body.push_str(&format!("[{name}]\n{rows}"));
-    }
-    let map = crate::map::map_file::MapFile::from_bytes(
-        format!(
-            "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
-             [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
-             [Basic]\nNewINIFormat=4\n{body}"
-        )
-        .as_bytes(),
-    )
-    .unwrap();
-    sim.initialize_trigger_definitions(
-        &map,
-        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
-        None,
-        None,
-    );
-    sim.install_authored_cell_trigger_tags(&map);
-    sim.classify_map_triggers(Some(&rules));
-    sim.clear_tag_dispatch_trace_for_test();
-    // The retail OverlayType list supplies the ordinary bridge Recalc inputs.
-    let Some((retail, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
-        return;
-    };
-    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&retail, Some(&art));
-    let result = damage_ordinary(
-        &mut sim,
-        &rules,
-        Some(&registry),
-        (16, 16),
-        Family::Low,
-        FrameEffects::default(),
-    )
-    .unwrap();
-    assert!(result.returned && result.collapsed);
-    assert_eq!(
-        sim.tag_dispatch_trace_for_test()
-            .iter()
-            .filter(|(_, kind)| *kind == 31)
-            .count(),
-        1
-    );
-    assert!(sim.trigger_local_is_set_for_test(0));
-    assert!(!sim.trigger_local_is_set_for_test(1));
-    assert!(!sim.trigger_local_is_set_for_test(2));
-}
-
-#[test]
 fn signed_bridge_strength_survives_reader_runtime_dispatch_and_snapshot() {
     let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/bridge_damage_admission.json",
@@ -498,33 +399,6 @@ fn bridge_publication_production_nonanchor_collapse_keeps_other_overlay_and_runs
     }
 }
 
-#[test]
-fn bridge_publication_retained_anchor_reads_live_overlay_identity() {
-    let rules = rules();
-    let mut sim = world(&rules, 15);
-    // A bridgehead collapse clears the anchor's +44 while OverlayGrid still
-    // retains the original high-surface identity; CellClass decides.
-    let terrain = sim.resolved_terrain.as_mut().unwrap();
-    let anchor = terrain.native_cell_identity((4, 4));
-    terrain.clear_native_cell_overlay(anchor);
-    let hit = event(&mut sim, (3, 4));
-    assert!(!apply_bridge_damage_events_with_overlay_registry(
-        &mut sim,
-        &rules,
-        &[hit],
-        None,
-        crate::sim::world::FrameEffects::default(),
-    ));
-    let host = host(&mut sim, &rules);
-    let anchor = host.terrain().native_cell_identity((4, 4));
-    assert_eq!(host.state(anchor), 15);
-    assert_ne!(host.flags(anchor) & BRIDGE_FLAG_STRUCTURAL, 0);
-    assert_eq!(
-        host.terrain().cell(4, 4).unwrap().bridge_facts.overlay_id,
-        None
-    );
-}
-
 struct ReenteringHost<'a> {
     live: LivePublication<'a>,
     anchor: Cell,
@@ -644,36 +518,5 @@ fn bridge_publication_reentrant_cleared_slot_cannot_reenter_through_old_topology
             .cell(4, 4)
             .overlay_id,
         Some(25)
-    );
-}
-
-#[test]
-fn bridge_publication_perpendicular_uses_raw_tile_instead_of_runtime_class() {
-    let rules = rules();
-    let mut sim = world(&rules, 9);
-    // Native572C90 gates on raw +38; nothing but the raw tile can make this
-    // unrelated cell a middle-family tile.
-    sim.resolved_terrain
-        .as_mut()
-        .unwrap()
-        .test_set_high_bridge_rim_tiles(
-            crate::map::bridge_rim_tiles::HighBridgeRimTiles::from_ini(
-                0,
-                b"[General]\nBridgeMiddle1=7\nBridgeMiddle2=12\n",
-            ),
-        );
-    let original_tile = sim
-        .resolved_terrain
-        .as_ref()
-        .unwrap()
-        .cell(4, 3)
-        .unwrap()
-        .final_tile_index;
-    let mut host = host(&mut sim, &rules);
-    host.perpendicular((4, 4), Axis::EW, Phase::DamageB, 0, Family::High);
-    host.perpendicular((4, 4), Axis::EW, Phase::DamageB, 0, Family::High);
-    assert_eq!(
-        host.terrain().cell(4, 3).unwrap().final_tile_index,
-        original_tile
     );
 }

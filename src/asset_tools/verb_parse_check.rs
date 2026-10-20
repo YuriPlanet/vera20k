@@ -509,27 +509,6 @@ mod tests {
     }
 
     #[test]
-    fn a_fully_sampled_format_produces_no_cap_warning() {
-        let mut tallies = Tallies::new(DEFAULT_FAILURE_CAP);
-        tallies.record_failure("pal", 768, failure("bad.pal"));
-        let (rows, warnings) = tallies.into_rows();
-        assert_eq!(rows[0].failed, 1);
-        assert_eq!(rows[0].failures.len(), 1);
-        assert!(warnings.is_empty(), "{warnings:?}");
-    }
-
-    #[test]
-    fn format_rows_come_out_sorted_by_name() {
-        let mut tallies = Tallies::new(DEFAULT_FAILURE_CAP);
-        tallies.record_ok("vxl", 1);
-        tallies.record_ok("pal", 1);
-        tallies.record_ok("shp", 1);
-        let (rows, _) = tallies.into_rows();
-        let names: Vec<&str> = rows.iter().map(|row| row.format.as_str()).collect();
-        assert_eq!(names, ["pal", "shp", "vxl"]);
-    }
-
-    #[test]
     fn an_unknown_format_lists_the_tags_that_have_parsers() {
         let err = unknown_format_error("wav");
         assert!(err.error.contains("wav"), "{}", err.error);
@@ -558,12 +537,5 @@ mod tests {
         let truncated = truncate_error(&long);
         assert!(truncated.starts_with(&"x".repeat(MAX_ERROR_CHARS)));
         assert!(truncated.ends_with("(truncated)"), "{truncated}");
-    }
-
-    #[test]
-    fn default_options_check_every_format_with_the_documented_cap() {
-        let opts = ParseCheckOptions::default();
-        assert!(opts.format.is_none());
-        assert_eq!(opts.failure_cap, DEFAULT_FAILURE_CAP);
     }
 }

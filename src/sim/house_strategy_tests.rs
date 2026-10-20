@@ -17,6 +17,7 @@ use std::collections::BTreeSet;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::house_state::HouseStrategyEmergencyState;
 use crate::sim::rng::SimRng;
 use crate::sim::timer::CdTimer;
 use serde_json::Value;
@@ -140,12 +141,13 @@ fn the_strategy_timer_and_its_gates_match_native() {
         let (mut sim, names) = houses(int(&row["game_mode"]) != 0, 1);
         let owner = names[0];
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.is_human = flag(&row["human"]);
-        house.player_control = flag(&row["control"]);
-        house.multiplay_passive = flag(&row["passive"]);
-        house.strategy_timer = CdTimer::from_raw(int(&row["start"]), int(&row["delay"]));
+        house.set_is_human_for_test(flag(&row["human"]));
+        house.set_player_control_for_test(flag(&row["control"]));
+        house.set_multiplay_passive_for_test(flag(&row["passive"]));
+        house
+            .set_strategy_timer_for_test(CdTimer::from_raw(int(&row["start"]), int(&row["delay"])));
         // A live factory and cash keep Strategy to its draw.
-        house.economy.set_credits_for_test(1000);
+        house.economy_mut().set_credits_for_test(1000);
         spawn_building(&mut sim, owner, "FACTORY", 1000, false);
         sim.session
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
@@ -163,7 +165,7 @@ fn the_strategy_timer_and_its_gates_match_native() {
             crate::sim::world::FrameEffects::default(),
         );
 
-        let timer = sim.houses[&owner].strategy_timer;
+        let timer = sim.houses[&owner].strategy_timer();
         assert_eq!(
             (timer.start_frame(), timer.duration()),
             (int(&row["start_after"]), int(&row["delay_after"])),
@@ -196,30 +198,36 @@ fn the_strategy_matches_native() {
         let mut allies = BTreeSet::new();
         for (&name, peer) in others.iter().zip(peers) {
             let house = sim.houses.get_mut(&name).unwrap();
-            house.multiplay_passive = flag(&peer["passive"]);
-            house.is_defeated = flag(&peer["defeated"]);
+            house.set_multiplay_passive_for_test(flag(&peer["passive"]));
+            house.set_is_defeated_for_test(flag(&peer["defeated"]));
             if flag(&peer["ally"]) {
                 allies.insert(sim.interner.resolve(name).to_string());
             }
             let anger = int(&peer["anger"]);
             if anger != 0 {
                 let owner_house = sim.houses.get_mut(&owner).unwrap();
-                owner_house.grudge_scores.insert(name, anger);
+                owner_house.grudge_scores_mut_for_test().insert(name, anger);
             }
         }
         let owner_name = sim.interner.resolve(owner).to_string();
         sim.house_alliances.insert(owner_name, allies);
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.multiplay_passive = flag(&row["self_passive"]);
-        house.enemy_house = usize::try_from(int(&row["enemy"]))
-            .ok()
-            .map(|index| names[index]);
-        house.base_center = Some(cell(&row["centre"]));
-        house.alternate_base_center = cell(&row["alternate"]);
-        house.strategy_emergency.mode = int(&row["mode"]);
-        house.strategy_emergency.last_building_attack_frame = int(&row["attack_frame"]);
-        house.economy.set_credits_for_test(int(&row["money"]));
-        house.current_iq = int(&row["iq"]);
+        house.set_multiplay_passive_for_test(flag(&row["self_passive"]));
+        house.set_enemy_house_for_test(
+            usize::try_from(int(&row["enemy"]))
+                .ok()
+                .map(|index| names[index]),
+        );
+        house.set_base_center_for_test(Some(cell(&row["centre"])));
+        house.set_alternate_base_center_for_test(cell(&row["alternate"]));
+        house
+            .strategy_emergency_mut()
+            .set_mode_for_test(int(&row["mode"]));
+        house
+            .strategy_emergency_mut()
+            .note_building_attack(int(&row["attack_frame"]));
+        house.economy_mut().set_credits_for_test(int(&row["money"]));
+        house.set_current_iq_for_test(int(&row["iq"]));
         // VERA's list holds no null item; a native null is skipped by both
         // walks.
         let mut sellable = Vec::new();
@@ -247,14 +255,14 @@ fn the_strategy_matches_native() {
             }
         }
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.tracking.set_buildings_for_test(counted);
+        house.tracking_mut().set_buildings_for_test(counted);
         // The rows answer Check_Build_Need with `need`. A refinery and a
         // gatherer make VERA's answer 0, as for -1, which the urgency loop
         // never matches; without them it is 1, and Manage_Build_Queue,
         // whose rows only record the call, finds no economy type in these
         // rules to rebuild.
         if !(1..=4).contains(&int(&row["need"])) {
-            house.tracking.set_economy_for_test(1, 1, 0);
+            house.tracking_mut().set_economy_for_test(1, 1, 0);
         }
         sim.session
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
@@ -300,12 +308,12 @@ fn the_strategy_matches_native() {
         let house = &sim.houses[&owner];
         assert_eq!(delay, int(&row["delay"]), "{label}");
         assert_eq!(
-            house.strategy_emergency.mode,
+            house.strategy_emergency().mode(),
             int(&row["mode_after"]),
             "{label}"
         );
         assert_eq!(
-            house.enemy_house,
+            house.enemy_house(),
             usize::try_from(int(&row["enemy_after"]))
                 .ok()
                 .map(|index| names[index]),
@@ -313,7 +321,7 @@ fn the_strategy_matches_native() {
         );
         let anger: Vec<i32> = others
             .iter()
-            .map(|name| house.grudge_scores.get(name).copied().unwrap_or(0))
+            .map(|name| house.grudge_scores().get(name).copied().unwrap_or(0))
             .collect();
         let native_anger: Vec<i32> = row["anger_after"]
             .as_array()
@@ -330,7 +338,7 @@ fn the_strategy_matches_native() {
             );
         }
         assert_eq!(
-            house.strategy_emergency.all_to_hunt_bias,
+            house.strategy_emergency().all_to_hunt_bias(),
             !events(row, "all_to_hunt").is_empty(),
             "{label}"
         );
@@ -364,7 +372,9 @@ fn the_fire_sale_matches_native() {
             })
             .collect();
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.tracking.set_buildings_for_test(int(&row["current"]));
+        house
+            .tracking_mut()
+            .set_buildings_for_test(int(&row["current"]));
 
         fire_sale(
             &mut sim,
@@ -432,7 +442,10 @@ fn all_to_hunt_matches_native() {
         let (mut sim, names) = houses(true, 2);
         sim.resolve_type_handles(&rules);
         let (owner, other) = (names[0], names[1]);
-        sim.houses.get_mut(&owner).unwrap().is_human = flag(&row["human"]);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_is_human_for_test(flag(&row["human"]));
         let mut slots = Vec::new();
         for (slot, techno) in technos.iter().enumerate() {
             // A Techno neither Foot nor Building is beyond VERA's objects.
@@ -530,19 +543,10 @@ fn all_to_hunt_matches_native() {
         native.sort_unstable();
         assert_eq!(damaged, native, "{label}");
         assert_eq!(
-            sim.houses[&owner].strategy_emergency.all_to_hunt_bias,
+            sim.houses[&owner].strategy_emergency().all_to_hunt_bias(),
             flag(&row["latch"]),
             "{label}"
         );
-    }
-}
-
-fn state(mode: i32, last_attack: i32) -> HouseStrategyEmergencyState {
-    HouseStrategyEmergencyState {
-        mode,
-        all_to_hunt_bias: false,
-        last_building_attack_frame: last_attack,
-        last_attacker_house_index: -1,
     }
 }
 
@@ -565,7 +569,7 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         "fixture intern order must oppose the equal-score House order"
     );
     let mut defeated_house = house(defeated, 2);
-    defeated_house.is_defeated = true;
+    defeated_house.set_is_defeated_for_test(true);
     let mut houses = [
         house(owner, 0),
         house(allied, 1),
@@ -578,7 +582,7 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
     let mut alliances = HouseAllianceMap::new();
     alliances.insert("OWNER".to_string(), BTreeSet::from(["ALLIED".to_string()]));
     {
-        let anger = &mut houses.get_mut(&owner).unwrap().grudge_scores;
+        let anger = houses.get_mut(&owner).unwrap().grudge_scores_mut_for_test();
         anger.insert(allied, 99);
         anger.insert(defeated, 98);
         anger.insert(missing, 97);
@@ -587,14 +591,17 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
     }
 
     update_anger_nodes(&mut houses, &alliances, &interner, owner, first, 0);
-    assert_eq!(houses[&owner].enemy_house, Some(first));
+    assert_eq!(houses[&owner].enemy_house(), Some(first));
 
-    houses.get_mut(&owner).unwrap().enemy_house = None;
-    let missing_score = houses[&owner].grudge_scores[&missing];
+    houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_enemy_house_for_test(None);
+    let missing_score = houses[&owner].grudge_scores()[&missing];
     update_anger_nodes(&mut houses, &alliances, &interner, owner, missing, 5);
-    assert_eq!(houses[&owner].grudge_scores[&missing], missing_score);
+    assert_eq!(houses[&owner].grudge_scores()[&missing], missing_score);
     assert_eq!(
-        houses[&owner].enemy_house,
+        houses[&owner].enemy_house(),
         Some(first),
         "a rejected in-order null peer still triggers the full ordered rescan"
     );
@@ -602,28 +609,28 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
     houses
         .get_mut(&owner)
         .unwrap()
-        .grudge_scores
+        .grudge_scores_mut_for_test()
         .insert(first, i32::MAX);
     houses
         .get_mut(&owner)
         .unwrap()
-        .grudge_scores
+        .grudge_scores_mut_for_test()
         .insert(second, 1);
     update_anger_nodes(&mut houses, &alliances, &interner, owner, first, 1);
-    assert_eq!(houses[&owner].grudge_scores[&first], i32::MIN);
-    assert_eq!(houses[&owner].enemy_house, Some(second));
+    assert_eq!(houses[&owner].grudge_scores()[&first], i32::MIN);
+    assert_eq!(houses[&owner].enemy_house(), Some(second));
 
     update_anger_nodes(&mut houses, &alliances, &interner, owner, unregistered, 5);
-    assert!(!houses[&owner].grudge_scores.contains_key(&unregistered));
-    assert_eq!(houses[&owner].enemy_house, Some(second));
+    assert!(!houses[&owner].grudge_scores().contains_key(&unregistered));
+    assert_eq!(houses[&owner].enemy_house(), Some(second));
     houses
         .get_mut(&owner)
         .unwrap()
-        .grudge_scores
+        .grudge_scores_mut_for_test()
         .insert(second, 0);
     update_anger_nodes(&mut houses, &alliances, &interner, owner, owner, 5);
-    assert!(!houses[&owner].grudge_scores.contains_key(&owner));
-    assert_eq!(houses[&owner].enemy_house, None);
+    assert!(!houses[&owner].grudge_scores().contains_key(&owner));
+    assert_eq!(houses[&owner].enemy_house(), None);
 }
 
 #[test]
@@ -638,9 +645,12 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
     houses
         .get_mut(&owner)
         .unwrap()
-        .grudge_scores
+        .grudge_scores_mut_for_test()
         .insert(second, 5);
-    houses.get_mut(&owner).unwrap().enemy_house = Some(first);
+    houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_enemy_house_for_test(Some(first));
 
     update_anger_nodes(
         &mut houses,
@@ -650,15 +660,18 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
         first,
         0,
     );
-    assert!(!houses[&owner].grudge_scores.contains_key(&first));
-    assert_eq!(houses[&owner].enemy_house, Some(second));
+    assert!(!houses[&owner].grudge_scores().contains_key(&first));
+    assert_eq!(houses[&owner].enemy_house(), Some(second));
 
     houses
         .get_mut(&owner)
         .unwrap()
-        .grudge_scores
+        .grudge_scores_mut_for_test()
         .insert(first, 5);
-    houses.get_mut(&owner).unwrap().enemy_house = None;
+    houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_enemy_house_for_test(None);
     update_anger_nodes(
         &mut houses,
         &HouseAllianceMap::new(),
@@ -667,8 +680,8 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
         first,
         -5,
     );
-    assert_eq!(houses[&owner].grudge_scores.get(&first), Some(&0));
-    assert_eq!(houses[&owner].enemy_house, Some(second));
+    assert_eq!(houses[&owner].grudge_scores().get(&first), Some(&0));
+    assert_eq!(houses[&owner].enemy_house(), Some(second));
 }
 
 #[test]
@@ -681,23 +694,23 @@ fn gsi_04_05_anger_decay_uses_signed_frame_boundaries_and_strict_score_gate() {
     let two = interner.intern("TWO");
     let house_order = [owner, minimum, zero, one, two];
     let mut base = house(owner, 0);
-    base.grudge_scores.insert(minimum, i32::MIN);
-    base.grudge_scores.insert(zero, 0);
-    base.grudge_scores.insert(one, 1);
-    base.grudge_scores.insert(two, 2);
+    base.grudge_scores_mut_for_test().insert(minimum, i32::MIN);
+    base.grudge_scores_mut_for_test().insert(zero, 0);
+    base.grudge_scores_mut_for_test().insert(one, 1);
+    base.grudge_scores_mut_for_test().insert(two, 2);
 
     for frame in [99, 101] {
         let mut unchanged = base.clone();
-        decay_anger_scores(&mut unchanged, &house_order, frame);
-        assert_eq!(unchanged.grudge_scores, base.grudge_scores);
+        unchanged.decay_anger_scores(&house_order, frame);
+        assert_eq!(unchanged.grudge_scores(), base.grudge_scores());
     }
     for frame in [100, -100, 0] {
         let mut decayed = base.clone();
-        decay_anger_scores(&mut decayed, &house_order, frame);
-        assert_eq!(decayed.grudge_scores[&minimum], i32::MIN);
-        assert_eq!(decayed.grudge_scores[&zero], 0);
-        assert_eq!(decayed.grudge_scores[&one], 1);
-        assert_eq!(decayed.grudge_scores[&two], 1);
+        decayed.decay_anger_scores(&house_order, frame);
+        assert_eq!(decayed.grudge_scores()[&minimum], i32::MIN);
+        assert_eq!(decayed.grudge_scores()[&zero], 0);
+        assert_eq!(decayed.grudge_scores()[&one], 1);
+        assert_eq!(decayed.grudge_scores()[&two], 1);
     }
 }
 
@@ -709,15 +722,15 @@ fn gsi_04_05_anger_decay_does_not_reselect_enemy() {
     let stronger = interner.intern("STRONGER");
     let house_order = [owner, selected, stronger];
     let mut owner_house = house(owner, 0);
-    owner_house.grudge_scores.insert(selected, 2);
-    owner_house.grudge_scores.insert(stronger, 5);
-    owner_house.enemy_house = Some(selected);
+    owner_house.grudge_scores_mut_for_test().insert(selected, 2);
+    owner_house.grudge_scores_mut_for_test().insert(stronger, 5);
+    owner_house.set_enemy_house_for_test(Some(selected));
 
-    decay_anger_scores(&mut owner_house, &house_order, 100);
+    owner_house.decay_anger_scores(&house_order, 100);
 
-    assert_eq!(owner_house.grudge_scores[&selected], 1);
-    assert_eq!(owner_house.grudge_scores[&stronger], 4);
-    assert_eq!(owner_house.enemy_house, Some(selected));
+    assert_eq!(owner_house.grudge_scores()[&selected], 1);
+    assert_eq!(owner_house.grudge_scores()[&stronger], 4);
+    assert_eq!(owner_house.enemy_house(), Some(selected));
 }
 
 #[test]
@@ -728,33 +741,20 @@ fn all_to_hunt_override_is_persistent_and_follows_designated_enemy() {
     let bystander = InternedId::from_index(4);
     let mut house = HouseState::new(owner, 0, None, false, 0, 10);
 
-    house.enemy_house = Some(first_enemy);
+    house.set_enemy_house_for_test(Some(first_enemy));
     assert_eq!(all_to_hunt_score_override(&house, bystander), None);
 
-    house.strategy_emergency.set_all_to_hunt_bias();
+    house.strategy_emergency_mut().set_all_to_hunt_bias();
     assert_eq!(all_to_hunt_score_override(&house, first_enemy), None);
     assert_eq!(all_to_hunt_score_override(&house, bystander), Some(1));
 
-    house.enemy_house = Some(second_enemy);
+    house.set_enemy_house_for_test(Some(second_enemy));
     assert_eq!(all_to_hunt_score_override(&house, first_enemy), Some(1));
     assert_eq!(all_to_hunt_score_override(&house, second_enemy), None);
 
-    house.enemy_house = None;
+    house.set_enemy_house_for_test(None);
     assert_eq!(all_to_hunt_score_override(&house, bystander), None);
-    assert!(house.strategy_emergency.all_to_hunt_bias());
-}
-
-#[test]
-fn native_entry_writers_change_only_their_owned_fields() {
-    let mut emergency = state(-7, 123);
-    emergency.set_state_four();
-    assert_eq!(emergency.mode(), 4);
-    assert_eq!(emergency.last_building_attack_frame(), 123);
-    assert!(!emergency.all_to_hunt_bias());
-
-    emergency.note_building_attack(-55);
-    assert_eq!(emergency.last_building_attack_frame(), -55);
-    assert_eq!(emergency.mode(), 4);
+    assert!(house.strategy_emergency().all_to_hunt_bias());
 }
 
 #[test]
@@ -769,14 +769,17 @@ fn non_bincode_missing_house_field_uses_native_constructor_defaults() {
     let restored: HouseState =
         serde_json::from_value(value).expect("serde default fills the absent field");
     assert_eq!(
-        restored.strategy_emergency,
+        *restored.strategy_emergency(),
         HouseStrategyEmergencyState::default()
     );
-    assert_eq!(restored.strategy_emergency.mode(), 0);
-    assert!(!restored.strategy_emergency.all_to_hunt_bias());
-    assert_eq!(restored.strategy_emergency.last_building_attack_frame(), 0);
+    assert_eq!(restored.strategy_emergency().mode(), 0);
+    assert!(!restored.strategy_emergency().all_to_hunt_bias());
     assert_eq!(
-        restored.strategy_timer,
+        restored.strategy_emergency().last_building_attack_frame(),
+        0
+    );
+    assert_eq!(
+        *restored.strategy_timer(),
         crate::sim::house_state::strategy_timer_at_construction()
     );
 }

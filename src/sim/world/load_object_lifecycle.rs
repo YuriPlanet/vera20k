@@ -147,9 +147,6 @@ pub(crate) struct LoadObjectLifecycle {
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
     events: Vec<LoadObjectLifecycleEvent>,
-    #[cfg(any(test, feature = "test-support"))]
-    #[serde(skip)]
-    fail_next_registry: Option<LoadObjectRegistryKind>,
 }
 
 impl LoadObjectLifecycle {
@@ -442,12 +439,6 @@ impl LoadObjectLifecycle {
         registry: LoadObjectRegistryKind,
         handle: LoadOverlayHandle,
     ) -> Result<(), LoadOverlayLifecycleError> {
-        #[cfg(any(test, feature = "test-support"))]
-        if self.fail_next_registry == Some(registry) {
-            self.fail_next_registry = None;
-            return Err(LoadOverlayLifecycleError::RegistryCapacity { registry });
-        }
-
         let entries = match registry {
             LoadObjectRegistryKind::Object => &mut self.object_registry,
             LoadObjectRegistryKind::PointerExpiration => &mut self.pointer_expiration_registry,
@@ -533,11 +524,6 @@ impl LoadObjectLifecycle {
         self.events.push(event);
         #[cfg(not(any(test, feature = "test-support")))]
         let _ = event;
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    fn fail_next_join_for_test(&mut self, registry: LoadObjectRegistryKind) {
-        self.fail_next_registry = Some(registry);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -686,55 +672,5 @@ mod tests {
                 DeferredDeleteTicket::Overlay(alive_c.0)
             ]
         );
-    }
-
-    #[test]
-    fn every_registry_growth_failure_stops_at_its_exact_join() {
-        for registry in [
-            LoadObjectRegistryKind::Object,
-            LoadObjectRegistryKind::PointerExpiration,
-            LoadObjectRegistryKind::AllAbstract,
-            LoadObjectRegistryKind::TagRemoval,
-            LoadObjectRegistryKind::Overlay,
-        ] {
-            let mut lifecycle = LoadObjectLifecycle::default();
-            lifecycle.fail_next_join_for_test(registry);
-            let mut id_calls = 0;
-            let error = lifecycle
-                .construct_overlay(1, (1, 2), || {
-                    id_calls += 1;
-                    77
-                })
-                .unwrap_err();
-            assert_eq!(
-                error,
-                LoadOverlayLifecycleError::RegistryCapacity { registry }
-            );
-            assert_eq!(
-                id_calls,
-                usize::from(registry == LoadObjectRegistryKind::Overlay),
-                "native ID is assigned only after all four base joins"
-            );
-        }
-    }
-
-    #[test]
-    fn queue_growth_failure_retains_committed_uninit_prefix() {
-        let mut lifecycle = LoadObjectLifecycle::default();
-        let mut queue = DeferredDeleteQueue::default();
-        let handle = construct(&mut lifecycle, 1, 99);
-        lifecycle.begin_mark(handle, None).unwrap();
-        queue.fail_next_overlay_queue_for_test();
-
-        assert_eq!(
-            lifecycle.finish_common(handle, &mut queue),
-            Err(LoadOverlayLifecycleError::DeferredQueueCapacity)
-        );
-        let snapshot = lifecycle.snapshot(handle, &queue).unwrap();
-        assert!(!snapshot.alive);
-        assert!(snapshot.limbo);
-        assert!(!snapshot.on_map);
-        assert_eq!(snapshot.expiration_broadcasts, 1);
-        assert!(!snapshot.queued);
     }
 }

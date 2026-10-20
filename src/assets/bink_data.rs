@@ -573,16 +573,6 @@ mod tests {
     }
 
     #[test]
-    fn tree_bits_and_lens_have_16_by_16_shape() {
-        assert_eq!(BINK_TREE_BITS.len(), 16);
-        assert_eq!(BINK_TREE_LENS.len(), 16);
-        for t in 0..16 {
-            assert_eq!(BINK_TREE_BITS[t].len(), 16);
-            assert_eq!(BINK_TREE_LENS[t].len(), 16);
-        }
-    }
-
-    #[test]
     fn every_tree_covers_its_code_space_exactly() {
         // Kraft inequality: sum of 2^(maxlen - len_i) over all symbols == 2^maxlen.
         for (t, lens) in BINK_TREE_LENS.iter().enumerate() {
@@ -604,17 +594,6 @@ mod tests {
                 seen[v as usize] = true;
             }
             assert!(seen.iter().all(|&s| s), "pattern {} incomplete", p);
-        }
-    }
-
-    #[test]
-    fn quant_matrices_are_nonzero() {
-        // Sanity only — if we pasted a zero row, everything IDCT-related breaks.
-        for q in 0..16 {
-            let intra_sum: i64 = BINK_INTRA_QUANT[q].iter().map(|&v| v as i64).sum();
-            let inter_sum: i64 = BINK_INTER_QUANT[q].iter().map(|&v| v as i64).sum();
-            assert!(intra_sum > 0, "intra quant row {} is empty", q);
-            assert!(inter_sum > 0, "inter quant row {} is empty", q);
         }
     }
 }

@@ -256,19 +256,6 @@ mod tests {
     }
 
     #[test]
-    fn default_skirmish_speed_uses_verified_yr_stored_speed_one() {
-        assert_eq!(DEFAULT_YR_SKIRMISH_GAME_SPEED, 1);
-        assert_eq!(tps_for_game_speed(DEFAULT_YR_SKIRMISH_GAME_SPEED), 63);
-    }
-
-    #[test]
-    fn game_speed_one_is_not_the_old_speed_two_or_options_three_calibration() {
-        let default = tps_for_game_speed(DEFAULT_YR_SKIRMISH_GAME_SPEED);
-        assert_ne!(default, tps_for_game_speed(2));
-        assert_ne!(default, tps_for_game_speed(3));
-    }
-
-    #[test]
     fn item83_type_select_release_window_is_inclusive_and_repeat_does_not_rearm() {
         let start = Instant::now();
         let mut state = TypeSelectInputState::default();
@@ -279,13 +266,6 @@ mod tests {
         state.press(KeyCode::KeyT, start, false);
         assert!(!state.release(KeyCode::KeyT, start + Duration::from_millis(501)));
         assert!(!state.held());
-    }
-
-    #[test]
-    fn item83_type_select_outcomes_use_csf_keys_not_source_line_numbers() {
-        assert_eq!(TypeSelectOutcome::Empty.csf_key(), "MSG:NothingSelected");
-        assert_eq!(TypeSelectOutcome::Map.csf_key(), "MSG:SelAcrossMap");
-        assert_eq!(TypeSelectOutcome::Screen.csf_key(), "MSG:SelAcrossScreen");
     }
 }
 

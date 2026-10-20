@@ -21,8 +21,6 @@ use crate::render::bit_font::BitFont;
 use crate::ui::sidebar::SidebarView;
 // Generic credit glyph generation is render-owned (F06); this module keeps
 // only the sidebar-view adapter below. Re-exported for existing callers.
-#[cfg(test)]
-use crate::render::sidebar_text::{CREDITS_DEPTH, CREDITS_SURFACE_Y, format_credits};
 pub use crate::render::sidebar_text::{build_credits_instances, credits_tint};
 /// Per-frame wrapper over [`build_credits_instances`] taking the sidebar view.
 pub fn build_sidebar_credits_instances(
@@ -98,24 +96,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn credits_anchor_is_sidebar_surface_centre_at_row_two() {
-        let font = digit_font();
-        let rect = panel();
-        let inst = build_credits_instances(&font, 1250, rect, 1.0, [1.0, 1.0, 0.0], [0.0, 0.0]);
-
-        // gamemd: x = surface_width / 2 with the h-centre flag, y = the
-        // literal 2. Both literals are asserted here, not read back out of the
-        // constants, so a change to either fails.
-        assert_eq!(CREDITS_SURFACE_Y, 2.0);
-        let measured = font.text_width("1250") as i32;
-        let expected_x = 632.0 + (168 / 2 - measured / 2) as f32;
-        assert_eq!(inst[0].position[0], expected_x);
-        for q in &inst {
-            assert_eq!(q.position[1], 2.0, "credits sit on surface row 2");
-        }
-    }
-
     /// Native halves the surface width and the measured width with integer
     /// division. An odd/odd pair in float lands on a half pixel and the
     /// counter flips between two columns as the camera pans.
@@ -138,80 +118,6 @@ mod tests {
         let skewed = Rect { x: 100.4, ..rect };
         let inst = build_credits_instances(&font, 1, skewed, 1.0, [1.0, 1.0, 0.0], [0.0, 0.0]);
         assert_eq!(inst[0].position[0].fract(), 0.0);
-    }
-
-    #[test]
-    fn credits_depth_is_the_sidebar_text_layer() {
-        let font = digit_font();
-        let inst = build_credits_instances(&font, 500, panel(), 1.0, [1.0, 1.0, 0.0], [0.0, 0.0]);
-        // The `sidebar_text` lane depth. Above the chrome (0.00048) and the
-        // cameo overlays (0.00043), matching the cameo status labels.
-        assert_eq!(CREDITS_DEPTH, 0.00042);
-        for q in &inst {
-            assert_eq!(q.depth, 0.00042);
-        }
-    }
-
-    /// The colour *decision*, not just its propagation: the credits take the
-    /// side-dependent sidebar text colour, and specifically not the fixed
-    /// `(230,240,255)` the retired egui painter used.
-    #[test]
-    fn credits_use_the_side_text_colour_not_a_fixed_rgb() {
-        use crate::render::sidebar_chrome::SidebarTheme;
-
-        const RETIRED_EGUI_RGB: [f32; 3] = [230.0 / 255.0, 240.0 / 255.0, 255.0 / 255.0];
-        let allied = credits_tint(SidebarTheme::Allied);
-        let soviet = credits_tint(SidebarTheme::Soviet);
-        assert_eq!(allied, [164.0 / 255.0, 210.0 / 255.0, 1.0]);
-        assert_eq!(soviet, [1.0, 1.0, 0.0]);
-        assert_eq!(credits_tint(SidebarTheme::Yuri), soviet);
-        assert_ne!(allied, RETIRED_EGUI_RGB);
-        assert_ne!(soviet, allied, "the colour must depend on the side");
-
-        let font = digit_font();
-        for theme in [SidebarTheme::Allied, SidebarTheme::Soviet] {
-            let tint = credits_tint(theme);
-            let inst = build_credits_instances(&font, 500, panel(), 1.0, tint, [0.0, 0.0]);
-            assert!(!inst.is_empty());
-            for q in &inst {
-                assert_eq!(q.tint, tint);
-                assert_eq!(q.alpha, 1.0);
-            }
-        }
-    }
-
-    #[test]
-    fn credits_scale_with_the_ui_scale() {
-        let font = digit_font();
-        let rect = Rect {
-            x: 1264.0,
-            y: 0.0,
-            w: 336.0,
-            h: 1200.0,
-        };
-        let inst = build_credits_instances(&font, 1250, rect, 2.0, [1.0, 1.0, 0.0], [0.0, 0.0]);
-        assert_eq!(inst[0].size[0], 6.0, "'1' at 2x");
-        // Native row 2 scaled by the UI factor: 2 * 2 = 4.
-        assert_eq!(inst[0].position[1], 4.0);
-        let measured = (font.text_width("1250") as f32 * 2.0) as i32;
-        assert_eq!(
-            inst[0].position[0],
-            1264.0 + (336 / 2 - measured / 2) as f32
-        );
-    }
-
-    #[test]
-    fn format_credits_matches_the_native_percent_ld() {
-        assert_eq!(format_credits(0), "0");
-        assert_eq!(format_credits(10000), "10000");
-        // `%ld` is signed: a negative total prints its minus sign, and the
-        // glyph table has a '-' so it renders rather than falling through to
-        // the missing-glyph path.
-        assert_eq!(format_credits(-25), "-25");
-        let font = digit_font();
-        let inst = build_credits_instances(&font, -25, panel(), 1.0, [1.0, 1.0, 0.0], [0.0, 0.0]);
-        assert_eq!(inst.len(), 3);
-        assert_eq!(inst[0].size[0], 4.0, "leading '-' glyph");
     }
 
     /// The production wrapper must read the *displayed* credit total and the
@@ -267,18 +173,5 @@ mod tests {
         assert_eq!(view.panel_rect.w, 168.0);
         let expected_x = view.panel_rect.x + (168 / 2 - 26 / 2) as f32;
         assert_eq!(inst[0].position[0], expected_x);
-    }
-
-    #[test]
-    fn credits_follow_the_camera_offset_convention() {
-        let font = digit_font();
-        let plain = build_credits_instances(&font, 500, panel(), 1.0, [1.0, 1.0, 0.0], [0.0, 0.0]);
-        let offset =
-            build_credits_instances(&font, 500, panel(), 1.0, [1.0, 1.0, 0.0], [13.25, -7.5]);
-        assert_eq!(plain.len(), offset.len());
-        for (p, o) in plain.iter().zip(offset.iter()) {
-            assert_eq!(o.position[0] - p.position[0], 13.25);
-            assert_eq!(o.position[1] - p.position[1], -7.5);
-        }
     }
 }

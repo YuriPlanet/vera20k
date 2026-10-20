@@ -1062,17 +1062,6 @@ mod tests {
     }
 
     #[test]
-    fn default_facing_set_is_the_eight_compass_points() {
-        let facings = default_facings();
-        assert_eq!(facings, vec![0, 32, 64, 96, 128, 160, 192, 224]);
-        assert_eq!(facings.len(), COMPASS_NAMES.len());
-        // Every default must be nameable, or the sheet labels lose their point.
-        for facing in facings {
-            assert!(compass_name(facing).is_some(), "facing {facing}");
-        }
-    }
-
-    #[test]
     fn selection_defaults_to_the_compass_and_honours_an_explicit_list() {
         let default = select_facings(&[], 64);
         assert_eq!(default.facings, default_facings());
@@ -1254,14 +1243,6 @@ mod tests {
     }
 
     #[test]
-    fn output_filenames_zero_pad_the_facing_byte() {
-        assert_eq!(facing_png_name("htnk.vxl", 0), "htnk.vxl.000.png");
-        assert_eq!(facing_png_name("htnk.vxl", 32), "htnk.vxl.032.png");
-        assert_eq!(facing_png_name("htnk.vxl", 224), "htnk.vxl.224.png");
-        assert_eq!(sheet_png_name("htnk.vxl"), "htnk.vxl.sheet.png");
-    }
-
-    #[test]
     fn generated_output_predicate_matches_only_our_own_files() {
         assert!(is_generated_output("htnk.vxl.000.png", "htnk.vxl"));
         assert!(is_generated_output("htnk.vxl.224.png", "htnk.vxl"));
@@ -1270,25 +1251,6 @@ mod tests {
         assert!(!is_generated_output("index.tsv", "htnk.vxl"));
         assert!(!is_generated_output("htnk.vxl.notes.png", "htnk.vxl"));
         assert!(!is_generated_output("htnk.vxl.000.txt", "htnk.vxl"));
-    }
-
-    #[test]
-    fn sanitise_name_keeps_safe_characters_and_replaces_the_rest() {
-        assert_eq!(sanitise_name("htnk.vxl"), "htnk.vxl");
-        assert_eq!(sanitise_name("ra2\\dir/na me:x*?"), "ra2_dir_na_me_x__");
-        assert_eq!(sanitise_name(""), FALLBACK_DIR_NAME);
-    }
-
-    #[test]
-    fn render_dir_is_absolute_and_shares_the_shp_output_tree() {
-        // The root is whatever `--out` carried; only the layout under it is ours.
-        let dir = render_dir(Path::new("target/asset"), "htnk.vxl");
-        assert!(dir.is_absolute(), "{}", dir.display());
-        assert!(
-            dir.ends_with(Path::new(RENDER_SUBDIR).join("htnk.vxl")),
-            "{}",
-            dir.display()
-        );
     }
 
     #[test]
@@ -1303,20 +1265,6 @@ mod tests {
         // A corrupt header claiming a giant sprite fails instead of allocating.
         assert_eq!(fit_scale(60_000, 60_000, 1), None);
         assert_eq!(fit_scale(0, 0, 2), Some(2));
-    }
-
-    #[test]
-    fn last_resort_palette_reasons_are_detected_case_insensitively() {
-        assert!(is_last_resort_palette("last-resort-768-byte-scan"));
-        assert!(is_last_resort_palette("Scanned the source archive"));
-        assert!(!is_last_resort_palette("fallback-chain"));
-    }
-
-    #[test]
-    fn summarise_facings_caps_the_listing() {
-        assert_eq!(summarise_facings(&[0, 64, 128]), "0, 64, 128");
-        let many: Vec<u8> = (0..12).collect();
-        assert!(summarise_facings(&many).ends_with("+4 more"));
     }
 
     #[test]

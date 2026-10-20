@@ -403,7 +403,7 @@ fn damage_gates_match_original_execution() {
         let type_ref = victim.type_ref();
         let mut sim = sim_with(victim);
         let mut house = HouseState::new(owner, 0, None, flag("human", false), 0, 10);
-        house.player_control = flag("player_control", false);
+        house.set_player_control_for_test(flag("player_control", false));
         sim.houses.register(house);
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(flag(

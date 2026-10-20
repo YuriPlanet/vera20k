@@ -170,7 +170,7 @@ pub(super) fn launch_sites(
     sim.houses
         .get(&owner)
         .into_iter()
-        .flat_map(|house| house.base_projection.buildings())
+        .flat_map(|house| house.base_projection().buildings())
         .filter_map(|&id| {
             let entity = sim.substrate.entities.get(id)?;
             if !super::provided_supers(sim, rules, entity)

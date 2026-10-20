@@ -294,8 +294,8 @@ impl Simulation {
             ),
             distance: crush_distance(coords(unit), coords(victim)),
             reach: rules.combat_damage.crush,
-            easy: house.difficulty == crate::sim::house_state::HouseDifficulty::Easy,
-            iq: house.current_iq,
+            easy: house.difficulty() == crate::sim::house_state::HouseDifficulty::Easy,
+            iq: house.current_iq(),
             iq_auto_crush: rules.general.iq_auto_crush,
             disguised: victim.is_disguised_to(
                 unit.owner(),

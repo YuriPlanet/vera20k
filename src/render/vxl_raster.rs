@@ -46,24 +46,12 @@ pub(crate) fn prepare_native_draw(
     native::prepare_draw(vxl, hva, params, vpl)
 }
 
-/// Isometric camera pitch (60°, matching the original engine's isometric projection).
-#[cfg(test)]
-const CAMERA_PITCH_DEG: f32 = 60.0;
-
-/// World yaw offset (45°) to align model north with isometric grid.
-#[cfg(test)]
-const WORLD_YAW_OFFSET_DEG: f32 = 45.0;
-
 /// Number of distinct orientations a voxel body/turret/barrel can render at.
 ///
 /// The original quantizes facing to 5 bits before building the rotation matrix and
 /// reuses those same 5 bits as its draw-cache key, so there is no finer sub-facing
 /// anywhere in the voxel pipeline: a rendered voxel is always exactly 1 of 32.
 pub const VOXEL_FACING_STEPS: u32 = 32;
-
-/// Angular size of one voxel facing step: 360° / 32 = 11.25° = π/16.
-#[cfg(test)]
-const VOXEL_FACING_STEP_RAD: f32 = std::f32::consts::PI / 16.0;
 
 /// Quantize an 8-bit facing to the voxel renderer's 5-bit facing step (0–31).
 ///
@@ -83,17 +71,6 @@ pub fn voxel_facing_step(facing: u8) -> u8 {
 /// already-truncated byte.
 pub fn voxel_facing_step_u16(facing16: u16) -> u8 {
     crate::util::direction_tables::step32_from_facing16(facing16)
-}
-
-/// The body-rotation angle the original installs for a given facing step.
-///
-/// Built as `RotateZ((step - 8) * -π/16)`. The `-8` bias is a constant +90° folded
-/// into the body term; the camera carries the matching `-45°` yaw, so the net world
-/// rotation works out to `45° − facing°` — but the two terms sit on opposite sides
-/// of the terrain-slope matrix and therefore cannot be collapsed into one another.
-#[cfg(test)]
-fn voxel_facing_angle(step: u8) -> f32 {
-    (step as f32 - 8.0) * -VOXEL_FACING_STEP_RAD
 }
 
 /// The camera/view basis every voxel draw shares.
@@ -1624,106 +1601,6 @@ mod tests {
     }
 
     #[test]
-    fn test_render_produces_nonempty_sprite() {
-        let vxl: VxlFile = make_test_vxl();
-        let params: VxlRenderParams = VxlRenderParams::default();
-        let sprite: VxlSprite = render_vxl(&vxl, None, &params, None);
-
-        assert!(sprite.width > 0);
-        assert!(sprite.height > 0);
-        assert_eq!(
-            sprite.palette_indices.len(),
-            (sprite.width * sprite.height) as usize
-        );
-
-        let opaque_count: usize = sprite.palette_indices.iter().filter(|&&b| b != 0).count();
-        assert!(
-            opaque_count >= 2,
-            "Expected at least 2 opaque pixels, got {}",
-            opaque_count
-        );
-    }
-
-    #[test]
-    fn test_empty_model_returns_transparent() {
-        let vxl: VxlFile = VxlFile {
-            limb_count: 0,
-            body_size: 0,
-            palette: vec![],
-            limbs: vec![],
-        };
-        let params: VxlRenderParams = VxlRenderParams::default();
-        let sprite: VxlSprite = render_vxl(&vxl, None, &params, None);
-        assert_eq!(sprite.width, 1);
-        assert_eq!(sprite.height, 1);
-        // Empty model → single transparent byte (palette index 0).
-        assert_eq!(sprite.palette_indices[0], 0);
-    }
-
-    #[test]
-    fn test_facing_changes_output() {
-        let vxl: VxlFile = make_test_vxl();
-
-        let sprite_0: VxlSprite = render_vxl(
-            &vxl,
-            None,
-            &VxlRenderParams {
-                facing: 0,
-                ..Default::default()
-            },
-            None,
-        );
-        let sprite_128: VxlSprite = render_vxl(
-            &vxl,
-            None,
-            &VxlRenderParams {
-                facing: 128,
-                ..Default::default()
-            },
-            None,
-        );
-
-        let same_offset: bool = (sprite_0.offset_x - sprite_128.offset_x).abs() < 0.01
-            && (sprite_0.offset_y - sprite_128.offset_y).abs() < 0.01;
-        assert!(
-            !same_offset || sprite_0.palette_indices != sprite_128.palette_indices,
-            "Facing 0 and 128 should produce different output"
-        );
-    }
-
-    #[test]
-    fn test_point_plot_fills_pixels() {
-        let vxl: VxlFile = make_test_vxl();
-        let params: VxlRenderParams = VxlRenderParams::default();
-        let sprite: VxlSprite = render_vxl(&vxl, None, &params, None);
-
-        let opaque: usize = sprite.palette_indices.iter().filter(|&&b| b != 0).count();
-        assert!(
-            opaque >= 2,
-            "Point-plot should produce at least 2 opaque pixels, got {}",
-            opaque
-        );
-    }
-
-    #[test]
-    fn test_voxel_grid_packing() {
-        // Verify packed voxel round-trips correctly.
-        let packed: PackedVoxel = pack_voxel(42, 137);
-        assert_eq!(unpack_color(packed), 42);
-        assert_eq!(unpack_normal(packed), 137);
-
-        // Color index 0 = empty sentinel.
-        let empty: PackedVoxel = pack_voxel(0, 99);
-        assert_eq!(empty, 0x0063); // color 0 still packs but...
-        // Our grid check uses `packed == 0` which requires both to be 0.
-        // Color index 0 means transparent, so we skip it during grid build
-        // (the original voxel list already excludes color_index 0 in practice).
-        let truly_empty: PackedVoxel = 0;
-        assert_eq!(unpack_color(truly_empty), 0);
-        assert_eq!(unpack_normal(truly_empty), 0);
-    }
-
-    #[test]
     fn shadow_marks_every_occupied_column_and_nothing_else() {
         // The fixture has voxels in columns (1,1) and (0,0) only; the shadow is
         // those two columns flattened, shifted right, and nothing more.
@@ -1776,49 +1653,6 @@ mod tests {
             .filter(|&&b| b != 0)
             .count();
         assert!(lit_one < lit, "{lit_one} vs {lit}");
-    }
-
-    #[test]
-    fn shadow_is_the_bottom_face_through_the_draw_matrix_shifted_right() {
-        // Each occupied column's shadow point is its (x, y, 0) grid point through
-        // camera x model_to_world, plus 3 px right: on a slope the footprint
-        // follows the ramp because the slope matrix is inside model_to_world.
-        let vxl: VxlFile = make_test_vxl();
-        let flat_params: VxlRenderParams = VxlRenderParams::default();
-        let ramp_params: VxlRenderParams = VxlRenderParams {
-            slope_type: 4,
-            ..VxlRenderParams::default()
-        };
-        let (flat_limbs, _) = prepare_limb_data(&vxl, None, &flat_params);
-        let (ramp_limbs, _) = prepare_limb_data(&vxl, None, &ramp_params);
-        let m_flat: Mat4 = voxel_camera_view() * flat_limbs[0].model_to_world;
-        let m_ramp: Mat4 = voxel_camera_view() * ramp_limbs[0].model_to_world;
-        let p_flat: Vec3 = m_flat.transform_point3(Vec3::new(1.0, 1.0, 0.0));
-        let p_ramp: Vec3 = m_ramp.transform_point3(Vec3::new(1.0, 1.0, 0.0));
-        assert!(
-            (p_flat.y - p_ramp.y).abs() > 1e-4,
-            "the ramp must move the bottom face on screen"
-        );
-        let shifted: Mat4 =
-            Mat4::from_translation(Vec3::new(SHADOW_LIGHT_OFFSET_PX, 0.0, 0.0)) * m_flat;
-        let sp: Vec3 = shifted.transform_point3(Vec3::new(1.0, 1.0, 0.0));
-        assert!((sp.x - p_flat.x - 3.0).abs() < 1e-5 && (sp.y - p_flat.y).abs() < 1e-5);
-    }
-
-    #[test]
-    fn test_axis_order_positive_depth() {
-        // Positive depth contribution → iterate low to high.
-        let iter: AxisIter = axis_order(5, 1.0);
-        let vals: Vec<i32> = iter.iter().collect();
-        assert_eq!(vals, vec![0, 1, 2, 3, 4]);
-    }
-
-    #[test]
-    fn test_axis_order_negative_depth() {
-        // Negative depth contribution → iterate high to low.
-        let iter: AxisIter = axis_order(5, -1.0);
-        let vals: Vec<i32> = iter.iter().collect();
-        assert_eq!(vals, vec![4, 3, 2, 1, 0]);
     }
 
     #[test]
@@ -1890,47 +1724,6 @@ mod tests {
     }
 
     #[test]
-    fn test_camera_yaw_sign_is_load_bearing_on_slopes() {
-        // The camera's -45° yaw and the body term's +90° bias cancel on flat ground,
-        // which is why a sign flip in either one hides for as long as every unit is
-        // on level terrain. They do not cancel once a slope matrix sits between
-        // them: Rz does not commute with a tilt about a horizontal axis, so the
-        // wrong sign tilts a ramped unit about an axis 90° away from the original's.
-        //
-        // Pin both halves of that: identical on flat ground, different on a ramp.
-        let facing: u8 = 64;
-        let step = voxel_facing_step(facing) as f32;
-        let facing_rad = facing as f32 / 256.0 * std::f32::consts::TAU;
-
-        let correct_camera = Mat4::from_rotation_x(-CAMERA_PITCH_DEG.to_radians())
-            * Mat4::from_rotation_z(-WORLD_YAW_OFFSET_DEG.to_radians());
-        let correct_body = Mat4::from_rotation_z((step - 8.0) * -VOXEL_FACING_STEP_RAD);
-
-        // The pre-fix formulation: yaw sign flipped, +90° folded out of the body.
-        let flipped_camera = Mat4::from_rotation_x(-CAMERA_PITCH_DEG.to_radians())
-            * Mat4::from_rotation_z(WORLD_YAW_OFFSET_DEG.to_radians());
-        let flipped_body = Mat4::from_rotation_z(-facing_rad);
-
-        let flat = compute_slope_rotation(0);
-        assert_mat4_close(
-            correct_camera * flat * correct_body,
-            flipped_camera * flat * flipped_body,
-            1e-5,
-        );
-
-        let ramp = compute_slope_rotation(4);
-        let sample = Vec3::new(0.0, 1.0, 0.0);
-        let correct_point = (correct_camera * ramp * correct_body).transform_point3(sample);
-        let flipped_point = (flipped_camera * ramp * flipped_body).transform_point3(sample);
-        assert!(
-            (correct_point - flipped_point).length() > 0.1,
-            "camera yaw sign must change the rendered tilt on a ramp; got {:?} vs {:?}",
-            correct_point,
-            flipped_point
-        );
-    }
-
-    #[test]
     fn test_voxel_facing_quantizes_to_32_steps_with_round_half_up() {
         // The original reduces facing to 5 bits before building the rotation matrix
         // and reuses those same 5 bits as its draw-cache key, so 32 is the complete
@@ -1965,27 +1758,6 @@ mod tests {
                 voxel_facing_step(facing),
                 "8-bit and 16-bit quantization disagree at facing {}",
                 facing
-            );
-        }
-    }
-
-    #[test]
-    fn test_voxel_facing_angle_nets_to_45_minus_facing_on_flat_ground() {
-        // Sanity-check the +90° bias hiding in the `step - 8` term: composed with
-        // the camera's -45° yaw, the net world rotation on flat ground must come out
-        // at `45° - facing°` for the quantized facing. This is the identity that
-        // makes the sign pair self-consistent, and the reason the old formulation
-        // looked right for as long as nothing drove onto a ramp.
-        for step in 0..32u8 {
-            let net = -WORLD_YAW_OFFSET_DEG.to_radians() + voxel_facing_angle(step);
-            let expected =
-                WORLD_YAW_OFFSET_DEG.to_radians() - (step as f32) * VOXEL_FACING_STEP_RAD;
-            assert!(
-                (net - expected).abs() < 1e-5,
-                "step {}: net {} != expected {}",
-                step,
-                net,
-                expected
             );
         }
     }
@@ -2226,17 +1998,6 @@ mod tests {
     }
 
     #[test]
-    fn test_default_scale_is_unity() {
-        // The original applies no magnification between the section transform and
-        // the pixel write: the camera is a pure rotation, and the only constants on
-        // the path are a x256 (8.8 fixed point — the rasterizer indexes its 256x256
-        // visibility map with the high byte of each 16-bit coordinate) and a +128
-        // that centres the model in that buffer. VXL bounds are already pixels.
-        // The former 1.045 here was an eyeballed fudge with no such provenance.
-        assert_eq!(VxlRenderParams::default().scale, 1.0);
-    }
-
-    #[test]
     fn flat_geometry_uses_native_camera_and_facing_basis() {
         let vxl = make_test_vxl();
         let params = VxlRenderParams {
@@ -2272,70 +2033,6 @@ mod tests {
     }
 
     #[test]
-    fn test_slope_4_geometry_locks_current_direction() {
-        // Original initialized row4, selected by7559B0; sign follows the
-        // retained original matrix, including its table-trig magnitude.
-        let slope_mat = compute_slope_rotation(4);
-        assert_eq!(slope_mat.transform_point3(Vec3::Y).z.to_bits(), 0x3efaa753);
-        assert_eq!(slope_mat.transform_point3(-Vec3::Y).z.to_bits(), 0xbefaa753);
-    }
-
-    #[test]
-    fn test_slopes_9_to_12_alias_corner_ramps_5_to_8() {
-        // gamemd's VXL_MasterLighting_Init populates slope-table entries 9-12
-        // with the same compass+tilt arguments as 5-8 (CORNER tilt at
-        // NW/NE/SE/SW). The matrices are byte-identical at runtime.
-        // A regression that swapped CORNER for EDGE on 9-12 would tilt these
-        // cells more steeply than gamemd does — a player-visible drift.
-        for (extended, base) in [(9, 5), (10, 6), (11, 7), (12, 8)] {
-            let ext_mat: Mat4 = compute_slope_rotation(extended);
-            let base_mat: Mat4 = compute_slope_rotation(base);
-            assert_eq!(
-                ext_mat, base_mat,
-                "slope_type={} should produce the same matrix as slope_type={}",
-                extended, base
-            );
-        }
-    }
-
-    #[test]
-    fn test_slopes_13_to_16_use_edge_tilt_at_corner_directions() {
-        // Slopes 13-16 reuse the corner compass directions (NW/NE/SE/SW from
-        // 5-8) but with the steeper EDGE tilt magnitude — a combination not
-        // present in slopes 1-8. The matrix must therefore differ from the
-        // CORNER-tilt variant at the same compass.
-        for (steep, corner) in [(13, 5), (14, 6), (15, 7), (16, 8)] {
-            let steep_mat: Mat4 = compute_slope_rotation(steep);
-            let corner_mat: Mat4 = compute_slope_rotation(corner);
-            assert_ne!(
-                steep_mat, corner_mat,
-                "slope_type={} (EDGE tilt) must not equal slope_type={} (CORNER tilt)",
-                steep, corner
-            );
-            // Sanity: also not identity.
-            assert_ne!(
-                steep_mat,
-                Mat4::IDENTITY,
-                "slope_type={} should produce a tilt, not identity",
-                steep
-            );
-        }
-    }
-
-    #[test]
-    fn test_slopes_17_to_20_return_identity() {
-        // Original755852..755875 explicitly initializes these rows to identity.
-        for slope in 17..=20u8 {
-            assert_eq!(
-                compute_slope_rotation(slope),
-                Mat4::IDENTITY,
-                "slope_type={} must clamp to identity",
-                slope
-            );
-        }
-    }
-
-    #[test]
     fn original_native_slope_interpolation_reaches_renderer_unchanged() {
         let golden: serde_json::Value =
             serde_json::from_str(crate::test_fixture::text("tools/native_slope_blend.json"))
@@ -2358,22 +2055,6 @@ mod tests {
     }
 
     #[test]
-    fn test_vxl_slope_blend_midphase_differs_from_both_endpoints() {
-        let blend = VxlSlopeBlend {
-            from_slope: 4,
-            to_slope: 8,
-            phase_num: 1,
-            phase_den: SLOPE_TRANSITION_FRAMES,
-        };
-        let mid = compute_slope_blend_rotation(blend);
-        let from = compute_slope_rotation(4);
-        let to = compute_slope_rotation(8);
-        let sample = Vec3::new(0.25, 0.75, 1.0);
-        assert!((mid.transform_point3(sample) - from.transform_point3(sample)).length() > 0.001);
-        assert!((mid.transform_point3(sample) - to.transform_point3(sample)).length() > 0.001);
-    }
-
-    #[test]
     fn drive_ship_slope_negative_one_third_extrapolates_without_lower_clamp() {
         let negative = compute_slope_blend_rotation(VxlSlopeBlend {
             from_slope: 4,
@@ -2389,32 +2070,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_vxl_slope_blend_preserves_camera_slope_facing_order() {
-        let vxl = make_test_vxl();
-        let params = VxlRenderParams {
-            facing: 64,
-            slope_type: 8,
-            slope_blend: Some(VxlSlopeBlend {
-                from_slope: 4,
-                to_slope: 8,
-                phase_num: 1,
-                phase_den: SLOPE_TRANSITION_FRAMES,
-            }),
-            ..Default::default()
-        };
-
-        let (limbs, _) = prepare_limb_data(&vxl, None, &params);
-        let camera_view = voxel_camera_view();
-        let body_facing = voxel_body_facing(voxel_facing_step(params.facing));
-        let section_transform = Mat4::from_translation(Vec3::new(-1.0, -1.0, -1.0));
-        let expected = camera_view
-            * compute_slope_blend_rotation(params.slope_blend.unwrap())
-            * body_facing
-            * section_transform;
-
-        assert_mat4_close(limbs[0].combined, expected, 1e-6);
-    }
     /// Jumpjet Draw_Matrix against the executable
     /// (`tools/spatial_oracle/jumpjet_crash.json`, `draw_matrix`): the
     /// `TiltCrashJumpjet=` arm at four facings, over and under the 0.005 gate

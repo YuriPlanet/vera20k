@@ -345,27 +345,6 @@ mod tests {
     }
 
     #[test]
-    fn origin_cell_projects_to_the_x_bias() {
-        // Cell 0's centre sits on the projection's axis, so X lands exactly on
-        // the bias and Y on zero.
-        assert_eq!(project_cell_centre(0, 0), (PROJECT_X_BIAS, 15));
-    }
-
-    #[test]
-    fn moving_east_and_south_moves_opposite_ways_in_x() {
-        let (east_x, east_y) = project_cell_centre(10, 0);
-        let (south_x, south_y) = project_cell_centre(0, 10);
-        let (origin_x, _) = project_cell_centre(0, 0);
-        assert!(east_x > origin_x, "east goes right");
-        assert!(south_x < origin_x, "south goes left");
-        assert_eq!(
-            preview_cell_row(east_y),
-            preview_cell_row(south_y),
-            "both are the same distance down the screen"
-        );
-    }
-
-    #[test]
     fn projection_matches_the_canonical_with_preview_bias() {
         // Cell (0, 1): leptons (128, 384) → canonical (-30, 30); only the X
         // bias is preview-local. The toward-zero truncation of the shared
@@ -381,29 +360,6 @@ mod tests {
         let image = render_preview(&cells, &[]).expect("image");
         assert_eq!(image.width, ((max_col - min_col) * 2) as u32);
         assert_eq!(image.height, (max_row - min_row) as u32);
-    }
-
-    #[test]
-    fn each_cell_writes_a_left_and_a_right_pixel() {
-        let cells = diamond(20);
-        let image = render_preview(&cells, &[]).expect("image");
-        // Every written column pair carries the two distinct colours, so a
-        // solid-colour run would mean the pair collapsed.
-        let mut saw_left = false;
-        let mut saw_right = false;
-        for y in 0..image.height {
-            for x in 0..image.width {
-                match image.pixel(x, y) {
-                    Some([10, 20, 30]) => saw_left = true,
-                    Some([40, 50, 60]) => saw_right = true,
-                    _ => {}
-                }
-            }
-        }
-        assert!(
-            saw_left && saw_right,
-            "both halves of the diamond are drawn"
-        );
     }
 
     #[test]

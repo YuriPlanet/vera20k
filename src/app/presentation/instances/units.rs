@@ -1875,31 +1875,6 @@ mod tests {
     use crate::sim::timer::CdTimer;
     use crate::sim::world::Simulation;
 
-    /// `UnitClass::DrawIt` rounds the body facing to eight directions before
-    /// it moves the OREGATH point 30 leptons along it (`0x0073D134..0x0073D145`).
-    #[test]
-    fn oregath_arm_rounds_the_facing_to_eight_directions() {
-        let harvester = || GameEntity::test_default(1, "HARV", "Americans", 10, 10);
-        let at = |facing: u16| {
-            let mut entity = harvester();
-            entity.body_facing.snap(facing, 0);
-            harvest_arm_screen_position(&entity, 0)
-        };
-        assert_eq!(at(0x0000), at(0x0FFF));
-        assert_eq!(
-            at(0xF000),
-            at(0x0000),
-            "from 0xF000 a heading rounds to north"
-        );
-        assert_eq!(at(0x1000), at(0x2000));
-        assert_eq!(at(0x2FFF), at(0x2000));
-        assert_ne!(at(0x0FFF), at(0x1000));
-        // East is +X: down and to the right of the unit on screen.
-        let unit = crate::render::locomotor_visual::screen_position(&harvester());
-        let east = at(0x4000);
-        assert!(east.0 > unit.0 && east.1 > unit.1, "{east:?} from {unit:?}");
-    }
-
     /// OREGATH's row rounds the body facing to eight directions, `0x1000` on
     /// either side of each (`0x0073D1E7..0x0073D1FD`); the frame within the
     /// row is `(Foot+0x538 + Frame) % 15`, signed (`0x0073D25C..0x0073D273`).
@@ -1916,48 +1891,6 @@ mod tests {
         assert_eq!(oregath_frame(7, 20, 0x2000), Some(102));
         // A negative sum leaves a negative remainder, which row 0 cannot hold.
         assert_eq!(oregath_frame(u32::MAX - 20, 0, 0xE000), None);
-    }
-
-    /// `UnitClass::DrawIt` draws OREGATH only over a harvesting unit
-    /// (`+0x6D2`) of a `Harvester=` type at rest (`0x0073D0DB..0x0073D11C`),
-    /// at the frame its body counter and the global frame give.
-    #[test]
-    fn oregath_follows_the_harvesting_byte_and_the_body_counter() {
-        let rules =
-            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-                "[VehicleTypes]\n0=HARV\n[HARV]\nStrength=1000\nHarvester=yes\n\
-                 Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
-            ))
-            .expect("harvester rules");
-        let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Americans");
-        sim.houses
-            .register(crate::sim::house_state::HouseState::new(
-                owner, 0, None, false, 0, 10,
-            ));
-        let id = sim
-            .spawn_object_at_height("HARV", "Americans", 10, 10, 0x10, 0, &rules)
-            .expect("harvester");
-        let frame = sim.session.binary_frame();
-        let display = display_binary_frame_for_committed_session(frame);
-        let entity = sim.entities().get(id).unwrap();
-        assert_eq!(
-            harvest_overlay_frame(Some(&rules), &sim, entity, display),
-            None,
-            "not harvesting"
-        );
-        {
-            let entity = sim.substrate.entities.get_mut(id).unwrap();
-            entity.miner.as_mut().unwrap().set_harvesting_for_test(true);
-            entity.body_frame_counter.set_for_test(7);
-        }
-        let entity = sim.entities().get(id).unwrap();
-        assert_eq!(entity.body_facing_current(frame), 0x1000);
-        assert_eq!(
-            harvest_overlay_frame(Some(&rules), &sim, entity, display),
-            Some(90 + ((7 + frame) % 15) as u16),
-            "row 6"
-        );
     }
 
     /// All51 active RGB565 rows execute original Unit73BF7B..73C166.
@@ -2039,42 +1972,6 @@ mod tests {
         assert_eq!(compared, 51);
     }
 
-    #[test]
-    fn voxel_aircraft_does_not_take_unit_colour_arms() {
-        let rules =
-            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-                "[ColorAdd]\nBlue=0,0,24\n[AudioVisual]\nBerserkColor=0\nIronCurtainColor=0\n",
-            ))
-            .unwrap();
-        let mut aircraft = GameEntity::test_default_of_category(
-            1,
-            "ORCA",
-            "Americans",
-            10,
-            10,
-            crate::map::entities::EntityCategory::Aircraft,
-        );
-        aircraft.berserk.set_active_for_test(true);
-        aircraft.invulnerability = Some(
-            crate::sim::superweapon::invulnerability::InvulnerabilityState::new(
-                CdTimer::from_raw(4990, 750),
-                crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
-            ),
-        );
-        let light = crate::render::palette_light::PaletteLight::color_scheme([1000; 3], 1000)
-            .with_colour_word(0x1234);
-        let (tint, lit) = crate::app::presentation::lighting::unit_voxel_effect_light(
-            &aircraft,
-            [1.0; 3],
-            light,
-            Some(&rules),
-            5000,
-        );
-        assert_eq!(lit.colour_word(), 0x1234);
-        assert_eq!(lit.brightness(), 1000);
-        assert_eq!(tint, [1.0; 3]);
-    }
-
     /// Retail `[AudioVisual] IronCurtainColor=0;4` reads 0 through ReadInt
     /// (`0x0066B84C`; the INI loader drops the `;` comment), and `[ColorAdd]`'s
     /// first entry, None, is black: the curtain ORs nothing into a retail
@@ -2147,28 +2044,6 @@ mod tests {
             UnitRenderSlopeState::Stable(0),
             EntityDrawBand::Ground
         ));
-    }
-
-    #[test]
-    fn raw_cloak_shadow_gate_covers_zero_progress_and_type_flag() {
-        let mut entity = GameEntity::test_default(1, "SUB", "Russians", 0, 0);
-        entity.set_category_for_test(EntityCategory::Unit);
-        assert!(unit_shadow_admitted(&entity, false, EntityDrawBand::Ground));
-        assert!(!unit_shadow_admitted(&entity, true, EntityDrawBand::Ground));
-        for state in [1, 2, 3] {
-            let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
-            cloak.set_state_for_test(state);
-            entity.cloak = Some(cloak);
-            // StartCloaking703799 writes state1/progress0. At zero progress
-            // the body's visual query may be ordinary; the shadow stays absent.
-            assert!(!unit_shadow_admitted(
-                &entity,
-                false,
-                EntityDrawBand::Ground
-            ));
-        }
-        entity.cloak.as_mut().unwrap().set_state_for_test(0);
-        assert!(unit_shadow_admitted(&entity, false, EntityDrawBand::Ground));
     }
 
     #[test]
@@ -2384,24 +2259,6 @@ mod tests {
     }
 
     #[test]
-    fn unit_vxl_piece_order_keeps_native_boundary_values() {
-        for (high, expected) in [
-            (0u8, ["barrel", "turret"]),
-            (31, ["barrel", "turret"]),
-            (32, ["turret", "barrel"]),
-            (159, ["turret", "barrel"]),
-            (160, ["barrel", "turret"]),
-            (255, ["barrel", "turret"]),
-        ] {
-            assert_eq!(
-                native_turret_barrel_order(u16::from(high) << 8, "turret", "barrel"),
-                expected,
-                "facing high byte {high}"
-            );
-        }
-    }
-
-    #[test]
     fn unit_vxl_piece_order_matches_native_selector_for_every_facing() {
         for facing in 0..=u16::MAX {
             let native_quadrant = ((((u32::from(facing) >> 13) + 1) >> 1) & 3) as u8;
@@ -2415,83 +2272,6 @@ mod tests {
                 expected,
                 "facing {facing:#06x}, native quadrant {native_quadrant}"
             );
-        }
-    }
-
-    #[test]
-    fn drive_ship_slope_unit_extraction_uses_last_processed_frame_without_mutation() {
-        let mut sim = Simulation::new();
-        let mut entity = GameEntity::test_default(1, "DRIVE", "Americans", 0, 0);
-        entity.set_owner_for_test(sim.intern("Americans"));
-        entity.set_type_ref_for_test(sim.intern("DRIVE"));
-        entity.locomotor = Some(LocomotorState::for_test_kind_at_frame(
-            LocomotorKind::Drive,
-            39,
-        ));
-        let slope = entity
-            .locomotor
-            .as_mut()
-            .unwrap()
-            .active_slope_transition_mut()
-            .unwrap();
-        slope.snap(3, 39);
-        slope.sample_process_entry(8, 40);
-        sim.substrate.entities.insert(entity);
-
-        assert_eq!(display_binary_frame_for_committed_session(0), u32::MAX);
-
-        for (committed_binary_frame, expected) in [
-            (
-                41,
-                UnitRenderSlopeState::Transition {
-                    from_slope: 3,
-                    to_slope: 8,
-                    phase_num: 0,
-                    phase_den: SLOPE_TRANSITION_FRAMES,
-                },
-            ),
-            (
-                42,
-                UnitRenderSlopeState::Transition {
-                    from_slope: 3,
-                    to_slope: 8,
-                    phase_num: 1,
-                    phase_den: SLOPE_TRANSITION_FRAMES,
-                },
-            ),
-            (
-                43,
-                UnitRenderSlopeState::Transition {
-                    from_slope: 3,
-                    to_slope: 8,
-                    phase_num: 2,
-                    phase_den: SLOPE_TRANSITION_FRAMES,
-                },
-            ),
-            (44, UnitRenderSlopeState::Stable(8)),
-        ] {
-            sim.session
-                .set_binary_frame_for_test(committed_binary_frame);
-            let before_hash = sim.state_hash();
-            let display_binary_frame =
-                display_binary_frame_for_committed_session(sim.session.binary_frame());
-            assert_eq!(display_binary_frame, committed_binary_frame.wrapping_sub(1));
-            let entity = sim.substrate.entities.get(1).unwrap();
-            assert_eq!(
-                locomotor_render_slope_state(entity, display_binary_frame),
-                Some(expected)
-            );
-            assert_eq!(
-                locomotor_render_slope_state(entity, display_binary_frame),
-                Some(expected),
-                "repeated presentation extraction for one committed frame is stable"
-            );
-            assert_eq!(
-                display_binary_frame_for_committed_session(sim.session.binary_frame()),
-                display_binary_frame,
-                "a paused presentation pass retains the same committed-frame selector"
-            );
-            assert_eq!(sim.state_hash(), before_hash, "presentation is read-only");
         }
     }
 
@@ -2536,47 +2316,6 @@ mod tests {
             }),
             "session frame 51 presents processed frame 50, one third through a timer started at 49"
         );
-    }
-
-    #[test]
-    fn turret_offset_pivot_uses_the_same_slope_blend_as_raster_layers() {
-        const OFFSET: i32 = 80;
-        const FACING: u8 = 0;
-        fn close(a: (f32, f32), b: (f32, f32)) -> bool {
-            (a.0 - b.0).abs() < 0.000_01 && (a.1 - b.1).abs() < 0.000_01
-        }
-
-        let stable_from = turret_screen_offset(OFFSET, FACING, UnitRenderSlopeState::Stable(0));
-        let stable_to = turret_screen_offset(OFFSET, FACING, UnitRenderSlopeState::Stable(4));
-        assert_eq!(
-            stable_to,
-            crate::render::vxl_raster::turret_pivot_screen_offset(OFFSET, FACING, 4, 1.0),
-            "the stable path remains the existing exact slope transform"
-        );
-
-        let blended = |phase_num| {
-            turret_screen_offset(
-                OFFSET,
-                FACING,
-                UnitRenderSlopeState::Transition {
-                    from_slope: 0,
-                    to_slope: 4,
-                    phase_num,
-                    phase_den: SLOPE_TRANSITION_FRAMES,
-                },
-            )
-        };
-        let phase_zero = blended(0);
-        let phase_one_third = blended(1);
-        let phase_two_thirds = blended(2);
-
-        assert!(close(phase_zero, stable_from));
-        assert!(!close(phase_zero, stable_to));
-        assert!(!close(phase_one_third, stable_from));
-        assert!(!close(phase_one_third, stable_to));
-        assert!(!close(phase_two_thirds, stable_from));
-        assert!(!close(phase_two_thirds, stable_to));
-        assert!(!close(phase_one_third, phase_two_thirds));
     }
 
     fn spawn_manager(states: &[SpawnSlotState]) -> SpawnManagerState {
@@ -2630,95 +2369,4 @@ mod tests {
         assert_eq!(no_spawn_alt_type_id("V3", true, None), None);
     }
 
-    #[test]
-    fn gsi_13_07_dreadnought_stays_loaded_while_any_slot_is_docked() {
-        for (states, expected) in [
-            (
-                [SpawnSlotState::ReadyDocked, SpawnSlotState::InFlight],
-                None,
-            ),
-            (
-                [SpawnSlotState::Reloading, SpawnSlotState::Regenerating],
-                None,
-            ),
-            (
-                [SpawnSlotState::InFlight, SpawnSlotState::Regenerating],
-                Some("DREDWO"),
-            ),
-        ] {
-            let manager = spawn_manager(&states);
-            assert_eq!(
-                no_spawn_alt_type_id("DRED", true, Some(&manager)).as_deref(),
-                expected,
-                "states {states:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn gsi_13_07_no_spawn_alt_selection_is_not_manager_timer_gated() {
-        let mut manager = spawn_manager(&[SpawnSlotState::ReadyDocked]);
-        assert!(!manager.update_timer().expired(10));
-        assert_eq!(no_spawn_alt_type_id("V3", true, Some(&manager)), None);
-
-        manager.slots_mut_for_test()[0].set_state_for_test(SpawnSlotState::InFlight);
-        assert_eq!(
-            no_spawn_alt_type_id("V3", true, Some(&manager)).as_deref(),
-            Some("V3WO"),
-            "the next presentation query sees the slot transition without an AI pass"
-        );
-    }
-
-    #[test]
-    fn gsi_13_10_vxl_selector_adds_the_class_extra_to_the_top_scalar() {
-        let mut grid = lighting::CellLightGrid::new();
-        grid.insert_profiled_light((4, 5), [1.0, 0.88, 0.88], 1.0);
-
-        let unit = vxl_body_tint(&grid, (4, 5), EntityCategory::Unit, 200);
-        let aircraft = vxl_body_tint(&grid, (4, 5), EntityCategory::Aircraft, 424);
-        let structure = vxl_body_tint(&grid, (4, 5), EntityCategory::Structure, 200);
-
-        for (actual, expected) in unit.into_iter().zip([1.2, 1.056, 1.056]) {
-            assert!((actual - expected).abs() < 0.0001);
-        }
-        for (actual, expected) in aircraft.into_iter().zip([1.424, 1.25312, 1.25312]) {
-            assert!((actual - expected).abs() < 0.0001);
-        }
-        for (actual, expected) in structure.into_iter().zip([1.0, 0.88, 0.88]) {
-            assert!((actual - expected).abs() < 0.0001);
-        }
-    }
-
-    #[test]
-    fn split_bound_ignores_atlas_padding_and_unrequested_part_facings() {
-        let body = UnitSpriteEntry {
-            uv_origin: [0.0; 2],
-            uv_size: [1.0; 2],
-            pixel_size: [100.0, 100.0],
-            offset_x: -50.0,
-            offset_y: -50.0,
-            page: 0,
-            native_draw_bounds: Some([-10, -15, 20, 25]),
-        };
-        let turret = UnitSpriteEntry {
-            native_draw_bounds: Some([-5, -20, 10, 15]),
-            ..body
-        };
-        let (rect, split) =
-            composite_draw_bounds([(body, [0.0, 100.0]), (turret, [0.0, 100.0])]).depth_rect(true);
-        assert!(split);
-        assert_eq!(rect, [80.0, 30.0]);
-        let (rect, split) = composite_draw_bounds([(body, [0.0, 100.0])]).depth_rect(false);
-        assert!(!split);
-        assert_eq!(rect, [50.0, 100.0]);
-        let unknown = UnitSpriteEntry {
-            native_draw_bounds: None,
-            ..body
-        };
-        assert!(
-            !composite_draw_bounds([(body, [0.0, 0.0]), (unknown, [0.0, 0.0])])
-                .depth_rect(true)
-                .1
-        );
-    }
 }

@@ -70,6 +70,103 @@ pub fn initial_multiplayer_max_ahead(protocol: i32, mut response_time: impl FnMu
     }
 }
 
+/// Arguments of the IPX `SetTiming` call (`0x540C60`, thiscall on the IPX
+/// manager `0xA8E9C0`) issued by the WOL start-timing block: retry delta,
+/// max retries (`-1`), timeout (`retry_delta * 8`) and the bool that makes the
+/// manager forward the timing to every connection (always 1 here).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolIpxTiming {
+    pub retry_delta: i32,
+    pub max_retries: i32,
+    pub timeout: i32,
+    pub apply_to_connections: bool,
+}
+
+/// Network timing globals written by the WOL start-timing block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolStartTiming {
+    /// MaxAhead `0xA8B550`.
+    pub max_ahead: i32,
+    /// FrameSendRate `0xA8B554`.
+    pub frame_send_rate: i32,
+    /// PreCalcMaxAhead `0xA8B56C`.
+    pub precalc_max_ahead: i32,
+    /// PreCalcFrameRate `0xA8B570`.
+    pub precalc_frame_rate: i32,
+    /// MaxMaxAhead `0xA8B568`.
+    pub max_max_ahead: i32,
+    /// LatencyFudge `0xA8DB9C`.
+    pub latency_fudge: i32,
+    /// `None` when the highest ping is 0 or exactly 1000 (no call).
+    pub set_timing: Option<WolIpxTiming>,
+}
+
+/// WOL "Start Game Now" `0x794BA0` timing block `0x794F6F..0x79523E`, run by
+/// host and guest alike after the server's StartGame echo.
+///
+/// `game_speed` is `[0xA8B268]` (unsigned bound: anything outside 0..=5,
+/// negatives included, takes the slowest row); `pings` are the eight dwords
+/// at `0xB7790C`, reduced to a signed maximum starting from 0 so negative
+/// (unknown) pings are ignored. `channel_owner` is true when the first channel
+/// user row with flag bit 0 (`0xB77908` rows, +0) has a nickname (+0x24)
+/// equal to the local one under ASCII case-insensitive `_stricmp 0x7C8D20`;
+/// no flagged row means false. The ping-to-retry conversion uses the native
+/// signed magic divisions `0x10624DD3>>6` (/1000) and `0x51EB851F>>5` (/100)
+/// after a wrapping `ping * 60`. The command-line debug byte `0xA8E2C8`
+/// (+20 MaxAhead, doubled ping) is dormant and not ported. Not ported here:
+/// the clear of `0xA8B574[0xD0]`, current speed `0xA8EB60 = game_speed`,
+/// the `0x841F30..3C` writes and `0xA8ED84 = 0`.
+/// Original gamemd.exe controls: tools/storage_oracle/wol_shell.py, timing.
+pub fn wol_start_timing(game_speed: i32, pings: [i32; 8], channel_owner: bool) -> WolStartTiming {
+    // Jump table 0x79561C; `ja` at 0x794F8B is unsigned.
+    let (max_ahead, owner_frame_rate, frame_send_rate) = match game_speed as u32 {
+        0 => (40, 60, 10),
+        1 => (40, 45, 10),
+        2 => (30, 30, 5),
+        3 => (20, 20, 5),
+        4 => (20, 15, 5),
+        5 => (20, 12, 5),
+        _ => (10, 10, 5),
+    };
+    let ping = pings.into_iter().fold(0, i32::max);
+    let mut timing = WolStartTiming {
+        max_ahead,
+        frame_send_rate,
+        precalc_max_ahead: 0,
+        precalc_frame_rate: if channel_owner { owner_frame_rate } else { 0 },
+        max_max_ahead: max_ahead,
+        latency_fudge: 1,
+        set_timing: None,
+    };
+    let round_down = |value: i32| (value as u32 / 10 * 10) as i32;
+    if ping == 0 || ping == 1000 {
+        // 0x7953BB: every player, floor 10 (unsigned `ja`).
+        timing.precalc_max_ahead = round_down(max_ahead).max(10);
+        return timing;
+    }
+    if ping > 1000 {
+        timing.latency_fudge = 2;
+    }
+    let frames = ping.wrapping_mul(60) / 1000;
+    let retry_delta = frames.wrapping_add(frames.wrapping_mul(120) / 100);
+    timing.set_timing = Some(WolIpxTiming {
+        retry_delta,
+        max_retries: -1,
+        timeout: retry_delta.wrapping_mul(8),
+        apply_to_connections: true,
+    });
+    if channel_owner {
+        // 0x79536C jump table 0x795634: fudge 0/1 -> MaxAhead, 2 -> x1.5.
+        let base = if timing.latency_fudge == 2 {
+            max_ahead + ((max_ahead as u32) >> 1) as i32
+        } else {
+            max_ahead
+        };
+        timing.precalc_max_ahead = round_down(base);
+    }
+    timing
+}
+
 /// The two verified network send-frame policies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkSendPolicy {
@@ -829,6 +926,48 @@ mod tests {
                 case["role"]
             );
         }
+    }
+
+    #[test]
+    fn wol_start_timing_matches_original_start_game_now_block() {
+        let corpus = crate::test_fixture::json("tools/storage_oracle/wol_shell.json");
+        let cases = corpus["timing"].as_array().unwrap();
+        let int = |value: &serde_json::Value| i32::try_from(value.as_i64().unwrap()).unwrap();
+        let mut checked = 0;
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            // The command-line debug byte 0xA8E2C8 is dormant; its controls
+            // only document the native +20/x2 branch.
+            if case["debug"].as_bool().unwrap() {
+                continue;
+            }
+            let pings: Vec<i32> = case["pings"].as_array().unwrap().iter().map(int).collect();
+            let result = super::wol_start_timing(
+                int(&case["game_speed"]),
+                pings.try_into().unwrap(),
+                case["channel_owner"].as_bool().unwrap(),
+            );
+            let set_timing = case["set_timing"]
+                .as_array()
+                .map(|args| super::WolIpxTiming {
+                    retry_delta: int(&args[0]),
+                    max_retries: int(&args[1]),
+                    timeout: int(&args[2]),
+                    apply_to_connections: int(&args[3]) != 0,
+                });
+            let expected = super::WolStartTiming {
+                max_ahead: int(&case["max_ahead"]),
+                frame_send_rate: int(&case["frame_send_rate"]),
+                precalc_max_ahead: int(&case["precalc_max_ahead"]),
+                precalc_frame_rate: int(&case["precalc_frame_rate"]),
+                max_max_ahead: int(&case["max_max_ahead"]),
+                latency_fudge: int(&case["latency_fudge"]),
+                set_timing,
+            };
+            assert_eq!(result, expected, "{name}");
+            checked += 1;
+        }
+        assert_eq!(checked, cases.len() - 3, "three dormant debug controls");
     }
 
     fn opaque(opcode: u8, house: i32, frame: i32, payload: &[u8]) -> SynchronizedCommand {

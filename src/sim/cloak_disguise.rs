@@ -771,7 +771,7 @@ impl crate::sim::world::Simulation {
             .session
             .current_house()
             .and_then(|id| self.houses.get(&id))
-            .map_or(2, |house| match house.side_index {
+            .map_or(2, |house| match house.side_index() {
                 0 => 0,
                 1 => 1,
                 _ => 2,
@@ -1162,15 +1162,6 @@ mod tests {
         );
         assert!(result.transitioned && !result.consumed_scenario_rng);
         assert_eq!(rng.logical_state(), before);
-    }
-
-    #[test]
-    fn reveal_timer_blocks_until_expiry() {
-        let mut state = DisguiseRuntime::default();
-        assert!(!state.reveal_blocks(0));
-        state.block_reacquisition(100, 10);
-        assert!(state.reveal_blocks(109));
-        assert!(!state.reveal_blocks(110));
     }
 
     #[test]

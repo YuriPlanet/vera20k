@@ -285,7 +285,7 @@ fn building_discovery_updates_last_type_only_after_admission_outside_init() {
         0,
     )
     .unwrap();
-    let built_before = sim.houses[&owner].stats.built();
+    let built_before = sim.houses[&owner].stats().built();
     for row in source["histories"].as_array().unwrap() {
         let viewer = if row["viewer_current"].as_bool().unwrap() {
             player
@@ -306,7 +306,7 @@ fn building_discovery_updates_last_type_only_after_admission_outside_init() {
             integer(&row["owner"]["type_df8_copy"])
         );
         assert_eq!(
-            sim.houses[&owner].stats.built(),
+            sim.houses[&owner].stats().built(),
             built_before,
             "discovery never scores production"
         );

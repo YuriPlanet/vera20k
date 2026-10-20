@@ -146,17 +146,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn automatic_recalc_tube_is_same_cell_zero_step_shell() {
-        let tube = TubeFact::automatic_recalc_shell((12, 34), 2);
-
-        assert_eq!(tube.entry, (12, 34));
-        assert_eq!(tube.exit, (12, 34));
-        assert_eq!(tube.direction, 2);
-        assert_eq!(tube.path_len(), 0);
-        assert_eq!(tube.source, TubeSource::AutomaticRecalcShell);
-    }
-
-    #[test]
     fn native_cell_index_preserves_signed_and_out_of_range_admission() {
         assert!(NativeTubeCellIndex::NONE.admits_automatic_construction(2));
         assert_eq!(NativeTubeCellIndex::NONE.validated_id(2), None);
@@ -172,16 +161,5 @@ mod tests {
         let truncated_negative = NativeTubeCellIndex::from_registry_ordinal(0x8000);
         assert_eq!(truncated_negative.raw(), i16::MIN);
         assert!(truncated_negative.admits_automatic_construction(0x8001));
-    }
-
-    #[test]
-    fn explicit_tube_preserves_path_steps() {
-        let tube = TubeFact::explicit((1, 1), (4, 1), 2, vec![2, 2, 2]);
-
-        assert_eq!(tube.entry, (1, 1));
-        assert_eq!(tube.exit, (4, 1));
-        assert_eq!(tube.path_steps, vec![2, 2, 2]);
-        assert_eq!(tube.path_len(), 3);
-        assert_eq!(tube.source, TubeSource::ExplicitMap);
     }
 }

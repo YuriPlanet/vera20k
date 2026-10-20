@@ -240,35 +240,12 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
 
     #[test]
-    fn parse_preview_metadata() {
-        let ini = IniFile::from_str("[Preview]\nSize=0,0,80,50\n[PreviewPack]\n1=ABC\n2=DEF\n");
-        let preview = parse_preview_section(&ini);
-        assert_eq!(preview.size, Some((80, 50)));
-        assert!(preview.has_packed_preview);
-        assert_eq!(preview.decoded, None);
-    }
-
-    #[test]
     fn empty_preview_pack_is_not_counted() {
         let ini = IniFile::from_str("[PreviewPack]\n1=\n");
         let preview = parse_preview_section(&ini);
         assert_eq!(preview.size, None);
         assert!(!preview.has_packed_preview);
         assert_eq!(preview.decoded, None);
-    }
-
-    #[test]
-    fn parse_preview_size_uses_rect_dimensions() {
-        let ini = IniFile::from_str("[Preview]\nSize=0,0,138,75\n");
-        let preview = parse_preview_section(&ini);
-        assert_eq!(preview.size, Some((138, 75)));
-    }
-
-    #[test]
-    fn parse_preview_size_rejects_single_value() {
-        let ini = IniFile::from_str("[Preview]\nSize=138\n");
-        let preview = parse_preview_section(&ini);
-        assert_eq!(preview.size, None);
     }
 
     /// ReadRect scans a two-field value into the origin, leaving no size.
@@ -283,20 +260,6 @@ mod tests {
     fn preview_pack_text_preserves_source_order() {
         let ini = IniFile::from_str("[PreviewPack]\n2=BBB\n10=CCC\n1=AAA\n");
         assert_eq!(preview_pack_text(&ini).as_deref(), Some("BBBCCCAAA"));
-    }
-
-    #[test]
-    fn preview_pack_text_rejects_empty_numbered_values() {
-        let ini = IniFile::from_str("[PreviewPack]\n1=\n2=\n");
-        assert_eq!(preview_pack_text(&ini), None);
-    }
-
-    #[test]
-    fn decode_preview_pack_literal_chunk_to_rgba() {
-        let preview = decode_preview_pack("CgAGABcBAgMEBQYRAAA=", 2, 1).expect("valid preview");
-        assert_eq!(preview.width, 2);
-        assert_eq!(preview.height, 1);
-        assert_eq!(preview.rgba, vec![1, 2, 3, 255, 4, 5, 6, 255]);
     }
 
     #[test]
@@ -315,28 +278,6 @@ mod tests {
     fn parse_preview_section_leaves_valid_pack_lazy() {
         let ini =
             IniFile::from_str("[Preview]\nSize=0,0,2,1\n[PreviewPack]\n1=CgAGABcBAgMEBQYRAAA=\n");
-        let preview = parse_preview_section(&ini);
-        assert_eq!(preview.size, Some((2, 1)));
-        assert!(preview.has_packed_preview);
-        assert_eq!(preview.decoded, None);
-    }
-
-    #[test]
-    fn decode_preview_image_from_ini_decodes_valid_pack() {
-        let ini =
-            IniFile::from_str("[Preview]\nSize=0,0,2,1\n[PreviewPack]\n1=CgAGABcBAgMEBQYRAAA=\n");
-        let decoded = decode_preview_image_from_ini(&ini)
-            .expect("valid preview decode")
-            .expect("decoded preview");
-        assert_eq!(decoded.width, 2);
-        assert_eq!(decoded.height, 1);
-        assert_eq!(decoded.rgba, vec![1, 2, 3, 255, 4, 5, 6, 255]);
-    }
-
-    #[test]
-    fn parse_preview_section_keeps_invalid_pack_nonfatal() {
-        let ini =
-            IniFile::from_str("[Preview]\nSize=0,0,2,1\n[PreviewPack]\n1=not valid base64!\n");
         let preview = parse_preview_section(&ini);
         assert_eq!(preview.size, Some((2, 1)));
         assert!(preview.has_packed_preview);

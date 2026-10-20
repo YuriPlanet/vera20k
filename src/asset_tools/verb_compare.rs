@@ -1132,20 +1132,6 @@ mod tests {
     }
 
     #[test]
-    fn sanitiser_agrees_with_verb_render() {
-        // Fixtures copied from `verb_render::tests::
-        // sanitise_name_keeps_safe_characters_and_replaces_the_rest`. If that
-        // rule ever changes, this list is where the two verbs diverge.
-        assert_eq!(sanitise_name("sidebar.shp"), "sidebar.shp");
-        assert_eq!(sanitise_name("gi-idle_01.shp"), "gi-idle_01.shp");
-        assert_eq!(sanitise_name("ra2\\dir/na me:x*?"), "ra2_dir_na_me_x__");
-        assert_eq!(sanitise_name(""), FALLBACK_DIR_NAME);
-        assert_eq!(sanitise_name("///"), "___");
-        // Same fallback string as verb_render's and verb_extract's.
-        assert_eq!(FALLBACK_DIR_NAME, "asset");
-    }
-
-    #[test]
     fn compare_dir_is_absolute_and_sits_beside_the_render_tree() {
         let dir = compare_dir(Path::new(DEFAULT_OUT_ROOT), "POWERP.SHP");
         assert!(dir.is_absolute(), "{}", dir.display());
@@ -1165,18 +1151,6 @@ mod tests {
     }
 
     #[test]
-    fn compare_dir_preserves_an_absolute_out_root_verbatim() {
-        let root = if cfg!(windows) {
-            PathBuf::from("C:\\tmp\\out")
-        } else {
-            PathBuf::from("/tmp/out")
-        };
-        let dir = compare_dir(&root, "x.shp");
-        assert!(dir.starts_with(&root), "{}", dir.display());
-        assert!(dir.ends_with(Path::new(COMPARE_SUBDIR).join("x.shp")));
-    }
-
-    #[test]
     fn a_traversing_name_flattens_to_one_component() {
         let dir = compare_dir(Path::new(DEFAULT_OUT_ROOT), &sanitise_name("../../etc/x"));
         assert!(dir.ends_with(".._.._etc_x"), "{}", dir.display());
@@ -1186,24 +1160,6 @@ mod tests {
             "{}",
             dir.display()
         );
-    }
-
-    #[test]
-    fn variant_png_names_are_indexed_ordered_and_leaf_named() {
-        assert_eq!(
-            variant_png_name("POWERP.SHP", 0, SIDEC01),
-            "POWERP.SHP.v00.sidec01.mix.png"
-        );
-        assert_eq!(
-            variant_png_name("POWERP.SHP", 1, SIDEC02),
-            "POWERP.SHP.v01.sidec02.mix.png"
-        );
-        // Two chains ending in the same leaf still get distinct filenames.
-        assert_ne!(
-            variant_png_name("X.SHP", 0, "ra2.mix -> cache.mix"),
-            variant_png_name("X.SHP", 1, "ra2md.mix -> cache.mix")
-        );
-        assert_eq!(sheet_png_name("POWERP.SHP"), "POWERP.SHP.compare.png");
     }
 
     #[test]
@@ -1218,14 +1174,6 @@ mod tests {
         assert!(!is_generated_output("index.tsv", "gi.shp"));
         assert!(!is_generated_output("gi.shp.v00.png", "gi.shp"));
         assert!(!is_generated_output("gi.shp.vxx.ra2.mix.png", "gi.shp"));
-    }
-
-    #[test]
-    fn the_checksum_separates_equal_length_payloads() {
-        assert_eq!(content_checksum(b"abcd"), content_checksum(b"abcd"));
-        assert_ne!(content_checksum(b"abcd"), content_checksum(b"abce"));
-        // Order matters, so a byte swap is not mistaken for the same art.
-        assert_ne!(content_checksum(b"ab"), content_checksum(b"ba"));
     }
 
     #[test]

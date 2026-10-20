@@ -77,7 +77,7 @@ fn assert_state(sim: &Simulation, owner: InternedId, expected: &Value, context: 
             u32::try_from(expected["produced_totals"][family].as_u64().unwrap()).unwrap(),
         );
     }
-    assert_eq!(house.stats.built(), total, "{context}: score Built");
+    assert_eq!(house.stats().built(), total, "{context}: score Built");
     house.validate_production_history().unwrap();
 }
 
@@ -176,7 +176,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                     };
                     let held = sim
                         .production
-                        .factories
+                        .factories()
                         .view(owner, strip)
                         .and_then(|factory| factory.object)
                         .and_then(|object| object.entity_id);
@@ -184,7 +184,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                         sim.discard_constructed_limbo(held, Some(&rules), FrameEffects::default());
                     }
                     sim.production
-                        .factories
+                        .factories_mut()
                         .remove_factory(FactoryHolder::House(owner, strip));
                     let queued = step["queued"].as_array().unwrap();
                     if let Some(index) = step["held_index"].as_i64() {
@@ -192,7 +192,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                         let type_id = sim.interner.get(&name).unwrap();
                         assert!(
                             sim.production
-                                .factories
+                                .factories_mut()
                                 .test_enqueue_kernel(owner, strip, type_id, 0, 0,)
                         );
                         construct_active_factory_fixture(&mut sim, &rules, owner, strip, type_id)
@@ -201,7 +201,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                             let name = type_name(family, int(index));
                             let type_id = sim.interner.get(&name).unwrap();
                             sim.production
-                                .factories
+                                .factories_mut()
                                 .test_enqueue_kernel(owner, strip, type_id, 0, 0);
                         }
                     } else {
@@ -211,7 +211,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                     sim.houses
                         .get_mut(&owner)
                         .unwrap()
-                        .tracking
+                        .tracking_mut()
                         .set_owned_for_test(
                             EntityCategory::from(category(family)),
                             query,

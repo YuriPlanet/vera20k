@@ -67,18 +67,18 @@ fn assert_production_state(
         "{name}: House+1FC"
     );
     assert_eq!(
-        house.economy.credits(),
+        house.economy().credits(),
         number(&original["credits"]),
         "{name}: actual wallet"
     );
     assert_eq!(
-        house.economy.spent_credits(),
+        house.economy().spent_credits(),
         number(&original["spent"]),
         "{name}: money-spent statistic"
     );
     let actual = sim
         .production
-        .factories
+        .factories()
         .iter_insertion_ordered()
         .into_iter()
         .find(|factory| factory.owner == owner && factory.category == ProductionCategory::Aircraft);
@@ -276,7 +276,7 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
         input["house_power"]
     );
     assert_eq!(
-        sim.houses[&owner].tracking.airport_docks(),
+        sim.houses[&owner].tracking().airport_docks(),
         number(&input["airport_docks"])
     );
     if !history["initial_state"]["dirty"].as_bool().unwrap() {
@@ -331,7 +331,7 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
     let held = runtime
         .simulation
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Aircraft)
         .unwrap()
         .object

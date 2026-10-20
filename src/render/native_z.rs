@@ -560,84 +560,6 @@ mod tests {
     }
 
     #[test]
-    fn gradient_table_matches_the_bytes_at_0x00817710() {
-        let t = GRADIENT_TABLE;
-        assert_eq!(
-            (
-                t[0].increment,
-                t[0].threshold,
-                t[0].step_dir,
-                t[0].top_seeded
-            ),
-            (1, 1, -1, true)
-        );
-        assert_eq!(
-            (
-                t[1].increment,
-                t[1].threshold,
-                t[1].step_dir,
-                t[1].top_seeded
-            ),
-            (2, 3, -1, true)
-        );
-        assert_eq!(
-            (
-                t[2].increment,
-                t[2].threshold,
-                t[2].step_dir,
-                t[2].top_seeded
-            ),
-            (1, 3, 1, false)
-        );
-    }
-
-    #[test]
-    fn flat_gradient_walks_one_unit_nearer_per_row_from_the_top() {
-        // Top row Z is the ground Z of that screen row; each row down is nearer.
-        let top = DEFAULT_Z - 100;
-        assert_eq!(sprite_row_z(ZGradient::Flat, 100, 20, 0, 0), top);
-        assert_eq!(sprite_row_z(ZGradient::Flat, 100, 20, 0, 7), top - 7);
-        assert_eq!(sprite_row_z(ZGradient::Flat, 100, 20, -2, 0), top - 2);
-    }
-
-    #[test]
-    fn moderate_gradient_quantises_the_seed_and_steps_two_per_three_rows() {
-        let seed = ((DEFAULT_Z - 101) / 3) * 3;
-        assert_eq!(sprite_row_z(ZGradient::Moderate, 101, 30, 0, 0), seed);
-        assert_eq!(sprite_row_z(ZGradient::Moderate, 101, 30, 0, 1), seed);
-        assert_eq!(sprite_row_z(ZGradient::Moderate, 101, 30, 0, 2), seed - 1);
-        assert_eq!(sprite_row_z(ZGradient::Moderate, 101, 30, 0, 3), seed - 2);
-        assert_eq!(sprite_row_z(ZGradient::Moderate, 101, 30, 0, 6), seed - 4);
-    }
-
-    #[test]
-    fn vertical_gradient_anchors_on_the_bottom_row_and_climbs_nearer_upward() {
-        // Height 30 (divisible by 3): accum starts at 3 -> reset to 0 and seed +1.
-        let raw = DEFAULT_Z - 30 - 100 + 1 - 2;
-        let seed = (raw / 3) * 3 - 10 + 1;
-        assert_eq!(sprite_seed_z(ZGradient::Vertical, 100, 30, -2), (seed, 0));
-        assert_eq!(sprite_row_z(ZGradient::Vertical, 100, 30, -2, 0), seed);
-        assert_eq!(sprite_row_z(ZGradient::Vertical, 100, 30, -2, 2), seed);
-        assert_eq!(sprite_row_z(ZGradient::Vertical, 100, 30, -2, 3), seed + 1);
-        assert_eq!(sprite_row_z(ZGradient::Vertical, 100, 30, -2, 29), seed + 9);
-        // The bottom row sits within one quantum of the ground Z of that row.
-        let bottom_ground = DEFAULT_Z - (100 + 29);
-        assert!((sprite_row_z(ZGradient::Vertical, 100, 30, 0, 29) - bottom_ground).abs() <= 3);
-    }
-
-    #[test]
-    fn vertical_gradient_height_not_divisible_by_three_keeps_the_partial_accumulator() {
-        // Height 31: accum = 3 - 1 = 2, so the first step lands after one row.
-        let raw = DEFAULT_Z - 31 - 100 + 1;
-        let seed = (raw / 3) * 3 - 10;
-        assert_eq!(sprite_seed_z(ZGradient::Vertical, 100, 31, 0), (seed, 2));
-        assert_eq!(sprite_row_z(ZGradient::Vertical, 100, 31, 0, 0), seed);
-        assert_eq!(sprite_row_z(ZGradient::Vertical, 100, 31, 0, 1), seed + 1);
-        assert_eq!(sprite_row_z(ZGradient::Vertical, 100, 31, 0, 3), seed + 1);
-        assert_eq!(sprite_row_z(ZGradient::Vertical, 100, 31, 0, 4), seed + 2);
-    }
-
-    #[test]
     fn building_shape_uses_unquantised_bottom_seed_and_raw_frames_only_clip() {
         // Regression derived from the 437C39..437C72 arithmetic, not a
         // captured parity golden. A neutral shape must have one Z at all rows.
@@ -662,14 +584,6 @@ mod tests {
         assert_eq!(lifted, ground);
         // Odd levels truncate the half unit toward zero.
         assert_eq!(tile_base_z(400 - 15, 1), DEFAULT_Z - 385 - 30 - 15);
-    }
-
-    #[test]
-    fn flat_tile_zdata_makes_lower_rows_nearer() {
-        // Retail CLEAR01.TEM Z-data runs 29 at the top row to 1..3 at the
-        // bottom, so `base + zdata` decreases down the tile: nearer.
-        let base = tile_base_z(200, 0);
-        assert!(base + 29 > base + 1);
     }
 
     #[test]

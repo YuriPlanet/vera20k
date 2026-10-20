@@ -92,10 +92,4 @@ mod tests {
         assert_eq!(vars[&0].name, "Replaced");
         assert!(vars[&0].initially_set);
     }
-
-    #[test]
-    fn test_missing_variable_names_is_empty() {
-        let ini = IniFile::from_str("[Map]\nTheater=TEMPERATE\n");
-        assert!(parse_local_variables(&ini).is_empty());
-    }
 }

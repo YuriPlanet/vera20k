@@ -739,7 +739,7 @@ pub(crate) fn building_can_be_occupied_by(
 fn owner_is_multiplay_passive(owner: InternedId, houses: &crate::sim::houses::Houses) -> bool {
     houses
         .get(&owner)
-        .is_some_and(|house| house.multiplay_passive)
+        .is_some_and(|house| house.multiplay_passive())
 }
 
 /// The passenger, building, their types and the building's cargo, by id:
@@ -1098,7 +1098,7 @@ pub fn add_garrison_occupant(
         sim.sound_events
             .push(SimSoundEvent::BuildingGarrisonedSfx { owner, rx, ry });
     }
-    if sim.houses.get(&owner).is_some_and(|house| house.is_human)
+    if sim.houses.get(&owner).is_some_and(|house| house.is_human())
         && let Some(pax) = sim.substrate.entities.get_mut(pax_id)
     {
         pax.building_entry.clear_occupy_seeks();

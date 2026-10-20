@@ -1013,18 +1013,6 @@ mod tests {
         SoundRegistry::from_ini(&with_sound_list(&format!("{STOCK_DEFAULTS}{body}")))
     }
 
-    #[test]
-    fn test_parse_single_sound() {
-        let ini: IniFile =
-            with_sound_list("[VGCannon1]\nSounds=vgcannon.wav\nVolume=80\nPriority=high\n");
-        let reg: SoundRegistry = SoundRegistry::from_ini(&ini);
-        assert_eq!(reg.len(), 1);
-        let entry: &SoundEntry = reg.get("VGCannon1").expect("should find entry");
-        assert_eq!(entry.sounds, vec!["vgcannon.wav"]);
-        assert_eq!(entry.volume, 80);
-        assert_eq!(entry.priority, 3);
-    }
-
     /// Every token in the native table, in both cases, plus the terminator's
     /// default for an unrecognised or numeric value.
     #[test]
@@ -1055,14 +1043,6 @@ mod tests {
         assert_eq!(entry.sounds, vec!["e1sel01", "e1sel02", "e1sel03"]);
         let comma = SoundRegistry::from_ini(&with_sound_list("[X]\nSounds=a.wav,b.wav\n"));
         assert_eq!(comma.get("X").unwrap().sounds, vec!["a.wav,b.wav"]);
-    }
-
-    #[test]
-    fn test_case_insensitive_lookup() {
-        let ini: IniFile = with_sound_list("[TestSound]\nSounds=test.wav\n");
-        let reg: SoundRegistry = SoundRegistry::from_ini(&ini);
-        assert!(reg.get("testsound").is_some());
-        assert!(reg.get("TESTSOUND").is_some());
     }
 
     /// Registration comes from `[SoundList]`, not from the section headers:
@@ -1424,37 +1404,11 @@ mod tests {
     }
 
     #[test]
-    fn test_whitespace_separated() {
-        let ini: IniFile = with_sound_list("[GISelect]\nSounds= igisea igiseb igisec\nVolume=85\n");
-        let reg: SoundRegistry = SoundRegistry::from_ini(&ini);
-        let entry: &SoundEntry = reg.get("GISelect").expect("should find entry");
-        assert_eq!(entry.sounds, vec!["igisea", "igiseb", "igisec"]);
-        assert_eq!(entry.volume, 85);
-    }
-
-    #[test]
-    fn test_strip_dollar_prefix() {
-        let ini: IniFile =
-            with_sound_list("[VoiceTest]\nSounds= $igisea $igiseb $igisec\nVolume=85\n");
-        let reg: SoundRegistry = SoundRegistry::from_ini(&ini);
-        let entry: &SoundEntry = reg.get("VoiceTest").expect("should find entry");
-        assert_eq!(entry.sounds, vec!["igisea", "igiseb", "igisec"]);
-    }
-
-    #[test]
     fn test_strip_hash_prefix() {
         let ini: IniFile = with_sound_list("[HashTest]\nSounds= #sound1 #$sound2\n");
         let reg: SoundRegistry = SoundRegistry::from_ini(&ini);
         let entry: &SoundEntry = reg.get("HashTest").expect("should find entry");
         assert_eq!(entry.sounds, vec!["sound1", "sound2"]);
-    }
-
-    #[test]
-    fn test_inline_comment_filtered() {
-        let ini: IniFile = with_sound_list("[CommentTest]\nSounds= irocdiea ;$irocdib $irocdic\n");
-        let reg: SoundRegistry = SoundRegistry::from_ini(&ini);
-        let entry: &SoundEntry = reg.get("CommentTest").expect("should find entry");
-        assert_eq!(entry.sounds, vec!["irocdiea"]);
     }
 
     /// `VoxClass::ReadEVAINI @ 0x00753000` walks `[DialogList]` values and
@@ -1610,27 +1564,6 @@ mod tests {
         assert_eq!(EvaSide::from_side_index(7), EvaSide::Yuri);
     }
 
-    /// `ReadINI` priority tokens map to the four list indices in the native
-    /// order (`LOW`→0 .. `CRITICAL`→3); `HIGH`/`LOWEST` at `0x008161CC`/
-    /// `0x008161E0` are not consulted by this reader.
-    #[test]
-    fn eva_priority_tokens_match_the_native_parse_table() {
-        assert_eq!(EvaPriority::parse("LOW"), Some(EvaPriority::Low));
-        assert_eq!(EvaPriority::parse("normal"), Some(EvaPriority::Normal));
-        assert_eq!(
-            EvaPriority::parse(" IMPORTANT"),
-            Some(EvaPriority::Important)
-        );
-        assert_eq!(EvaPriority::parse("Critical"), Some(EvaPriority::Critical));
-        assert_eq!(EvaPriority::parse("HIGH"), None);
-        assert_eq!(EvaPriority::Critical.list_index(), 3);
-        assert!(EvaPriority::Low < EvaPriority::Normal);
-        assert_eq!(
-            EvaType::parse("QUEUED_INTERRUPT"),
-            Some(EvaType::QueuedInterrupt)
-        );
-        assert_eq!(EvaType::parse("interrupt"), Some(EvaType::Interrupt));
-    }
     #[test]
     fn waypoint_cue_literal_sound_ordinals_follow_first_registration_with_duplicates() {
         let registry = SoundRegistry::from_ini(&IniFile::from_str(

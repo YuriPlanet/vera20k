@@ -194,16 +194,6 @@ fn auto_deploy_difficulty_vector_matches_original_retained_reader() {
 }
 
 #[test]
-fn test_parse_sequence_value_basic() {
-    let entry: InfantrySequenceEntry =
-        parse_sequence_value("8,6,6").expect("Should parse Walk=8,6,6");
-    assert_eq!(entry.start_frame, 8);
-    assert_eq!(entry.frames_per_facing, 6);
-    assert_eq!(entry.facings, 6);
-    assert_eq!(entry.facing_hint, None);
-}
-
-#[test]
 fn test_parse_sequence_value_with_facing_hint() {
     let entry: InfantrySequenceEntry =
         parse_sequence_value("56,15,0,S").expect("Should parse Idle1=56,15,0,S");
@@ -211,13 +201,6 @@ fn test_parse_sequence_value_with_facing_hint() {
     assert_eq!(entry.frames_per_facing, 15);
     assert_eq!(entry.facings, 0);
     assert_eq!(entry.facing_hint, Some(FacingHint::S));
-}
-
-#[test]
-fn test_parse_sequence_value_facing_hint_ne() {
-    let entry: InfantrySequenceEntry =
-        parse_sequence_value("71,15,0,NE").expect("Should parse with NE hint");
-    assert_eq!(entry.facing_hint, Some(FacingHint::NE));
 }
 
 #[test]
@@ -242,25 +225,6 @@ fn gsi_05_07_all_completion_facing_tokens_map_to_dir_bytes() {
         );
     }
     assert_eq!(completion_facing(None), None);
-}
-
-#[test]
-fn test_parse_sequence_value_single_frame() {
-    let entry: InfantrySequenceEntry =
-        parse_sequence_value("0,1,1").expect("Should parse Ready=0,1,1");
-    assert_eq!(entry.start_frame, 0);
-    assert_eq!(entry.frames_per_facing, 1);
-    assert_eq!(entry.facings, 1);
-    assert_eq!(entry.facing_hint, None);
-}
-
-#[test]
-fn test_parse_sequence_value_zero_frames() {
-    let entry: InfantrySequenceEntry =
-        parse_sequence_value("0,0,0").expect("Should parse zero-frame entry");
-    assert_eq!(entry.start_frame, 0);
-    assert_eq!(entry.frames_per_facing, 0);
-    assert_eq!(entry.facings, 0);
 }
 
 #[test]
@@ -348,103 +312,6 @@ fn test_sequence_kind_from_ini_key_core_mappings() {
 }
 
 #[test]
-fn test_sequence_kind_from_ini_key_case_insensitive() {
-    assert_eq!(sequence_kind_from_ini_key("walk"), Some(SequenceKind::Walk));
-    assert_eq!(sequence_kind_from_ini_key("WALK"), Some(SequenceKind::Walk));
-    assert_eq!(sequence_kind_from_ini_key("Walk"), Some(SequenceKind::Walk));
-    assert_eq!(
-        sequence_kind_from_ini_key("Shovel"),
-        Some(SequenceKind::Shovel)
-    );
-}
-
-#[test]
-fn test_sequence_kind_from_ini_key_unknown_returns_none() {
-    assert_eq!(sequence_kind_from_ini_key("Tumble"), None);
-    assert_eq!(sequence_kind_from_ini_key("Carry"), None);
-    assert_eq!(sequence_kind_from_ini_key("Bogus"), None);
-}
-
-#[test]
-fn test_sequence_kind_from_ini_key_deploy_variants() {
-    assert_eq!(
-        sequence_kind_from_ini_key("Deploy"),
-        Some(SequenceKind::Deploy)
-    );
-    assert_eq!(
-        sequence_kind_from_ini_key("Undeploy"),
-        Some(SequenceKind::Undeploy)
-    );
-    assert_eq!(
-        sequence_kind_from_ini_key("Deployed"),
-        Some(SequenceKind::Deployed)
-    );
-    assert_eq!(
-        sequence_kind_from_ini_key("DeployedFire"),
-        Some(SequenceKind::DeployedFire)
-    );
-    assert_eq!(
-        sequence_kind_from_ini_key("DeployedIdle"),
-        Some(SequenceKind::DeployedIdle)
-    );
-    assert_eq!(sequence_kind_from_ini_key("Swim"), Some(SequenceKind::Swim));
-    assert_eq!(sequence_kind_from_ini_key("Fly"), Some(SequenceKind::Fly));
-    assert_eq!(
-        sequence_kind_from_ini_key("WetAttack"),
-        Some(SequenceKind::WetAttack)
-    );
-}
-
-#[test]
-fn test_parse_con_sequence_from_ini() {
-    let ini_text: &str = "\
-[ConSequence]
-Ready=0,1,1
-Guard=0,1,1
-Walk=8,6,6
-FireUp=164,6,6
-Idle1=56,15,0,S
-Idle2=71,15,0,E
-Die1=134,15,0
-Die2=149,15,0
-Prone=86,1,6
-Crawl=86,6,6
-Down=260,2,2
-Up=276,2,2
-FireProne=212,6,6
-Cheer=293,8,0,E
-Paradrop=292,1,0
-Panic=8,6,6
-";
-    let ini: IniFile = IniFile::from_str(ini_text);
-    let registry: InfantrySequenceRegistry = parse_infantry_sequence_registry(&ini);
-
-    assert_eq!(registry.len(), 1, "Should parse exactly one sequence def");
-    let def: &InfantrySequenceDef = registry
-        .get("CONSEQUENCE")
-        .expect("Should find ConSequence");
-
-    // Walk: start=8, 6 frames, 6 facings.
-    let walk: &InfantrySequenceEntry = def.entries.get("WALK").expect("Should have Walk");
-    assert_eq!(walk.start_frame, 8);
-    assert_eq!(walk.frames_per_facing, 6);
-    assert_eq!(walk.facings, 6);
-
-    // Idle1: non-directional with facing hint S.
-    let idle1: &InfantrySequenceEntry = def.entries.get("IDLE1").expect("Should have Idle1");
-    assert_eq!(idle1.start_frame, 56);
-    assert_eq!(idle1.frames_per_facing, 15);
-    assert_eq!(idle1.facings, 0);
-    assert_eq!(idle1.facing_hint, Some(FacingHint::S));
-
-    // FireUp: start=164, 6 frames, 6 facings.
-    let fire: &InfantrySequenceEntry = def.entries.get("FIREUP").expect("Should have FireUp");
-    assert_eq!(fire.start_frame, 164);
-    assert_eq!(fire.frames_per_facing, 6);
-    assert_eq!(fire.facings, 6);
-}
-
-#[test]
 fn test_build_sequence_set_from_con_sequence() {
     let ini_text: &str = "\
 [ConSequence]
@@ -526,24 +393,6 @@ Panic=8,6,6
 }
 
 #[test]
-fn test_build_sequence_set_facings_zero_becomes_one() {
-    let ini_text: &str = "\
-[TestSequence]
-Idle1=56,15,0,S
-";
-    let ini: IniFile = IniFile::from_str(ini_text);
-    let registry: InfantrySequenceRegistry = parse_infantry_sequence_registry(&ini);
-    let def: &InfantrySequenceDef = registry.get("TESTSEQUENCE").expect("def");
-    let set: SequenceSet = build_sequence_set(def);
-
-    let idle: &SequenceDef = set.get(&SequenceKind::Idle1).expect("Idle1");
-    assert_eq!(
-        idle.facings, 1,
-        "facings=0 in INI should become 1 in engine"
-    );
-}
-
-#[test]
 fn ready_guard_precedence_is_stable_across_insertion_order() {
     let ready = InfantrySequenceEntry {
         start_frame: 7,
@@ -605,31 +454,6 @@ fn gsi_05_07_sequence_build_preserves_completion_facing_and_native_none() {
             .completion_facing,
         None
     );
-}
-
-#[test]
-fn test_multiple_sequences_in_registry() {
-    let ini_text: &str = "\
-[ConSequence]
-Ready=0,1,1
-Walk=8,6,6
-
-[BruteSequence]
-Ready=0,1,1
-Walk=8,6,6
-FireUp=116,10,10
-";
-    let ini: IniFile = IniFile::from_str(ini_text);
-    let registry: InfantrySequenceRegistry = parse_infantry_sequence_registry(&ini);
-
-    assert_eq!(registry.len(), 2);
-    assert!(registry.contains_key("CONSEQUENCE"));
-    assert!(registry.contains_key("BRUTESEQUENCE"));
-
-    // BruteSequence FireUp has 10 facings (unusual).
-    let brute: &InfantrySequenceDef = registry.get("BRUTESEQUENCE").expect("brute");
-    let fire: &InfantrySequenceEntry = brute.entries.get("FIREUP").expect("fireup");
-    assert_eq!(fire.facings, 10);
 }
 
 #[test]

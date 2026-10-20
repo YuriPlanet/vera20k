@@ -111,7 +111,7 @@ fn ordinary_and_planned_grinder_clicks_consume_engineers_and_refund_once() {
     for planning in [false, true] {
         let (mut sim, rules, actor, hover) = scene(false);
         let owner = sim.entities().get(actor).unwrap().owner();
-        let before = sim.houses[&owner].economy.credits();
+        let before = sim.houses[&owner].economy().credits();
         click(&mut sim, &rules, actor, &hover, planning);
         for _ in 0..600 {
             step(&mut sim, &rules);
@@ -120,12 +120,12 @@ fn ordinary_and_planned_grinder_clicks_consume_engineers_and_refund_once() {
             }
         }
         assert!(sim.entities().get(actor).is_none(), "planning={planning}");
-        assert_eq!(sim.houses[&owner].economy.credits(), before + 500);
+        assert_eq!(sim.houses[&owner].economy().credits(), before + 500);
         assert!(sim.planning_paths(owner).is_empty());
         for _ in 0..10 {
             step(&mut sim, &rules);
         }
-        assert_eq!(sim.houses[&owner].economy.credits(), before + 500);
+        assert_eq!(sim.houses[&owner].economy().credits(), before + 500);
     }
 }
 
@@ -134,7 +134,7 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
     for planning in [false, true] {
         let (mut sim, rules, actor, hover) = scene(true);
         let owner = sim.entities().get(actor).unwrap().owner();
-        let before = sim.houses[&owner].economy.credits();
+        let before = sim.houses[&owner].economy().credits();
         assert_eq!(rules.object("FACILITY").unwrap().passengers, 0);
         click(&mut sim, &rules, actor, &hover, planning);
         let mut entered = false;
@@ -175,7 +175,7 @@ fn ordinary_and_planned_hospital_clicks_enter_heal_and_exit_after_save_load() {
             "planning={planning}: entered={entered}, left={left}"
         );
         assert_eq!(
-            sim.houses[&owner].economy.credits(),
+            sim.houses[&owner].economy().credits(),
             before,
             "infantry repair is free"
         );
@@ -340,7 +340,7 @@ fn infantry_repair_tick_clamps_nonpositive_steps_to_one() {
     for repair_step in [0, -3] {
         let (mut sim, rules, actor, hover) = scene_with_repair_step(true, repair_step);
         let owner = sim.entities().get(actor).unwrap().owner();
-        let before = sim.houses[&owner].economy.credits();
+        let before = sim.houses[&owner].economy().credits();
         assert_eq!(rules.general.infantry_repair_step, repair_step);
         assert_eq!(
             transmit(
@@ -355,7 +355,7 @@ fn infantry_repair_tick_clamps_nonpositive_steps_to_one() {
             RadioResponse::Roger
         );
         assert_eq!(sim.entities().get(actor).unwrap().health.current(), 31);
-        assert_eq!(sim.houses[&owner].economy.credits(), before);
+        assert_eq!(sim.houses[&owner].economy().credits(), before);
     }
 }
 
@@ -471,7 +471,7 @@ fn retail_engineer_grinder_clicks_reach_yagrnd_in_both_input_modes() {
         }
         assert!(sim.entities().get(actor).is_none(), "planning={planning}");
         assert_eq!(
-            sim.houses[&owner].economy.credits(),
+            sim.houses[&owner].economy().credits(),
             10_000 + rules.object("ENGINEER").unwrap().soylent
         );
     }

@@ -150,7 +150,10 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
     let rules = &s.scene.rules;
     let sim = &mut s.scene.sim;
     let owner = sim.substrate.entities.get(refinery).unwrap().owner();
-    sim.houses.get_mut(&owner).unwrap().side_index = input["side"].as_i64().unwrap() as i32;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_side_index_for_test(input["side"].as_i64().unwrap() as i32);
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     building
         .has_been_captured
@@ -387,8 +390,8 @@ fn sale_refund_matches_the_original() {
         .unwrap();
         let owner = crate::sim::intern::test_intern("Americans");
         let mut house = HouseState::new(owner, 0, None, true, 0, 10);
-        house.is_human = input["human"].as_bool().unwrap();
-        house.player_control = input["player_control"] == true;
+        house.set_is_human_for_test(input["human"].as_bool().unwrap());
+        house.set_player_control_for_test(input["player_control"] == true);
         let game_mode_nonzero = input["game_mode"].as_u64().unwrap() != 0;
         assert_eq!(
             i64::from(production::type_refund(
@@ -580,8 +583,8 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
         );
         let owner = sim.interner.intern("AI");
         let mut house = HouseState::new(owner, 0, None, false, int("balance"), int("tech_level"));
-        house.current_iq = int("current_iq");
-        house.authored_iq = int("authored_iq");
+        house.set_current_iq_for_test(int("current_iq"));
+        house.set_authored_iq_for_test(int("authored_iq"));
         sim.houses.register(house);
         let kind = sim.interner.intern("YAREFN");
         let mut building = GameEntity::new_at_frame_zero_for_test(

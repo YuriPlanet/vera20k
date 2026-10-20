@@ -248,11 +248,11 @@ fn spawn_retail_mover(
     // This is an authored local input fixture. A headless retail scenario
     // does not bind its Americans house to the local player; supply the
     // controller prior read by House50B6F0/50B730 before spawning the mover.
-    house.is_human = true;
-    house.player_control = true;
+    house.set_is_human_for_test(true);
+    house.set_player_control_for_test(true);
     sim.session.set_current_house_for_test(Some(owner));
     for house in sim.houses.values_mut() {
-        house.multiplay_passive = true;
+        house.set_multiplay_passive_for_test(true);
     }
     let entity = sim
         .spawn_object(

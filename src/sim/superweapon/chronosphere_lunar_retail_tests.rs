@@ -115,8 +115,8 @@ fn wait_for(
     panic!(
         "{stage}: tick={} credits={} spent={} power={:?} queue={:?} options={options:?} movers={movers:?}",
         sim.session.tick(),
-        sim.houses[&owner].economy.credits(),
-        sim.houses[&owner].economy.spent_credits(),
+        sim.houses[&owner].economy().credits(),
+        sim.houses[&owner].economy().spent_credits(),
         power_balance_for_owner(sim, &scene.runtime.resources.rules, OWNER),
         queue_view_for_owner(sim, &scene.runtime.resources.rules, OWNER),
     );
@@ -197,7 +197,7 @@ fn buy_building(scene: &mut HeadlessScenario, name: &str, anchor: (u16, u16)) ->
     let sim = scene.sim();
     let owner = sim.interner.get(OWNER).unwrap();
     let type_id = sim.interner.get(name).unwrap();
-    let paid_before = sim.houses[&owner].economy.spent_credits();
+    let paid_before = sim.houses[&owner].economy().spent_credits();
     let price = sim.cost_of(
         owner,
         scene.runtime.resources.rules.object(name).unwrap(),
@@ -217,7 +217,7 @@ fn buy_building(scene: &mut HeadlessScenario, name: &str, anchor: (u16, u16)) ->
     .unwrap();
     assert!(scene.sim().entities().get(held).unwrap().in_limbo());
     assert_eq!(
-        scene.sim().houses[&owner].economy.spent_credits() - paid_before,
+        scene.sim().houses[&owner].economy().spent_credits() - paid_before,
         price
     );
     let (rx, ry) = placement(scene, name, anchor);
@@ -312,7 +312,7 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
         .hash_state_every(std::num::NonZeroU64::new(MAX_FRAMES).unwrap());
     let sim = scene.sim();
     let owner = sim.interner.get(OWNER).unwrap();
-    assert_eq!(sim.houses[&owner].economy.credits(), 10_000);
+    assert_eq!(sim.houses[&owner].economy().credits(), 10_000);
     let starting: Vec<_> = sim
         .entities()
         .iter_sorted()
@@ -349,7 +349,7 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
             .iter()
             .any(|option| option.type_id == type_id && option.enabled)
     );
-    let spent = scene.sim().houses[&owner].economy.spent_credits();
+    let spent = scene.sim().houses[&owner].economy().spent_credits();
     let price = scene.sim().cost_of(
         owner,
         scene.runtime.resources.rules.object("AMCV").unwrap(),
@@ -375,10 +375,10 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
         },
     );
     assert_eq!(
-        scene.sim().houses[&owner].economy.spent_credits() - spent,
+        scene.sim().houses[&owner].economy().spent_credits() - spent,
         price
     );
-    let wallet = &scene.sim().houses[&owner].economy;
+    let wallet = scene.sim().houses[&owner].economy();
     assert!(
         i64::from(wallet.credits()) + i64::from(wallet.spent_credits()) > 10_000,
         "normal refinery income funds the opening"
@@ -495,7 +495,7 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
         Ok(7)
     );
     let health = sim.entities().get(mover).unwrap().health.current();
-    let losses = sim.houses[&owner].stats.units_lost();
+    let losses = sim.houses[&owner].stats().units_lost();
     advance(
         &mut scene,
         Some(Command::LaunchSuperWeapon {
@@ -556,7 +556,7 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
     assert!(entity.is_object_alive() && entity.lifecycle.cell_marked());
     assert!(entity.navigation.nav_com().is_none());
     assert_eq!(
-        sim.houses[&owner].stats.units_lost(),
+        sim.houses[&owner].stats().units_lost(),
         losses,
         "718AC2 branch does not book an immediate kill"
     );
@@ -574,7 +574,7 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
         |scene| !scene.sim().entities().contains(mover),
     );
     let sim = scene.sim();
-    assert_eq!(sim.houses[&owner].stats.units_lost(), losses + 1);
+    assert_eq!(sim.houses[&owner].stats().units_lost(), losses + 1);
     assert!(!sim.occupancy().contains_entity(wall.0, wall.1, mover));
     assert!(!sim.occupancy().contains_entity(source.0, source.1, mover));
     assert_eq!(

@@ -530,7 +530,7 @@ impl Simulation {
         let hunts = self.substrate.entities.get(target).is_some_and(|entity| {
             self.houses
                 .get(&entity.owner())
-                .is_some_and(|house| !house.is_human && !gatherer && !house.multiplay_passive)
+                .is_some_and(|house| !house.is_human() && !gatherer && !house.multiplay_passive())
         });
         if hunts {
             let _ = self.mission_queue_exact(
@@ -929,14 +929,14 @@ impl Simulation {
                 ))
             }
             CellObjectMember::Terrain(tree) => {
-                let Some(tree) = self.production.terrain_objects.get(&tree) else {
+                let Some(tree) = self.terrain_objects.objects().get(&tree) else {
                     return false;
                 };
                 AreaDamageReceiver::Terrain(TerrainDamageEvent {
-                    stable_id: tree.stable_id,
-                    rx: tree.rx,
-                    ry: tree.ry,
-                    damage: tree.health,
+                    stable_id: tree.stable_id(),
+                    rx: tree.cell().0,
+                    ry: tree.cell().1,
+                    damage: tree.health(),
                     distance_leptons: 0,
                     warhead_ref: warhead,
                     near_center_ic_isolation_eligible: false,

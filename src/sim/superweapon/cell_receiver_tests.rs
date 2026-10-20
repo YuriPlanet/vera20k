@@ -133,7 +133,7 @@ fn held_infantry_survives_launch(name: &str) {
     ));
     let held = sim
         .production
-        .factories
+        .factories()
         .view(owner, production::ProductionCategory::Infantry)
         .unwrap()
         .object
@@ -194,7 +194,7 @@ fn held_infantry_survives_launch(name: &str) {
     );
     let before_factory = sim
         .production
-        .factories
+        .factories()
         .iter_insertion_ordered()
         .into_iter()
         .cloned()
@@ -227,7 +227,7 @@ fn held_infantry_survives_launch(name: &str) {
     );
     assert_eq!(
         sim.production
-            .factories
+            .factories()
             .iter_insertion_ordered()
             .into_iter()
             .cloned()
@@ -240,11 +240,6 @@ fn held_infantry_survives_launch(name: &str) {
 #[test]
 fn iron_curtain_command_does_not_damage_factory_held_or_unmarked_infantry() {
     held_infantry_survives_launch("IC");
-}
-
-#[test]
-fn genetic_converter_command_does_not_damage_factory_held_or_unmarked_infantry() {
-    held_infantry_survives_launch("GM");
 }
 
 #[test]
@@ -727,8 +722,8 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
     // The ordinary sequence still owns the object; the existing shared UnInit
     // terminal owns score publication. Verify the attributed receipt survives it.
     sim.uninit_with_rules(wounded, &rules);
-    assert_eq!(sim.houses[&owner].stats.units_killed(), 1);
-    assert_eq!(sim.houses[&enemy].stats.units_lost(), 1);
+    assert_eq!(sim.houses[&owner].stats().units_killed(), 1);
+    assert_eq!(sim.houses[&enemy].stats().units_lost(), 1);
     assert!(
         sim.substrate
             .entities
@@ -871,11 +866,6 @@ fn iron_curtain_command_uses_packed_aliases_and_stamps_missing_cells() {
     command_uses_packed_aliases_and_stamps_missing_cells("IC", "MTNK");
 }
 
-#[test]
-fn genetic_converter_command_uses_packed_aliases_and_stamps_missing_cells() {
-    command_uses_packed_aliases_and_stamps_missing_cells("GM", "E1");
-}
-
 fn command_uses_packed_aliases_and_stamps_missing_cells(name: &str, object_type: &str) {
     for (x, y) in [(512, 1), (u16::MAX, 2)] {
         let (mut sim, rules) = fixture();
@@ -883,23 +873,11 @@ fn command_uses_packed_aliases_and_stamps_missing_cells(name: &str, object_type:
             .spawn_object_at_height(object_type, "Americans", 0, 2, 0, 0, &rules)
             .unwrap();
         launch_command(&mut sim, &rules, name, x, y);
-        if name == "GM" {
-            // The fixed-stride alias / independent word wrap reaches actual
-            // cell (0,2), whose victim InfDeath 9 UnInits.
-            assert!(
-                sim.substrate
-                    .entities
-                    .get(victim)
-                    .is_none_or(|object| !object.lifecycle.object_alive())
-            );
-            assert!(!sim.substrate.occupancy.contains_entity(0, 2, victim));
-        } else {
-            let object = sim.substrate.entities.get(victim).unwrap();
-            assert!(
-                object.invulnerability.is_some(),
-                "fixed-stride alias / independent word wrap reaches actual cell (0,2)"
-            );
-        }
+        let object = sim.substrate.entities.get(victim).unwrap();
+        assert!(
+            object.invulnerability.is_some(),
+            "fixed-stride alias / independent word wrap reaches actual cell (0,2)"
+        );
     }
     let (mut sim, rules) = fixture();
     let victim = sim

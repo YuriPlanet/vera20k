@@ -662,21 +662,21 @@ impl Simulation {
             Vec::with_capacity(self.houses.len().min(TELEMETRY_MAX_HOUSES));
         for (index, (owner, house)) in self.houses.iter().take(TELEMETRY_MAX_HOUSES).enumerate() {
             owner_index.insert(*owner, index);
-            let difficulty = match house.difficulty {
+            let difficulty = match house.difficulty() {
                 crate::sim::house_state::HouseDifficulty::Hard => "hard",
                 crate::sim::house_state::HouseDifficulty::Normal => "normal",
                 crate::sim::house_state::HouseDifficulty::Easy => "easy",
             };
             houses.push(HousePopulation {
-                name: bounded_name(self.interner.resolve(house.name)),
-                side_index: house.side_index,
+                name: bounded_name(self.interner.resolve(house.name())),
+                side_index: house.side_index(),
                 side_name: None,
                 difficulty: difficulty.to_owned(),
-                is_human: house.is_human,
-                passive: house.multiplay_passive,
+                is_human: house.is_human(),
+                passive: house.multiplay_passive(),
                 counts: CategoryCounts::default(),
                 color: None,
-                credits: house.economy.credits(),
+                credits: house.economy().credits(),
                 power_output: self
                     .power_states
                     .get(owner)
@@ -689,10 +689,10 @@ impl Simulation {
                     .power_states
                     .get(owner)
                     .is_some_and(|power| power.is_low_power),
-                spent: house.economy.spent_credits(),
-                score: house.economy.score(),
-                defeated: house.is_defeated,
-                base_center: house.base_center,
+                spent: house.economy().spent_credits(),
+                score: house.economy().score(),
+                defeated: house.is_defeated(),
+                base_center: house.base_center(),
                 roster: Vec::new(),
                 production: Vec::new(),
                 squads: Vec::new(),
@@ -728,7 +728,7 @@ impl Simulation {
             house.roster = type_counts(counts, &self.interner, TELEMETRY_MAX_ROSTER);
         }
 
-        for factory in self.production.factories.iter_insertion_ordered() {
+        for factory in self.production.factories().iter_insertion_ordered() {
             let Some(&index) = owner_index.get(&factory.owner) else {
                 continue;
             };
@@ -800,8 +800,8 @@ impl Simulation {
         for (owner, index) in &owner_index {
             let source = &self.houses[owner];
             houses[*index].base_plan = source
-                .base_plan
-                .nodes
+                .base_plan()
+                .nodes()
                 .iter()
                 .filter(|node| node.packed_cell != 0)
                 .take(TELEMETRY_MAX_BASE_PLAN)
@@ -870,12 +870,12 @@ impl Simulation {
             .iter()
             .take(TELEMETRY_MAX_HOUSES)
             .map(|(_, house)| ReportHouseRow {
-                name: bounded_name(self.interner.resolve(house.name)),
-                is_human: house.is_human,
-                passive: house.multiplay_passive,
+                name: bounded_name(self.interner.resolve(house.name())),
+                is_human: house.is_human(),
+                passive: house.multiplay_passive(),
                 structures: 0,
-                credits: house.economy.credits(),
-                score: house.economy.score(),
+                credits: house.economy().credits(),
+                score: house.economy().score(),
             })
             .collect();
         let index: BTreeMap<InternedId, usize> = self

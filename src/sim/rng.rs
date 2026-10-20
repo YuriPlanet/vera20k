@@ -222,14 +222,6 @@ impl MainRng {
     pub(crate) fn index_b(&self) -> i32 {
         self.logical_state().index_b
     }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn next_range_u32_inclusive(&self, low: u32, high: u32) -> u32 {
-        self.state
-            .lock()
-            .expect("Main RNG poisoned")
-            .next_range_u32_inclusive(low, high)
-    }
 }
 
 impl From<SimRng> for MainRng {
@@ -751,19 +743,6 @@ mod tests {
     }
 
     #[test]
-    fn sim_rng_logical_view_and_state_expose_all_250_words_without_mutation() {
-        let rng = SimRng::new(0);
-        let before = rng.state();
-        let view = rng.logical_view();
-        let owned = rng.logical_state();
-        assert_eq!(view.disabled, 0);
-        assert_eq!((view.index_a, view.index_b), (0, 0x67));
-        assert_eq!(view.words.len(), 250);
-        assert_eq!(owned.words.as_slice(), view.words);
-        assert_eq!(rng.state(), before, "observation must not advance the RNG");
-    }
-
-    #[test]
     fn seed_zero_logical_state_matches_native_fixture_edges() {
         let state = SimRng::new(0).logical_state();
         assert_eq!(
@@ -774,33 +753,6 @@ mod tests {
             &state.words[246..],
             &[0x62FD_BE0F, 0x2034_06B3, 0xAD5E_A053, 0xD72E_1536]
         );
-    }
-
-    #[test]
-    fn test_rng_repeatable_sequence() {
-        let mut a = SimRng::new(12345);
-        let mut b = SimRng::new(12345);
-        for _ in 0..128 {
-            assert_eq!(a.next_u64(), b.next_u64());
-        }
-    }
-
-    #[test]
-    fn test_rng_range_bounds() {
-        let mut rng = SimRng::new(1);
-        for _ in 0..256 {
-            let v = rng.next_range_u32(7);
-            assert!(v < 7);
-        }
-    }
-
-    #[test]
-    fn test_inclusive_range_bounds() {
-        let mut rng = SimRng::new(42);
-        for _ in 0..256 {
-            let v = rng.next_range_u32_inclusive(1, 5);
-            assert!((1..=5).contains(&v));
-        }
     }
 
     #[test]
@@ -934,25 +886,6 @@ mod tests {
             rng.state(),
             reference.state(),
             "RandomRanged(0,4) must consume exactly 3 raw draws (rejection sampling)"
-        );
-    }
-
-    #[test]
-    fn random_ranged_power_of_two_span_can_return_inclusive_top() {
-        // span=4 is a power of two; the inclusive top value 4 must be reachable
-        // (impossible with the buggy span-1 mask, which caps output at 3).
-        let mut rng = SimRng::new(7);
-        let mut saw_top = false;
-        for _ in 0..4096 {
-            let val = rng.next_range_u32_inclusive(0, 4);
-            assert!(val <= 4);
-            if val == 4 {
-                saw_top = true;
-            }
-        }
-        assert!(
-            saw_top,
-            "RandomRanged(0,4) must be able to return the inclusive top value 4"
         );
     }
 

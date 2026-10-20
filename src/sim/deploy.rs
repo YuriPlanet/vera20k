@@ -164,8 +164,15 @@ impl Simulation {
     /// coordinate.
     pub(crate) fn own_map_cell(&self, id: u64) -> Option<(u16, u16)> {
         let coord = self.foot_navigation_coordinate(id).ok()?;
+        self.packed_map_cell(coord.x, coord.y)
+    }
+
+    /// `MapClass::Get_CellClass @ 0x005657A0` for world XY divided by 256
+    /// toward zero and packed to 16 bits: the real cell, or the stamped shared
+    /// Dummy. `None` only without terrain.
+    pub(crate) fn packed_map_cell(&self, x: i32, y: i32) -> Option<(u16, u16)> {
         let terrain = self.resolved_terrain.as_ref()?;
-        let cell = terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
+        let cell = terrain.native_cell_identity(((x / 256) as i16, (y / 256) as i16));
         let at = terrain.native_cell_coord(cell);
         Some((at.0 as u16, at.1 as u16))
     }
@@ -325,7 +332,7 @@ impl Simulation {
                         || (self
                             .houses
                             .get(&entity.owner())
-                            .is_some_and(|house| house.is_human)
+                            .is_some_and(|house| house.is_human())
                             && cell(own).land_type() == LandType::Water.as_index())
                     {
                         return false;

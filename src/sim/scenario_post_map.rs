@@ -142,11 +142,10 @@ impl Simulation {
                     .first()
                     .expect("native FillSilos requires Tiberium registry slot0")
                     .value;
-                house.economy.fill_silos_fresh_empty_store(
-                    value,
-                    house.tracking.storage_capacity(),
-                    income,
-                );
+                let capacity = house.tracking().storage_capacity();
+                house
+                    .economy_mut()
+                    .fill_silos_fresh_empty_store(value, capacity, income);
             }
         }
 

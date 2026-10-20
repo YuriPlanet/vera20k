@@ -164,8 +164,14 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
         let sw = rules.super_weapon("NukeSpecial").unwrap();
         // The native control supplies these already-admitted AI/power priors;
         // it does not execute the whole ALL03 power puzzle/House scheduler.
-        sim.houses.get_mut(&owner).unwrap().enemy_house = Some(enemy);
-        sim.houses.get_mut(&owner).unwrap().player_control = false;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_enemy_house_for_test(Some(enemy));
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_player_control_for_test(false);
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
         );
@@ -222,7 +228,10 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
                     // Full House enemy selection/cadence is outside the
                     // original control, which supplies the chosen enemy here.
                     assert_eq!(row["enemy_index"], 0);
-                    sim.houses.get_mut(&owner).unwrap().enemy_house = Some(enemy);
+                    sim.houses
+                        .get_mut(&owner)
+                        .unwrap()
+                        .set_enemy_house_for_test(Some(enemy));
                 }
                 _ if stage.starts_with("execute") => {
                     let action =

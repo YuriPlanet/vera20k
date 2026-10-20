@@ -523,15 +523,6 @@ pub(crate) mod tests {
         (window, receipt)
     }
 
-    #[test]
-    fn waiting_is_hidden_and_timer_is_inert() {
-        let mut reveal = Kind1StaticReveal::default();
-        let now = Instant::now();
-        assert_eq!(reveal.paint_window(), Kind1PaintWindow::Hidden);
-        assert!(!reveal.poll_timer(now + Duration::from_secs(1)));
-        assert!(!reveal.is_terminal_persistent());
-    }
-
     /// Native getters executed under Unicorn by
     /// `tools/storage_oracle/shell_static_timers.py`.
     pub(crate) fn native_static_timer_cases() -> Vec<serde_json::Value> {

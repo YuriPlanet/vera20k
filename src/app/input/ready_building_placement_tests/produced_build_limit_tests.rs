@@ -44,9 +44,9 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
         consume_frame_outputs(&mut fixture, &frame, Some(owner));
     }
     let initial_entities = fixture.sim.entities().len();
-    let initial_credits = fixture.sim.houses[&owner].economy.credits();
-    let initial_spent = fixture.sim.houses[&owner].economy.spent_credits();
-    let initial_built = fixture.sim.houses[&owner].stats.built();
+    let initial_credits = fixture.sim.houses[&owner].economy().credits();
+    let initial_spent = fixture.sim.houses[&owner].economy().spent_credits();
+    let initial_built = fixture.sim.houses[&owner].stats().built();
     let cost = fixture
         .sim
         .cost_of(owner, fixture.rules.object("E2").unwrap(), &fixture.rules);
@@ -67,7 +67,7 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
     let held_id = fixture
         .sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap()
         .object
@@ -90,13 +90,16 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
         }
     }
     assert!(delivered, "the first real paid E2 reaches its normal exit");
-    assert_eq!(fixture.sim.houses[&owner].stats.built(), initial_built + 1);
     assert_eq!(
-        fixture.sim.houses[&owner].economy.credits(),
+        fixture.sim.houses[&owner].stats().built(),
+        initial_built + 1
+    );
+    assert_eq!(
+        fixture.sim.houses[&owner].economy().credits(),
         initial_credits - cost
     );
     assert_eq!(
-        fixture.sim.houses[&owner].economy.spent_credits(),
+        fixture.sim.houses[&owner].economy().spent_credits(),
         initial_spent + cost
     );
     // Human delivery records after this frame's House rung. Record4FB804
@@ -166,13 +169,16 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
             );
             let delivered = fixture.sim.entities().get(held_id).unwrap();
             assert!(delivered.is_alive() && !delivered.in_limbo());
-            assert_eq!(fixture.sim.houses[&owner].stats.built(), initial_built + 1);
             assert_eq!(
-                fixture.sim.houses[&owner].economy.credits(),
+                fixture.sim.houses[&owner].stats().built(),
+                initial_built + 1
+            );
+            assert_eq!(
+                fixture.sim.houses[&owner].economy().credits(),
                 initial_credits - cost
             );
             assert_eq!(
-                fixture.sim.houses[&owner].economy.spent_credits(),
+                fixture.sim.houses[&owner].economy().spent_credits(),
                 initial_spent + cost
             );
         }

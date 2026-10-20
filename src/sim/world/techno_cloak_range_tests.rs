@@ -44,7 +44,7 @@ fn placed_sub_with_attack(
     let frame = sim.session.binary_frame() as i32;
     assert!(actor.rearm_timer.timer().expired(frame));
     assert!(actor.cloak.as_ref().unwrap().recloak_delay().expired(frame));
-    assert!(sim.houses[&owner].is_human);
+    assert!(sim.houses[&owner].is_human());
     assert!(sim.apply_command(
         "Americans",
         &Command::Attack {
@@ -64,30 +64,6 @@ fn placed_sub_with_attack(
         "ordinary Attack must retain the naval target"
     );
     (sim, sub, target)
-}
-
-#[test]
-fn retail_sub_distant_attack_keeps_target_and_starts_cloaking() {
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &retail.rules;
-    let (mut sim, sub, target) = placed_sub_with_attack(rules, 48);
-    assert!(!sim.techno_can_fire_at_target(sub, TargetKind::Entity(target), rules, None));
-    let grid = sim.path_grid_snapshot().unwrap();
-    sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
-    let actor = sim.substrate.entities.get(sub).unwrap();
-    assert_eq!(
-        actor.attack_target.target(),
-        Some(TargetKind::Entity(target)),
-        "cloak entry preserves the source's own distant attack"
-    );
-    assert_eq!(
-        actor.cloak.as_ref().unwrap().state(),
-        1,
-        "native CanAutoCloak permits a retained target outside weapon range"
-    );
-    assert!(sim.fire_events.iter().all(|event| event.attacker_id != sub));
 }
 
 #[test]

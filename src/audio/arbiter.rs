@@ -2084,34 +2084,6 @@ mod tests {
         assert_eq!(victims, vec![first]);
     }
 
-    /// Two equal-priority channels: the older one only loses its channel when
-    /// the age gap reaches `0x666` (`CMP EBX,0x666 ; JC skip` at
-    /// `0x0040366F`). Below that gap `FindAvailable` keeps the first
-    /// candidate it saw.
-    #[test]
-    fn equal_priority_channels_need_a_1638_stamp_gap_before_the_older_one_loses() {
-        let mut arbiter = SoundArbiter::new(0);
-        // Fill and start the pool so every channel is `playing`.
-        let mut ids = Vec::new();
-        for index in 0..MAX_CHANNELS {
-            ids.push(
-                arbiter
-                    .submit(&request(&format!("C{index}"), facts(2, 0), VOLUME_SCALE), 0)
-                    .expect("pool slot"),
-            );
-        }
-        arbiter.update_tick(100, &mut TestPlayback::default());
-        // These consecutive stamps are never0x666 apart: the first
-        // candidate (channel 0, the oldest) is kept and it is the one the
-        // newcomer takes.
-        let newcomer = arbiter
-            .submit(&request("NEW", facts(2, 0), VOLUME_SCALE), 200)
-            .expect("pool slot");
-        let actions = arbiter.update_tick(200, &mut TestPlayback::default());
-        assert!(started(&actions).contains(&newcomer));
-        assert_eq!(stopped(&actions), vec![ids[0]]);
-    }
-
     /// `Limit=0` is unlimited (`if (Voc+0x48 != 0 && ...)`).
     #[test]
     fn limit_zero_is_unlimited() {

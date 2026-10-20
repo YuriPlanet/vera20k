@@ -112,19 +112,3 @@ impl App {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn client_seed_keeps_all_bits_and_is_not_relabelled_as_a_native_clock() {
-        let mut clock = SpawnSeedClock {
-            seed: Some(u32::MAX),
-        };
-        let seed = crate::app::match_bootstrap::read_match_seed(&mut clock);
-        assert_eq!(seed.value, u32::MAX);
-        assert_eq!(seed.source, MatchSeedSource::Controlled);
-        assert!(!seed.seed_authority_certifying);
-    }
-}

@@ -250,7 +250,7 @@ impl Simulation {
         let spy_sat_active = self
             .houses
             .iter()
-            .filter_map(|(&owner, house)| house.spy_sat_active.then_some(owner))
+            .filter_map(|(&owner, house)| house.spy_sat_active().then_some(owner))
             .collect();
         vision::publish_gap_generator_event(
             &mut self.fog,

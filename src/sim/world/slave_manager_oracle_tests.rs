@@ -677,7 +677,7 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
     }
     let owner = sim.interner.get("Americans").unwrap();
     assert_eq!(
-        i64::from(sim.houses[&owner].economy.credits()),
+        i64::from(sim.houses[&owner].economy().credits()),
         native["balance"].as_i64().unwrap(),
         "{context}: balance"
     );
@@ -726,41 +726,31 @@ fn ai_update_matches_the_original_node_machine() {
     }
 }
 
+/// The building's (`manager`) and the Slave Miner's (`unit_manager`) states,
+/// and state 5 with no ore within `SlaveMinerShortScan` (`relocation`): the
+/// relocation test and, when it passes, the archive, the undeploy (Selling)
+/// and state 6.
 #[test]
-fn manager_machine_matches_the_original_building_owner_states() {
+fn manager_machine_matches_the_original_owner_states_and_relocation() {
     let corpus = corpus();
-    for (row, name) in rows(&corpus, "manager") {
-        let mut s = row_scene(&row["input"]);
-        s.scene.sim.slave_manager_step(
-            s.master,
-            &s.scene.rules,
-            Some(registry()),
-            crate::sim::world::FrameEffects::default(),
-        );
-        compare_state(&s, row, &name);
-    }
-}
-
-/// State 5 with no ore within `SlaveMinerShortScan`: the relocation test
-/// and, when it passes, the archive, the undeploy (Selling) and state 6.
-#[test]
-fn manager_machine_matches_the_original_slave_refinery_relocation() {
-    let corpus = corpus();
-    for (row, name) in rows(&corpus, "relocation") {
-        let mut s = row_scene(&row["input"]);
-        // A supplied Find_Nearby_Passable_Cell miss: the scene's open ground
-        // would offer a cell, so the search is denied the zone map it needs
-        // and FindDeployCell answers the same (0,0) (read at 0x006B00F0).
-        if row["input"]["passable"] == serde_json::json!([null]) {
-            s.scene.sim.zone_grid = None;
+    for group in ["manager", "unit_manager", "relocation"] {
+        for (row, name) in rows(&corpus, group) {
+            let mut s = row_scene(&row["input"]);
+            // A supplied relocation Find_Nearby_Passable_Cell miss: the scene's
+            // open ground would offer a cell, so the search is denied the zone
+            // map it needs and FindDeployCell answers the same (0,0) (read at
+            // 0x006B00F0).
+            if group == "relocation" && row["input"]["passable"] == serde_json::json!([null]) {
+                s.scene.sim.zone_grid = None;
+            }
+            s.scene.sim.slave_manager_step(
+                s.master,
+                &s.scene.rules,
+                Some(registry()),
+                crate::sim::world::FrameEffects::default(),
+            );
+            compare_state(&s, row, &name);
         }
-        s.scene.sim.slave_manager_step(
-            s.master,
-            &s.scene.rules,
-            Some(registry()),
-            crate::sim::world::FrameEffects::default(),
-        );
-        compare_state(&s, row, &name);
     }
 }
 
@@ -836,21 +826,6 @@ fn slave_deposit_matches_the_original_payment() {
         let mut s = row_scene(&row["input"]);
         let slave = s.slaves[&0];
         s.scene.sim.slave_deposit(slave, s.master, &s.scene.rules);
-        compare_state(&s, row, &name);
-    }
-}
-
-#[test]
-fn manager_machine_matches_the_original_slave_miner_states() {
-    let corpus = corpus();
-    for (row, name) in rows(&corpus, "unit_manager") {
-        let mut s = row_scene(&row["input"]);
-        s.scene.sim.slave_manager_step(
-            s.master,
-            &s.scene.rules,
-            Some(registry()),
-            crate::sim::world::FrameEffects::default(),
-        );
         compare_state(&s, row, &name);
     }
 }

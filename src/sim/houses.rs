@@ -31,7 +31,7 @@ impl Houses {
     /// construction admits distinct House names only.
     #[track_caller]
     pub fn register(&mut self, house: HouseState) -> &mut HouseState {
-        let name = house.name;
+        let name = house.name();
         match self.states.entry(name) {
             btree_map::Entry::Vacant(slot) => {
                 self.order.push(name);
@@ -133,7 +133,11 @@ impl Houses {
     ) -> &mut HouseState {
         if !self.states.contains_key(&name) {
             let house = make();
-            assert_eq!(house.name, name, "fixture House registered under its name");
+            assert_eq!(
+                house.name(),
+                name,
+                "fixture House registered under its name"
+            );
             self.register(house);
         }
         self.states.get_mut(&name).expect("registered House")
@@ -143,7 +147,7 @@ impl Houses {
     /// place: a map insert's semantics, for fixtures that rebuild a House.
     #[cfg(any(test, feature = "test-support"))]
     pub fn insert_for_test(&mut self, house: HouseState) -> Option<HouseState> {
-        match self.states.get_mut(&house.name) {
+        match self.states.get_mut(&house.name()) {
             Some(slot) => Some(std::mem::replace(slot, house)),
             None => {
                 self.register(house);
@@ -157,7 +161,7 @@ impl Houses {
     pub fn replace_for_test(&mut self, house: HouseState) {
         let slot = self
             .states
-            .get_mut(&house.name)
+            .get_mut(&house.name())
             .expect("replaced House is registered");
         *slot = house;
     }
@@ -218,7 +222,11 @@ impl TryFrom<SavedHouses> for Houses {
         if seen.len() != saved.states.len() {
             return Err("House array order omits a registered House".to_owned());
         }
-        if let Some((key, _)) = saved.states.iter().find(|(key, house)| **key != house.name) {
+        if let Some((key, _)) = saved
+            .states
+            .iter()
+            .find(|(key, house)| **key != house.name())
+        {
             return Err(format!("House {key:?} is saved under another House's name"));
         }
         Ok(Self {

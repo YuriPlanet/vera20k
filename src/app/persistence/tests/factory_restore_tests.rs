@@ -52,19 +52,19 @@ fn factory_fixture(
     assert!(
         saved
             .production
-            .factories
+            .factories_mut_for_test()
             .test_enqueue_kernel(owner, category, type_id, 1, cost,)
     );
     saved
         .production
-        .factories
+        .factories_mut_for_test()
         .test_factory_mut(owner, category)
         .unwrap()
         .object
         .as_mut()
         .unwrap()
         .entity_id = Some(parent);
-    saved.production.next_enqueue_order = 2;
+    saved.production.set_next_enqueue_order_for_test(2);
     (saved, rules, owner, parent)
 }
 
@@ -142,7 +142,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         .houses
         .get_mut(&owner)
         .unwrap()
-        .tracking
+        .tracking_mut_for_test()
         .set_buildings_for_test(1);
     // Execute the build start before saving: it constructs the held graph and
     // arms its timer. A queue kernel alone is intentionally not a running build.
@@ -160,19 +160,19 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         let house = saved.houses.get_mut(&owner).unwrap();
         saved
             .production
-            .factories
+            .factories_mut_for_test()
             .test_factory_mut(owner, ProductionCategory::Building)
             .unwrap()
-            .advance_one_step(&mut house.economy);
+            .advance_one_step(house.economy_mut_for_test());
     }
     crate::sim::credit_income::add_credits(&mut saved, owner, 123);
     saved
         .houses
         .get_mut(&owner)
         .unwrap()
-        .economy
+        .economy_mut_for_test()
         .set_score_for_test(35);
-    let expected = saved.houses[&owner].economy.clone();
+    let expected = saved.houses[&owner].economy().clone();
     assert!(expected.spent_credits() > 0);
     assert_eq!(expected.credits() + expected.spent_credits(), 50_123);
 
@@ -184,7 +184,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         resources,
     };
     prepared.commit_into(&mut runtime);
-    assert_eq!(runtime.simulation.houses[&owner].economy, expected);
+    assert_eq!(*runtime.simulation.houses[&owner].economy(), expected);
     let mut reference_resources = crate::sim::runtime::SimResources::empty();
     reference_resources.rules = factory_rules();
     let mut reference = crate::sim::runtime::SimRuntime {
@@ -209,15 +209,17 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
             )
             .expect("uninterrupted active frame");
         assert_eq!(
-            runtime.simulation.houses[&owner].economy, reference.simulation.houses[&owner].economy,
+            runtime.simulation.houses[&owner].economy(),
+            reference.simulation.houses[&owner].economy(),
             "wallet at resumed frame {frame}"
         );
         assert_eq!(
-            runtime.simulation.production.factories, reference.simulation.production.factories,
+            runtime.simulation.production.factories(),
+            reference.simulation.production.factories(),
             "factory at resumed frame {frame}"
         );
     }
-    let resumed = runtime.simulation.houses[&owner].economy.clone();
+    let resumed = runtime.simulation.houses[&owner].economy().clone();
     assert!(
         resumed.spent_credits() > expected.spent_credits(),
         "restored production must charge again"
@@ -226,7 +228,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
     let factory = runtime
         .simulation
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Building)
         .expect("active factory retained");
     assert!(factory.progress > 5 && factory.progress < PRODUCTION_STEPS);
@@ -253,7 +255,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
             crate::sim::world::FrameEffects::default(),
         )
         .expect("restored frame");
-    let economy = &runtime.simulation.houses[&owner].economy;
+    let economy = runtime.simulation.houses[&owner].economy();
     assert_eq!(economy.credits(), 50_123);
     assert_eq!(economy.spent_credits(), resumed.spent_credits());
     assert_eq!(economy.score(), 35);
@@ -287,16 +289,21 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                 assert!(
                     !saved
                         .production
-                        .factories
+                        .factories_mut_for_test()
                         .test_enqueue_kernel(owner, category, type_id, 2, 1000)
                 );
-                saved.production.next_enqueue_order = 3;
+                saved.production.set_next_enqueue_order_for_test(3);
             }
             "unpublished-complete"
             | "ready-building"
             | "ready-defense"
             | "mobile-awaiting-producer" => {
-                assert!(saved.production.factories.test_arm_ready(owner, category));
+                assert!(
+                    saved
+                        .production
+                        .factories_mut_for_test()
+                        .test_arm_ready(owner, category)
+                );
                 if label != "unpublished-complete" {
                     assert!(
                         !crate::sim::production::dispatch_production_changes_for_tests(
@@ -306,7 +313,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                     assert!(
                         saved
                             .production
-                            .factories
+                            .factories()
                             .view(owner, category)
                             .unwrap()
                             .object
@@ -341,21 +348,24 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                     .unwrap();
             }
             "empty-registry" => {
-                saved.production.factories = Default::default();
+                *saved.production.factories_mut_for_test() = Default::default();
             }
             _ => unreachable!(),
         }
         let factories: Vec<Factory> = saved
             .production
-            .factories
+            .factories()
             .iter_insertion_ordered()
             .into_iter()
             .cloned()
             .collect();
-        let counts = saved
-            .houses
-            .get(&owner)
-            .map(|house| (house.tracking.clone(), house.economy.credits(), house.stats));
+        let counts = saved.houses.get(&owner).map(|house| {
+            (
+                house.tracking().clone(),
+                house.economy().credits(),
+                house.stats(),
+            )
+        });
         let identities: Vec<_> = saved
             .substrate
             .entities
@@ -389,7 +399,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
         assert_eq!(
             restored
                 .production
-                .factories
+                .factories()
                 .iter_insertion_ordered()
                 .into_iter()
                 .cloned()
@@ -399,9 +409,9 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
         );
         assert_eq!(
             restored.houses.get(&owner).map(|house| (
-                house.tracking.clone(),
-                house.economy.credits(),
-                house.stats
+                house.tracking().clone(),
+                house.economy().credits(),
+                house.stats()
             )),
             counts,
             "{label}"
@@ -471,16 +481,13 @@ fn factory_restore_rejects_inconsistent_roots() {
         match label {
             "idle-owner-index" => {
                 let invalid_owner = InternedId::from_index(u32::MAX);
-                saved.production.factories.test_enqueue_kernel(
-                    invalid_owner,
-                    category,
-                    parent_type,
-                    3,
-                    1000,
-                );
                 saved
                     .production
-                    .factories
+                    .factories_mut_for_test()
+                    .test_enqueue_kernel(invalid_owner, category, parent_type, 3, 1000);
+                saved
+                    .production
+                    .factories_mut_for_test()
                     .test_factory_mut(invalid_owner, category)
                     .unwrap()
                     .object = None;
@@ -491,18 +498,17 @@ fn factory_restore_rejects_inconsistent_roots() {
                     "tail-type-index" => InternedId::from_index(u32::MAX),
                     _ => saved.interner.get("E1").unwrap(),
                 };
-                assert!(!saved.production.factories.test_enqueue_kernel(
-                    owner,
-                    category,
-                    queued_type,
-                    2,
-                    200
-                ));
+                assert!(
+                    !saved
+                        .production
+                        .factories_mut_for_test()
+                        .test_enqueue_kernel(owner, category, queued_type, 2, 200)
+                );
             }
             "active-category" => {
                 saved
                     .production
-                    .factories
+                    .factories_mut_for_test()
                     .test_first_mut()
                     .unwrap()
                     .object
@@ -511,16 +517,13 @@ fn factory_restore_rejects_inconsistent_roots() {
                     .type_id = saved.interner.get("E1").unwrap()
             }
             "duplicate-roots" => {
-                saved.production.factories.test_enqueue_kernel(
-                    foreign,
-                    category,
-                    parent_type,
-                    3,
-                    1000,
-                );
                 saved
                     .production
-                    .factories
+                    .factories_mut_for_test()
+                    .test_enqueue_kernel(foreign, category, parent_type, 3, 1000);
+                saved
+                    .production
+                    .factories_mut_for_test()
                     .test_factory_mut(foreign, category)
                     .unwrap()
                     .object
@@ -543,7 +546,7 @@ fn factory_restore_rejects_inconsistent_roots() {
             "missing-entity" => {
                 saved
                     .production
-                    .factories
+                    .factories_mut_for_test()
                     .test_first_mut()
                     .unwrap()
                     .object
@@ -551,11 +554,18 @@ fn factory_restore_rejects_inconsistent_roots() {
                     .unwrap()
                     .entity_id = Some(u64::MAX)
             }
-            "key-owner" => saved.production.factories.test_first_mut().unwrap().owner = foreign,
+            "key-owner" => {
+                saved
+                    .production
+                    .factories_mut_for_test()
+                    .test_first_mut()
+                    .unwrap()
+                    .owner = foreign
+            }
             "key-category" => {
                 saved
                     .production
-                    .factories
+                    .factories_mut_for_test()
                     .test_first_mut()
                     .unwrap()
                     .category = ProductionCategory::Infantry
@@ -563,7 +573,7 @@ fn factory_restore_rejects_inconsistent_roots() {
             "no-identity" => {
                 saved
                     .production
-                    .factories
+                    .factories_mut_for_test()
                     .test_first_mut()
                     .unwrap()
                     .object
@@ -574,7 +584,7 @@ fn factory_restore_rejects_inconsistent_roots() {
             "unknown-active-type" => {
                 saved
                     .production
-                    .factories
+                    .factories_mut_for_test()
                     .test_first_mut()
                     .unwrap()
                     .object
@@ -619,19 +629,21 @@ fn factory_restore_rejects_inconsistent_roots() {
                 manager.set_for_test(state, frame, nodes, timer);
             }
             "tail-without-head" => {
-                saved.production.factories.test_enqueue_kernel(
-                    owner,
-                    category,
-                    parent_type,
-                    2,
-                    1000,
-                );
-                saved.production.factories.test_first_mut().unwrap().object = None;
+                saved
+                    .production
+                    .factories_mut_for_test()
+                    .test_enqueue_kernel(owner, category, parent_type, 2, 1000);
+                saved
+                    .production
+                    .factories_mut_for_test()
+                    .test_first_mut()
+                    .unwrap()
+                    .object = None;
             }
             "early-accounting" => {
                 saved
                     .production
-                    .factories
+                    .factories_mut_for_test()
                     .test_first_mut()
                     .unwrap()
                     .object

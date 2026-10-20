@@ -478,11 +478,11 @@ pub(crate) fn pay_refinery_owner(
         return;
     };
     house
-        .economy
+        .economy_mut()
         .add_tiberium_credits(value, bales, INCOME_PPM_SCALE, income_ppm);
     if bonus_ppm > 0 {
         house
-            .economy
+            .economy_mut()
             .add_tiberium_credits(value, bales, bonus_ppm, income_ppm);
     }
 }

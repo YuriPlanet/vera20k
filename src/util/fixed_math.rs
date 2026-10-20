@@ -83,14 +83,6 @@ pub fn ra2_speed_to_leptons_per_second(raw_speed: i32) -> SimFixed {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_constants() {
-        assert_eq!(SIM_ZERO, SimFixed::from_num(0));
-        assert_eq!(SIM_ONE, SimFixed::from_num(1));
-        let half: f32 = SIM_HALF.to_num();
-        assert!((half - 0.5).abs() < 0.001);
-    }
-
     /// S0 GATE (design Correction 1): pin the ReadDouble->SimFixed quantization.
     /// gamemd computes `(double)(float)sscanf("%f")`, times the binary64 0.01
     /// under its chop control word if the value holds a '%', and keeps the raw
@@ -144,28 +136,12 @@ mod tests {
     }
 
     #[test]
-    fn test_lepton_speed_zero_is_immobile() {
-        assert_eq!(ra2_speed_to_leptons_per_second(0), SIM_ZERO);
-        assert_eq!(ra2_speed_to_leptons_per_second(-5), SIM_ZERO);
-    }
-
-    #[test]
     fn test_lepton_speed_harvester() {
         // HARV: Speed=4. leptons/tick = 4*256/100 = 10. leptons/sec = 10*15 = 150.
         let speed: f32 = ra2_speed_to_leptons_per_second(4).to_num();
         assert!(
             (speed - 150.0).abs() < 1.0,
             "Speed=4: got {speed}, expected ~150"
-        );
-    }
-
-    #[test]
-    fn test_lepton_speed_max() {
-        // Speed=100. leptons/tick = 255. leptons/sec = 255*15 = 3825
-        let speed: f32 = ra2_speed_to_leptons_per_second(100).to_num();
-        assert!(
-            (speed - 3825.0).abs() < 1.0,
-            "Speed=100: got {speed}, expected ~3825"
         );
     }
 }

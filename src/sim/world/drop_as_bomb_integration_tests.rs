@@ -174,7 +174,7 @@ fn run_drop(sim: &mut Simulation, rules: &RuleSet, carrier: u64, passenger: u64,
     let owner = sim.substrate.entities.get(carrier).unwrap().owner();
     let landing_xy =
         ground_pose::position_world_xy(&sim.substrate.entities.get(carrier).unwrap().position);
-    let losses = sim.houses[&owner].stats.units_lost();
+    let losses = sim.houses[&owner].stats().units_lost();
     let existing = sim.substrate.entities.keys_sorted();
     sim.clear_lifecycle_test_events_for_test();
     remove_deck(sim);
@@ -241,7 +241,7 @@ fn run_drop(sim: &mut Simulation, rules: &RuleSet, carrier: u64, passenger: u64,
         !sim.substrate.entities.contains(passenger),
         "bomb cargo dies without escape"
     );
-    assert_eq!(sim.houses[&owner].stats.units_lost(), losses + 2);
+    assert_eq!(sim.houses[&owner].stats().units_lost(), losses + 2);
     assert!(
         sim.substrate
             .entities

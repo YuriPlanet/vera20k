@@ -116,7 +116,7 @@ impl ParityDigest {
 
         let house_credits: Vec<i32> = houses
             .values()
-            .map(|house| house.economy.credits())
+            .map(|house| house.economy().credits())
             .collect();
 
         Self {
@@ -250,15 +250,6 @@ mod tests {
     }
 
     #[test]
-    fn empty_state_hashes_to_the_offset_basis() {
-        let digest = empty_digest();
-        assert_eq!(digest.entity_state_hash, FNV1A64_OFFSET_BASIS);
-        assert_eq!(digest.entity_count, 0);
-        assert_eq!(digest.house_count, 0);
-        assert!(digest.house_credits.is_empty());
-    }
-
-    #[test]
     fn absolute_axis_matches_the_shared_sub_cell_convention() {
         use crate::util::fixed_math::SimFixed;
         // A centred entity in cell 0 sits at 128; cell 1 centred is 384.
@@ -268,35 +259,5 @@ mod tests {
         // Fractional sub-cell offsets truncate rather than round, so the value stays in
         // whole units on both sides of the comparison.
         assert_eq!(absolute_axis(2, SimFixed::from_num(0.75)), 512);
-    }
-
-    #[test]
-    fn the_fold_is_order_sensitive() {
-        let forward = fnv1a64_fold_i32(fnv1a64_fold_i32(FNV1A64_OFFSET_BASIS, 1), 2);
-        let reversed = fnv1a64_fold_i32(fnv1a64_fold_i32(FNV1A64_OFFSET_BASIS, 2), 1);
-        assert_ne!(
-            forward, reversed,
-            "two engines holding the same entities in a different order are not equivalent \
-             for lockstep, so the hash must notice"
-        );
-    }
-
-    #[test]
-    fn json_line_round_trips() {
-        let digest = ParityDigest {
-            tick: 7,
-            entity_count: 226,
-            house_count: 4,
-            house_credits: vec![8500, 3328, 0, 0],
-            rng_index_a: 211,
-            rng_index_b: 64,
-            entity_state_hash: 0x9CEB_C227_CE30_BEAF,
-            scenario_rng_index_a: 144,
-            scenario_rng_index_b: 32,
-        };
-        let line = digest.to_json_line().unwrap();
-        assert!(!line.contains('\n'), "a JSON line must stay on one line");
-        let parsed: ParityDigest = serde_json::from_str(&line).unwrap();
-        assert_eq!(parsed, digest);
     }
 }

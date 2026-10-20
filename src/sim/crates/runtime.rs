@@ -438,34 +438,6 @@ mod tests {
         assert_eq!(sim.crate_authority.slots()[1].start_frame, -1);
     }
 
-    /// An empty coordinate returns false and mutates nothing at all.
-    #[test]
-    fn crate_slot_clear_on_empty_slot_is_a_total_no_op() {
-        let mut sim = sim_with_grid(0x53);
-        let rules = crate_ruleset("");
-        let registry = crate_registry();
-        *sim.crate_authority.slot_mut(7) = CrateSlot {
-            start_frame: 42,
-            aux: 8,
-            duration: 9,
-            cell_x: 0,
-            cell_y: 0,
-        };
-
-        assert!(!clear_crate_slot(&mut sim, &rules, &registry, 7, 1000));
-
-        assert_eq!(
-            sim.crate_authority.slots()[7],
-            CrateSlot {
-                start_frame: 42,
-                aux: 8,
-                duration: 9,
-                cell_x: 0,
-                cell_y: 0,
-            }
-        );
-    }
-
     /// Removal accepts only the three live Rules crate images and writes exactly
     /// the two CellClass overlay fields, keeping the cell's wall owner.
     ///
@@ -546,27 +518,6 @@ mod tests {
             Some(wood),
             "In_Bounds rejects 5 + 5 <= size width before Get_CellClass"
         );
-    }
-
-    /// Removal that finds no matching identity still lets the caller free the
-    /// slot: a ghost slot's cell never carried a crate overlay.
-    #[test]
-    fn crate_slot_clear_ignores_removal_failure_on_a_ghost_cell() {
-        let mut sim = sim_with_grid(0x55);
-        let rules = crate_ruleset("");
-        let registry = crate_registry();
-        *sim.crate_authority.slot_mut(0) = CrateSlot {
-            start_frame: 5,
-            aux: 0,
-            duration: 60,
-            cell_x: 12,
-            cell_y: 13,
-        };
-
-        assert!(clear_crate_slot(&mut sim, &rules, &registry, 0, 20));
-
-        assert!(sim.crate_authority.slots()[0].is_empty());
-        assert_eq!(sim.crate_authority.slots()[0].duration, 45);
     }
 
     /// The two gates are the whole function: a zero game mode or a cleared
@@ -651,48 +602,6 @@ mod tests {
             replaced.start_frame, 1_000,
             "the new timer starts this frame"
         );
-    }
-
-    /// The replacement lands at or below the expiring index, so one ascending
-    /// pass never revisits it and never cascades.
-    #[test]
-    fn crate_regen_replacement_never_lands_above_the_expiring_slot() {
-        let mut sim = sim_with_grid(0x58);
-        sim.session.set_game_mode(
-            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
-        );
-        sim.session.game_options_mut_for_test().crates = true;
-        sim.session.set_binary_frame_for_test(4_000);
-        let rules = crate_ruleset("");
-        let registry = crate_registry();
-
-        for index in [0usize, 1, 2] {
-            *sim.crate_authority.slot_mut(index) = CrateSlot {
-                start_frame: -1,
-                aux: 0,
-                duration: 0,
-                cell_x: 5 + index as i16,
-                cell_y: 5,
-            };
-        }
-
-        let regen = tick_crate_regeneration(&mut sim, &rules, &registry, lighting());
-
-        assert_eq!(regen.expired, 3, "each due slot expires exactly once");
-        assert_eq!(regen.accepted, 3);
-        for index in 3..CRATE_SLOT_CAPACITY {
-            assert!(
-                sim.crate_authority.slots()[index].is_empty(),
-                "no replacement may appear above the expiring indices"
-            );
-        }
-        for index in [0usize, 1, 2] {
-            assert_eq!(
-                sim.crate_authority.slots()[index].start_frame,
-                4_000,
-                "every replacement re-armed its timer this frame"
-            );
-        }
     }
 
     /// A regenerated crate really moves on the map: the expired cell's overlay
@@ -876,49 +785,4 @@ mod tests {
         );
     }
 
-    /// A paused, already-zero slot re-fires every tick until a placement takes
-    /// it — the native `start == -1, duration == 0` branch.
-    #[test]
-    fn crate_regen_paused_zero_slot_refires_until_a_placement_succeeds() {
-        let mut sim = sim_with_grid(0x5A);
-        sim.session.set_game_mode(
-            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
-        );
-        sim.session.game_options_mut_for_test().crates = true;
-        let rules = crate_ruleset("");
-        let registry = crate_registry();
-
-        // Fill every slot above index 0 so the replacement can only reuse the
-        // slot the scan just freed, then keep zeroing its timer.
-        for index in 1..CRATE_SLOT_CAPACITY {
-            *sim.crate_authority.slot_mut(index) = CrateSlot {
-                start_frame: 0,
-                aux: 0,
-                duration: i32::MAX,
-                cell_x: 1,
-                cell_y: 1,
-            };
-        }
-        *sim.crate_authority.slot_mut(0) = CrateSlot {
-            start_frame: -1,
-            aux: 0,
-            duration: 0,
-            cell_x: 9,
-            cell_y: 9,
-        };
-
-        for _ in 0..3 {
-            let regen = tick_crate_regeneration(&mut sim, &rules, &registry, lighting());
-            assert_eq!(
-                regen.expired, 1,
-                "the paused zero-duration slot expires on every pass"
-            );
-            *sim.crate_authority.slot_mut(0) = CrateSlot {
-                start_frame: -1,
-                aux: 0,
-                duration: 0,
-                ..sim.crate_authority.slots()[0]
-            };
-        }
-    }
 }

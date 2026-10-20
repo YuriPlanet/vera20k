@@ -206,7 +206,7 @@ impl PreparedLoad {
             bytes,
             expected_map_hash,
             rules.simulation_config_hash(),
-            &current_simulation.session.map_name(),
+            current_simulation.session.map_name(),
         )?;
         let terrain_template = terrain_template
             .cloned()
@@ -1159,7 +1159,7 @@ mod tests {
             &IniFile::from_str("[Basic]\nPlayer=OutgoingPlayer\n"),
         );
         assert_eq!(current.session.current_house(), Some(outgoing_owner));
-        assert!(!current.houses[&saved_owner].is_human);
+        assert!(!current.houses[&saved_owner].is_human());
         let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(current);
         runtime.resources.rules = rules;
         runtime.resources.overlay_registry = registry;
@@ -1190,10 +1190,10 @@ mod tests {
             runtime.simulation.session.current_house(),
             Some(saved_owner)
         );
-        assert!(runtime.simulation.houses[&saved_owner].is_human);
-        assert!(runtime.simulation.houses[&saved_owner].player_control);
-        assert!(!runtime.simulation.houses[&outgoing_owner].is_human);
-        assert!(!runtime.simulation.houses[&outgoing_owner].player_control);
+        assert!(runtime.simulation.houses[&saved_owner].is_human());
+        assert!(runtime.simulation.houses[&saved_owner].player_control());
+        assert!(!runtime.simulation.houses[&outgoing_owner].is_human());
+        assert!(!runtime.simulation.houses[&outgoing_owner].player_control());
         let tick = runtime.simulation.session.tick();
         runtime
             .advance_frame(
@@ -1258,11 +1258,11 @@ mod tests {
             let _ = prepared.commit_into(&mut runtime);
             assert_eq!(runtime.simulation.session.current_house(), Some(selected));
             assert!(
-                runtime.simulation.houses[&selected].is_human
-                    && runtime.simulation.houses[&selected].player_control
+                runtime.simulation.houses[&selected].is_human()
+                    && runtime.simulation.houses[&selected].player_control()
             );
-            assert!(!runtime.simulation.houses[&neutral].is_human);
-            assert!(!runtime.simulation.houses[&ai].is_human);
+            assert!(!runtime.simulation.houses[&neutral].is_human());
+            assert!(!runtime.simulation.houses[&ai].is_human());
             let tick = runtime.simulation.session.tick();
             runtime
                 .advance_frame(

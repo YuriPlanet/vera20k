@@ -174,9 +174,9 @@ fn admit_attacker_fire<'r>(
                 // FireAt6FDDAE..6FDDC0 retains the actual Object pointer;
                 // Terrain's +48 is Object5F65A0, owned by the shared resolver.
                 // Read its actual Terrain type/Health, without a Techno shell.
-                let target = world.production.terrain_objects.get(&target_id)?;
+                let target = world.terrain_objects.objects().get(&target_id)?;
                 let (rx, ry, sx, sy) = resolve_target_coords(&snap.target, world)?;
-                Some((rx, ry, sx, sy, target.health, target.type_ref))
+                Some((rx, ry, sx, sy, target.health(), target.type_ref()))
             }),
         TargetKind::Cell(rx, ry) => {
             let (trx, try_, tsx, tsy) = cell_center_coords(rx, ry);
@@ -543,10 +543,10 @@ fn admit_attacker_fire<'r>(
                     .map(|target| target.type_ref())
                     .or_else(|| {
                         world
-                            .production
                             .terrain_objects
+                            .objects()
                             .get(&id)
-                            .map(|target| target.type_ref)
+                            .map(|target| target.type_ref())
                     })?;
                 (coords, type_ref)
             }
@@ -922,7 +922,7 @@ fn reveal_on_fire(
     };
     let victim = if let Some(target) = world.substrate.entities.get(target_id) {
         Some(target.owner())
-    } else if world.production.terrain_objects.contains_key(&target_id) {
+    } else if world.terrain_objects.objects().contains_key(&target_id) {
         // Terrain ctor71BBFF installs7F522C; slot+3C=4104A0 returnsNULL.
         // This is a real Object target: Spawner still reaches its border.
         None
@@ -1148,8 +1148,8 @@ pub(super) fn emit_admitted_fire(
             .map(|target| target.lifecycle.in_limbo())
             .or_else(|| {
                 world
-                    .production
                     .terrain_objects
+                    .objects()
                     .get(&id)
                     .map(|target| !target.is_live())
             })
@@ -1252,6 +1252,41 @@ pub(super) fn emit_admitted_fire(
         }
         return None;
     }
+
+    // `0x006FE095..0x006FE245`: the target argument and its coordinate. A
+    // `SprayAttack=` type (TechnoType `+0x691`) aims at one of eight fixed
+    // offsets around itself instead, the first picked by a Scenario draw;
+    // retail sets the key on no type, so that branch is dormant and not
+    // ported. Otherwise an `AreaFire=` weapon (`+0x150`,
+    // `0x006FE140..0x006FE1D8`) fires at the cell under the firer: GetCoords
+    // (vt+0x48) XY /256 toward zero, packed to 16 bits, Map `0x005657A0`.
+    // That cell's own GetCoords (`0x00486840`: centre XY and ground height,
+    // not vt+0x58's bridge deck) becomes the target coordinate, and Map
+    // `0x00565730` looks the same cell up again as the new target. Every later
+    // step reads these: CreateBullet, the Inviso placement, the beams and
+    // RevealOnFire, which a Cell skips (`0x006FF6D4`). TarCom, which GetFLH and
+    // the estimate debit read, keeps the victim. Infantry GetFireError refuses
+    // an AreaFire shot off its own cell (`0x0051CB08`); a Unit fires it from
+    // range, so a Chaos Drone's gas rises around the drone, not the victim. A
+    // fixture without terrain has no cell and keeps the victim.
+    let area_fire_cell = (weapon.area_fire && !obj.spray_attack)
+        .then(|| object_get_coords(world, snap.stable_id))
+        .flatten()
+        .and_then(|coord| world.packed_map_cell(coord.x, coord.y));
+    // The Object local FireAt took at entry (`0x006FDD88..0x006FDDA1`),
+    // which the retarget leaves alone; the Inviso OnBridge copy reads it.
+    let entry_target = snap.target;
+    let area_fire_snap;
+    let (snap, (target_rx, target_ry, target_sub_x, target_sub_y)) = match area_fire_cell {
+        Some((rx, ry)) => {
+            area_fire_snap = AttackerSnapshot {
+                target: TargetKind::Cell(rx, ry),
+                ..snap.clone()
+            };
+            (&area_fire_snap, cell_center_coords(rx, ry))
+        }
+        None => (snap, (target_rx, target_ry, target_sub_x, target_sub_y)),
+    };
 
     // Fire one shot!
     //
@@ -1372,12 +1407,20 @@ pub(super) fn emit_admitted_fire(
             launch_source.coord,
             // 6FE1EE reads the Building argument's+A4. The launch delta and
             // Bullet::Fire reference below independently read+58 instead.
-            super::fire_coord::effect_target_coordinate(
-                world,
-                rules,
-                snap.target.projectile_target(world),
-            )
-            .unwrap_or(impact),
+            // AreaFire's coordinate is its cell's +48 (6FE1A3).
+            match area_fire_cell {
+                Some((rx, ry)) => crate::sim::projectile::cell_ground_coord(
+                    world.resolved_terrain.as_ref(),
+                    rx,
+                    ry,
+                ),
+                None => super::fire_coord::effect_target_coordinate(
+                    world,
+                    rules,
+                    snap.target.projectile_target(world),
+                )
+                .unwrap_or(impact),
+            },
             tarcom,
         );
         let origin = launch_source.coord;
@@ -1617,6 +1660,10 @@ pub(super) fn emit_admitted_fire(
                     } else {
                         launch_speed.clamp(0, i32::from(u16::MAX)) as u16
                     },
+                    target_on_bridge: super::projectile_delivery::target_on_bridge(
+                        world,
+                        entry_target.projectile_target(world),
+                    ),
                 },
             );
         }
@@ -2349,10 +2396,10 @@ pub(crate) fn visit_fire(
                         .map(|target| target.type_ref())
                         .or_else(|| {
                             world
-                                .production
                                 .terrain_objects
+                                .objects()
                                 .get(&target)
-                                .map(|target| target.type_ref)
+                                .map(|target| target.type_ref())
                         })?,
                     TargetKind::Cell(..) => actor.type_ref(),
                 };
@@ -2777,7 +2824,7 @@ mod reveal_on_fire_tests {
             "TREE01",
             ini.section("TREE01").unwrap(),
         );
-        sim.production.terrain_objects.insert(
+        sim.terrain_objects.objects_mut_for_test().insert(
             3,
             crate::sim::terrain_object::TerrainObjectState::new(
                 3,

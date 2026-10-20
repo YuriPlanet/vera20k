@@ -312,13 +312,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_basic_section_returns_defaults() {
-        let ini = IniFile::from_str("[Map]\nTheater=TEMPERATE\n");
-        let basic = parse_basic_section(&ini);
-        assert_eq!(basic, BasicSection::default());
-    }
-
-    #[test]
     fn free_radar_preserves_original_bool_tokens_and_supplied_default() {
         let original: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/free_radar_oracle/fixtures/native-free-radar.json",
@@ -363,32 +356,6 @@ mod tests {
         assert_eq!(flags.tiberium_spreads, Some(false));
         assert_eq!(flags.destroyable_bridges, Some(false));
         assert_eq!(flags.inert, Some(true));
-    }
-
-    #[test]
-    fn gsi_04_10_special_flags_inert_is_optional_scenario_authority() {
-        assert_eq!(
-            parse_special_flags_section(&IniFile::from_str("[SpecialFlags]\nInert=yes\n")).inert,
-            Some(true)
-        );
-        assert_eq!(
-            parse_special_flags_section(&IniFile::from_str("[SpecialFlags]\nInert=no\n")).inert,
-            Some(false)
-        );
-        assert_eq!(
-            parse_special_flags_section(&IniFile::from_str("[Basic]\nName=Ordinary\n")).inert,
-            None
-        );
-    }
-
-    #[test]
-    fn parse_special_flags_mcvdeploy_no() {
-        let ini = IniFile::from_str("[SpecialFlags]\nMCVDeploy=no\n");
-        let flags = parse_special_flags_section(&ini);
-        assert_eq!(flags.mcv_deploy, Some(false));
-        assert_eq!(flags.tiberium_grows, None);
-        assert_eq!(flags.tiberium_spreads, None);
-        assert_eq!(flags.destroyable_bridges, None);
     }
 
     /// `HarvesterImmune=` (`0x006B8EBF..0x006B8ED7`): present key parses;

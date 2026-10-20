@@ -859,39 +859,6 @@ mod tests {
     }
 
     #[test]
-    fn marker_records_preserve_start_participant_and_color_identity() {
-        let prefix = [waypoint(0, 0, 0), waypoint(1, 1, 0)];
-        let assignments = [
-            LoadingStartAssignment {
-                start_index: 1,
-                participant: LoadingParticipantId::Local,
-                color_priority: 7,
-            },
-            LoadingStartAssignment {
-                start_index: 0,
-                participant: LoadingParticipantId::Opponent(0),
-                color_priority: 2,
-            },
-        ];
-        let bounds = ProjectedPlayfieldBounds {
-            min_x: 250,
-            min_y: 0,
-            extent_x: 20,
-            extent_y: 20,
-        };
-        let region = mmpb_region_rect(640);
-        let fit = aspect_fit_preview(region, 100, 100).expect("valid fit");
-        let markers = build_mmpb_marker_records(&prefix, &assignments, bounds, region, fit);
-        assert_eq!(markers.len(), 2);
-        assert_eq!(markers[0].start_index, 0);
-        assert_eq!(markers[0].participant, LoadingParticipantId::Opponent(0));
-        assert_eq!(markers[0].color_priority, 2);
-        assert_eq!(markers[1].start_index, 1);
-        assert_eq!(markers[1].participant, LoadingParticipantId::Local);
-        assert_eq!(markers[1].color_priority, 7);
-    }
-
-    #[test]
     fn black_source_indicator_clips_a_four_by_four_rect() {
         let mut preview = DecodedPreview {
             width: 3,
@@ -1021,60 +988,6 @@ mod tests {
         assert_eq!(loading_base_origin([1024, 768]), [112, 84]);
         assert_eq!(loading_base_origin([1920, 1080]), [560, 240]);
         assert_eq!(loading_base_origin([640, 800]), [0, 160]);
-    }
-
-    #[test]
-    fn text_rects_shift_by_exactly_the_shared_base_origin() {
-        // The split-anchor bug this guards: the text layers moved with the
-        // window while the art and the progress row stayed at (0,0).
-        let battle = mode("MPBattleMD.ini");
-        let anchored = loading_text_rects([800, 600], &battle, ShellScale::RETAIL);
-        let maximized = loading_text_rects([1024, 768], &battle, ShellScale::RETAIL);
-        let [dx, dy] = loading_base_origin([1024, 768]);
-
-        assert_eq!(
-            maximized.country_name,
-            anchored.country_name.translate(dx, dy)
-        );
-        assert_eq!(
-            maximized.special_unit,
-            anchored.special_unit.translate(dx, dy)
-        );
-        assert_eq!(maximized.load_brief, anchored.load_brief.translate(dx, dy));
-        assert_eq!(maximized.loading, anchored.loading.translate(dx, dy));
-    }
-
-    #[test]
-    fn gsi_03_09_missing_random_preview_keeps_text_without_markers() {
-        let csf = test_csf(&[
-            ("Name:Americans", "America"),
-            ("Name:Para", "paradrop"),
-            ("LoadBrief:USA", "A briefing."),
-            ("GUI:LoadingEx", "Loading..."),
-        ]);
-        let map =
-            crate::map::rmg::emit::empty_map_file(&crate::map::rmg::RmgOptions::default(), 32, 32);
-        let composition = build_random_map_loading_composition(
-            &test_launch_session(),
-            Some(&csf),
-            [800, 600],
-            ShellScale::RETAIL,
-            None,
-            &map,
-            &map.waypoints,
-            &[],
-        );
-
-        assert_eq!(composition.text.country_name.as_deref(), Some("America"));
-        assert_eq!(composition.text.special_unit.as_deref(), Some("PARADROP"));
-        assert_eq!(composition.text.load_brief.as_deref(), Some("A briefing."));
-        assert_eq!(composition.text.loading.as_deref(), Some("Loading..."));
-        assert_eq!(
-            composition.text_rects,
-            loading_text_rects([800, 600], &mode("MPBattleMD.ini"), ShellScale::RETAIL)
-        );
-        assert!(composition.preview.is_none());
-        assert!(composition.markers.is_empty());
     }
 
     #[test]

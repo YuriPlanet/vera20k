@@ -71,8 +71,10 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
         // Historical corpus name: input_locked is the native Session+300
         // dword atA8B538, not Scenario+35A2. These explicit component priors
         // are separate from the real-loader local-loss regression.
-        sim.houses.get_mut(&owner).unwrap().is_defeated =
-            initial["input_locked"].as_u64().unwrap() != 0;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_is_defeated_for_test(initial["input_locked"].as_u64().unwrap() != 0);
         assert!(!sim.session.input_locked());
         let mut queue = SynchronizedCommandQueue::new();
         for _ in 0..initial["queue_count"].as_u64().unwrap() {
@@ -95,7 +97,10 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
             sim.session
                 .set_binary_frame_for_test(boundary["current_frame"].as_i64().unwrap() as u32);
             if let Some(session300) = boundary["input_locked"].as_u64() {
-                sim.houses.get_mut(&owner).unwrap().is_defeated = session300 != 0;
+                sim.houses
+                    .get_mut(&owner)
+                    .unwrap()
+                    .set_is_defeated_for_test(session300 != 0);
             }
             if let Some(count) = boundary["queue_count"].as_u64() {
                 // This history declares an external OutList drain between

@@ -283,7 +283,7 @@ fn retail_inactive_and_nonlocal_defeat_do_not_leave_the_local_planner() {
             admitted.extend(output.take_admitted_commands());
         }
         let loser = rt.simulation.houses.order()[losing_house];
-        assert!(rt.simulation.houses[&loser].is_defeated);
+        assert!(rt.simulation.houses[&loser].is_defeated());
         assert_eq!(planning.active(), active);
         assert_eq!(
             planning.highlighted_node(),

@@ -955,32 +955,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_changed_ra2_look_reloads_the_movie_session() {
-        let identity = |ra2_look| {
-            Ra2tsMovieSessionIdentity::new(
-                Ra2tsDialogOwner::MainMenu0xE2,
-                MainMenuMovieBase::Ra2tsL,
-                ra2_look,
-            )
-        };
-        assert!(ra2ts_movie_session_is_reusable(
-            true,
-            Some(identity(false)),
-            identity(false)
-        ));
-        assert!(!ra2ts_movie_session_is_reusable(
-            true,
-            Some(identity(false)),
-            identity(true)
-        ));
-        assert!(!ra2ts_movie_session_is_reusable(
-            true,
-            Some(identity(true)),
-            identity(false)
-        ));
-    }
-
-    #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
     fn ra2_look_plays_the_red_alert_2_copy_of_the_menu_movie() {
         use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};

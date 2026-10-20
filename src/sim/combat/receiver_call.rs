@@ -205,7 +205,7 @@ pub(super) fn apply_building_receive_prelude(
         && let Some(owner) = houses.get_mut(&target.owner())
     {
         owner
-            .strategy_emergency
+            .strategy_emergency_mut()
             .note_building_attack(current_tick as u32 as i32);
     }
 

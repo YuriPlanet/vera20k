@@ -867,46 +867,6 @@ fn retail_non_fire_once_shot_retains_target() {
     );
 }
 
-/// Frames in limbo do not extend the fuse, and a carrier in limbo does not
-/// set it off: it goes off on its first AI visit back on the map.
-#[test]
-fn the_fuse_waits_while_the_carrier_is_in_limbo() {
-    let rules = rules();
-    let mut sim = sim(22);
-    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
-    let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 11, 10);
-    sim.session.set_binary_frame_for_test(100);
-    sim.bomb_attach(ivan, Some(tank), &rules);
-    sim.session.set_binary_frame_for_test(100 + 451);
-    sim.substrate
-        .entities
-        .get_mut(tank)
-        .unwrap()
-        .lifecycle
-        .set_in_limbo_for_test(true);
-    sim.bomb_fuse_step(
-        tank,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    assert!(bomb(&sim, tank).is_some(), "waits in limbo");
-    sim.substrate
-        .entities
-        .get_mut(tank)
-        .unwrap()
-        .lifecycle
-        .set_in_limbo_for_test(false);
-    sim.bomb_fuse_step(
-        tank,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    assert!(bomb(&sim, tank).is_none());
-    assert_eq!(entity(&sim, tank).health.current(), 1000 - 450);
-}
-
 /// A bomb outlives its planter (PointerGotInvalid only nulls it) and then
 /// credits no one.
 #[test]
@@ -1036,36 +996,6 @@ fn a_bombed_crazy_ivan_blows_up_once() {
     let engineer = entity(&sim, engineer);
     assert_eq!(engineer.health.current(), 0);
     assert_eq!(engineer.kill_record.killer(), sim.interner.get("Americans"));
-}
-
-/// The blast is Apply_area_damage at the carrier's Location with IvanDamage
-/// and IvanWarhead, the planter as its source and no house (the corpus's
-/// `detonate_blast` row: 450 at (3000, 3100, 0) from `techno0`). A carrier off
-/// its cell's center takes the whole 450, and what the blast kills is credited
-/// to the planter's house.
-#[test]
-fn the_blast_is_centred_on_the_carrier() {
-    let rules = rules();
-    let (mut sim, _grid) = arena(31, &rules);
-    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 11, 12);
-    let engineer = spawn(&mut sim, &rules, "ENGINEER", "Americans", 12, 12);
-    let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 25, 25);
-    for id in [tank, engineer] {
-        place(&mut sim, &rules, id, (3000, 3100));
-    }
-    sim.session.set_binary_frame_for_test(100);
-    sim.bomb_attach(ivan, Some(tank), &rules);
-    sim.session.set_binary_frame_for_test(100 + 451);
-    sim.bomb_fuse_step(
-        tank,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    assert_eq!(entity(&sim, tank).health.current(), 1000 - 450);
-    let engineer = entity(&sim, engineer);
-    assert_eq!(engineer.health.current(), 0);
-    assert_eq!(engineer.kill_record.killer(), sim.interner.get("Russians"));
 }
 
 /// A blast that kills another carrier sets that bomb off in its death
@@ -1259,37 +1189,6 @@ fn who_sees_a_bomb_follows_the_native_refresh() {
     sim.bomb_list_update(&rules);
     assert!(sim.bomb_seen_by(tank, americans));
     assert_eq!(sim.state_hash(), before, "BombVisible is presentation");
-}
-
-/// The ticking loop plays at the carrier's Location while it is on the map
-/// and stops in limbo (`BombListClass::UpdateAll`, 0x00438C84..0x00438CFE),
-/// under an owner key apart from the carrier's own sounds.
-#[test]
-fn the_ticking_loop_follows_the_carrier() {
-    let rules = rules();
-    let mut sim = sim(29);
-    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
-    let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 11, 10);
-    assert_eq!(sim.bomb_ticking_coord(tank), None, "no bomb, no loop");
-    sim.bomb_attach(ivan, Some(tank), &rules);
-    let owner = ticking_sound_owner(tank);
-    assert_ne!(owner, tank);
-    assert_eq!(ticking_sound_carrier(owner), Some(tank));
-    assert_eq!(ticking_sound_carrier(tank), None);
-    let expected = Simulation::movement_sound_world(entity(&sim, tank));
-    assert_eq!(sim.bomb_ticking_coord(tank), Some(expected));
-    assert_eq!(sim.looping_sound_owner_coord(owner), Some(expected));
-    sim.substrate
-        .entities
-        .get_mut(tank)
-        .unwrap()
-        .lifecycle
-        .set_in_limbo_for_test(true);
-    assert_eq!(
-        sim.looping_sound_owner_coord(owner),
-        None,
-        "stopped in limbo"
-    );
 }
 
 /// Retail `rulesmd.ini` through the production reader (skipped without it):

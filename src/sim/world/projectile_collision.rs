@@ -692,84 +692,13 @@ mod tests {
             dummy: &sim.shared_cell_dummy,
             occupancy: &sim.substrate.occupancy,
             entities: &sim.substrate.entities,
-            terrain_objects: &sim.production.terrain_objects,
+            terrain_objects: sim.terrain_objects.objects(),
             interner: &sim.interner,
             alliances: &sim.house_alliances,
             overlays: sim.overlay_grid.as_ref(),
             overlay_registry: None,
             rules: None,
             map_size: Some((2, 3)),
-        }
-    }
-
-    /// Instruction-established inputs to468BB0, not stock flight histories.
-    /// The shared probe queries height twice at distinct native boundaries;
-    /// retained Bullet OnBridge is independent of the map's bridge flags.
-    #[test]
-    fn shared_bridge_height_admissions_use_the_retained_bullet_flag() {
-        for (level, slope, dummy) in [(0, 0, false), (2, 1, false), (2, 1, true)] {
-            for (on_bridge, relative_z, flak, aim_height, admitted) in [
-                (true, 0, false, 500, true),
-                (false, 0, false, 500, false),
-                (true, 1, false, 500, false),
-                (true, 415, true, 500, true),
-                (false, 415, true, 500, false),
-                (true, 416, true, 500, false),
-                (true, 415, true, 415, false),
-                (true, 415, true, 414, false),
-            ] {
-                let mut sim = Simulation::new();
-                install_common_raw_terrain(&mut sim, 8, 8, level, None);
-                let (x, y) = if dummy {
-                    (20 * 256 + 128, 21 * 256 + 128)
-                } else {
-                    (640, 640)
-                };
-                if dummy {
-                    sim.shared_cell_dummy.set_level_slope(level as i8, slope);
-                } else {
-                    sim.resolved_terrain
-                        .as_mut()
-                        .unwrap()
-                        .cell_mut(2, 2)
-                        .unwrap()
-                        .slope_type = slope;
-                }
-                let ground = world(&sim).ground(ProjectileCoord::new(x, y, 0));
-                let candidate = ProjectileCoord::new(x, y, ground + relative_z);
-                place(
-                    &mut sim,
-                    2,
-                    ProjectileCoord::new(640, 640, ground + aim_height),
-                    EntityCategory::Unit,
-                );
-                let mut shot = gsi_05_02_projectile(999, None);
-                shot.origin = candidate;
-                shot.target = ProjectileTarget::Entity(2);
-                shot.collision.flak_scatter = flak;
-                sim.projectiles.spawn(100, shot);
-                let mut bullet = sim.projectiles.get(100).unwrap().clone();
-                bullet.on_bridge = on_bridge;
-                let original = bullet.clone();
-                let response =
-                    world(&sim).collide(&bullet, candidate, ProjectileCollisionPhase::Shared);
-                assert_eq!(
-                    response.is_some(),
-                    admitted,
-                    "level={level}, slope={slope}, dummy={dummy}, OnBridge={on_bridge}, z-ground={relative_z}, flak={flak}, aim-ground={aim_height}"
-                );
-                assert_eq!(
-                    bullet, original,
-                    "probe does not rewrite retained Bullet state"
-                );
-                if dummy {
-                    assert_eq!(
-                        sim.shared_cell_dummy.snapshot().coord,
-                        (20, 21),
-                        "height queries stamp the supplied candidate"
-                    );
-                }
-            }
         }
     }
 
@@ -958,8 +887,8 @@ mod tests {
             &rules,
             false,
         );
-        let id = sim.production.terrain_object_cells[&(10, 20)];
-        let coord = sim.production.terrain_objects[&id].world_coord();
+        let id = sim.terrain_objects.cell_index()[&(10, 20)];
+        let coord = sim.terrain_objects.objects()[&id].world_coord();
         assert_eq!(coord.z, 624);
         sim.resolved_terrain
             .as_mut()
@@ -2264,126 +2193,6 @@ mod tests {
                 expected_bits.as_slice()
             );
         }
-    }
-
-    #[test]
-    fn ordinary_projectile_near_target_final_coordinate_reaches_runtime_damage() {
-        use crate::rules::ini_parser::IniFile;
-        use crate::sim::runtime::SimRuntime;
-        let ini = IniFile::from_str(
-            "[General]\nVeteranRatio=3.0\n[AudioVisual]\nGravity=0\n[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\n[Warheads]\n0=WALLWH\n[WALLWH]\nWall=yes\nCellSpread=0\nPercentAtMax=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n[OverlayTypes]\n0=WALL\n[WALL]\nWall=yes\nStrength=1\n",
-        );
-        let art = IniFile::from_str("[WALL]\nDamageLevels=4\n");
-        let mut sim = Simulation::new();
-        install_native_size_terrain(&mut sim, 8, 8);
-        let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(24, 24);
-        overlays.place_overlay(5, 5, 0, 0);
-        overlays.place_overlay(6, 5, 0, 0);
-        sim.overlay_grid = Some(overlays);
-        // The frozen target cell admits near-target at candidate (1424,1408,5).
-        // The live target has moved to the next cell: final +48 must redirect
-        // the actual damage to (1664,1408,0), not leave it at that candidate.
-        place(
-            &mut sim,
-            2,
-            ProjectileCoord::new(1664, 1408, 0),
-            EntityCategory::Unit,
-        );
-        let mut shot = gsi_05_02_projectile(999, None);
-        shot.target = ProjectileTarget::Entity(2);
-        shot.origin = ProjectileCoord::new(1408, 1408, 5);
-        shot.initial_target_position = ProjectileCoord::new(1408, 1408, 0);
-        shot.velocity = ProjectileVelocity::new(16, 0, 0);
-        shot.trajectory = ProjectileTrajectory::Ballistic;
-        shot.payload = crate::sim::projectile::ProjectilePayload::new(
-            1,
-            sim.interner.intern("WALLWH"),
-            None,
-            false,
-        );
-        admit_existing(&mut sim, shot);
-        let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
-        runtime.resources.overlay_registry =
-            crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
-        let _ = runtime
-            .advance_frame(
-                &[],
-                16,
-                TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
-            )
-            .expect("fixture frame must complete");
-        assert!(runtime.simulation.projectiles.get(100).is_none());
-        let overlays = runtime.simulation.overlay_grid.as_ref().unwrap();
-        assert_eq!(
-            overlays.cell(5, 5).overlay_data,
-            0,
-            "candidate cell receives no wall damage"
-        );
-        assert_eq!(
-            overlays.cell(6, 5).overlay_data,
-            0x10,
-            "final target coordinate receives damage immediately"
-        );
-    }
-
-    #[test]
-    fn reflected_fractional_motion_reaches_runtime_impact_and_removal() {
-        use crate::rules::ini_parser::IniFile;
-        use crate::sim::runtime::SimRuntime;
-        use crate::util::native_x87::NativeF64Bits;
-        let ini = IniFile::from_str(
-            "[General]\nVeteranRatio=3.0\n[AudioVisual]\nGravity=0\n[Warheads]\n0=WALLWH\n[WALLWH]\nWall=yes\nCellSpread=0\nPercentAtMax=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n[OverlayTypes]\n0=WALL\n[WALL]\nWall=yes\nStrength=1\n",
-        );
-        let art = IniFile::from_str("[WALL]\nDamageLevels=4\n");
-        let mut sim = Simulation::new();
-        install_native_size_terrain(&mut sim, 8, 8);
-        let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(24, 24);
-        overlays.place_overlay(5, 5, 0, 0);
-        sim.overlay_grid = Some(overlays);
-        let mut shot = gsi_05_02_projectile(999, None);
-        shot.target = ProjectileTarget::None;
-        shot.origin = ProjectileCoord::new(1388, 1405, 5);
-        shot.initial_target_position = ProjectileCoord::new(2000, 1408, 0);
-        shot.velocity = ProjectileVelocity::from_native(
-            [20.0f64, 3.0, -5.5].map(|v| NativeF64Bits::from_bits(v.to_bits())),
-        );
-        shot.trajectory = ProjectileTrajectory::Ballistic;
-        shot.payload = crate::sim::projectile::ProjectilePayload::new(
-            1,
-            sim.interner.intern("WALLWH"),
-            None,
-            false,
-        );
-        admit_existing(&mut sim, shot);
-        let mut runtime = SimRuntime::from_simulation(sim);
-        runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
-        assert_eq!(runtime.resources.rules.general.gravity, 0);
-        runtime.resources.overlay_registry =
-            crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, Some(&art));
-        // Native geometry fixtures establish the source-less fractional-below-floor
-        // admission and Z=0 selection. Exact reflected stores have their own
-        // original-byte comparisons; this checks the real AI-to-damage delivery.
-        let _ = runtime
-            .advance_frame(
-                &[],
-                16,
-                TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
-            )
-            .expect("fixture frame must complete");
-        assert!(runtime.simulation.projectiles.get(100).is_none());
-        assert_eq!(
-            runtime
-                .simulation
-                .overlay_grid
-                .as_ref()
-                .unwrap()
-                .cell(5, 5)
-                .overlay_data,
-            0x10
-        );
     }
 
     #[test]

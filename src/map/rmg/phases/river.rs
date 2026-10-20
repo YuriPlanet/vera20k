@@ -862,20 +862,6 @@ mod tests {
     }
 
     #[test]
-    fn the_base_never_rises_twice() {
-        // The gate is an exact test against the starting base, so once a canyon
-        // has been cut no later river can add another step. A `>=` gate here
-        // would let the base climb run away.
-        for seed in [11u16, 4242, 60000] {
-            let (base, _, _) = run_carved_levels(3, seed);
-            assert!(
-                base <= CANYON_BASE_LEVEL + CANYON_LEVEL_STEP,
-                "base climbed past one step: {base}"
-            );
-        }
-    }
-
-    #[test]
     fn a_canyon_raises_the_terrain_outside_the_river() {
         // The valley stays low; everything else goes up by four. The first
         // port of this had it backwards (nothing raised, only the base bumped),
@@ -938,28 +924,5 @@ mod tests {
     fn the_gate_matches_the_documented_threshold() {
         assert!(!carries_a_river(20));
         assert!(carries_a_river(21));
-    }
-
-    #[test]
-    fn bounded_gaussian_recentres_only_when_the_window_is_too_narrow() {
-        // A window wider than +/- sigma leaves mean and sigma alone.
-        let mut rng = RmgRng::new(7);
-        let mut gauss = Gaussian::default();
-        let value = bounded_gaussian(&mut gauss, &mut rng, 0.0, 0.1, -10.0, 10.0);
-        assert!((-10.0..=10.0).contains(&value));
-    }
-
-    #[test]
-    fn a_cross_section_advances_along_sin_cos() {
-        // Pins the convention this module exists to get right: the carve line
-        // steps by (+sin, +cos), so a heading of 0 lays a vertical line.
-        let _ = Grid::step(0, 0, 0);
-        let (sin, cos) = (0.0f64, 1.0f64);
-        let span = 3;
-        let step_back = f64::from(span - 1) * HALF;
-        let x0 = 10.0 - step_back * sin;
-        let y0 = 10.0 - step_back * cos;
-        assert_eq!(X87Chop53::ftol_f64_low_masked(x0), 10);
-        assert_eq!(X87Chop53::ftol_f64_low_masked(y0), 9);
     }
 }

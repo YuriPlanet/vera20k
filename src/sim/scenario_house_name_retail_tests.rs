@@ -210,7 +210,10 @@ fn native_names_survive_load_and_hash_independently_of_runtime_keys() {
     let second_ai = sim.houses.order()[2];
     sim.session
         .set_current_house_for_test(Some(sim.houses.order()[0]));
-    sim.houses.get_mut(&first_ai).unwrap().is_human = true;
+    sim.houses
+        .get_mut(&first_ai)
+        .unwrap()
+        .set_is_human_for_test(true);
     let bytes = GameSnapshot::save(&sim, 0, 0, "native-house-name", 0);
     let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
     loaded.restore_after_snapshot_load().unwrap();

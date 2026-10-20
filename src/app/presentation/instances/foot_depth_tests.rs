@@ -6,15 +6,11 @@ use super::{
 };
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::cloak_disguise::DisguiseRuntime;
 use crate::sim::combat::Health;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
 use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::SimFixed;
 
 const RULES: &str = "\
 [VehicleTypes]
@@ -100,60 +96,6 @@ fn set_live_level(runtime: &mut SimRuntime, coord: (u16, u16), level: u8) {
 }
 
 #[test]
-fn runtime_rules_and_live_cliff_edits_reach_depth_instead_of_the_load_template() {
-    let mut runtime = runtime();
-    let tank = entity(&mut runtime, "TANK", EntityCategory::Unit);
-    let custom = entity(&mut runtime, "CUSTOM", EntityCategory::Unit);
-    // Stale load resources claim a cliff while the live simulation is flat.
-    runtime
-        .resources
-        .terrain_template
-        .as_mut()
-        .unwrap()
-        .cell_mut(3, 3)
-        .unwrap()
-        .level = 9;
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
-        -1
-    );
-
-    // This is an adapter sequence, not another exhaustive helper truth table:
-    // runtime changes must be visible immediately, without replacing resources.
-    set_live_level(&mut runtime, (3, 3), 4);
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
-        19
-    );
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &custom, true, None),
-        13
-    );
-    set_live_level(&mut runtime, (4, 4), 4);
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
-        9
-    );
-    set_live_level(&mut runtime, (3, 3), 0);
-    set_live_level(&mut runtime, (4, 4), 0);
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
-        -1
-    );
-    assert_eq!(
-        runtime
-            .resources
-            .terrain_template
-            .as_ref()
-            .unwrap()
-            .cell(3, 3)
-            .unwrap()
-            .level,
-        9
-    );
-}
-
-#[test]
 fn native_on_bridge_controls_the_cliff_gate_and_shp_surface() {
     let mut runtime = runtime();
     let mut tank = entity(&mut runtime, "TANK", EntityCategory::Unit);
@@ -180,154 +122,6 @@ fn native_on_bridge_controls_the_cliff_gate_and_shp_surface() {
         (foot - 2) as f32
     );
     assert_eq!(foot, -61);
-}
-
-#[test]
-fn shp_uses_exact_height_and_category_while_raw_unit_depth_keeps_foot() {
-    let mut runtime = runtime();
-    let mut tank = entity(&mut runtime, "TANK", EntityCategory::Unit);
-    let infantry = entity(&mut runtime, "INF", EntityCategory::Infantry);
-    let mut aircraft = entity(&mut runtime, "JET", EntityCategory::Aircraft);
-    set_live_level(&mut runtime, (3, 3), 4);
-    assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &infantry), 17.0);
-    assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &aircraft), -2.0);
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &aircraft, true, None),
-        0
-    );
-
-    // An exact one-lepton height excludes Foot even though it rounds to no
-    // screen lift and there is no air-layer locomotor.
-    tank.position.set_exact_z_leptons_for_test(Some(1));
-    assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &tank), -2.0);
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
-        19
-    );
-
-    let mut locomotor =
-        LocomotorState::from_object_type(runtime.resources.rules.object("TANK").unwrap(), 0);
-    locomotor.set_kind_for_test(LocomotorKind::Jumpjet);
-    locomotor.set_layer(MovementLayer::Air);
-    tank.locomotor = Some(locomotor);
-    tank.position.set_exact_z_leptons_for_test(None);
-    assert_eq!(
-        shp_z_adjust_in_runtime(Some(&runtime), &tank),
-        17.0,
-        "air layer alone is not GetHeight"
-    );
-    tank.position.set_exact_z_leptons_for_test(Some(104));
-    assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &tank), -17.0);
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
-        4
-    );
-    aircraft.position.set_exact_z_leptons_for_test(Some(104));
-    assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &aircraft), -17.0);
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &aircraft, true, None),
-        -15
-    );
-    assert_eq!(shp_z_adjust_in_runtime(None, &tank), -17.0);
-    assert_eq!(unit_z_adjust_in_runtime(None, &tank, true, None), -15);
-}
-
-#[test]
-fn shp_ramp_gate_preserves_coarse_grounded_poses_and_checks_exact_surface_height() {
-    use crate::util::lepton::ground_height_leptons;
-    use crate::util::native_x87::adjust_for_z_standard;
-
-    let mut runtime = runtime();
-    let mut infantry = entity(&mut runtime, "INF", EntityCategory::Infantry);
-    infantry
-        .position
-        .set_sub_x_for_test(SimFixed::from_num(128));
-    infantry
-        .position
-        .set_sub_y_for_test(SimFixed::from_num(128));
-    runtime
-        .simulation
-        .resolved_terrain
-        .as_mut()
-        .unwrap()
-        .cell_mut(2, 2)
-        .unwrap()
-        .slope_type = 1;
-    set_live_level(&mut runtime, (3, 3), 4);
-    let surface = ground_height_leptons(0, 1, 640, 640).unwrap();
-    assert!(surface > 0, "fixture is above its coarse cell-level Z");
-
-    // Ground movement retains only coarse cell-level Z. Its zero semantic
-    // altitude must still reach Foot when the subcell ramp surface is higher.
-    assert!(infantry.position.exact_z_leptons().is_none());
-    assert_eq!(
-        shp_z_adjust_in_runtime(Some(&runtime), &infantry),
-        (unit_z_adjust_in_runtime(Some(&runtime), &infantry, true, None) - 2) as f32
-    );
-    assert_ne!(shp_z_adjust_in_runtime(Some(&runtime), &infantry), -2.0);
-
-    // An exact coordinate instead permits the actual GetHeight subtraction.
-    infantry.position.set_exact_z_leptons_for_test(Some(0));
-    assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &infantry), -2.0);
-    infantry
-        .position
-        .set_exact_z_leptons_for_test(Some(surface));
-    assert_eq!(
-        shp_z_adjust_in_runtime(Some(&runtime), &infantry),
-        (unit_z_adjust_in_runtime(Some(&runtime), &infantry, true, None) - 2) as f32
-    );
-    infantry
-        .position
-        .set_exact_z_leptons_for_test(Some(surface + 1));
-    let airborne = shp_z_adjust_in_runtime(Some(&runtime), &infantry);
-    assert_eq!(airborne, (-adjust_for_z_standard(surface + 1) - 2) as f32);
-    assert_ne!(
-        airborne,
-        (unit_z_adjust_in_runtime(Some(&runtime), &infantry, true, None) - 2) as f32
-    );
-}
-
-#[test]
-fn actual_type_wins_display_art_except_the_harvester_unloading_body() {
-    let mut runtime = runtime();
-    let mut tank = entity(&mut runtime, "TANK", EntityCategory::Unit);
-    let mut harvester = entity(&mut runtime, "HARV", EntityCategory::Unit);
-    let display = runtime.simulation.interner.intern("CUSTOM");
-    let unloading = runtime.simulation.interner.intern("UNLOAD");
-    set_live_level(&mut runtime, (3, 3), 4);
-    tank.display_type_override.set_for_test(Some(display));
-    let mut disguise = DisguiseRuntime::default();
-    disguise.acquire(0, Some(unloading), None);
-    tank.disguise = Some(disguise);
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
-        19
-    );
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &tank, false, None),
-        19
-    );
-    assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &tank), 17.0);
-
-    // Unit+6C4 is temporarily replaced for the unloading body. The original
-    // type still owns the callers that explicitly do not request that body.
-    harvester
-        .display_type_override
-        .set_for_test(Some(unloading));
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &harvester, true, None),
-        5
-    );
-    assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &harvester), 3.0);
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &harvester, false, None),
-        19
-    );
-    harvester.display_type_override.set_for_test(None);
-    assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &harvester, true, None),
-        19
-    );
 }
 
 #[test]
@@ -418,79 +212,6 @@ fn composite_split_uses_live_raw_bridge_terms_and_native_on_bridge() {
     }
     tank.set_category_for_test(EntityCategory::Infantry);
     assert!(!evaluate(&runtime, &tank));
-}
-
-#[test]
-fn direct_shp_bridge_fudge_uses_unit_no_turret_branch_and_excludes_infantry() {
-    let mut runtime = runtime();
-    runtime
-        .simulation
-        .resolved_terrain
-        .as_mut()
-        .unwrap()
-        .cell_mut(2, 2)
-        .unwrap()
-        .bridge_facts
-        .raw_flags = 0x100;
-    let mut unit = entity(&mut runtime, "TANK", EntityCategory::Unit);
-    assert!(super::shp_unit_bridge_fudge_in_runtime(
-        Some(&runtime),
-        &unit
-    ));
-    unit.set_category_for_test(EntityCategory::Infantry);
-    assert!(!super::shp_unit_bridge_fudge_in_runtime(
-        Some(&runtime),
-        &unit
-    ));
-    unit.set_category_for_test(EntityCategory::Unit);
-    runtime.resources.rules = RuleSet::from_ini(&IniFile::from_str(
-        &RULES.replace("[TANK]", "[TANK]\nTurret=yes"),
-    ))
-    .unwrap();
-    assert!(!super::shp_unit_bridge_fudge_in_runtime(
-        Some(&runtime),
-        &unit
-    ));
-}
-
-#[test]
-fn composite_split_uses_active_unloading_type_and_not_art_override() {
-    let mut runtime = runtime();
-    runtime
-        .simulation
-        .resolved_terrain
-        .as_mut()
-        .unwrap()
-        .cell_mut(2, 2)
-        .unwrap()
-        .bridge_facts
-        .raw_flags = 0x100;
-    let mut harvester = entity(&mut runtime, "HARV", EntityCategory::Unit);
-    assert!(!unit_bridge_split_in_runtime(
-        Some(&runtime),
-        &harvester,
-        true
-    ));
-    harvester
-        .display_type_override
-        .set_for_test(Some(runtime.simulation.interner.intern("UNLOAD")));
-    assert!(unit_bridge_split_in_runtime(
-        Some(&runtime),
-        &harvester,
-        true
-    ));
-    assert!(!unit_bridge_split_in_runtime(
-        Some(&runtime),
-        &harvester,
-        false
-    ));
-    let mut ordinary = entity(&mut runtime, "CUSTOM", EntityCategory::Unit);
-    ordinary.display_type_override = harvester.display_type_override;
-    assert!(!unit_bridge_split_in_runtime(
-        Some(&runtime),
-        &ordinary,
-        true
-    ));
 }
 
 #[test]

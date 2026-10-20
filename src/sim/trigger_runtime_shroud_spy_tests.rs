@@ -70,7 +70,10 @@ fn forced_defaults_and_makeup_kit_copy_use_the_same_retained_type_owner() {
         (None, "INIT"),
     ] {
         sim.session.set_current_house_for_test(side.map(|side| {
-            sim.houses.get_mut(&houses[2]).unwrap().side_index = side;
+            sim.houses
+                .get_mut(&houses[2])
+                .unwrap()
+                .set_side_index_for_test(side);
             houses[2]
         }));
         assert_eq!(
@@ -142,7 +145,10 @@ fn spy_type_event_uses_forced_identity_side_fallback_and_native_persistence_gate
     ] {
         let (mut sim, rules, _, houses) = fixture();
         sim.session.set_current_house_for_test(side.map(|side| {
-            sim.houses.get_mut(&houses[2]).unwrap().side_index = side;
+            sim.houses
+                .get_mut(&houses[2])
+                .unwrap()
+                .set_side_index_for_test(side);
             houses[2]
         }));
         let actor = sim
@@ -324,7 +330,10 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
             .set_ground_bits_for_test(houses[0], cell.0, cell.1, 8);
     }
     sim.fog.set_ground_bits_for_test(houses[1], 8, 11, 24);
-    sim.houses.get_mut(&houses[0]).unwrap().map_is_clear = true;
+    sim.houses
+        .get_mut(&houses[0])
+        .unwrap()
+        .set_map_is_clear_for_test(true);
     let rng_before = rng(&sim);
     sim.trigger_grow_shroud(UninitContext::new(Some(&rules), Some(&registry)));
     assert!(sim.fog.is_ground_unshrouded(houses[0], 14, 15));
@@ -332,7 +341,7 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
     assert!(!sim.fog.is_ground_unshrouded(houses[0], 23, 23));
     assert!(!sim.fog.is_ground_unshrouded(houses[0], 8, 11));
     assert!(sim.fog.is_ground_open(houses[1], 8, 11));
-    assert!(sim.houses[&houses[0]].map_is_clear);
+    assert!(sim.houses[&houses[0]].map_is_clear());
     assert_eq!(rng(&sim), rng_before);
     install_event_ingress_map(
         &mut sim,

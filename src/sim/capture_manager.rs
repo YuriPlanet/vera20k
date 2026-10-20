@@ -504,13 +504,13 @@ impl Simulation {
         let mut count = self
             .houses
             .get(&source)
-            .map_or(0, |house| house.base_projection.buildings().len());
+            .map_or(0, |house| house.base_projection().buildings().len());
         while count != 0 {
             count -= 1;
             let Some(id) = self
                 .houses
                 .get(&source)
-                .and_then(|house| house.base_projection.buildings().get(count))
+                .and_then(|house| house.base_projection().buildings().get(count))
                 .copied()
             else {
                 continue;
@@ -969,7 +969,7 @@ impl Simulation {
         if self
             .houses
             .get(&unit_owner)
-            .is_none_or(|house| house.is_human)
+            .is_none_or(|house| house.is_human())
         {
             return;
         }

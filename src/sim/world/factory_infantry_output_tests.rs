@@ -211,9 +211,9 @@ fn ground_command_fixture(
         assert_eq!(human, context["human"] != 0);
         assert_eq!(state["house"]["pointer"], context["actor_owner"]);
         assert_eq!(state["house"]["current"], context["current_house"]);
-        house.player_control = context["player_control"] != 0;
+        house.set_player_control_for_test(context["player_control"] != 0);
     }
-    house.difficulty = HouseDifficulty::Hard;
+    house.set_difficulty_for_test(HouseDifficulty::Hard);
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
     sim.session.set_current_house_for_test(
@@ -1527,26 +1527,19 @@ fn initialized_cell_what_action_matches_every_original_query() {
 /// Original input emits no Move for the recorded local-house, Berserk and
 /// Deployer/Doing contexts. Action0 can return CellClick AL1 without issuing
 /// an order; the latter's query2 has a different refusal path.51AA40 owns its
-/// separate later human-class guard.
+/// separate later human-class guard. Unit query7404B0 and click738910 have
+/// their own pre-Event guards: explicit native byte priors exercise them
+/// without claiming that MTNK's retail type can itself produce deployment
+/// transitions.
 #[test]
 #[ignore = "slow; run when changing what it covers"]
-fn initialized_gi_cell_input_no_order_contexts_match_original_state() {
+fn initialized_gi_and_unit_cell_input_no_order_contexts_match_original_state() {
     check_initialized_no_order_contexts(&[
         "human_Doing27_B",
         "human_Doing27_shift_B",
         "mode5_current_mismatch_B",
         "mode5_current_nonhuman_Doing27_input_class_B",
         "berserk_B",
-    ]);
-}
-
-/// Unit query7404B0 and click738910 have their own pre-Event guards.
-/// Explicit native byte priors exercise them without claiming that MTNK's
-/// retail type can itself produce deployment transitions.
-#[test]
-#[ignore = "slow; run when changing what it covers"]
-fn initialized_unit_cell_input_no_order_contexts_match_original_state() {
-    check_initialized_no_order_contexts(&[
         "unit_owner_mismatch_B",
         "unit_berserk_B",
         "unit_deployed_B",
@@ -1870,23 +1863,25 @@ enum OutputRoute {
     RallyBetweenCompletionAndPlace,
 }
 
+/// Without a rally the two paid GIs walk out and release their factory
+/// contacts. Building443860 appends SetRally before the next Strip6A8B30
+/// appends PLACE: the already admitted player event must reach the tail
+/// first, and Exit443C60 copies the new Archive to the retained GI instead of
+/// its previous value.
 #[test]
-fn no_rally_two_paid_gi_walk_out_and_release_their_factory_contacts() {
-    joined_two_paid_gi(OutputRoute::NoRally);
+fn two_paid_gi_walk_out_without_a_rally_or_with_one_set_before_place() {
+    for route in [
+        OutputRoute::NoRally,
+        OutputRoute::RallyBetweenCompletionAndPlace,
+    ] {
+        joined_two_paid_gi(route);
+    }
 }
 
 #[test]
 #[ignore = "slow; run when changing what it covers"]
 fn rally_two_paid_gi_consume_archive_walk_to_rally_and_settle() {
     joined_two_paid_gi(OutputRoute::Rally);
-}
-
-/// Building443860 appends SetRally before the next Strip6A8B30 appends PLACE.
-/// The already admitted player event must reach the tail first: Exit443C60
-/// copies the new Archive to the retained GI instead of its previous value.
-#[test]
-fn rally_between_factory_completion_and_place_reaches_the_held_gi() {
-    joined_two_paid_gi(OutputRoute::RallyBetweenCompletionAndPlace);
 }
 
 fn joined_two_paid_gi(route: OutputRoute) {
@@ -1913,7 +1908,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
     // Human/currentHouse/difficulty0 and cash10000 are retained native priors.
     // TechLevel10 is explicit structural eligibility, not a measured P2 field.
     let mut house = HouseState::new(owner, 0, Some(owner), true, 10_000, 10);
-    house.difficulty = HouseDifficulty::Hard;
+    house.set_difficulty_for_test(HouseDifficulty::Hard);
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
     sim.session.set_current_house_for_test(Some(owner));
@@ -1991,7 +1986,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
     sim.advance_tick(&commands, Some(&rules), None, Some(&registry), TICK_MS);
     let head = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .expect("real production event starts the first GI");
     let first = head.object.unwrap().entity_id.unwrap();
@@ -2079,7 +2074,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
         let log = radio::take_transmit_log();
         if let Some(view) = sim
             .production
-            .factories
+            .factories()
             .view(owner, ProductionCategory::Infantry)
             && let Some(held) = view.object.and_then(|object| object.entity_id)
         {
@@ -2171,7 +2166,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
                     // factory during this PLACE, before any later Strip visit.
                     assert!(
                         sim.production
-                            .factories
+                            .factories()
                             .view(owner, ProductionCategory::Infantry)
                             .is_none()
                     );
@@ -2340,16 +2335,16 @@ fn joined_two_paid_gi(route: OutputRoute) {
     }
     let factory = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry);
     assert!(factory.is_none_or(|view| view.object.is_none() && view.queue.is_empty()));
     assert!(sim.pending_command_snapshot().is_empty());
     assert_eq!(
-        json!(sim.houses[&owner].economy.credits()),
+        json!(sim.houses[&owner].economy().credits()),
         native["final_wallet"]["credits"]
     );
     assert_eq!(
-        json!(sim.houses[&owner].economy.spent_credits()),
+        json!(sim.houses[&owner].economy().spent_credits()),
         native["final_wallet"]["spent"]
     );
 }

@@ -272,10 +272,10 @@ fn apply_damage(
                 .filter(|e| e.lifecycle.object_alive() && e.health.current() > 0)
                 .map(|e| crate::sim::movement::ground_pose::position_world_coord(&e.position)),
             CellObjectMember::Terrain(id) => sim
-                .production
                 .terrain_objects
+                .objects()
                 .get(&id)
-                .filter(|e| e.is_live() && e.health > 0)
+                .filter(|e| e.is_live() && e.health() > 0)
                 .map(|e| {
                     let c = e.world_coord();
                     crate::sim::components::DriveCoord {

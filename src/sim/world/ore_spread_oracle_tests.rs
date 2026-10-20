@@ -34,15 +34,15 @@ fn world(
         |base| *base = terrain,
     );
     sim.overlay_grid = Some(grid);
-    sim.production.ore_growth_state = state;
+    sim.ore_growth_state = state;
     sim.scenario_rng = rng;
     sim.substrate.entities = entities;
     sim.substrate.occupancy = occupancy;
     sim.interner = interner;
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.production.terrain_object_cells = trees;
-    sim.production.tiberium_spawning_terrain_cells = sources;
+    *sim.terrain_objects.cell_index_mut_for_test() = trees;
+    *sim.terrain_objects.spawning_cells_mut_for_test() = sources;
     let input = &row["input"];
     sim.native_unique_ids = Some(
         crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(
@@ -57,11 +57,11 @@ fn world(
         ),
     );
     sim.playfield_size_height = Some(height);
-    sim.production.ore_growth_config = OreGrowthConfig {
-        grows: input["grows"] == true,
-        spreads: input["spreads"] == true,
-        tiberium_grows_flag: input["fast_growth"] == true,
-    };
+    sim.ore_growth_config = OreGrowthConfig::for_test(
+        input["grows"] == true,
+        input["spreads"] == true,
+        input["fast_growth"] == true,
+    );
     prepare_native_dummy(sim.resolved_terrain.as_ref().unwrap());
     (sim, rules, registry)
 }
@@ -129,7 +129,7 @@ fn app_frames_match_original_ore_driver_histories_and_rng_continuation() {
         let capacity = row["capacity"].as_u64().unwrap() as u32;
         let (mut sim, rules, registry) = world(row);
         compare_state(
-            &sim.production.ore_growth_state,
+            &sim.ore_growth_state,
             &sim.scenario_rng,
             &row["before"],
             capacity,
@@ -161,7 +161,7 @@ fn app_frames_match_original_ore_driver_histories_and_rng_continuation() {
                 "{name}: step {index} draws"
             );
             compare_state(
-                &sim.production.ore_growth_state,
+                &sim.ore_growth_state,
                 &sim.scenario_rng,
                 &step["state"],
                 capacity,
@@ -282,12 +282,8 @@ fn ore_rung_spreads_no_ore_under_a_landed_aircraft() {
             sim.session.binary_frame(),
             (32, 32),
         );
-        sim.production.ore_growth_state = state;
-        sim.production.ore_growth_config = OreGrowthConfig {
-            grows: true,
-            spreads: true,
-            tiberium_grows_flag: false,
-        };
+        sim.ore_growth_state = state;
+        sim.ore_growth_config = OreGrowthConfig::for_test(true, true, false);
         if landed {
             sim.spawn_object("ORCA", "Americans", target.0, target.1, 0, &rules)
                 .expect("retail ORCA spawns");

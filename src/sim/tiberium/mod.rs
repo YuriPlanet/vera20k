@@ -111,7 +111,7 @@ pub struct TiberiumPlacementObjectContext<'a> {
     raw_occupation: &'a RawCellOccupationGrid,
     rules: &'a RuleSet,
     interner: &'a StringInterner,
-    /// Live terrain-object cell index (`production.terrain_object_cells`):
+    /// Live terrain-object cell index (`TerrainObjectStore::cell_index`):
     /// the terrain half of the native `FirstObject` list.
     terrain_object_cells: &'a std::collections::BTreeMap<(u16, u16), u64>,
 }
@@ -1404,37 +1404,6 @@ SpreadPercentage=.06
     }
 
     #[test]
-    fn gsi_04_09_missing_reducer_context_fails_closed() {
-        let mut growth = OreGrowthState::new(10, 10);
-        let mut radar_dirty = Vec::new();
-        let mut radar_generation = 0;
-        let mut tactical_dirty = Vec::new();
-        let mut ctx = ReduceTiberiumContext {
-            overlay_grid: None,
-            ore_growth_state: &mut growth,
-            overlay_registry: None,
-            tiberium_types: None,
-            resolved_terrain: None,
-            source_object_cells: None,
-            live_objects: None,
-            rng: None,
-            binary_frame: 0,
-            spread_enabled: false,
-            radar_dirty_cells: Some(&mut radar_dirty),
-            radar_dirty_generation: Some(&mut radar_generation),
-            tactical_dirty_cells: Some(&mut tactical_dirty),
-        };
-
-        assert_eq!(
-            reduce_tiberium(&mut ctx, (5, 5), 2),
-            ReduceTiberiumOutcome::none()
-        );
-        assert!(radar_dirty.is_empty());
-        assert_eq!(radar_generation, 0);
-        assert!(tactical_dirty.is_empty());
-    }
-
-    #[test]
     fn gsi_04_09_reducer_boundary_table_uses_raw_overlay_data() {
         let (overlay_registry, tiberium_types) = native_tiberium_fixture();
         let tib01 = overlay_registry.id_for_name("TIB01").expect("TIB01");
@@ -1579,11 +1548,10 @@ SpreadPercentage=.06
         rules.tiberium_types = tiberium_types;
         let mut sim = Simulation::new();
         sim.hash_state_every(std::num::NonZeroU64::MIN);
-        sim.production.ore_growth_config.grows = false;
-        sim.production.ore_growth_config.spreads = false;
-        sim.production.ore_growth_state = OreGrowthState::new(1, 1);
-        sim.production
-            .ore_growth_state
+        sim.ore_growth_config.set_grows_for_test(false);
+        sim.ore_growth_config.set_spreads_for_test(false);
+        sim.ore_growth_state = OreGrowthState::new(1, 1);
+        sim.ore_growth_state
             .reset_native_tiberium_classes(rules.tiberium_types.len(), 0);
         let mut terrain = flat_clear_terrain();
         let cell = terrain.cell_mut(0, 0).unwrap();
@@ -1640,7 +1608,14 @@ SpreadPercentage=.06
         assert!(!repeated.navigation_changed);
 
         let deferred = sim
-            .advance_app_frame(&[], Some(&rules), None, 67, TickLane::Ordinary, crate::sim::world::FrameEffects::default())
+            .advance_app_frame(
+                &[],
+                Some(&rules),
+                None,
+                67,
+                TickLane::Ordinary,
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("fixture frame must complete");
         assert!(deferred.overlay_updates.is_empty());
         let published = sim.path_grid_snapshot().unwrap();
@@ -1663,7 +1638,8 @@ SpreadPercentage=.06
                 Some(&overlay_registry),
                 67,
                 TickLane::Ordinary,
-             crate::sim::world::FrameEffects::default(),)
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("fixture frame must complete");
         assert!(sim.zone_grid.is_some());
         assert!(
@@ -1682,7 +1658,8 @@ SpreadPercentage=.06
                 Some(&overlay_registry),
                 67,
                 TickLane::Ordinary,
-             crate::sim::world::FrameEffects::default(),)
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("fixture frame must complete");
         assert!(second.overlay_updates.is_empty());
         assert!(

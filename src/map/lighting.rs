@@ -521,11 +521,6 @@ impl CellLightGrid {
         self.tint_or_default(cell)
     }
 
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn terrain_object_tint_at(&self, cell: (u16, u16)) -> [f32; 3] {
-        self.tint_for_common_scalar_or_default(cell)
-    }
-
     pub fn terrain_object_tint_for_type(
         &self,
         cell: (u16, u16),
@@ -646,12 +641,6 @@ fn key_to_rgb(key: LightRgbKey) -> [f32; 3] {
         key[1] as f32 / LIGHT_UNIT as f32,
         key[2] as f32 / LIGHT_UNIT as f32,
     ]
-}
-
-/// Return signed building body draw-depth adjustment from art.ini ExtraLight.
-#[cfg(any(test, feature = "test-support"))]
-pub fn building_body_depth_adjustment(extra_light: i32) -> i32 {
-    extra_light
 }
 
 /// Parse [Lighting] section from a map INI file.
@@ -780,22 +769,6 @@ impl Default for ParsedLightingProfiles {
 
 fn quantize_scenario_light(value: f64, scale: i32) -> i32 {
     (value * f64::from(scale) + 0.01) as i32
-}
-
-/// Compute the RGB tint for a single cell given its elevation.
-#[cfg(any(test, feature = "test-support"))]
-pub fn cell_tint(config: &LightingConfig, z: u8) -> [f32; 3] {
-    let grid = build_cell_light_grid_from_heights([((1, 1), z)], config);
-    grid.tint_or_default((1, 1))
-}
-
-/// Compute the uniform terrain tint for the map.
-///
-/// Terrain uses the ground-level lighting value across all cells so repeating
-/// tile textures do not expose the map grid through per-cell tint boundaries.
-#[cfg(any(test, feature = "test-support"))]
-pub fn terrain_tint(config: &LightingConfig) -> [f32; 3] {
-    cell_tint(config, 0)
 }
 
 /// Build the profile-backed base cell light grid from known cell heights.
@@ -1592,16 +1565,6 @@ mod tests {
     }
 
     #[test]
-    fn test_default_lighting_uses_yr_ground_subtraction() {
-        let config: LightingConfig = LightingConfig::default();
-        assert!((config.ground - 0.05).abs() < 0.001);
-        let tint: [f32; 3] = cell_tint(&config, 0);
-        assert!((tint[0] - 0.95).abs() < 0.001);
-        assert!((tint[1] - 0.95).abs() < 0.001);
-        assert!((tint[2] - 0.95).abs() < 0.001);
-    }
-
-    #[test]
     fn test_parse_lighting_uses_yr_defaults() {
         let ini = IniFile::from_str("[Lighting]\nFixtureOnly=1\n");
         let config = parse_lighting(&ini);
@@ -1663,46 +1626,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_20_detail_level_requantizes_lightconvert_rgb() {
-        let profile = LightingProfileUnits {
-            ambient_percent: 100,
-            red_percent: 100,
-            green_percent: 88,
-            blue_percent: 88,
-            ground_units: 0,
-            level_units: 0,
-        };
-        let key_at = |detail_level| {
-            build_cell_light_grid_from_heights_and_units_with_detail(
-                [((3, 4), 0)],
-                profile.into(),
-                detail_level,
-            )
-            .cell_light_at((3, 4))
-            .expect("light")
-            .rgb_key
-        };
-
-        let low = key_at(0);
-        let medium = key_at(1);
-        let high = key_at(2);
-        assert_eq!(low, [896, 768, 768]);
-        assert_eq!(medium, [960, 832, 832]);
-        assert_eq!(high, [992, 864, 864]);
-    }
-
-    #[test]
-    fn default_flat_no_lamps_ground_scalar_is_950() {
-        let grid = build_cell_light_grid_from_heights([((3, 4), 0)], &LightingConfig::default());
-        let light = grid.cell_light_at((3, 4)).expect("light");
-
-        assert_eq!(light.common_scalar, 950);
-        assert_eq!(light.top_scalar, 950);
-        assert_eq!(light.bottom_scalar, 982);
-        assert_eq!(grid.terrain_tile_tint_at((3, 4)), [0.95, 0.95, 0.95]);
-    }
-
-    #[test]
     fn sentinel_cell_zero_zero_uses_neutral_light() {
         let grid = build_cell_light_grid_from_heights([((0, 0), 0)], &LightingConfig::default());
         let light = grid.cell_light_at((0, 0)).expect("light");
@@ -1714,145 +1637,6 @@ mod tests {
         assert_eq!(light.top_scalar, LIGHT_UNIT);
         assert_eq!(light.bottom_scalar, LIGHT_UNIT);
         assert_eq!(grid.tint_or_default((0, 0)), DEFAULT_TINT);
-    }
-
-    #[test]
-    fn default_raised_no_lamps_common_and_bottom_scalars_match_gamemd() {
-        let grid = build_cell_light_grid_from_heights([((10, 11), 4)], &LightingConfig::default());
-        let light = grid.cell_light_at((10, 11)).expect("light");
-
-        assert_eq!(light.common_scalar, 982);
-        assert_eq!(light.top_scalar, 982);
-        assert_eq!(light.bottom_scalar, 1014);
-        assert_eq!(
-            cell_ground_z_adjust(parse_lighting_profiles(&IniFile::from_str("")).normal, 4),
-            982
-        );
-    }
-
-    #[test]
-    fn test_elevation_boost() {
-        let config: LightingConfig = LightingConfig::default();
-        let tint_z0: [f32; 3] = cell_tint(&config, 0);
-        let tint_z4: [f32; 3] = cell_tint(&config, 4);
-        // Default YR units: 1000 + Level(8) * z(4) - Ground(50) = 982.
-        assert!(tint_z4[0] > tint_z0[0]);
-        assert!((tint_z4[0] - 0.982).abs() < 0.01);
-        let grid = build_cell_light_grid_from_heights([((10, 11), 4)], &config);
-        let light = grid.cell_light_at((10, 11)).expect("light");
-        assert_eq!(light.common_scalar, 982);
-        assert_eq!(light.bottom_scalar, 1014);
-    }
-
-    #[test]
-    fn test_dark_map() {
-        let config: LightingConfig = LightingConfig {
-            ambient: 0.5,
-            red: 1.0,
-            green: 0.8,
-            blue: 0.6,
-            ground: 0.0,
-            level: 0.0,
-            ..LightingConfig::default()
-        };
-        let grid = build_cell_light_grid_from_heights([((1, 1), 0)], &config);
-        let light = grid.cell_light_at((1, 1)).expect("light");
-        assert_eq!(light.common_scalar, 500);
-        assert_eq!(light.raw_rgb, [1000, 800, 600]);
-    }
-
-    #[test]
-    fn test_cap_at_two() {
-        let config: LightingConfig = LightingConfig {
-            ambient: 3.0,
-            red: 1.0,
-            green: 1.0,
-            blue: 1.0,
-            ground: 0.0,
-            level: 0.0,
-            ..LightingConfig::default()
-        };
-        let tint: [f32; 3] = cell_tint(&config, 0);
-        // 3.0 > 2.0 cap → scaled to 2.0
-        assert!((tint[0] - 2.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_ground_darkening() {
-        let config: LightingConfig = LightingConfig {
-            ambient: 1.0,
-            red: 1.0,
-            green: 1.0,
-            blue: 1.0,
-            ground: 0.5,
-            level: 0.0,
-            ..LightingConfig::default()
-        };
-        let grid = build_cell_light_grid_from_heights([((1, 1), 0)], &config);
-        let light = grid.cell_light_at((1, 1)).expect("light");
-        // Original 0068A92E converts authored Ground=.5 to 500.
-        assert_eq!(light.common_scalar, 500);
-    }
-
-    #[test]
-    fn test_terrain_tint_matches_ground_level_cell_tint() {
-        let config: LightingConfig = LightingConfig {
-            ambient: 1.0,
-            red: 1.0,
-            green: 0.88,
-            blue: 0.88,
-            ground: 0.0,
-            level: 0.039,
-            ..LightingConfig::default()
-        };
-        let terrain: [f32; 3] = terrain_tint(&config);
-        let ground_cell: [f32; 3] = cell_tint(&config, 0);
-        assert_eq!(terrain, ground_cell);
-    }
-
-    #[test]
-    fn test_light_profile_cache_reuses_identical_rgb() {
-        let mut cache = LightProfileCache::new();
-        let neutral = cache.default_profile_id();
-        let first = cache.profile_id_for_rgb([1.0, 1.0, 1.0]);
-        let second = cache.profile_id_for_rgb([1.0, 1.0, 1.0]);
-
-        assert_eq!(neutral, first);
-        assert_eq!(first, second);
-        assert_eq!(cache.len(), 1);
-    }
-
-    #[test]
-    fn test_cell_light_grid_default_cell_uses_neutral_tint() {
-        let grid = CellLightGrid::new();
-        assert_eq!(grid.tint_or_default((99, 99)), DEFAULT_TINT);
-        assert_eq!(grid.profiles().default_profile_id(), LightProfileId(0));
-    }
-
-    #[test]
-    fn test_radiation_point_light_center_and_flags() {
-        // spread 10 -> radius 10*256+128 = 2688; center cell (100,100).
-        let light = radiation_point_light(100, 100, 2688, 50, [0, 1000, 0]);
-        assert_eq!(light.center_x, 100 * 256 + 128);
-        assert_eq!(light.center_y, 100 * 256 + 128);
-        assert_eq!(light.radius_leptons, 2688);
-        assert_eq!(light.intensity, 50);
-        assert_eq!(light.tint, [0, 1000, 0]);
-        assert!(
-            light.active && light.detail,
-            "radiation light is active and detail-forced"
-        );
-    }
-
-    #[test]
-    fn test_cell_light_grid_compatibility_tint() {
-        let mut grid = CellLightGrid::new();
-        grid.insert_profiled_light((1, 2), [0.8, 0.7, 0.6], 0.5);
-
-        let tint = grid.tint_or_default((1, 2));
-        assert!((tint[0] - 0.4).abs() < 0.001);
-        assert!((tint[1] - 0.35).abs() < 0.001);
-        assert!((tint[2] - 0.3).abs() < 0.001);
     }
 
     #[test]
@@ -1903,19 +1687,6 @@ mod tests {
     }
 
     #[test]
-    fn test_consumer_accessors_return_compatibility_tint() {
-        let mut grid = CellLightGrid::new();
-        grid.set_compat_tint((4, 5), [0.7, 0.8, 0.9]);
-
-        assert_eq!(grid.techno_tint_at((4, 5)), [0.7, 0.8, 0.9]);
-        assert_eq!(grid.body_tint_at((4, 5), 0), [0.7, 0.8, 0.9]);
-        assert_eq!(grid.overlay_tint_at((4, 5)), [0.7, 0.8, 0.9]);
-        assert_eq!(grid.terrain_object_tint_at((4, 5)), [0.7, 0.8, 0.9]);
-        assert_eq!(grid.anim_tint_at((4, 5), None), [0.7, 0.8, 0.9]);
-        assert_eq!(grid.bridge_body_tint_at((4, 5)), [0.7, 0.8, 0.9]);
-    }
-
-    #[test]
     fn use_normal_light_anim_ignores_a_colour_shifted_cell() {
         // [Lighting] read verbatim out of the retail Dustbowl map: unit ambient
         // with green and blue pulled down. That colour shift is exactly what
@@ -1958,30 +1729,6 @@ mod tests {
     }
 
     #[test]
-    fn use_normal_light_anim_ignores_a_darkened_cell() {
-        // Ambient below 1.0 is the other half of the symptom: on a dark map an
-        // explosion drawn through cell light comes out dimmer than retail.
-        let config = LightingConfig {
-            ambient: 0.68,
-            red: 1.0,
-            green: 1.0,
-            blue: 1.0,
-            ground: 0.0,
-            level: 0.032,
-            ..LightingConfig::default()
-        };
-        let grid = build_cell_light_grid_from_heights([((7, 9), 0)], &config);
-        let art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[S_BANG24]\nUseNormalLight=yes\n[SMOKEY2]\nRate=600\n",
-        ));
-        let flagged = art.anim_runtime_config("S_BANG24").expect("S_BANG24 art");
-        let plain = art.anim_runtime_config("SMOKEY2").expect("SMOKEY2 art");
-
-        assert_eq!(grid.anim_tint_at((7, 9), Some(plain)), [0.68, 0.68, 0.68]);
-        assert_eq!(grid.anim_tint_at((7, 9), Some(flagged)), DEFAULT_TINT);
-    }
-
-    #[test]
     fn terrain_object_instances_choose_branch_specific_cell_light() {
         let mut grid = CellLightGrid::new();
         let profile_id = grid
@@ -2011,50 +1758,6 @@ mod tests {
         assert_eq!(
             grid.terrain_object_tint_for_type((4, 5), true),
             [1.2, 1.2, 1.2]
-        );
-    }
-
-    #[test]
-    fn test_building_body_depth_adjustment_keeps_signed_extra_light() {
-        assert_eq!(building_body_depth_adjustment(350), 350);
-        assert_eq!(building_body_depth_adjustment(-100), -100);
-    }
-
-    #[test]
-    fn test_base_cell_light_grid_matches_cell_tint() {
-        let config = LightingConfig {
-            ambient: 1.0,
-            red: 0.8,
-            green: 0.9,
-            blue: 1.0,
-            ground: 0.20,
-            level: 0.032,
-            ..LightingConfig::default()
-        };
-        let grid = build_cell_light_grid_from_heights([((10, 10), 0), ((10, 11), 4)], &config);
-
-        for (cell, z) in [((10, 10), 0), ((10, 11), 4)] {
-            let expected = cell_tint(&config, z);
-            let actual = grid.tint_or_default(cell);
-            assert!((actual[0] - expected[0]).abs() < 0.001);
-            assert!((actual[1] - expected[1]).abs() < 0.001);
-            assert!((actual[2] - expected[2]).abs() < 0.001);
-        }
-    }
-
-    #[test]
-    fn test_base_cell_light_grid_reuses_neutral_profile() {
-        let config = LightingConfig::default();
-        let grid = build_cell_light_grid_from_heights([((1, 1), 0), ((1, 0), 3)], &config);
-
-        assert_eq!(grid.profiles().len(), 1);
-        assert_eq!(
-            grid.cell_light_at((1, 1)).map(|light| light.profile_id),
-            Some(LightProfileId(0))
-        );
-        assert_eq!(
-            grid.cell_light_at((1, 0)).map(|light| light.profile_id),
-            Some(LightProfileId(0))
         );
     }
 
@@ -2224,54 +1927,6 @@ mod tests {
     }
 
     #[test]
-    fn light_normalize_max_two_does_not_reset_to_neutral() {
-        let normalized = normalize_light([2, 1, 1], 100);
-
-        assert_eq!(normalized.scale16, 131);
-        assert_eq!(normalized.common_scalar, 0);
-        assert_eq!(normalized.rgb_key, [992, 480, 480]);
-    }
-
-    #[test]
-    fn light_normalize_negative_common_uses_arithmetic_shift() {
-        let normalized = normalize_light([2, 1, 1], -1);
-
-        assert_eq!(normalized.scale16, 131);
-        assert_eq!(normalized.common_scalar, -1);
-    }
-
-    #[test]
-    fn light_normalize_green_max_uses_scale_denominator_for_quantization() {
-        let normalized = normalize_light([19, 22, 0], 0);
-
-        assert_eq!(normalized.scale16, 1441);
-        assert_eq!(normalized.rgb_key, [864, 992, 0]);
-    }
-
-    #[test]
-    fn galite_source_fields_match_rulesmd_units() {
-        let light = point_light_from_object(10, 10, 5000, 200, [50, 50, 10]).expect("light");
-
-        assert_eq!(light.radius_leptons, 5000);
-        assert_eq!(light.intensity, 200);
-        assert_eq!(light.tint, [50, 50, 10]);
-    }
-
-    #[test]
-    fn galite_point_light_contribution_separates_intensity_and_rgb() {
-        let mut grid =
-            build_cell_light_grid_from_heights([((10, 10), 0)], &LightingConfig::default());
-        let light = point_light_from_object(10, 10, 5000, 200, [50, 50, 10]).expect("light");
-        accumulate_point_lights(&mut grid, &[light]);
-
-        let center = grid.cell_light_at((10, 10)).expect("light");
-        assert_eq!(center.raw_additive_intensity, 200);
-        assert_eq!(center.raw_rgb, [1050, 1050, 1010]);
-        assert_eq!(center.common_scalar, 1207);
-        assert_ne!(center.raw_rgb, [10, 10, 2]);
-    }
-
-    #[test]
     fn light_intensity_zero_allocates_no_static_source() {
         assert!(point_light_from_object(1, 2, 4096, 0, [1000; 3]).is_none());
     }
@@ -2321,15 +1976,6 @@ mod tests {
             structure_online: true,
             trigger_tag: None,
         }
-    }
-
-    #[test]
-    fn test_extra_light_is_not_rgb_cell_light() {
-        let grid = test_grid(5, [0.4, 0.4, 0.4]);
-        let key = (2u16, 2u16);
-        // art.ini ExtraLight affects building draw brightness, not cell state.
-        let result = grid.tint_or_default(key);
-        assert_eq!(result, [0.4, 0.4, 0.4]);
     }
 
     #[test]

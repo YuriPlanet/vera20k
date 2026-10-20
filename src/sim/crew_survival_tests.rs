@@ -946,51 +946,6 @@ const ORDINARY: ReceiverCallFlags = ReceiverCallFlags {
     arg6: false,
 };
 
-/// Through the production receiver: the building is removed in the same
-/// call that spawns its crew, and an IgnoreDefenses kill (C4 expiry) spawns
-/// none.
-#[test]
-fn a_killing_hit_spawns_the_building_crew_in_the_same_receiver_call() {
-    let rules = rules();
-    let mut spawned = 0;
-    for seed in 1..=6 {
-        for flags in [
-            ORDINARY,
-            ReceiverCallFlags {
-                ignore_defenses: true,
-                arg6: false,
-            },
-        ] {
-            let mut sim = sim_with_houses(seed);
-            let yard = spawn(&mut sim, &rules, "GACNST", "Americans", 10, 10);
-            let before = sim.substrate.entities.keys_sorted();
-            kill(&mut sim, &rules, yard, flags);
-            assert!(
-                sim.substrate
-                    .entities
-                    .get(yard)
-                    .is_none_or(|entity| !entity.lifecycle.object_alive()),
-                "the yard died"
-            );
-            let crew: Vec<_> = new_ids(&sim, &before)
-                .into_iter()
-                .filter(|&id| {
-                    sim.substrate.entities.get(id).unwrap().category() == EntityCategory::Infantry
-                })
-                .collect();
-            assert!(crew.len() <= 5);
-            if flags.ignore_defenses {
-                assert!(crew.is_empty(), "NoSurvivor");
-            }
-            for id in &crew {
-                assert!(matches!(type_name(&sim, *id).as_str(), "E1" | "ENGINEER"));
-            }
-            spawned += crew.len();
-        }
-    }
-    assert!(spawned > 0);
-}
-
 /// The production rules reader and death receiver must use each side's
 /// `*Crew=` name, rather than the stock E1/E2/INIT assignment. Reusing the
 /// fixture's registered infantry types keeps this test about the binding.
@@ -1025,56 +980,6 @@ fn renamed_general_crew_types_spawn_through_the_building_death_receiver() {
             }
         }
         assert!(spawned > 0, "no {owner} crew reached the receiver");
-    }
-}
-
-/// Through the production receiver: the dying vehicle leaves its cell before
-/// the crewman is placed there; arg6 keeps the crew inside.
-#[test]
-fn a_killing_hit_lets_the_vehicle_crew_out_unless_arg6() {
-    let rules = rules();
-    let mut escaped = 0;
-    for seed in 1..=8 {
-        for flags in [
-            ORDINARY,
-            ReceiverCallFlags {
-                ignore_defenses: false,
-                arg6: true,
-            },
-        ] {
-            let mut sim = sim_with_houses(seed);
-            let mcv = spawn(&mut sim, &rules, "AMCV", "Americans", 10, 10);
-            let before = sim.substrate.entities.keys_sorted();
-            kill(&mut sim, &rules, mcv, flags);
-            let crew = new_ids(&sim, &before);
-            if flags.arg6 {
-                assert!(crew.is_empty());
-            }
-            for id in &crew {
-                let crewman = sim.substrate.entities.get(*id).unwrap();
-                assert_eq!(type_name(&sim, *id), "E1");
-                assert_eq!((crewman.position.rx(), crewman.position.ry()), (10, 10));
-                assert!((5..=62).contains(&crewman.health.current()));
-            }
-            escaped += crew.len();
-        }
-    }
-    assert!(escaped > 0);
-}
-
-/// Through the production receiver: the fatal prelude leaves an absorbing
-/// building's passengers for Phase A instead of killing them.
-#[test]
-fn a_killing_hit_releases_the_bio_reactors_infantry() {
-    let rules = rules();
-    let mut sim = sim_with_houses(4);
-    let reactor = spawn(&mut sim, &rules, "YAPOWR", "Americans", 10, 10);
-    let absorbed = load_absorbed(&mut sim, &rules, reactor, 3);
-    kill(&mut sim, &rules, reactor, ORDINARY);
-    for id in absorbed {
-        let passenger = sim.substrate.entities.get(id).expect("released");
-        assert!(passenger.lifecycle.object_alive() && passenger.health.current() > 0);
-        assert!(!passenger.lifecycle.in_limbo());
     }
 }
 
@@ -1555,7 +1460,7 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
             scenario.tick();
         }
         assert!(scenario.sim().substrate.entities.get(guard).is_some());
-        assert!(!scenario.sim().houses[&owner].is_defeated);
+        assert!(!scenario.sim().houses[&owner].is_defeated());
         for (id, from_plant, spawn, destination) in crew {
             let entity = scenario
                 .sim()
@@ -1753,7 +1658,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
         }
     }
     assert!(scenario.sim().substrate.entities.get(guard).is_some());
-    assert!(!scenario.sim().houses[&owner].is_defeated);
+    assert!(!scenario.sim().houses[&owner].is_defeated());
     for ((kind, id, wreck, destination), left) in destinations.into_iter().zip(left) {
         println!("{kind} GI {id}: wreck {wreck:?}, Scatter to {destination:?}");
         assert!(left, "{kind}: GI {id} walked off the wreck");

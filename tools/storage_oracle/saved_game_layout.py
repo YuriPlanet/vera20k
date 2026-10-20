@@ -17,7 +17,7 @@ from unicorn.x86_const import (
 )
 from tools import native_oracle as native
 from tools.native_oracle import finish_vectors, load_image, provenance
-from tools.storage_oracle.shell_relayout import Image, Machine, PARENT, muldiv
+from tools.storage_oracle.shell_relayout import Image, Machine, PARENT, dialog_box, popup_layout
 from tools.rules_oracle.bridge_anim_inputs import Reader
 from tools.projectile_oracle.bridge_render_inputs import lexical
 from tools.spatial_oracle.building_body_rules import INI, SP, dwords
@@ -394,41 +394,10 @@ def scenario_elapsed_cases():
 
 
 def progress_geometry_case(width,height):
- m=Machine(0xF0,width,height);u=m.uc
- raw=Image(u).dialog_template(0xF0)
- assert list(struct.unpack_from('<4h',raw,10))==[0,0,300,200]
- m.windows[PARENT]['rect']=[0,0,muldiv(300,6,4),muldiv(200,13,8)]
- for h,c in zip(m.children,m.controls):
-  x,y,w,hgt=c['template'];x,y,w,hgt=muldiv(x,6,4),muldiv(y,13,8),muldiv(w,6,4),muldiv(hgt,13,8)
-  m.windows[h]['rect']=[x,y,x+w,y+hgt]
- m.windows[0x7000]={'id':0,'style':0,'class':'Main','rect':[0,0,width,height]}
- m.w32(0xB73550,0x7000);m.w32(0xB72F54,300);m.w32(0xB72F58,163)
- events=[]
- def get_long():
-  hwnd=m.arg(0);index=m.signed_args(2)[1];w=m.windows[hwnd]
-  value={-8:0x7000 if hwnd==PARENT else PARENT,-16:w['style'],-12:w['id']}.get(index,0)
-  m.ret(8,value)
- m.stubs[m.r32(0x7E1474)]=get_long
- for iat,name in ((0x7E1398,'MoveWindow'),(0x7E13F0,'SetWindowPos')):
-  old=m.stubs[m.r32(iat)]
-  def report(old=old,name=name):
-   events.append({'event':name,'args':[m.arg(i) for i in range(6 if name=='MoveWindow' else 7)]});old()
-  m.stubs[m.r32(iat)]=report
- guard=code_guard(u)
- initial={str(m.windows[h]['id']):list(m.windows[h]['rect']) for h in [PARENT]+m.children}
- # Same callback order as775BA0: original callback for each child, then parent.
- # Enumeration transport itself is supplied, as in the existing shell owner.
- for h in m.children:m.call(0x775BC0,stack_args=(h,1))
- m.call(0x775BC0,stack_args=(PARENT,0))
- m.call(0x60C540,ecx=PARENT);fullscreen=u.reg_read(UC_X86_REG_EAX)&255
- m.call(0x60C7D0,ecx=PARENT);mode2=u.reg_read(UC_X86_REG_EAX)&255
- m.call(0x777060,ecx=PARENT)
- check_code(u,guard)
- x,y,r,b=m.windows[PARENT]['rect']
- return dict(input={'width':width,'height':height,'dialog_base_units':[6,13],'benchmark_client':[300,163],'initial_window_rects':initial},
-             fullscreen=fullscreen,mode2=mode2,background_mode=m.r32(m.record(PARENT)+0xB0),
-             dialog_rect=[x,y,r-x,b-y],children=[dict(id=c['id'],style=c['style'],visible=bool(c['style']&0x10000000),
-              rect=[m.windows[h]['rect'][0]+x,m.windows[h]['rect'][1]+y,m.windows[h]['rect'][2]-m.windows[h]['rect'][0],m.windows[h]['rect'][3]-m.windows[h]['rect'][1]]) for h,c in zip(m.children,m.controls)],events=events,code_unchanged=True)
+ raw=Image(Machine(0xF0,width,height).uc).dialog_template(0xF0)
+ assert dialog_box(raw)==[0,0,300,200]
+ _m,result=popup_layout(0xF0,width,height,guard=(code_guard,check_code))
+ return dict(result,code_unchanged=True)
 
 def progress_background_case(active, side, missing=None):
  m=Machine(0xF0,800,600);u=m.uc;events=[]

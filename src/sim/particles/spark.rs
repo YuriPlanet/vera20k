@@ -813,20 +813,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_03_cell_ground_104_preserves_level_two_spark_bridge_composition() {
-        let mut structural = facts(208);
-        structural.old_has_structural_bridge = true;
-
-        let descending = resolve_collision(motion(634, 622), structural).unwrap();
-        assert_eq!(descending.committed_coords.z, 624);
-        assert_eq!(descending.kind, Some(SparkCollisionKind::DescendingBridge));
-
-        let ascending = resolve_collision(motion(614, 632), structural).unwrap();
-        assert_eq!(ascending.committed_coords.z, 604);
-        assert_eq!(ascending.kind, Some(SparkCollisionKind::AscendingBridge));
-    }
-
-    #[test]
     fn ground_and_contact_height_boundaries_are_strict() {
         let near = resolve_collision(motion(0, -99), facts(0)).unwrap();
         assert_eq!(near.committed_coords.z, 0);

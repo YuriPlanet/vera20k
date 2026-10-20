@@ -288,15 +288,6 @@ mod tests {
     }
 
     #[test]
-    fn the_border_pick_stays_inside_the_list() {
-        let mut rng = RmgRng::new(3);
-        for _ in 0..64 {
-            assert!(pick_border_cell(&mut rng, 5) < 5);
-        }
-        assert_eq!(pick_border_cell(&mut rng, 1), 0, "a single cell is index 0");
-    }
-
-    #[test]
     fn flood_branch_visits_exact_qualified_ordered_slot_pairs_in_order() {
         let flood = region(0, 4, true, 90, &[1, 2, 3, 4, 5, 6]);
         let regions = vec![

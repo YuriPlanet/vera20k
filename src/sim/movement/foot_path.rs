@@ -1505,7 +1505,7 @@ mod tests {
                 let owner = sim.intern("Americans");
                 let mut house =
                     crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 10);
-                house.base_center = Some((16, 16));
+                house.set_base_center_for_test(Some((16, 16)));
                 sim.houses.register(house);
                 let id = sim
                     .spawn_object("MTNK", "Americans", 13, 15, 0, &rules)

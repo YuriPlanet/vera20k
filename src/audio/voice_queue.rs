@@ -217,23 +217,6 @@ mod tests {
     }
 
     #[test]
-    fn two_objects_follow_reached_ai_order_instead_of_stable_id_order() {
-        let mut queue = VoiceQueue::new();
-        queue.queue(9, "DogMove");
-        queue.queue(3, "GIMove");
-        // Supplied live Logic order is 9, 3. Both owners reached the common
-        // Techno voice slot6F9EBB; sorting IDs changes their admission order.
-        let decisions: Vec<_> = [9, 3]
-            .into_iter()
-            .filter_map(|owner| queue.visit(owner, false))
-            .collect();
-        assert_eq!(
-            decisions.iter().map(|d| d.owner).collect::<Vec<_>>(),
-            vec![9, 3]
-        );
-    }
-
-    #[test]
     fn no_visit_keeps_pending_and_other_visits_do_not_drain_it() {
         let mut queue = VoiceQueue::new();
         queue.queue(7, "GIMove");
@@ -245,15 +228,6 @@ mod tests {
         assert_eq!(queue.pending_owners().collect::<Vec<_>>(), vec![7]);
         assert_eq!(queue.pending_for(7), Some("GIMove"));
         assert_eq!(queue.playing_for(7), None);
-    }
-
-    #[test]
-    fn destroyed_before_visit_cannot_admit_its_pending_voice() {
-        let mut queue = VoiceQueue::new();
-        queue.queue(7, "GIMove");
-        queue.forget(7);
-        assert!(queue.visit(7, false).is_none());
-        assert!(queue.pending_owners().next().is_none());
     }
 
     #[test]

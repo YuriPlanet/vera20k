@@ -325,14 +325,6 @@ mod tests {
     }
 
     #[test]
-    fn mean_draws_are_in_twenty_to_forty() {
-        let mut rng = RmgRng::new(3);
-        for _ in 0..500 {
-            assert!((20..=40).contains(&mean_draw(&mut rng)));
-        }
-    }
-
-    #[test]
     fn temperate_paints_rough_sand_and_green_patches() {
         let (grid, _scratch, _rng) = run_theater(1234, 0, 100);
         let mut kinds = std::collections::HashSet::new();

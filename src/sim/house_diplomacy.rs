@@ -97,7 +97,7 @@ impl Simulation {
             HouseAllianceAdmission::Admitted(alliances) => alliances,
             HouseAllianceAdmission::ScenarioInitialization { roster } => {
                 assert!(
-                    self.entities().is_empty() && self.production.terrain_objects.is_empty(),
+                    self.entities().is_empty() && self.terrain_objects.objects().is_empty(),
                     "ScenarioInit diplomacy precedes map objects"
                 );
                 assert!(
@@ -194,7 +194,7 @@ impl Simulation {
             let owner = self.houses.order()[index];
             index += 1;
             if !self.houses.get(&owner).is_some_and(|house| {
-                !house.is_defeated && !house.is_controlled_by_human(game_mode_nonzero)
+                !house.is_defeated() && !house.is_controlled_by_human(game_mode_nonzero)
             }) {
                 continue;
             }
@@ -202,7 +202,7 @@ impl Simulation {
             while peer_index < self.houses.order().len() {
                 let other = self.houses.order()[peer_index];
                 peer_index += 1;
-                let Some(peer) = self.houses.get(&other).filter(|peer| !peer.is_defeated) else {
+                let Some(peer) = self.houses.get(&other).filter(|peer| !peer.is_defeated()) else {
                     continue;
                 };
                 // Itself too: CanAlly refuses it.
@@ -237,7 +237,7 @@ impl Simulation {
         let anger = self
             .houses
             .get(&owner)
-            .and_then(|house| house.grudge_scores.get(&other).copied())
+            .and_then(|house| house.grudge_scores().get(&other).copied())
             .unwrap_or(0);
         update_anger_nodes(
             &mut self.houses,
@@ -248,9 +248,9 @@ impl Simulation {
             anger.wrapping_neg(),
         );
         if let Some(house) = self.houses.get_mut(&owner)
-            && house.enemy_house == Some(other)
+            && house.enemy_house() == Some(other)
         {
-            house.enemy_house = None;
+            house.forget_enemy();
         }
         // 0x004F9B9A's release bracket ran while `owner` did not count
         // `other` an ally (CanAlly refuses an existing ally), so it took no
@@ -276,7 +276,7 @@ impl Simulation {
                 && self
                     .houses
                     .get(&other)
-                    .is_some_and(|house| !house.multiplay_passive)
+                    .is_some_and(|house| !house.multiplay_passive())
             {
                 self.computer_paranoid(rules, registry, effects);
             }
@@ -327,7 +327,7 @@ impl Simulation {
         };
         // 0x004F9FA9..0x004F9FC9.
         if self.session.game_mode_nonzero()
-            && (other_house.multiplay_passive || house.multiplay_passive)
+            && (other_house.multiplay_passive() || house.multiplay_passive())
         {
             return;
         }
@@ -393,7 +393,7 @@ impl Simulation {
             return true;
         }
         // 0x005015B1..0x005015BF.
-        if house.is_defeated {
+        if house.is_defeated() {
             return false;
         }
         // 0x005015C2..0x00501638: among the live houses whose type is not
@@ -406,7 +406,7 @@ impl Simulation {
             if !self
                 .houses
                 .get(&peer)
-                .is_some_and(|peer| !peer.is_defeated && !peer.multiplay_passive)
+                .is_some_and(|peer| !peer.is_defeated() && !peer.multiplay_passive())
             {
                 continue;
             }

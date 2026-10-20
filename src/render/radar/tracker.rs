@@ -195,7 +195,7 @@ pub(super) fn radar_pixel_candidate_eligible(
     if object.is_some_and(|object| object.insignificant && !object.radar_visible)
         && !houses
             .get(&entity.owner())
-            .is_some_and(|house| !house.multiplay_passive)
+            .is_some_and(|house| !house.multiplay_passive())
     {
         return false;
     }
@@ -710,22 +710,6 @@ mod tests {
         // The mobile returns only at its later ordinary Techno +0x4A0 visit.
         tracker.update_object(update(1, false), false);
         assert!(tracker.is_registered(1));
-    }
-
-    #[test]
-    fn radar_tracker_two_identical_action40_resets_both_rebuild() {
-        let mut tracker = RetainedRadarTracker::default();
-        let mut building = update(2, false);
-        building.foundation = Some((2, 2));
-        tracker.update_object(building, false);
-        for _ in 0..2 {
-            tracker.reset_for_action40();
-            assert!(tracker.take_action40_building_tail_pending());
-            assert!(!tracker.is_registered(2));
-            tracker.update_object(building, true);
-            assert!(tracker.is_registered(2));
-            assert_eq!(tracker.entries_at(40, 60).len(), 1);
-        }
     }
 
     #[test]

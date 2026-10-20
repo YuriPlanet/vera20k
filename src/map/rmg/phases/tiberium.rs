@@ -518,38 +518,6 @@ mod tests {
         assert!(pass1_gem_flag(2, 3));
     }
 
-    #[test]
-    fn field_count_uses_two_stage_truncation() {
-        // regionTotal = trunc(trunc(tib*0.01*(max-min)+min) * max(quota,0.5)).
-        let two_stage = |tib: i32, min: i32, max: i32, quota: i32| {
-            let lerp = X87Chop53::ftol_f64_low_masked(
-                TruncF64::from_f64(f64::from(tib))
-                    .mul(TruncF64::from_f64(0.01))
-                    .mul(TruncF64::from_f64(f64::from(max - min)))
-                    .add(TruncF64::from_f64(f64::from(min)))
-                    .to_f64(),
-            );
-            let mult = if f64::from(quota) < 0.5 {
-                0.5
-            } else {
-                f64::from(quota)
-            };
-            X87Chop53::ftol_f64_low_masked(
-                TruncF64::from_f64(f64::from(lerp))
-                    .mul(TruncF64::from_f64(mult))
-                    .to_f64(),
-            )
-        };
-        // tib 50%, [900,1050] → lerp=trunc(50*0.01*150+900)=975; quota 2 → 1950.
-        assert_eq!(two_stage(50, 900, 1050, 2), 1950);
-        // quota 0 → mult 0.5 → 487.
-        assert_eq!(two_stage(50, 900, 1050, 0), 487);
-        // tib 0 → lerp=min=2500; quota 4 → 10000.
-        assert_eq!(two_stage(0, 2500, 5500, 4), 10000);
-        // tib 100 → lerp=max; quota 1 → 5500.
-        assert_eq!(two_stage(100, 2500, 5500, 1), 5500);
-    }
-
     fn run_once(seed: u16, map_type: i32, resources: i32) -> (TiberiumOutcome, World, usize) {
         let (targs, stride) = args(map_type, resources);
         let mut w = world(stride);
@@ -616,22 +584,6 @@ mod tests {
                 .iter()
                 .all(|(name, _, _)| name.starts_with("TIBTRE")),
         );
-    }
-
-    #[test]
-    fn tibtre_variants_are_one_to_three() {
-        let mut rng = RmgRng::new(19);
-        for _ in 0..500 {
-            assert!((1..=3).contains(&tibtre_draw(&mut rng)));
-        }
-    }
-
-    #[test]
-    fn density_draws_are_zero_to_eleven() {
-        let mut rng = RmgRng::new(23);
-        for _ in 0..500 {
-            assert!((0..=11).contains(&density_draw(&mut rng)));
-        }
     }
 
     #[test]

@@ -648,11 +648,13 @@ mod tests {
             .expect("spawns");
         let tree = (11, 10);
         let type_ref = sim.interner.intern("TREE01");
-        sim.production.terrain_objects.insert(
+        sim.terrain_objects.objects_mut_for_test().insert(
             900,
             TerrainObjectState::for_test(900, type_ref, tree.0, tree.1),
         );
-        sim.production.terrain_object_cells.insert(tree, 900);
+        sim.terrain_objects
+            .cell_index_mut_for_test()
+            .insert(tree, 900);
         mark_terrain_raw_occupation(&mut sim.substrate.raw_cell_occupation, tree, 5);
         assert!(matches!(
             sim.find_blocking_object(tree, crate::sim::movement::locomotor::MovementLayer::Ground,),

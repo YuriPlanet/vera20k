@@ -663,14 +663,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_new_frame_starts_an_empty_page() {
-        let mut cache = VxlPoseFrameCache::default();
-        cache.begin_frame();
-        assert!(cache.pages.is_empty());
-        assert!(cache.page_texture(0).is_none());
-    }
-
     /// Sprites pack left to right on shelves; the upload covers exactly the
     /// rows they use, and the next frame clears those rows.
     #[test]

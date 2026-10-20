@@ -108,7 +108,7 @@ impl Simulation {
             let owner_spy_sat = self
                 .houses
                 .get(&owner)
-                .is_some_and(|house| house.spy_sat_active);
+                .is_some_and(|house| house.spy_sat_active());
             if !owner_spy_sat {
                 self.reset_shroud_for_owner(owner, rules);
             }

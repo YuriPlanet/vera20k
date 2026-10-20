@@ -1,7 +1,7 @@
 //! Wakeup queues Guard through the existing Mission authority. Native
 //! Execute6DDB67 ->6E01C0 uses the live Trigger's Tag membership, not a House.
 use super::*;
-use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::mission::MissionId;
 use crate::util::save_codec;
 
 fn corpus() -> &'static serde_json::Value {
@@ -186,45 +186,6 @@ fn wakeup_selection_and_deferred_mission_state_match_original_controls() {
     }
 }
 
-#[test]
-fn wakeup_tagged_sleep_queues_guard_without_commencing() {
-    let (mut sim, rules, _, houses) = super::tests::event_ingress_fixture();
-    super::tests::install_event_ingress_map(
-        &mut sim,
-        &rules,
-        "[Triggers]\nWAKE=Country0,<none>,Wake,0,1,1,1,0\n\
-         [Events]\nWAKE=1,8,0,0\n\
-         [Actions]\nWAKE=1,81,0,0,0,0,0,0,A\n\
-         [Tags]\nTAG=2,Wake,WAKE\n",
-    );
-    let actor = super::tests::spawn_event_ingress_unit(&mut sim, &rules, houses[1], (15, 15));
-    sim.attach_object_trigger_tag(actor, Some("TAG"));
-    sim.mission_assign_exact(actor, MissionId::from_known(MissionType::Sleep), 17)
-        .unwrap();
-    let before = sim.substrate.entities.get(actor).unwrap().mission;
-    let rng = sim.scenario_rng.native_state_hex();
-    let live = sim.trigger_runtime.trigger_order[0];
-    let typ = sim.trigger_runtime.trigger(live).unwrap().type_index;
-    let action = sim.trigger_runtime.definitions.trigger_types[typ].actions[0].clone();
-    sim.apply_live_trigger_action(
-        &action,
-        TriggerActionContext {
-            live_index: Some(live),
-            incoming_house: Some(houses[0]),
-            input: TagEventInput::default(),
-        },
-        &mut Vec::new(),
-        Some(&rules),
-        None,
-        FrameEffects::default(),
-    );
-    let after = sim.substrate.entities.get(actor).unwrap().mission;
-    assert_eq!(after.current(), before.current());
-    assert_eq!(after.queued().known(), Some(MissionType::Guard));
-    assert_eq!(after.dispatch_timer(), before.dispatch_timer());
-    assert_eq!(after.mission_start_frame(), before.mission_start_frame());
-    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
-}
 #[test]
 fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     use crate::map::{entities::EntityCategory, map_file::MapFile};

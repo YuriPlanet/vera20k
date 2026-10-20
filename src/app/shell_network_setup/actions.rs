@@ -1,4 +1,5 @@
-//! BC/BD commands after the shared window/control input owner admits them.
+//! BC/BD and C2/C9 commands after the shared window/control input owner
+//! admits them.
 
 mod start;
 use super::*;
@@ -7,23 +8,42 @@ use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition, L
 use crate::ui::multiplayer_setup::*;
 
 pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
+    let dialog = super::dialog(state);
+    // While C2's StartGame request is pending (`00B77E28`), its proc skips
+    // checkboxes and sliders (`0x78F823`), and Back, ChooseMap and every
+    // row combo test the same flag (`0x790C5B`, `0x791033`, `0x791075`,
+    // `0x791097`, `0x790D12`).
+    if super::wol::start_pending(state)
+        && matches!(
+            action,
+            SetupAction::Back
+                | SetupAction::ChooseMap
+                | SetupAction::Select { .. }
+                | SetupAction::Toggle { .. }
+                | SetupAction::Trackbar { .. }
+        )
+    {
+        return;
+    }
     let result = match action {
         SetupAction::Start => start::request_start(state),
         SetupAction::Accept => accept(state),
         SetupAction::Back => {
             if state
                 .frontend
-                .lan_setup_protocol
+                .network_setup_protocol
                 .as_ref()
                 .is_some_and(|protocol| !protocol.locked)
             {
-                queue(state, LanSetupRequest::Leave);
-                App::leave_shell_dialog(
-                    state,
-                    shell_transition::ShellExitThen::LanSetupBack {
-                        host: state.match_state.session.host(),
-                    },
-                );
+                queue(state, NetworkSetupRequest::Leave);
+                // C9 Back (0x791E4A..5F) closes only when the leave call
+                // fails; otherwise the channel-left event closes it.
+                if !(dialog.wol() && !dialog.host) {
+                    App::leave_shell_dialog(
+                        state,
+                        shell_transition::ShellExitThen::NetworkSetupBack(dialog),
+                    );
+                }
             }
             Ok(())
         }
@@ -31,13 +51,13 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             if state.match_state.session.host()
                 && state
                     .frontend
-                    .lan_setup_protocol
+                    .network_setup_protocol
                     .as_ref()
                     .is_some_and(|protocol| !protocol.locked)
             {
                 App::leave_shell_dialog(
                     state,
-                    shell_transition::ShellExitThen::LanSetupChooseMap { host: true },
+                    shell_transition::ShellExitThen::NetworkSetupChooseMap(dialog),
                 );
             }
             Ok(())
@@ -45,6 +65,20 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
         SetupAction::Toggle { control } => toggle(state, control),
         SetupAction::Trackbar { control, value } => trackbar(state, control, value),
         SetupAction::Select { control, value } => select(state, control, value),
+        SetupAction::Chat(text) if dialog.wol() => {
+            super::wol::chat(state, text);
+            Ok(())
+        }
+        SetupAction::Emote => {
+            super::wol::emote(state);
+            Ok(())
+        }
+        SetupAction::Page => {
+            // 0x5C2 runs the modal page dialog 0xCF (0078D120), a later
+            // WOL chain; nothing is invented in its place.
+            log::warn!("WOL page dialog 0xCF is not implemented");
+            Ok(())
+        }
         SetupAction::Chat(text) => {
             // Original BC/BD chat is admitted even during its GO input lock.
             let name = state
@@ -61,18 +95,18 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                     color: 0x40ffff,
                 },
             );
-            queue(state, LanSetupRequest::Chat(text));
+            queue(state, NetworkSetupRequest::Chat(text));
             Ok(())
         }
     };
     if let Err(error) = result {
-        log::warn!("LAN setup command refused: {error:#}");
+        log::warn!("network setup command refused: {error:#}");
     }
     state.platform.window.request_redraw();
 }
 
-fn queue(state: &mut AppState, request: LanSetupRequest) {
-    if let Some(protocol) = state.frontend.lan_setup_protocol.as_mut() {
+fn queue(state: &mut AppState, request: NetworkSetupRequest) {
+    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         protocol.requests.push(request);
     }
 }
@@ -101,7 +135,17 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
         _ => anyhow::bail!("unknown setup checkbox"),
     }
     state.match_state.session.set_network_options(options)?;
-    queue(state, LanSetupRequest::PublishOptions);
+    host_option_edited(state)?;
+    queue(state, NetworkSetupRequest::PublishOptions);
+    Ok(())
+}
+
+/// C2 checkbox and slider handlers (`0x78F9C1`, `0x78FA97`) clear every
+/// remote acceptance at once (`005E9850`); BC leaves that to peers' A0.
+fn host_option_edited(state: &mut AppState) -> anyhow::Result<()> {
+    if super::dialog(state).wol() {
+        super::wol::clear_guest_acceptance(state)?;
+    }
     Ok(())
 }
 
@@ -139,7 +183,8 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
         }
         state.match_state.session.set_network_options(options)?;
     }
-    queue(state, LanSetupRequest::PublishOptions);
+    host_option_edited(state)?;
+    queue(state, NetworkSetupRequest::PublishOptions);
     Ok(())
 }
 
@@ -173,7 +218,7 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
             .session
             .set_network_row_kind(row as u8, kind)?
         {
-            queue(state, LanSetupRequest::Kick { name: peer.name });
+            queue(state, NetworkSetupRequest::Kick { name: peer.name });
         }
     } else {
         let mut slot = state
@@ -227,7 +272,7 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
                 .expect("choices retain setup");
             queue(
                 state,
-                LanSetupRequest::PlayerChoices {
+                NetworkSetupRequest::PlayerChoices {
                     row: row as u8,
                     slot,
                     observer: launch.local_player().is_observer(),
@@ -236,7 +281,7 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
             return Ok(());
         }
     }
-    queue(state, LanSetupRequest::PublishOptions);
+    queue(state, NetworkSetupRequest::PublishOptions);
     Ok(())
 }
 
@@ -253,10 +298,10 @@ fn accept(state: &mut AppState) -> anyhow::Result<()> {
         .match_state
         .session
         .set_network_player_ready(index, true)?;
-    if let Some(protocol) = state.frontend.lan_setup_protocol.as_mut() {
+    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         protocol.start_requested = false;
     }
-    queue(state, LanSetupRequest::Ready(true));
+    queue(state, NetworkSetupRequest::Ready(true));
     Ok(())
 }
 
@@ -277,7 +322,7 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
     match state.match_state.session.freeze_network_start(agreed_seed) {
         Ok(startup) => {
             state.frontend.multiplayer_setup = None;
-            state.frontend.lan_setup_protocol = None;
+            state.frontend.network_setup_protocol = None;
             state.frontend.skirmish_preview_texture = None;
             crate::app::loading::pump::begin_loading(
                 state,
@@ -320,7 +365,7 @@ pub(crate) fn commit_map_selection(
     anyhow::ensure!(
         state
             .frontend
-            .lan_setup_protocol
+            .network_setup_protocol
             .as_ref()
             .is_some_and(|p| !p.locked),
         "setup is locked"
@@ -335,6 +380,17 @@ pub(crate) fn commit_map_selection(
         .ok_or_else(|| anyhow::anyhow!("unknown chosen map"))?;
     let file = map.file_name.clone();
     let metadata = super::local_map_metadata(state, &file)?;
+    let changed = state
+        .match_state
+        .session
+        .network_setup()
+        .and_then(|launch| launch.selected_map_file.as_deref())
+        .is_none_or(|current| !current.eq_ignore_ascii_case(&file))
+        || state
+            .match_state
+            .session
+            .network_map_metadata()
+            .is_none_or(|current| current.display_name != metadata.display_name);
     let removed = state.match_state.session.select_network_map(
         crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(mode),
         file.clone(),
@@ -345,7 +401,7 @@ pub(crate) fn commit_map_selection(
         .session
         .accept_network_map_metadata(metadata, None, true)?;
     for human in removed {
-        queue(state, LanSetupRequest::Kick { name: human.name });
+        queue(state, NetworkSetupRequest::Kick { name: human.name });
     }
     state.frontend.random_map_retention.select_map(&file);
     state
@@ -353,6 +409,14 @@ pub(crate) fn commit_map_selection(
         .multiplayer_shell_runtime
         .set_preferred_game_mode(mode_id);
     state.frontend.skirmish_preview_texture = None;
-    queue(state, LanSetupRequest::PublishOptions);
+    if super::dialog(state).wol() {
+        // C2 ChooseMap 0x790F68: acceptance clears only for a new
+        // filename or title; the advertisement always follows (78F000).
+        if changed {
+            super::wol::clear_guest_acceptance(state)?;
+        }
+        queue(state, NetworkSetupRequest::Advertise);
+    }
+    queue(state, NetworkSetupRequest::PublishOptions);
     Ok(())
 }

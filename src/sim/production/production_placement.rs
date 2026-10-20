@@ -245,7 +245,7 @@ pub(crate) fn place_production_with_overlays(
             };
             let Some(object) = sim
                 .production
-                .factories
+                .factories()
                 .view(owner_id, category)
                 .and_then(|factory| factory.complete_object())
             else {
@@ -286,7 +286,7 @@ pub(crate) fn place_production_with_overlays(
                 || exit == BuildingExit::TryLater
                     && sim
                         .production
-                        .factories
+                        .factories()
                         .building_factory(producer)
                         .is_some();
             // House4FB57F's +524 is a producer Factory pointer, not a

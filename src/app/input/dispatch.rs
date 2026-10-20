@@ -3812,7 +3812,7 @@ mod control_group_tests {
     ) -> crate::sim::intern::InternedId {
         let id = sim.interner.intern(name);
         let mut house = crate::sim::house_state::HouseState::new(id, 0, None, is_human, 0, 10);
-        house.player_control = player_control;
+        house.set_player_control_for_test(player_control);
         sim.houses.register(house);
         id
     }
@@ -3981,8 +3981,10 @@ mod control_group_tests {
             for (index, actor) in actors.iter().enumerate() {
                 let id = index as u64 + 1;
                 let owner = owners[actor["owner"].as_u64().unwrap() as usize];
-                sim.houses.get_mut(&owner).unwrap().player_control =
-                    actor["player_control"].as_bool().unwrap();
+                sim.houses
+                    .get_mut(&owner)
+                    .unwrap()
+                    .set_player_control_for_test(actor["player_control"].as_bool().unwrap());
                 group_entity(&mut sim, id, owner);
                 let is_selected = actor["selected"].as_bool().unwrap();
                 sim.entities_mut()

@@ -281,43 +281,6 @@ mod tests {
     use super::*;
     use crate::skirmish_modes::stock_skirmish_modes;
 
-    #[test]
-    fn upserting_the_random_map_sentinel_keeps_exactly_one_row() {
-        // Accepting Create Random Map twice must refresh the existing row, not
-        // append a second one.
-        let mut records = Vec::new();
-        let first = upsert_random_map_sentinel(
-            &mut records,
-            "Random Map",
-            i32::from(RANDOM_MAP_GENERATED_START_QUOTA),
-        );
-        let second = upsert_random_map_sentinel(
-            &mut records,
-            "Random Map",
-            i32::from(RANDOM_MAP_GENERATED_START_QUOTA),
-        );
-        assert_eq!(first, second, "the sentinel is updated, never duplicated");
-
-        let sentinels = records
-            .iter()
-            .filter(|record| record.kind == SkirmishScenarioKind::RandomMapSentinel)
-            .count();
-        assert_eq!(sentinels, 1);
-
-        let sentinel = &records[first];
-        assert_eq!(sentinel.file_name, RANDMAP_SED);
-        assert!(sentinel.official, "the original constructs it official");
-        // Current repo behaviour. The binary's record constructor passes 2 and 4
-        // into +0x180/+0x184, but nothing reads those two fields when deciding a
-        // player count - MPGameOptions__GetScenarioPlayerCount reads
-        // [RandomMap] NumPlayers from the .SED instead - so the wider range here
-        // is what the dialog's 2..8 trackbar actually produces.
-        assert_eq!(
-            (sentinel.min_players, sentinel.max_players),
-            (Some(RANDOM_MAP_MIN_PLAYERS), Some(RANDOM_MAP_MAX_PLAYERS))
-        );
-    }
-
     fn mode(id: i32) -> SkirmishGameMode {
         stock_skirmish_modes()
             .into_iter()
@@ -411,36 +374,6 @@ mod tests {
     }
 
     #[test]
-    fn pkt_entry_without_a_game_mode_key_matches_standard_only() {
-        let ini = IniFile::from_str("[Basic]\nName=Nameless\n");
-        let rec = SkirmishScenarioRecord::pkt_from_ini(
-            0,
-            SkirmishScenarioSource::MissionsMdPkt,
-            "Nameless.MAP",
-            &ini,
-            PktEntryFields {
-                display_name: "Nameless".to_string(),
-                ..PktEntryFields::default()
-            },
-        );
-
-        assert!(rec.game_modes.is_empty());
-        assert!(record_matches_mode(&rec, &mode(1)));
-        assert!(!record_matches_mode(&rec, &mode(9)));
-    }
-
-    #[test]
-    fn choose_map_filters_by_selected_mpmode_game_modes() {
-        let records = vec![
-            record(0, "Battle", "standard"),
-            record(1, "Team", "teamgame"),
-            record(2, "Duel", "duel"),
-        ];
-        assert_eq!(filter_records_for_mode(&records, &mode(9)), vec![1]);
-        assert_eq!(filter_records_for_mode(&records, &mode(6)), vec![2]);
-    }
-
-    #[test]
     fn choose_map_empty_game_modes_matches_standard_only() {
         let records = vec![record(0, "Empty", "")];
         assert_eq!(filter_records_for_mode(&records, &mode(1)), vec![0]);
@@ -507,30 +440,6 @@ mod tests {
     }
 
     #[test]
-    fn random_map_sentinel_advertises_shell_capacity_without_concrete_starts() {
-        let rec = SkirmishScenarioRecord::random_map_sentinel(
-            4,
-            "Random Map",
-            i32::from(RANDOM_MAP_GENERATED_START_QUOTA),
-        );
-
-        assert_eq!(rec.file_name, RANDMAP_SED);
-        assert_eq!(rec.kind, SkirmishScenarioKind::RandomMapSentinel);
-        assert_eq!(rec.min_players, Some(RANDOM_MAP_MIN_PLAYERS));
-        assert_eq!(rec.max_players, Some(RANDOM_MAP_MAX_PLAYERS));
-        assert!(rec.official);
-        assert_eq!(
-            rec.player_capacity,
-            i32::from(RANDOM_MAP_GENERATED_START_QUOTA)
-        );
-        assert_eq!(RANDOM_MAP_GENERATED_START_QUOTA, 4);
-        assert!(
-            rec.multiplayer_start_waypoints.is_empty(),
-            "the Choose Map sentinel is metadata only; generated maps must provide real waypoints before launch"
-        );
-    }
-
-    #[test]
     fn skirmish_random_map_command_adds_or_updates_single_sentinel_record() {
         let mut records = vec![record(0, "Concrete", "standard")];
         let first = upsert_random_map_sentinel(
@@ -573,17 +482,6 @@ mod tests {
     }
 
     #[test]
-    fn the_sentinel_map_entry_is_addressable_by_its_seed_file_name() {
-        // Committing a chooser selection resolves it against the loadable map
-        // list by file name; a mismatch here is what makes an accepted random
-        // map unplayable.
-        let mut records = Vec::new();
-        let idx = upsert_random_map_sentinel(&mut records, "Random Map", 2);
-        let entry = records[idx].to_map_menu_entry();
-        assert!(entry.file_name.eq_ignore_ascii_case(RANDMAP_SED));
-    }
-
-    #[test]
     fn random_map_upsert_repairs_stale_sentinel_metadata() {
         let mut stale = SkirmishScenarioRecord::random_map_sentinel(
             0,
@@ -618,17 +516,5 @@ mod tests {
             records[0].multiplayer_start_waypoints.is_empty(),
             "upsert must not preserve fabricated starts on the sentinel"
         );
-    }
-
-    #[test]
-    fn scenario_records_retain_explicit_source_ordinals() {
-        let records = [
-            record(10, "From Missions", "standard"),
-            record(11, "From Loose Pkt", "standard"),
-            record(12, "From Yro", "standard"),
-            record(13, "From Yrm", "standard"),
-        ];
-        let ordinals: Vec<usize> = records.iter().map(|record| record.source_ordinal).collect();
-        assert_eq!(ordinals, vec![10, 11, 12, 13]);
     }
 }

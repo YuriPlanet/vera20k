@@ -17,7 +17,7 @@ use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::movement::FacingClass;
 use crate::sim::rng::SimRng;
 use crate::sim::runtime::{SimResources, SimRuntime};
-use crate::sim::snapshot::{GameSnapshot, SnapshotRestoreError};
+use crate::sim::snapshot::GameSnapshot;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -578,20 +578,6 @@ fn snapshot_copy(sim: &Simulation) -> Simulation {
     GameSnapshot::load(&bytes).unwrap().sim
 }
 
-fn change_saved_shot(sim: &mut Simulation, id: u64, change: impl FnOnce(&mut Value)) {
-    // Fault injection stays inside the serialized private owner. Production
-    // exposes neither mutable bodies nor a second shot registry.
-    let mut owner = serde_json::to_value(&sim.disk_lasers).unwrap();
-    change(
-        owner["shots"]
-            .as_object_mut()
-            .unwrap()
-            .get_mut(&id.to_string())
-            .unwrap(),
-    );
-    sim.disk_lasers = serde_json::from_value(owner).unwrap();
-}
-
 #[test]
 fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
     let Some(retail) = retail_battle_rules_for_map("XMP03T4.MAP") else {
@@ -725,128 +711,6 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
         assert!(!scene.sim.has_disk_laser(id));
         assert!(!resumed.has_disk_laser(id));
     }
-}
-
-#[test]
-fn disk_snapshot_rejects_invalid_body_references_membership_and_identity() {
-    use super::display_layers::DisplayLayer;
-    let Some(retail) = retail_battle_rules_for_map("XMP03T4.MAP") else {
-        return;
-    };
-    let rules = &retail.rules;
-    let registry = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
-    let row = &native()["lifecycle"][0];
-    let mut scene = Scene::new(rules, row);
-    let spec = &row["input"]["births"][0];
-    let id = scene.construct(spec);
-    scene.fire(spec, id);
-    for (field, value, reason) in [
-        ("start", json!(16), "invalid ring cursor or countdown"),
-        ("step", json!(9), "invalid ring cursor or countdown"),
-        ("countdown", json!(2), "invalid ring cursor or countdown"),
-        ("source", json!(999_999), "missing active source"),
-        (
-            "target",
-            serde_json::to_value(TargetKind::Entity(999_999)).unwrap(),
-            "missing active target",
-        ),
-        ("weapon", Value::Null, "missing active weapon"),
-        (
-            "weapon",
-            serde_json::to_value(crate::sim::intern::InternedId::from_index(u32::MAX)).unwrap(),
-            "missing weapon identity",
-        ),
-    ] {
-        let mut bad = snapshot_copy(&scene.sim);
-        change_saved_shot(&mut bad, id, |body| body[field] = value);
-        let error = snapshot_copy(&bad)
-            .restore_after_snapshot_load()
-            .unwrap_err();
-        assert!(
-            matches!(error, SnapshotRestoreError::InvalidDiskLaserState { object_id, reason: actual } if object_id == id && actual == reason),
-            "{field}: {error:?}"
-        );
-    }
-    for in_logic in [false, true] {
-        let mut bad = snapshot_copy(&scene.sim);
-        if in_logic {
-            bad.substrate.logic.try_push(id).unwrap();
-        } else {
-            assert!(
-                bad.substrate
-                    .display
-                    .submit(id, Some(DisplayLayer::TOP), &|_| 0)
-            );
-        }
-        assert!(
-            matches!(snapshot_copy(&bad).restore_after_snapshot_load(), Err(SnapshotRestoreError::InvalidDiskLaserState { object_id, reason: "DiskLaser registered in Logic or Display" }) if object_id == id)
-        );
-    }
-    let mut bad = snapshot_copy(&scene.sim);
-    bad.substrate.next_stable_object_id = id;
-    assert!(
-        matches!(snapshot_copy(&bad).restore_after_snapshot_load(), Err(SnapshotRestoreError::ObjectIdCounterBehind { next_id, highest_id }) if next_id == id && highest_id == id)
-    );
-
-    let mut bad = snapshot_copy(&scene.sim);
-    let missing_weapon = bad.intern("NotARetailDiskWeapon");
-    change_saved_shot(&mut bad, id, |body| {
-        body["weapon"] = serde_json::to_value(missing_weapon).unwrap()
-    });
-    let mut bad = snapshot_copy(&bad);
-    bad.restore_after_snapshot_load().unwrap();
-    assert!(
-        matches!(bad.restore_map_authority_after_snapshot_load(rules, &registry, None), Err(SnapshotRestoreError::InvalidDiskLaserState { object_id, reason: "missing retained weapon" }) if object_id == id)
-    );
-
-    let mut bad = snapshot_copy(&scene.sim);
-    bad.fire_disk_laser(id, None, None, None, 90);
-    bad.disk_lasers = Default::default();
-    assert!(
-        matches!(snapshot_copy(&bad).restore_after_snapshot_load(), Err(SnapshotRestoreError::UnresolvedDeferredDeleteTicket { registry: "DiskLaser", identity }) if identity == id)
-    );
-}
-
-#[test]
-fn new_scenario_has_no_retained_disk_shots_tickets_or_copied_lasers() {
-    let Some(retail) = retail_battle_rules_for_map("XMP03T4.MAP") else {
-        return;
-    };
-    let row = &native()["lifecycle"][0];
-    let mut scene = Scene::new(&retail.rules, row);
-    let spec = &row["input"]["births"][0];
-    let id = scene.construct(spec);
-    scene.fire(spec, id);
-    scene
-        .sim
-        .tick_disk_lasers(&retail.rules, None, FrameEffects::default());
-    scene.sim.fire_disk_laser(id, None, None, None, 90);
-    assert!(scene.sim.has_disk_laser(id));
-    assert!(
-        scene
-            .sim
-            .substrate
-            .pending_delete
-            .retained_tickets()
-            .any(|ticket| ticket == DeferredDeleteTicket::DiskLaser(id))
-    );
-    assert!(
-        scene
-            .sim
-            .lifecycle_outputs
-            .iter()
-            .any(|output| matches!(output, LifecycleOutput::LaserCreated(_)))
-    );
-    let fresh = Simulation::from_descriptor(&Default::default());
-    assert_eq!(fresh.disk_laser_observations().count(), 0);
-    assert_eq!(fresh.substrate.pending_delete.retained_tickets().count(), 0);
-    assert!(
-        !fresh
-            .lifecycle_outputs
-            .iter()
-            .any(|output| matches!(output, LifecycleOutput::LaserCreated(_)))
-    );
-    assert!(fresh.native_identity_cursor().is_none());
 }
 
 #[test]

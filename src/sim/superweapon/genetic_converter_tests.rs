@@ -595,7 +595,7 @@ fn the_make_infantry_end_matches_native() {
                     ["Americans", "Russians", "YuriCountry", "Neutral"][usize::from(side)];
                 let country = sim.interner.intern(country);
                 let mut state = HouseState::new(id, side, Some(country), house[2] == true, 0, 10);
-                state.is_defeated = house[1] == true;
+                state.set_is_defeated_for_test(house[1] == true);
                 sim.houses.register(state);
                 id
             })
@@ -838,7 +838,10 @@ fn retail_computer_mutator_leaves_hunting_brutes() {
     };
     let (rules, mut sim, americans) = world_with(rules, 64, &[]);
     let russians = sim.interner.intern("Russians");
-    sim.houses.get_mut(&russians).unwrap().enemy_house = Some(americans);
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_enemy_house_for_test(Some(americans));
     for (x, y) in [(30, 30), (31, 30), (30, 31), (31, 31)] {
         sim.spawn_object_at_height("E1", "Americans", x, y, 0, 0, &rules)
             .unwrap();

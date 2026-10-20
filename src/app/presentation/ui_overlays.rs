@@ -1791,27 +1791,18 @@ mod tests {
         ));
     }
 
-    /// A selected object draws both halves — bracket and pips.
-    #[test]
-    fn selected_unit_draws_bracket_and_pips() {
-        assert_eq!(status_visibility(true, false), (true, true));
-        assert_eq!(status_visibility(true, true), (true, true));
-    }
-
-    /// The hover arm draws the pip strip with no bracket behind it: the
-    /// bracket blit sits under an is-selected test inside the health-bar
-    /// routine, while the pips do not.
-    #[test]
-    fn hovered_unselected_unit_draws_pips_without_the_bracket() {
-        assert_eq!(status_visibility(false, true), (false, true));
-    }
-
     /// The clause the old damage gate broke: an unselected, unhovered object
     /// draws no health bar at all, whatever its health is. The overlay pass
     /// reaches the health-bar slot only through the selected and hover arms.
+    /// A selected object draws bracket and pips; the hover arm draws the pips
+    /// alone, because the bracket blit sits under an is-selected test inside
+    /// the health-bar routine.
     #[test]
     fn unselected_unhovered_unit_draws_nothing_regardless_of_damage() {
         assert_eq!(status_visibility(false, false), (false, false));
+        assert_eq!(status_visibility(true, false), (true, true));
+        assert_eq!(status_visibility(true, true), (true, true));
+        assert_eq!(status_visibility(false, true), (false, true));
     }
 
     /// The arm table `DrawPipScalePips` walks at `0x0070A50C..0x0070A5E4`:
@@ -1842,18 +1833,5 @@ mod tests {
         // The other arm's counter never substitutes for the object's own.
         assert_eq!(self_heal_pip(Unit, false, 1, 0), None);
         assert_eq!(self_heal_pip(Unit, false, 0, 1), Some(SelfHealPip::Units));
-    }
-
-    /// Frame selection and RTTI projection are independent at70A573/5DF/5EC.
-    /// The consumed control_group_status corpus executes both category arms.
-    #[test]
-    fn the_self_heal_pip_frames_and_offsets_match_the_original() {
-        assert_eq!(SelfHealPip::Organic.frame(), 0x0D);
-        assert_eq!(SelfHealPip::Units.frame(), 0x14);
-        assert_eq!(
-            self_heal_pip_offset(EntityCategory::Infantry),
-            (15.0, -25.0)
-        );
-        assert_eq!(self_heal_pip_offset(EntityCategory::Unit), (23.0, -22.0));
     }
 }

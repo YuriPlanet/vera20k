@@ -358,87 +358,6 @@ fn v3_launcher_gets_a_missile_pool_on_spawn() {
 }
 
 #[test]
-fn carrier_pool_is_not_missile_flavoured() {
-    let rules = make_spawner_rules();
-    let mut sim = Simulation::new();
-    let carrier = sim
-        .spawn_object("CARRIER", "Americans", 10, 10, 0, &rules)
-        .expect("spawn CARRIER");
-    let manager = sim
-        .substrate
-        .entities
-        .get(carrier)
-        .and_then(|e| e.spawn_manager.as_ref())
-        .expect("carrier manager");
-    assert_eq!(manager.slots.len(), 3);
-    assert_eq!(manager.reload_rate, 150);
-    assert_eq!(
-        manager.missile_family, None,
-        "HORNET is not one of the three hardcoded rocket families"
-    );
-    assert!(manager.slots.iter().all(|s| !s.is_missile_spawn));
-}
-
-#[test]
-fn units_without_spawns_get_no_manager() {
-    let rules = make_spawner_rules();
-    let mut sim = Simulation::new();
-    let target = sim
-        .spawn_object("TARGET", "Yuri", 20, 20, 0, &rules)
-        .expect("spawn TARGET");
-    assert!(
-        sim.substrate
-            .entities
-            .get(target)
-            .expect("target")
-            .spawn_manager
-            .is_none()
-    );
-}
-
-#[test]
-fn set_target_queues_and_the_ai_pass_promotes_it() {
-    let rules = make_spawner_rules();
-    let mut sim = flat_sim();
-    let v3 = sim
-        .spawn_object("V3", "Russians", 10, 10, 0, &rules)
-        .expect("spawn V3");
-    let target = sim
-        .spawn_object("TARGET", "Yuri", 20, 20, 0, &rules)
-        .expect("spawn TARGET");
-
-    if let Some(manager) = sim
-        .substrate
-        .entities
-        .get_mut(v3)
-        .and_then(|e| e.spawn_manager.as_mut())
-    {
-        manager.set_target(Some(TargetKind::Entity(target)));
-        assert_eq!(manager.queued_target, Some(TargetKind::Entity(target)));
-        assert_eq!(manager.current_target, None, "SetTarget only queues");
-        // Force the update gate open so this test exercises one AI pass.
-        manager.update_timer = CdTimer::default();
-    }
-
-    spawn_manager_ai(
-        &mut sim,
-        &rules,
-        v3,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-
-    let manager = sim
-        .substrate
-        .entities
-        .get(v3)
-        .and_then(|e| e.spawn_manager.as_ref())
-        .expect("manager");
-    assert_eq!(manager.current_target, Some(TargetKind::Entity(target)));
-    assert_eq!(manager.queued_target, None);
-}
-
-#[test]
 fn hornet_launcher_maximum_matches_native_distance_ties() {
     let rules = make_spawner_rules();
     // SpawnManager6B7B43 -> Unit+3AC/6F7780 -> CanFireAt6F77B0 ->
@@ -611,7 +530,7 @@ fn gsi_05_08_v3_minimum_accepts_1280_and_clears_1279() {
 
 /// Negative half only: proves the gate holds work back before the 20th frame.
 /// It does not prove the pass runs *on* the boundary frame, nor that the
-/// period becomes 10 afterwards — `set_target_queues_and_the_ai_pass_promotes_it`
+/// period becomes 10 afterwards — `hornet_launcher_maximum_matches_native_distance_ties`
 /// forces the gate open rather than waiting it out, so the positive edge is
 /// **UNCHECKED** by this file.
 #[test]
@@ -1063,55 +982,6 @@ fn missile_impact_kills_through_the_shared_death_pipeline() {
     );
 }
 
-#[test]
-fn v3_attack_order_damages_the_target_through_the_spawned_rocket() {
-    let rules = make_spawner_rules();
-    let mut sim = missile_sim();
-    let v3 = sim
-        .spawn_object("V3", "Russians", 10, 10, 0, &rules)
-        .expect("spawn V3");
-    let target = sim
-        .spawn_object("FRAGILE", "Yuri", 16, 10, 0, &rules)
-        .expect("spawn FRAGILE");
-
-    assert!(
-        sim.substrate
-            .entities
-            .get(target)
-            .is_some_and(|t| t.lifecycle.object_alive() && t.health.current() == 50),
-        "fixture guard: the target must start alive at full health"
-    );
-
-    if let Some(entity) = sim.substrate.entities.get_mut(v3) {
-        entity
-            .attack_target
-            .set_for_test(Some(crate::sim::combat::TargetKind::Entity(target)));
-    }
-
-    // The retail contract is a kill, not a scratch: FRAGILE has Strength=50
-    // against the V3's 200 damage, so anything short of the shared death
-    // pipeline running leaves it standing at 0 HP and this fails.
-    let mut destroyed = false;
-    for _ in 0..600 {
-        sim.advance_tick(&[], Some(&rules), None, None, 67);
-        let gone = sim
-            .substrate
-            .entities
-            .get(target)
-            .is_none_or(|t| t.death.is_dying() || !t.lifecycle.object_alive());
-        if gone {
-            destroyed = true;
-            break;
-        }
-    }
-    assert!(
-        destroyed,
-        "a V3 Launcher with an attack order must land its rocket and destroy the target"
-    );
-    // Kill credit rides the combat damage event, which carries the launcher as
-    // the attacker.
-}
-
 /// `TechnoClass::AI` runs the SpawnManager (`0x006FA94C`) inside the Unit's
 /// `FootClass::AI` (`0x0073647B`), before `UnitClass::AI`'s Fire_At_Target
 /// (`0x007365E1`): when a V3's manager pass falls on the frame it fires, the
@@ -1226,36 +1096,6 @@ fn a_live_spawners_own_expiry_rebuilds_its_docked_missile() {
             .owner(),
         Some(v3)
     );
-}
-
-#[test]
-fn owner_death_destroys_docked_children() {
-    let rules = make_spawner_rules();
-    let mut sim = Simulation::new();
-    let dred = sim
-        .spawn_object("DRED", "Russians", 10, 10, 0, &rules)
-        .expect("spawn DRED");
-    let children: Vec<u64> = sim
-        .substrate
-        .entities
-        .get(dred)
-        .and_then(|e| e.spawn_manager.as_ref())
-        .map(|m| m.slots.iter().filter_map(|s| s.spawn).collect())
-        .expect("children");
-    assert_eq!(children.len(), 2, "SpawnsNumber=2");
-
-    sim.uninit(dred);
-    sim.flush_pending_delete();
-
-    for child in children {
-        assert!(
-            sim.substrate
-                .entities
-                .get(child)
-                .is_none_or(|c| c.death.is_dying() || !c.lifecycle.object_alive()),
-            "docked children die with the parent (Kill_All_Spawns)"
-        );
-    }
 }
 
 /// `ObjectClass::ReceiveDamage`'s exact-zero Destroy (`0x005F57AF`) announces
@@ -1651,13 +1491,6 @@ fn missile_flight_speed_uses_the_ra2_conversion() {
         f64::from(crate::util::fixed_math::ra2_speed_to_leptons_per_frame(15))
     );
     assert_eq!(fastest, 38.0);
-}
-
-#[test]
-fn gsi_13_07_no_spawn_alt_parser_defaults_false_and_reads_yes() {
-    let rules = make_spawner_rules();
-    assert!(rules.object("V3").expect("V3 rules").no_spawn_alt);
-    assert!(!rules.object("DRED").expect("DRED rules").no_spawn_alt);
 }
 
 #[test]

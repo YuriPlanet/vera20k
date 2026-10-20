@@ -243,7 +243,7 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
         .simulation
         .houses
         .iter()
-        .find(|(_, house)| !house.is_human && !house.multiplay_passive)
+        .find(|(_, house)| !house.is_human() && !house.multiplay_passive())
         .map(|(&owner, _)| probe.simulation.interner.resolve(owner).to_owned())
         .expect("ALL05 has a computer House");
     for (mode, visible, computer, expected) in [
@@ -273,7 +273,7 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
                 .any(|entity| entity.owner() == miner_owner && entity.type_ref() == refinery)
         );
         if computer {
-            assert!(!sim.houses[&miner_owner].is_human);
+            assert!(!sim.houses[&miner_owner].is_human());
         }
         sim.fog.reset_explored_for_owner(owner);
         if visible {

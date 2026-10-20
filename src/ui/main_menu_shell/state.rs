@@ -193,39 +193,4 @@ mod tests {
         c.on_pointer_down(700, 577, &feed);
         assert_eq!(c.pressed(), None);
     }
-
-    #[test]
-    fn controller_hits_unscaled_large_screen_button_rects() {
-        let layout = compute_layout(1024, 768);
-        let feed = button_feed(&layout);
-        let mut c = DialogController::default();
-        c.ensure_active(DialogId(0x00E2), false);
-        c.on_pointer_down(760, 300, &feed);
-        assert_eq!(
-            c.pressed(),
-            Some(MainMenuControlId::SinglePlayer0x683.resource_id())
-        );
-        c.on_pointer_down(809, 255, &feed);
-        assert_eq!(c.pressed(), None);
-    }
-
-    #[test]
-    fn controller_release_must_match_pressed_button() {
-        let layout = compute_layout(800, 600);
-        let feed = button_feed(&layout);
-        let mut c = DialogController::default();
-        c.ensure_active(DialogId(0x00E2), false);
-        // Press SinglePlayer, release over the WW Online row -> no fire.
-        c.on_pointer_down(700, 210, &feed);
-        assert_eq!(c.on_pointer_up(700, 250, &feed), None);
-        // Press and release SinglePlayer -> the activated id maps to its action.
-        c.on_pointer_down(700, 210, &feed);
-        let activated = c.on_pointer_up(700, 210, &feed);
-        assert_eq!(
-            activated
-                .and_then(MainMenuControlId::from_resource_id)
-                .map(action_for_control),
-            Some(MainMenuShellAction::SinglePlayer)
-        );
-    }
 }

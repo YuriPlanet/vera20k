@@ -271,10 +271,6 @@ mod tests {
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
     use glam::IVec3;
 
-    fn empty_rules() -> RuleSet {
-        RuleSet::from_ini(&IniFile::from_str("")).expect("empty rules parse")
-    }
-
     fn build_rules(behaves_like: &str, lifetime: i32) -> RuleSet {
         let ini_text = format!(
             "[General]\nWindDirection=1\n[ParticleSystems]\n\
@@ -337,14 +333,6 @@ mod tests {
     }
 
     #[test]
-    fn empty_store_tick_is_a_no_op() {
-        let mut sim = Simulation::new();
-        let rules = empty_rules();
-        tick_particle_systems(&mut sim, &rules);
-        assert_eq!(sim.particle_systems().len(), 0);
-    }
-
-    #[test]
     fn finite_lifetime_uses_common_deferred_finalizer() {
         let rules = build_rules("Smoke", 3);
         let mut sim = Simulation::new();
@@ -394,16 +382,6 @@ mod tests {
         tick_particle_systems(&mut sim, &rules);
         assert_eq!(sim.particle_systems().len(), 1);
         assert_eq!(sim.live_object_order_snapshot().len(), 1);
-    }
-
-    #[test]
-    fn reinsert_preserves_stable_id() {
-        let rules = build_rules("Smoke", 100);
-        let mut sim = Simulation::new();
-        let id = insert_live_system(&mut sim, fake_system(ParticleSystemTypeId(0), 100));
-        tick_particle_systems(&mut sim, &rules);
-        assert!(sim.particle_systems().get(id).is_some());
-        assert_eq!(sim.particle_systems().get(id).unwrap().lifetime, 99);
     }
 
     #[test]

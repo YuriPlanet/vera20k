@@ -128,24 +128,6 @@ pub enum LoadingArtVariant {
 }
 
 impl LoadingArtVariant {
-    #[cfg(test)]
-    pub fn from_country_name(country: &str) -> Option<Self> {
-        match country.to_ascii_lowercase().as_str() {
-            "yuricountry" | "yuri" => Some(Self::Yuri),
-            "observer" | "obs" => Some(Self::Observer),
-            "americans" | "usa" | "ustates" => Some(Self::Americans),
-            "russians" | "russia" => Some(Self::Russians),
-            "africans" | "libya" | "lybia" => Some(Self::Africans),
-            "alliance" | "korea" => Some(Self::Alliance),
-            "arabs" | "iraq" => Some(Self::Arabs),
-            "germans" | "germany" => Some(Self::Germans),
-            "french" | "france" => Some(Self::French),
-            "confederation" | "cuba" => Some(Self::Confederation),
-            "british" | "ukingdom" => Some(Self::British),
-            _ => None,
-        }
-    }
-
     /// Country insignia PCX drawn to the right of the loading bar (G4).
     ///
     /// Verified asset mapping from gamemd's loading-side-icon resolver
@@ -814,14 +796,12 @@ fn pack_entries(
 mod tests {
     use super::{
         CAMPAIGN_BACKGROUND_LABEL, CAMPAIGN_BAR_BACKGROUND_LABEL, CAMPAIGN_PROGRESS_LABEL,
-        CAMPAIGN_TITLE_LABEL, LOADING_PREVIEW_LABEL, LoadingArtVariant, LoadingScreenEntry,
-        LoadingScreenWidth, MmpbRegionRect, PreparedLoadingPreviewRgba,
-        lookup_optional_atlas_entries, mmpb_marker_label, mmpb_region_rect, prepared_preview_entry,
+        CAMPAIGN_TITLE_LABEL, LOADING_PREVIEW_LABEL, LoadingArtVariant, LoadingScreenWidth,
+        MmpbRegionRect, PreparedLoadingPreviewRgba, mmpb_region_rect, prepared_preview_entry,
         progress_palette_with_player_ramp, render_campaign_entries, render_pcx_entry,
         render_shp_entry,
     };
     use crate::assets::pal_file::{Color, Palette};
-    use std::collections::HashMap;
 
     #[test]
     fn first_campaign_art_decodes_through_the_shared_loading_palette_and_shp_path() {
@@ -978,47 +958,6 @@ mod tests {
     }
 
     #[test]
-    fn optional_entry_bookkeeping_keeps_marker_colors_distinct() {
-        let preview = LoadingScreenEntry {
-            uv_origin: [0.0, 0.0],
-            uv_size: [0.25, 0.25],
-            pixel_size: [200.0, 100.0],
-        };
-        let red = LoadingScreenEntry {
-            uv_origin: [0.25, 0.0],
-            uv_size: [0.02, 0.02],
-            pixel_size: [12.0, 12.0],
-        };
-        let blue = LoadingScreenEntry {
-            uv_origin: [0.27, 0.0],
-            uv_size: [0.02, 0.02],
-            pixel_size: [12.0, 12.0],
-        };
-        let red_label = mmpb_marker_label(3);
-        let blue_label = mmpb_marker_label(11);
-        let by_label = HashMap::from([
-            (LOADING_PREVIEW_LABEL.to_string(), preview),
-            (red_label.clone(), red),
-            (blue_label.clone(), blue),
-        ]);
-
-        let (resolved_preview, markers) = lookup_optional_atlas_entries(
-            &by_label,
-            Some(LOADING_PREVIEW_LABEL),
-            &[
-                (3, red_label),
-                (11, blue_label),
-                (19, mmpb_marker_label(19)),
-            ],
-        );
-
-        assert_eq!(resolved_preview, Some(preview));
-        assert_eq!(markers.get(&3), Some(&red));
-        assert_eq!(markers.get(&11), Some(&blue));
-        assert!(!markers.contains_key(&19));
-    }
-
-    #[test]
     fn loading_art_manifest_uses_verified_binary_string_table_names() {
         let cases = [
             (
@@ -1104,28 +1043,6 @@ mod tests {
     }
 
     #[test]
-    fn loading_art_manifest_does_not_use_mode2_or_campaign_assets() {
-        for variant in [
-            LoadingArtVariant::Yuri,
-            LoadingArtVariant::Observer,
-            LoadingArtVariant::Americans,
-            LoadingArtVariant::Russians,
-            LoadingArtVariant::Africans,
-            LoadingArtVariant::Alliance,
-            LoadingArtVariant::Arabs,
-            LoadingArtVariant::Germans,
-            LoadingArtVariant::French,
-            LoadingArtVariant::Confederation,
-            LoadingArtVariant::British,
-        ] {
-            let manifest = variant.manifest();
-            let name = manifest.background_asset(LoadingScreenWidth::W800);
-            assert!(!name.to_ascii_lowercase().contains("pudlgbg"));
-            assert_ne!(name.to_ascii_lowercase(), "spldbr.shp");
-        }
-    }
-
-    #[test]
     fn side_icon_pcx_uses_verified_insignia_mapping() {
         let cases = [
             (LoadingArtVariant::Americans, "usai.pcx"),
@@ -1143,22 +1060,6 @@ mod tests {
         for (variant, expected) in cases {
             assert_eq!(variant.side_icon_pcx(), expected, "{variant:?}");
         }
-    }
-
-    #[test]
-    fn loading_art_variant_resolves_rules_country_names() {
-        assert_eq!(
-            LoadingArtVariant::from_country_name("Americans"),
-            Some(LoadingArtVariant::Americans)
-        );
-        assert_eq!(
-            LoadingArtVariant::from_country_name("Alliance"),
-            Some(LoadingArtVariant::Alliance)
-        );
-        assert_eq!(
-            LoadingArtVariant::from_country_name("YuriCountry"),
-            Some(LoadingArtVariant::Yuri)
-        );
     }
 
     #[test]

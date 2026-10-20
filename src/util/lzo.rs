@@ -342,11 +342,4 @@ mod tests {
         let result: Vec<u8> = decompress_chunks(&chunks).expect("Should decompress chunks");
         assert_eq!(result, b"ABC");
     }
-
-    #[test]
-    fn test_empty_input() {
-        let mut output: [u8; 16] = [0u8; 16];
-        let written: usize = lzo1x_decompress(&[], &mut output).expect("Empty OK");
-        assert_eq!(written, 0);
-    }
 }

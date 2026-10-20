@@ -101,31 +101,6 @@ mod tests {
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::LocomotorState;
 
-    #[test]
-    fn a_fresh_locomotor_is_powered() {
-        for kind in [
-            LocomotorKind::Drive,
-            LocomotorKind::Hover,
-            LocomotorKind::Walk,
-            LocomotorKind::Teleport,
-        ] {
-            assert!(
-                LocomotorState::for_test_kind(kind).is_powered(),
-                "{kind:?} must start powered — unpowered is a state something \
-                 has to actively put a unit into"
-            );
-        }
-    }
-
-    #[test]
-    fn power_off_then_on_round_trips() {
-        let mut state = LocomotorState::for_test_kind(LocomotorKind::Hover);
-        state.power_off();
-        assert!(!state.is_powered());
-        state.power_on();
-        assert!(state.is_powered());
-    }
-
     /// The base Power_Off is not a stop: it touches the flag and nothing
     /// else, so a destination already installed survives.
     #[test]

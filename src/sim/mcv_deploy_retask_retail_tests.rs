@@ -38,11 +38,11 @@ fn actual_computer_yard_retasks_existing_starting_force_through_move() {
     let rules = &scene.runtime.resources.rules;
     let tank_type = rules.object("HTNK").unwrap();
     assert!(tank_type.allowed_to_start_in_multiplayer);
-    assert!(tank_type.tech_level <= sim.houses[&owner].tech_level);
+    assert!(tank_type.tech_level <= sim.houses[&owner].tech_level());
     assert!(tank_type.deploys_into.is_none());
     // Armed Unit and Infantry idle (`0x00738B67..0x00738C98`,
     // `0x0051CCB9..0x0051CD75`) select AreaGuard for this House's IQ.
-    assert!(sim.houses[&owner].current_iq >= rules.general.iq_guard_area);
+    assert!(sim.houses[&owner].current_iq() >= rules.general.iq_guard_area);
     let yard_type = rules.object("SMCV").unwrap().deploys_into.clone().unwrap();
     assert!(rules.object(&yard_type).unwrap().construction_yard);
     let mcv = sim

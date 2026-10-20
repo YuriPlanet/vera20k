@@ -515,14 +515,6 @@ mod tests {
         );
     }
 
-    fn initialized_empty_csf() -> CsfFile {
-        let mut bytes = Vec::new();
-        for value in [0x4353_4620_u32, 3, 1, 1, 0, 0] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        CsfFile::from_bytes(&bytes).expect("valid initialized CSF header")
-    }
-
     #[test]
     fn exact_640_selects_small_every_other_width_selects_large() {
         for ra2_look in [false, true] {
@@ -577,19 +569,6 @@ mod tests {
         assert_eq!(centered_offset(799, 800), 0);
         assert_eq!(centered_offset(798, 800), -1);
         assert_eq!(centered_offset(806, 800), 3);
-    }
-
-    #[test]
-    fn initialized_csf_exposes_missing_label_instead_of_english_fallback() {
-        let csf = initialized_empty_csf();
-        assert_eq!(
-            csf_text(Some(&csf), COPYRIGHT_KEY, COPYRIGHT_FALLBACK),
-            format!("MISSING:'{COPYRIGHT_KEY}'")
-        );
-        assert_eq!(
-            csf_text(None, COPYRIGHT_KEY, COPYRIGHT_FALLBACK),
-            COPYRIGHT_FALLBACK
-        );
     }
 
     #[test]

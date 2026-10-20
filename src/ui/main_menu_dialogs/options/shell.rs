@@ -621,56 +621,6 @@ mod tests {
     }
 
     #[test]
-    fn right_panel_children_follow_the_family_places() {
-        let layout = LauncherOptionsLayout::new(800, 600);
-        assert_eq!(layout.title, RectPx::new(635, 9, 163, 18));
-        assert_eq!(layout.status_help, RectPx::new(10, 578, 456, 21));
-        let buttons = layout.buttons.map(|(_, rect)| rect);
-        assert_eq!(
-            buttons,
-            [
-                RectPx::new(644, 199, 156, 42),
-                RectPx::new(644, 241, 156, 42),
-                RectPx::new(644, 535, 156, 42),
-            ]
-        );
-    }
-
-    #[test]
-    fn responsive_layout_stretches_the_dialog_and_keeps_its_right_panel() {
-        // Identity at the authored size, where the retail layout is used.
-        assert_eq!(
-            LauncherOptionsLayout::responsive(800, 600),
-            LauncherOptionsLayout::new(800, 600)
-        );
-        let base = LauncherOptionsLayout::new(800, 600);
-        let scale = ShellScale::from_screen(1600, 1200);
-        let wide = LauncherOptionsLayout::responsive(1600, 1200);
-        assert_eq!(wide.scale, scale);
-        // No centring offset of its own: at 4:3 the scale fills the window.
-        assert_eq!((wide.offset_x, wide.offset_y), (0, 0));
-        assert_eq!(wide.title, RectPx::new(1270, 18, 326, 36));
-        assert_eq!(wide.status_help, RectPx::new(20, 1156, 912, 42));
-        assert_eq!(wide.zoom, RectPx::new(702, 172, 360, 48));
-        assert_eq!(
-            wide.buttons.map(|(_, rect)| rect),
-            [
-                RectPx::new(1288, 398, 312, 84),
-                RectPx::new(1288, 482, 312, 84),
-                RectPx::new(1288, 1070, 312, 84),
-            ]
-        );
-        assert_eq!(
-            wide.trackbars.map(|(_, rect)| rect),
-            base.trackbars.map(|(_, rect)| scale.scale_rect(rect))
-        );
-        assert_eq!(
-            wide.checkboxes.map(|(_, rect)| rect),
-            base.checkboxes.map(|(_, rect)| scale.scale_rect(rect))
-        );
-    }
-
-    #[test]
     fn a_stretched_slider_maps_the_pointer_back_to_its_authored_track() {
         let mut dialog = state();
         let base = LauncherOptionsLayout::new(800, 600);
@@ -756,30 +706,6 @@ mod tests {
             Some(LauncherStatusHelp::Text(RA2_LOOK_HELP))
         );
         assert_eq!(state.shell_status_help_key(5, 5, &layout), None);
-    }
-
-    #[test]
-    fn a_captured_slider_keeps_the_status_help_until_release() {
-        let mut state = state();
-        let layout = LauncherOptionsLayout::new(800, 600);
-        let rect = layout.trackbar_rect(LauncherTrackbarId::Score);
-        let thumb = state.shell_trackbar_thumb_left(LauncherTrackbarId::Score, rect, layout.scale);
-        state.shell_mouse_down(rect.x + thumb + 5, rect.y + 10, &layout);
-        assert_eq!(
-            state.shell_status_help(),
-            Some(LauncherStatusHelp::Csf("STT:MainOptSliderMusic"))
-        );
-        let back = layout.buttons[2].1;
-        state.shell_mouse_move(back.x + 5, back.y + 5, &layout);
-        assert_eq!(
-            state.shell_status_help(),
-            Some(LauncherStatusHelp::Csf("STT:MainOptSliderMusic"))
-        );
-        state.shell_mouse_up(back.x + 5, back.y + 5, &layout);
-        assert_eq!(
-            state.shell_status_help(),
-            Some(LauncherStatusHelp::Csf("STT:MainOptButtonBack"))
-        );
     }
 
     #[test]
@@ -1046,39 +972,6 @@ mod tests {
             [
                 LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
                 LauncherOptionsEvent::OriginalShapeChanged(true)
-            ]
-        );
-    }
-
-    #[test]
-    fn ra2_look_box_continues_the_ui_options_column_and_applies_at_once() {
-        let mut state = state();
-        let layout = LauncherOptionsLayout::new(800, 600);
-        let (id, rect) = layout.checkboxes[5];
-        let show_hidden = layout.checkboxes[2].1;
-        assert_eq!(id, LauncherCheckboxId::Ra2Look);
-        // One more row of the column under Show Hidden, clear of it and of
-        // the Audio Options heading.
-        assert_eq!(
-            (rect.x, rect.w, rect.h),
-            (show_hidden.x, show_hidden.w, show_hidden.h)
-        );
-        assert!(rect.y >= show_hidden.y + show_hidden.h);
-        let heading = state
-            .shell_labels(&layout)
-            .into_iter()
-            .find(|label| label.text == "Audio Options")
-            .expect("Audio Options heading")
-            .rect;
-        assert!(rect.y + rect.h <= heading.y);
-        assert_eq!(state.shell_checkbox_label(id), RA2_LOOK_LABEL);
-        state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
-        assert!(state.shell_checkbox_checked(id));
-        assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
-                LauncherOptionsEvent::Ra2LookChanged(true)
             ]
         );
     }

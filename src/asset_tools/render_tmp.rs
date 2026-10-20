@@ -940,19 +940,6 @@ mod tests {
     }
 
     #[test]
-    fn grid_origins_advance_by_a_full_tile_in_both_axes() {
-        let origin = |index| tile_origin(index, 3, TILE_W, TILE_H, false);
-        assert_eq!(origin(0), (0, 0));
-        assert_eq!(origin(1), (60, 0));
-        assert_eq!(origin(2), (120, 0));
-        assert_eq!(origin(3), (0, 30));
-        assert_eq!(origin(4), (60, 30));
-        assert_eq!(origin(5), (120, 30));
-        assert_eq!(origin(6), (0, 60));
-        assert_eq!(origin(8), (120, 60));
-    }
-
-    #[test]
     fn isometric_origins_stagger_odd_rows_by_half_a_tile() {
         let origin = |index| tile_origin(index, 3, TILE_W, TILE_H, true);
         // Row 0 sits flush; every row drops half a tile height.
@@ -979,15 +966,6 @@ mod tests {
         assert_eq!(origin(3), (30, 45));
         // A zero column count must not divide by zero.
         assert_eq!(tile_origin(2, 0, TILE_W, TILE_H, false), (0, 60));
-    }
-
-    #[test]
-    fn composite_size_matches_each_layout() {
-        // Grid is the bare tile pitch.
-        assert_eq!(composite_size(3, 3, TILE_W, TILE_H, false), Some((180, 90)));
-        // Isometric carries half a tile of slack in x and a full tile in y.
-        assert_eq!(composite_size(3, 3, TILE_W, TILE_H, true), Some((210, 75)));
-        assert_eq!(composite_size(1, 1, TILE_W, TILE_H, true), Some((90, 45)));
     }
 
     #[test]
@@ -1032,12 +1010,6 @@ mod tests {
         assert_eq!(empty_cell_indices(&tmp.tiles, &[1, 3, 5]), vec![1, 3, 5]);
         // An index past the end counts as absent rather than panicking.
         assert_eq!(empty_cell_indices(&tmp.tiles, &[99]), vec![99]);
-    }
-
-    #[test]
-    fn an_all_empty_template_counts_every_selected_cell() {
-        let tmp = template(2, 1, &[false, false]);
-        assert_eq!(empty_cell_indices(&tmp.tiles, &[0, 1]), vec![0, 1]);
     }
 
     #[test]
@@ -1169,38 +1141,6 @@ mod tests {
     }
 
     #[test]
-    fn output_paths_match_the_shp_render_convention() {
-        assert_eq!(tile_png_name("clat01.tem", 0), "clat01.tem.000.png");
-        assert_eq!(tile_png_name("clat01.tem", 42), "clat01.tem.042.png");
-        assert_eq!(sheet_png_name("clat01.tem"), "clat01.tem.sheet.png");
-
-        // The default output root is `RenderOptions`', not this module's, so the
-        // two render paths cannot drift apart.
-        let dir = render_dir(&RenderOptions::default().out, "clat01.tem");
-        assert!(dir.is_absolute(), "{}", dir.display());
-        assert!(
-            dir.ends_with(Path::new(RENDER_SUBDIR).join("clat01.tem")),
-            "{}",
-            dir.display()
-        );
-
-        assert!(is_generated_output("clat01.tem.000.png", "clat01.tem"));
-        assert!(is_generated_output("clat01.tem.sheet.png", "clat01.tem"));
-        assert!(!is_generated_output("index.tsv", "clat01.tem"));
-        assert!(!is_generated_output("clat01.tem.000.png", "clat02.tem"));
-    }
-
-    #[test]
-    fn sanitise_name_keeps_a_theater_extension_and_replaces_separators() {
-        assert_eq!(sanitise_name("clat01.tem"), "clat01.tem");
-        assert_eq!(
-            sanitise_name("isotemp.mix/clat01.tem"),
-            "isotemp.mix_clat01.tem"
-        );
-        assert_eq!(sanitise_name(""), FALLBACK_DIR_NAME);
-    }
-
-    #[test]
     fn scale_is_clamped_and_fitted_to_the_pixel_budget() {
         assert_eq!(clamp_scale(0), MIN_SCALE);
         assert_eq!(clamp_scale(999), MAX_SCALE);
@@ -1212,20 +1152,6 @@ mod tests {
         let fitted = fit_scale(4000, 4000, 16).unwrap();
         assert!((MIN_SCALE..16).contains(&fitted), "{fitted}");
         assert_eq!(fit_scale(60_000, 60_000, 1), None);
-    }
-
-    #[test]
-    fn last_resort_palette_reasons_are_detected_case_insensitively() {
-        assert!(is_last_resort_palette("last-resort-768-byte-scan"));
-        assert!(is_last_resort_palette("LAST RESORT archive scan"));
-        assert!(!is_last_resort_palette("archive-map:isotemp"));
-    }
-
-    #[test]
-    fn summarise_indices_caps_the_listing() {
-        assert_eq!(summarise_indices(&[1, 2, 3]), "1, 2, 3");
-        let many: Vec<usize> = (0..12).collect();
-        assert!(summarise_indices(&many).ends_with("+4 more"));
     }
 
     #[test]

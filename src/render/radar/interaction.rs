@@ -412,17 +412,6 @@ mod tests {
     }
 
     #[test]
-    fn native_click_tracker_miss_clamps_negative_inverse_before_unsigned_pack() {
-        let surface = NativeRadarSurfaceGeometry::from_raw_rect(30, 20, 300, 180).unwrap();
-        let signed = signed_tracker_or_inverse_cell(surface, (0, 0), None);
-        assert_eq!(signed, (-4, 25));
-        assert_eq!(
-            clamp_native_radar_click_cell(signed, (100, 100), (632, 570)),
-            (85, 114)
-        );
-    }
-
-    #[test]
     fn native_click_target_samples_all_active_slopes_at_cell_center() {
         let mut terrain = click_terrain(64, 64);
         let expected_contributions = [

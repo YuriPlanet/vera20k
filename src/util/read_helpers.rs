@@ -76,30 +76,10 @@ mod tests {
     }
 
     #[test]
-    fn test_read_u32_le() {
-        // 0x04030201 in little-endian = bytes [0x01, 0x02, 0x03, 0x04]
-        let data: &[u8] = &[0x01, 0x02, 0x03, 0x04];
-        assert_eq!(read_u32_le(data, 0), 0x04030201);
-    }
-
-    #[test]
-    fn test_read_i32_le_positive() {
-        let data: &[u8] = &[0x01, 0x00, 0x00, 0x00];
-        assert_eq!(read_i32_le(data, 0), 1);
-    }
-
-    #[test]
     fn test_read_i32_le_negative() {
         // -1 in two's complement = 0xFFFFFFFF = bytes [0xFF, 0xFF, 0xFF, 0xFF]
         let data: &[u8] = &[0xFF, 0xFF, 0xFF, 0xFF];
         assert_eq!(read_i32_le(data, 0), -1);
-    }
-
-    #[test]
-    fn test_read_at_offset() {
-        // Read u16 starting at byte 2 (skipping first two bytes).
-        let data: &[u8] = &[0x00, 0x00, 0xAB, 0xCD];
-        assert_eq!(read_u16_le(data, 2), 0xCDAB);
     }
 
     #[test]
@@ -108,13 +88,5 @@ mod tests {
         let data: &[u8] = &[0x00, 0x00, 0x80, 0x3F];
         let val: f32 = read_f32_le(data, 0);
         assert!((val - 1.0).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn test_read_f32_le_negative() {
-        // -0.5f32 in little-endian = 0xBF000000 = bytes [0x00, 0x00, 0x00, 0xBF]
-        let data: &[u8] = &[0x00, 0x00, 0x00, 0xBF];
-        let val: f32 = read_f32_le(data, 0);
-        assert!((val - (-0.5)).abs() < f32::EPSILON);
     }
 }

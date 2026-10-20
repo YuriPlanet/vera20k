@@ -32,12 +32,14 @@ fn loss_threshold_events_match_original_incoming_house_and_signed_counters() {
     for case in cases {
         let (mut sim, rules, _, houses) = event_ingress_fixture();
         for (house, losses) in houses.iter().zip(case["loss_counters"].as_array().unwrap()) {
-            sim.houses.get_mut(house).unwrap().stats = MatchStatistics::from_totals_for_test(
-                0,
-                0,
-                integer(&losses[1]) as u32,
-                integer(&losses[0]) as u32,
-                0,
+            sim.houses.get_mut(house).unwrap().set_stats_for_test(
+                MatchStatistics::from_totals_for_test(
+                    0,
+                    0,
+                    integer(&losses[1]) as u32,
+                    integer(&losses[0]) as u32,
+                    0,
+                ),
             );
         }
         install_event_ingress_map(
@@ -202,12 +204,14 @@ fn loss_threshold_events_bind_retail_all04_reinforcement_operands() {
         // callback -> reinforcement test covers the connected ordinary path.
         // This is not a played ALL04 mission or original Team execution.
         for (losses, expected) in [(threshold - 1, false), (threshold, true)] {
-            sim.houses.get_mut(&owner).unwrap().stats = MatchStatistics::from_totals_for_test(
-                0,
-                0,
-                if kind == 16 { losses as u32 } else { 0 },
-                if kind == 15 { losses as u32 } else { 0 },
-                0,
+            sim.houses.get_mut(&owner).unwrap().set_stats_for_test(
+                MatchStatistics::from_totals_for_test(
+                    0,
+                    0,
+                    if kind == 16 { losses as u32 } else { 0 },
+                    if kind == 15 { losses as u32 } else { 0 },
+                    0,
+                ),
             );
             let mut persistence = false;
             assert_eq!(
@@ -265,7 +269,7 @@ fn naval_land_events_match_original_signed_tracking_and_country_selection() {
             sim.houses
                 .get_mut(owner)
                 .unwrap()
-                .tracking
+                .tracking_mut()
                 .set_naval_land_for_test(
                     integer(&counts[0]),
                     integer(&counts[1]),
@@ -513,7 +517,7 @@ fn naval_event_retail_all05_removal_enables_black_eagle_support_once() {
             &rules,
         )
         .unwrap();
-    assert_eq!(sim.houses[&owner].tracking.navy(), 1);
+    assert_eq!(sim.houses[&owner].tracking().navy(), 1);
     for (frame, remove, expected) in [
         (0, false, false),
         (7, true, false),
@@ -523,7 +527,7 @@ fn naval_event_retail_all05_removal_enables_black_eagle_support_once() {
         sim.session.set_binary_frame_for_test(frame);
         if remove {
             sim.uninit_with_rules(id, &rules);
-            assert_eq!(sim.houses[&owner].tracking.navy(), 1);
+            assert_eq!(sim.houses[&owner].tracking().navy(), 1);
             sim.flush_pending_delete();
         }
         sim.raise_house_tags(owner, Some(&rules), None, FrameEffects::default());
@@ -711,7 +715,7 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
             let trigger = runtime.trigger(live).unwrap();
             let actual = json!({
                 "wallet": crate::sim::credit_income::available_money(&sim, houses[0]),
-                "spent": sim.houses[&houses[0]].economy.spent_credits(),
+                "spent": sim.houses[&houses[0]].economy().spent_credits(),
                 "actions": runtime.action_trace.len(),
                 "house_tag_count": runtime.house_tags.get(&houses[0]).map_or(0, Vec::len),
                 "logic_tag_count": runtime.logic_tags.len(),
@@ -748,7 +752,7 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
         }
         let cleanup = json!({
             "wallet": crate::sim::credit_income::available_money(&sim, houses[0]),
-            "spent": sim.houses[&houses[0]].economy.spent_credits(),
+            "spent": sim.houses[&houses[0]].economy().spent_credits(),
             "house_tag_count": sim.trigger_runtime.house_tags.get(&houses[0]).map_or(0, Vec::len),
             "logic_tag_count": sim.trigger_runtime.logic_tags.len(),
             "pending_count": sim.substrate.pending_delete.len(),
@@ -891,7 +895,7 @@ fn building_loss_event_matches_original_tracked_count_and_country_order() {
             sim.houses
                 .get_mut(owner)
                 .unwrap()
-                .tracking
+                .tracking_mut()
                 .set_buildings_for_test(integer(&case["tracked_buildings"][index]));
         }
         let actor = case["actor_owner"].as_u64().map(|index| {
@@ -1022,7 +1026,7 @@ fn building_loss_event_retail_all04_sets_the_rescue_route_local() {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .tracking
+            .tracking_mut()
             .set_buildings_for_test(buildings);
         sim.dispatch_live_tag_event(
             tag,

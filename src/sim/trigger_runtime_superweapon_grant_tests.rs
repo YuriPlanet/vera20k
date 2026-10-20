@@ -102,7 +102,10 @@ fn super_grant_actions_survive_provider_loss_power_and_shell_until_house_defeat(
             serde_json::to_value(&sim.super_weapons[&owner][&id]).unwrap(),
             before
         );
-        sim.houses.get_mut(&owner).unwrap().is_defeated = true;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_is_defeated_for_test(true);
         superweapon::update_owned_supers(&mut sim, &rules, owner);
         assert!(!sim.super_weapons[&owner][&id].is_active);
         assert!(!sim.super_weapons[&owner][&id].is_ready);

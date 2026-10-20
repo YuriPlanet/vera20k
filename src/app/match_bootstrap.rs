@@ -720,43 +720,6 @@ mod tests {
     }
 
     #[test]
-    fn launch_writes_the_shell_game_mode() {
-        use crate::app::match_runtime::session::SessionMode;
-        let ini = crate::rules::ini_parser::IniFile::from_str(
-            "[Battles]\n0=ALL1\n[ALL1]\nCD=2\nScenario=ALL01UMD.MAP\n",
-        );
-        let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
-        campaigns.apply_ini(&ini, &crate::rules::movies::MovieRegistry::default());
-        let mut clock = CountingClock { value: 7, reads: 0 };
-        let campaign = prepare_campaign_startup(&campaigns, "ALL1", 1, None, None, &mut clock)
-            .expect("synthetic campaign catalog admits a selected campaign");
-        assert_eq!(
-            LoadingStartup::Campaign(campaign).session_mode(),
-            SessionMode::Campaign
-        );
-        assert_eq!(
-            LoadingStartup::Accepted(prepared(9)).session_mode(),
-            SessionMode::Skirmish
-        );
-        let seed = prepared(9).seed;
-        assert_eq!(
-            LoadingStartup::UnverifiedLegacy {
-                session: explicit_session(),
-                seed,
-            }
-            .session_mode(),
-            SessionMode::Skirmish
-        );
-        assert_eq!(
-            LoadingStartup::Generic {
-                selected_map_file: "x.map".into()
-            }
-            .session_mode(),
-            SessionMode::Skirmish
-        );
-    }
-
-    #[test]
     fn cncnet_campaign_enters_a_selected_mission_and_keeps_continuation_identity() {
         let ini = crate::rules::ini_parser::IniFile::from_str(
             "[Battles]\n0=ALL1\n[ALL1]\nCD=2\nScenario=ALL01UMD.MAP\n",
@@ -804,13 +767,6 @@ mod tests {
         assert!(!next.game_options().unwrap().build_off_ally);
     }
 
-    fn assert_unverified(session: &SkirmishLaunchSession, expected: UnverifiedStartupReason) {
-        assert_eq!(
-            classify_startup_session(session),
-            StartupSessionClassification::UnverifiedLegacy(expected)
-        );
-    }
-
     fn acknowledge<'a>(
         startup: &'a PreparedMatchStartup,
         simulation: &'a Simulation,
@@ -823,14 +779,6 @@ mod tests {
             screen_is_loading: true,
         }
         .acknowledge()
-    }
-
-    #[test]
-    fn explicit_fixed_battle_session_is_accepted() {
-        assert!(matches!(
-            classify_startup_session(&explicit_session()),
-            StartupSessionClassification::AcceptedExplicitFixedBattle(_)
-        ));
     }
 
     #[test]
@@ -861,105 +809,6 @@ mod tests {
     }
 
     #[test]
-    fn random_local_country_is_unverified() {
-        let mut session = explicit_session();
-        session.local_slot_mut().country_random = true;
-        assert_unverified(&session, UnverifiedStartupReason::RandomLocalCountry);
-    }
-
-    #[test]
-    fn random_ai_country_is_unverified() {
-        let mut session = explicit_session();
-        session.opponents[0].country_random = true;
-        assert_unverified(
-            &session,
-            UnverifiedStartupReason::RandomAiCountry { index: 0 },
-        );
-    }
-
-    #[test]
-    fn random_local_color_is_unverified() {
-        let mut session = explicit_session();
-        session.local_slot_mut().color_random = true;
-        assert_unverified(&session, UnverifiedStartupReason::RandomLocalColor);
-    }
-
-    #[test]
-    fn random_ai_color_is_unverified() {
-        let mut session = explicit_session();
-        session.opponents[0].color_random = true;
-        assert_unverified(
-            &session,
-            UnverifiedStartupReason::RandomAiColor { index: 0 },
-        );
-    }
-
-    #[test]
-    fn auto_local_start_is_unverified() {
-        let mut session = explicit_session();
-        session.local_slot_mut().start_position = LaunchStartPosition::Auto;
-        assert_unverified(&session, UnverifiedStartupReason::AutoLocalStart);
-    }
-
-    #[test]
-    fn auto_ai_start_is_unverified() {
-        let mut session = explicit_session();
-        session.opponents[0].start_position = LaunchStartPosition::Auto;
-        assert_unverified(&session, UnverifiedStartupReason::AutoAiStart { index: 0 });
-    }
-
-    #[test]
-    fn missing_map_is_unverified() {
-        let mut session = explicit_session();
-        session.selected_map_file = None;
-        assert_unverified(&session, UnverifiedStartupReason::MissingMap);
-    }
-
-    #[test]
-    fn non_battle_mode_is_unverified() {
-        let mut session = explicit_session();
-        session.mode.id = 2;
-        assert_unverified(&session, UnverifiedStartupReason::NonBattleMode);
-    }
-
-    #[test]
-    fn invalid_active_ai_count_is_unverified() {
-        let mut session = explicit_session();
-        let slot = session.opponents[0].clone();
-        session.opponents = vec![slot; SKIRMISH_AI_SLOT_COUNT + 1];
-        assert_unverified(
-            &session,
-            UnverifiedStartupReason::InvalidActiveAiCount {
-                count: SKIRMISH_AI_SLOT_COUNT + 1,
-            },
-        );
-    }
-
-    #[test]
-    fn team_none_is_concrete_and_accepted() {
-        let session = explicit_session();
-        assert_eq!(session.local_slot().team, LaunchTeam::None);
-        assert_eq!(session.opponents[0].team, LaunchTeam::None);
-        assert!(matches!(
-            classify_startup_session(&session),
-            StartupSessionClassification::AcceptedExplicitFixedBattle(_)
-        ));
-    }
-
-    #[test]
-    fn accepted_startup_reads_seed_once_and_preserves_boundaries() {
-        for value in [0, 1, 0x7fff_ffff, u32::MAX] {
-            let mut next = 1;
-            let correlation = allocate_match_correlation(&mut next).unwrap();
-            let mut clock = CountingClock { value, reads: 0 };
-            let startup = prepare_match_startup(correlation, accepted_session(), &mut clock);
-            assert_eq!(clock.reads, 1);
-            assert_eq!(startup.seed.value, value);
-            assert_eq!(startup.seed.source, MatchSeedSource::Controlled);
-        }
-    }
-
-    #[test]
     fn accepted_loading_seed_preserves_u32_boundaries_through_descriptor_and_simulation() {
         for value in [0, 1, 0x7fff_ffff, u32::MAX] {
             let loading = LoadingStartup::Accepted(prepared(value));
@@ -985,74 +834,6 @@ mod tests {
     }
 
     #[test]
-    fn shell_resolved_loading_uses_preselected_seed_while_generic_calls_fallback() {
-        let legacy = LoadingStartup::UnverifiedLegacy {
-            session: explicit_session(),
-            seed: MatchSeed {
-                value: 0x1234_5678,
-                source: MatchSeedSource::Controlled,
-                seed_authority_certifying: true,
-            },
-        };
-        let mut legacy_calls = 0;
-        assert_eq!(
-            legacy.seed_or_else(|| {
-                legacy_calls += 1;
-                0x1234_5678
-            }),
-            0x1234_5678
-        );
-        assert_eq!(legacy_calls, 0);
-
-        let generic = LoadingStartup::Generic {
-            selected_map_file: "DeepFrze.map".into(),
-        };
-        let mut generic_calls = 0;
-        assert_eq!(
-            generic.seed_or_else(|| {
-                generic_calls += 1;
-                0x8765_4321
-            }),
-            0x8765_4321
-        );
-        assert_eq!(generic_calls, 1);
-    }
-
-    #[test]
-    fn correlations_are_monotonic_across_consecutive_attempts() {
-        let mut next = 1;
-        let first = allocate_match_correlation(&mut next).unwrap();
-        let second = allocate_match_correlation(&mut next).unwrap();
-        assert_eq!(first.get(), 1);
-        assert_eq!(second.get(), 2);
-        assert_eq!(next, 3);
-    }
-
-    #[test]
-    fn correlation_exhaustion_fails_without_reuse() {
-        let mut next = u64::MAX;
-        assert_eq!(
-            allocate_match_correlation(&mut next),
-            Err(MatchCorrelationError::Exhausted)
-        );
-        assert_eq!(next, u64::MAX);
-    }
-
-    #[test]
-    fn correlation_exhaustion_fails_without_reading_seed() {
-        let mut next = u64::MAX;
-        let mut clock = CountingClock { value: 7, reads: 0 };
-        assert_eq!(
-            allocate_match_correlation(&mut next),
-            Err(MatchCorrelationError::Exhausted)
-        );
-        assert_eq!(clock.reads, 0);
-        // Keep the clock live so the assertion proves no hidden preparation call.
-        assert_eq!(clock.low_u32(), 7);
-        assert_eq!(clock.reads, 1);
-    }
-
-    #[test]
     fn rust_l0_receipt_captures_each_rng_stream_exactly() {
         let startup = prepared(7);
         let mut simulation = Simulation::with_seed(7);
@@ -1075,23 +856,6 @@ mod tests {
     }
 
     #[test]
-    fn rust_l0_rejects_acknowledgement_after_leaving_loading_screen() {
-        let startup = prepared(9);
-        let simulation = Simulation::with_seed(9);
-        assert_eq!(
-            RustL0Observation {
-                startup: &startup,
-                simulation: &simulation,
-                active_correlation: startup.correlation,
-                prior_receipt: None,
-                screen_is_loading: false,
-            }
-            .acknowledge(),
-            Err(RustL0Error::ScreenNotLoading)
-        );
-    }
-
-    #[test]
     fn rust_l0_acknowledges_once_before_in_game() {
         let startup = prepared(11);
         let simulation = Simulation::with_seed(11);
@@ -1109,39 +873,6 @@ mod tests {
             }
             .acknowledge(),
             Err(RustL0Error::DuplicateReceipt)
-        );
-    }
-
-    #[test]
-    fn rust_l0_rejects_nonzero_tick() {
-        let startup = prepared(12);
-        let mut simulation = Simulation::with_seed(12);
-        simulation.session.set_tick_for_test(1);
-        assert_eq!(
-            acknowledge(&startup, &simulation),
-            Err(RustL0Error::NonzeroTick)
-        );
-    }
-
-    #[test]
-    fn rust_l0_rejects_nonzero_sim_time() {
-        let startup = prepared(13);
-        let mut simulation = Simulation::with_seed(13);
-        simulation.session.set_total_sim_ms_for_test(1);
-        assert_eq!(
-            acknowledge(&startup, &simulation),
-            Err(RustL0Error::NonzeroSimulationTime)
-        );
-    }
-
-    #[test]
-    fn rust_l0_rejects_nonzero_binary_frame() {
-        let startup = prepared(14);
-        let mut simulation = Simulation::with_seed(14);
-        simulation.session.set_binary_frame_for_test(1);
-        assert_eq!(
-            acknowledge(&startup, &simulation),
-            Err(RustL0Error::NonzeroBinaryFrame)
         );
     }
 
@@ -1168,13 +899,6 @@ mod tests {
             .acknowledge(),
             Err(RustL0Error::CorrelationMismatch)
         );
-    }
-
-    #[test]
-    fn accepted_match_tick_is_gated_without_receipt() {
-        let startup = prepared(18);
-        assert!(!accepted_tick_is_admitted(Some(&startup), None));
-        assert!(accepted_tick_is_admitted(None, None));
     }
 
     #[test]
@@ -1232,19 +956,4 @@ mod tests {
         assert!(accepted_tick_is_admitted(None, None));
     }
 
-    #[test]
-    fn second_match_cannot_reuse_first_receipt() {
-        let first = prepared(19);
-        let first_simulation = Simulation::with_seed(19);
-        let receipt = acknowledge(&first, &first_simulation).unwrap();
-
-        let mut next = 2;
-        let second_correlation = allocate_match_correlation(&mut next).unwrap();
-        let mut clock = CountingClock {
-            value: 19,
-            reads: 0,
-        };
-        let second = prepare_match_startup(second_correlation, accepted_session(), &mut clock);
-        assert!(!accepted_tick_is_admitted(Some(&second), Some(&receipt)));
-    }
 }

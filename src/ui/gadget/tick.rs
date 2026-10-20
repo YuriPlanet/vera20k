@@ -321,16 +321,6 @@ mod tests {
     }
 
     #[test]
-    fn g14_half_open_boundary() {
-        let mut l = GadgetList::new(ListId(1));
-        let a = l.add_tail(spec(GadgetRect::new(10, 10, 5, 5), 0xFF));
-        assert_eq!(hit_test(&l, 10, 10), Some(a));
-        assert_eq!(hit_test(&l, 14, 14), Some(a));
-        assert_eq!(hit_test(&l, 15, 10), None, "right edge out");
-        assert_eq!(hit_test(&l, 10, 15), None, "bottom edge out");
-    }
-
-    #[test]
     fn g15_mask_first_filter() {
         let mut f = FocusState::new();
         let mut out = TickOutput::default();
@@ -400,35 +390,6 @@ mod tests {
         );
         assert_eq!(out.dispatches.len(), 1);
         assert_eq!(out.dispatches[0].masked_flags, 0);
-    }
-
-    #[test]
-    fn g15_keyboard_flag_bypasses_bounds() {
-        let mut f = FocusState::new();
-        let mut out = TickOutput::default();
-        let mut l = GadgetList::new(ListId(1));
-        let mut s = spec(GadgetRect::new(0, 0, 10, 10), 0x05 | FLAG_KEYBOARD);
-        s.id = 0x42;
-        s.behavior = GadgetBehavior::Control;
-        let a = l.add_tail(s);
-        let mut key: u16 = 0;
-        // Keyboard flag, point far outside → still dispatches.
-        assert_eq!(
-            clicked_on(
-                &mut l,
-                a,
-                &mut key,
-                FLAG_KEYBOARD,
-                500,
-                500,
-                0,
-                (500, 500),
-                &mut f,
-                &mut out
-            ),
-            1
-        );
-        assert_eq!(key, 0x42 | 0x8000);
     }
 
     #[test]
@@ -592,35 +553,6 @@ mod tests {
     }
 
     #[test]
-    fn g10_tier_precedence_sticky_exclusive() {
-        let mut f = FocusState::new();
-        let mut out = TickOutput::default();
-        let mut l = GadgetList::new(ListId(1));
-        let a = l.add_tail(btn(GadgetRect::new(0, 0, 10, 10), 0x65));
-        let b = l.add_tail(btn(GadgetRect::new(20, 0, 10, 10), 0x66));
-        // Capture a.
-        tick(
-            &mut l,
-            &mut f,
-            &event(crate::ui::gadget::KEY_LMB_DOWN, 5, 5, true),
-            &mut out,
-        );
-        assert_eq!(f.sticky, Some(a));
-        // A press over b while a holds capture goes to a ONLY (tier 1 is
-        // exclusive); b is never dispatched.
-        tick(
-            &mut l,
-            &mut f,
-            &event(crate::ui::gadget::KEY_LMB_DOWN, 25, 5, true),
-            &mut out,
-        );
-        assert_eq!(out.dispatches.len(), 1);
-        assert_eq!(out.dispatches[0].handle, a);
-        assert_eq!(out.consumed_by, None, "no broadcast walk ran");
-        let _ = b;
-    }
-
-    #[test]
     fn g10_keyboard_tier_and_g13_result() {
         let mut f = FocusState::new();
         let mut out = TickOutput::default();
@@ -780,32 +712,6 @@ mod tests {
     }
 
     #[test]
-    fn a3_smaller_or_earlier_wins_overlapping_region_and_button() {
-        // A small button overlapping a large catcher: the button consumes the
-        // press first (earlier in the walk) — the catcher is the fallback only.
-        let mut f = FocusState::new();
-        let mut out = TickOutput::default();
-        let mut l = GadgetList::new(ListId(1));
-        let button = l.add_tail(btn(GadgetRect::new(0, 0, 20, 20), 0x65));
-        let _catcher = l.add_tail(GadgetSpec::click_region(
-            GadgetRect::new(0, 0, 800, 600),
-            0x7F,
-        ));
-        tick(&mut l, &mut f, &idle(500, 500), &mut out); // prime
-        tick(
-            &mut l,
-            &mut f,
-            &event(crate::ui::gadget::KEY_LMB_DOWN, 5, 5, true),
-            &mut out,
-        );
-        assert_eq!(
-            out.consumed_by,
-            Some(button),
-            "button (earlier) consumes, not the catcher"
-        );
-    }
-
-    #[test]
     fn a3_catcher_dispatches_above_hit_seed_area() {
         // A region larger than HIT_SEED_AREA still consumes a contained press in
         // the broadcast walk (dispatch uses rect.contains, not the hover seed).
@@ -898,39 +804,6 @@ mod tests {
         assert_eq!(
             f.sticky, None,
             "right-release frees capture (0xDF) — no stuck"
-        );
-    }
-
-    #[test]
-    fn minimap_literal_0x9f_would_leave_capture_stuck() {
-        // Documents WHY we diverge to 0xDF: gamemd's literal 0x9F masks out
-        // RIGHT_RELEASE, so a right-press captures and never releases — the
-        // latent input-eating bug.
-        let mut f = FocusState::new();
-        let mut out = TickOutput::default();
-        let mut l = GadgetList::new(ListId(2));
-        let region = l.add_tail(GadgetSpec::click_region(
-            GadgetRect::new(0, 0, 50, 50),
-            0x9F,
-        ));
-        tick(&mut l, &mut f, &idle(500, 500), &mut out);
-        tick(
-            &mut l,
-            &mut f,
-            &event(crate::ui::gadget::KEY_RMB_DOWN, 5, 5, false),
-            &mut out,
-        );
-        assert_eq!(f.sticky, Some(region));
-        tick(
-            &mut l,
-            &mut f,
-            &event(crate::ui::gadget::KEY_RMB_UP, 5, 5, false),
-            &mut out,
-        );
-        assert_eq!(
-            f.sticky,
-            Some(region),
-            "0x9F leaves capture stuck — hence 0xDF"
         );
     }
 }

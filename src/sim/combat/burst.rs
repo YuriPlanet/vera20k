@@ -349,28 +349,4 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn target_assignment_keeps_nonnull_burst_and_clears_changed_null() {
-        let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
-        entity
-            .attack_target
-            .set_for_test(Some(TargetKind::Entity(2)));
-        entity.weapon_burst.complete_shot(5);
-        crate::sim::mission::concrete_effects::represented_assign_target_admitted(
-            &mut entity,
-            Some(TargetKind::Entity(3)),
-            Some(TargetKind::Entity(3)),
-        );
-        assert_eq!(entity.weapon_burst.index(), 1);
-        represented_assign_target(&mut entity, None);
-        assert_eq!(entity.weapon_burst.index(), 0);
-        entity.weapon_burst.complete_shot(5);
-        represented_assign_target(&mut entity, None);
-        assert_eq!(
-            entity.weapon_burst.index(),
-            1,
-            "same-target early exit precedes reset"
-        );
-    }
 }

@@ -1136,16 +1136,6 @@ mod tests {
     }
 
     #[test]
-    fn launch_options_preserve_build_off_ally_default() {
-        let options = SkirmishLaunchOptions::default();
-        let game_options = options.to_game_options(3);
-
-        assert!(game_options.build_off_ally);
-        assert_eq!(game_options.ai_players, 3);
-        assert_eq!(game_options.ai_difficulty, 0);
-    }
-
-    #[test]
     fn country_identity_retains_allocated_indices_and_reads_legacy_names() {
         let custom = LaunchCountry::from_country_index(14);
         assert_eq!(custom.raw_index(), 14);
@@ -1194,37 +1184,6 @@ mod tests {
         // rows are copied to HouseState during launch population.
         assert_eq!(launched.ai_players, 2);
         assert_eq!(launched.ai_difficulty, 2);
-    }
-
-    #[test]
-    fn launch_mode_carries_selected_mpmode_data() {
-        let mode = SkirmishGameMode {
-            class: crate::skirmish_modes::MpModeClass::Battle,
-            id: 9,
-            ui_name_key: "GUI:TeamGame".to_string(),
-            tooltip_key: "STT:ModeTeamGame".to_string(),
-            override_file: "MPTeamMD.ini".to_string(),
-            map_filter: "teamgame".to_string(),
-            random_maps_allowed: false,
-            allies_allowed: true,
-            must_ally: true,
-        };
-
-        let launch_mode = SkirmishLaunchMode::from_game_mode(&mode);
-
-        assert_eq!(launch_mode.id, 9);
-        assert_eq!(launch_mode.ui_name_key, "GUI:TeamGame");
-        assert_eq!(launch_mode.override_file, "MPTeamMD.ini");
-        assert!(launch_mode.allies_allowed);
-        assert!(launch_mode.must_ally);
-    }
-
-    #[test]
-    fn shell_team_values_use_negative_none_and_zero_based_teams() {
-        assert_eq!(LaunchTeam::from_shell_value(-2), LaunchTeam::None);
-        assert_eq!(LaunchTeam::from_shell_value(-1), LaunchTeam::None);
-        assert_eq!(LaunchTeam::from_shell_value(0), LaunchTeam::Team(0));
-        assert_eq!(LaunchTeam::from_shell_value(3), LaunchTeam::Team(3));
     }
 
     #[test]

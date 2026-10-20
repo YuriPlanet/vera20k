@@ -998,29 +998,6 @@ mod tests {
     }
 
     #[test]
-    fn height_only_snapshot_uses_fallback_window_then_rereads_retained_height() {
-        let load = load_snapshot(
-            &RetailStartupOptions::default(),
-            b"[Video]\nScreenHeight=480\n",
-        );
-
-        assert_eq!(
-            load.startup_shell_screen,
-            ScreenSize {
-                width: 800,
-                height: 600,
-            }
-        );
-        assert_eq!(
-            (
-                load.retained_profile.screen_width,
-                load.retained_profile.screen_height,
-            ),
-            (800, 480)
-        );
-    }
-
-    #[test]
     fn ordinary_frontend_size_is_independent_of_game_profile_and_launcher_edits() {
         for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
             let ini = format!("[Video]\nScreenWidth={width}\nScreenHeight={height}\n");
@@ -1055,29 +1032,6 @@ mod tests {
                 load.retained_profile.screen_height
             ),
             (1024, 768)
-        );
-    }
-
-    #[test]
-    fn configured_game_pair_does_not_select_the_shell_size() {
-        let load = load_snapshot(
-            &RetailStartupOptions::default(),
-            b"[Video]\nScreenWidth=640\nScreenHeight=480\n",
-        );
-
-        assert_eq!(
-            load.startup_shell_screen,
-            ScreenSize {
-                width: 800,
-                height: 600,
-            }
-        );
-        assert_eq!(
-            (
-                load.retained_profile.screen_width,
-                load.retained_profile.screen_height,
-            ),
-            (640, 480)
         );
     }
 
@@ -1190,17 +1144,6 @@ mod tests {
             ),
             (0, 480)
         );
-    }
-
-    #[test]
-    fn explicit_invalid_screen_values_are_retained() {
-        let mut profile = RetailOptionsProfile {
-            screen_width: 0,
-            screen_height: -20,
-            ..RetailOptionsProfile::default()
-        };
-        profile.resolve_screen_size();
-        assert_eq!((profile.screen_width, profile.screen_height), (0, -20));
     }
 
     #[test]

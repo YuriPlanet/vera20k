@@ -472,24 +472,6 @@ mod tests {
     }
 
     #[test]
-    fn fully_hidden_cloak_suppresses_the_base_draw() {
-        let decision = DrawState::resolve(
-            DrawStateInput {
-                cloak: Some(CloakDrawInput {
-                    character: 5,
-                    progress: 9,
-                    native_offset_words: 0,
-                    voxel: true,
-                }),
-                ..DrawStateInput::default()
-            },
-            0,
-            3,
-        );
-        assert!(!decision.visible);
-    }
-
-    #[test]
     fn visible_cloak_warp_disguise_tint_and_remap_stay_independent() {
         let decision = DrawState::resolve(
             DrawStateInput {

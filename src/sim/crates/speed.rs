@@ -47,7 +47,7 @@ pub(super) fn apply_speed_crate(
             announce |= sim
                 .houses
                 .get(&entity.owner())
-                .is_some_and(|house| house.player_control);
+                .is_some_and(|house| house.player_control());
         }
     }
     announce
@@ -169,7 +169,9 @@ mod tests {
                 let house = sim.houses.get_or_register_for_test(owner, || {
                     HouseState::new(owner, 0, None, false, 0, 10)
                 });
-                house.player_control = actor["player_controlled"].as_u64().unwrap_or(0) != 0;
+                house.set_player_control_for_test(
+                    actor["player_controlled"].as_u64().unwrap_or(0) != 0,
+                );
                 let category = if actor["flags"].as_u64().unwrap_or(4) & 4 == 0 {
                     EntityCategory::Structure
                 } else {

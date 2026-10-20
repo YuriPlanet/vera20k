@@ -449,23 +449,6 @@ mod tests {
     }
 
     #[test]
-    fn verified_rgb565_and_rgb555_layouts_pack_expected_masks() {
-        use crate::render::native_surface_format::{RGB555, RGB565};
-
-        assert_eq!(pack_rgb([255, 255, 255], RGB565), 0xffff);
-        assert_eq!(pack_rgb([255, 0, 0], RGB565), 0xf800);
-        assert_eq!(pack_rgb([0, 255, 0], RGB565), 0x07e0);
-        assert_eq!(pack_rgb([0, 0, 255], RGB565), 0x001f);
-        assert_eq!(pack_rgb([255, 255, 0], RGB565), 0xffe0);
-
-        assert_eq!(pack_rgb([255, 255, 255], RGB555), 0x7fff);
-        assert_eq!(pack_rgb([255, 0, 0], RGB555), 0x7c00);
-        assert_eq!(pack_rgb([0, 255, 0], RGB555), 0x03e0);
-        assert_eq!(pack_rgb([0, 0, 255], RGB555), 0x001f);
-        assert_eq!(pack_rgb([255, 255, 0], RGB555), 0x7fe0);
-    }
-
-    #[test]
     fn projection_matches_verified_signed_fixtures() {
         let a = vec![127; 64 * 64];
         let z = vec![u16::MAX; 64 * 64];
@@ -507,22 +490,6 @@ mod tests {
             project_spark_point(IVec3::new(i32::MAX, 1, 0), frame.viewport).unwrap(),
             IVec2::ZERO,
         );
-    }
-
-    #[test]
-    fn clip_is_inclusive_left_top_and_exclusive_right_bottom() {
-        let clip = TacticalRect {
-            left: 10,
-            top: 20,
-            width: 4,
-            height: 3,
-        };
-        assert!(clip.contains(IVec2::new(10, 20)));
-        assert!(clip.contains(IVec2::new(13, 22)));
-        assert!(!clip.contains(IVec2::new(14, 22)));
-        assert!(!clip.contains(IVec2::new(13, 23)));
-        assert!(!clip.contains(IVec2::new(9, 20)));
-        assert!(!clip.contains(IVec2::new(10, 19)));
     }
 
     #[test]

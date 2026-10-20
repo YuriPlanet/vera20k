@@ -376,7 +376,7 @@ impl Simulation {
             .entities
             .get(id)
             .and_then(|entity| self.houses.get(&entity.owner()))
-            .map_or(0, |house| house.waypoint_edge)
+            .map_or(0, |house| house.waypoint_edge())
     }
 
     /// Fly `Move_To @ 0x004CCC80` with a non-null coordinate. Answers whether

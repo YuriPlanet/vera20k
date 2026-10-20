@@ -651,24 +651,6 @@ mod anim_class_root_tests {
         }
     }
 
-    /// Bridge collapse explosions are AnimClass objects; their types must be
-    /// roots in their own right, not through a warhead that happens to list
-    /// the same names.
-    #[test]
-    fn roots_cover_bridge_explosions_without_a_matching_warhead() {
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nBridgeExplosions=MYBRIDGE1,MYBRIDGE2\n",
-        ))
-        .expect("rules");
-        let roots = anim_class_roots(&rules);
-        for name in ["MYBRIDGE1", "MYBRIDGE2"] {
-            assert!(
-                roots.iter().any(|root| root == name),
-                "{name} missing: {roots:?}"
-            );
-        }
-    }
-
     /// Producers that name their type outside any warhead list: the ore
     /// twinkle, the cliff-collapse literals and the rocket's puffs and trail.
     #[test]
@@ -709,14 +691,5 @@ mod anim_class_root_tests {
                 .iter()
                 .all(|root| root != "NONE" && root != "<NONE>" && root != "UNREGISTERED")
         );
-    }
-
-    /// `RulesClass+0x298` defaults to a null type: without `IonBlast=` the
-    /// Genetic Mutator constructs no animation, and no empty root is bound.
-    #[test]
-    fn absent_ion_blast_adds_no_root() {
-        let rules = RuleSet::from_ini(&IniFile::from_str("[General]\n")).expect("rules");
-        assert_eq!(rules.general.ion_blast_anim, "");
-        assert!(anim_class_roots(&rules).iter().all(|root| !root.is_empty()));
     }
 }

@@ -763,8 +763,8 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
     {
         // A hard computer house takes up the defence 90 times in 100.
         let house = sim.houses.get_mut(&americans).unwrap();
-        house.base_center = Some((42, 42));
-        house.difficulty = crate::sim::house_state::HouseDifficulty::Hard;
+        house.set_base_center_for_test(Some((42, 42)));
+        house.set_difficulty_for_test(crate::sim::house_state::HouseDifficulty::Hard);
     }
     sim.session.game_options_mut_for_test().super_weapons = true;
     sim.resolved_terrain = Some(test_grid(

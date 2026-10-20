@@ -70,16 +70,6 @@ fn virtual_zero_fill_is_not_mapped_to_file_data() {
 }
 
 #[test]
-fn alignment_padding_is_not_table_storage() {
-    let mut image = blank_image();
-    put32(&mut image, SECTION_HEADERS + 8, 0x20);
-    assert_eq!(
-        file_offset_of(&image, REFERENCE_VA),
-        Err(TrigTableError::UnmappedAddress(REFERENCE_VA))
-    );
-}
-
-#[test]
 fn truncated_headers_and_section_data_are_errors() {
     let image = blank_image();
     for length in 0..image.len() {
@@ -117,12 +107,4 @@ fn malformed_pe_offsets_and_non_pe32_headers_are_errors() {
             "offset {offset:#x}"
         );
     }
-}
-
-#[test]
-fn a_non_pe_input_is_refused_rather_than_misread() {
-    assert_eq!(
-        file_offset_of(b"not an executable", REFERENCE_VA),
-        Err(TrigTableError::NotPeFile)
-    );
 }

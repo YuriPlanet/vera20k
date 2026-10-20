@@ -177,7 +177,7 @@ impl Simulation {
             entities: &self.substrate.entities,
             anims: &self.substrate.anims,
             particles: &self.substrate.particle_systems,
-            terrain: &self.production.terrain_objects,
+            terrain: self.terrain_objects.objects(),
             interner: &self.interner,
             rules,
         };
@@ -272,7 +272,7 @@ impl Simulation {
             entities: &self.substrate.entities,
             anims: &self.substrate.anims,
             particles: &self.substrate.particle_systems,
-            terrain: &self.production.terrain_objects,
+            terrain: self.terrain_objects.objects(),
             interner: &self.interner,
             rules,
         };
@@ -522,7 +522,7 @@ mod tests {
                 entities: &sim.substrate.entities,
                 anims: &sim.substrate.anims,
                 particles: &sim.substrate.particle_systems,
-                terrain: &sim.production.terrain_objects,
+                terrain: sim.terrain_objects.objects(),
                 interner: &sim.interner,
                 rules,
             }

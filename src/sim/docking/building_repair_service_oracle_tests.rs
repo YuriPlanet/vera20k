@@ -199,8 +199,8 @@ impl Scene {
             "unit_coordinate": [at.x,at.y,at.z],
             "health": unit.health.current(),
             "estimate": unit.estimated_health.get(),
-            "balance": house.economy.credits(),
-            "spent": house.economy.spent_credits(),
+            "balance": house.economy().credits(),
+            "spent": house.economy().spent_credits(),
             "unit_mission": unit.mission.current().raw(),
             "unit_queued": unit.mission.queued().raw(),
             "unit_nav": self.nav(unit.navigation.nav_com()),
@@ -340,7 +340,7 @@ fn scene(golden: &Value, row: &Value) -> Scene {
     // either Techno is constructed. Install that same membership prerequisite.
     let owner = sim.interner.intern("Russians");
     let mut house = crate::sim::house_state::HouseState::new(owner, 1, None, true, 0, 0);
-    house.difficulty = crate::sim::house_state::HouseDifficulty::Hard;
+    house.set_difficulty_for_test(crate::sim::house_state::HouseDifficulty::Hard);
     sim.houses.register(house);
     let depot = sim
         .spawn_object(
@@ -566,8 +566,12 @@ fn scene(golden: &Value, row: &Value) -> Scene {
     }
     let owner = sim.substrate.entities.get(tank).unwrap().owner();
     let house = sim.houses.get_mut(&owner).unwrap();
-    house.economy.set_credits_for_test(int(&before["balance"]));
-    house.economy.set_spent_for_test(int(&before["spent"]));
+    house
+        .economy_mut()
+        .set_credits_for_test(int(&before["balance"]));
+    house
+        .economy_mut()
+        .set_spent_for_test(int(&before["spent"]));
     sim.scenario_rng = if let Some(hex) = row["rng_before"]["scenario"].as_str() {
         SimRng::from_native_state_hex_for_test(hex)
     } else {

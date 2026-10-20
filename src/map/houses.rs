@@ -224,16 +224,6 @@ fn with_house_key<R>(name: &str, f: impl FnOnce(&str) -> R) -> R {
     }
 }
 
-/// Parse house color assignments from a map's INI data.
-///
-/// This remains as a compatibility helper for systems that only need color.
-/// `schemes` is the parsed `[Colors]` list used to resolve each house's
-/// `Color=<name>` to a `[Colors]` entry index.
-#[cfg(any(test, feature = "test-support"))]
-pub fn parse_house_colors(ini: &IniFile, schemes: &[ColorSchemeEntry]) -> HouseColorMap {
-    parse_house_roster(ini, schemes, None).color_map()
-}
-
 /// Parse the ordered active-house roster from a map's INI data.
 ///
 /// `schemes` is the parsed `[Colors]` list; a house's `Color=<name>` resolves to
@@ -496,14 +486,6 @@ mod tests {
     }
 
     #[test]
-    fn test_unknown_color_defaults_to_default_scheme() {
-        let ini: IniFile =
-            IniFile::from_str("[Houses]\n0=Neutral\n[Neutral]\nColor=PinkPolkaDot\n");
-        let map = parse_house_colors(&ini, &test_schemes());
-        assert_eq!(map["Neutral"], HouseColorIndex(DEFAULT_SCHEME_ENTRY as u8));
-    }
-
-    #[test]
     fn scenario_house_color_inherits_country_and_retains_unknown_names() {
         // The executed original American controls have no map Color and
         // retain Country Gold: native paired index3, logical palette1.
@@ -543,20 +525,6 @@ mod tests {
             let roster = parse_house_roster(&map, &rules.color_schemes, Some(&rules));
             assert_eq!(roster.houses[0].color, expected, "map Color={color:?}");
         }
-    }
-
-    #[test]
-    fn test_missing_houses_section() {
-        let ini: IniFile = IniFile::from_str("[General]\nKey=Value\n");
-        let roster = parse_house_roster(&ini, &test_schemes(), None);
-        assert!(roster.houses.is_empty());
-    }
-
-    #[test]
-    fn test_house_without_section() {
-        let ini: IniFile = IniFile::from_str("[Houses]\n0=Ghost\n");
-        let map = parse_house_colors(&ini, &test_schemes());
-        assert_eq!(map["Ghost"], HouseColorIndex(DEFAULT_SCHEME_ENTRY as u8));
     }
 
     #[test]

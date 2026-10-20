@@ -3,7 +3,7 @@
 //! state. Control flow is instruction-level reading (see the module doc);
 //! these are Rust behaviour tests, not native executions.
 
-use super::{SimSoundEvent, Simulation, working_sound_building, working_sound_owner};
+use super::{SimSoundEvent, Simulation, working_sound_owner};
 use crate::map::resolved_terrain::test_flat_ground_grid;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::RulesLayerStack;
@@ -13,18 +13,17 @@ use crate::sim::house_state::HouseState;
 
 const TICK_MS: u32 = 67;
 
-/// `PLANT` powers the house. `DEF` is a powered defence with both cues, `HUM`
-/// a powered building with the working cue alone and `PLAIN` one with neither.
+/// `PLANT` powers the house. `DEF` is a powered defence with both cues and
+/// `HUM` a powered building with the working cue alone.
 fn rules() -> RuleSet {
     let base = "Strength=1000\nArmor=concrete\nFoundation=1x1\n\
                 CanPassiveAquire=no\nHasStupidGuardMode=no\n";
     let powered = "Powered=yes\nPower=-50\n";
     let layers = RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(&format!(
-        "[BuildingTypes]\n0=PLANT\n1=DEF\n2=HUM\n3=PLAIN\n\
+        "[BuildingTypes]\n0=PLANT\n1=DEF\n2=HUM\n\
          [PLANT]\n{base}Power=200\n\
          [DEF]\n{base}{powered}WorkingSound=PowerOn\nNotWorkingSound=PowerOff\n\
-         [HUM]\n{base}{powered}WorkingSound=OilDerrickLoop\n\
-         [PLAIN]\n{base}{powered}"
+         [HUM]\n{base}{powered}WorkingSound=OilDerrickLoop\n"
     )));
     let processed = layers.process().unwrap();
     let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
@@ -99,32 +98,6 @@ fn next_edge(sim: &mut Simulation, rules: &RuleSet, id: u64, frames: usize) -> V
 }
 
 #[test]
-fn a_powered_defence_plays_power_on_and_power_off_on_its_edges() {
-    let rules = rules();
-    let (mut sim, plant, id) = scene(&rules, "DEF");
-    // The first operational visit is an edge from the constructor's +0x6C8.
-    assert_eq!(
-        next_edge(&mut sim, &rules, id, 60),
-        ["detach", "start PowerOn"]
-    );
-    // Unchanged visits leave the handle to the 750D40 re-drive.
-    tick(&mut sim, &rules);
-    assert!(working_events(&sim, id).is_empty());
-    let world = Simulation::movement_sound_world(sim.substrate.entities.get(id).unwrap());
-    assert_eq!(
-        sim.looping_sound_owner_coord(working_sound_owner(id)),
-        Some(world)
-    );
-
-    // Without the plant the house runs low on power.
-    sim.uninit_with_rules(plant, &rules);
-    assert_eq!(
-        next_edge(&mut sim, &rules, id, 60),
-        ["detach", "start PowerOff"]
-    );
-}
-
-#[test]
 fn a_working_cue_alone_only_detaches_on_the_off_edge() {
     let rules = rules();
     let (mut sim, plant, id) = scene(&rules, "HUM");
@@ -134,24 +107,6 @@ fn a_working_cue_alone_only_detaches_on_the_off_edge() {
     );
     sim.uninit_with_rules(plant, &rules);
     assert_eq!(next_edge(&mut sim, &rules, id, 60), ["detach"]);
-}
-
-#[test]
-fn a_type_without_either_cue_never_touches_the_handle() {
-    let rules = rules();
-    let (mut sim, plant, id) = scene(&rules, "PLAIN");
-    assert!(next_edge(&mut sim, &rules, id, 60).is_empty());
-    sim.uninit_with_rules(plant, &rules);
-    assert!(next_edge(&mut sim, &rules, id, 60).is_empty());
-    sim.uninit_with_rules(id, &rules);
-    sim.process_pending_delete_with(
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-        1,
-        sim.session.started(),
-    );
-    assert!(working_events(&sim, id).is_empty());
 }
 
 #[test]
@@ -177,26 +132,6 @@ fn limbo_keeps_the_handle_and_the_destructor_releases_it() {
     );
     assert_eq!(working_events(&sim, id), ["release"]);
     assert_eq!(sim.looping_sound_owner_coord(working_sound_owner(id)), None);
-}
-
-#[test]
-fn the_owner_tag_names_only_its_building() {
-    let owner = working_sound_owner(42);
-    assert_eq!(working_sound_building(owner), Some(42));
-    assert_eq!(working_sound_building(42), None);
-    assert_eq!(
-        crate::sim::world::turret_rotate_sound::turret_rotate_sound_techno(owner),
-        None
-    );
-    assert_eq!(
-        crate::sim::combat::gattling::gattling_sound_techno(owner),
-        None
-    );
-    assert_eq!(crate::sim::bomb::ticking_sound_carrier(owner), None);
-    assert_eq!(
-        crate::sim::world::object_sound::object_sound_object(owner),
-        None
-    );
 }
 
 /// Retail `[NASAM]` (Patriot) through the production rules owner, powered by

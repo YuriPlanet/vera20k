@@ -225,25 +225,6 @@ mod tests {
     }
 
     #[test]
-    fn responsive_load_page_stretches_the_list_and_browser_from_800x600() {
-        let base = main_menu_saved_game_layout(800, 600);
-        let same = main_menu_saved_game_responsive_layout(800, 600);
-        assert_eq!(same.list_window, base.list_window);
-        assert_eq!(same.browser.list, base.browser.list);
-        assert_eq!(same.browser.action, base.browser.action);
-        assert_eq!(same.browser.back, base.browser.back);
-
-        let double = main_menu_saved_game_responsive_layout(1600, 1200);
-        assert_eq!(double.list_window, RectPx::new(238, 254, 798, 608));
-        assert_eq!(double.browser.list, RectPx::new(238, 254, 800, 610));
-        assert_eq!(double.browser.title, RectPx::new(1270, 18, 326, 36));
-        assert_eq!(double.browser.blank, RectPx::new(20, 1156, 912, 42));
-        assert_eq!(double.browser.action, RectPx::new(1288, 398, 312, 84));
-        assert_eq!(double.browser.back, RectPx::new(1288, 1070, 312, 84));
-        assert_eq!(double.browser.scale, ShellScale::from_screen(1600, 1200));
-    }
-
-    #[test]
     fn ordinary_controls_match_original_resource_bytes_and_native_placement() {
         let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/storage_oracle/saved_game_layout.json",

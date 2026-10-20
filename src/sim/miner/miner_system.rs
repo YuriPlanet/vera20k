@@ -369,7 +369,7 @@ fn harvest_looking(
                 // `MOV byte ptr [ECX+0x242], 1` at `0x0073E911`, gated on
                 // `UnitType+0xE0E` (`Harvester=yes`) — true for every kind
                 // dispatched here (slave hosts never reach this handler).
-                house.harvester_no_ore = true;
+                house.note_harvester_no_ore();
             }
             snap.dispatch_delay = NO_ORE_DELAY;
             return;
@@ -849,7 +849,7 @@ fn house_owns_dock_instance(sim: &Simulation, rules: &RuleSet, snap: &MinerSnaps
         return true;
     };
     sim.houses.get(&snap.owner).is_some_and(|house| {
-        house.tracking.owns_any_building(
+        house.tracking().owns_any_building(
             harvester
                 .dock
                 .iter()
@@ -1010,7 +1010,7 @@ fn scan_docking_type(
     if sim
         .houses
         .get(&owner)?
-        .tracking
+        .tracking()
         .owned_count(EntityCategory::Structure, type_ref)
         == 0
     {
@@ -1018,7 +1018,12 @@ fn scan_docking_type(
     }
     // CAN_LOAD runs synchronously; retain the House's native scan order
     // without holding its projection across radio owner calls.
-    let buildings = sim.houses.get(&owner)?.base_projection.buildings().to_vec();
+    let buildings = sim
+        .houses
+        .get(&owner)?
+        .base_projection()
+        .buildings()
+        .to_vec();
     let mut found: Option<u64> = None;
     let mut nearest = -1_i32;
     for &sid in &buildings {
@@ -1275,10 +1280,10 @@ pub(crate) fn effective_purifier_count(
     else {
         return real;
     };
-    if house.is_human || !sim.session.game_mode_nonzero() {
+    if house.is_human() || !sim.session.game_mode_nonzero() {
         return real;
     }
     let table = rules.general.ai_virtual_purifiers;
-    let virtual_count = table[house.difficulty.table_index()];
+    let virtual_count = table[house.difficulty().table_index()];
     real + virtual_count
 }

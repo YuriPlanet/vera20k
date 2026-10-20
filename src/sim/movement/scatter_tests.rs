@@ -291,13 +291,6 @@ fn scatter_dispatch_gate_matches_the_native_disjunction() {
     assert!(!scatter_dispatch_allowed(stock, false, false, techno(1)));
 }
 
-#[test]
-fn scatter_eligibility_defaults_are_the_rules_constructor_values() {
-    let defaults = ScatterEligibility::default();
-    assert!(!defaults.player_scatter);
-    assert_eq!(defaults.iq_scatter, 3);
-}
-
 /// The original `Scatter_Objects` dispatch (tools/spatial_oracle/cell_scatter):
 /// each row's Techno list through the production walk; a non-Techno, which VERA
 /// never lists, through the gate's cell-wide terms alone.
@@ -374,7 +367,7 @@ fn cell_scatter_dispatch_matches_original_execution() {
                 .veterancy
                 .set_rank_for_test(object["rank"].as_u64().unwrap_or(0) as u16 * 100);
             let mut house = HouseState::new(owner, 0, None, true, 0, 10);
-            house.current_iq = object["iq"].as_i64().unwrap_or(0) as i32;
+            house.set_current_iq_for_test(object["iq"].as_i64().unwrap_or(0) as i32);
             houses.register(house);
             entities.insert(entity);
             technos.push(id);
@@ -451,7 +444,7 @@ fn unforced_walk_reads_house_iq_ability_elite_and_player_scatter() {
         scatter_objects_admitted(cell, false, Some(rules), entities, houses, &interner)
     };
     for (iq, rank, expected) in [(1, 0, false), (2, 0, true), (1, 100, true)] {
-        houses.get_mut(&owner).unwrap().current_iq = iq;
+        houses.get_mut(&owner).unwrap().set_current_iq_for_test(iq);
         entities
             .get_mut(2)
             .unwrap()
@@ -463,7 +456,7 @@ fn unforced_walk_reads_house_iq_ability_elite_and_player_scatter() {
             "IQ={iq} rank={rank}"
         );
     }
-    houses.get_mut(&owner).unwrap().current_iq = 0;
+    houses.get_mut(&owner).unwrap().set_current_iq_for_test(0);
     entities.get_mut(2).unwrap().veterancy.set_rank_for_test(0);
     assert_eq!(walk(&entities, &houses, &rules(true), &[2]), vec![2]);
     let mut elite = GameEntity::test_default(3, "E1", "Soviet", 5, 5);
@@ -706,7 +699,7 @@ fn receive_damage_scatter_gates_match_original_execution() {
         let mut sim = Simulation::new();
         sim.interner = crate::sim::intern::test_interner();
         let mut house = HouseState::new(owner, 0, None, flag("human"), 0, 10);
-        house.player_control = flag("player_control");
+        house.set_player_control_for_test(flag("player_control"));
         sim.houses.register(house);
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(

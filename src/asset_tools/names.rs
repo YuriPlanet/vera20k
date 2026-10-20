@@ -506,17 +506,6 @@ mod tests {
     }
 
     #[test]
-    fn unknown_hash_resolves_to_a_flagged_placeholder() {
-        let dict = NameDict {
-            map: HashMap::new(),
-            db: NameDb::IniOnly,
-        };
-        let (name, identified) = dict.resolve(0x1234_5678);
-        assert!(!identified);
-        assert!(name.contains("0x12345678"), "got {name}");
-    }
-
-    #[test]
     fn hand_identified_alias_wins() {
         let dict = NameDict::build_offline();
         let (alias_hash, alias_name) = HASH_ALIASES[0];

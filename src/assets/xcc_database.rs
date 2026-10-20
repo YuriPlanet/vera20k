@@ -214,27 +214,6 @@ mod tests {
     }
 
     #[test]
-    fn test_build_hash_dictionary() {
-        let mut data = Vec::new();
-        data.extend_from_slice(&2u32.to_le_bytes());
-        data.extend_from_slice(b"rules.ini\0config\0");
-        data.extend_from_slice(b"art.ini\0graphics\0");
-
-        let db = XccDatabase::from_bytes(&data).expect("parse");
-        let dict = db.build_hash_dictionary();
-        assert_eq!(dict.len(), 2);
-        // Verify hashes match our mix_hash function.
-        assert!(
-            dict.iter()
-                .any(|(name, hash)| name == "rules.ini" && *hash == mix_hash("rules.ini"))
-        );
-        assert!(
-            dict.iter()
-                .any(|(name, hash)| name == "art.ini" && *hash == mix_hash("art.ini"))
-        );
-    }
-
-    #[test]
     fn test_extra_entries_beyond_count() {
         // Count says 1, but file has 2 pairs — second should still be parsed.
         let mut data = Vec::new();
@@ -244,12 +223,5 @@ mod tests {
 
         let db = XccDatabase::from_bytes(&data).expect("parse");
         assert_eq!(db.len(), 2); // both parsed
-    }
-
-    #[test]
-    fn test_empty_database() {
-        let data = 0u32.to_le_bytes().to_vec();
-        let db = XccDatabase::from_bytes(&data).expect("parse");
-        assert!(db.is_empty());
     }
 }

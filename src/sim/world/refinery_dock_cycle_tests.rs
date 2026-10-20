@@ -51,7 +51,7 @@ fn run_until_unloading(s: &mut Scene) {
 
 fn credits(s: &Scene) -> i32 {
     let owner = s.sim.interner.get("Americans").unwrap();
-    s.sim.houses[&owner].economy.credits()
+    s.sim.houses[&owner].economy().credits()
 }
 
 /// Advance one production frame; returns the owner's credits after it.
@@ -262,7 +262,11 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
         input["unlimbo_at_cell"] = true.into();
         let mut s = scene_with(&input, retail.rules.clone(), &ini);
         let owner = s.sim.interner.get("Americans").unwrap();
-        s.sim.houses.get_mut(&owner).unwrap().country = Some(owner);
+        s.sim
+            .houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_country_for_test(Some(owner));
         for (name, x, y) in [("GACNST", 20, 12), ("GAPILE", 20, 6), ("GAPOWR", 20, 3)] {
             s.sim
                 .spawn_object(name, "Americans", x, y, 0, &s.rules)
@@ -284,7 +288,7 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
         let factory = |s: &Scene| {
             s.sim
                 .production
-                .factories
+                .factories()
                 .iter_insertion_ordered()
                 .into_iter()
                 .find(|f| f.owner == owner && f.category == ProductionCategory::Infantry)
@@ -298,17 +302,17 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
         for _ in 0..1500 {
             let before = factory(&s);
             let now = s.sim.session.binary_frame();
-            let spent_before = s.sim.houses[&owner].economy.spent_credits();
+            let spent_before = s.sim.houses[&owner].economy().spent_credits();
             let cash_before = credits(&s);
             let cargo_before = sample(&s, s.miner).ore;
             frame(&mut s);
             let after = factory(&s);
-            let spent = s.sim.houses[&owner].economy.spent_credits() - spent_before;
+            let spent = s.sim.houses[&owner].economy().spent_credits() - spent_before;
             if sample(&s, s.miner).ore < cargo_before {
                 assert!(stalled, "the paid head stalled before the unload");
                 assert_eq!(cargo_before, 40);
                 assert_eq!(credits(&s), cash_before + payout - spent);
-                assert_eq!(s.sim.houses[&owner].economy.score(), score);
+                assert_eq!(s.sim.houses[&owner].economy().score(), score);
                 assert_eq!(after.object, before.object);
                 assert_eq!(after.queue, first.queue);
                 assert_eq!(after.insertion_seq, first.insertion_seq);
@@ -333,7 +337,7 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
                 let view = s
                     .sim
                     .production
-                    .factories
+                    .factories()
                     .view(owner, ProductionCategory::Infantry)
                     .unwrap();
                 assert!(view.is_running());
@@ -353,7 +357,7 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
             frame(&mut s);
             if s.sim
                 .production
-                .factories
+                .factories()
                 .view(owner, ProductionCategory::Infantry)
                 .is_some_and(|f| f.object.is_none() && f.queue.is_empty())
             {
@@ -370,9 +374,9 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
         assert_eq!(products.len(), 2);
         assert!(products.iter().any(|e| e.stable_id() == head));
         let spent = 2 * s.rules.object("E1").unwrap().cost;
-        assert_eq!(s.sim.houses[&owner].economy.spent_credits(), spent);
+        assert_eq!(s.sim.houses[&owner].economy().spent_credits(), spent);
         assert_eq!(credits(&s), 50 + payout - spent);
-        assert_eq!(s.sim.houses[&owner].economy.score(), score);
+        assert_eq!(s.sim.houses[&owner].economy().score(), score);
         assert!(!sample(&s, s.miner).tethered);
     }
     assert_eq!(phases, [true, true]);

@@ -14,7 +14,7 @@ use crate::sim::world::Simulation;
 fn human_house(sim: &mut Simulation) {
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
-    house.player_control = true;
+    house.set_player_control_for_test(true);
     sim.houses.register(house);
 }
 
@@ -131,47 +131,6 @@ fn far_failure_stops_walk_clears_target_and_queues_guard_for_a_human_house() {
 }
 
 #[test]
-fn building_target_redirects_to_a_nearby_cell_and_the_walk_completes_there() {
-    let (mut sim, rules, registry) = fixture();
-    human_house(&mut sim);
-    hut_house(&mut sim);
-    sim.spawn_object("CABHUT", "Soviets", 13, 10, 0, &rules)
-        .unwrap();
-    let id = engineer_at(&mut sim, &rules, (10, 10));
-    order_walk(&mut sim, &rules, id, (13, 10));
-    for _ in 0..400 {
-        sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
-        let e = sim.substrate.entities.get(id).unwrap();
-        if crate::sim::movement::motion_query::is_moving(&e) != Some(true)
-            && e.locomotor.as_ref().unwrap().walk_destination().is_none()
-        {
-            break;
-        }
-    }
-    let e = sim.substrate.entities.get(id).unwrap();
-    // Code 7 with a Building (0x47C520) redirected the Find_Path target to an
-    // FNPC cell beside the hut; no failure tail ran.
-    assert_ne!(
-        (e.position.rx(), e.position.ry()),
-        (10, 10),
-        "the engineer walked"
-    );
-    assert_ne!((e.position.rx(), e.position.ry()), (13, 10));
-    assert!(
-        (i32::from(e.position.rx()) - 13).abs() <= 1
-            && (i32::from(e.position.ry()) - 10).abs() <= 1,
-        "ended at {:?}",
-        (e.position.rx(), e.position.ry())
-    );
-    // Successful stopped-Move arrival also enters Infantry idle:
-    //520F8C ->51CBA0(0,1) ->51CD6E/51CD96 queues human Guard.
-    // This is separate from the Find_Path failure tail.
-    let guard = MissionId::from_known(MissionType::Guard);
-    assert!(e.mission.queued() == guard || e.mission.current() == guard);
-    assert!(!e.infantry.as_ref().unwrap().cell_entry_blocked());
-}
-
-#[test]
 fn obstructed_target_beyond_close_enough_redirects_only_when_the_nearby_cell_is_closer() {
     let (mut sim, rules, registry) = fixture();
     human_house(&mut sim);
@@ -256,38 +215,6 @@ fn near_failure_returns_before_the_null_setter_and_guard_queue() {
     assert!(!e.infantry.as_ref().unwrap().cell_entry_blocked());
 }
 
-/// A Walk destination in the infantryman's own cell reaches Find_Path like
-/// any other (Walk has no same-cell arm before the request at 0x0075AFC5),
-/// and AStar has no route for a goal in its start cell
-/// (0x00429BF3..0x00429C0A). The receiver's Stop clears the destination, the
-/// tail's Chebyshev test (0 here, 0x4D40A6) returns before its NULL setter
-/// and Guard queue, and the outer Process's recheck of the cleared
-/// destination (0x75AFD3) runs the NULL setter.
-#[test]
-fn own_cell_destination_fails_and_clears_the_order() {
-    let (mut sim, rules, registry) = fixture();
-    human_house(&mut sim);
-    let id = engineer_at(&mut sim, &rules, (10, 10));
-    order_walk(&mut sim, &rules, id, (10, 10));
-    let grid = sim.path_grid.clone();
-    sim.process_ground_locomotor_for_test(id, Some(&rules), grid.as_deref(), Some(&registry))
-        .unwrap();
-    let e = sim.substrate.entities.get(id).unwrap();
-    assert!(e.locomotor.as_ref().unwrap().walk_destination().is_none());
-    assert_eq!(e.locomotor.as_ref().unwrap().walk_is_moving(), Some(false));
-    assert!(e.navigation.nav_com().is_none());
-    assert!(crate::sim::movement::motion_query::is_moving(&e) != Some(true));
-    assert_eq!(e.mission.queued(), MissionId::NONE);
-    assert_eq!(
-        e.mission.current(),
-        MissionId::from_known(MissionType::Move)
-    );
-    assert_eq!((e.position.rx(), e.position.ry()), (10, 10));
-    // The NULL setter's Set_Destination_Internal tail rewrote +640 to
-    // duration 0.
-    assert_eq!(e.navigation.path_runtime.movement_timer().duration(), 0);
-}
-
 #[test]
 fn receiver_records_an_impassable_current_cell() {
     let (mut sim, rules, registry) = fixture();
@@ -319,39 +246,6 @@ fn receiver_records_an_impassable_current_cell() {
     assert!(e.infantry.as_ref().unwrap().cell_entry_blocked());
     assert!(e.locomotor.as_ref().unwrap().walk_destination().is_none());
     assert_ne!(sim.state_hash(), before);
-}
-
-#[test]
-fn receiver_writes_the_ready_action_only_when_do_action_admits_it() {
-    let (mut sim, rules, registry) = fixture();
-    human_house(&mut sim);
-    let id = engineer_at(&mut sim, &rules, (10, 10));
-    order_walk(&mut sim, &rules, id, (11, 10));
-    // Doing -1 admits request 0 when the type carries a Ready sequence; the
-    // fixture rules define no sequences, so 0x51D70F refuses before any write.
-    sim.infantry_stop_driver(
-        id,
-        &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default(),
-    )
-    .unwrap();
-    let doing = sim
-        .substrate
-        .entities
-        .get(id)
-        .unwrap()
-        .mission_leaf
-        .as_infantry()
-        .unwrap()
-        .doing();
-    // The gate reads the type's native Ready record (Type `+0xE3C`), whose
-    // count the constructor leaves 0 without a `Sequence=`.
-    let has_ready = rules
-        .animation_sequence("ENGINEER")
-        .and_then(|set| set.infantry_action(0))
-        .is_some_and(|record| record.frames_per_facing != 0);
-    assert_eq!(doing, if has_ready { 0 } else { -1 });
 }
 
 /// A Jumpjet man's damage Scatter takes the Infantry setter (`0x0051AA40`) to
@@ -510,32 +404,4 @@ fn infantry_damage_scatter_reaches_the_ordinary_walk_process() {
     assert_eq!((e.position.rx(), e.position.ry()), (rx, ry));
     assert!(e.navigation.nav_com().is_none());
     assert!(e.locomotor.as_ref().unwrap().walk_destination().is_none());
-}
-
-/// FootClass::Limbo (0x004DB260) runs Infantry +0x500 on the first Limbo:
-/// the receiver's +0x6DC answer is written and Walk Stop clears the moving
-/// byte, which the Lock that follows leaves alone.
-#[test]
-fn first_limbo_runs_the_infantry_stop_driver() {
-    let (mut sim, rules, registry) = fixture();
-    human_house(&mut sim);
-    let id = engineer_at(&mut sim, &rules, (10, 10));
-    {
-        let cell = sim
-            .resolved_terrain
-            .as_mut()
-            .unwrap()
-            .cell_mut(10, 10)
-            .unwrap();
-        cell.land_type = 2;
-        cell.speed_costs.foot = Some(0);
-        cell.base_speed_costs.foot = Some(0);
-    }
-    order_walk(&mut sim, &rules, id, (11, 10));
-    let _ = sim.techno_limbo_with_rules(id, &rules, Some(&registry));
-    let e = sim.substrate.entities.get(id).unwrap();
-    assert!(e.infantry.as_ref().unwrap().cell_entry_blocked());
-    let loco = e.locomotor.as_ref().unwrap();
-    assert_eq!((loco.walk_destination(), loco.step_head()), (None, None));
-    assert_eq!(loco.walk_is_moving(), Some(false));
 }

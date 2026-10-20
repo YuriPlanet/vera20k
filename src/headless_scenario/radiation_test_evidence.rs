@@ -182,7 +182,7 @@ pub fn visit_paid_deso_light_lifecycle(
                     );
                 }
                 paid_start = Some((
-                    scene.sim().houses[&owner].economy.spent_credits(),
+                    scene.sim().houses[&owner].economy().spent_credits(),
                     option.cost,
                 ));
                 assert!(!held && !delivered);
@@ -228,7 +228,7 @@ pub fn visit_paid_deso_light_lifecycle(
                 );
                 let (spent, cost) = paid_start.expect("ordinary DESO production was requested");
                 assert!(
-                    scene.sim().houses[&owner].economy.spent_credits() >= spent + cost,
+                    scene.sim().houses[&owner].economy().spent_credits() >= spent + cost,
                     "paid head must finish charging before world delivery"
                 );
                 delivered = true;

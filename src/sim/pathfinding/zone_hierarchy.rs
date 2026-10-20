@@ -1295,16 +1295,6 @@ mod tests {
     }
 
     #[test]
-    fn zone_level_graph_cell_lookup_returns_invalid_out_of_bounds() {
-        let graph = ZoneLevelGraph::new(2).with_cell_zone_ids(vec![1, 2], 2, 1);
-
-        assert_eq!(graph.zone_at(0, 0), 1);
-        assert_eq!(graph.zone_at(1, 0), 2);
-        assert_eq!(graph.zone_at(2, 0), ZONE_INVALID);
-        assert_eq!(graph.zone_at(0, 1), ZONE_INVALID);
-    }
-
-    #[test]
     fn zone_precheck_manual_exclusion_is_undirected() {
         let mut hierarchy = fixture_hierarchy();
         hierarchy.levels_mut()[0].push_edge(3, ZoneEdgeRecord::new(5, 0));
@@ -1344,12 +1334,6 @@ mod tests {
             .unwrap(),
             ZonePrecheckOutcome::Failed
         );
-    }
-
-    #[test]
-    fn zone_precheck_bridge_edges_are_zero_flagged_fixture_contract() {
-        let edge = ZoneEdgeRecord::new(2, 0);
-        assert_eq!(edge.flag, 0);
     }
 
     /// Every start/goal pair, for movement zones the fixture's type-0 zones

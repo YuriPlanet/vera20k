@@ -451,7 +451,7 @@ impl App {
         let layout = Self::skirmish_choose_map_layout(state);
         state.frontend.skirmish_shell_state.choose_map_modal =
             Some(crate::ui::skirmish_shell::ChooseMapModalState::open(
-                if state.frontend.shell_route.lan_setup() {
+                if state.frontend.shell_route.network_setup() {
                     crate::ui::skirmish_shell::ChooseMapContext::Network {
                         observer: state
                             .match_state
@@ -548,8 +548,8 @@ impl App {
             return false;
         };
 
-        if state.frontend.shell_route.lan_setup() {
-            return match crate::app::shell_lan_setup::commit_map_selection(
+        if state.frontend.shell_route.network_setup() {
+            return match crate::app::shell_network_setup::commit_map_selection(
                 state,
                 selection.mode_id,
                 map_idx,
@@ -737,7 +737,7 @@ impl App {
         else {
             return false;
         };
-        if state.frontend.shell_route.lan_setup() {
+        if state.frontend.shell_route.network_setup() {
             return state
                 .match_state
                 .session

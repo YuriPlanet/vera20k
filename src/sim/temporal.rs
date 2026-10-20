@@ -362,7 +362,7 @@ impl Simulation {
                         let requested = Some(crate::sim::combat::TargetKind::Entity(bunker));
                         let stored = crate::sim::mission::concrete_effects::assign_target_stored(
                             &self.substrate.entities,
-                            &self.production.terrain_objects,
+                            self.terrain_objects.objects(),
                             firer,
                             requested,
                             Some((rules, &self.interner)),

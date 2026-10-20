@@ -115,34 +115,6 @@ fn a_batched_answer_is_the_scan_itself() {
     assert_eq!(batched.state_hash(), serial.state_hash());
 }
 
-/// An attack-mover's Arrival_Target_Handler takes the answer too.
-#[test]
-fn an_attack_movers_handler_takes_the_answer() {
-    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &fixture.rules;
-    let attack_move = |sim: &mut Simulation, scanner: u64| {
-        sim.substrate
-            .entities
-            .get_mut(scanner)
-            .unwrap()
-            .mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(Some(
-            TargetKind::Cell(28, 12),
-        ));
-    };
-    let (mut serial, scanner, _) = scene(rules);
-    attack_move(&mut serial, scanner);
-    let live = scan(&mut serial, rules, scanner);
-    assert!(live.is_some(), "the attack-mover picks a rifleman");
-    let (mut batched, _, _) = scene(rules);
-    attack_move(&mut batched, scanner);
-    batched.answer_batched_scans(Some(rules), None);
-    assert_eq!(scan(&mut batched, rules, scanner), live);
-    assert_eq!(batched.batched_scans_used(), 1);
-    assert_eq!(batched.state_hash(), serial.state_hash());
-}
-
 /// An Area Guard rifleman posted at its cell, its handler due: the handler's
 /// scan around the post takes the answer, and a post that moved before its
 /// turn scans live.
@@ -176,27 +148,6 @@ fn an_area_guards_handler_takes_the_answer_for_its_post() {
     assert_eq!(moved.batched_scans_used(), 0);
 }
 
-/// Area Guard picks beyond weapon range, within its doubled radius: a lone
-/// rifleman seven cells out is the answer, and the scan takes it.
-#[test]
-fn an_area_guard_takes_a_pick_beyond_weapon_range() {
-    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &fixture.rules;
-    let far = [(19, 12)];
-    let (mut serial, scanner, riflemen) = scene_with(rules, &far);
-    area_guard(&mut serial, scanner, (12, 12));
-    let live = run_mission(&mut serial, rules, scanner);
-    assert_eq!(live, Some(TargetKind::Entity(riflemen[0])));
-    let (mut batched, _, _) = scene_with(rules, &far);
-    area_guard(&mut batched, scanner, (12, 12));
-    batched.answer_batched_scans(Some(rules), None);
-    assert_eq!(run_mission(&mut batched, rules, scanner), live);
-    assert_eq!(batched.batched_scans_used(), 1);
-    assert_eq!(batched.state_hash(), serial.state_hash());
-}
-
 /// An Area Guard far from its post walks back first: the leash gives it a
 /// NavCom before its scan, which GetFireError reads, so it scans live.
 #[test]
@@ -227,104 +178,48 @@ fn an_area_guard_sent_back_to_its_post_scans_live() {
     assert_eq!(batched.state_hash(), serial.state_hash());
 }
 
-/// A hunter's handler scans the whole map: a rifleman across the arena is
-/// the answer, and the scan takes it.
+/// An answer invalidated before the scanner's turn is not taken, and the
+/// scanner scans live: a pick that went into limbo fails the drop step's
+/// GetFireError, a pick the pointer-expiry broadcast reached (a kill's or a
+/// cloak's Detach_All) or the scanner's house captured is passed over for
+/// the other rifleman, and a scanner that no longer stands as it did when the
+/// pass began scans afresh.
 #[test]
-fn a_hunters_handler_takes_the_answer() {
-    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &fixture.rules;
-    let far = [(26, 26)];
-    let hunt = crate::sim::mission::MissionType::Hunt;
-    let (mut serial, scanner, riflemen) = scene_with(rules, &far);
-    on_mission(&mut serial, scanner, hunt);
-    let live = run_mission(&mut serial, rules, scanner);
-    assert_eq!(live, Some(TargetKind::Entity(riflemen[0])));
-    let (mut batched, _, _) = scene_with(rules, &far);
-    on_mission(&mut batched, scanner, hunt);
-    batched.answer_batched_scans(Some(rules), None);
-    assert_eq!(run_mission(&mut batched, rules, scanner), live);
-    assert_eq!(batched.batched_scans_used(), 1);
-    assert_eq!(batched.state_hash(), serial.state_hash());
-}
-
-/// A pick that went into limbo before the scanner's turn fails the drop
-/// step's GetFireError, and the scanner scans live for the other rifleman.
-#[test]
-fn a_pick_gone_before_the_turn_is_scanned_live() {
+fn an_invalidated_answer_is_scanned_live() {
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
     let rules = &fixture.rules;
     let (first, other) = live_pick(rules);
-    let (mut batched, scanner, _) = scene(rules);
-    batched.answer_batched_scans(Some(rules), None);
-    batched
-        .substrate
-        .entities
-        .get_mut(first)
-        .unwrap()
-        .lifecycle
-        .set_in_limbo_for_test(true);
-    assert_eq!(
-        scan(&mut batched, rules, scanner),
-        Some(TargetKind::Entity(other))
-    );
-    assert_eq!(batched.batched_scans_used(), 0);
-}
-
-/// A pick the pointer-expiry broadcast reached before the scanner's turn (a
-/// kill's or a cloak's Detach_All) is not taken.
-#[test]
-fn a_released_pick_is_scanned_live() {
-    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &fixture.rules;
-    let (first, _) = live_pick(rules);
-    let (mut batched, scanner, _) = scene(rules);
-    batched.answer_batched_scans(Some(rules), None);
-    batched.detach_all_pointer_expired(first, rules, None, FrameEffects::default());
-    assert!(scan(&mut batched, rules, scanner).is_some());
-    assert_eq!(batched.batched_scans_used(), 0);
-}
-
-/// A pick captured by the scanner's house before its turn is not taken; the
-/// scanner scans live for the other rifleman.
-#[test]
-fn a_captured_pick_is_scanned_live() {
-    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &fixture.rules;
-    let (first, other) = live_pick(rules);
-    let (mut batched, scanner, _) = scene(rules);
-    batched.answer_batched_scans(Some(rules), None);
-    let americans = batched.substrate.entities.get(scanner).unwrap().owner();
-    batched.change_owner(first, americans);
-    assert_eq!(
-        scan(&mut batched, rules, scanner),
-        Some(TargetKind::Entity(other))
-    );
-    assert_eq!(batched.batched_scans_used(), 0);
-}
-
-/// A scanner that no longer stands as it did when the pass began scans
-/// live.
-#[test]
-fn a_changed_scanner_scans_live() {
-    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &fixture.rules;
-    let (mut batched, scanner, _) = scene(rules);
-    batched.answer_batched_scans(Some(rules), None);
-    let entity = batched.substrate.entities.get_mut(scanner).unwrap();
-    let facing = entity.body_facing.current(100).wrapping_add(0x2000);
-    entity.body_facing.snap(facing, 100);
-    assert!(scan(&mut batched, rules, scanner).is_some());
-    assert_eq!(batched.batched_scans_used(), 0);
+    for case in ["limbo", "released", "captured", "turned"] {
+        let (mut batched, scanner, _) = scene(rules);
+        batched.answer_batched_scans(Some(rules), None);
+        match case {
+            "limbo" => {
+                let entity = batched.substrate.entities.get_mut(first).unwrap();
+                entity.lifecycle.set_in_limbo_for_test(true);
+            }
+            "released" => {
+                batched.detach_all_pointer_expired(first, rules, None, FrameEffects::default());
+            }
+            "captured" => {
+                let americans = batched.substrate.entities.get(scanner).unwrap().owner();
+                batched.change_owner(first, americans);
+            }
+            _ => {
+                let entity = batched.substrate.entities.get_mut(scanner).unwrap();
+                let facing = entity.body_facing.current(100).wrapping_add(0x2000);
+                entity.body_facing.snap(facing, 100);
+            }
+        }
+        let pick = scan(&mut batched, rules, scanner);
+        if matches!(case, "limbo" | "captured") {
+            assert_eq!(pick, Some(TargetKind::Entity(other)), "{case}");
+        } else {
+            assert!(pick.is_some(), "{case}");
+        }
+        assert_eq!(batched.batched_scans_used(), 0, "{case}");
+    }
 }
 
 /// An answer whose lookups stamped its copy of the Dummy (the east

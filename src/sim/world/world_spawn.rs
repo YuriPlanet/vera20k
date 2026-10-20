@@ -664,7 +664,7 @@ impl Simulation {
             &map_ent.owner,
             &self.interner,
         ) {
-            MapEntityOwner::Registered(house.name)
+            MapEntityOwner::Registered(house.name())
         } else if !require_owner && self.houses.is_empty() {
             MapEntityOwner::UnregisteredDiagnostic
         } else {
@@ -2354,14 +2354,14 @@ impl Simulation {
                 && !house.is_controlled_by_human(true))
             .then(|| {
                 let country_name = house
-                    .country
+                    .country()
                     .map(|country| self.interner.resolve(country).to_owned());
                 (
                     country_name,
-                    house.side_index,
-                    house.difficulty,
-                    house.tech_level,
-                    house.base_plan.nodes.is_empty(),
+                    house.side_index(),
+                    house.difficulty(),
+                    house.tech_level(),
+                    house.base_plan().nodes().is_empty(),
                 )
             })
         });
@@ -2571,9 +2571,9 @@ impl Simulation {
                 .houses
                 .get_mut(&owner_id)
                 .expect("qualifying deploy owner remains registered");
-            if house.base_plan.nodes.is_empty() {
+            if house.base_plan().nodes().is_empty() {
                 recalc_base_plan(
-                    &mut house.base_plan,
+                    house.base_plan_mut(),
                     rules,
                     &self.type_tech_levels,
                     country_name
@@ -2586,10 +2586,10 @@ impl Simulation {
                     &mut self.scenario_rng,
                 );
             }
-            if let Some(node_zero) = house.base_plan.nodes.first_mut() {
-                node_zero.packed_cell = pack_base_plan_cell(i32::from(rx), i32::from(ry));
-            }
-            house.base_plan_center = (rx, ry);
+            house
+                .base_plan_mut()
+                .anchor_first_node(pack_base_plan_cell(i32::from(rx), i32::from(ry)));
+            house.anchor_base_plan((rx, ry));
             house.enable_ai_deploy_latches();
             self.move_ground_forces_to_base(owner_id, rules, registry, frame_effects);
         }
@@ -2869,7 +2869,7 @@ impl Simulation {
         }
         self.houses
             .get(&entity.owner())
-            .is_some_and(|house| house.is_human)
+            .is_some_and(|house| house.is_human())
     }
 }
 

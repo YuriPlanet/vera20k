@@ -27,8 +27,9 @@ use cooperative::{
     CooperativeProgressRecord, CooperativeProgressState, CooperativeRegistry,
     draw_country_for_progress,
 };
+pub(crate) use persistence::SetupProfile;
 use persistence::{
-    MultiplayerSetupSnapshot, SKIRMISH_PERSISTED_SLOT_COUNT, SetupProfile, SkirmishGlobalDefaults,
+    MultiplayerSetupSnapshot, SKIRMISH_PERSISTED_SLOT_COUNT, SkirmishGlobalDefaults,
     SkirmishPersistedSlot, read_setup_snapshot,
 };
 
@@ -98,6 +99,7 @@ pub(crate) struct CooperativeSetupView<'a> {
 pub(crate) struct MultiplayerShellRuntime {
     snapshot: MultiplayerSetupSnapshot,
     lan_snapshot: MultiplayerSetupSnapshot,
+    wol_snapshot: MultiplayerSetupSnapshot,
     // These preferences mirror the process INI8870C0. Native6980C0 does not
     // reopen RA2MD.INI on a child-dialog visit; keep accepted in-memory values
     // rather than replacing them with an unsolicited disk refresh.
@@ -199,10 +201,20 @@ impl MultiplayerShellRuntime {
         }
     }
 
-    /// Restore Session+208's own LAN profile. Slot01..07 describe visible
-    /// rows1..7; row0 is the new local host. 697F10 uses defaults2/2 here.
-    pub(crate) fn new_lan_setup(
+    fn network_snapshot(&self, profile: SetupProfile) -> &MultiplayerSetupSnapshot {
+        match profile {
+            SetupProfile::Lan => &self.lan_snapshot,
+            SetupProfile::Wol => &self.wol_snapshot,
+            SetupProfile::Skirmish => unreachable!("offline Skirmish is not a network profile"),
+        }
+    }
+
+    /// Restore Session+208's LAN or Session+284's WOL profile (5ED5A0 with
+    /// the profile in EDX). Slot01..07 describe visible rows1..7; row0 is the
+    /// new local host. 697F10 uses defaults2/2 for both.
+    pub(crate) fn new_network_setup(
         &self,
+        profile: SetupProfile,
         catalog: &crate::app::scenario_catalog::ScenarioCatalog,
         modes: &[SkirmishGameMode],
         mut options: crate::skirmish_launch::SkirmishLaunchOptions,
@@ -217,10 +229,10 @@ impl MultiplayerShellRuntime {
             AiDifficulty, LaunchStartPosition, LaunchTeam, PreFillHouseRoster, SkirmishAiSlot,
             SkirmishLaunchMode,
         };
-        let snapshot = &self.lan_snapshot;
+        let snapshot = self.network_snapshot(profile);
         let mode = mode_by_id(modes, snapshot.game_mode)
             .or_else(|| modes.first())
-            .ok_or_else(|| anyhow::anyhow!("LAN setup has no game mode"))?;
+            .ok_or_else(|| anyhow::anyhow!("network setup has no game mode"))?;
         let records = catalog.records();
         let preferred = usize::try_from(snapshot.scenario_index).unwrap_or(0);
         let selected = records
@@ -231,7 +243,7 @@ impl MultiplayerShellRuntime {
                     crate::map::skirmish_scenarios::record_matches_mode(record, mode)
                 })
             })
-            .ok_or_else(|| anyhow::anyhow!("LAN game mode has no eligible map"))?;
+            .ok_or_else(|| anyhow::anyhow!("network game mode has no eligible map"))?;
         options.game_speed = game_speed_from_visual_position(
             bounds
                 .range(SkirmishTrackbarId::GameSpeed0x529)
@@ -306,10 +318,12 @@ impl MultiplayerShellRuntime {
         Ok((launch, vacancies))
     }
 
-    /// 5ED400 snapshots current controls into the retained LAN profile at
-    /// Back/Start. It neither resolves random choices nor persists MultiPlayer.
-    pub(crate) fn remember_lan_setup(
+    /// 5ED400 snapshots current controls into the retained LAN or WOL
+    /// profile at Back/Start. It neither resolves random choices nor persists
+    /// MultiPlayer.
+    pub(crate) fn remember_network_setup(
         &mut self,
+        profile: SetupProfile,
         launch: &SkirmishLaunchSession,
         vacancies: [Option<crate::app::match_runtime::session::NetworkVacancy>; 8],
         row_choices: [Option<crate::skirmish_launch::SkirmishLocalSlot>; 8],
@@ -317,7 +331,11 @@ impl MultiplayerShellRuntime {
     ) {
         use crate::app::match_runtime::session::NetworkVacancy;
         use crate::skirmish_launch::AiDifficulty;
-        let snapshot = &mut self.lan_snapshot;
+        let snapshot = match profile {
+            SetupProfile::Lan => &mut self.lan_snapshot,
+            SetupProfile::Wol => &mut self.wol_snapshot,
+            SetupProfile::Skirmish => unreachable!("offline Skirmish is not a network profile"),
+        };
         snapshot.game_mode = launch.mode.id;
         snapshot.scenario_index = catalog
             .records()
@@ -414,14 +432,20 @@ impl MultiplayerShellRuntime {
         }
     }
 
-    pub(crate) fn persist_lan_setup(&mut self) {
+    /// SessionClass__WriteMultiPlayerSettings 6990A0 writes every profile;
+    /// only the network profile the setup edited can differ from disk.
+    pub(crate) fn persist_network_setup(&mut self, profile: SetupProfile) {
         self.persist_preferences(|runtime, existing| {
             let preferences = runtime.update_local_preference_bytes(existing);
-            runtime.lan_snapshot.update_ini_bytes(&preferences)
+            runtime
+                .network_snapshot(profile)
+                .update_ini_bytes(&preferences)
         });
     }
 
-    pub(crate) fn set_lan_name(&mut self, name: &str) {
+    /// Session handle `[0xA8B380]`: BB's name edit, and the WOL nickname
+    /// after a successful login (`0x007864C0`).
+    pub(crate) fn set_handle(&mut self, name: &str) {
         self.local_preferences.handle_bytes = crate::util::native_string::acp_encode(name);
         self.local_preferences
             .handle_bytes
@@ -559,12 +583,18 @@ impl MultiplayerShellRuntime {
             .map(cooperative_country_roster_from_rules)
             .unwrap_or_default();
         let ini_path = ra2_dir.map(|root| root.join(RA2MD_INI));
-        let (snapshot, lan_snapshot, local_preferences, lan_observer_mode, settings_ini) =
-            load_persistence(ini_path.as_deref(), defaults);
+        let (
+            snapshot,
+            [lan_snapshot, wol_snapshot],
+            local_preferences,
+            lan_observer_mode,
+            settings_ini,
+        ) = load_persistence(ini_path.as_deref(), defaults);
 
         Self {
             snapshot,
             lan_snapshot,
+            wol_snapshot,
             local_preferences,
             settings_ini,
             lan_observer_mode,
@@ -1213,7 +1243,7 @@ fn load_persistence(
     defaults: SkirmishGlobalDefaults,
 ) -> (
     MultiplayerSetupSnapshot,
-    MultiplayerSetupSnapshot,
+    [MultiplayerSetupSnapshot; 2],
     LocalMultiplayerPreferences,
     i32,
     Vec<u8>,
@@ -1221,7 +1251,8 @@ fn load_persistence(
     let fallback = || {
         (
             MultiplayerSetupSnapshot::from_global_defaults(defaults, SetupProfile::Skirmish),
-            MultiplayerSetupSnapshot::from_global_defaults(defaults, SetupProfile::Lan),
+            [SetupProfile::Lan, SetupProfile::Wol]
+                .map(|profile| MultiplayerSetupSnapshot::from_global_defaults(defaults, profile)),
             LocalMultiplayerPreferences::default(),
             0,
             Vec::new(),
@@ -1245,13 +1276,14 @@ fn load_persistence(
                 ini.section_or_empty("MultiPlayer")
                     .read_int("ObserverMode", 0)
             });
-            let lan =
-                read_setup_snapshot(&bytes, defaults, SetupProfile::Lan).unwrap_or_else(|_| {
-                    MultiplayerSetupSnapshot::from_global_defaults(defaults, SetupProfile::Lan)
-                });
+            let network = [SetupProfile::Lan, SetupProfile::Wol].map(|profile| {
+                read_setup_snapshot(&bytes, defaults, profile).unwrap_or_else(|_| {
+                    MultiplayerSetupSnapshot::from_global_defaults(defaults, profile)
+                })
+            });
             (
                 snapshot,
-                lan,
+                network,
                 read_initial_local_preference_fields(&bytes),
                 observer,
                 bytes,
@@ -1486,6 +1518,10 @@ mod tests {
                 defaults(),
                 SetupProfile::Lan,
             ),
+            wol_snapshot: MultiplayerSetupSnapshot::from_global_defaults(
+                defaults(),
+                SetupProfile::Wol,
+            ),
             local_preferences: LocalMultiplayerPreferences::default(),
             settings_ini: Vec::new(),
             lan_observer_mode: 0,
@@ -1507,6 +1543,10 @@ mod tests {
             lan_snapshot: MultiplayerSetupSnapshot::from_global_defaults(
                 defaults(),
                 SetupProfile::Lan,
+            ),
+            wol_snapshot: MultiplayerSetupSnapshot::from_global_defaults(
+                defaults(),
+                SetupProfile::Wol,
             ),
             local_preferences: LocalMultiplayerPreferences::default(),
             settings_ini: Vec::new(),
@@ -1551,7 +1591,8 @@ mod tests {
         ]);
         let modes = [mode()];
         let (launch, vacancies) = owner
-            .new_lan_setup(
+            .new_network_setup(
+                SetupProfile::Lan,
                 &catalog,
                 &modes,
                 crate::skirmish_launch::SkirmishLaunchOptions::default(),
@@ -1573,7 +1614,9 @@ mod tests {
         assert_eq!(vacancies[2], NetworkVacancy::Closed);
         assert_eq!(vacancies[3], NetworkVacancy::Open);
         let offline_before = owner.snapshot.clone();
-        owner.remember_lan_setup(
+        let wol_before = owner.wol_snapshot.clone();
+        owner.remember_network_setup(
+            SetupProfile::Lan,
             &launch,
             std::array::from_fn(|row| Some(vacancies[row])),
             std::array::from_fn(|_| None),
@@ -1581,9 +1624,24 @@ mod tests {
         );
         assert_eq!(owner.lan_snapshot.slots[0].row_type, 4);
         assert_eq!(owner.snapshot, offline_before);
+        // C2/C9 keep their own Session+284 WonlinePref profile.
+        assert_eq!(owner.wol_snapshot, wol_before);
+        let (wol, wol_vacancies) = owner
+            .new_network_setup(
+                SetupProfile::Wol,
+                &catalog,
+                &modes,
+                crate::skirmish_launch::SkirmishLaunchOptions::default(),
+                crate::ui::skirmish_shell::SkirmishTrackbarBounds::default(),
+                false,
+            )
+            .unwrap();
+        assert!(wol.opponents.is_empty());
+        assert_eq!(wol_vacancies, [NetworkVacancy::Open; 8]);
         owner.set_lan_observer(true);
         let (observer, _) = owner
-            .new_lan_setup(
+            .new_network_setup(
+                SetupProfile::Lan,
                 &catalog,
                 &modes,
                 crate::skirmish_launch::SkirmishLaunchOptions::default(),

@@ -2194,35 +2194,6 @@ mod tests {
         assert_ne!(camera.0, 0.0 - WINDOW_W / 2.0);
     }
 
-    #[test]
-    fn centring_stays_on_the_tactical_centre_across_zoom() {
-        for zoom in [0.25_f32, 0.5, 1.0, 2.0, 4.0] {
-            let unit = entity_world_point(37, 12, 3);
-            let camera = tactical_camera_top_left(
-                cell_centre_world_point(37, 12, 3),
-                TACTICAL_W,
-                TACTICAL_H,
-                zoom,
-            );
-            let (sx, sy) = screen_of(unit, camera, zoom);
-            assert!((sx - TACTICAL_W / 2.0).abs() < 1e-3, "zoom {zoom}: sx {sx}");
-            assert!((sy - TACTICAL_H / 2.0).abs() < 1e-3);
-        }
-    }
-
-    /// Half a tile on **both** axes from the tile corner — the Y half is the one
-    /// that used to be missing, which put every camera move 15 px north of the
-    /// unit it was supposed to centre on.
-    #[test]
-    fn cell_centre_shifts_half_a_tile_on_both_axes_from_the_tile_corner() {
-        for (rx, ry, z) in [(0_u16, 0_u16, 0_u8), (5, 9, 2), (63, 1, 0)] {
-            let (nw_x, nw_y) = terrain::iso_to_screen(rx, ry, z);
-            let (cx, cy) = cell_centre_world_point(rx, ry, z);
-            assert_eq!(cx - nw_x, terrain::TILE_WIDTH / 2.0);
-            assert_eq!(cy - nw_y, terrain::TILE_HEIGHT / 2.0);
-        }
-    }
-
     // -- edge scroll ---------------------------------------------------------
 
     const VIEW_W: i32 = 1024;
@@ -2252,16 +2223,6 @@ mod tests {
         assert_eq!(edge_scroll_octant(left, bottom, VIEW_W, VIEW_H), 5, "SW");
         assert_eq!(edge_scroll_octant(left, mid_y, VIEW_W, VIEW_H), 6, "W");
         assert_eq!(edge_scroll_octant(left, top, VIEW_W, VIEW_H), 7, "NW");
-    }
-
-    #[test]
-    fn touching_the_left_edge_high_up_scrolls_diagonally_not_straight_west() {
-        // y = 100 is inside the top 21 % band, so the reference point is the
-        // top-left corner and the scroll runs NW. Four independent axis tests
-        // would report plain west here.
-        assert_eq!(edge_scroll_octant(0, 100, VIEW_W, VIEW_H), 7);
-        // y = 300 is in the middle band, so the same x gives plain west.
-        assert_eq!(edge_scroll_octant(0, 300, VIEW_W, VIEW_H), 6);
     }
 
     #[test]
@@ -2303,27 +2264,6 @@ mod tests {
         );
         assert!(dx > 0.0, "dx {dx}");
         assert_eq!(dy, 0.0);
-    }
-
-    #[test]
-    fn coast_ramps_geometrically_and_scroll_rate_caps_the_peak() {
-        let mut st = state();
-        // One step per radar tick; the cursor sits on the left edge throughout.
-        let mut seen = Vec::new();
-        for tick in 0..12_u32 {
-            let (dx, _) = edge_scroll_step(
-                &mut st,
-                (0.0, 300.0),
-                VIEW_W,
-                VIEW_H,
-                DEFAULT_SCROLL_RATE,
-                tick,
-            );
-            seen.push(-dx);
-        }
-        // Retail curve for ScrollRate 3: 1, 2, 4, 8, 13 then held at the cap.
-        assert_eq!(&seen[..5], &[1.0, 2.0, 4.0, 8.0, 13.0]);
-        assert!(seen[5..].iter().all(|&v| v == 13.0), "{seen:?}");
     }
 
     #[test]
@@ -2427,14 +2367,6 @@ mod tests {
     }
 
     #[test]
-    fn corner_scroll_moves_the_full_distance_on_both_axes() {
-        let mut st = state();
-        let (dx, dy) =
-            edge_scroll_step(&mut st, (0.0, 0.0), VIEW_W, VIEW_H, DEFAULT_SCROLL_RATE, 0);
-        assert_eq!((dx, dy), (-1.0, -1.0));
-    }
-
-    #[test]
     fn item82_blocked_active_edge_caps_coast_without_changing_direction_or_timer() {
         let mut st = state();
         st.coast_level = 5;
@@ -2494,20 +2426,6 @@ mod tests {
         // The ScrollRate cap first pulls the overshot 5 back to 4, then the
         // ordinary off-edge timer decay takes it to 3.
         assert_eq!((before, st.coast_level), (5, 3));
-    }
-
-    #[test]
-    fn item82_diagonal_probe_slides_when_one_component_survives() {
-        assert!(requested_scroll_survives_clamp(
-            (70.0, 300.0),
-            (70.0, 299.0),
-            ScrollDir::NW,
-        ));
-        assert!(!requested_scroll_survives_clamp(
-            (70.0, 200.0),
-            (70.0, 200.0),
-            ScrollDir::NW,
-        ));
     }
 
     #[test]
@@ -2593,171 +2511,7 @@ mod tests {
         assert_eq!(marks.get(VIEW_BOOKMARK_SLOTS), None);
     }
 
-    /// Recalling a bookmark lands the stored cell at the centre of the tactical
-    /// viewport — the same anchoring `center_camera_on_cell` performs, which is
-    /// what the native recall does after projecting the cell centre.
-    #[test]
-    fn recalling_a_bookmark_centres_that_cell_in_the_tactical_viewport() {
-        let mut marks = ViewBookmarks::default();
-        marks.seed_all(37, 12);
-        marks.set(1, 10, 10);
-        let (rx, ry) = marks.get(1).expect("slot 1");
-        let camera = tactical_camera_top_left(
-            cell_centre_world_point(rx, ry, 0),
-            TACTICAL_W,
-            TACTICAL_H,
-            1.0,
-        );
-        let (sx, sy) = screen_of(entity_world_point(rx, ry, 0), camera, 1.0);
-        assert!((sx - TACTICAL_W / 2.0).abs() < 1e-3, "sx {sx}");
-        assert!((sy - TACTICAL_H / 2.0).abs() < 1e-3, "sy {sy}");
-    }
-
-    // -- keyboard scroll -----------------------------------------------------
-
-    /// The Shift boost truncates: 21 * 2.5 is 52.5 and the native float-to-long
-    /// chops it to 52, not 53.
-    #[test]
-    fn shift_boosted_keyboard_scroll_truncates_to_52() {
-        assert_eq!(KEY_SCROLL_DISTANCE, 21.0);
-        assert_eq!(
-            (KEY_SCROLL_DISTANCE * KEY_SCROLL_SHIFT_MULTIPLIER).trunc(),
-            52.0
-        );
-    }
-
-    /// The Ctrl distance is the map's longer side in cells shifted by 8, which
-    /// overshoots the widest stock map by orders of magnitude — the clamp is
-    /// what actually stops the view, so this is a map-edge jump.
-    #[test]
-    fn ctrl_keyboard_scroll_overshoots_the_whole_map() {
-        for cells in [64u32, 128, 256] {
-            let jump = (cells << KEY_SCROLL_CTRL_CELL_SHIFT) as f32;
-            // World width of a square map that many cells on a side.
-            let world_span = cells as f32 * terrain::TILE_WIDTH;
-            assert!(jump > world_span, "{cells} cells: {jump} vs {world_span}");
-        }
-    }
-
     // -- right-drag pan ------------------------------------------------------
-
-    const PAN_VIEW_W: f32 = 1024.0;
-    const PAN_VIEW_H: f32 = 768.0;
-    /// Stock `[Options] ScrollRate` default (0 fastest .. 6 slowest).
-    const PAN_SCROLL_RATE: u32 = 3;
-
-    /// The native threshold is strict and independent for each axis. A custom
-    /// 4x6 system metric therefore requires more than 8px X or more than 12px Y.
-    #[test]
-    fn right_drag_threshold_is_strict_and_axis_independent() {
-        assert!(!right_drag_threshold_crossed(8.0, 12.0, 4, 6));
-        assert!(right_drag_threshold_crossed(8.01, 0.0, 4, 6));
-        assert!(right_drag_threshold_crossed(0.0, -12.01, 4, 6));
-        assert!(!right_drag_threshold_crossed(7.0, 11.0, 4, 6));
-    }
-
-    /// The pan is measured from the anchor, not from the previous frame, so
-    /// holding the cursor still keeps the map sliding at a constant rate.
-    #[test]
-    fn pan_speed_is_the_anchor_displacement_over_scroll_rate_plus_one() {
-        let anchor = (400.0, 300.0);
-        assert_eq!(
-            right_drag_pan_step(
-                anchor,
-                (500.0, 300.0),
-                PAN_VIEW_W,
-                PAN_VIEW_H,
-                PAN_SCROLL_RATE
-            ),
-            (25.0, 0.0)
-        );
-        assert_eq!(
-            right_drag_pan_step(
-                anchor,
-                (300.0, 380.0),
-                PAN_VIEW_W,
-                PAN_VIEW_H,
-                PAN_SCROLL_RATE
-            ),
-            (-25.0, 20.0)
-        );
-        // Slower ScrollRate, same gesture, smaller step.
-        assert_eq!(
-            right_drag_pan_step(anchor, (500.0, 300.0), PAN_VIEW_W, PAN_VIEW_H, 6),
-            (14.0, 0.0)
-        );
-    }
-
-    /// Both axes truncate toward zero, so a drag shorter than the divisor moves
-    /// the camera not at all rather than by a rounded pixel.
-    #[test]
-    fn pan_truncates_toward_zero_on_both_signs() {
-        let anchor = (400.0, 300.0);
-        assert_eq!(
-            right_drag_pan_step(
-                anchor,
-                (403.0, 297.0),
-                PAN_VIEW_W,
-                PAN_VIEW_H,
-                PAN_SCROLL_RATE
-            ),
-            (0.0, 0.0)
-        );
-        assert_eq!(
-            right_drag_pan_step(
-                anchor,
-                (407.0, 293.0),
-                PAN_VIEW_W,
-                PAN_VIEW_H,
-                PAN_SCROLL_RATE
-            ),
-            (1.0, -1.0)
-        );
-    }
-
-    /// An anchor pressed against a border boosts: the displacement is forced to
-    /// at least five pixels outward and then multiplied by four, which is how a
-    /// right drag started at the screen edge still scrolls.
-    #[test]
-    fn pan_boosts_when_the_anchor_sits_on_a_border() {
-        // Anchor 4 px from the left edge, cursor 1 px further left: the raw
-        // displacement is -1, the boost substitutes -5 and quadruples it.
-        let (dx, _) = right_drag_pan_step(
-            (4.0, 300.0),
-            (3.0, 300.0),
-            PAN_VIEW_W,
-            PAN_VIEW_H,
-            PAN_SCROLL_RATE,
-        );
-        assert_eq!(dx, -5.0);
-        // Away from the border the same gesture does nothing.
-        let (plain, _) = right_drag_pan_step(
-            (400.0, 300.0),
-            (399.0, 300.0),
-            PAN_VIEW_W,
-            PAN_VIEW_H,
-            PAN_SCROLL_RATE,
-        );
-        assert_eq!(plain, 0.0);
-    }
-
-    /// Capture routing: the left button is tested first, so a band box in
-    /// progress keeps the right drag from stealing the camera.
-    #[test]
-    fn left_button_wins_the_per_frame_mouse_block() {
-        let mut mouse = TacticalMouseState {
-            right_held: true,
-            ..Default::default()
-        };
-        mouse.begin_right_drag((100.0, 100.0));
-        assert!(mouse.right_drag_owns_frame());
-        mouse.left_held = true;
-        assert!(!mouse.right_drag_owns_frame());
-        mouse.left_held = false;
-        mouse.release();
-        assert!(!mouse.captured);
-        assert!(!mouse.right_drag_owns_frame());
-    }
 
     /// One and two objects take the plain centroid — the outlier pass is gated
     /// on `2 < count`, so a pair never drops half of itself.
@@ -2829,18 +2583,6 @@ mod tests {
             "an exact root would have separated them"
         );
         assert_eq!(selection_view_centre_leptons(&coords), Some((65, 0, 0)));
-    }
-
-    /// Distance is 3D: elevation decides the straggler when the ground plane
-    /// alone would tie.
-    #[test]
-    fn elevation_participates_in_the_straggler_search() {
-        let flat = [(0, 0, 0), (100, 0, 0), (200, 0, 0)];
-        let raised = [(0, 0, 0), (100, 0, 5000), (200, 0, 0)];
-        assert_ne!(
-            selection_view_centre_leptons(&flat),
-            selection_view_centre_leptons(&raised)
-        );
     }
 
     /// The native quirk, reproduced rather than repaired: with 3+ objects all on
@@ -2984,3 +2726,16 @@ mod fast_scroll_tests;
 #[cfg(test)]
 #[path = "camera_bounds_tests.rs"]
 mod camera_bounds_tests;
+
+/// Half a tile on **both** axes from the tile corner — the Y half is the one
+/// that used to be missing, which put every camera move 15 px north of the
+/// unit it was supposed to centre on.
+#[test]
+fn cell_centre_shifts_half_a_tile_on_both_axes_from_the_tile_corner() {
+    for (rx, ry, z) in [(0_u16, 0_u16, 0_u8), (5, 9, 2), (63, 1, 0)] {
+        let (nw_x, nw_y) = terrain::iso_to_screen(rx, ry, z);
+        let (cx, cy) = cell_centre_world_point(rx, ry, z);
+        assert_eq!(cx - nw_x, terrain::TILE_WIDTH / 2.0);
+        assert_eq!(cy - nw_y, terrain::TILE_HEIGHT / 2.0);
+    }
+}

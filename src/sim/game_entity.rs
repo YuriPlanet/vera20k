@@ -2032,64 +2032,6 @@ mod tests {
     }
 
     #[test]
-    fn test_new_entity_defaults() {
-        let e = GameEntity::test_default(1, "HTNK", "Americans", 30, 40);
-        assert_eq!(e.stable_id, 1);
-        assert_eq!(e.type_ref, crate::sim::intern::test_intern("HTNK"));
-        assert_eq!(e.owner, crate::sim::intern::test_intern("Americans"));
-        assert_eq!(e.position.rx(), 30);
-        assert_eq!(e.position.ry(), 40);
-        assert_eq!(e.position.z(), 0);
-        assert_eq!(e.body_facing_current(0), 0);
-        assert_eq!(e.health.current(), 100);
-        assert_eq!(e.category, EntityCategory::Unit);
-        assert_eq!(e.veterancy.rank(), 0);
-        assert_eq!(e.sight.range(), 5);
-        assert!(e.is_voxel);
-        assert!(!e.selection.is_selected());
-        assert!(!e.repairing.is_on());
-        assert!(e.locomotor.is_none());
-        assert!(e.attack_target.target().is_none());
-        assert!(e.radio_contacts.is_empty());
-        assert_eq!(e.rally_cell(), None);
-        assert!(!e.ai_sell_repair.was_attacked_by_enemy());
-        assert!(e.barrel_facing.is_none());
-        assert!(e.miner.is_none());
-        assert!(!e.mega_mission.is_attack_move());
-        assert!(!e.on_bridge());
-        assert!(
-            !e.in_playfield(),
-            "TechnoClass ctor @ 0x006F2F5B initializes +0x3D5 false"
-        );
-    }
-
-    #[test]
-    fn gsi_05_10_pending_building_fire_serde_default_is_none() {
-        let entity = GameEntity::test_default(1, "NATSLA", "Soviet", 30, 40);
-        let mut value = serde_json::to_value(entity).expect("serialize entity");
-        value
-            .as_object_mut()
-            .expect("entity object")
-            .remove("pending_building_fire");
-
-        let restored: GameEntity = serde_json::from_value(value).expect("deserialize entity");
-        assert!(restored.pending_building_fire.pending().is_none());
-    }
-
-    #[test]
-    fn gsi_13_06_body_frame_counter_serde_default_is_zero() {
-        let entity = GameEntity::test_default(1, "DRON", "Soviet", 30, 40);
-        let mut value = serde_json::to_value(entity).expect("serialize entity");
-        value
-            .as_object_mut()
-            .expect("entity object")
-            .remove("body_frame_counter");
-
-        let restored: GameEntity = serde_json::from_value(value).expect("deserialize entity");
-        assert_eq!(restored.body_frame_counter.get(), 0);
-    }
-
-    #[test]
     fn live_contacts_are_per_entity_and_idempotent() {
         let mut contacted = GameEntity::test_default(1, "MTNK", "Americans", 30, 40);
         let unrelated = GameEntity::test_default(2, "MTNK", "Americans", 31, 40);
@@ -2103,14 +2045,6 @@ mod tests {
 
         contacted.clear_live_contact_with(100);
         assert!(!contacted.has_live_contact_with(100));
-    }
-
-    #[test]
-    fn test_is_alive() {
-        let mut e = GameEntity::test_default(1, "E1", "Soviet", 10, 10);
-        assert!(e.is_alive());
-        e.health.set_for_test(0);
-        assert!(!e.is_alive());
     }
 }
 

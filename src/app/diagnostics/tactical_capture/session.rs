@@ -648,7 +648,7 @@ impl TacticalCaptureSession {
         let construction_ticks = |type_id: &str| -> Result<u64> {
             let frames = crate::sim::building_construction::player_placement_frames_to_complete(
                 rules.buildup_control(type_id),
-                &sim.session.game_options(),
+                sim.session.game_options(),
             )
             .with_context(|| format!("{type_id} build-up never completes"))?;
             Ok(result_delay + u64::try_from(frames)?)
@@ -900,7 +900,7 @@ impl TacticalCaptureSession {
             .collect();
         let owner_id = sim.interner.get(&owner).unwrap_or_default();
         let mut queued_production = Vec::new();
-        for factory in sim.production.factories.iter_insertion_ordered() {
+        for factory in sim.production.factories().iter_insertion_ordered() {
             if factory.owner != owner_id {
                 continue;
             }
@@ -967,7 +967,7 @@ impl TacticalCaptureSession {
         let match_ended = sim
             .houses
             .get(&owner_id)
-            .is_some_and(|house| house.is_defeated || house.has_won() || house.has_lost());
+            .is_some_and(|house| house.is_defeated() || house.has_won() || house.has_lost());
         let wall_elapsed_ms = self
             .post_l0_started_at
             .unwrap_or(self.started_at)
@@ -1320,9 +1320,9 @@ impl TacticalCaptureSession {
         Ok(json!({
             "core": core,
             "wallet": {
-                "credits": house.economy.credits(),
-                "spent_credits": house.economy.spent_credits(),
-                "score": house.economy.score(),
+                "credits": house.economy().credits(),
+                "spent_credits": house.economy().spent_credits(),
+                "score": house.economy().score(),
             },
             "power": {
                 "output": power.total_output,
@@ -1698,7 +1698,7 @@ fn validate_game_options(
 ) -> Result<()> {
     ensure!(
         crate::skirmish_launch::SkirmishLaunchOptions::from_game_options(
-            &sim.session.game_options()
+            sim.session.game_options()
         ) == launch.options
             && sim.session.game_options().ai_players == launch.ai_player_count,
         "live GameOptions differ from the requested tactical launch"
@@ -1721,21 +1721,21 @@ fn validate_houses_and_slots(
         .get(&local_id)
         .context("local HouseState is absent")?;
     let local_country = local
-        .country
+        .country()
         .map(|country| sim.interner.resolve(country))
         .context("local country is absent")?;
     let expected_local_country = rules
         .country_name(profile.launch.local.country.launch_country().index())
         .context("local Country index missing")?;
     ensure!(
-        local.is_human
-            && local.side_index
+        local.is_human()
+            && local.side_index()
                 == rules
                     .country_side_index_raw(expected_local_country)
                     .context("local Side missing")?
             && local_country == expected_local_country
-            && local.difficulty == HouseDifficulty::Normal
-            && local.economy.credits() == profile.launch.options.starting_credits,
+            && local.difficulty() == HouseDifficulty::Normal
+            && local.economy().credits() == profile.launch.options.starting_credits,
         "local HouseState differs from sealed slot"
     );
 
@@ -1750,7 +1750,7 @@ fn validate_houses_and_slots(
         .get(&ai_id)
         .context("Computer1 HouseState is absent")?;
     let ai_country = ai
-        .country
+        .country()
         .map(|country| sim.interner.resolve(country))
         .context("Computer1 country is absent")?;
     let expected_ai_country = rules
@@ -1760,17 +1760,17 @@ fn validate_houses_and_slots(
     // MultiplayerAICM=400,0,0. Post_Map_Init @ 0x00686A52..0x00686A6B
     // therefore adds no opening grant (scenario_bootstrap's native evidence).
     ensure!(
-        !ai.is_human
-            && ai.side_index
+        !ai.is_human()
+            && ai.side_index()
                 == rules
                     .country_side_index_raw(expected_ai_country)
                     .context("AI Side missing")?
             && ai_country == expected_ai_country
-            && ai.difficulty == HouseDifficulty::Easy
-            && ai.economy.credits() == profile.launch.options.starting_credits,
+            && ai.difficulty() == HouseDifficulty::Easy
+            && ai.economy().credits() == profile.launch.options.starting_credits,
         "Computer1 HouseState differs from sealed slot: credits={}, difficulty={:?}",
-        ai.economy.credits(),
-        ai.difficulty
+        ai.economy().credits(),
+        ai.difficulty()
     );
     ensure!(
         sim.session.start_slot_houses().len() == 2

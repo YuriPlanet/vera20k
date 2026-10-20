@@ -49,7 +49,7 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
     for (index, (name, human)) in [("Player", false), ("Enemy", true)].into_iter().enumerate() {
         let id = sim.interner.intern(name);
         let mut house = HouseState::new(id, index as u8, None, human, 0, 10);
-        house.multiplay_passive = !human;
+        house.set_multiplay_passive_for_test(!human);
         sim.houses.register(house);
         owners.push(id);
     }

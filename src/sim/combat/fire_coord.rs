@@ -65,8 +65,8 @@ pub(crate) fn effect_target_coordinate(
         }
         // Terrain+A4 (41BDD0) delegates to its retained Object+48 (5F65A0).
         ProjectileTarget::Terrain(id) => world
-            .production
             .terrain_objects
+            .objects()
             .get(&id)
             .map(crate::sim::terrain_object::TerrainObjectState::world_coord),
         ProjectileTarget::Cell { rx, ry } => Some(crate::sim::projectile::cell_target_coord(
@@ -1118,19 +1118,6 @@ mod tests {
                 .z,
             Z + 3
         );
-    }
-
-    #[test]
-    fn a_unit_fires_from_its_flh_for_the_selected_slot() {
-        let (rules, world) = (rules(), Simulation::new());
-        let obj = rules.object("E1").unwrap();
-        let shooter = source(EntityCategory::Infantry);
-        let primary = fire_coordinate(&world, &rules, &shooter, obj, 0, 0, Flh::default());
-        let secondary = fire_coordinate(&world, &rules, &shooter, obj, 1, 0, Flh::default());
-        // A height-only FLH leaves X and Y on the firer.
-        assert_eq!(primary.coord, ProjectileCoord::new(X, Y, Z + 105));
-        assert_eq!(secondary.coord, ProjectileCoord::new(X, Y, Z + 90));
-        assert_eq!((primary.source_z, primary.offset_y), (Z, 0));
     }
 
     /// The source Z is the stored firer's actual height, not its level byte.

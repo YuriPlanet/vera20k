@@ -87,7 +87,7 @@ fn the_harvester_branch_matches_the_original() {
     let name = sim.interner.intern("H0");
     for (number, row) in rows("harvester").iter().enumerate() {
         let mut house = HouseState::new(name, 0, None, flag(&row["human"]), 0, dword(&row["tech"]));
-        house.player_control = flag(&row["control"]);
+        house.set_player_control_for_test(flag(&row["control"]));
         // The fixture's harvester is vehicle 7; its refinery undeploys into
         // vehicle 9.
         let facts = HarvesterFacts {
@@ -102,7 +102,7 @@ fn the_harvester_branch_matches_the_original() {
             iq_harvester: dword(&row["iq_harvester"]),
             no_ore: flag(&row["no_ore"]),
             human: house.is_controlled_by_human(dword(&row["game_mode"]) != 0),
-            tech_level: house.tech_level,
+            tech_level: house.tech_level(),
         };
         let decision = harvester_decision(&facts);
         assert_eq!(

@@ -350,8 +350,10 @@ fn send_spy_planes_matches_native() {
                 "{row}"
             );
         }
-        sim.houses.get_mut(&americans).unwrap().waypoint_edge =
-            u8::try_from(waypoint_edge).unwrap_or(u8::MAX);
+        sim.houses
+            .get_mut(&americans)
+            .unwrap()
+            .set_waypoint_edge_for_test(u8::try_from(waypoint_edge).unwrap_or(u8::MAX));
         // The plane's constructor draws one word before the pick.
         let expected = expected_pick(&sim, own, 1);
         let sw_type = sim.interner.intern(SPY_PLANE);
@@ -541,8 +543,10 @@ fn spyplane_missions_match_native() {
         };
         let (rules, mut sim, americans) = world(rules(&keys));
         let house = sim.houses.get_mut(&americans).unwrap();
-        house.waypoint_edge = u8::try_from(int(&row["waypoint_edge"])).unwrap_or(u8::MAX);
-        house.multiplay_passive = flag(row, "passive");
+        house.set_waypoint_edge_for_test(
+            u8::try_from(int(&row["waypoint_edge"])).unwrap_or(u8::MAX),
+        );
+        house.set_multiplay_passive_for_test(flag(row, "passive"));
         let id = mission_plane(&mut sim, &rules, row);
         if flag(row, "latched") {
             // A snapshot held from before, as the row's `+0x250` stands for.
@@ -741,8 +745,14 @@ fn retail_computer_sends_its_spy_plane_past_the_enemy_base() {
     };
     let (rules, mut sim, americans) = world(rules);
     let russians: InternedId = sim.interner.intern("Russians");
-    sim.houses.get_mut(&russians).unwrap().enemy_house = Some(americans);
-    sim.houses.get_mut(&americans).unwrap().base_center = Some(TARGET);
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_enemy_house_for_test(Some(americans));
+    sim.houses
+        .get_mut(&americans)
+        .unwrap()
+        .set_base_center_for_test(Some(TARGET));
     let sw_type = charge_super(&mut sim, russians, SPY_PLANE);
 
     super::ai_fire::try_fire(

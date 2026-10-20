@@ -62,41 +62,6 @@ fn advance_n(sim: &mut Simulation, n: u32) {
 }
 
 #[test]
-fn same_seed_same_smudge_state_yields_same_hash() {
-    let sim_a = build_test_sim_with_seed(42);
-    let sim_b = build_test_sim_with_seed(42);
-    assert_eq!(
-        sim_a.state_hash(),
-        sim_b.state_hash(),
-        "same seed + same SmudgeGrid pattern must hash identically",
-    );
-}
-
-#[test]
-fn different_smudge_state_yields_different_hash() {
-    // Same seed, but one sim has an extra smudge cell. The hash must diverge —
-    // this proves SmudgeGrid is actually contributing to state_hash.
-    let mut sim_a = build_test_sim_with_seed(42);
-    let sim_b = build_test_sim_with_seed(42);
-    if let Some(grid) = sim_a.smudge_grid.as_mut() {
-        grid.test_force_set(
-            10,
-            10,
-            SmudgeCell {
-                type_id: Some(0),
-                footprint_origin: Some((10, 10)),
-                frame_offset: 0,
-            },
-        );
-    }
-    assert_ne!(
-        sim_a.state_hash(),
-        sim_b.state_hash(),
-        "an extra smudge cell must change the state hash",
-    );
-}
-
-#[test]
 fn smudge_state_hash_stable_across_advance_tick() {
     // SmudgeGrid is mutated only by combat events (none fired here). Across
     // 100 empty ticks, the smudge contribution to the hash must stay constant

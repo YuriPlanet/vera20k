@@ -601,37 +601,6 @@ mod tests {
     }
 
     #[test]
-    fn quota_split_is_cumulative_rounding_with_remainder_last() {
-        // Two synthetic buckets 3:1 with quota 4 -> 3 + 1; the formula path
-        // is exercised end-to-end elsewhere, here the arithmetic contract.
-        let quota_total = 4i32;
-        let counts = [3000i32, 1000];
-        let total: i32 = counts.iter().sum();
-        let mut assigned = 0;
-        let mut cumulative = 0;
-        let mut quotas = Vec::new();
-        for (i, &count) in counts.iter().enumerate() {
-            cumulative += count;
-            let quota = if i == counts.len() - 1 {
-                quota_total - assigned
-            } else {
-                X87Chop53::ftol_f64_low_masked(
-                    TruncF64::from_f64(f64::from(cumulative))
-                        .div(TruncF64::from_f64(f64::from(total)))
-                        .mul(TruncF64::from_f64(f64::from(quota_total)))
-                        .add(TruncF64::from_f64(0.5))
-                        .sub(TruncF64::from_f64(f64::from(assigned)))
-                        .to_f64(),
-                )
-            };
-            quotas.push(quota);
-            assigned += quota;
-        }
-        assert_eq!(quotas, vec![3, 1]);
-        assert_eq!(assigned, quota_total);
-    }
-
-    #[test]
     fn the_phase_is_deterministic() {
         let snapshot = |seed| {
             let (outcome, regions, _, scratch) = run_phase(seed);

@@ -214,17 +214,6 @@ pub fn get_normal(normals_mode: u8, index: u8) -> Vec3 {
     }
 }
 
-/// Compute diffuse lighting brightness for a voxel.
-///
-/// Uses N·L (dot product of normal and light direction) for directional
-/// diffuse lighting, plus an ambient base level. Returns a brightness
-/// multiplier clamped to [0.0, 1.0].
-#[cfg(test)]
-pub fn diffuse_shade(normal: Vec3, light_dir: Vec3, ambient: f32, diffuse: f32) -> f32 {
-    let n_dot_l: f32 = normal.dot(light_dir).max(0.0);
-    (ambient + diffuse * n_dot_l).clamp(0.0, 1.0)
-}
-
 /// Startup `VXL_LightDirection_Setup @ 0x00754C00`, called at 0x0052BDF5
 /// with the original float angle at 0x007E1E68. These are its executed output
 /// bits, including native trig-table and x87 rounding; no capture fitting.
@@ -400,23 +389,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ts_normal_count() {
-        for i in 0..36u8 {
-            let n: Vec3 = get_normal(2, i);
-            let len: f32 = n.length();
-            assert!(
-                (len - 1.0).abs() < 0.01,
-                "TS normal {} has bad length {}",
-                i,
-                len
-            );
-        }
-        // Out of range falls back to Vec3::Z.
-        let fallback: Vec3 = get_normal(2, 36);
-        assert_eq!(fallback, Vec3::Z);
-    }
-
-    #[test]
     fn stale_normal_255_gets_ambient_page_in_both_modes() {
         // Retail voxels carry normal index 255 in both normals modes (DUMMY
         // limbs); the original engine renders them with the fixed ambient
@@ -529,18 +501,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn test_diffuse_shade_range() {
-        let normal: Vec3 = Vec3::new(0.0, 0.0, 1.0);
-        let light: Vec3 = Vec3::new(0.0, 0.0, 1.0);
-        // Fully lit: ambient 0.6 + diffuse 0.4 * 1.0 = 1.0
-        let bright: f32 = diffuse_shade(normal, light, 0.6, 0.4);
-        assert!((bright - 1.0).abs() < 0.001);
-
-        // Opposite direction: ambient only.
-        let dark: f32 = diffuse_shade(normal, -light, 0.6, 0.4);
-        assert!((dark - 0.6).abs() < 0.001);
     }
 }

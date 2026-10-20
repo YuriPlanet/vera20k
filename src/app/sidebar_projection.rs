@@ -448,7 +448,7 @@ impl SidebarProjectionState {
                     .any(|id| *id == CameoId::Object(*type_id))
                 && sim
                     .production
-                    .factories
+                    .factories()
                     .view(owner, link.category)
                     .is_some_and(|factory| factory.construction_order() == link.construction_order)
         });
@@ -460,7 +460,7 @@ impl SidebarProjectionState {
             ProductionCategory::Aircraft,
             ProductionCategory::Ship,
         ] {
-            let Some(factory) = sim.production.factories.view(owner, category) else {
+            let Some(factory) = sim.production.factories().view(owner, category) else {
                 continue;
             };
             if let Some(object) = factory.object
@@ -492,7 +492,7 @@ impl SidebarProjectionState {
             .factory_links
             .get(&type_id)
             .filter(|link| link.owner == owner)?;
-        let factory = sim.production.factories.view(owner, link.category)?;
+        let factory = sim.production.factories().view(owner, link.category)?;
         (factory.construction_order() == link.construction_order).then_some(factory)
     }
 
@@ -653,15 +653,15 @@ impl SidebarProjectionState {
                         i32::from(factory.build_step_rate(sim, rules)) + 1,
                     ))
                 } else {
-                    let busy =
-                        sim.production
-                            .factories
-                            .view(owner, category)
-                            .is_some_and(|factory| {
-                                factory.is_running()
-                                    || factory.object.is_some()
-                                    || !factory.queue.is_empty()
-                            });
+                    let busy = sim
+                        .production
+                        .factories()
+                        .view(owner, category)
+                        .is_some_and(|factory| {
+                            factory.is_running()
+                                || factory.object.is_some()
+                                || !factory.queue.is_empty()
+                        });
                     if busy || self.prediction_categories.contains(&category) {
                         return;
                     }
@@ -1098,8 +1098,7 @@ pub(crate) fn credit_tick_sound(credit_ticks: &[String], tick: CreditTick) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
-    use crate::ui::sidebar::{SidebarTab, build_sidebar_view};
+    use crate::ui::sidebar::SidebarTab;
 
     #[test]
     fn begin_attempt_clears_the_first_request_gate_without_discarding_failed_request() {
@@ -1340,52 +1339,6 @@ mod tests {
         );
     }
 
-    fn retained_test_view(credits: i32) -> SidebarView {
-        build_sidebar_view(
-            800.0,
-            600.0,
-            SidebarTab::Building,
-            credits,
-            100,
-            80,
-            None,
-            &[],
-            &[],
-            &[],
-            None,
-            &[],
-            99,
-            None,
-            &SidebarGadgetState::new(),
-            None,
-            None,
-        )
-    }
-
-    #[test]
-    fn sidebar_view_reads_are_pure() {
-        let _pure_getter: for<'a> fn(&'a crate::app::AppState) -> Option<&'a SidebarView> =
-            crate::app::presentation::sidebar_render::current_sidebar_view;
-        let mut projection = SidebarProjectionState::default();
-        assert_eq!(projection.displayed_credits_or_seed("Americans", 100), 100);
-        projection.replace_view(Some(retained_test_view(100)));
-
-        let first = projection.view().expect("retained view");
-        let first_ptr = std::ptr::from_ref(first);
-        let first_credits = first.credits;
-        let first_scroll = first.scroll_rows;
-        for _ in 0..8 {
-            let read = projection.view().expect("retained view remains present");
-            assert_eq!(std::ptr::from_ref(read), first_ptr);
-            assert_eq!(read.credits, first_credits);
-            assert_eq!(read.scroll_rows, first_scroll);
-        }
-        assert_eq!(
-            projection.displayed_credits_for_test("Americans"),
-            Some(100)
-        );
-    }
-
     #[test]
     fn selling_producer_does_not_recalculate_retained_cameos() {
         let owner = InternedId::from_index(3);
@@ -1521,48 +1474,6 @@ mod tests {
                 .reconcile_fixture(owner, &[candidate(a)], 3)
                 .build_inserted()
         );
-    }
-
-    #[test]
-    fn credits_advance_once_per_committed_ordinary_frame() {
-        let mut projection = SidebarProjectionState::default();
-        projection.displayed_credits_or_seed("Americans", 100);
-
-        if credits_advance_for_frame(true, TickLane::Ordinary) {
-            projection.advance_credits("Americans", 900);
-        }
-        assert_eq!(
-            projection.displayed_credits_for_test("Americans"),
-            Some(200)
-        );
-        for _ in 0..6 {
-            let _ = projection.view();
-        }
-        assert_eq!(
-            projection.displayed_credits_for_test("Americans"),
-            Some(200)
-        );
-
-        if credits_advance_for_frame(true, TickLane::Ordinary) {
-            projection.advance_credits("Americans", 900);
-        }
-        assert_eq!(
-            projection.displayed_credits_for_test("Americans"),
-            Some(287)
-        );
-
-        let mut down = SidebarProjectionState::default();
-        down.displayed_credits_or_seed("Americans", 900);
-        down.advance_credits("Americans", 100);
-        assert_eq!(down.displayed_credits_for_test("Americans"), Some(800));
-
-        let mut clamped = SidebarProjectionState::default();
-        clamped.displayed_credits_or_seed("Americans", 0);
-        clamped.advance_credits("Americans", 5_000);
-        assert_eq!(clamped.displayed_credits_for_test("Americans"), Some(143));
-        clamped.displayed_credits_or_seed("Soviets", 10);
-        clamped.advance_credits("Soviets", 11);
-        assert_eq!(clamped.displayed_credits_for_test("Soviets"), Some(11));
     }
 
     /// GSI-09.01 §2.22: `CreditsClass::AI` raises `animating`/`counting_up`

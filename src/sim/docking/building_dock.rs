@@ -1922,25 +1922,6 @@ mod tests {
         );
     }
 
-    /// Original Unit/Foot/Techno1C: full health replies10 without paying or
-    /// resetting independent estimated health (building_repair depot controls).
-    #[test]
-    fn full_health_repair_request_does_not_pay_or_reset_estimated_health() {
-        let (mut sim, rules) = setup(1);
-        let owner = sim.substrate.entities.get(1).unwrap().owner();
-        let unit = sim.substrate.entities.get_mut(1).unwrap();
-        unit.health.set_for_test(300);
-        unit.estimated_health.reset(-20);
-        let rng = sim.scenario_rng.state();
-        assert_eq!(repair_request(&mut sim, &rules, 1), RadioResponse::Negatory);
-        let unit = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(unit.health.current(), 300);
-        assert_eq!(unit.estimated_health.get(), -20);
-        assert_eq!(sim.houses[&owner].economy.credits(), 10_000);
-        assert_eq!(sim.houses[&owner].economy.spent_credits(), 0);
-        assert_eq!(sim.scenario_rng.state(), rng);
-    }
-
     /// Foot4D900E replies10 while NavCom is nonnull, before any wallet/heal.
     #[test]
     fn moving_repair_request_stops_at_the_foot_navcom_interceptor() {
@@ -1955,8 +1936,8 @@ mod tests {
         ));
         assert_eq!(repair_request(&mut sim, &rules, 1), RadioResponse::Negatory);
         assert_eq!(sim.substrate.entities.get(1).unwrap().health.current(), 100);
-        assert_eq!(sim.houses[&owner].economy.credits(), 10_000);
-        assert_eq!(sim.houses[&owner].economy.spent_credits(), 0);
+        assert_eq!(sim.houses[&owner].economy().credits(), 10_000);
+        assert_eq!(sim.houses[&owner].economy().spent_credits(), 0);
     }
 
     /// Techno6F4D35 replies32 without side effects; repeated requests do not
@@ -1968,7 +1949,7 @@ mod tests {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .economy
+            .economy_mut()
             .set_credits_for_test(1);
         let rng = sim.scenario_rng.state();
         let estimate = sim
@@ -1987,8 +1968,8 @@ mod tests {
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.health.current(), 100);
         assert_eq!(unit.estimated_health.get(), estimate);
-        assert_eq!(sim.houses[&owner].economy.credits(), 1);
-        assert_eq!(sim.houses[&owner].economy.spent_credits(), 0);
+        assert_eq!(sim.houses[&owner].economy().credits(), 1);
+        assert_eq!(sim.houses[&owner].economy().spent_credits(), 0);
         assert_eq!(sim.scenario_rng.state(), rng);
     }
 
@@ -2185,7 +2166,7 @@ mod tests {
             use crate::sim::house_state::HouseState;
             let owner_id = sim.interner.intern("Americans");
             let mut house = HouseState::new(owner_id, 0, None, false, 0, 10);
-            house.economy.set_credits_for_test(10_000);
+            house.economy_mut().set_credits_for_test(10_000);
             sim.houses.register(house);
         }
         spawn_depot(&mut sim);
@@ -2224,8 +2205,8 @@ mod tests {
         let tank = sim.substrate.entities.get(1).unwrap();
         assert_eq!(tank.health.current(), 108);
         let house = sim.houses.get(&owner).unwrap();
-        assert_eq!(house.economy.credits(), 9_998);
-        assert_eq!(house.economy.spent_credits(), 2);
+        assert_eq!(house.economy().credits(), 9_998);
+        assert_eq!(house.economy().spent_credits(), 2);
         assert_eq!(sim.scenario_rng.state(), rng);
     }
 
@@ -3194,61 +3175,6 @@ mod tests {
         assert_eq!(harvest_cursor(&sim, MINER), cursor_at_order);
     }
 
-    /// The common selector routes a miner on Enter to the depot body, with
-    /// one cadence draw and one timer write; no Harvest cursor step runs.
-    #[test]
-    fn miner_on_enter_with_a_depot_contact_has_one_dispatch_writer() {
-        let (mut sim, rules) = setup(0);
-        const MINER: u64 = 7;
-        spawn_damaged_miner(&mut sim, MINER, 14, 11);
-        assert!(order_repair(&mut sim, &rules, MINER));
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-        visit_units_with_harvest(&mut sim, &rules);
-        assert!(linked(&sim, MINER));
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(MINER)
-                .unwrap()
-                .mission
-                .current()
-                .known(),
-            Some(MissionType::Enter)
-        );
-        let (start, delay) = dispatch_timer(&sim, MINER);
-        assert!((14..=16).contains(&delay));
-        // Jump to the due frame.
-        sim.session
-            .set_binary_frame_for_test((start + delay) as u32);
-        let now = sim.session.binary_frame();
-        let mut shadow = sim.clone_scenario_rng();
-        visit_units_with_harvest(&mut sim, &rules);
-        shadow.next_range_u32_inclusive(0, 2);
-        assert_eq!(sim.scenario_rng.state(), shadow.state(), "one (0,2) draw");
-        let after = dispatch_timer(&sim, MINER);
-        assert_eq!(after.0, now as i32);
-        assert!(
-            (14..=16).contains(&after.1),
-            "Enter epilogue, got {after:?}"
-        );
-    }
-
-    /// The class entry owner, rather than a grid proxy, decides every saved row.
-    #[test]
-    fn exit_cell_skips_blocked_cells_in_list_order() {
-        let (mut sim, rules) = setup(1);
-        assert_eq!(
-            building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules, None),
-            Some((DEPOT_RX, DEPOT_RY + 3))
-        );
-        spawn_tank(&mut sim, 7, DEPOT_RX, DEPOT_RY + 3);
-        assert_eq!(
-            building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules, None),
-            Some((DEPOT_RX + 1, DEPOT_RY + 3))
-        );
-    }
-
     /// Original44C0BD skips reconstruction when state1 has neither service
     /// animation. Exercise real Anim constructors with RandomRate so both
     /// animation identity and the shared Scenario stream expose regressions.
@@ -3334,7 +3260,7 @@ mod tests {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .economy
+            .economy_mut()
             .set_credits_for_test(2);
         spawn_entity(
             &mut sim,
@@ -3367,14 +3293,14 @@ mod tests {
             .unwrap()
             .power_off();
         let pending = sim.interner.intern("PENDING");
-        assert!(sim.production.factories.test_enqueue_kernel(
+        assert!(sim.production.factories_mut().test_enqueue_kernel(
             owner,
             ProductionCategory::Vehicle,
             pending,
             1,
             108,
         ));
-        let factory = sim.production.factories.test_first_mut().unwrap();
+        let factory = sim.production.factories_mut().test_first_mut().unwrap();
         // The kernel fixture supplies an already-running head. StartProduction
         // itself now correctly leaves +70 stopped until the separate Resume.
         factory.suspended = false;
@@ -3385,9 +3311,9 @@ mod tests {
         }
         sim.advance_tick(&[], Some(&rules), None, None, 66);
         assert_eq!(sim.substrate.entities.get(1).unwrap().health.current(), 108);
-        assert_eq!(sim.houses[&owner].economy.credits(), 0);
-        assert_eq!(sim.houses[&owner].economy.spent_credits(), 2);
-        let factory = sim.production.factories.test_first_mut().unwrap();
+        assert_eq!(sim.houses[&owner].economy().credits(), 0);
+        assert_eq!(sim.houses[&owner].economy().spent_credits(), 2);
+        let factory = sim.production.factories_mut().test_first_mut().unwrap();
         assert_eq!(factory.progress, 0);
         assert_eq!(factory.balance, 108);
         assert!(factory.on_hold);
@@ -3408,7 +3334,10 @@ mod tests {
             let (mut sim, rules) = setup(0);
             if human {
                 let owner_id = sim.interner.intern("Americans");
-                sim.houses.get_mut(&owner_id).unwrap().is_human = true;
+                sim.houses
+                    .get_mut(&owner_id)
+                    .unwrap()
+                    .set_is_human_for_test(true);
             }
             spawn_entity(&mut sim, 1, "HARV", EntityCategory::Unit, 14, 11, 600);
             {

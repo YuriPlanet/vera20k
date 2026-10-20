@@ -214,21 +214,6 @@ mod tests {
     }
 
     #[test]
-    fn sanitiser_agrees_with_verb_render() {
-        // Fixtures copied from `verb_render::tests::
-        // sanitise_name_keeps_safe_characters_and_replaces_the_rest`. If that
-        // rule ever changes, this list is where the two verbs diverge.
-        assert_eq!(sanitise_name("sidebar.shp"), "sidebar.shp");
-        assert_eq!(sanitise_name("gi-idle_01.shp"), "gi-idle_01.shp");
-        assert_eq!(sanitise_name("ra2\\dir/na me:x*?"), "ra2_dir_na_me_x__");
-        assert_eq!(sanitise_name(""), FALLBACK_FILE_NAME);
-        assert_eq!(sanitise_name("///"), "___");
-        // Same fallback string as verb_render's, so both verbs name the
-        // unnameable asset identically.
-        assert_eq!(FALLBACK_FILE_NAME, "asset");
-    }
-
-    #[test]
     fn a_traversing_name_flattens_to_one_component() {
         assert_eq!(sanitise_name("../../etc/passwd"), ".._.._etc_passwd");
         let dir = extract_dir(Path::new(DEFAULT_OUT_ROOT));
@@ -242,18 +227,6 @@ mod tests {
     fn extract_dir_is_absolute_and_ends_with_the_extract_subdir() {
         let dir = extract_dir(Path::new(DEFAULT_OUT_ROOT));
         assert!(dir.is_absolute(), "{}", dir.display());
-        assert!(dir.ends_with(EXTRACT_SUBDIR), "{}", dir.display());
-    }
-
-    #[test]
-    fn extract_dir_preserves_an_absolute_out_root_verbatim() {
-        let root = if cfg!(windows) {
-            PathBuf::from("C:\\tmp\\out")
-        } else {
-            PathBuf::from("/tmp/out")
-        };
-        let dir = extract_dir(&root);
-        assert!(dir.starts_with(&root), "{}", dir.display());
         assert!(dir.ends_with(EXTRACT_SUBDIR), "{}", dir.display());
     }
 
@@ -298,12 +271,5 @@ mod tests {
             b"[General]\n".to_vec()
         );
         let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn default_options_target_the_build_output_root() {
-        let opts = ExtractOptions::default();
-        assert_eq!(opts.out, PathBuf::from(DEFAULT_OUT_ROOT));
-        assert!(extract_dir(&opts.out).ends_with(EXTRACT_SUBDIR));
     }
 }

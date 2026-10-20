@@ -583,7 +583,10 @@ fn replay_category_history(
         veterancy_category: native_last_category(&before["veterancy_category"]),
     };
     let current_house = sim.session.current_house().unwrap();
-    sim.houses.get_mut(&current_house).unwrap().is_defeated = history.command_guard != 0;
+    sim.houses
+        .get_mut(&current_house)
+        .unwrap()
+        .set_is_defeated_for_test(history.command_guard != 0);
     // SelectionFixture supplies original A8ED84=1000 for these histories.
     sim.session.set_binary_frame_for_test(1000);
     let rank_cache: BTreeMap<_, _> = sim
@@ -693,7 +696,7 @@ fn replay_category_history(
                     );
                 } else {
                     assert!(
-                        sim.houses[&current_house].is_defeated,
+                        sim.houses[&current_house].is_defeated(),
                         "{label}: authoritative early guard"
                     );
                     for key in [
@@ -828,8 +831,10 @@ fn replay_category_history(
             "supply_command_guard" => {
                 // This compares the bounded admission condition only; arbitrary
                 // writes to A8B538 do not establish the whole defeat lifecycle.
-                sim.houses.get_mut(&current_house).unwrap().is_defeated =
-                    step["value"].as_u64().unwrap() != 0;
+                sim.houses
+                    .get_mut(&current_house)
+                    .unwrap()
+                    .set_is_defeated_for_test(step["value"].as_u64().unwrap() != 0);
             }
             "free_slave_owner_writer" => {
                 // The fixture executes this original FreeSlaves writer only.
@@ -1641,7 +1646,10 @@ fn combatant_defeat_admission_matches_original_early_guard() {
     let (mut sim, _) = fixture(&row.inputs, &row.selected);
     assert!(selection_navigation_allowed(&sim));
     let local = sim.session.current_house().unwrap();
-    sim.houses.get_mut(&local).unwrap().is_defeated = true;
+    sim.houses
+        .get_mut(&local)
+        .unwrap()
+        .set_is_defeated_for_test(true);
     assert!(!selection_navigation_allowed(&sim));
     let step = &row.steps[0];
     for key in [
@@ -1800,8 +1808,8 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
     sim.houses
         .register(HouseState::new(local, 0, None, true, 0, 10));
     let mut other_house = HouseState::new(other, 1, None, inputs.house.other_human, 0, 10);
-    other_house.player_control = inputs.house.other_control;
-    other_house.multiplay_passive = inputs.house.other_passive;
+    other_house.set_player_control_for_test(inputs.house.other_control);
+    other_house.set_multiplay_passive_for_test(inputs.house.other_passive);
     sim.houses.register(other_house);
     for actor in &inputs.actors {
         assert!(!actor.robot_offline && actor.techno_cast);

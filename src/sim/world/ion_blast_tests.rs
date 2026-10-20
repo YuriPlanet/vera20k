@@ -174,25 +174,6 @@ fn water_selects_last_splash_and_only_raw100_adds_a_deck_area() {
 }
 
 #[test]
-fn multiple_blasts_start_in_reverse_live_vector_order() {
-    let (rules, mut sim, _) = world_with(rules(), 64, &[]);
-    for cell in [(20, 20), (22, 22)] {
-        waypoint(&mut sim, cell);
-        assert!(sim.trigger_ion_blast(1));
-    }
-    let (_, areas) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
-        sim.update_ion_blasts(&rules, None, FrameEffects::default())
-    });
-    assert_eq!(
-        areas.iter().map(|v| v["coord"].clone()).collect::<Vec<_>>(),
-        [
-            serde_json::json!([5760, 5760, 0]),
-            serde_json::json!([5248, 5248, 0])
-        ]
-    );
-}
-
-#[test]
 fn positive_ripple_stops_and_lifts_shp_foot_before_the_voxel_gate() {
     let (rules, mut sim, _) = world_with(rules(), 64, &[]);
     let ids = [

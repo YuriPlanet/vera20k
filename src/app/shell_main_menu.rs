@@ -595,16 +595,15 @@ impl App {
     }
 
     /// PrepareSession re-enters the active mode's shell: LAN starts a new BB,
-    /// Skirmish a new0x102. The session keeps the admitted network return owner.
+    /// WOL its lobby 0x113, Skirmish a new0x102. The session keeps the
+    /// admitted network return owner.
     pub(super) fn resume_shell_after_match(state: &mut AppState) {
         if state.frontend.external_launch {
             Self::start_quit_cascade(state);
             return;
         }
-        if state.match_state.session.network_return_context()
-            == Some(crate::app::match_runtime::session::NetworkReturnContext::LanLobby)
-        {
-            crate::app::shell_lan_setup::commit_back(state);
+        if state.match_state.session.network_return_context().is_some() {
+            crate::app::shell_network_setup::return_after_match(state);
             return;
         }
         if state.frontend.shell_route.skirmish() {
@@ -1262,12 +1261,14 @@ impl App {
             ShellExitThen::LanJoinAccepted(accepted) => {
                 Self::open_lan_joined_setup(state, accepted)
             }
-            ShellExitThen::LanSetupBack { .. } => crate::app::shell_lan_setup::commit_back(state),
-            ShellExitThen::LanSetupChooseMap { .. } => {
-                crate::app::shell_lan_setup::open_choose_map(state)
+            ShellExitThen::NetworkSetupBack(_) => {
+                crate::app::shell_network_setup::commit_back(state)
             }
-            ShellExitThen::LanStart { agreed_seed, .. } => {
-                crate::app::shell_lan_setup::commit_start(state, agreed_seed)
+            ShellExitThen::NetworkSetupChooseMap(_) => {
+                crate::app::shell_network_setup::open_choose_map(state)
+            }
+            ShellExitThen::NetworkStart { agreed_seed, .. } => {
+                crate::app::shell_network_setup::commit_start(state, agreed_seed)
             }
             ShellExitThen::SkirmishChooseMap => {
                 let mode_id = state.frontend.skirmish_shell_state.selected_mode_id;
@@ -1282,7 +1283,13 @@ impl App {
             ShellExitThen::WolBack => Self::return_from_wol(state),
             ShellExitThen::ScoreContinue => Self::leave_mission_result_screen(state),
             ShellExitThen::CampaignScoreContinue => Self::leave_mission_result_screen(state),
-            ShellExitThen::WolApiMissing => Self::commit_wol_api_missing(state),
+            ShellExitThen::WolAction(mode) => Self::commit_wol_action(state, mode),
+            ShellExitThen::WolLoginClose(result) => Self::commit_wol_login_close(state, result),
+            ShellExitThen::WolLobbyBack => crate::app::shell_wol::lobby::commit_back(state),
+            ShellExitThen::WolLobbyHide => crate::app::shell_wol::lobby::commit_hide(state),
+            ShellExitThen::WolCreateAccepted { observe } => {
+                crate::app::shell_wol::lobby::commit_create(state, observe)
+            }
         }
     }
 
@@ -1305,7 +1312,7 @@ impl App {
         if state.frontend.credits_roll.is_some() {
             return;
         }
-        if state.frontend.shell_route.wol_welcome() {
+        if state.frontend.shell_route.wol_visit() {
             return;
         }
         if let Some(assets) = state.process_assets.manager() {

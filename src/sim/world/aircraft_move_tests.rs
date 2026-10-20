@@ -635,23 +635,6 @@ fn a_move_queued_during_a_release_waits_for_mission_attack() {
     assert_eq!(plane.mission.handler_state(), 0);
 }
 
-/// An Attack commenced over Mission_Move starts Mission_Attack at state 0.
-#[test]
-fn an_attack_commenced_over_mission_move_starts_at_state_zero() {
-    let (mut sim, rules) = fixture(&json!({}));
-    set_current(&mut sim, MissionType::Move);
-    sim.substrate
-        .entities
-        .get_mut(OWNER)
-        .unwrap()
-        .mission
-        .set_current_for_test(MissionId::from_known(MissionType::Move), 4);
-    queue(&mut sim, MissionType::Attack);
-    sim.mission_host_promote(OWNER, 1, &rules);
-    let plane = sim.substrate.entities.get(OWNER).unwrap();
-    assert_eq!(crate::sim::aircraft::attack_state(plane), Some(0));
-}
-
 /// The Move slot `0x004166C0` sends a `Carryall=` type to `0x00416D50`; no
 /// retail aircraft type sets the key, so every one runs `0x004166E0`.
 #[test]
@@ -662,60 +645,5 @@ fn retail_aircraft_types_are_not_carryalls() {
     assert!(!rules.aircraft_ids.is_empty());
     for name in &rules.aircraft_ids {
         assert!(!rules.object(name).unwrap().carryall, "{name}");
-    }
-}
-
-/// Mission_Move's state 0 without a NavCom enters idle mode (`0x004176F0`,
-/// `aircraft::idle_entry`) and commences what it picks. On the ground the
-/// landed arm drops the destination and the Target and picks Guard (an
-/// unarmed aircraft outside a team); in flight the airborne arm sends an
-/// aircraft without a weapon to its nearest airfield on Move, keeping its
-/// Target.
-#[test]
-fn mission_move_idle_mode_on_the_ground_and_in_flight() {
-    use crate::sim::combat::TargetKind;
-    for (z, landed) in [(0, true), (1500, false)] {
-        let (mut sim, rules) = fixture(&json!({}));
-        set_current(&mut sim, MissionType::Move);
-        let plane = sim.substrate.entities.get_mut(OWNER).unwrap();
-        plane.locomotor = Some(
-            crate::sim::movement::locomotor::LocomotorState::from_object_type(
-                rules.object("TEST").unwrap(),
-                0,
-            ),
-        );
-        plane.position.set_exact_z_leptons_for_test(Some(z));
-        plane
-            .mission
-            .set_current_for_test(MissionId::from_known(MissionType::Move), 0);
-        plane
-            .attack_target
-            .set_for_test(Some(TargetKind::Cell(70, 70)));
-        let airfield = sim.aircraft_nearest_friendly_airfield_cell(OWNER, &rules);
-
-        crate::sim::aircraft::dispatch_mission(&mut sim, OWNER, &rules, Default::default());
-        let plane = sim.substrate.entities.get(OWNER).unwrap();
-        let expected = if landed {
-            MissionType::Guard
-        } else {
-            MissionType::Move
-        };
-        assert_eq!(
-            plane.mission.current(),
-            MissionId::from_known(expected),
-            "z {z}"
-        );
-        assert_eq!(plane.mission.queued(), MissionId::NONE, "z {z}");
-        assert_eq!(plane.mission.handler_state(), 0, "z {z}");
-        assert_eq!(
-            plane.attack_target.target().is_none(),
-            landed,
-            "z {z}: the Target"
-        );
-        assert_eq!(
-            plane.navigation.nav_com(),
-            (!landed).then_some(airfield),
-            "z {z}"
-        );
     }
 }

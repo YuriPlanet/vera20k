@@ -910,7 +910,7 @@ impl ScanContext<'_> {
     fn owner_is_passive(&self, candidate: &GameEntity) -> bool {
         self.fire_world
             .and_then(|world| world.houses.get(&candidate.owner()))
-            .is_some_and(|house| house.multiplay_passive)
+            .is_some_and(|house| house.multiplay_passive())
     }
 
     /// The exception both passive-house gates share (`0x006F8292..0x006F835E`,
@@ -1041,7 +1041,7 @@ impl<'a> ScannerStanding<'a> {
 
     /// The owner's current enemy (`House+0x5600`).
     fn enemy(&self) -> Option<InternedId> {
-        self.house.and_then(|house| house.enemy_house)
+        self.house.and_then(|house| house.enemy_house())
     }
 }
 
@@ -1805,13 +1805,9 @@ fn scan_cell_for_target(
 /// (`rx`, `ry`), reading each member's record: what it holds when it stops or
 /// runs out, if [`ScanContext::offers`] passes it.
 fn walk_cell_list(ctx: &ScanContext<'_>, rx: u16, ry: u16, layer: MovementLayer) -> Option<u64> {
-    let terrain = ctx.fire_world.and_then(|world| {
-        world
-            .production
-            .terrain_object_cells
-            .get(&(rx, ry))
-            .copied()
-    });
+    let terrain = ctx
+        .fire_world
+        .and_then(|world| world.terrain_objects.cell_index().get(&(rx, ry)).copied());
     let mut held = None;
     for member in ctx.cells.cell_objects(rx, ry, layer, terrain) {
         let CellObjectMember::Entity(id) = member else {

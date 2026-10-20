@@ -162,15 +162,12 @@ fn retained_ground_history_controls_overlapping_atlas_pixels() {
     );
 }
 
+/// Ground vehicles draw their shadow after the body with clipped read-only
+/// depth; Air/Top bodies draw it first and keep ground occlusion.
 #[test]
-#[ignore = "requires GPU; actual Ground lowering, atlas upload and voxel body/shadow replay"]
-fn vehicle_shadow_after_body_preserves_body_and_clipped_read_only_depth() {
-    unit_body_shadow_replay(2, true, 65535);
-}
-
-#[test]
-#[ignore = "requires GPU; actual Air/Top shadow-before-body replay, posed sources, clipping and terrain occlusion"]
+#[ignore = "requires GPU; actual Ground/Air/Top lowering, atlas upload, posed sources and voxel body/shadow replay"]
 fn aircraft_shadow_before_body_preserves_body_and_ground_occlusion() {
+    unit_body_shadow_replay(2, true, 65535);
     unit_body_shadow_replay(3, false, 65535);
     unit_body_shadow_replay(4, false, 65535);
     unit_body_shadow_replay(4, false, 0);

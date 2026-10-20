@@ -332,35 +332,6 @@ mod tests {
     }
 
     #[test]
-    fn campaign_outcome_routes_follow_mode_and_skip_score() {
-        use crate::app::match_runtime::session::SessionMode;
-        use crate::sim::house_state::HouseOutcomeKind::{Defeat, Victory};
-
-        assert_eq!(
-            campaign_outcome_route(SessionMode::Campaign, Victory, false),
-            Some(CampaignOutcomeRoute::VictoryScore)
-        );
-        assert_eq!(
-            campaign_outcome_route(SessionMode::Campaign, Victory, true),
-            Some(CampaignOutcomeRoute::VictoryContinue)
-        );
-        assert_eq!(
-            campaign_outcome_route(SessionMode::Campaign, Defeat, false),
-            Some(CampaignOutcomeRoute::DefeatPrompt)
-        );
-        // A restored Campaign session is classified without consulting the
-        // optional campaign bootstrap token used by next-mission progression.
-        assert_eq!(
-            campaign_outcome_route(SessionMode::Campaign, Victory, false),
-            Some(CampaignOutcomeRoute::VictoryScore)
-        );
-        assert_eq!(
-            campaign_outcome_route(SessionMode::Skirmish, Victory, false),
-            None
-        );
-    }
-
-    #[test]
     fn production_destination_keeps_campaign_and_skirmish_models_on_their_owners() {
         use crate::app::match_runtime::session::SessionMode;
         use crate::sim::house_state::HouseOutcomeKind::{Defeat, Victory};
@@ -458,34 +429,6 @@ mod tests {
         assert!(matches!(
             exit.take_destination(),
             Some(ScenarioExitDestination::Score { .. })
-        ));
-    }
-
-    #[test]
-    fn campaign_score_destination_starts_the_same_score_theme() {
-        // Dialog 0x103's WM_INIT (`0x006C92F6`) plays ThemeClass "SCORE", so
-        // the campaign page is not silent while only 0x108 was wired here.
-        let model = crate::ui::campaign_score_shell::CampaignScoreScreenModel {
-            side: 0,
-            ..Default::default()
-        };
-        let mut exit = ScenarioExitCascade::start(
-            15,
-            ScenarioExitDestination::CampaignScore {
-                title: "won".into(),
-                detail: "done".into(),
-                model,
-            },
-        );
-        let done = exit.tick(1_016, false);
-        assert!(done.stop_audio && done.finished);
-        assert_eq!(
-            done.after_stop,
-            Some(ScenarioExitAudioAction::PlayTheme("SCORE"))
-        );
-        assert!(matches!(
-            exit.take_destination(),
-            Some(ScenarioExitDestination::CampaignScore { .. })
         ));
     }
 

@@ -97,14 +97,14 @@ impl<'r> EconomyTypes<'r> {
                 rules,
                 &rules.build_refinery_types,
                 country,
-                house.side_index,
+                house.side_index(),
                 super_weapons,
             ),
             war_factory: first_buildable_from_array(
                 rules,
                 &rules.build_weapons_types,
                 country,
-                house.side_index,
+                house.side_index(),
                 super_weapons,
             ),
             harvester: first_owner_compatible_harvester(rules, house_country_bit(rules, country)),
@@ -131,12 +131,12 @@ fn can_make_money(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> bool 
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    let tracking = &house.tracking;
+    let tracking = house.tracking();
     let destinations = tracking.resource_destinations() > 0;
     let gatherers = tracking.resource_gatherers() > 0;
     let war_factories = tracking.war_factories() > 0;
     let country_bit = house_country_bit(rules, sim.interner.resolve(house.house_type_id()));
-    let base = !house.build_const_order.is_empty()
+    let base = !house.build_const_order().is_empty()
         || first_owner_compatible(
             rules,
             &rules.general.base_unit_types,
@@ -198,7 +198,7 @@ pub(crate) fn check_build_need(sim: &Simulation, rules: &RuleSet, owner: Interne
     }
     let money = available_money(sim, owner);
     let types = EconomyTypes::of(sim, rules, house);
-    if house.tracking.resource_destinations() > 0 {
+    if house.tracking().resource_destinations() > 0 {
         if refinery_under_construction(sim, rules, house) {
             return false;
         }
@@ -206,7 +206,7 @@ pub(crate) fn check_build_need(sim: &Simulation, rules: &RuleSet, owner: Interne
             return true;
         };
         let chosen = rules.type_array_index(ObjectCategory::Vehicle, &harvester.id)
-            == Some(house.ai_unit_choices.get(UnitChoiceKind::Unit));
+            == Some(house.ai_unit_choices().get(UnitChoiceKind::Unit));
         if !chosen {
             return money < sim.cost_of(owner, harvester, rules);
         }
@@ -218,7 +218,7 @@ pub(crate) fn check_build_need(sim: &Simulation, rules: &RuleSet, owner: Interne
     let Some(building) = types.refinery.or(types.war_factory) else {
         return true;
     };
-    if house.ai_production.building_choice() == building.base_plan_type_index {
+    if house.ai_production().building_choice() == building.base_plan_type_index {
         return balance_owed(sim, rules, owner, |object| {
             object.category == ObjectCategory::Building && object.id == building.id
         })
@@ -244,7 +244,7 @@ fn refinery_under_construction(sim: &Simulation, rules: &RuleSet, house: &HouseS
         .entities
         .values()
         .filter(|entity| entity.category() == EntityCategory::Structure)
-        .take(house.base_projection.buildings().len())
+        .take(house.base_projection().buildings().len())
         .any(|building| {
             building.mission.current() == construction && refineries.contains(&building.type_ref())
         })
@@ -261,7 +261,7 @@ fn balance_owed(
     holds: impl Fn(&ObjectType) -> bool,
 ) -> Option<i32> {
     sim.production
-        .factories
+        .factories()
         .holders_insertion_ordered()
         .into_iter()
         .map(|(_, factory)| factory)
@@ -309,8 +309,8 @@ pub(crate) fn manage_build_queue(
         return;
     };
     let types = EconomyTypes::of(sim, rules, house);
-    let war_factories = house.tracking.war_factories();
-    let refinery_and_factory = house.tracking.resource_destinations() > 0 && war_factories > 0;
+    let war_factories = house.tracking().war_factories();
+    let refinery_and_factory = house.tracking().resource_destinations() > 0 && war_factories > 0;
     let rebuild = match (types.harvester, types.refinery) {
         (Some(harvester), refinery)
             if refinery_and_factory || (refinery.is_none() && war_factories > 0) =>
@@ -332,7 +332,7 @@ pub(crate) fn manage_build_queue(
     let nodes = sim
         .houses
         .get(&owner)
-        .map_or(0, |house| house.base_plan.nodes.len());
+        .map_or(0, |house| house.base_plan().nodes().len());
     let mut index = nodes as i32 - 1;
     let mut sale = Sale::default();
     let paid = loop {
@@ -343,7 +343,7 @@ pub(crate) fn manage_build_queue(
         let balance = sim
             .houses
             .get(&owner)
-            .map_or(0, |house| house.economy.credits());
+            .map_or(0, |house| house.economy().credits());
         if balance.wrapping_add(sale.refunds) > price {
             break true;
         }
@@ -393,7 +393,7 @@ fn sell_node(
     registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
-    let node = sim.houses[&owner].base_plan.nodes[index];
+    let node = sim.houses[&owner].base_plan().nodes()[index];
     let building = node_building(sim, owner, &node).filter(|&id| can_sell_building(sim, rules, id));
     if let Some(id) = building {
         sell_back(sim, rules, id, SellOrder::Computer, registry, effects);
@@ -429,9 +429,9 @@ fn remove_node(sim: &mut Simulation, owner: InternedId, index: usize, sale: &mut
     let Some(house) = sim.houses.get_mut(&owner) else {
         return;
     };
-    let node = house.base_plan.nodes.get(index).copied();
-    house.base_plan.remove(index);
-    if house.base_plan.nodes.is_empty() {
+    let node = house.base_plan().nodes().get(index).copied();
+    house.base_plan_mut().remove(index);
+    if house.base_plan().nodes().is_empty() {
         sale.slot_zero = node;
     }
 }
@@ -458,14 +458,14 @@ fn restart_production(
     let Some(house) = sim.houses.get_mut(&owner) else {
         return true;
     };
-    house.ai_unit_choices = Default::default();
-    house.ai_production.clear_building_choice();
+    house.ai_unit_choices_mut().clear_all();
+    house.ai_production_mut().clear_building_choice();
     let building = match rebuild {
         Rebuild::Harvester(harvester) => {
             if let Some(index) = rules.type_array_index(ObjectCategory::Vehicle, &harvester.id) {
-                house.ai_unit_choices.set(UnitChoiceKind::Unit, index);
+                house.ai_unit_choices_mut().set(UnitChoiceKind::Unit, index);
             }
-            house.ai_production.set_mode(2);
+            house.ai_production_mut().set_mode(2);
             return true;
         }
         Rebuild::Refinery(building) | Rebuild::WarFactory(building) => building,
@@ -484,34 +484,22 @@ fn restart_production(
         filled: false,
         retry_count: 0,
     };
+    // `0x004FE226..0x004FE2BD`: later nodes of the war factory's type go,
+    // but only when `BuildRefinery=`'s first type is that type too.
+    let refinery_first = rules
+        .build_refinery_types
+        .first()
+        .and_then(|id| rules.object_in_category(ObjectCategory::Building, id))
+        .map(|refinery| refinery.base_plan_type_index);
+    let drop_later_same_type =
+        matches!(rebuild, Rebuild::WarFactory(_)) && refinery_first == Some(node.type_or_control);
     let Some(house) = sim.houses.get_mut(&owner) else {
         return true;
     };
-    let nodes = &mut house.base_plan.nodes;
-    if index > nodes.len() {
-        // At 1 on a plan the sale emptied, native writes the slot past the
-        // count, which grows to take in slot 0: the node last removed.
-        nodes.extend(slot_zero);
-    } else {
-        nodes.insert(index, node);
-        // `0x004FE226..0x004FE2BD`: later nodes of the war factory's type
-        // go, but only when `BuildRefinery=`'s first type is that type too.
-        let refinery_first = rules
-            .build_refinery_types
-            .first()
-            .and_then(|id| rules.object_in_category(ObjectCategory::Building, id))
-            .map(|refinery| refinery.base_plan_type_index);
-        if matches!(rebuild, Rebuild::WarFactory(_)) && refinery_first == Some(node.type_or_control)
-        {
-            let later = nodes.split_off(index + 1);
-            nodes.extend(
-                later
-                    .into_iter()
-                    .filter(|later| later.type_or_control != node.type_or_control),
-            );
-        }
-    }
-    house.ai_production.set_mode(1);
+    house
+        .base_plan_mut()
+        .insert_rebuild_node(index, node, slot_zero, drop_later_same_type);
+    house.ai_production_mut().set_mode(1);
     choose_building(sim, rules, owner, registry);
     true
 }

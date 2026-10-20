@@ -235,8 +235,8 @@ fn origin(row: &Value) -> (i16, i16) {
         0,
         10,
     );
-    house.alternate_base_center = unsigned(cell(&row["alternate"]));
-    house.base_center = Some(unsigned(cell(&row["base"])));
+    house.set_alternate_base_center_for_test(unsigned(cell(&row["alternate"])));
+    house.set_base_center_for_test(Some(unsigned(cell(&row["base"]))));
     signed(house.base_origin())
 }
 

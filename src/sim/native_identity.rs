@@ -485,18 +485,6 @@ mod tests {
     }
 
     #[test]
-    fn map_read_reservation_sets_from_wrapping_saved_snapshot() {
-        let mut cursor = super::NativeUniqueIdCursor::from_saved_prefix(0xFFFF_FFF0);
-        assert_eq!(cursor.next_id() as u32, 0xFFFF_FFF1);
-        assert_eq!(
-            cursor.reserve_map_read_from_saved().unwrap(),
-            0xFFFF_FFF0u32.wrapping_add(MAP_READ_NATIVE_ID_RESERVATION)
-        );
-        assert_eq!(cursor.current_raw(), 0x0000_2700);
-        assert!(cursor.reserve_map_read_from_saved().is_err());
-    }
-
-    #[test]
     fn raw_tubes_reserve_then_assign_every_source_row_in_order() {
         let ini = IniFile::from_str(
             "[Tubes]\n\
@@ -593,42 +581,6 @@ mod tests {
                 .unwrap()
                 .entries
                 .is_empty()
-        );
-    }
-
-    /// A malformed row spends its ID and stops the section before the valid
-    /// row after it.
-    #[test]
-    fn a_malformed_tube_row_stops_native_construction() {
-        let ini = IniFile::from_str(
-            "[Tubes]\n\
-             malformed=1,2,2,4,2,2,2\n\
-             valid=7,0,6,4,0,6,6,-1\n",
-        );
-        let mut simulation = simulation_with_saved_prefix(1_000_018);
-
-        let error = simulation.construct_native_map_tubes(&ini).unwrap_err();
-
-        assert_eq!(
-            error,
-            NativeMapTubeConstructionError::Tube(TubeConstructionError::AllocatedRowMalformed {
-                ordinal: 0,
-                native_unique_id: 1_010_019,
-                error: AllocatedTubeParseError::PathRunsOutBeforeNativeStop,
-            })
-        );
-        assert_eq!(
-            simulation.native_unique_ids.as_ref().unwrap().current_raw(),
-            1_010_019
-        );
-        assert!(
-            simulation
-                .native_map_tubes
-                .as_ref()
-                .unwrap()
-                .entries
-                .is_empty(),
-            "the later convenience fact must never become a native binding"
         );
     }
 

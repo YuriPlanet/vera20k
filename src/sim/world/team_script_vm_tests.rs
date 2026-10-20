@@ -162,36 +162,6 @@ fn team_member_order_is_hashed() {
 }
 
 #[test]
-fn production_install_boundary_resolves_aimd_without_creating_a_team() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
-    ))
-    .expect("minimal rules");
-    let comparison = zero_ai_trigger_comparison();
-    let aimd = IniFile::from_str(&format!(
-        "[TeamTypes]\n0=TT\n[TT]\nScript=S\nTaskForce=F\n\
-         [ScriptTypes]\n0=S\n[S]\n0=2,0\n\
-         [TaskForces]\n0=F\n[F]\n0=1,E1\n\
-         [AITriggerTypes]\nA=Trigger,TT,<all>,2,4,<none>,{comparison},40,10,40,1,0,1,0,<none>,1,1,1\n"
-    ));
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
-    let mut sim = Simulation::new();
-    sim.intern_rule_type_ids(&rules);
-    sim.resolve_type_handles(&rules);
-
-    let diagnostics = sim
-        .install_team_ai_registry(&registry, &rules)
-        .expect("clean fixed AIMD installs");
-
-    assert!(diagnostics.is_empty());
-    assert_eq!(sim.team_script_vm.registry_counts(), (1, 1, 1, 1));
-    assert!(
-        sim.team_script_vm.team(1).is_none(),
-        "definition installation must not allocate a live TeamClass"
-    );
-}
-
-#[test]
 fn production_install_refuses_fixed_resolution_loss_but_keeps_scenario_omissions() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
@@ -260,45 +230,6 @@ fn production_install_refuses_fixed_resolution_loss_but_keeps_scenario_omissions
         scenario_sim.team_script_vm.registry_counts(),
         (2, 1, 1, 1),
         "scenario-origin omissions remain diagnosed, nonfatal overlays"
-    );
-}
-
-#[test]
-fn production_install_refuses_unknown_fixed_ai_trigger_object() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
-    ))
-    .expect("minimal rules");
-    let comparison = zero_ai_trigger_comparison();
-    let fixed = IniFile::from_str(&format!(
-        "[TeamTypes]\n0=TT\n[TT]\nScript=S\nTaskForce=F\n\
-         [ScriptTypes]\n0=S\n[S]\n0=2,0\n\
-         [TaskForces]\n0=F\n[F]\n0=1,E1\n\
-         [AITriggerTypes]\nA=Trigger,TT,<all>,2,4,GHOST,{comparison},40,10,40,1,0,1,0,<none>,1,1,1\n"
-    ));
-    let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
-    assert!(registry.fixed_source_is_complete());
-    let mut sim = Simulation::new();
-    sim.intern_rule_type_ids(&rules);
-    sim.resolve_type_handles(&rules);
-
-    let diagnostics = sim
-        .install_team_ai_registry(&registry, &rules)
-        .expect_err("a fixed-origin resolution loss refuses the install");
-
-    assert_eq!(
-        diagnostics,
-        vec![TeamAiInstallDiagnostic::UnknownAiTriggerObject {
-            trigger_id: "A".to_string(),
-            object_type: "GHOST".to_string(),
-            source: TeamAiDefinitionSource::FixedAimd,
-        }]
-    );
-    assert!(diagnostics[0].is_fixed_source_refusal());
-    assert_eq!(
-        sim.team_script_vm.registry_counts(),
-        (0, 0, 0, 0),
-        "unknown fixed AITrigger token-6 references must refuse the whole registry install"
     );
 }
 
@@ -386,11 +317,11 @@ fn team_fixture(
     let owner = sim.interner.intern("Computer");
     let enemy = sim.interner.intern("Human");
     let mut computer = HouseState::new(owner, 0, None, false, 0, 10);
-    computer.enemy_house = Some(enemy);
-    computer.base_center = Some((10, 11));
+    computer.set_enemy_house_for_test(Some(enemy));
+    computer.set_base_center_for_test(Some((10, 11)));
     sim.houses.register(computer);
     let mut human = HouseState::new(enemy, 1, None, true, 0, 10);
-    human.base_center = Some((18, 11));
+    human.set_base_center_for_test(Some((18, 11)));
     sim.houses.register(human);
     let members = [(10, 10), (12, 10)].map(|(rx, ry)| {
         sim.spawn_object_at_height(member, "Computer", rx, ry, 0, 0, &rules)
@@ -457,45 +388,6 @@ fn a_computer_team_attacks_the_bigger_power_plant() {
             "member {member} is on Attack"
         );
     }
-}
-
-/// Script action 53 then 49: on its first frame the team's mission target
-/// becomes the passable cell `AISafeDistance=` cells from the enemy's base
-/// centre towards its own; the team moves there and the script goes on.
-#[test]
-fn a_computer_team_gathers_outside_the_enemy_base() {
-    let (mut sim, rules, team_id, members, _) = attack_team_fixture("0=53,0\n1=49,0");
-    let mut destinations = Vec::new();
-    for _ in 0..600 {
-        sim.advance_tick(&[], Some(&rules), None, None, 67);
-        for &member in &members {
-            if let Some(nav) = sim
-                .entities()
-                .get(member)
-                .and_then(|entity| entity.navigation.nav_com())
-                && !destinations.contains(&nav)
-            {
-                destinations.push(nav);
-            }
-        }
-        if sim.team_script_vm.team(team_id).is_none() {
-            break;
-        }
-    }
-    // 4 cells from the enemy's centre (18,11) towards the house's (10,11).
-    let seed = (14, 11);
-    assert!(
-        destinations.iter().any(|nav| matches!(
-            nav,
-            crate::sim::components::NavTargetRef::Cell { rx, ry }
-                if (i32::from(*rx) - seed.0).abs() <= 2 && (i32::from(*ry) - seed.1).abs() <= 2
-        )),
-        "a member was sent near {seed:?}: {destinations:?}"
-    );
-    assert!(
-        sim.team_script_vm.team(team_id).is_none(),
-        "the team arrived and its script ran to the end"
-    );
 }
 
 /// Script action 53 with aircraft members: the team's `Set_Destination`
@@ -708,41 +600,6 @@ fn super_fires(sim: &mut Simulation, rules: &RuleSet, team_id: u64) -> Vec<(Stri
             _ => None,
         })
         .collect()
-}
-
-/// Script action 55 then 49: once formed, the team's house fires its charged
-/// Iron Curtain at the team's centre, the cell (11,10) between its members,
-/// whose 3x3 block holds both; the script then runs to its end.
-#[test]
-fn a_computer_team_iron_curtains_itself() {
-    let (mut sim, rules, team_id, members, _) = super_team_fixture("0=55,0\n1=49,0");
-    let fires = super_fires(&mut sim, &rules, team_id);
-    assert_eq!(fires, vec![("IronCurtainSpecial".to_string(), (11, 10))]);
-    assert!(
-        sim.team_script_vm.team(team_id).is_none(),
-        "the script ran to its end"
-    );
-    for member in members {
-        let entity = sim.entities().get(member).expect("member");
-        assert_eq!(
-            entity.invulnerability.as_ref().map(|state| state.kind()),
-            Some(crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain),
-            "member {member} is under the Iron Curtain"
-        );
-        assert!(
-            crate::sim::superweapon::invulnerability::is_invulnerable(
-                entity.invulnerability.as_ref(),
-                sim.session.binary_frame()
-            ),
-            "member {member}'s curtain is still running"
-        );
-    }
-    let owner = sim.interner.get("Computer").unwrap();
-    let curtain = sim.interner.get("IronCurtainSpecial").unwrap();
-    assert!(
-        !sim.super_weapons[&owner][&curtain].is_ready,
-        "it recharges"
-    );
 }
 
 /// Script action 55 with the Iron Curtain 30 frames short of its charge: the

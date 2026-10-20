@@ -246,6 +246,7 @@ pub enum ShellCaptureCheckpoint {
     /// Ordinary D5 -> D7 with explicit service/settings inputs.
     NetworkOptions(movies::NetworkOptionsTarget),
     Lan(movies::LanTarget),
+    Wol(movies::WolTarget),
     /// Network on `0xE2`: after its teardown slide and a new `0xE2`'s entry
     /// slide, the settled main menu.
     MainMenu0xE2NetworkBounce,
@@ -357,6 +358,12 @@ impl ShellCaptureCheckpoint {
             .find(|(name, _)| *name == value)
         {
             return Ok(Self::Lan(*target));
+        }
+        if let Some((_, target)) = movies::WOL_CHECKPOINTS
+            .iter()
+            .find(|(name, _)| *name == value)
+        {
+            return Ok(Self::Wol(*target));
         }
         if let Some(tick) = value.strip_prefix(CHECKPOINT_CAMPAIGN_ALL1_OPENING_TICK_PREFIX) {
             let tick: u64 = tick
@@ -658,6 +665,13 @@ impl ShellCaptureCheckpoint {
                     .expect("LAN checkpoint")
                     .0
             }
+            Self::Wol(target) => {
+                movies::WOL_CHECKPOINTS
+                    .iter()
+                    .find(|(_, candidate)| *candidate == target)
+                    .expect("WOL checkpoint")
+                    .0
+            }
             Self::NetworkOptions(target) => {
                 NETWORK_OPTIONS_CHECKPOINTS
                     .iter()
@@ -801,6 +815,7 @@ impl ShellCaptureCheckpoint {
             },
             Self::NetworkOptions(target) => movies::MoviesTarget::NetworkOptions(target),
             Self::Lan(target) => movies::MoviesTarget::Lan(target),
+            Self::Wol(target) => movies::MoviesTarget::Wol(target),
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
@@ -2218,6 +2233,18 @@ mod tests {
             );
         }
         assert!(ShellCaptureCheckpoint::parse("lan-0xbd-offline-shortcut").is_err());
+    }
+
+    #[test]
+    fn wol_checkpoints_route_through_production_wol() {
+        for &(name, target) in movies::WOL_CHECKPOINTS {
+            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("WOL checkpoint");
+            assert_eq!(checkpoint.as_str(), name);
+            assert_eq!(
+                checkpoint.movies_target(),
+                Some(movies::MoviesTarget::Wol(target))
+            );
+        }
     }
 
     #[test]

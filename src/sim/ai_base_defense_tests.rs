@@ -4,6 +4,7 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::ai_buildable::country_bit;
+use crate::sim::base_plan::BasePlanNode;
 use crate::sim::house_state::{HouseDifficulty, HouseState};
 use serde_json::Value;
 
@@ -219,7 +220,9 @@ fn node(value: &Value) -> BasePlanNode {
 /// search call (type, key, argument and the grid the key reads) in native
 /// order, then, given the native site, the result and the node writes.
 /// Whether it placed a defense.
-fn check_choice(row: &Value, choice: &DefenseChoice, mut nodes: Vec<BasePlanNode>) -> bool {
+fn check_choice(row: &Value, choice: &DefenseChoice, nodes: Vec<BasePlanNode>) -> bool {
+    let mut plan = crate::sim::base_plan::BasePlanState::default();
+    plan.set_nodes_for_test(nodes);
     let label = row["label"].as_str().unwrap();
     let events = row["events"].as_array().unwrap();
     let draw_events = events
@@ -264,7 +267,11 @@ fn check_choice(row: &Value, choice: &DefenseChoice, mut nodes: Vec<BasePlanNode
             if site == (0, 0) {
                 false
             } else {
-                write_nodes(&mut nodes, index, pick.defense, site);
+                plan.place_defense(
+                    index,
+                    pick.defense.base_plan_type_index,
+                    pack_base_plan_cell(i32::from(site.0), i32::from(site.1)),
+                );
                 true
             }
         }
@@ -276,7 +283,7 @@ fn check_choice(row: &Value, choice: &DefenseChoice, mut nodes: Vec<BasePlanNode
         .iter()
         .map(node)
         .collect();
-    assert_eq!(nodes, after, "{label}");
+    assert_eq!(plan.nodes(), after.as_slice(), "{label}");
     assert_eq!(int(&row["grid_after"]), 0, "{label}");
     placed
 }
@@ -383,10 +390,12 @@ fn production_state_feeds_the_choice_as_native() {
         0,
         int(&row["tech"]) as i32,
     );
-    house.difficulty = HouseDifficulty::from_native(int(&row["difficulty"]) as i32).unwrap();
-    house.base_plan_center = ((x - SHIFT) as u16, (y - SHIFT) as u16);
-    house.base_plan.nodes = row_nodes(row);
-    house.enemy_house = Some(enemy);
+    house.set_difficulty_for_test(
+        HouseDifficulty::from_native(int(&row["difficulty"]) as i32).unwrap(),
+    );
+    house.set_base_plan_center_for_test(((x - SHIFT) as u16, (y - SHIFT) as u16));
+    house.base_plan_mut().set_nodes_for_test(row_nodes(row));
+    house.set_enemy_house_for_test(Some(enemy));
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
     let mut enemy_house = HouseState::new(enemy, 1, None, false, 0, 10);
@@ -411,7 +420,7 @@ fn production_state_feeds_the_choice_as_native() {
     }
     // The row's bounds are the reservation the native call read; the spawns
     // above marked the arena's own.
-    let reservation = &mut sim.houses.get_mut(&owner).unwrap().base_reservation;
+    let reservation = sim.houses.get_mut(&owner).unwrap().base_reservation_mut();
     *reservation = Default::default();
     reservation.update_bounds(
         left - i32::from(SHIFT),

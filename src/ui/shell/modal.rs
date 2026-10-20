@@ -328,6 +328,114 @@ pub fn quit_confirm_layout(screen_w: i32, screen_h: i32) -> QuitConfirmLayout {
     }
 }
 
+/// The Westwood Online Yes/No box `0x126` (`0x005E2CD0` style 4): its
+/// template places body `0x5B0` (40,40,220,50), Yes 6 (207,155,83,15) and
+/// No 7 (207,175,83,15), the rects of `0x120`'s body, OK and Cancel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct YesNoLayout {
+    pub dialog: RectPx,
+    pub body: RectPx,
+    pub yes: RectPx,
+    pub no: RectPx,
+}
+
+pub fn yes_no_layout(screen_w: i32, screen_h: i32) -> YesNoLayout {
+    let shared = quit_confirm_layout(screen_w, screen_h);
+    YesNoLayout {
+        dialog: shared.dialog,
+        body: shared.body,
+        yes: shared.ok,
+        no: shared.cancel,
+    }
+}
+
+/// The Westwood Online wait box `0xC4` (300x200 DLU, compact popup centred
+/// like the message boxes): Disconnect `0x58D` (109,105,83,15), the
+/// centred text `0x5B2` (51,14,197,54), WOL Check Status `0x58E`
+/// (109,130,83,15) and the animation static `0x7A9` (68,163,165,20).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WaitBoxLayout {
+    pub dialog: RectPx,
+    pub text: RectPx,
+    pub disconnect: RectPx,
+    pub check_status: RectPx,
+    pub animation: RectPx,
+}
+
+pub fn wait_box_layout(screen_w: i32, screen_h: i32) -> WaitBoxLayout {
+    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    WaitBoxLayout {
+        dialog,
+        text: modal_child(dialog, geom::child_window(51, 14, 197, 54)),
+        disconnect: modal_child(dialog, geom::child_window(109, 105, 83, 15)),
+        check_status: modal_child(dialog, geom::child_window(109, 130, 83, 15)),
+        animation: modal_child(dialog, geom::child_window(68, 163, 165, 20)),
+    }
+}
+
+/// The Westwood Online Create Game popup `0xC3` (`0x0078DB70`), the same
+/// 451x326 centred box: executed client rects (tools/storage_oracle/
+/// wol_shell.json) of its controls from their templates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolCreateGameLayout {
+    pub dialog: RectPx,
+    /// Static `GUI:Password`, right aligned.
+    pub password_label: RectPx,
+    /// Edit `0x72C` after its NewEdit inset.
+    pub password: RectPx,
+    pub clan: RectPx,
+    pub limit: RectPx,
+    pub observe: RectPx,
+    pub ok: RectPx,
+    pub cancel: RectPx,
+    /// Its own status line `0x695`.
+    pub status: RectPx,
+}
+
+/// A NewEdit's window after `0x00614CCF`'s +1/-2 inset.
+fn new_edit_window(rect: RectPx) -> RectPx {
+    RectPx::new(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2)
+}
+
+pub fn wol_create_game_layout(screen_w: i32, screen_h: i32) -> WolCreateGameLayout {
+    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    WolCreateGameLayout {
+        dialog,
+        password_label: child(11, 48, 113, 12),
+        password: new_edit_window(child(133, 47, 140, 12)),
+        clan: child(34, 76, 234, 14),
+        limit: child(34, 93, 234, 14),
+        observe: child(34, 110, 234, 14),
+        ok: child(33, 128, 83, 15),
+        cancel: child(184, 128, 83, 15),
+        status: child(0, 186, 291, 12),
+    }
+}
+
+/// The channel password popup `0xE1` (`0x0078E030`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolChannelPasswordLayout {
+    pub dialog: RectPx,
+    /// Static `GUI:ChannelPassword`, centred.
+    pub label: RectPx,
+    pub password: RectPx,
+    pub ok: RectPx,
+    pub cancel: RectPx,
+}
+
+pub fn wol_channel_password_layout(screen_w: i32, screen_h: i32) -> WolChannelPasswordLayout {
+    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    WolChannelPasswordLayout {
+        dialog,
+        label: child(49, 76, 200, 12),
+        password: new_edit_window(child(48, 94, 202, 12)),
+        ok: child(49, 163, 83, 15),
+        cancel: child(157, 163, 83, 15),
+    }
+}
+
 /// Center a modal panel of `(w, h)` on the live screen. Byte-identical to the
 /// skirmish validation-modal centering (`((screen - size) + 1) / 2`, clamped >= 0).
 fn centered_modal_dialog(screen_w: i32, screen_h: i32, w: i32, h: i32) -> RectPx {
@@ -579,5 +687,66 @@ mod tests {
         // A screen smaller than the panel clamps the origin to >= 0 (no negative rect).
         let l = quit_confirm_layout(320, 240);
         assert_eq!(l.dialog, RectPx::new(0, 0, MESSAGE_BOX_W, MESSAGE_BOX_H));
+    }
+
+    #[test]
+    fn wol_wait_box_matches_the_template_arithmetic_at_800x600() {
+        // RT_DIALOG 0xC4 through the shared 300x200 DLU modal policy (the
+        // relayout tool's MulDiv; the popup was not executed).
+        let wait = wait_box_layout(800, 600);
+        assert_eq!(wait.dialog, RectPx::new(175, 137, 451, 326));
+        assert_eq!(wait.disconnect, RectPx::new(339, 308, 126, 25));
+        assert_eq!(wait.text, RectPx::new(252, 160, 297, 89));
+        assert_eq!(wait.check_status, RectPx::new(339, 348, 126, 25));
+        assert_eq!(wait.animation, RectPx::new(277, 402, 249, 34));
+        let yes_no = yes_no_layout(800, 600);
+        let quit = quit_confirm_layout(800, 600);
+        assert_eq!((yes_no.yes, yes_no.no), (quit.ok, quit.cancel));
+    }
+
+    #[test]
+    fn wol_lobby_popups_follow_the_executed_0xc3_0xe1_tables() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/wol_shell.json",
+        ))
+        .unwrap();
+        let rect = |value: &serde_json::Value| {
+            let a: Vec<i32> = serde_json::from_value(value.clone()).unwrap();
+            RectPx::new(a[0], a[1], a[2], a[3])
+        };
+        let mut checked = 0;
+        for key in ["0xC3", "0xE1"] {
+            for (size, case) in corpus["layouts"][key]["sizes"].as_object().unwrap() {
+                let (w, h) = size.split_once('x').unwrap();
+                let (w, h): (i32, i32) = (w.parse().unwrap(), h.parse().unwrap());
+                let create = wol_create_game_layout(w, h);
+                let password = wol_channel_password_layout(w, h);
+                assert_eq!(create.dialog, rect(&case["dialog"]), "{key} {size}");
+                for (id, child) in case["controls"].as_object().unwrap() {
+                    let mut native = rect(&child["screen_rect"]);
+                    let actual = match (key, id.as_str()) {
+                        ("0xC3", "0xFFFF") => create.password_label,
+                        ("0xC3", "0x72C") => create.password,
+                        ("0xC3", "0x66C") => create.clan,
+                        ("0xC3", "0x71E") => create.limit,
+                        ("0xC3", "0x71F") => create.observe,
+                        ("0xC3", "0x1") => create.ok,
+                        ("0xC3", "0x2") => create.cancel,
+                        ("0xC3", "0x695") => create.status,
+                        (_, "0xFFFF") => password.label,
+                        (_, "0x72C") => password.password,
+                        (_, "0x1") => password.ok,
+                        (_, "0x2") => password.cancel,
+                        other => panic!("{other:?}"),
+                    };
+                    if id == "0x72C" {
+                        native = new_edit_window(native);
+                    }
+                    assert_eq!(actual, native, "{key} {size} {id}");
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 36);
     }
 }
