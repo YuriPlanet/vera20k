@@ -964,30 +964,6 @@ impl ResolvedTerrainGrid {
         );
         grid
     }
-
-    pub fn build_height_map(&self) -> BTreeMap<(u16, u16), u8> {
-        self.cells
-            .iter()
-            .map(|cell| ((cell.rx, cell.ry), cell.level))
-            .collect()
-    }
-
-    /// Build a bridge deck height map — only HIGH bridge cells are included.
-    /// Low bridges (LOBRDG/LOBRDB) are at ground level and don't need height
-    /// correction for click resolution or debug overlays.
-    pub fn build_bridge_height_map(&self) -> BTreeMap<(u16, u16), u8> {
-        self.cells
-            .iter()
-            .filter(|cell| {
-                cell.has_bridge_deck
-                    && !cell
-                        .bridge_layer
-                        .as_ref()
-                        .is_some_and(|bl| bl.direction == BridgeDirection::Low)
-            })
-            .map(|cell| ((cell.rx, cell.ry), cell.bridge_deck_level))
-            .collect()
-    }
 }
 
 #[derive(Debug, Clone)]

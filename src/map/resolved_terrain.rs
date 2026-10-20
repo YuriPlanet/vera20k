@@ -338,6 +338,17 @@ impl ResolvedTerrainCell {
         self.has_bridge_deck.then_some(self.bridge_deck_level)
     }
 
+    /// The deck level of a high bridge; low bridges (LOBRDG/LOBRDB) sit at
+    /// ground level and answer `None`.
+    pub fn high_bridge_deck_level(&self) -> Option<u8> {
+        self.bridge_deck_level_if_any().filter(|_| {
+            !self
+                .bridge_layer
+                .as_ref()
+                .is_some_and(|layer| layer.direction == BridgeDirection::Low)
+        })
+    }
+
     pub fn bridge_flags(&self) -> u32 {
         self.bridge_facts.raw_flags
     }

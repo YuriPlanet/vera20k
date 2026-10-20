@@ -191,11 +191,7 @@ pub(crate) fn build_heightmap_overlay_instances(
     for cell in terrain.cells() {
         let (rx, ry, z) = (cell.rx, cell.ry, cell.level);
         // Bridge cells: render at deck height so the overlay aligns with the bridge surface.
-        let deck = cell.bridge_deck_level_if_any().filter(|_| {
-            !cell.bridge_layer.as_ref().is_some_and(|layer| {
-                layer.direction == crate::map::resolved_terrain::BridgeDirection::Low
-            })
-        });
+        let deck = cell.high_bridge_deck_level();
         let render_z = deck.unwrap_or(z);
         let (sx, sy) = terrain::iso_to_screen(rx, ry, render_z);
         if !in_view(sx, sy, TILE_WIDTH, TILE_HEIGHT, cam_x, cam_y, sw, sh, 60.0) {
