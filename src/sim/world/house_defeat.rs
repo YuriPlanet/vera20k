@@ -615,6 +615,14 @@ impl Simulation {
         true
     }
 
+    /// Diagnostic producer for a map's TAction 68 (Lose) on the current
+    /// House, through the same [`Self::trigger_house_outcome`] owner. Only
+    /// the dev chord's capture routes reach it; shipping builds omit it.
+    #[cfg(feature = "dev-overlays")]
+    pub fn dev_trigger_current_house_lose(&mut self, rules: &RuleSet) -> bool {
+        self.trigger_house_outcome(68, -1, Some(rules), FrameEffects::empty())
+    }
+
     /// Session `+0x300` (`0x00A8B538`), written when the current house is
     /// defeated (`0x004FC205`; the other writer, `0x005C3ABE`, is the
     /// cooperative mode's). VERA reads it as the current house's Defeated

@@ -340,66 +340,23 @@ mod campaign_score_model_tests {
     }
 }
 
-/// A score row's name: the house's UI name (`house+0x1602A`, copied at
-/// `0x005C98FE`). Skirmish setup gives a human house its player's handle
-/// (`0x00688094`) and every computer house `TXT_COMPUTER`
-/// (`0x00688252..0x00688270`). A human without a recorded handle (a launch
-/// with no skirmish session) shows `fallback`.
-fn score_row_display_name(
-    is_human: bool,
-    handle: Option<&str>,
-    computer: &str,
-    fallback: &str,
-) -> String {
-    if !is_human {
-        return computer.to_string();
-    }
-    handle.unwrap_or(fallback).to_string()
-}
-
-/// What names and colours the score rows.
-struct ScoreRowSources<'a> {
-    handle: Option<&'a str>,
-    computer: &'a str,
-    schemes: &'a [crate::rules::color_scheme::ColorSchemeEntry],
-    colors: &'a crate::map::houses::HouseColorMap,
-}
-
 /// The dialog's rows from the sim's snapshot, in its order (`0x005C9D7A`).
 fn resolve_score_rows(
     sim: &crate::sim::world::Simulation,
     snapshot: &crate::sim::score::TerminalScoreSnapshot,
-    sources: &ScoreRowSources<'_>,
+    sources: &crate::app::presentation::house_ui::HouseUiSources<'_>,
     country_name: impl Fn(crate::sim::intern::InternedId) -> Option<String>,
 ) -> Vec<crate::ui::score_shell::ScoreRow> {
     let mut rows: Vec<_> = snapshot
         .rows
         .iter()
-        .map(|raw| {
-            let owner_name = sim.interner.resolve(raw.owner).to_string();
-            let is_human = sim
-                .houses
-                .get(&raw.owner)
-                .is_some_and(|house| house.is_human());
-            let fallback = raw.country.and_then(&country_name);
-            let color = sources
-                .colors
-                .get(&owner_name)
-                .copied()
-                .unwrap_or(crate::rules::house_colors::NO_REMAP);
-            crate::ui::score_shell::ScoreRow {
-                name: score_row_display_name(
-                    is_human,
-                    sources.handle,
-                    sources.computer,
-                    fallback.as_deref().unwrap_or(&owner_name),
-                ),
-                rgb: crate::rules::house_colors::house_text_rgb(sources.schemes, color),
-                kills: raw.kills,
-                losses: raw.losses,
-                built: raw.built,
-                score: raw.score,
-            }
+        .map(|raw| crate::ui::score_shell::ScoreRow {
+            name: sources.ui_name(sim, raw.owner, raw.country, &country_name),
+            rgb: sources.text_rgb(sim, raw.owner),
+            kills: raw.kills,
+            losses: raw.losses,
+            built: raw.built,
+            score: raw.score,
         })
         .collect();
     crate::ui::score_shell::sort_rows(&mut rows);
@@ -431,30 +388,11 @@ fn build_score_screen_model(
         return ScoreScreenModel::default();
     };
     let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
-    let presentation = &state.match_state.match_presentation;
     let rows = resolve_score_rows(
         sim,
         raw_snapshot,
-        &ScoreRowSources {
-            handle: state.match_state.session.local_player_name(),
-            computer: &computer,
-            schemes: state
-                .rules()
-                .map_or(&[][..], |rules| rules.color_schemes.as_slice()),
-            colors: &presentation.house_color_map,
-        },
-        |country| {
-            let country = sim.interner.resolve(country);
-            let (ui_key, plain) = state
-                .rules()
-                .map(|rules| rules.country_display_name_sources(country))
-                .unwrap_or((None, None));
-            let localized = ui_key
-                .zip(state.process_assets.csf.as_ref())
-                .map(|(key, csf)| csf.text(key).into_owned())
-                .filter(|text| Some(text.as_str()) != ui_key);
-            localized.or_else(|| plain.map(str::to_string))
-        },
+        &crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer),
+        |country| crate::app::presentation::house_ui::country_display_name(state, sim, country),
     );
     // Scenario +0x34B8: the side of session player 0's country, the local
     // player in a skirmish (0x0068779A..0x0068782D).
@@ -2223,8 +2161,8 @@ mod camera_cadence_tests;
 #[cfg(test)]
 mod modal_pump_tests {
     use super::{
-        ScoreRowSources, SessionMode, modal_pump_should_advance_sim, resolve_score_rows,
-        should_record_replay_tick, wall_clock_service_admission,
+        SessionMode, modal_pump_should_advance_sim, resolve_score_rows, should_record_replay_tick,
+        wall_clock_service_admission,
     };
 
     #[test]
@@ -2498,7 +2436,7 @@ mod modal_pump_tests {
         let rows = resolve_score_rows(
             &sim,
             &snapshot,
-            &ScoreRowSources {
+            &crate::app::presentation::house_ui::HouseUiSources {
                 handle: Some("[New Player]"),
                 computer: "Computer",
                 schemes: &schemes,
@@ -2521,7 +2459,7 @@ mod modal_pump_tests {
         let rows = resolve_score_rows(
             &sim,
             &snapshot,
-            &ScoreRowSources {
+            &crate::app::presentation::house_ui::HouseUiSources {
                 handle: None,
                 computer: "Computer",
                 schemes: &schemes,

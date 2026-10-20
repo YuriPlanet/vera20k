@@ -11,8 +11,9 @@
 //! MapSelect writes the next map into Scenario+0x125C, the carry-over record
 //! `0x004C6180` saves the 50 globals, the mission counter Scenario+0x1254
 //! increments (`0x00685AAF`) and Start_Scenario `0x00683AB0` runs with the
-//! retained campaign index (`0x00685C47`). The record is written back by
-//! `0x004C6210` once Start_Scenario has read the next map.
+//! retained campaign index (`0x00685C47`). The record (globals and the
+//! player House's difficulty row) is written back by `0x004C6210` once
+//! Start_Scenario has read the next map; see `sim::campaign_carry_over`.
 //!
 //! Residuals, all inert on the retail campaign maps:
 //! - the Win movie (`+0x143C`, before StandaloneScore) is not played; retail
@@ -22,16 +23,14 @@
 //! - the record's money (`CarryOverMoney` x the House's money, capped by
 //!   `CarryOverCap`, also added to House+0x1DC) and the mission timer
 //!   (`TimerInherit`) are not carried; every retail map has
-//!   `CarryOverMoney=0.000000` and `TimerInherit=no`. Nor is the player's
-//!   handicap (House+0x184 through Assign_Handicap `0x004F6EC0`); the next
-//!   mission reads the same Options.Difficulty unless the player changed it.
+//!   `CarryOverMoney=0.000000` and `TimerInherit=no`.
 //! - the calls after the restore (`0x00685D7F..0x00685DAE`: `0x007241A0`,
 //!   `0x004F4480`, `0x004A3C30`) are not ported.
 //! - Session+0x3C0 bit 2 (`0x00685934`) skips the score, movies and
 //!   MapSelect and restarts Scenario+0x125C; VERA has no writer of that bit.
 //! - Show_Credits returns to the main menu with INTRO queued, as the shell's
 //!   credits do; the theme native plays when Main_Game returns is not traced.
-//! - the carried globals are written after installation and are not part of
+//! - the carry-over record is written after installation and is not part of
 //!   the startup the diagnostic replay records.
 //! - SkipMapSelect=yes (`0x005ADE20`) matches NextScenario against the stage
 //!   recorded in Scenario+0x35A0, which VERA does not track; such a map
@@ -259,7 +258,7 @@ impl App {
                             counter + 1,
                             state.persistence.options_profile.difficulty,
                             sim.session.game_options().game_speed,
-                            sim.global_variables(),
+                            sim.save_campaign_carry_over(),
                             &mut crate::app::match_bootstrap::OrdinaryMatchSeedClock,
                         )))
                     }

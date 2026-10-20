@@ -101,7 +101,7 @@ fn cncnet_campaign_keeps_logical_identity_for_loose_and_archived_missions() {
         2,
         1,
         3,
-        [false; crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT],
+        crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
         &mut OrdinaryMatchSeedClock,
     );
     assert_eq!(next.scenario(), "ALL02UMD.MAP");
@@ -117,7 +117,7 @@ fn cncnet_campaign_keeps_logical_identity_for_loose_and_archived_missions() {
         3,
         1,
         3,
-        [false; crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT],
+        crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
         &mut OrdinaryMatchSeedClock,
     );
     let loaded =

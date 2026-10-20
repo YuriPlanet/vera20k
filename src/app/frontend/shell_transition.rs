@@ -711,7 +711,7 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             .then_some(ShellSlideKind::Keyboard)
             .filter(|kind| crate::ui::shell::slide::is_slide_eligible(kind.dialog_id()));
     }
-    if state.frontend.exit_confirm_modal.is_some() || state.frontend.quit_cascade.is_some() {
+    if state.frontend.shell_message_box.is_some() || state.frontend.quit_cascade.is_some() {
         return None;
     }
     // Only the native page slides; the assetless fallback does not.

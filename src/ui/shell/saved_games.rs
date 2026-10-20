@@ -5,7 +5,7 @@
 
 use super::descriptor::DialogId;
 use super::geom::{self, RectPx, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale};
-use super::in_game_shell::InGameShellLayout;
+use super::in_game_shell::{self, InGameShellLayout};
 use super::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::{SavedSeedLayout, SavedSeedMode};
 
@@ -46,14 +46,7 @@ pub const fn saved_game_title_label(mode: SavedSeedMode) -> (&'static str, &'sta
 }
 
 fn ordinary_rect(dlu: RectPx, width: i32, height: i32) -> RectPx {
-    let raw = geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h);
-    // Original60B7A0 clamps final coordinates, not the signed half-delta.
-    RectPx::new(
-        (raw.x + (width - 800) / 2).max(0),
-        (raw.y + (height - 600) / 2).max(0),
-        raw.w,
-        raw.h,
-    )
+    in_game_shell::ordinary_child_rect(geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h), width, height)
 }
 
 /// Physical active-session layout. Static40C remains visible: 558F8A hides
@@ -72,7 +65,7 @@ pub fn saved_game_layout(
         screen,
         dialog: screen,
         // 608CD0 routes694 through active60B1D0; no launcher +7 adjustment.
-        title: RectPx::new(width - 165, 2, 162, 16),
+        title: in_game_shell::right_panel_title_rect(width),
         prompt: ordinary_rect(controls.prompt, width, height),
         list: ordinary_rect(controls.list, width, height),
         name_edit: (mode == SavedSeedMode::Save).then(|| ordinary_rect(EDIT_DLU, width, height)),
@@ -81,14 +74,9 @@ pub fn saved_game_layout(
             button_size,
         ),
         // 609730 ->60B350: bottom button follows the SIDE3 upper edge.
-        back: RectPx::new(
-            width - 147,
-            shell.side3.y - button_size[1],
-            button_size[0],
-            button_size[1],
-        ),
+        back: shell.lower_button_rect(width, button_size),
         // Active60B550 uses parent left+10 and bottom-existingheight-1.
-        blank: RectPx::new(10, height - 21, 455, 20),
+        blank: in_game_shell::status_line_rect(height),
         // The active-session dialog is anchored by 0x0060B7A0, never stretched.
         scale: ShellScale::RETAIL,
     }

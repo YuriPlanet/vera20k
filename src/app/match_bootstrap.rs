@@ -4,7 +4,7 @@
 //! sessions, reads the ordinary Windows seed once, and observes an already
 //! initialized `Simulation` without mutating it.
 
-use crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT;
+use crate::sim::campaign_carry_over::CampaignCarryOver;
 use crate::sim::world::{Simulation, SimulationRngState};
 use crate::skirmish_launch::{LaunchStartPosition, SKIRMISH_AI_SLOT_COUNT, SkirmishLaunchSession};
 
@@ -174,9 +174,16 @@ pub struct PreparedCampaignStartup {
     mission_counter: i32,
     difficulty: i32,
     launch_options: Option<CampaignLaunchOptions>,
-    /// The globals `0x004C6180` saved from the won mission; `0x004C6210`
-    /// writes them back once Start_Scenario has read the next map.
-    carried_globals: Option<[bool; SCENARIO_GLOBAL_COUNT]>,
+    /// The carry-over record `0x004C6210` writes back once Start_Scenario
+    /// has read the map. A new campaign (Main__PrepareSession) never calls
+    /// it; a won mission, the restart and the defeat retry all do.
+    carry_over: Option<CampaignCarryOver>,
+    /// Start_Scenario's DL argument (`0x00683ABC`), tested at `0x00683D9C`
+    /// before the post-read `[Basic] Action` movie (Scenario+0x1444). A new
+    /// campaign (`0x0052E70C`) and a won mission (`0x00685C45`) pass 1; the
+    /// restart (`0x006864ED`) and the defeat retry (`0x00686287`) pass 0.
+    /// The pre-read Intro/Brief movie does not depend on it.
+    play_action_movie: bool,
     pub seed: MatchSeed,
 }
 
@@ -216,20 +223,63 @@ impl PreparedCampaignStartup {
             })
     }
 
-    pub fn carried_globals(&self) -> Option<&[bool; SCENARIO_GLOBAL_COUNT]> {
-        self.carried_globals.as_ref()
+    pub fn carry_over(&self) -> Option<&CampaignCarryOver> {
+        self.carry_over.as_ref()
+    }
+
+    pub fn plays_action_movie(&self) -> bool {
+        self.play_action_movie
+    }
+
+    /// Start_Scenario for the same mission: the in-battle Restart
+    /// (`0x006863E0`, call at `0x006864FC`) and the defeat retry (`0x00686296`)
+    /// both pass Scenario+0x125C, DL 0 and the retained campaign index
+    /// Scenario+0x34CC. Neither path touches the mission counter
+    /// Scenario+0x1254 or saves the carry-over record, so the record
+    /// `0x004C6210` writes back afterwards (`0x00686506`, `0x0068639A`) is the
+    /// one this mission started from. Without a won mission the record is the
+    /// one `0x004C6140` cleared at session preparation (`0x0052DF0E`): every
+    /// global false and the player's difficulty row 1, which SetDifficulty
+    /// puts on the player House whatever Options.Difficulty says. The
+    /// computer rows and the session's Options.Difficulty are read again.
+    pub fn restart(
+        &self,
+        difficulty: i32,
+        game_speed: i32,
+        clock: &mut impl MatchSeedClock,
+    ) -> Self {
+        Self {
+            campaign_index: self.campaign_index,
+            campaign: self.campaign.clone(),
+            scenario: self.scenario.clone(),
+            scenario_file: self.scenario_file.clone(),
+            mission_counter: self.mission_counter,
+            difficulty,
+            launch_options: self
+                .launch_options
+                .as_ref()
+                .map(|options| CampaignLaunchOptions {
+                    game_speed,
+                    ..options.clone()
+                }),
+            carry_over: Some(self.carry_over.unwrap_or(CampaignCarryOver::CLEARED)),
+            play_action_movie: false,
+            seed: read_match_seed(clock),
+        }
     }
 
     /// The won mission's Start_Scenario (`0x00685C4E`): the same campaign
     /// index, the map MapSelect chose, the incremented mission counter and
-    /// the saved globals. Difficulty is Options.Difficulty again.
+    /// the record `0x004C6180` saved from the won mission. Options.Difficulty
+    /// is read again for the session; the player House's row comes from the
+    /// record.
     pub fn next_mission(
         &self,
         scenario: String,
         mission_counter: i32,
         difficulty: i32,
         game_speed: i32,
-        carried_globals: [bool; SCENARIO_GLOBAL_COUNT],
+        carry_over: CampaignCarryOver,
         clock: &mut impl MatchSeedClock,
     ) -> Self {
         let (scenario, scenario_file) =
@@ -248,7 +298,8 @@ impl PreparedCampaignStartup {
                     game_speed,
                     ..options.clone()
                 }),
-            carried_globals: Some(carried_globals),
+            carry_over: Some(carry_over),
+            play_action_movie: true,
             seed: read_match_seed(clock),
         }
     }
@@ -278,7 +329,8 @@ pub fn prepare_campaign_startup(
         mission_counter: 1,
         difficulty,
         launch_options,
-        carried_globals: None,
+        carry_over: None,
+        play_action_movie: true,
         seed: read_match_seed(clock),
     })
 }
@@ -772,7 +824,7 @@ mod tests {
             2,
             2,
             4,
-            [false; SCENARIO_GLOBAL_COUNT],
+            CampaignCarryOver::CLEARED,
             &mut clock,
         );
         assert_eq!(next.campaign_index(), startup.campaign_index());
@@ -781,6 +833,45 @@ mod tests {
         assert_eq!(next.selected_map_file(), "ALL05uMd.map");
         assert_eq!(next.game_options().unwrap().game_speed, 4);
         assert!(!next.game_options().unwrap().build_off_ally);
+        assert!(startup.plays_action_movie() && next.plays_action_movie());
+    }
+
+    /// Restart and the defeat retry re-enter Start_Scenario with the same
+    /// FileName and campaign index, DL 0 and the record this mission
+    /// started from; only the seed and Options.Difficulty are read again.
+    #[test]
+    fn restart_reenters_the_same_mission_without_the_action_movie() {
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[Battles]\n0=ALL1\n1=SOV1\n[ALL1]\nScenario=ALL01UMD.MAP\n[SOV1]\nScenario=SOV01UMD.MAP\n",
+        );
+        let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
+        campaigns.apply_ini(&ini, &crate::rules::movies::MovieRegistry::default());
+        let mut clock = CountingClock { value: 5, reads: 0 };
+        let first = prepare_campaign_startup(&campaigns, "SOV1", 0, None, None, &mut clock)
+            .expect("campaign admission");
+        let mut won = crate::sim::world::Simulation::new();
+        won.set_trigger_variable(true, 3, true);
+        let record = won.save_campaign_carry_over();
+        let second = first.next_mission("SOV02SMD.MAP".into(), 2, 0, 1, record, &mut clock);
+        clock.value = 77;
+        let restarted = second.restart(2, 1, &mut clock);
+        assert_eq!(restarted.campaign_index(), second.campaign_index());
+        assert_eq!(restarted.campaign(), second.campaign());
+        assert_eq!(restarted.scenario(), "SOV02SMD.MAP");
+        assert_eq!(restarted.selected_map_file(), second.selected_map_file());
+        assert_eq!(restarted.mission_counter(), 2);
+        assert_eq!(restarted.carry_over(), Some(&record));
+        assert!(restarted.carry_over().unwrap().globals()[3]);
+        assert_eq!(restarted.difficulty(), 2);
+        assert_eq!(restarted.seed.value, 77);
+        assert!(!restarted.plays_action_movie());
+        // A first mission starts without the record but restarts with the
+        // one `0x004C6140` cleared, player row 1 included.
+        assert_eq!(first.carry_over(), None);
+        assert_eq!(
+            first.restart(0, 1, &mut clock).carry_over(),
+            Some(&CampaignCarryOver::CLEARED)
+        );
     }
 
     fn acknowledge<'a>(

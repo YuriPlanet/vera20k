@@ -2179,7 +2179,7 @@ impl HouseState {
     /// Unlimbo BasePlan satisfaction and the early House-update activation.
     /// `HouseClass::IsControlledByHuman @ 0x0050B730` supplies the former;
     /// `HouseClass__Update @ 0x004F8440` inlines the same branch shape.
-    pub(crate) const fn is_controlled_by_human(&self, game_mode_nonzero: bool) -> bool {
+    pub const fn is_controlled_by_human(&self, game_mode_nonzero: bool) -> bool {
         self.is_human || (!game_mode_nonzero && self.player_control)
     }
 

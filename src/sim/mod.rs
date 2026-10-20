@@ -37,6 +37,7 @@ pub(crate) mod base_plan;
 pub(crate) mod base_plan_generation;
 pub mod bomb;
 pub(crate) mod c4_plant;
+pub mod campaign_carry_over; // the record 0x008A38E0 one campaign mission hands to the next start
 pub mod capture_manager;
 pub mod cloak_disguise;
 pub mod command;

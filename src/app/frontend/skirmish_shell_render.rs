@@ -30,7 +30,9 @@ mod preview;
 mod text;
 
 pub(crate) use preview::SkirmishPreviewTexture;
-pub(crate) use text::{combo_item_label, skirmish_right_panel_label_strings};
+pub(crate) use text::{
+    combo_item_label, skirmish_right_panel_label_strings, skirmish_selected_map_name,
+};
 
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellFrameWave;
@@ -1899,6 +1901,8 @@ mod tests {
 }
 mod abort;
 pub(crate) use abort::render_abort_shell;
+mod diplomacy;
+pub(crate) use diplomacy::render_diplomacy_shell;
 
 mod list;
 

@@ -170,7 +170,7 @@ impl AppState {
     /// Whether any main-menu modal dialog (exit confirm, options, keyboard)
     /// is currently open.
     pub(crate) fn main_menu_dialog_open(&self) -> bool {
-        self.frontend.exit_confirm_modal.is_some()
+        self.frontend.shell_message_box.is_some()
             || self.frontend.options_dialog.is_some()
             || self.frontend.keyboard_dialog.is_some()
     }

@@ -496,14 +496,22 @@ pub(crate) fn skirmish_right_panel_label_strings(state: &AppState) -> (String, S
         .find(|mode| mode.id == shell.selected_mode_id)
         .map(|mode| localized_label(state, &mode.ui_name_key, &mode.ui_name_key))
         .unwrap_or_else(|| localized_label(state, "GUI:Battle", "Battle"));
-    let map_label = state
+    let map_label = skirmish_selected_map_name(state)
+        .unwrap_or("None")
+        .to_string();
+    (title, game_type, map_label)
+}
+
+/// The Skirmish selection's scenario description, Session+0xEA
+/// (`0x00A8B322`): `MPGameOptions__SelectScenario` copies it from the chosen
+/// list entry (`0x005E7D2C`) and `MPDialog__SetMapNameStatic` shows it.
+pub(crate) fn skirmish_selected_map_name(state: &AppState) -> Option<&str> {
+    state
         .frontend
         .scenario_catalog
         .shell_maps()
-        .get(shell.selected_map_idx)
-        .map(|map| map.display_name.clone())
-        .unwrap_or_else(|| "None".to_string());
-    (title, game_type, map_label)
+        .get(state.frontend.skirmish_shell_state.selected_map_idx)
+        .map(|map| map.display_name.as_str())
 }
 
 /// A kind-1 static's label: the Path-A reveal of its text in its window

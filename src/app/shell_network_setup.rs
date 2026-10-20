@@ -437,10 +437,11 @@ fn persist_setup_preferences(state: &mut AppState) {
     }
 }
 
-/// The native map description can come from the host when no local scenario
-/// record qualifies. It belongs to the accepted session, not a phantom entry
-/// in the discovery catalog (ParsePacket5E51C4..5E5409).
-fn map_display_name(state: &AppState) -> Option<&str> {
+/// The network setup's scenario description, Session+0xEA (`0x00A8B322`).
+/// It can come from the host when no local scenario record qualifies. It
+/// belongs to the accepted session, not a phantom entry in the discovery
+/// catalog (ParsePacket5E51C4..5E5409).
+pub(crate) fn map_display_name(state: &AppState) -> Option<&str> {
     let session = &state.match_state.session;
     let file = session.network_setup()?.selected_map_file.as_deref()?;
     session

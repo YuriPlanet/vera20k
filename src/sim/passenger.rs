@@ -629,13 +629,18 @@ pub fn can_enter_transport(
     }
     // Infantry51ED10 asks the actor's alliance before issuing the radio; the
     // receiver then asks its own (Building 0x0043C2D0, Unit 0x00737430).
-    crate::sim::combat::combat_weapon::is_ally_by_object(
-        Some(&sim.house_alliances),
-        &sim.interner,
-        passenger.owner(),
-        transport.owner(),
-    ) && crate::sim::radio::receive::can_load_query(sim, transport_id, passenger_id, rules)
-        == crate::sim::radio::RadioResponse::Roger
+    // Only a carrier whose type has `Passengers=` above 0 (`+0x5E0`,
+    // `0x0051ED7C..0x0051ED96`) is asked: a Grinder answers ROGER but carries
+    // no one.
+    transport_obj.passengers > 0
+        && crate::sim::combat::combat_weapon::is_ally_by_object(
+            Some(&sim.house_alliances),
+            &sim.interner,
+            passenger.owner(),
+            transport.owner(),
+        )
+        && crate::sim::radio::receive::can_load_query(sim, transport_id, passenger_id, rules)
+            == crate::sim::radio::RadioResponse::Roger
 }
 
 /// `BuildingClass::CanBeOccupiedBy @ 0x00457CE0` for an infantryman: the

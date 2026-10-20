@@ -110,6 +110,12 @@ pub(crate) fn handle_mouse_input(
             crate::app::input::abort::mouse(state, button, pressed);
             return;
         }
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Diplomacy
+        {
+            crate::app::input::diplomacy::mouse(state, button, pressed);
+            return;
+        }
         if matches!(
             state.match_state.match_presentation.in_game_menu,
             crate::ui::pause_menu::InGameMenuState::SavedGame(_)
@@ -737,6 +743,12 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             crate::app::input::abort::cursor_moved(state);
             return;
         }
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Diplomacy
+        {
+            crate::app::input::diplomacy::cursor_moved(state);
+            return;
+        }
         if matches!(
             state.match_state.match_presentation.in_game_menu,
             crate::ui::pause_menu::InGameMenuState::SavedGame(_)
@@ -1088,7 +1100,10 @@ pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) 
     match action {
         SidebarAction::None => {}
         SidebarAction::OpenPauseMenu => open_pause_menu(state),
-        SidebarAction::OpenDiplomacy => open_diplomacy_menu(state),
+        SidebarAction::OpenDiplomacy => crate::app::input::diplomacy::open(
+            state,
+            crate::app::input::diplomacy::DiplomacyRequest::SidebarButton,
+        ),
         SidebarAction::SelectTab(tab) => {
             // Retained strips own their rows; changing tabs only selects a strip.
             state.match_state.match_presentation.active_sidebar_tab = tab;
@@ -1519,7 +1534,10 @@ pub(crate) fn handle_hotkey_pressed(
     match resolution {
         HotkeyResolution::Command(command) => dispatch_retail_hotkey(state, command),
         HotkeyResolution::Fallback(HotkeyFallback::DiplomacyDialog) => {
-            open_diplomacy_menu(state);
+            crate::app::input::diplomacy::open(
+                state,
+                crate::app::input::diplomacy::DiplomacyRequest::Hotkey,
+            );
         }
         HotkeyResolution::Fallback(
             HotkeyFallback::ArrowLeft
@@ -1772,12 +1790,6 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
 fn open_pause_menu(state: &mut AppState) {
     crate::app::App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Menu);
     log::info!("Game paused");
-}
-
-fn open_diplomacy_menu(_state: &mut AppState) {
-    // 6538FE -> GameState8 (diplomacy), or9 (mission briefing in mode0).
-    // Existing diplomacy hotkey boundary: the actual modal is not implemented.
-    // Keep this residual explicit; this increment establishes its gadget only.
 }
 
 fn handle_options_hotkey(state: &mut AppState) {

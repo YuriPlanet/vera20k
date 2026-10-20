@@ -1235,8 +1235,13 @@ mod tests {
             "the app cascade receives exactly one executed edge"
         );
         assert_eq!(
-            crate::app::match_runtime::scenario_exit::arbitrate_executed_exit(false),
-            crate::app::match_runtime::scenario_exit::ExecutedExitDisposition::Abort,
+            crate::app::match_runtime::scenario_exit::route_scenario_termination(
+                crate::app::match_runtime::scenario_exit::TerminationRequests {
+                    exit: true,
+                    ..Default::default()
+                }
+            ),
+            Some(crate::app::match_runtime::scenario_exit::TerminationRoute::Exit),
             "standalone EXIT keeps the abort route"
         );
         assert_eq!(
@@ -1286,10 +1291,14 @@ mod tests {
         assert!(local_outcome_exit_ready, "House expiry happened this frame");
         assert_eq!(sim.take_executed_exit_owner(), Some(local));
         assert_eq!(
-            crate::app::match_runtime::scenario_exit::arbitrate_executed_exit(
-                local_outcome_exit_ready
+            crate::app::match_runtime::scenario_exit::route_scenario_termination(
+                crate::app::match_runtime::scenario_exit::TerminationRequests {
+                    outcome_ready: local_outcome_exit_ready,
+                    exit: true,
+                    ..Default::default()
+                }
             ),
-            crate::app::match_runtime::scenario_exit::ExecutedExitDisposition::Outcome,
+            Some(crate::app::match_runtime::scenario_exit::TerminationRoute::Outcome),
             "Main_Game's victory/loss route has priority over simultaneous EXIT"
         );
         assert_eq!(

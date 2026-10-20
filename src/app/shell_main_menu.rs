@@ -25,7 +25,7 @@ impl ConfirmedQuitOperations for AppStateConfirmedQuitOperations<'_> {
     }
 
     fn dismiss_confirmation(&mut self) {
-        App::close_exit_confirm_modal_from_controller(self.state);
+        App::close_shell_message_box_from_controller(self.state);
     }
 
     fn start_cascade(&mut self) {
@@ -405,22 +405,6 @@ impl App {
         );
     }
 
-    /// Campaign defeat also bypasses the generic multiplayer score dialog.
-    /// Until the native message-box choices are ported, retain the common
-    /// asset-independent result card instead of presenting `0x108`.
-    pub(crate) fn open_campaign_defeat_fallback(
-        state: &mut AppState,
-        title: String,
-        detail: String,
-    ) {
-        state.frontend.score_page = None;
-        state.frontend.score_art = None;
-        state.frontend.campaign_score_art = None;
-        state.frontend.campaign_score_page = None;
-        state.frontend.shell_first_paint_slide = None;
-        state.frontend.screen = GameScreen::MissionResult { title, detail };
-    }
-
     fn score_layout(state: &AppState) -> crate::ui::score_shell::ScoreLayout {
         crate::app::frontend::shell_layout::score_layout(state)
     }
@@ -575,6 +559,18 @@ impl App {
         // A won campaign mission continues in GameExit::Victory instead of
         // returning to the shell; read it before the teardown below.
         let campaign_victory = Self::take_campaign_victory(state);
+        Self::close_finished_scenario(state);
+        match campaign_victory {
+            Some(victory) => Self::advance_campaign_victory(state, victory),
+            None => Self::resume_shell_after_match(state),
+        }
+    }
+
+    /// Retire a scenario whose outcome teardown has run: flush the
+    /// deterministic log while its simulation is still alive and hand the
+    /// scenario stream back to the offline shell, retaining the runtime and
+    /// presentation resources.
+    pub(super) fn close_finished_scenario(state: &mut AppState) {
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
         if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
@@ -592,10 +588,6 @@ impl App {
         state.frontend.screen = GameScreen::MainMenu;
         state.match_state.input.zoom_level = 1.0;
         state.match_state.input.zoom_target = 1.0;
-        match campaign_victory {
-            Some(victory) => Self::advance_campaign_victory(state, victory),
-            None => Self::resume_shell_after_match(state),
-        }
     }
 
     /// PrepareSession re-enters the active mode's shell: LAN starts a new BB,
@@ -1019,7 +1011,7 @@ impl App {
 
     /// The quit-confirm (0x120) modal's OK/Cancel button feed: resource-id'd pixel
     /// rects from the centered modal layout at the live screen size.
-    fn exit_confirm_modal_feed(state: &AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
+    fn shell_message_box_feed(state: &AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
         use crate::ui::shell::layout::LaidOutControl;
         use crate::ui::shell::modal;
         let layout = modal::quit_confirm_layout(
@@ -1038,8 +1030,8 @@ impl App {
         ]
     }
 
-    pub(super) fn handle_exit_confirm_modal_mouse_down(state: &mut AppState) {
-        let feed = Self::exit_confirm_modal_feed(state);
+    pub(super) fn handle_shell_message_box_mouse_down(state: &mut AppState) {
+        let feed = Self::shell_message_box_feed(state);
         let (x, y) = state.match_state.input.cursor_px();
         if state.frontend.shell_controller.top_id()
             != Some(crate::ui::shell::descriptor::DialogId(0x0120))
@@ -1055,8 +1047,8 @@ impl App {
         }
     }
 
-    pub(super) fn handle_exit_confirm_modal_mouse_up(state: &mut AppState) {
-        let feed = Self::exit_confirm_modal_feed(state);
+    pub(super) fn handle_shell_message_box_mouse_up(state: &mut AppState) {
+        let feed = Self::shell_message_box_feed(state);
         let (x, y) = state.match_state.input.cursor_px();
         if state.frontend.shell_controller.top_id()
             != Some(crate::ui::shell::descriptor::DialogId(0x0120))
@@ -1064,22 +1056,48 @@ impl App {
             return;
         }
         let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
-        match activated {
+        if let Some(result) =
+            activated.and_then(crate::ui::shell::modal::ModalResult::from_message_box_control)
+        {
+            Self::resolve_shell_message_box(state, result);
+        }
+    }
+
+    /// The box's result returns to its caller. Callback `0x005D36A0` writes 0
+    /// for `0x5AE` and 1 for control 2 or IDOK.
+    pub(super) fn resolve_shell_message_box(
+        state: &mut AppState,
+        result: crate::ui::shell::modal::ModalResult,
+    ) {
+        use crate::app::frontend::state::ShellMessageBoxPurpose;
+        let Some(message_box) = state.frontend.shell_message_box.take() else {
+            return;
+        };
+        match message_box.purpose {
             // OK -> quit (result 0). Dismiss the confirmation first, persist
             // settings to RA2MD.INI, then run the graceful cascade (music fade
             // → trailing-voice wait → hard stop → exit) via render_frame instead
             // of exiting immediately. The screen fade-to-black is sub-step 4b-ii-b.
-            Some(id) if id == crate::ui::shell::modal::control::OK => {
+            ShellMessageBoxPurpose::ExitGame
+                if result == crate::ui::shell::modal::ModalResult::MessageBox(0) =>
+            {
                 let mut operations = AppStateConfirmedQuitOperations { state };
                 dispatch_shell_controller_confirmed_quit(&mut operations);
             }
-            // Cancel (control 2) -> stay; close the modal via the controller
-            // pop (D-B3) so mouse and Esc converge on the same teardown.
-            Some(id) if id == crate::ui::shell::modal::control::CANCEL => {
-                Self::close_exit_confirm_modal_from_controller(state);
+            // Cancel -> stay; close the modal via the controller pop (D-B3)
+            // so mouse and Esc converge on the same teardown.
+            ShellMessageBoxPurpose::ExitGame => {
+                Self::close_shell_message_box_from_controller(state);
                 state.platform.window.request_redraw();
             }
-            _ => {}
+            ShellMessageBoxPurpose::CampaignReplay(retry) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_campaign_replay(
+                    state,
+                    retry,
+                    crate::app::campaign_defeat::replay_route(result),
+                );
+            }
         }
     }
 
@@ -1409,7 +1427,7 @@ impl App {
             MainMenuShellAction::None => {}
             // The original pops a confirm message box here; it does NOT quit on
             // the first Exit click. Quitting happens only on confirm.
-            MainMenuShellAction::ExitGame => Self::open_exit_confirm_modal(state),
+            MainMenuShellAction::ExitGame => Self::open_exit_confirm(state),
             MainMenuShellAction::SinglePlayer => {
                 Self::open_single_player_shell(state);
             }
@@ -1425,16 +1443,30 @@ impl App {
     }
 
     /// Open the Exit-Game confirm message box, resolving its labels from CSF.
-    fn open_exit_confirm_modal(state: &mut AppState) {
+    fn open_exit_confirm(state: &mut AppState) {
         // State 6 runs after 0xE2 is destroyed: it paints the empty shell
         // backdrop (`0x0052FEC0`) and asks; Cancel builds a new 0xE2 (state
         // 0x12, `0x0052DE39..0x0052DE42`).
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
         let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
-        let modal = crate::ui::main_menu_dialogs::ExitConfirmModalState::open(&csf);
+        let labels = crate::ui::main_menu_dialogs::ShellMessageBoxLabels::exit_confirm(&csf);
+        Self::open_shell_message_box(
+            state,
+            crate::app::frontend::state::ShellMessageBox {
+                labels,
+                purpose: crate::app::frontend::state::ShellMessageBoxPurpose::ExitGame,
+            },
+        );
+    }
+
+    /// ShellMessageBox__Run `0x005D3490` over the empty shell backdrop.
+    pub(super) fn open_shell_message_box(
+        state: &mut AppState,
+        message_box: crate::app::frontend::state::ShellMessageBox,
+    ) {
         // The SHP modal sources PUDLGBGN/MNBTTN from the skirmish chrome atlas; load
-        // it on demand so the quit-confirm renders straight from the main menu.
+        // it on demand so the box renders straight from the main menu.
         let _ = Self::ensure_skirmish_shell_chrome(state);
         // Host the modal as a TRUE LIFO push over the active shell (D-B3):
         // teardown pops back to it with focus restored. (ensure_active would
@@ -1448,7 +1480,8 @@ impl App {
                 .shell_controller
                 .push(crate::ui::shell::descriptor::DialogId(0x0120), true);
         }
-        state.frontend.exit_confirm_modal = Some(modal);
+        state.frontend.shell_message_box = Some(message_box);
+        state.platform.window.request_redraw();
     }
 
     /// Whether any main-menu modal dialog is currently open. Used to route
@@ -1459,9 +1492,9 @@ impl App {
 
     /// Close retained main-menu child dialogs (options — never on the
     /// controller stack). The exit-confirm modal closes through
-    /// close_exit_confirm_modal_from_controller (D-B3).
+    /// close_shell_message_box_from_controller (D-B3).
     pub(crate) fn close_main_menu_dialogs(state: &mut AppState) {
-        state.frontend.exit_confirm_modal = None;
+        state.frontend.shell_message_box = None;
         state.frontend.options_dialog = None;
     }
 
@@ -1469,8 +1502,8 @@ impl App {
     /// state, then LIFO-pop its 0x120 instance so focus returns to the shell
     /// beneath. Mirrors `close_validation_modal_from_controller` — every Esc
     /// and mouse close path converges here.
-    pub(super) fn close_exit_confirm_modal_from_controller(state: &mut AppState) {
-        state.frontend.exit_confirm_modal = None;
+    pub(super) fn close_shell_message_box_from_controller(state: &mut AppState) {
+        state.frontend.shell_message_box = None;
         if state.frontend.shell_controller.top_id()
             == Some(crate::ui::shell::descriptor::DialogId(0x0120))
         {
@@ -1478,14 +1511,15 @@ impl App {
         }
     }
 
-    pub(super) fn route_exit_confirm_modal_key(state: &mut AppState, key: ShellKey) -> bool {
-        if state.frontend.exit_confirm_modal.is_none() {
+    pub(super) fn route_shell_message_box_key(state: &mut AppState, key: ShellKey) -> bool {
+        if state.frontend.shell_message_box.is_none() {
             return false;
         }
         if !state.frontend.shell_controller.on_key(key) {
             return false;
         }
-        Self::close_exit_confirm_modal_from_controller(state);
+        // Escape is IDCANCEL (control 2): result 1, the same as Cancel.
+        Self::resolve_shell_message_box(state, crate::ui::shell::modal::ModalResult::MessageBox(1));
         state.platform.window.request_redraw();
         true
     }

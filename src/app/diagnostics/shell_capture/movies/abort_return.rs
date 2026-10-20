@@ -1,4 +1,6 @@
-//! Shared production B5/B6 physical-input capture, ending at queued EXIT.
+//! Shared production B5/B6 physical-input capture: B6 presented, then
+//! optionally Leave (ending at queued EXIT) or campaign Restart (ending at the
+//! raised restart request).
 use super::*;
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::abort::AbortButton;
@@ -10,14 +12,26 @@ enum AbortInputPhase {
     Menu,
     AbortPressed,
     Modal,
-    LeavePressed,
+    ChoicePressed,
     Queued,
 }
 pub(super) struct AbortReturnInput {
     phase: AbortInputPhase,
+    /// The B6 button to press, or none to stop once B6 has presented.
+    choice: Option<AbortButton>,
 }
 impl AbortReturnInput {
+    /// Through B6 Leave to the queued EXIT.
     pub(super) fn begin(state: &mut AppState, route: &mut Vec<Value>, frame: u32) -> Result<Self> {
+        Self::begin_choosing(state, route, frame, Some(AbortButton::Leave))
+    }
+
+    pub(super) fn begin_choosing(
+        state: &mut AppState,
+        route: &mut Vec<Value>,
+        frame: u32,
+        choice: Option<AbortButton>,
+    ) -> Result<Self> {
         // Ordinary world Escape resolves the actual binding before
         // Options enters B5, exactly as the window handler does.
         ensure!(
@@ -45,6 +59,7 @@ impl AbortReturnInput {
         route.push(json!({"frame": frame, "action": "Escape press", "dialog": 0xb5}));
         Ok(Self {
             phase: AbortInputPhase::Menu,
+            choice,
         })
     }
     pub(super) fn after_present(
@@ -147,21 +162,22 @@ impl AbortReturnInput {
                         ),
                     "B6 did not present with its required loaded artwork"
                 );
+                let layout = crate::app::input::abort::current_abort_layout(state)
+                    .context("B6 has no loaded geometry")?;
                 route.push(
-                    json!({"frame": frame, "action": "abort modal presented", "dialog": 0xb6}),
+                    json!({"frame": frame, "action": "abort modal presented", "dialog": 0xb6,
+                    "buttons": layout.buttons().map(|(button, rect)| json!({
+                        "button": format!("{button:?}"), "rect": [rect.x, rect.y, rect.w, rect.h]}))
+                        .collect::<Vec<_>>()}),
                 );
-                let shell =
-                    crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
-                        state,
-                    )
-                    .context("B6 has no loaded hit geometry")?;
-                let layout = crate::ui::shell::abort::abort_layout(
-                    shell.width,
-                    shell.height,
-                    shell.layout,
-                    shell.button_size,
-                );
-                let rect = layout.button(AbortButton::Leave);
+                let Some(choice) = self.choice else {
+                    MoviesCapture::restore_neutral_pointer(state);
+                    self.phase = AbortInputPhase::Queued;
+                    return Ok(true);
+                };
+                let rect = layout
+                    .button(choice)
+                    .with_context(|| format!("B6 does not show {choice:?}"))?;
                 let point = set_window_pointer_to_rect_center(state, rect);
                 crate::app::input::dispatch::handle_cursor_moved_in_game(state);
                 crate::app::input::dispatch::handle_mouse_input(
@@ -174,16 +190,44 @@ impl AbortReturnInput {
                         .match_state
                         .match_presentation
                         .abort_buttons
-                        .is_pressed(AbortButton::Leave),
-                    "physical B6 Leave press missed its loaded control"
+                        .is_pressed(choice),
+                    "physical B6 {choice:?} press missed its loaded control"
                 );
                 route.push(
-                    json!({"frame": frame, "action": "Leave press", "dialog": 0xb6,
+                    json!({"frame": frame, "action": format!("{choice:?} press"), "dialog": 0xb6,
                     "point": point, "rect": [rect.x, rect.y, rect.w, rect.h]}),
                 );
-                self.phase = AbortInputPhase::LeavePressed;
+                self.phase = AbortInputPhase::ChoicePressed;
             }
-            AbortInputPhase::LeavePressed => {
+            AbortInputPhase::ChoicePressed if self.choice == Some(AbortButton::Restart) => {
+                ensure!(
+                    state.match_state.match_presentation.in_game_menu
+                        == InGameMenuState::AbortConfirm
+                        && state
+                            .match_state
+                            .match_presentation
+                            .abort_buttons
+                            .is_pressed(AbortButton::Restart),
+                    "B6 Restart capture changed before its presented press/release"
+                );
+                crate::app::input::dispatch::handle_mouse_input(
+                    state,
+                    MouseButton::Left,
+                    ElementState::Released,
+                );
+                ensure!(
+                    state.match_state.match_presentation.in_game_menu == InGameMenuState::Closed
+                        && state.match_state.scenario_restart_requested,
+                    "physical Restart did not close B6 and raise the restart request"
+                );
+                route.push(
+                    json!({"frame": frame, "action": "Restart release", "dialog": 0xb6,
+                    "restart_requested": true}),
+                );
+                MoviesCapture::restore_neutral_pointer(state);
+                self.phase = AbortInputPhase::Queued;
+            }
+            AbortInputPhase::ChoicePressed => {
                 ensure!(
                     state.match_state.match_presentation.in_game_menu
                         == InGameMenuState::AbortConfirm

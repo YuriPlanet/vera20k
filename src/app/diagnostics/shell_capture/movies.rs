@@ -9,6 +9,8 @@ use crate::ui::campaign_shell::CampaignSide;
 use serde_json::{Value, json};
 
 mod abort_return;
+mod campaign_restart;
+pub(super) use campaign_restart::RestartTarget;
 mod lan;
 pub(crate) use lan::{LAN_CHECKPOINTS, LanTarget};
 mod wol;
@@ -112,6 +114,7 @@ pub(super) enum CampaignStartTarget {
     FirstLive,
     AbortReturn,
     Opening(OpeningTarget),
+    Restart(RestartTarget),
 }
 
 /// A `0x10E` button the capture presses once the page has settled.
@@ -146,6 +149,8 @@ enum Phase {
     CampaignReturning,
     CampaignAbortMenu,
     CampaignLeaving,
+    /// The restart driver owns the route from the first live frame.
+    CampaignRestart,
     LoadSavedGame,
     Options,
     NetworkOptions,
@@ -177,6 +182,7 @@ pub(super) struct MoviesCapture {
     observed_campaign_runtime: Option<Value>,
     observed_exit_cascade: bool,
     abort_input: Option<abort_return::AbortReturnInput>,
+    restart: Option<campaign_restart::RestartCapture>,
     opening: Option<opening::OpeningCapture>,
     lan: Option<lan::LanCapture>,
     wol: Option<wol::WolCapture>,
@@ -202,6 +208,7 @@ impl MoviesCapture {
             observed_campaign_runtime: None,
             observed_exit_cascade: false,
             abort_input: None,
+            restart: None,
             opening: match target {
                 MoviesTarget::CampaignStart {
                     target: CampaignStartTarget::Opening(target),
@@ -221,6 +228,13 @@ impl MoviesCapture {
         }
         if let Some(wol) = &self.wol {
             return wol.timeout();
+        }
+        if let MoviesTarget::CampaignStart {
+            target: CampaignStartTarget::Restart(target),
+            ..
+        } = self.target
+        {
+            return target.timeout();
         }
         self.opening
             .as_ref()
@@ -248,6 +262,9 @@ impl MoviesCapture {
         }
         if let Some(wol) = self.wol.as_mut() {
             return wol.after_present(state, rendered, frame);
+        }
+        if let Some(restart) = self.restart.as_mut() {
+            return restart.after_present(state, rendered, &mut self.route, frame);
         }
         let starting_campaign = matches!(self.target, MoviesTarget::CampaignStart { .. })
             && self.phase == Phase::CampaignStarting;
@@ -328,6 +345,25 @@ impl MoviesCapture {
                     frame,
                 )?);
                 self.phase = Phase::CampaignAbortMenu;
+            }
+            if let MoviesTarget::CampaignStart {
+                target: CampaignStartTarget::Restart(target),
+                ..
+            } = self.target
+                && state.frontend.screen == GameScreen::InGame
+            {
+                ensure!(
+                    self.observed_campaign_startup.is_some(),
+                    "installed campaign was not observed loading"
+                );
+                self.observed_campaign_runtime = Some(campaign_runtime_receipt(state)?);
+                self.restart = Some(campaign_restart::RestartCapture::begin(
+                    target,
+                    state,
+                    &mut self.route,
+                    frame,
+                )?);
+                self.phase = Phase::CampaignRestart;
             }
             if state.frontend.screen == GameScreen::InGame
                 && let Some(opening) = self.opening.as_mut()
@@ -986,8 +1022,7 @@ impl MoviesCapture {
                 self.phase = Phase::Settling(SETTLE_FRAMES);
             }
             (Phase::Exit, PresentedShell::MainMenu) => {
-                if state.frontend.exit_confirm_modal.is_some()
-                    && state.frontend.shell_exit.is_none()
+                if state.frontend.shell_message_box.is_some() && state.frontend.shell_exit.is_none()
                 {
                     self.route
                         .push(json!({"state": 6, "frame": frame, "action": "confirmation shown"}));
@@ -1088,6 +1123,9 @@ impl MoviesCapture {
             campaign_abort_cleanup_receipt(state)?;
             return steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state));
         }
+        if let Some(restart) = self.restart.as_ref() {
+            return restart.ready(state);
+        }
         if let MoviesTarget::CampaignStart { side, target } = self.target {
             if self.phase != Phase::CampaignStarting {
                 return Ok(false);
@@ -1135,6 +1173,8 @@ impl MoviesCapture {
                         .ready(state)
                 }
                 CampaignStartTarget::AbortReturn => unreachable!("handled above"),
+                // The restart driver takes over at the first live frame.
+                CampaignStartTarget::Restart(_) => Ok(false),
             };
         }
         if self.target == MoviesTarget::ListBackFirstFrame {
@@ -1231,7 +1271,7 @@ impl MoviesCapture {
             }
             MoviesTarget::Credits { .. } => state.frontend.credits_roll.is_some(),
             MoviesTarget::SneakPeek { .. } => state.frontend.fullscreen_movie.is_some(),
-            MoviesTarget::ExitConfirm => state.frontend.exit_confirm_modal.is_some(),
+            MoviesTarget::ExitConfirm => state.frontend.shell_message_box.is_some(),
             MoviesTarget::NetworkBounce
             | MoviesTarget::WolWelcome {
                 press: WolPress::MainMenu,
@@ -1344,7 +1384,8 @@ impl MoviesCapture {
                 }
                 CampaignStartTarget::FirstLive
                 | CampaignStartTarget::AbortReturn
-                | CampaignStartTarget::Opening(_) => state.match_state.loaded_map_source.as_ref(),
+                | CampaignStartTarget::Opening(_)
+                | CampaignStartTarget::Restart(_) => state.match_state.loaded_map_source.as_ref(),
             }
             .context("campaign selected map source missing at readback")?;
             // Readiness is queried before the first loading render prepares
@@ -1368,14 +1409,18 @@ impl MoviesCapture {
                 CampaignStartTarget::FirstLive => "first-live-frame",
                 CampaignStartTarget::AbortReturn => "abort-return",
                 CampaignStartTarget::Opening(target) => target.phase(),
+                CampaignStartTarget::Restart(RestartTarget::AbortShown) => "abort-restart-shown",
+                CampaignStartTarget::Restart(RestartTarget::AbortRestarted) => "abort-restarted",
+                CampaignStartTarget::Restart(RestartTarget::DefeatPrompt) => "defeat-replay-prompt",
+                CampaignStartTarget::Restart(RestartTarget::DefeatReplayed) => "defeat-replayed",
             });
             manifest["runtime"] = match target {
                 CampaignStartTarget::LoadingFirst => Value::Null,
                 CampaignStartTarget::FirstLive => campaign_runtime_receipt(state)?,
-                CampaignStartTarget::AbortReturn => self
+                CampaignStartTarget::AbortReturn | CampaignStartTarget::Restart(_) => self
                     .observed_campaign_runtime
                     .clone()
-                    .context("campaign abort has no pre-Escape runtime observation")?,
+                    .context("campaign route has no first-live runtime observation")?,
                 CampaignStartTarget::Opening(_) => installed_campaign_runtime_receipt(state)?,
             };
             if target == CampaignStartTarget::AbortReturn {
@@ -1402,7 +1447,10 @@ impl MoviesCapture {
                 manifest["coverage"]["abort_audio"] =
                     json!("ordinary exit cascade observed; device audio output is not captured");
                 manifest["coverage"]["campaign_b6_restart"] =
-                    json!("not implemented by the existing abort owner; selected Leave path only");
+                    json!("selected Leave path only; Restart has its own targets");
+            }
+            if let Some(restart) = &self.restart {
+                manifest["restart"] = restart.receipt();
             }
         } else if self.target == MoviesTarget::CampaignBack {
             manifest["schema_version"] = json!("vera20k.campaign-start-capture.v1");
@@ -1438,13 +1486,17 @@ impl MoviesCapture {
         if let Some(wol) = self.wol.as_ref() {
             return wol.owns_simulation_steps(state);
         }
+        if let Some(restart) = self.restart.as_ref() {
+            return restart.owns_simulation_steps(state);
+        }
 
         matches!(
             self.target,
             MoviesTarget::CampaignStart {
                 target: CampaignStartTarget::FirstLive
                     | CampaignStartTarget::AbortReturn
-                    | CampaignStartTarget::Opening(_),
+                    | CampaignStartTarget::Opening(_)
+                    | CampaignStartTarget::Restart(_),
                 ..
             }
         ) && self.phase == Phase::CampaignStarting

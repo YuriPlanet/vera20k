@@ -3,7 +3,7 @@
 //! upper buttons in60B000; Resume686 uses60B350. App owns action dispatch.
 
 use super::geom::{self, RectPx};
-use super::in_game_shell::InGameShellLayout;
+use super::in_game_shell::{self, InGameShellLayout};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
@@ -120,24 +120,15 @@ pub fn pause_menu_layout(
         let dlu = button.descriptor().dlu_rect;
         let raw = geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h);
         if button == PauseMenuButton::Resume {
-            // Original60B3FC..60B41C: lower anchor is SIDE3.y, not viewportbottom.
-            RectPx::new(
-                width - 147,
-                shell.side3.y - button_size[1],
-                button_size[0],
-                button_size[1],
-            )
+            shell.lower_button_rect(width, button_size)
         } else {
             shell.button_rect(raw, button_size)
         }
     });
     PauseMenuLayout {
         buttons,
-        // Original60B1D0 active branch: no launcher title's +7 final adjustment.
-        title: RectPx::new(width - 165, 2, 162, 16),
-        // Original60B550 active branch retains the resource455x20 canvas,
-        // places its left at10 and its bottom one pixel above the parent bottom.
-        footer: RectPx::new(10, height - 21, 455, 20),
+        title: in_game_shell::right_panel_title_rect(width),
+        footer: in_game_shell::status_line_rect(height),
     }
 }
 

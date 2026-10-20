@@ -305,8 +305,13 @@ pub(crate) fn can_load(
             return CanLoad::Answer(RadioResponse::Roger);
         }
     }
+    // `0x0043C4F8..0x0043C500`: a `Grinding=` building (`+0x16AD`) takes
+    // anyone the gates above admit.
+    if building_type.grinding {
+        return CanLoad::Answer(RadioResponse::Roger);
+    }
     // Other building mechanisms retain their existing owner/residual.
-    if building_type.grinding || building_type.bunker {
+    if building_type.bunker {
         return CanLoad::Answer(RadioResponse::None);
     }
     if building_type.unit_repair {

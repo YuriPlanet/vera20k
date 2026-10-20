@@ -53,6 +53,8 @@ enum Phase {
     Defeating,
     /// The score page `0x108` is up after the defeat.
     Scoring,
+    /// Tab opened Diplomacy `0x73` over the running game.
+    Diplomacy,
     /// Continue was pressed on the settled score page.
     Continuing,
 }
@@ -72,6 +74,9 @@ pub(super) enum LoadingTarget {
     DefeatScore,
     /// The same, then Continue: the new `0x102` settled.
     DefeatContinue,
+    /// The game runs [`QUIT_AFTER_FRAMES`] frames, then Tab opens the
+    /// Diplomacy dialog `0x73` through the production key path; it settled.
+    Diplomacy,
 }
 
 /// In-game frames before the quit route presses Leave.
@@ -180,6 +185,8 @@ pub(super) struct SkirmishCapture {
     answer_rested: bool,
     loading: Option<LoadingTarget>,
     in_game_frames: u32,
+    /// Frames Diplomacy has presented.
+    diplomacy_frames: u32,
     deploy_sent: bool,
     sell_sent: bool,
 }
@@ -416,6 +423,7 @@ impl SkirmishCapture {
                     | Phase::Defeating
                     | Phase::Scoring
                     | Phase::Continuing
+                    | Phase::Diplomacy
             ),
             (rest.0 as f32, rest.1 as f32),
         )
@@ -578,6 +586,7 @@ impl SkirmishCapture {
                 LoadingTarget::AfterQuit
                     | LoadingTarget::DefeatScore
                     | LoadingTarget::DefeatContinue
+                    | LoadingTarget::Diplomacy
             )
         ) {
             std::time::Duration::from_secs(180)
@@ -1279,6 +1288,79 @@ impl SkirmishCapture {
                 }
             }
             (Phase::Starting, _)
+                if self.loading == Some(LoadingTarget::Diplomacy)
+                    && state.frontend.screen == GameScreen::InGame =>
+            {
+                self.in_game_frames += 1;
+                if self.in_game_frames == QUIT_AFTER_FRAMES {
+                    // Tab through the ordinary key edge: the binding lookup
+                    // falls back to Request_Diplomacy_Menu (0x0055E08A).
+                    let tab = winit::keyboard::Key::Named(winit::keyboard::NamedKey::Tab);
+                    for edge in [
+                        winit::event::ElementState::Pressed,
+                        winit::event::ElementState::Released,
+                    ] {
+                        let paused_at_event = state.match_state.paused();
+                        crate::app::input::keyboard::in_game_key_edge(
+                            state,
+                            crate::app::input::keyboard::InGameKeyEdge {
+                                physical: winit::keyboard::KeyCode::Tab,
+                                logical: &tab,
+                                unmodified: &tab,
+                                location: winit::keyboard::KeyLocation::Standard,
+                                state: edge,
+                                repeat: false,
+                            },
+                            paused_at_event,
+                        );
+                    }
+                    ensure!(
+                        state.match_state.match_presentation.in_game_menu
+                            == crate::ui::pause_menu::InGameMenuState::Diplomacy,
+                        "Tab did not open the Diplomacy dialog"
+                    );
+                    self.route.push(json!({"screen": "in game", "frame": frame,
+                        "action": "Tab", "dialog": 0x73, "in_game_frames": self.in_game_frames}));
+                    // Rest on row 1's name, right of its text, so the status
+                    // line shows that static's help.
+                    let shell =
+                        crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+                            state,
+                        )
+                        .context("Diplomacy has no loaded geometry")?;
+                    let name = crate::ui::shell::diplomacy::diplomacy_layout(
+                        shell.width,
+                        shell.height,
+                        shell.layout,
+                        shell.button_size,
+                    )
+                    .names[1];
+                    let point = (name.x + name.w - 8, name.y + name.h / 2);
+                    Self::set_pointer(state, point);
+                    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+                    ensure!(
+                        state.match_state.match_presentation.diplomacy.hovered
+                            == Some(crate::ui::shell::diplomacy::DiplomacyControl::Name(1)),
+                        "the pointer missed row 1's name"
+                    );
+                    self.route
+                        .push(json!({"frame": frame, "action": "pointer rests",
+                        "dialog": 0x73, "point": [point.0, point.1]}));
+                    self.phase = Phase::Diplomacy;
+                }
+            }
+            (Phase::Diplomacy, _) => {
+                ensure!(
+                    state.match_state.match_presentation.in_game_menu
+                        == crate::ui::pause_menu::InGameMenuState::Diplomacy
+                        && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
+                            state
+                        ),
+                    "Diplomacy did not present with its required loaded artwork"
+                );
+                self.diplomacy_frames += 1;
+            }
+            (Phase::Starting, _)
                 if self.defeat_route() && state.frontend.screen == GameScreen::InGame =>
             {
                 self.in_game_frames += 1;
@@ -1472,6 +1554,9 @@ impl SkirmishCapture {
                 && self.last_presented == Some(PresentedShell::Skirmish)
                 && self.settled(state)?);
         }
+        if self.loading == Some(LoadingTarget::Diplomacy) {
+            return Ok(self.phase == Phase::Diplomacy && self.diplomacy_frames >= 2);
+        }
         if self.loading == Some(LoadingTarget::AfterQuit) {
             return Ok(self.phase == Phase::Quitting
                 && state.frontend.screen == GameScreen::MainMenu
@@ -1488,9 +1573,8 @@ impl SkirmishCapture {
                 LoadingTarget::FirstFrame
                 | LoadingTarget::AfterQuit
                 | LoadingTarget::DefeatScore
-                | LoadingTarget::DefeatContinue => {
-                    crate::app::loading::pump::NextLoadingFrame::First
-                }
+                | LoadingTarget::DefeatContinue
+                | LoadingTarget::Diplomacy => crate::app::loading::pump::NextLoadingFrame::First,
             };
             return Ok(self.phase == Phase::Starting
                 && state.frontend.screen == GameScreen::Loading

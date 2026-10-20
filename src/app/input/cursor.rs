@@ -701,6 +701,30 @@ pub(super) fn capability_cursor_for_hover(
             };
         }
 
+        // Grinder: a Unit's or Infantryman's Select over a Grinding= building
+        // (`context_order::grinder_action`).
+        if !matches!(
+            modifier,
+            OrderModifier::ForceFire | OrderModifier::ForceMove | OrderModifier::GuardArea
+        ) && !(modifier == OrderModifier::AttackMove && force_move_key)
+            && matches!(hover.kind, HoverTargetKind::FriendlyStructure)
+            && let Some(action) = rules.and_then(|rules| {
+                super::context_order::grinder_action(
+                    sim,
+                    rules,
+                    best_id,
+                    hover.stable_id,
+                    overlay_registry,
+                )
+            })
+        {
+            return match action {
+                crate::sim::world::BuildingClickAction::NoEnter => CursorFeedbackKind::NoEnter,
+                crate::sim::world::BuildingClickAction::Grind
+                | crate::sim::world::BuildingClickAction::Enter => CursorFeedbackKind::Enter,
+            };
+        }
+
         let is_infantry = sel_entity.category() == EntityCategory::Infantry;
 
         // 5. Infantry boarding a friendly transport (Passengers > 0).
@@ -1309,6 +1333,7 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         // and the superweapon targeting minis while one is armed.
         CursorFeedbackKind::Minimap(id) => Some(id),
         CursorFeedbackKind::Enter => Some(CursorId::Enter),
+        CursorFeedbackKind::NoEnter => Some(CursorId::NoEnter),
         CursorFeedbackKind::EngineerDamage => Some(CursorId::EngineerRepair),
         CursorFeedbackKind::RepairAction(valid) => Some(if valid {
             CursorId::Repair

@@ -338,8 +338,10 @@ pub(crate) enum CursorFeedbackKind {
     /// Deploy/undeploy cursor — shown when a Deployer unit hovers over itself.
     Deploy,
     NoDeploy,
-    /// Enter cursor — garrison, capture, board transport, sabotage.
+    /// Enter cursor — garrison, capture, board transport, sabotage, grind.
     Enter,
+    /// NoEnter cursor (action 0x1F, row 0x1A at `0x004AB382`).
+    NoEnter,
     /// Engineer action28 damage cursor. Its uncommon authored-threshold
     /// display route remains outside the ordinary repair cursor proof.
     EngineerDamage,

@@ -433,6 +433,13 @@ pub(super) enum ControlPaint {
         checked: bool,
         rect: RectPx,
     },
+    /// A checkbox in dual-state mode (message 0x4E5) or disabled: Diplomacy
+    /// 0x73's Allies and Chat boxes.
+    StatefulCheckbox {
+        face: crate::ui::shell::button::CheckboxFace,
+        disabled: bool,
+        rect: RectPx,
+    },
     /// A trackbar window with its thumb's window-relative left edge
     /// ([`crate::ui::shell::trackbar::thumb_left`]). `plaque` is off where
     /// the owner sends `0x4AC` with 0 (Options Detail/Difficulty/Scroll, BBB).
@@ -467,20 +474,18 @@ pub(super) fn paint_control(
 ) {
     match paint {
         ControlPaint::Checkbox { checked, rect } => {
-            let icon = if checked {
-                chrome.checkbox_checked_cce_i
+            let face = if checked {
+                crate::ui::shell::button::CheckboxFace::Checked
             } else {
-                chrome.checkbox_unchecked_cue_i
+                crate::ui::shell::button::CheckboxFace::Unchecked
             };
-            if let Some(entry) = icon {
-                push_entry(
-                    out,
-                    entry,
-                    checkbox_icon_rect(rect, scale),
-                    SHELL_CONTROL_DEPTH,
-                );
-            }
+            paint_checkbox_face(out, chrome, face, false, rect, scale);
         }
+        ControlPaint::StatefulCheckbox {
+            face,
+            disabled,
+            rect,
+        } => paint_checkbox_face(out, chrome, face, disabled, rect, scale),
         ControlPaint::Trackbar {
             rect,
             thumb_left,
@@ -1597,6 +1602,38 @@ mod tests {
             !icon.contains(icon.x + icon.w, icon.y),
             "right edge (x+18) misses"
         );
+    }
+}
+
+/// Owner-draw checkbox 0x006163A0's WM_PAINT: the face PCX for its check
+/// and dual-state flags at the control's origin, then for a disabled window
+/// `AlphaBlendRect` colour 0 at the overlay alpha 0x60 (`0x0060FAB9`), which
+/// keeps `(255 - 0x60) / 256` of each channel. The tint applies that factor
+/// to the face without the RGB565 truncation (at most one unit per channel).
+fn paint_checkbox_face(
+    out: &mut Vec<SpriteInstance>,
+    chrome: &ControlChrome,
+    face: crate::ui::shell::button::CheckboxFace,
+    disabled: bool,
+    rect: RectPx,
+    scale: ShellScale,
+) {
+    use crate::ui::shell::button::CheckboxFace;
+    let entry = match face {
+        CheckboxFace::Unchecked => chrome.checkbox_unchecked_cue_i,
+        CheckboxFace::Checked => chrome.checkbox_checked_cce_i,
+        CheckboxFace::CheckedAlone => chrome.checkbox_dual_left_cce_il,
+        CheckboxFace::AnsweredAlone => chrome.checkbox_dual_right_cce_ir,
+    };
+    let Some(entry) = entry else {
+        return;
+    };
+    let icon = checkbox_icon_rect(rect, scale);
+    if disabled {
+        const DISABLED_KEEP: f32 = (255 - 0x60) as f32 / 256.0;
+        push_tinted_entry(out, entry, icon, [DISABLED_KEEP; 3], SHELL_CONTROL_DEPTH);
+    } else {
+        push_entry(out, entry, icon, SHELL_CONTROL_DEPTH);
     }
 }
 

@@ -2,7 +2,7 @@
 //! RT_DIALOG A3 atBEF560; bindings remain in the app command owner.
 use super::button::ShellButtonInteraction;
 use super::geom::{self, RectPx, ShellScale};
-use super::in_game_shell::InGameShellLayout;
+use super::in_game_shell::{self, InGameShellLayout};
 use super::list::ListScrollInteraction;
 
 /// A3 as a front-end family page: no top buttons, Back on the bottom row,
@@ -215,21 +215,16 @@ impl KeyboardLayout {
         let dlu = |x, y, w, h| {
             let r = geom::dlu_rect(x, y, w, h);
             if scale.is_retail() {
-                RectPx::new(
-                    (r.x + (width - 800) / 2).max(0),
-                    (r.y + (height - 600) / 2).max(0),
-                    r.w,
-                    r.h,
-                )
+                in_game_shell::ordinary_child_rect(r, width, height)
             } else {
                 scale.scale_rect(r)
             }
         };
         let (title, back, footer) = if let Some((shell, size)) = shell {
             (
-                RectPx::new(width - 165, 2, 162, 16),
-                RectPx::new(width - 147, shell.side3.y - size[1], size[0], size[1]),
-                RectPx::new(10, height - 21, 455, 20),
+                in_game_shell::right_panel_title_rect(width),
+                shell.lower_button_rect(width, size),
+                in_game_shell::status_line_rect(height),
             )
         } else if scale.is_retail() {
             // The front-end page is a family page: its heading, Back and
