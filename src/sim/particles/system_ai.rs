@@ -134,11 +134,11 @@ pub(crate) fn tick_particle_system(
         // same system. Retain its body in storage through those callbacks.
         super::gas::tick_system(sim, rules, id, context);
     } else {
-        let mut sys = sim.particle_systems_mut().take_for_tick(id).unwrap();
+        let mut sys = sim.substrate.particle_systems.take_for_tick(id).unwrap();
         tick_one_system(&mut sys, sim, rules);
-        sim.particle_systems_mut().reinsert_after_tick(sys);
+        sim.substrate.particle_systems.reinsert_after_tick(sys);
     }
-    let Some(sys) = sim.particle_systems_mut().get_mut(id) else {
+    let Some(sys) = sim.substrate.particle_systems.get_mut(id) else {
         return true;
     };
 
@@ -292,7 +292,7 @@ mod tests {
     fn insert_live_system(sim: &mut Simulation, mut system: ParticleSystem) -> u64 {
         let stable_id = sim.allocate_stable_id();
         system.stable_id = stable_id;
-        sim.particle_systems_mut().insert(system);
+        sim.substrate.particle_systems.insert(system);
         assert!(sim.reveal_particle_system(stable_id, None));
         stable_id
     }

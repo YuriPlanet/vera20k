@@ -962,7 +962,7 @@ fn exit_aircraft(
         }
         let pad = dock_coordinate(sim);
         sim.foot_set_location_marked(spawned, pad, Some(rules), overlay_registry, effects);
-        sim.set_aircraft_dock(spawned, Some(producer_id));
+        sim.substrate.set_aircraft_dock(spawned, Some(producer_id));
         let rally = sim
             .substrate
             .entities

@@ -73,7 +73,7 @@ fn insert(sim: &mut Simulation, id: u64, owner: InternedId, name: &str, x: u16, 
         );
         entity.locomotor = Some(loco);
     }
-    sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(id + 1);
+    sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(id);
     // Unlimbo's House+0x68 append, which the SpySat scan walks.

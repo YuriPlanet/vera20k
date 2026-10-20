@@ -266,9 +266,9 @@ fn superweapon_money_ui_affordability_is_live_and_independent_of_charge() {
     };
     assert!(view(&sim).is_ready);
     assert!(!view(&sim).can_afford);
-    crate::sim::credit_income::add_credits(&mut sim, owner, 1);
+    crate::sim::credit_income::add_credits(&mut sim.houses, owner, 1);
     assert!(view(&sim).can_afford);
-    crate::sim::credit_income::spend_money(&mut sim, owner, 1);
+    crate::sim::credit_income::spend_money(&mut sim.houses, owner, 1);
     assert!(!view(&sim).can_afford);
     assert!(view(&sim).is_ready);
 }

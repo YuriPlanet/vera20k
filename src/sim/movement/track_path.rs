@@ -456,7 +456,7 @@ impl Simulation {
     ) -> Result<bool, String> {
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             cell,
-            self.playfield_bounds,
+            self.playfield_bounds(),
             self.resolved_terrain.as_ref(),
         ) {
             return Ok(false);
@@ -546,7 +546,7 @@ impl Simulation {
         //4B2BDA..4B2BE4: the Foot's own House asks (Is_Ally_ByObject).
         let allied = self.substrate.entities.get(blocker).is_some_and(|b| {
             crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &self.interner,
                 actor.owner(),
                 b.owner(),
@@ -1491,7 +1491,11 @@ impl Simulation {
             let actor = self.substrate.entities.get_mut(id).expect("same arm actor");
             super::navcom::track_stop_moving(actor);
             actor.setter_force_reassign.raised = true;
-            let _ = self.mission_assign_exact(id, crate::sim::mission::MissionId::NONE, frame);
+            let _ = self.substrate.mission_assign_exact(
+                id,
+                crate::sim::mission::MissionId::NONE,
+                frame,
+            );
             let _ = self.mission_queue_exact(
                 id,
                 crate::sim::mission::MissionId::from_known(MissionType::Enter),
@@ -1710,7 +1714,7 @@ impl Simulation {
         }
         let attack = crate::sim::mission::MissionId::from_known(MissionType::Attack);
         if actor.mission.effective() != attack {
-            let _ = self.mission_assign_exact(id, attack, frame);
+            let _ = self.substrate.mission_assign_exact(id, attack, frame);
         }
         true
     }

@@ -74,7 +74,8 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, rx: u16
 fn capturer(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, ry: u16) -> u64 {
     let id = spawn(sim, rules, kind, owner, 10, ry);
     let now = sim.session.binary_frame();
-    sim.mission_assign_exact(id, MissionId::from_known(MissionType::Capture), now)
+    sim.substrate
+        .mission_assign_exact(id, MissionId::from_known(MissionType::Capture), now)
         .unwrap();
     id
 }

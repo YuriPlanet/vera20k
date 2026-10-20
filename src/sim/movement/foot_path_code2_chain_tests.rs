@@ -226,7 +226,7 @@ fn a_jammed_chain_detours_the_route_and_a_clear_one_runs_through() {
             tank,
             DriveCoord::cell(11, 10, 0),
             0,
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
         )
         .unwrap();
 

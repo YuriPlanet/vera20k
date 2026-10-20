@@ -958,6 +958,33 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
     assert_eq!(session.options.mcv_redeploy, shell.mcv_redeploy);
 }
 
+/// SkirmishDialog's packing forces Fog of War off, Bridge Destruction on,
+/// Harvester Truce off and MultiEngineer off (`0x006AD88F..0x006AD8A4`),
+/// whatever `[MultiplayerDialogSettings]` set.
+#[test]
+fn launch_session_forces_the_dialogs_fixed_session_options() {
+    let mut shell = SkirmishShellState::default();
+    shell.player_name_edit.text = "Commander".to_string();
+    shell.launch_options_base.fog_of_war = true;
+    shell.launch_options_base.bridges_destroyable = false;
+    shell.launch_options_base.harvester_truce = true;
+    shell.launch_options_base.multi_engineer = true;
+    let maps = [test_map_entry("first.mmx")];
+    let modes = stock_skirmish_modes();
+    let options = launch_session(&shell, &maps, &modes)
+        .expect("session")
+        .options;
+    assert_eq!(
+        (
+            options.fog_of_war,
+            options.bridges_destroyable,
+            options.harvester_truce,
+            options.multi_engineer
+        ),
+        (false, true, false, false)
+    );
+}
+
 #[test]
 fn launch_session_preserves_selected_team_game_mode_id() {
     let mut shell = SkirmishShellState {

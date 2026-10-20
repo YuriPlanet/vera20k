@@ -326,6 +326,7 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
     // Missions, as the oracle writes +AC/+B4.
     let current = mission(input["mission"].as_str().unwrap_or("enter"));
     s.sim
+        .substrate
         .mission_assign_exact(miner, MissionId::from_known(current), frame)
         .unwrap();
     if let Some(queued) = input["queued"].as_str() {
@@ -342,6 +343,7 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
     let status = input["status"].as_u64().unwrap_or(0) as u32;
     let building_mission = mission(input["refinery_mission"].as_str().unwrap_or("guard"));
     s.sim
+        .substrate
         .mission_assign_exact(refinery, MissionId::from_known(building_mission), frame)
         .unwrap();
     // Contacts: linked both ways unless the row names the holders.

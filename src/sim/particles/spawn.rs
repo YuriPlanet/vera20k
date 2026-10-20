@@ -163,22 +163,6 @@ impl Simulation {
         }
     }
 
-    /// Mark the attached Techno+310 smoke system for retirement while retaining
-    /// its owner pointer. Native ParticleSystem virtual F8 (6301E0) only sets
-    /// its done-spawning byte; the done-empty Limbo broadcast owns pointer expiry.
-    pub(crate) fn retire_attached_damage_smoke(&mut self, stable_id: u64) {
-        let system_id = self
-            .substrate
-            .entities
-            .get(stable_id)
-            .and_then(|entity| entity.damage_smoke_system_id.system());
-        if let Some(system_id) = system_id
-            && let Some(system) = self.particle_systems_mut().get_mut(system_id)
-        {
-            system.mark_done_spawning();
-        }
-    }
-
     /// Reached healing tails 6FA75A,45096C,451477: ordered Greater only.
     /// This never creates smoke and never clears the retained owner slot.
     pub(crate) fn retire_damage_smoke_after_heal(&mut self, stable_id: u64, rules: &RuleSet) {
@@ -196,7 +180,7 @@ impl Simulation {
                     })
             });
         if above {
-            self.retire_attached_damage_smoke(stable_id);
+            self.substrate.retire_attached_damage_smoke(stable_id);
         }
     }
 
@@ -222,7 +206,7 @@ impl Simulation {
                 self.damage_particle_owner_height(entity) < -10
             });
         if retire {
-            self.retire_attached_damage_smoke(stable_id);
+            self.substrate.retire_attached_damage_smoke(stable_id);
         }
     }
     /// Shared original Object5F5F40 adapter for the Smoke and Cyborg Spark gates.
@@ -362,7 +346,7 @@ impl Simulation {
                 && !self.particle_systems().contains_key(stable_id),
             "shared object id {stable_id} collided before particle-system insertion"
         );
-        self.particle_systems_mut().insert(sys);
+        self.substrate.particle_systems.insert(sys);
         self.reveal_particle_system(stable_id, Some(rules));
         Some(stable_id)
     }
@@ -424,7 +408,7 @@ impl Simulation {
         let Some(cell) = self.session.waypoint_cell(waypoint) else {
             return false;
         };
-        for (_, system) in self.particle_systems_mut().iter_mut() {
+        for (_, system) in self.substrate.particle_systems.iter_mut() {
             if !system.alive() {
                 continue;
             }
@@ -461,7 +445,7 @@ impl Simulation {
         let current_system = entity.damage_smoke_system_id.system();
 
         if above_yellow {
-            self.retire_attached_damage_smoke(stable_id);
+            self.substrate.retire_attached_damage_smoke(stable_id);
             return;
         }
 
@@ -532,6 +516,23 @@ impl Simulation {
         };
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.damage_smoke_system_id.system = Some(system_id);
+        }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// Mark the attached Techno+310 smoke system for retirement while retaining
+    /// its owner pointer. Native ParticleSystem virtual F8 (6301E0) only sets
+    /// its done-spawning byte; the done-empty Limbo broadcast owns pointer expiry.
+    pub(crate) fn retire_attached_damage_smoke(&mut self, stable_id: u64) {
+        let system_id = self
+            .entities
+            .get(stable_id)
+            .and_then(|entity| entity.damage_smoke_system_id.system());
+        if let Some(system_id) = system_id
+            && let Some(system) = self.particle_systems.get_mut(system_id)
+        {
+            system.mark_done_spawning();
         }
     }
 }
@@ -906,7 +907,11 @@ mod tests {
                     &rules,
                 )
                 .unwrap();
-            let mut sys = sim.particle_systems_mut().take_for_tick(sys_id).unwrap();
+            let mut sys = sim
+                .substrate
+                .particle_systems
+                .take_for_tick(sys_id)
+                .unwrap();
             assert!(spawn_particle(&mut sys, source, &rules, &mut sim), "{name}");
 
             let particle = &sys.particles[0];
@@ -1020,7 +1025,11 @@ mod tests {
             )
             .unwrap();
         *sim.particle_rng() = SimRng::new(1);
-        let mut sys = sim.particle_systems_mut().take_for_tick(sys_id).unwrap();
+        let mut sys = sim
+            .substrate
+            .particle_systems
+            .take_for_tick(sys_id)
+            .unwrap();
         for _ in 0..10 {
             spawn_particle(&mut sys, IVec3::ZERO, &rules, &mut sim);
         }
@@ -1054,7 +1063,11 @@ mod tests {
             )
             .unwrap();
         *sim.particle_rng() = SimRng::new(1);
-        let mut sys = sim.particle_systems_mut().take_for_tick(sys_id).unwrap();
+        let mut sys = sim
+            .substrate
+            .particle_systems
+            .take_for_tick(sys_id)
+            .unwrap();
         spawn_particle(&mut sys, IVec3::ZERO, &rules, &mut sim);
         assert_eq!(sys.particles[0].lifetime_remaining, 11);
 
@@ -1087,7 +1100,11 @@ mod tests {
             )
             .unwrap();
         *sim.particle_rng() = SimRng::new(1);
-        let mut sys = sim.particle_systems_mut().take_for_tick(sys_id).unwrap();
+        let mut sys = sim
+            .substrate
+            .particle_systems
+            .take_for_tick(sys_id)
+            .unwrap();
         assert!(!spawn_particle(&mut sys, IVec3::ZERO, &rules, &mut sim));
         assert!(sys.particles.is_empty());
     }

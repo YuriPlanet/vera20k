@@ -279,12 +279,13 @@ fn building_discovery_updates_last_type_only_after_admission_outside_init() {
     entity.set_owner_for_test(owner);
     entity.building_art.set_actually_placed_for_test(true);
     sim.substrate.entities.insert(entity);
-    sim.mission_assign_exact(
-        id,
-        crate::sim::mission::MissionId::from_raw(integer(&source["input"]["mission"])),
-        0,
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            id,
+            crate::sim::mission::MissionId::from_raw(integer(&source["input"]["mission"])),
+            0,
+        )
+        .unwrap();
     let built_before = sim.houses[&owner].stats().built();
     for row in source["histories"].as_array().unwrap() {
         let viewer = if row["viewer_current"].as_bool().unwrap() {

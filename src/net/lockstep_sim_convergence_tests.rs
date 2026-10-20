@@ -283,14 +283,14 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
             crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(64, 64, cells),
         );
         assert!(sim.rebuild_dynamic_navigation(&rules));
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 16,
             off_fc: -64,
             off_100: -64,
             off_104: 128,
             off_108: 128,
-        });
-        sim.playfield_size_height = Some(64);
+        }));
+        sim.set_playfield_size_height_for_test(Some(64));
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         let actor = sim.spawn_object("E1", "Local", 10, 10, 0, &rules).unwrap();
         let guard = sim.spawn_object("E1", "Local", 10, 12, 0, &rules).unwrap();

@@ -454,7 +454,12 @@ fn assert_span(sim: &Simulation, native: &Value, context: &str) {
             json!([
                 x,
                 y,
-                cell.bridge_facts.overlay_id.map_or(-1, i32::from),
+                sim.overlay_grid
+                    .as_ref()
+                    .unwrap()
+                    .cell(x, y)
+                    .overlay_id
+                    .map_or(-1, i32::from),
                 cell.land_type
             ]),
             *row,

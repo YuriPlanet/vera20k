@@ -122,6 +122,7 @@ impl HeadlessScenario {
             is_human: true,
             observer: false,
             source_human_index: None,
+            handle: None,
             difficulty: crate::sim::house_state::HouseDifficulty::Normal,
         };
         let runtime = &mut self.runtime;
@@ -719,7 +720,7 @@ mod retail_construction_tests {
             );
         }
         assert!(
-            a.sim().rule_handles.is_some(),
+            a.sim().resolved_rule_handles().is_some(),
             "headless combat rule bindings"
         );
         assert_eq!(rules.general.metallic_debris.len(), 15);
@@ -763,7 +764,7 @@ mod retail_construction_tests {
             "bridge runtime state must be constructed by the funnel"
         );
         assert!(
-            a.sim().authored_tiberium_value_total.is_some(),
+            a.sim().authored_tiberium_value_total().is_some(),
             "authored Full_Init stores the value-only InitCellAttributes(0) total"
         );
 
@@ -2359,9 +2360,10 @@ mod retail_construction_tests {
         )
         .expect("the Rhino takes the GI as its target");
         let now = sim.session.binary_frame();
-        sim.mission_assign_exact(rhino, MissionId::from_known(MissionType::Attack), now)
+        sim.substrate
+            .mission_assign_exact(rhino, MissionId::from_known(MissionType::Attack), now)
             .expect("the Rhino takes Attack");
-        let _ = sim.mission_commence_exact(rhino, now);
+        let _ = sim.substrate.mission_commence_exact(rhino, now);
         let (mut charged, mut died, mut gi_cell, mut crushed) = (None, None, None, false);
         for frame in 1..=600u32 {
             let output = tick_with_due_commands(&mut scenario);
@@ -2679,7 +2681,8 @@ mod retail_construction_tests {
             .filter(|&(x, y)| (x - rx).abs().max((y - ry).abs()) >= 6);
         let tanya = spawn_on_free_cells(sim, rules, america, cells, &["TANY"])[0];
         let now = sim.session.binary_frame();
-        sim.mission_assign_exact(tanya, MissionId::from_known(MissionType::Attack), now)
+        sim.substrate
+            .mission_assign_exact(tanya, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
         sim.assign_target_represented(
             tanya,

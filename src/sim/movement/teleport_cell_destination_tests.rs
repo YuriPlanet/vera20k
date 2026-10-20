@@ -95,16 +95,16 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
     sim.session.set_map_height_for_test(32);
     sim.session
         .set_map_name_for_test("CLEG supplied command cells".into());
-    sim.playfield_bounds = Some(PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
         base: 16,
         off_fc: -16,
         off_100: -16,
         off_104: 64,
         off_108: 64,
-    });
+    }));
     // Executed FNPC56DC20 reads Map+F4=16 and retained Map+F8=0,
     // giving radius cap16. The allocated32x32 cell table is independent.
-    sim.playfield_size_height = Some(0);
+    sim.set_playfield_size_height_for_test(Some(0));
     let mut cells: Vec<_> = (0..32)
         .flat_map(|y| {
             (0..32).map(move |x| {
@@ -125,7 +125,7 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
             })
         })
         .collect();
-    // Overlays as the map loader leaves them: the overlay cell and the bridge facts.
+    // Overlays and bridge facts as the map loader leaves them.
     let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(32, 32);
     for native in before["cells"].as_array().unwrap() {
         let (x, y) = pair(&native["coord"]);
@@ -133,8 +133,8 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
         cell.level = native["level"].as_u64().unwrap() as u8;
         cell.slope_type = native["slope"].as_u64().unwrap() as u8;
         if let Some(overlay) = native.get("overlay_id") {
-            cell.bridge_facts.overlay_id = overlay.as_i64().and_then(|id| u8::try_from(id).ok());
-            overlays.cell_mut_for_test(x, y).overlay_id = cell.bridge_facts.overlay_id;
+            overlays.cell_mut_for_test(x, y).overlay_id =
+                overlay.as_i64().and_then(|id| u8::try_from(id).ok());
         }
         cell.bridge_facts.raw_flags = native["structural_flags"].as_u64().unwrap() as u32;
         assert_eq!(native["land"], 0, "fixture has only native land0");
@@ -985,7 +985,7 @@ fn native_cleg_reservation_survives_snapshot_and_is_hashed() {
         restored.restore_after_snapshot_load().unwrap();
         restored.rebuild_caches_after_load(
             sim.resolved_terrain.as_ref().unwrap().clone(),
-            sim.terrain_speed_config.clone(),
+            sim.terrain_speed_config().clone(),
             &rules,
         );
         assert_eq!(

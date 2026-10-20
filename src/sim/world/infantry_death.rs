@@ -441,7 +441,7 @@ impl Simulation {
             );
         }
         let now = self.session.binary_frame();
-        let _ = self.mission_commence_exact(id, now);
+        let _ = self.substrate.mission_commence_exact(id, now);
         let entity = self
             .substrate
             .entities
@@ -566,7 +566,11 @@ impl Simulation {
             return None;
         }
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
-        let body = self.pick_death_anim(bodies).to_string();
+        let body = crate::sim::combat::destruction_effects::pick_death_anim(
+            &mut self.scenario_rng,
+            bodies,
+        )
+        .to_string();
         let body = self.interner.intern(&body);
         self.admit_death_anim(
             rules,

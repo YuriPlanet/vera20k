@@ -733,32 +733,12 @@ impl ResolvedTerrainGrid {
             overlay_zone_type,
             Some(zone_class::WALL) | Some(zone_class::IMPASSABLE)
         );
-        let overlay_name = overlay_id
-            .and_then(|overlay_id| state.overlay_types.name(overlay_id))
-            .unwrap_or("");
         let cell = &mut self.cells[index];
         cell.overlay_zone_type = overlay_zone_type;
         cell.overlay_blocks = overlay_blocks;
-        cell.bridge_layer = overlay_id.and_then(|overlay_id| {
-            crate::rules::overlay_types::is_bridge_overlay_index(overlay_id).then(|| {
-                let direction = match overlay_id {
-                    24 | 237 => BridgeDirection::EastWest,
-                    25 | 238 => BridgeDirection::NorthSouth,
-                    _ => BridgeDirection::Low,
-                };
-                BridgeLayer {
-                    overlay_id,
-                    overlay_name: overlay_name.to_string(),
-                    deck_level: match direction {
-                        BridgeDirection::Low => cell.level,
-                        BridgeDirection::EastWest | BridgeDirection::NorthSouth => {
-                            cell.level.saturating_add(4)
-                        }
-                    },
-                    direction,
-                }
-            })
-        });
+        cell.bridge_layer = overlay_id
+            .filter(|&overlay_id| crate::rules::overlay_types::is_bridge_overlay_index(overlay_id))
+            .map(|overlay_id| BridgeLayer::for_overlay(overlay_id, cell.level));
         let identity_bridge = cell.bridge_layer.is_some();
         let structural_bridge = cell.bridge_facts.has_structural_bridge();
         cell.has_bridge_deck = identity_bridge || structural_bridge;
@@ -783,8 +763,6 @@ impl ResolvedTerrainGrid {
             cell.speed_costs.wheel,
             cell.terrain_object_occupation,
         );
-        cell.bridge_facts.overlay_id = overlay_id;
-        cell.bridge_facts.state_byte = finalized.state();
         cell.is_wood_bridge_repair_tile = state.wood_bridge_repair_tile(cell.final_tile_index);
     }
 

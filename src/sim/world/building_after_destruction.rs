@@ -5,8 +5,8 @@
 //! Native callers run it right after the dying building's UnInit (`vt+0xF8`):
 //! `BuildingClass::ReceiveDamage` (`0x004426A2`) when DestructionEffects
 //! armed a running death timer, and `BuildingClass::Update` (`0x004400E5`)
-//! when that timer expires. VERA UnInits every dying building at once (see
-//! `crew_survival`), so it runs here from the fatal lifecycle's
+//! when that timer expires (an `Explodes=` type or a building dying while
+//! Selling, whose timer is zero). Both run it from the fatal lifecycle's
 //! AfterDeathEffects stage, after `uninit_with_context`.
 //!
 //! Rubble: when the type's rubble art answers

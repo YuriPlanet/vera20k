@@ -101,7 +101,7 @@ fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x51A4BF);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.input_delay_ticks = 0;
+    sim.set_input_delay_ticks(0);
     sim.session.set_binary_frame_for_test(1);
     let grid = sim
         .path_grid_snapshot()
@@ -168,7 +168,9 @@ fn stand_in(sim: &mut Simulation, id: u64, building: u64) {
         .map(|building| (building.position.rx(), building.position.ry()))
         .unwrap();
     let now = sim.session.binary_frame();
-    sim.mission_assign_exact(id, SABOTAGE, now).unwrap();
+    sim.substrate
+        .mission_assign_exact(id, SABOTAGE, now)
+        .unwrap();
     let planter = sim.substrate.entities.get_mut(id).unwrap();
     {
         let (rx, ry) = anchor;
@@ -220,7 +222,8 @@ fn mission_attacks_c4_arm_sends_a_demolition_man_to_sabotage() {
             .attack_target
             .set_for_test(Some(TargetKind::Entity(target)));
         let now = sim.session.binary_frame();
-        sim.mission_assign_exact(actor, MissionId::from_known(MissionType::Attack), now)
+        sim.substrate
+            .mission_assign_exact(actor, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
 
         sim.object_ai_visit_one(actor, Some(&rules), ObjectAiCtx::default());
@@ -250,7 +253,8 @@ fn a_hunting_demolition_man_whose_scan_finds_a_building_sabotages_it() {
     let target = spawn(&mut sim, &rules, "GAPILE", "Americans", 26, 26);
     let actor = spawn(&mut sim, &rules, "TANY", "Russians", 4, 4);
     let now = sim.session.binary_frame();
-    sim.mission_assign_exact(actor, MissionId::from_known(MissionType::Hunt), now)
+    sim.substrate
+        .mission_assign_exact(actor, MissionId::from_known(MissionType::Hunt), now)
         .unwrap();
 
     sim.object_ai_visit_one(actor, Some(&rules), ObjectAiCtx::default());
@@ -391,7 +395,8 @@ fn a_retail_area_guard_tanya_with_a_building_target_plants_c4() {
     let building = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 10);
     let tanya = spawn(&mut sim, &rules, "TANY", "Russians", 10, 10);
     let now = sim.session.binary_frame();
-    sim.mission_assign_exact(tanya, MissionId::from_known(MissionType::AreaGuard), now)
+    sim.substrate
+        .mission_assign_exact(tanya, MissionId::from_known(MissionType::AreaGuard), now)
         .unwrap();
     sim.assign_target_represented(
         tanya,
@@ -550,7 +555,8 @@ fn a_sold_or_curtained_building_takes_no_charge() {
                 crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
             );
         } else {
-            sim.mission_assign_exact(building, MissionId::from_known(MissionType::Selling), now)
+            sim.substrate
+                .mission_assign_exact(building, MissionId::from_known(MissionType::Selling), now)
                 .unwrap();
         }
         stand_in(&mut sim, tanya, building);
@@ -589,7 +595,8 @@ fn the_arm_plants_only_from_a_sabotage_c4_arrival_at_its_navcom() {
         match case {
             "not sabotage" => {
                 let now = sim.session.binary_frame();
-                sim.mission_assign_exact(actor, MissionId::from_known(MissionType::Capture), now)
+                sim.substrate
+                    .mission_assign_exact(actor, MissionId::from_known(MissionType::Capture), now)
                     .unwrap();
             }
             "other navcom" => {

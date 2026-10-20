@@ -146,7 +146,10 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         | WolServiceRequest::ForgetCredential { .. }
         | WolServiceRequest::StoreCredential { .. }
         | WolServiceRequest::Chat { .. }
-        | WolServiceRequest::Emote { .. } => return,
+        | WolServiceRequest::Emote { .. }
+        // Server-side page/find/language enforcement is not simulated.
+        | WolServiceRequest::SetLangFilter(_)
+        | WolServiceRequest::SetFindPage { .. } => return,
     };
     service_event(state, event);
 }

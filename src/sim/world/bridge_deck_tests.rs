@@ -38,11 +38,7 @@ fn structural_fallout_retires_effect_only_ground_victim() {
     let victim = sim
         .spawn_object_at_height("E1", "Americans", 4, 4, 0, 0, &rules)
         .unwrap();
-    seed_bridge_overlay(
-        sim.resolved_terrain.as_mut().unwrap(),
-        &[(4, 3), (4, 4), (4, 5)],
-        0xD4,
-    );
+    seed_bridge_overlay(&mut sim, &[(4, 3), (4, 4), (4, 5)], 0xD4);
     assert!(!sim.substrate.entities.get(victim).unwrap().on_bridge());
     sim.substrate
         .entities
@@ -115,11 +111,7 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
         cell.bridge_walkable = true;
         cell.bridge_deck_level = 4;
     }
-    seed_bridge_overlay(
-        sim.resolved_terrain.as_mut().unwrap(),
-        &[(4, 3), (4, 4), (4, 5)],
-        0xD4,
-    );
+    seed_bridge_overlay(&mut sim, &[(4, 3), (4, 4), (4, 5)], 0xD4);
     sim.bridge_state = Some(BridgeRuntimeState::default());
     let mut construct = |name: &str, x: u16, marked: bool| {
         let id = sim
@@ -329,13 +321,7 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
         let (mut sim, rules, registry) =
             crate::sim::world::entry_test_fixture::fixture_with_rules(ini);
         for y in [14, 15, 16] {
-            sim.resolved_terrain
-                .as_mut()
-                .unwrap()
-                .cell_mut_for_test(17, y)
-                .unwrap()
-                .bridge_facts
-                .overlay_id = Some(0xD4);
+            sim.overlay_cell_mut_for_test(17, y).overlay_id = Some(0xD4);
             sim.overlay_grid
                 .as_mut()
                 .unwrap()
@@ -399,9 +385,8 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
         }
         assert!(sim.bomb_carriers().is_empty());
         for y in [14, 15, 16] {
-            let cell = sim.resolved_terrain.as_ref().unwrap().cell(17, y).unwrap();
             assert_eq!(
-                cell.bridge_facts.overlay_id == Some(0xE7),
+                sim.overlay_grid.as_ref().unwrap().cell(17, y).overlay_id == Some(0xE7),
                 bombed,
                 "bombed {bombed}, killed {killed}: cell (17, {y})"
             );

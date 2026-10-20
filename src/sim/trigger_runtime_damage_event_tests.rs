@@ -377,8 +377,8 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
     );
     sim.install_fixture_path_grid(Some(&path));
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.playfield_bounds = Some(bounds);
-    sim.playfield_size_height = Some(32);
+    sim.set_playfield_bounds_for_test(Some(bounds));
+    sim.set_playfield_size_height_for_test(Some(32));
     sim.session.set_map_width_for_test(64);
     sim.session.set_map_height_for_test(64);
     Some(RetailDamageScene {

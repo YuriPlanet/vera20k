@@ -752,6 +752,23 @@ impl Simulation {
             })
     }
 
+    /// House+0x80, the UnitRepair stations (Items `+0x84`, Count `+0x90`), in
+    /// vector order. Unlimbo appends a `UnitRepair=` building (Type
+    /// `+0x16A9`, `0x0044122C..0x0044127A`) ahead of its House+0xB0 and
+    /// House+68 appends; ChangeOwner removes it from the old House
+    /// (`0x00448790..0x004487E0`) and appends it to the new one
+    /// (`0x00448E6E..0x00448EC5`) under the same gate, ahead of the same
+    /// lists; pointer expiry stable-removes it (`0x004FBA59..0x004FBA99`). As
+    /// with [`Self::house_absorbers`], it is House+68 filtered by the gate,
+    /// in order.
+    pub(crate) fn house_unit_repair_stations(
+        &self,
+        owner: InternedId,
+        rules: &RuleSet,
+    ) -> Vec<u64> {
+        self.house_buildings_where(owner, rules, |object| object.unit_repair)
+    }
+
     /// House+0xB0, the absorbers (Items `+0xB4`, Count `+0xC0`), in vector
     /// order. Unlimbo appends a `UnitAbsorb=`/`InfantryAbsorb=` building
     /// (Type `+0x16AE`/`+0x16AF`, `0x004412D4..0x00441335`) ahead of its
@@ -864,17 +881,6 @@ impl Simulation {
         self.append_house_base_building(id);
     }
 
-    /// `BuildingClass::ChangeOwner`'s moves between the two Houses' lists:
-    /// before the Techno owner swap it stable-removes the building from the
-    /// old House's FactoryPlant list, recomputes and removes it from House+68
-    /// (`0x00448A21..0x00448AB0`); after it, it appends to the new House's
-    /// lists (`0x00449155..0x004491D2`).
-    pub(super) fn leave_house_base_lists(&mut self, id: u64, owner: InternedId) {
-        if let Some(house) = self.houses.get_mut(&owner) {
-            house.base_projection_mut().remove_membership(id);
-        }
-    }
-
     pub(super) fn join_house_base_lists(
         &mut self,
         id: u64,
@@ -890,27 +896,6 @@ impl Simulation {
         }
         if let Some(house) = self.houses.get_mut(&owner) {
             house.base_projection_mut().append_membership(id);
-        }
-    }
-
-    /// `TechnoClass::ChangeOwner`'s Remove_Tracking on the old House and
-    /// Add_Tracking on the new (`0x007015DE`, `0x007015E6`) move the
-    /// building's registration with it.
-    pub(super) fn move_house_base_tracking(
-        &mut self,
-        id: u64,
-        old_owner: InternedId,
-        new_owner: InternedId,
-    ) {
-        let Some(entry) = self
-            .houses
-            .get_mut(&old_owner)
-            .and_then(|house| house.base_projection_mut().unregister(id))
-        else {
-            return;
-        };
-        if let Some(house) = self.houses.get_mut(&new_owner) {
-            house.base_projection_mut().register(entry);
         }
     }
 
@@ -935,6 +920,38 @@ impl Simulation {
         {
             //43BF34 changes tracking AFTER the earlier expiry/Limbo. No recalc.
             house.base_projection_mut().unregister(id);
+        }
+    }
+}
+
+impl crate::sim::houses::Houses {
+    /// `BuildingClass::ChangeOwner`'s moves between the two Houses' lists:
+    /// before the Techno owner swap it stable-removes the building from the
+    /// old House's FactoryPlant list, recomputes and removes it from House+68
+    /// (`0x00448A21..0x00448AB0`); after it, it appends to the new House's
+    /// lists (`0x00449155..0x004491D2`).
+    pub(super) fn leave_house_base_lists(&mut self, id: u64, owner: InternedId) {
+        if let Some(house) = self.get_mut(&owner) {
+            house.base_projection_mut().remove_membership(id);
+        }
+    }
+    /// `TechnoClass::ChangeOwner`'s Remove_Tracking on the old House and
+    /// Add_Tracking on the new (`0x007015DE`, `0x007015E6`) move the
+    /// building's registration with it.
+    pub(super) fn move_house_base_tracking(
+        &mut self,
+        id: u64,
+        old_owner: InternedId,
+        new_owner: InternedId,
+    ) {
+        let Some(entry) = self
+            .get_mut(&old_owner)
+            .and_then(|house| house.base_projection_mut().unregister(id))
+        else {
+            return;
+        };
+        if let Some(house) = self.get_mut(&new_owner) {
+            house.base_projection_mut().register(entry);
         }
     }
 }

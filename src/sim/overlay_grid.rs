@@ -10,8 +10,6 @@
 use crate::map::authored_overlay::{FinalizedOverlayCell, FinalizedOverlayPayload};
 use crate::map::overlay::{OverlayDataPack, OverlayEntry};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-#[cfg(any(test, feature = "test-support"))]
-use crate::rules::overlay_types::is_bridge_overlay_index;
 use crate::rules::overlay_types::{OverlayTypeRegistry, clears_tiberium_on_slope};
 use crate::sim::intern::InternedId;
 use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
@@ -233,18 +231,11 @@ impl OverlayGrid {
         true
     }
 
-    /// Seed from parsed map overlay entries.
-    ///
-    /// Bridge overlays are intentionally excluded: bridge body/bridgehead
-    /// overlay bytes are owned by CellClass (`ResolvedTerrainGrid`), while this
-    /// grid owns mutable non-bridge overlay bytes such as ore and walls.
+    /// Seed from parsed map overlay entries, bridges included.
     #[cfg(any(test, feature = "test-support"))]
     pub fn from_overlay_entries(entries: &[OverlayEntry], width: u16, height: u16) -> Self {
         let mut grid = Self::new(width, height);
         for entry in entries {
-            if is_bridge_overlay_index(entry.overlay_id) {
-                continue;
-            }
             if let Some(idx) = index_of(width, height, entry.rx, entry.ry) {
                 grid.cells[idx] = OverlayCell {
                     overlay_id: Some(entry.overlay_id),
@@ -597,9 +588,9 @@ impl OverlayGrid {
 
     /// `OverlayClass::Mark @ 0x005FC570`'s literal `CellClass+0x44` store,
     /// without the `RecalcAttributes` tail. Mark interleaves its data stores,
-    /// wall cleanup, germination and CellAnim before its own Recalc. The
-    /// terrain bridge cache follows when the caller holds the terrain mutably;
-    /// the batched ore placement holds it shared and leaves the cache (#722).
+    /// wall cleanup, germination and CellAnim before its own Recalc. A bridge
+    /// identity also projects the terrain's bridge layer and deck, so a caller
+    /// that can place one passes the terrain; ore placement passes none.
     /// False outside the grid or for an unregistered type.
     pub(crate) fn write_mark_identity(
         &mut self,
@@ -622,24 +613,14 @@ impl OverlayGrid {
     /// without a dirty entry or Recalc: `OverlayClass::Mark`'s data stores and
     /// the stores that follow an Overlay constructor
     /// (`CellClass::PlaceTiberium @ 0x004872A0`, `AnimClass::AI @
-    /// 0x00424155`), and map-load germination's densities. The terrain bridge
-    /// cache follows as for [`Self::write_mark_identity`]. False outside the
+    /// 0x00424155`), and map-load germination's densities. False outside the
     /// grid.
-    pub(crate) fn write_cell_data(
-        &mut self,
-        resolved_terrain: Option<&mut ResolvedTerrainGrid>,
-        rx: u16,
-        ry: u16,
-        overlay_data: u8,
-    ) -> bool {
+    pub(crate) fn write_cell_data(&mut self, rx: u16, ry: u16, overlay_data: u8) -> bool {
         let Some(idx) = index_of(self.width, self.height, rx, ry) else {
             return false;
         };
         self.bump_mutation_epoch();
         self.cells[idx].overlay_data = overlay_data;
-        if let Some(terrain) = resolved_terrain {
-            terrain.set_runtime_overlay_bridge_state_byte(rx, ry, overlay_data);
-        }
         true
     }
 
@@ -670,8 +651,8 @@ impl OverlayGrid {
     }
 
     /// The literal `CellClass+0x44` store, with `+0x11E` when `overlay_data`
-    /// is given, projected into the bridge cache when the terrain is given.
-    /// No Recalc tail. Returns the cell index, or `None` outside the grid or
+    /// is given; a bridge identity projects the terrain's bridge layer when
+    /// the terrain is given. No Recalc tail. Returns the cell index, or `None` outside the grid or
     /// for an unregistered type.
     fn write_identity_fields(
         &mut self,
@@ -683,16 +664,14 @@ impl OverlayGrid {
     ) -> Option<usize> {
         let idx = index_of(self.width, self.height, rx, ry)?;
         registry.flags(overlay_id)?;
-        let name = registry.name(overlay_id)?;
         let cell = &mut self.cells[idx];
         cell.overlay_id = Some(overlay_id);
         if let Some(overlay_data) = overlay_data {
             cell.overlay_data = overlay_data;
         }
-        let overlay_data = cell.overlay_data;
         self.dirty_cells.push((rx, ry));
         if let Some(terrain) = resolved_terrain {
-            terrain.set_runtime_overlay_bridge_identity(rx, ry, overlay_id, overlay_data, name);
+            terrain.set_runtime_overlay_bridge_identity(rx, ry, overlay_id);
         }
         Some(idx)
     }
@@ -716,23 +695,20 @@ impl OverlayGrid {
     /// Erase the two literal CellClass overlay fields a crate removal clears.
     ///
     /// `CrateSlot__RemoveCrateOverlayFromCell @ 0x004A1AA0` writes
-    /// `CellClass+0x44 = -1` and `CellClass+0x11E = 0` after its screen-dirty
-    /// request and changes no other field, so this deliberately keeps
-    /// `wall_owner` and runs no passability recalc of its own — unlike
-    /// [`OverlayGrid::clear_overlay`], which resets the whole cell.
-    pub(crate) fn clear_crate_mark_fields(
-        &mut self,
-        resolved_terrain: &mut ResolvedTerrainGrid,
-        rx: u16,
-        ry: u16,
-    ) -> bool {
+    /// `CellClass+0x44 = -1` (`0x004A1BE1`) and `CellClass+0x11E = 0`
+    /// (`0x004A1BE8`) after its screen-dirty request and changes no other
+    /// field, so this deliberately keeps `wall_owner`, the terrain's bridge
+    /// layer and every Recalc-derived attribute — unlike
+    /// [`OverlayGrid::clear_overlay`], which resets the whole cell. The random
+    /// placer admits only cells without an overlay, so in stock rules a
+    /// removal never undoes a bridge identity.
+    pub(crate) fn clear_crate_mark_fields(&mut self, rx: u16, ry: u16) -> bool {
         let Some(idx) = index_of(self.width, self.height, rx, ry) else {
             return false;
         };
         self.cells[idx].overlay_id = None;
         self.cells[idx].overlay_data = 0;
         self.removed_render_cells.push((rx, ry));
-        resolved_terrain.clear_runtime_overlay_identity(rx, ry);
         true
     }
 
@@ -748,12 +724,11 @@ impl OverlayGrid {
     /// target cell has no overlay identity yet.
     pub(crate) fn write_crate_mark_data_field(
         &mut self,
-        resolved_terrain: &mut ResolvedTerrainGrid,
         rx: u16,
         ry: u16,
         overlay_data: u8,
     ) -> bool {
-        if !self.write_literal_bridge_state(resolved_terrain, rx, ry, overlay_data) {
+        if !self.write_literal_bridge_state(rx, ry, overlay_data) {
             return false;
         }
         self.dirty_cells.push((rx, ry));
@@ -764,7 +739,6 @@ impl OverlayGrid {
     /// caller owns the later fallout/radar sequence; no Recalc receipt here.
     pub(crate) fn write_literal_bridge_state(
         &mut self,
-        resolved_terrain: &mut ResolvedTerrainGrid,
         rx: u16,
         ry: u16,
         overlay_data: u8,
@@ -772,9 +746,6 @@ impl OverlayGrid {
         let Some(idx) = index_of(self.width, self.height, rx, ry) else {
             return false;
         };
-        if !resolved_terrain.set_runtime_overlay_bridge_state_byte(rx, ry, overlay_data) {
-            return false;
-        }
         self.cells[idx].overlay_data = overlay_data;
         true
     }
@@ -798,7 +769,7 @@ impl OverlayGrid {
     /// callback here; subsequent Limbo/Unlimbo supplies its own cell callbacks.
     pub(crate) fn clear_building_placement_fields(
         &mut self,
-        terrain: &mut ResolvedTerrainGrid,
+        terrain: &ResolvedTerrainGrid,
         rx: u16,
         ry: u16,
     ) -> bool {
@@ -813,9 +784,12 @@ impl OverlayGrid {
         self.cells[idx].overlay_data = 0;
         self.cells[idx].rubble_building_type = None;
         self.removed_render_cells.push((rx, ry));
+        // A coordinate outside the native allocation resolves to the shared
+        // dummy, which clears its own identity and state.
         let cell = terrain.native_cell_identity((rx as i16, ry as i16));
-        terrain.clear_native_cell_overlay(cell);
-        terrain.write_native_cell_state(cell, 0);
+        if cell == crate::map::cell_index::NativeCellIdentity::Dummy {
+            terrain.shared_cell_dummy().set_overlay_fields(None, 0);
+        }
         true
     }
 
@@ -1105,6 +1079,7 @@ pub(crate) trait WallDamageTransactionHost {
     fn navigation_step(
         &mut self,
         terrain: &ResolvedTerrainGrid,
+        overlays: &OverlayGrid,
         cell: (u16, u16),
         navigation_changed: bool,
         repair: ZoneRepairKind,
@@ -1490,6 +1465,7 @@ fn damage_wall_recursive(
         if let Some(host) = host.as_deref_mut() {
             host.navigation_step(
                 terrain,
+                grid,
                 (rx, ry),
                 recalc.navigation_changed,
                 ZoneRepairKind::AssignOrphaned,
@@ -1849,6 +1825,7 @@ pub(crate) fn refresh_wall_connectivity_after_placement_with_host(
             {
                 host.navigation_step(
                     terrain,
+                    grid,
                     (nx, ny),
                     recalc.navigation_changed,
                     if result == RecomputeResult::Destroyed {
@@ -2001,6 +1978,7 @@ fn cleanup_wall_neighbors_into(
                 {
                     host.navigation_step(
                         terrain,
+                        grid,
                         (nx, ny),
                         recalc.navigation_changed,
                         if recomputed == RecomputeResult::Destroyed {
@@ -2140,33 +2118,6 @@ mod tests {
     }
 
     #[test]
-    fn from_overlay_entries_skips_bridge_overlay_bytes() {
-        let entries = vec![
-            OverlayEntry {
-                rx: 1,
-                ry: 1,
-                overlay_id: 24,
-                frame: 3,
-            },
-            OverlayEntry {
-                rx: 2,
-                ry: 1,
-                overlay_id: 5,
-                frame: 7,
-            },
-        ];
-
-        let grid = OverlayGrid::from_overlay_entries(&entries, 4, 4);
-
-        assert_eq!(
-            grid.cell(1, 1).overlay_id,
-            None,
-            "bridge overlay byte is owned by CellClass"
-        );
-        assert_eq!(grid.cell(2, 1).overlay_id, Some(5));
-    }
-
-    #[test]
     fn gsi_04_09_overlay_pack_init_preserves_all_raw_data_without_dirtying() {
         let entries = [OverlayEntry {
             rx: 1,
@@ -2198,12 +2149,10 @@ mod tests {
 
     #[test]
     fn bridge_publication_literal_fields_do_not_schedule_attribute_recalc() {
-        let mut terrain = single_cell_terrain(0, Default::default(), false);
         let mut grid = OverlayGrid::new(1, 1);
-        assert!(grid.write_literal_bridge_state(&mut terrain, 0, 0, 15));
+        assert!(grid.write_literal_bridge_state(0, 0, 15));
         assert_eq!(grid.cell(0, 0).overlay_id, None);
         assert_eq!(grid.cell(0, 0).overlay_data, 15);
-        assert_eq!(terrain.cell(0, 0).unwrap().bridge_facts.state_byte, 15);
         assert!(grid.pending_dirty_cells().is_empty());
         grid.cells[0].overlay_id = Some(24);
         grid.cells[0].wall_owner = Some(crate::sim::intern::test_intern("RetainedOwner"));

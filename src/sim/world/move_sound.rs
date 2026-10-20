@@ -31,17 +31,6 @@ impl MoveSoundState {
 }
 
 impl Simulation {
-    /// FootClass::Load 0x4DB60D..0x4DB624 reconstructs the handle and clears both fields
-    /// of logical sound state, regardless of sinking/crash state. The next
-    /// ordinary paid Foot visit may start a new sound and spends its own draw.
-    pub(crate) fn restore_move_sound_state_after_load(&mut self, id: u64) {
-        if let Some(entity) = self.substrate.entities.get_mut(id)
-            && entity.category() != EntityCategory::Structure
-        {
-            entity.move_sound = MoveSoundState::default();
-        }
-    }
-
     /// The before value is the same Foot+538 captured before Process, not
     /// position, facing or a locomotor cursor. The short-circuit changed arm
     /// does not ask IsMovingNow again. Stock idle SQD changes every four
@@ -114,6 +103,19 @@ impl Simulation {
             } else {
                 entity.move_sound.countdown = state.countdown.wrapping_sub(1);
             }
+        }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// FootClass::Load 0x4DB60D..0x4DB624 reconstructs the handle and clears both fields
+    /// of logical sound state, regardless of sinking/crash state. The next
+    /// ordinary paid Foot visit may start a new sound and spends its own draw.
+    pub(crate) fn restore_move_sound_state_after_load(&mut self, id: u64) {
+        if let Some(entity) = self.entities.get_mut(id)
+            && entity.category() != EntityCategory::Structure
+        {
+            entity.move_sound = MoveSoundState::default();
         }
     }
 }

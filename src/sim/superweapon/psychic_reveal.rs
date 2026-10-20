@@ -100,7 +100,7 @@ pub fn launch(
     let config = sim.sight_reveal_config(Some(rules));
     let viewers = vision::direct_reveal_viewers(
         &sim.fog,
-        &sim.house_alliances,
+        sim.house_alliances.as_map(),
         owner,
         &config,
         &sim.interner,

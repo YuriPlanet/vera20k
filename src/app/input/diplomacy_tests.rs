@@ -58,8 +58,14 @@ fn fixture() -> Fixture {
     let mut house = |name: &str, country: &str, human: bool| {
         let name = sim.intern(name);
         let country = sim.intern(country);
-        sim.houses_mut_for_test()
-            .register(HouseState::new(name, 0, Some(country), human, 0, 10));
+        let mut state = HouseState::new(name, 0, Some(country), human, 0, 10);
+        // CreateHouses' UI names: the human's handle, TXT_COMPUTER for AI.
+        state.set_ui_name_for_test(if human {
+            crate::sim::house_state::HouseUiName::handle("[New Player]")
+        } else {
+            crate::sim::house_state::HouseUiName::Computer
+        });
+        sim.houses_mut_for_test().register(state);
         name
     };
     let first_ai = house("Computer1", "Americans", false);
@@ -88,6 +94,7 @@ const SKIRMISH: DiplomacyRules = DiplomacyRules {
     quick_coop: false,
     local_inactive: false,
     game_mode_nonzero: true,
+    listeners: [true; 8],
 };
 
 fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
@@ -96,7 +103,7 @@ fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
         &fixture.rules,
         switches,
         &HouseUiSources {
-            handle: Some("[New Player]"),
+            csf: None,
             computer: "Computer",
             schemes: &fixture.schemes,
             colors: &fixture.colors,
@@ -270,6 +277,35 @@ fn human_rows_enable_allies_until_the_local_player_is_inactive() {
     let row = inactive.rows[2].as_ref().unwrap();
     assert!(!row.allies.unwrap().enabled);
     assert!(!row.chat.unwrap().enabled);
+    // The box shows the chat-mask byte of the row's House, and stays
+    // checked once the local player is out (0x00657F8E..0x00657FCC).
+    let index = fixture.sim.houses().index_of(first_ai).unwrap();
+    let mut listeners = [true; 8];
+    listeners[index] = false;
+    let muted = DiplomacyRules {
+        listeners,
+        ..SKIRMISH
+    };
+    assert!(
+        !rows(&fixture, muted).rows[2]
+            .as_ref()
+            .unwrap()
+            .chat
+            .unwrap()
+            .checked
+    );
+    let muted_inactive = DiplomacyRules {
+        local_inactive: true,
+        ..muted
+    };
+    assert!(
+        rows(&fixture, muted_inactive).rows[2]
+            .as_ref()
+            .unwrap()
+            .chat
+            .unwrap()
+            .checked
+    );
 }
 
 /// Retail layering through the production reader: RULESMD says

@@ -176,8 +176,24 @@ impl crate::sim::world::Simulation {
         layer: crate::sim::movement::locomotor::MovementLayer,
         exclude: Option<u64>,
     ) -> Option<u64> {
-        crate::sim::cell_kernel::nearest_eligible_in_order(
+        self.nearest_cell_object_from(
+            cell,
             crate::sim::cell_kernel::CellQueryPoint { x: 0, y: 0 },
+            layer,
+            exclude,
+        )
+    }
+
+    /// [`Self::nearest_cell_object`] from the caller's sub-point `point`.
+    pub(crate) fn nearest_cell_object_from(
+        &self,
+        cell: (u16, u16),
+        point: crate::sim::cell_kernel::CellQueryPoint,
+        layer: crate::sim::movement::locomotor::MovementLayer,
+        exclude: Option<u64>,
+    ) -> Option<u64> {
+        crate::sim::cell_kernel::nearest_eligible_in_order(
+            point,
             self.substrate
                 .occupancy
                 .get(cell.0, cell.1)

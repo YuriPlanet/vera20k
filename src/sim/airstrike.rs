@@ -112,19 +112,6 @@ impl Simulation {
         });
     }
 
-    pub(crate) fn link_airstrike_aircraft(&mut self, owner: u64, aircraft: u64) {
-        self.airstrike_manager_mut(owner)
-            .expect("strike owner")
-            .aircraft
-            .insert(0, aircraft);
-        self.substrate
-            .entities
-            .get_mut(aircraft)
-            .expect("constructed aircraft")
-            .airstrike
-            .link = Some(owner);
-    }
-
     fn airstrike_manager(&self, owner: u64) -> Option<&AirstrikeManager> {
         self.substrate
             .entities
@@ -132,14 +119,6 @@ impl Simulation {
             .airstrike
             .manager
             .as_ref()
-    }
-    fn airstrike_manager_mut(&mut self, owner: u64) -> Option<&mut AirstrikeManager> {
-        self.substrate
-            .entities
-            .get_mut(owner)?
-            .airstrike
-            .manager
-            .as_mut()
     }
 
     /// Bullet469705..469789 admits any Techno target through the firer's link.
@@ -206,7 +185,7 @@ impl Simulation {
             .veterancy
             .rank_kind()
             == VeterancyRank::Elite;
-        let m = self.airstrike_manager_mut(owner).unwrap();
+        let m = self.substrate.airstrike_manager_mut(owner).unwrap();
         m.busy = true;
         m.active = true;
         let (kind, count) = if elite {
@@ -219,7 +198,7 @@ impl Simulation {
         };
         let spawned = self.create_airstrike_aircraft(owner, target, &kind, count, rules, effects);
         let first = spawned.aircraft.first().copied();
-        let m = self.airstrike_manager_mut(owner).unwrap();
+        let m = self.substrate.airstrike_manager_mut(owner).unwrap();
         m.remaining = spawned.count;
         m.aircraft = spawned.aircraft;
         if spawned.count == 0 {
@@ -283,9 +262,9 @@ impl Simulation {
             old.airstrike.link = None;
             old.airstrike_tint.stop(self.session.binary_frame() as i32);
         }
-        self.airstrike_manager_mut(owner).unwrap().target = None;
+        self.substrate.airstrike_manager_mut(owner).unwrap().target = None;
         self.airstrike_mark_target(owner, target);
-        self.airstrike_manager_mut(owner).unwrap().target = Some(target);
+        self.substrate.airstrike_manager_mut(owner).unwrap().target = Some(target);
         for aircraft in aircraft.into_iter().take(remaining) {
             if self
                 .substrate
@@ -308,7 +287,7 @@ impl Simulation {
                     self.session.binary_frame(),
                     &crate::sim::mission::authority::EntityReadyInputProvider,
                 );
-                self.airstrike_manager_mut(owner).unwrap().active = true;
+                self.substrate.airstrike_manager_mut(owner).unwrap().active = true;
             }
         }
     }
@@ -355,7 +334,7 @@ impl Simulation {
             let _ = self.assign_target_represented(id, None, rules, None, effects);
             let _ = self.assign_destination_represented(id, None, rules, None, effects);
         }
-        self.airstrike_manager_mut(owner).unwrap().active = false;
+        self.substrate.airstrike_manager_mut(owner).unwrap().active = false;
         if let Some(target) = target.filter(|&id| {
             self.substrate.entities.get(id).is_some_and(|e| {
                 e.category() == EntityCategory::Structure && e.airstrike.link == Some(owner)
@@ -383,7 +362,7 @@ impl Simulation {
                 .airstrike
                 .link = replacement;
         }
-        self.airstrike_manager_mut(owner).unwrap().target = None;
+        self.substrate.airstrike_manager_mut(owner).unwrap().target = None;
     }
 
     fn airstrike_sound(
@@ -407,7 +386,7 @@ impl Simulation {
     /// Remove41DC80 clears only this aircraft link; last removal starts recharge.
     fn airstrike_remove_aircraft(&mut self, owner: u64, aircraft: u64) {
         let frame = self.session.binary_frame() as i32;
-        let Some(m) = self.airstrike_manager_mut(owner) else {
+        let Some(m) = self.substrate.airstrike_manager_mut(owner) else {
             return;
         };
         if let Some(index) = m.aircraft.iter().take(102).position(|&id| id == aircraft) {
@@ -561,6 +540,23 @@ impl Simulation {
             .and_then(GameEntity::airstrike_link)
             .and_then(|id| self.airstrike_manager(id))
             .is_some_and(|m| m.target == Some(target))
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    pub(crate) fn link_airstrike_aircraft(&mut self, owner: u64, aircraft: u64) {
+        self.airstrike_manager_mut(owner)
+            .expect("strike owner")
+            .aircraft
+            .insert(0, aircraft);
+        self.entities
+            .get_mut(aircraft)
+            .expect("constructed aircraft")
+            .airstrike
+            .link = Some(owner);
+    }
+    fn airstrike_manager_mut(&mut self, owner: u64) -> Option<&mut AirstrikeManager> {
+        self.entities.get_mut(owner)?.airstrike.manager.as_mut()
     }
 }
 

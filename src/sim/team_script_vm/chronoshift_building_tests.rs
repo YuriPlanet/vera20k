@@ -38,7 +38,7 @@ fn action56_paid_pair_settles_the_shared_wallet_once_after_destination() {
             source_id,
             false,
         );
-        crate::sim::credit_income::add_credits(&mut scene.sim, owner, 1000);
+        crate::sim::credit_income::add_credits(&mut scene.sim.houses, owner, 1000);
         assert_eq!(step(&mut scene).len(), 2);
         assert_eq!(scene.sim.houses[&owner].economy().credits(), 1000 + amount);
         assert!(scene.sim.paid_super_weapon_selection(owner).is_none());

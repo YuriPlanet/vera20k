@@ -312,7 +312,7 @@ impl Simulation {
             // The Infantry notice keeps the infantryman: its class AI runs on
             // to the sequencer and locomotion actions.
             if let Some(rules) = rules {
-                self.aircraft_tracker_remove(stable_id);
+                self.substrate.aircraft_tracker_remove(stable_id);
                 self.infantry_crash_impact(stable_id, rules, overlay_registry, effects);
             }
             return Ok(process);
@@ -1161,7 +1161,7 @@ impl Simulation {
             return Ok(outcome);
         }
         // UnitClass::AI after FootClass::AI, before its second Ready/Commence.
-        crate::sim::miner::miner_system::unit_ai_clear_harvesting(sim, stable_id);
+        crate::sim::miner::miner_system::unit_ai_clear_harvesting(&mut sim.substrate, stable_id);
         // Unit7365E1 Fire_At_Target then7365E8 Facing_Update precede
         // its second Ready/Commence. FireAt appends into the live Logic walk.
         if !infantry {
@@ -1176,6 +1176,19 @@ impl Simulation {
                 outcome.destroyed_structure |= receipt.structure_destroyed;
             }
             sim.object_ai_post_movement_promote_one(stable_id, rules);
+            // Unit73671F..736817 follows that Commence (the CTF flag block
+            // between them is unreachable).
+            if let Some(rules) = rules {
+                sim.unit_ai_seek_repair(stable_id, rules, overlay_registry, object_ctx.effects);
+                // Unit73681D..73697B, the last block of UnitClass::AI.
+                crate::sim::miner::miner_system::unit_ai_nudge_off_refinery_pad(
+                    sim,
+                    stable_id,
+                    rules,
+                    overlay_registry,
+                    object_ctx.effects,
+                );
+            }
         }
         if let Some(rules) = rules {
             sim.aircraft_crash_smoke(stable_id, rules);

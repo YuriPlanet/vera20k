@@ -74,7 +74,7 @@ impl crate::sim::world::Simulation {
                     entity.disguise_hides_house_from(
                         player,
                         Some(&self.fog),
-                        Some(&self.house_alliances),
+                        Some(self.house_alliances.as_map()),
                         &self.interner,
                     )
                 });

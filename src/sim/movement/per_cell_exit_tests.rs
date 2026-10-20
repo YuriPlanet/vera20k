@@ -72,10 +72,10 @@ fn a_promoted_grizzly_leaving_the_playfield_uninitializes_and_expires_targets() 
             .target(),
         Some(TargetKind::Entity(id)),
     );
-    sim.playfield_bounds = Some(PLAYFIELD);
+    sim.set_playfield_bounds_for_test(Some(PLAYFIELD));
     assert!(!crate::sim::cell_rect::cell_is_in_playfield_height_aware(
         (20, 20),
-        sim.playfield_bounds,
+        sim.playfield_bounds(),
         sim.resolved_terrain.as_ref(),
     ));
     let health = sim.substrate.entities.get(id).unwrap().health.current();
@@ -131,7 +131,7 @@ fn inside_ingress_guard_team_and_turn_completion_do_not_remove_the_grizzly() {
     ] {
         let mut sim = arena(&rules);
         let id = grizzly(&mut sim, &rules, cell);
-        sim.playfield_bounds = Some(PLAYFIELD);
+        sim.set_playfield_bounds_for_test(Some(PLAYFIELD));
         sim.substrate
             .entities
             .get_mut(id)
@@ -173,7 +173,7 @@ fn infantry_uses_the_foot_exit_but_an_ordinary_aircraft_keeps_its_own_gate() {
         let actor = sim.substrate.entities.get(id).unwrap();
         assert!(actor.in_playfield());
         assert!(!actor.is_mission_only());
-        sim.playfield_bounds = Some(PLAYFIELD);
+        sim.set_playfield_bounds_for_test(Some(PLAYFIELD));
         sim.per_cell_process(
             id,
             PerCellReason::Arrival,
@@ -204,7 +204,7 @@ fn a_partial_world_without_a_playfield_does_not_admit_exit() {
     };
     let mut sim = arena(&rules);
     let id = grizzly(&mut sim, &rules, (20, 20));
-    sim.playfield_bounds = None;
+    sim.set_playfield_bounds_for_test(None);
     sim.per_cell_process(
         id,
         PerCellReason::Arrival,
@@ -239,7 +239,7 @@ fn a_train_heading_back_to_the_playfield_stays_but_an_exiting_train_leaves() {
     for (destination, leaves) in [((12, 12), false), ((22, 22), true)] {
         let mut sim = arena(&rules);
         let id = grizzly(&mut sim, &rules, (20, 20));
-        sim.playfield_bounds = Some(PLAYFIELD);
+        sim.set_playfield_bounds_for_test(Some(PLAYFIELD));
         sim.assign_destination_represented(
             id,
             Some(NavTargetRef::cell(destination.0, destination.1)),
@@ -278,7 +278,7 @@ fn a_retail_grizzly_team_walks_out_and_retires_through_the_production_tick() {
         return;
     };
     let mut sim = arena(&rules);
-    sim.playfield_bounds = Some(PLAYFIELD);
+    sim.set_playfield_bounds_for_test(Some(PLAYFIELD));
     let id = grizzly(&mut sim, &rules, (12, 12));
     sim.spawn_object_at_height("E1", "Americans", 8, 16, 0, 0, &rules)
         .unwrap();

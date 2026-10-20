@@ -1934,7 +1934,15 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
     result.scenario.startup = session.freeze_network_start(1).unwrap();
     result.scenario.simulation = Some(sim);
     let notices = apply_network_loading_disconnects(&mut session, &mut result, &[1]);
-    assert_eq!(notices, vec![("Remote".into(), "Remote".into())]);
+    assert_eq!(
+        notices,
+        vec![
+            crate::app::match_runtime::network_match::ConnectionDestroyed {
+                owner: peer,
+                key: "TXT_CONNECTION_LOST",
+            }
+        ]
+    );
     assert_eq!(session.network_connected_source_indices(), &[0]);
     assert_eq!(
         result
@@ -1948,6 +1956,11 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
     );
     let sim = result.scenario.simulation.as_ref().unwrap();
     assert!(sim.houses()[&peer].is_to_die());
+    // DestroyConnection's line names the House by its own +0x1602A.
+    assert_eq!(
+        sim.houses()[&peer].ui_name(),
+        &crate::sim::house_state::HouseUiName::Handle("Remote".into())
+    );
     assert!(!sim.houses()[&local].is_to_die());
     assert_eq!(sim.session().current_house(), Some(local));
     assert!(apply_network_loading_disconnects(&mut session, &mut result, &[1]).is_empty());

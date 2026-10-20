@@ -125,8 +125,8 @@ fn no_factories_event_matches_original_incoming_house_list_and_raw_class() {
                 if building.is_null() {
                     continue;
                 }
-                let id = sim.substrate.next_stable_object_id;
-                sim.substrate.next_stable_object_id += 1;
+                let id = sim.next_stable_object_id();
+                sim.set_next_stable_object_id_for_test(sim.next_stable_object_id() + 1);
                 let typ = sim
                     .interner
                     .get(&format!("F{}", int(&building["factory_rtti"])))
@@ -183,8 +183,8 @@ fn no_factories_event_matches_original_incoming_house_list_and_raw_class() {
         let timer = CdTimer::from_raw(int(&case["timer_before"][0]), int(&case["timer_before"][2]));
         sim.trigger_runtime.triggers[live].as_mut().unwrap().timer = timer;
         let actor = case["actor_owner"].as_u64().map(|slot| {
-            let id = sim.substrate.next_stable_object_id;
-            sim.substrate.next_stable_object_id += 1;
+            let id = sim.next_stable_object_id();
+            sim.set_next_stable_object_id_for_test(sim.next_stable_object_id() + 1);
             let typ = sim.interner.get("ACTOR").unwrap();
             sim.substrate
                 .entities

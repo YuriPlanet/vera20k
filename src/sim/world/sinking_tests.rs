@@ -42,7 +42,7 @@ fn fixture(relative_z: i32) -> (Simulation, RuleSet, u64) {
         .position
         .set_exact_z_leptons_for_test(Some(208 + relative_z));
     sim.substrate.entities.insert(entity);
-    sim.begin_receiver_kill_record(id);
+    sim.substrate.begin_receiver_kill_record(id);
     sim.record_destruction_once(id);
     sim.begin_ship_sinking(id, &rules, crate::sim::world::FrameEffects::default());
     (sim, rules, id)

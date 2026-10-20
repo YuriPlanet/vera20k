@@ -351,7 +351,7 @@ fn arena(rules: &RuleSet) -> (Simulation, crate::sim::pathfinding::PathGrid) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x4571E0);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.input_delay_ticks = 0;
+    sim.set_input_delay_ticks(0);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session
@@ -399,13 +399,13 @@ fn the_infiltration_arm_takes_only_admitted_buildings() {
     );
 
     // Is_Ally_ByObject asks the spy's house only (`0x004F9A90`).
-    let alliances = &mut sim.house_alliances;
+    let alliances = sim.house_alliances_mut_for_test();
     alliances
         .entry("RUSSIANS".to_string())
         .or_default()
         .insert("AMERICANS".to_string());
     assert!(takes(&sim, spy, plant), "only the building's house allies");
-    sim.house_alliances
+    sim.house_alliances_mut_for_test()
         .entry("AMERICANS".to_string())
         .or_default()
         .insert("RUSSIANS".to_string());
@@ -517,7 +517,8 @@ fn a_computer_spy_attacking_a_power_plant_goes_in() {
         sim.interner.get("Russians").unwrap(),
     );
     let now = sim.session.binary_frame();
-    sim.mission_assign_exact(spy, MissionId::from_known(MissionType::Attack), now)
+    sim.substrate
+        .mission_assign_exact(spy, MissionId::from_known(MissionType::Attack), now)
         .unwrap();
     sim.assign_target_represented(
         spy,

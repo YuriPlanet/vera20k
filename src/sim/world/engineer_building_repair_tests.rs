@@ -219,9 +219,9 @@ impl Fixture {
             ),
         );
         if name == "allied_damaged" {
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .insert("AMERICANS".into(), ["SECOND".into()].into_iter().collect());
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .insert("SECOND".into(), ["AMERICANS".into()].into_iter().collect());
         }
         sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(999));
@@ -267,7 +267,7 @@ impl Fixture {
             ));
             // The native command witness follows Event4C6CB0 with the
             // ordinary Mission5B3570 Commence receiver before its snapshot.
-            sim.mission_commence_exact(id, 0).unwrap();
+            sim.substrate.mission_commence_exact(id, 0).unwrap();
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             assert_eq!(
                 entity.mission.effective().raw(),

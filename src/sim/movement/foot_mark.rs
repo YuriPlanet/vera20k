@@ -194,21 +194,6 @@ pub(super) fn raw_occupation_plane(
 }
 
 impl Simulation {
-    /// Save/clear/restore Object+74 without changing cell lists. Locomotors
-    /// use this around setters (Jumpjet54D0FF/54D6B4 and54C189/54C1A3, and
-    /// the Drive/Ship track's SetLocation and SetHeight(0) in
-    /// `track_host`).
-    /// This is distinct from Mark4D3780, whose pickup/place callbacks run
-    /// only when the native caller actually invokes Mark.
-    pub(crate) fn replace_foot_marked_byte(&mut self, id: u64, marked: bool) -> bool {
-        let entity = self
-            .substrate
-            .entities
-            .get_mut(id)
-            .expect("marked Foot exists");
-        entity.lifecycle.replace_cell_marked(marked)
-    }
-
     /// The object's Mark(2) virtual dispatch reached by Object radio 0xD
     /// (`0x005F5374`). Foot4D3789 returns true before any lifecycle gate or
     /// Techno Mark, so it cannot recursively transmit 0xD.
@@ -221,7 +206,7 @@ impl Simulation {
     /// SHA256 270a1321e3a5509df0eb58500883737f69af2172726da216f7ca107962391127;
     /// pinned active-retail gamemd SHA256
     /// 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c.
-    pub(crate) fn mark_entity_refresh(&mut self, id: u64) -> bool {
+    pub(crate) fn mark_entity_refresh(&self, id: u64) -> bool {
         self.substrate
             .entities
             .get(id)
@@ -458,6 +443,19 @@ impl Simulation {
             (false, MovementLayer::Bridge) => raw.clear_deck(at.0, at.1, OBJECT_OCCUPATION_BIT),
             (false, _) => raw.clear_ground(at.0, at.1, OBJECT_OCCUPATION_BIT),
         }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// Save/clear/restore Object+74 without changing cell lists. Locomotors
+    /// use this around setters (Jumpjet54D0FF/54D6B4 and54C189/54C1A3, and
+    /// the Drive/Ship track's SetLocation and SetHeight(0) in
+    /// `track_host`).
+    /// This is distinct from Mark4D3780, whose pickup/place callbacks run
+    /// only when the native caller actually invokes Mark.
+    pub(crate) fn replace_foot_marked_byte(&mut self, id: u64, marked: bool) -> bool {
+        let entity = self.entities.get_mut(id).expect("marked Foot exists");
+        entity.lifecycle.replace_cell_marked(marked)
     }
 }
 

@@ -277,19 +277,19 @@ fn flat_sim() -> Simulation {
     const WIDTH: u16 = 40;
     const HEIGHT: u16 = 32;
     let mut sim = Simulation::new();
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -40,
         off_100: -1,
         off_104: 80,
         off_108: 41,
-    });
+    }));
     sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         WIDTH,
         HEIGHT,
         flat_terrain_cell,
     ));
-    sim.playfield_size_height = Some(HEIGHT.into());
+    sim.set_playfield_size_height_for_test(Some(HEIGHT.into()));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim
 }
@@ -298,8 +298,8 @@ fn flat_sim() -> Simulation {
 /// holds the V3 tests' cells, as a missile's flight steps require.
 fn missile_sim() -> Simulation {
     let mut sim = flat_sim();
-    sim.playfield_bounds.as_mut().unwrap().base = 15;
-    sim.playfield_size_height = Some(15);
+    sim.playfield_bounds_mut_for_test().as_mut().unwrap().base = 15;
+    sim.set_playfield_size_height_for_test(Some(15));
     sim
 }
 
@@ -750,7 +750,7 @@ fn a_missile_that_lost_its_target_retreats_for_good() {
     let mut rng = sim.scenario_rng.clone();
     let mut pick = || {
         find_paradrop_edge_cell(
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
             sim.resolved_terrain.as_ref(),
             Edge::North,
             &mut rng,
@@ -2536,7 +2536,7 @@ CurleyShuffle=yes
         assert!(sim.map_cell_in_bounds(cell), "sortie start {cell:?}");
         assert!(crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(cell.0), i32::from(cell.1)),
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
             sim.resolved_terrain.as_ref(),
         ));
     }

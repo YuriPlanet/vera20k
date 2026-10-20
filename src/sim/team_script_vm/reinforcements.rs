@@ -141,7 +141,7 @@ impl Simulation {
         let nearby = waypoint_override != -1
             && crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(origin.0), i32::from(origin.1)),
-                self.playfield_bounds,
+                self.playfield_bounds(),
                 self.resolved_terrain.as_ref(),
             );
         let placed = if metadata.droppod {
@@ -162,7 +162,7 @@ impl Simulation {
             .filter(|&current| {
                 placed
                     && crate::map::houses::is_allied_with(
-                        &self.house_alliances,
+                        self.house_alliances.as_map(),
                         self.interner.resolve(owner),
                         self.interner.resolve(current),
                     )
@@ -396,14 +396,14 @@ impl Simulation {
                 .chrono_mut()
                 .unwrap()
                 .set_pending_state(3);
-            let _ = self.mission_commence_exact(member, frame);
+            let _ = self.substrate.mission_commence_exact(member, frame);
         }
         let review = self.team_type_house(team_type, rules).and_then(|owner| {
             self.session
                 .current_house()
                 .filter(|&current| {
                     crate::map::houses::is_allied_with(
-                        &self.house_alliances,
+                        self.house_alliances.as_map(),
                         self.interner.resolve(owner),
                         self.interner.resolve(current),
                     )
@@ -579,7 +579,9 @@ impl Simulation {
         }
         //65DCF9 invokes Aircraft Commence41B870 directly, with no Ready
         //query, after the entire payload attaches. Use the sole mission owner.
-        let _ = self.mission_commence_exact(plane, self.session.binary_frame());
+        let _ = self
+            .substrate
+            .mission_commence_exact(plane, self.session.binary_frame());
         true
     }
 

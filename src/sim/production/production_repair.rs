@@ -503,7 +503,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         }
         return;
     }
-    spend_money(sim, owner, cost);
+    spend_money(&mut sim.houses, owner, cost);
     let step = rules.general.repair_step;
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;

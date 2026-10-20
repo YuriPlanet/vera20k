@@ -32,18 +32,6 @@ impl GameEntity {
 }
 
 impl Simulation {
-    /// The latch stores of ForceOffline4521C0/ForceOnline452210. Temporal
-    /// must not call the normal toggles: these force stores have no factory,
-    /// light, Stuff or EVA callbacks. Their Anim119 translucency/fade tail
-    /// remains the existing Temporal presentation residual.
-    pub(crate) fn set_building_online_for_temporal(&mut self, id: u64, online: bool) {
-        if let Some(entity) = self.substrate.entities.get_mut(id)
-            && entity.category() == EntityCategory::Structure
-        {
-            entity.building_online.online = online;
-        }
-    }
-
     /// GoOffline452360: only positive native PowerDrain or Powered types
     /// can turn off. Return the actual transition, not Execute61's receipt.
     pub(crate) fn go_building_offline(
@@ -75,7 +63,7 @@ impl Simulation {
             .building_online
             .online = false;
         self.invalidate_house_power(owner, true);
-        self.request_house_tech_tree_recheck(owner);
+        self.houses.request_house_tech_tree_recheck(owner);
         self.set_building_stuff_enabled(id, false, rules);
         //4523DE speaks before509140; the online arm reverses that order.
         if self.house_is_human_player(owner) {
@@ -116,7 +104,7 @@ impl Simulation {
             .building_online
             .online = true;
         self.invalidate_house_power(owner, true);
-        self.request_house_tech_tree_recheck(owner);
+        self.houses.request_house_tech_tree_recheck(owner);
         self.set_building_stuff_enabled(id, true, rules);
         if let Some(category) = factory {
             crate::sim::production::update_factory_queue(self, rules, owner, category, effects);
@@ -128,5 +116,19 @@ impl Simulation {
             });
         }
         true
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// The latch stores of ForceOffline4521C0/ForceOnline452210. Temporal
+    /// must not call the normal toggles: these force stores have no factory,
+    /// light, Stuff or EVA callbacks. Their Anim119 translucency/fade tail
+    /// remains the existing Temporal presentation residual.
+    pub(crate) fn set_building_online_for_temporal(&mut self, id: u64, online: bool) {
+        if let Some(entity) = self.entities.get_mut(id)
+            && entity.category() == EntityCategory::Structure
+        {
+            entity.building_online.online = online;
+        }
     }
 }

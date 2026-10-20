@@ -168,7 +168,7 @@ fn octant_cell_open(sim: &Simulation, cell: (u16, u16), transport_owner: &str) -
         .and_then(|id| sim.substrate.entities.get(id))
         .is_none_or(|object| {
             crate::map::houses::is_allied_with(
-                &sim.house_alliances,
+                sim.house_alliances.as_map(),
                 transport_owner,
                 sim.interner.resolve(object.owner()),
             )

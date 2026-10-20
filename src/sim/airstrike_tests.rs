@@ -358,6 +358,7 @@ fn snapshot_preserves_cancelled_sortie_and_rejects_unresolved_manager_references
         );
     }
     f.sim
+        .substrate
         .airstrike_manager_mut(f.boris)
         .unwrap()
         .aircraft

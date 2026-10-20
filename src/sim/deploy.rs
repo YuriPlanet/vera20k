@@ -562,12 +562,13 @@ impl Simulation {
                 delay = object.undeploy_delay;
             }
         }
-        self.mission_assign_exact(
-            id,
-            MissionId::from_known(MissionType::Guard),
-            self.session.binary_frame(),
-        )
-        .map_err(|cause| format!("Infantry Unload Guard: {cause}"))?;
+        self.substrate
+            .mission_assign_exact(
+                id,
+                MissionId::from_known(MissionType::Guard),
+                self.session.binary_frame(),
+            )
+            .map_err(|cause| format!("Infantry Unload Guard: {cause}"))?;
         self.assign_destination_represented(id, None, Some(rules), None, effects)
             .map_err(|cause| format!("Infantry Unload destination: {cause}"))?;
         Ok(if delay > -1 { delay } else { 450 })

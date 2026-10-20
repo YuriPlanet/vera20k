@@ -268,7 +268,7 @@ impl Simulation {
             }
             if self.mission_ready_to_commence(id, rules) {
                 let now = self.session.binary_frame();
-                let _ = self.mission_commence_exact(id, now);
+                let _ = self.substrate.mission_commence_exact(id, now);
             }
         }
         if repair {

@@ -132,7 +132,8 @@ fn wakeup_selection_and_deferred_mission_state_match_original_controls() {
                     dispatch_guard: false,
                 }));
                 sim.trigger_runtime.tag_order.push(tag);
-                sim.replace_trigger_tag_attachment(TagAttachment::Object(id), Some(tag));
+                sim.trigger_runtime
+                    .replace_trigger_tag_attachment(TagAttachment::Object(id), Some(tag));
             }
             originals.push((index, entity.clone()));
             if order.iter().any(|v| int(v) as usize == index) {

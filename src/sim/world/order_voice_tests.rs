@@ -46,7 +46,8 @@ fn retail_attack_acknowledgement_spends_the_original_singleton_main_draw() {
     sim.houses
         .register(HouseState::new(local, 0, None, true, 0, 10));
     let type_ref = sim.interner.intern("MTNK");
-    sim.entities_mut()
+    sim.substrate
+        .entities
         .insert(GameEntity::new_at_frame_zero_for_test(
             1,
             10,
@@ -152,7 +153,8 @@ fn scene_for_rules(
         .set_player_control_for_test(input["other_player_control"].as_bool().unwrap_or(false));
     sim.houses.register(other_house);
     let id = 1;
-    sim.entities_mut()
+    sim.substrate
+        .entities
         .insert(GameEntity::new_at_frame_zero_for_test(
             id,
             0,
@@ -472,7 +474,7 @@ fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
             EntityCategory::Unit,
         );
         let object = rules.object(type_name).unwrap();
-        let entity = sim.entities_mut().get_mut(actor).unwrap();
+        let entity = sim.substrate.entities.get_mut(actor).unwrap();
         entity.veterancy.set_raw_for_test(NativeF32Bits::from_bits(
             input["raw_veterancy_bits"].as_u64().unwrap() as u32,
         ));
@@ -501,7 +503,8 @@ fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
             } else {
                 EntityCategory::Unit
             };
-            sim.entities_mut()
+            sim.substrate
+                .entities
                 .insert(GameEntity::new_at_frame_zero_for_test(
                     2,
                     4,
@@ -654,7 +657,8 @@ fn attack_voice_selects_for_the_committed_target_without_retargeting_the_actor()
     let owner = sim.interner.get("Other").unwrap();
     for (id, type_name) in [(2, "OLD"), (3, "NEW")] {
         let kind = sim.interner.intern(type_name);
-        sim.entities_mut()
+        sim.substrate
+            .entities
             .insert(GameEntity::new_at_frame_zero_for_test(
                 id,
                 id as u16,
@@ -731,7 +735,7 @@ fn capture_enter_and_harvest_preserve_scalar_precedence_and_move_fallback() {
             ("VoiceEnter", enter),
             ("VoiceHarvest", harvest),
         ] {
-            let (mut sim, rules, id) = scene(body);
+            let (sim, rules, id) = scene(body);
             let (request, draws) =
                 trace_draws(|| sim.order_voice_request(&rules, id, field, None, true));
             assert_eq!(request, expected, "{field} with {body:?}");
@@ -751,7 +755,7 @@ fn capture_enter_and_harvest_preserve_scalar_precedence_and_move_fallback() {
 
 #[test]
 fn disabled_order_voice_rejects_before_move_or_fallback_is_reached() {
-    let (mut sim, rules, id) = scene("VoiceMove=Move\n");
+    let (sim, rules, id) = scene("VoiceMove=Move\n");
     for field in [
         "VoiceMove",
         "VoiceAttack",
@@ -796,7 +800,7 @@ fn allied_object_move_voice_matches_native_rng_and_queue() {
         assert!(matches!(entry, 0x006f_fbe0 | 0x0070_8fc0), "{name}");
         let is_direct = entry == 0x0070_8fc0;
         let body = format!("VoiceMove={}\n", voices.join(","));
-        let (mut sim, rules, id) = scene_with_input(&body, input);
+        let (sim, rules, id) = scene_with_input(&body, input);
         let human = sim.house_is_human_player(sim.entities().get(id).unwrap().owner());
         assert_eq!(
             sim.main_rng.native_state_hex(),

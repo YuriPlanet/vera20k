@@ -72,17 +72,26 @@ pub const SPEED_LABEL_KEYS: [&str; 7] = [
     "TXT_FASTEST", // pos 6
 ];
 
-/// CSF key for a speed value-label: template default `GUI:Faster` until the slider
-/// has changed position this open, then the position-indexed `SPEED_LABEL_KEYS` entry.
-/// Reproduces the gamemd quirk: the proc's init path never sets the label text, so
-/// both sliders show the template default `GUI:Faster` until the user first changed positions
-/// *that* slider (WM_HSCROLL), which swaps it to the position CSF text.
-pub fn speed_value_label_key(slider_pos: u32, dragged: bool) -> &'static str {
-    if !dragged {
-        "GUI:Faster"
-    } else {
-        SPEED_LABEL_KEYS[(slider_pos as usize).min(SPEED_LABEL_KEYS.len() - 1)]
-    }
+/// CSF key for a speed value-label at a slider position. Active 4E1FE0's
+/// TBM_SETRANGE/TBM_SETPOS (GameSpeed 4E207F..4E20B8, ScrollRate
+/// 4E2128..4E2159) change the trackbar from its 0..100 default, whose tail
+/// 61E609..61E6AF sends WM_HSCROLL(5, min+pos) to the dialog; 4E2278..4E232B
+/// then sets the sender's label from this table, so the open shows it too.
+pub fn speed_value_label_key(slider_pos: u32) -> &'static str {
+    SPEED_LABEL_KEYS[(slider_pos as usize).min(SPEED_LABEL_KEYS.len() - 1)]
+}
+
+/// Whether a control shows in this open. Active 4E1FE0's init (message
+/// 0x497) hides GameSpeed, its caption and its label (529/714/671) in
+/// GameMode 0 without `-SPEEDCONTROL` (4E2036..4E2079, flag 0xA8EDDC) and
+/// whenever Session+0x300 is set (4E20BA..4E211A).
+pub fn control_shown(control: &ControlDescriptor, game_speed_hidden: bool) -> bool {
+    control.visible
+        && !(game_speed_hidden
+            && matches!(
+                control.id,
+                control::GAME_SPEED | control::GAME_SPEED_CAPTION | control::GAME_SPEED_VALUE
+            ))
 }
 
 /// RT_DIALOG resource id of the active-game Options dialog.
@@ -429,11 +438,10 @@ mod tests {
     }
 
     #[test]
-    fn value_label_is_template_default_until_dragged_then_position_key() {
-        assert_eq!(speed_value_label_key(3, false), "GUI:Faster");
-        assert_eq!(speed_value_label_key(3, true), "TXT_MEDIUM");
-        assert_eq!(speed_value_label_key(6, true), "TXT_FASTEST");
-        assert_eq!(speed_value_label_key(0, true), "TXT_SLOWEST");
+    fn value_label_is_the_position_key() {
+        assert_eq!(speed_value_label_key(3), "TXT_MEDIUM");
+        assert_eq!(speed_value_label_key(6), "TXT_FASTEST");
+        assert_eq!(speed_value_label_key(0), "TXT_SLOWEST");
     }
 
     #[test]

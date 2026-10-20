@@ -57,14 +57,14 @@ pub(super) fn approach(
     match entity.attack_target.target() {
         None => {
             sim.assign_aircraft_destination(id, None, rules, frame_effects);
-            super::queue_mission(sim, id, MissionType::Retreat);
+            super::queue_mission(&mut sim.substrate, id, MissionType::Retreat);
         }
         Some(target) if super::nav_com_absent(sim, id) => {
             sim.assign_aircraft_destination(id, Some(target.into()), rules, frame_effects);
         }
         Some(target) => {
             if super::target_distance(sim, id, Some(target)) <= rules.general.paradrop_radius {
-                super::queue_mission(sim, id, MissionType::ParadropOverfly);
+                super::queue_mission(&mut sim.substrate, id, MissionType::ParadropOverfly);
                 if let Some(entity) = sim.substrate.entities.get_mut(id) {
                     entity.mission_leaf.take_paradrop_pass();
                 }
@@ -113,7 +113,7 @@ pub(super) fn overfly(
             .as_aircraft()
             .is_some_and(|leaf| leaf.paradrop_passes() > 0);
         if passes_left {
-            super::queue_mission(sim, id, MissionType::ParadropApproach);
+            super::queue_mission(&mut sim.substrate, id, MissionType::ParadropApproach);
         } else {
             give_up(sim, id, rules, frame_effects);
         }
@@ -126,7 +126,7 @@ pub(super) fn overfly(
         );
         crate::sim::cell_rect::cell_is_in_playfield_leptons(
             (location.x, location.y, location.z),
-            sim.playfield_bounds,
+            sim.playfield_bounds(),
             sim.resolved_terrain.as_ref(),
         )
     });
@@ -145,5 +145,5 @@ fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: FrameE
         crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
     }
     sim.assign_aircraft_destination(id, None, rules, frame_effects);
-    super::queue_mission(sim, id, MissionType::Retreat);
+    super::queue_mission(&mut sim.substrate, id, MissionType::Retreat);
 }

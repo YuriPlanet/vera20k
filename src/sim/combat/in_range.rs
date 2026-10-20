@@ -871,11 +871,11 @@ impl crate::sim::world::Simulation {
                 id,
                 &target,
                 terrain,
-                Some(&self.house_alliances),
+                Some(self.house_alliances.as_map()),
                 &LineOfFireInputs {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
-                    alliances: Some(&self.house_alliances),
+                    alliances: Some(self.house_alliances.as_map()),
                 },
             )
         })

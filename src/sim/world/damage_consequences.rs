@@ -166,15 +166,8 @@ impl DamageConsequences {
         // returning to the caller's animation/cluster tail. Delivery carries
         // only the resulting frame notification, never deferred gameplay.
         let bridge_state_changed = effects.bridge_state_changed;
+        #[cfg(any(test, feature = "test-support"))]
         debug_assert!(effects.tiberium_reduction_requests.is_empty());
-        for request in &effects.tiberium_reduction_requests {
-            world.reduce_tiberium_at_with_native_context(
-                (request.rx, request.ry),
-                request.amount,
-                Some(rules),
-                overlay_registry,
-            );
-        }
         for detonation in effects.rad_detonations.drain(..) {
             world.radiation.apply_detonation(
                 detonation,
@@ -221,13 +214,7 @@ impl DamageConsequences {
         world.dispatch_unit_lost_events(&effects.unit_lost_events);
         debug_assert!(effects.smudge_spawn_requests.is_empty());
         if ordinary {
-            debug_assert!(world.pending_smudge_requests.is_empty());
             world.flush_smudge_dirty();
-            world.pending_smudge_requests.clear();
-        } else {
-            world
-                .pending_smudge_requests
-                .append(&mut effects.smudge_spawn_requests);
         }
         DamageCommitReceipt {
             area_result: None,

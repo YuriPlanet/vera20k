@@ -275,6 +275,11 @@ const fn frame_bucket(now_ms: u64) -> u32 {
     (now_ms as u32) >> FRAME_BUCKET_SHIFT
 }
 
+/// `WallClock__Get16msBucket @ 0x006C8C40` now.
+pub(crate) fn wall_clock_bucket() -> u32 {
+    frame_bucket(wall_clock_ms())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

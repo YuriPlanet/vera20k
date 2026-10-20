@@ -26,6 +26,7 @@ pub mod wol_login;
 pub mod wol_shell;
 pub(crate) mod wol_chat;
 pub(crate) mod wol_lobby;
+pub(crate) mod wol_options;
 pub mod network_options;
 pub(crate) mod lan_shell;
 pub(crate) mod multiplayer_setup;

@@ -71,6 +71,7 @@ fn spawn_returning_miner(s: &mut Scene, cell: (u16, u16)) -> u64 {
         .expect("second miner");
     let now = s.sim.session.binary_frame();
     s.sim
+        .substrate
         .mission_assign_exact(id, MissionId::from_known(MissionType::Harvest), now)
         .unwrap();
     let entity = s.sim.substrate.entities.get_mut(id).unwrap();
@@ -525,6 +526,7 @@ fn an_order_to_a_busy_refinery_waits_nearby_and_docks_on_enter_after_it_frees() 
     // Idle, so Harvest's own return cannot be what brings it home.
     let now = s.sim.session.binary_frame();
     s.sim
+        .substrate
         .mission_assign_exact(second, MissionId::from_known(MissionType::Guard), now)
         .unwrap();
     assert!(s.sim.apply_command(
@@ -585,6 +587,7 @@ fn a_guarding_miner_sent_to_a_free_refinery_queues_enter_without_a_destination()
     let mut s = returning_scene();
     let now = s.sim.session.binary_frame();
     s.sim
+        .substrate
         .mission_assign_exact(s.miner, MissionId::from_known(MissionType::Guard), now)
         .unwrap();
     s.sim.set_unit_destination(

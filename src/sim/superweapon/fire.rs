@@ -122,11 +122,11 @@ impl Simulation {
         }
         let paired = sw
             .post_click
-            .then(|| pre_dependent(self, rules, sw))
-            .flatten();
+            .then(|| super::pre_dependent(rules, sw))
+            .flatten()
+            .and_then(|(name, pre)| Some((self.interner.get(name)?, pre)));
         let paid_source = super::two_stage::destination_for_source(self, rules, sw_type_id, sw);
-        let paid_final =
-            paired.filter(|(_, source)| source.money_amount != 0 || sw.money_amount != 0);
+        let paid_final = paired.filter(|_| super::paid_pair_source(rules, sw).is_some());
         if paid_source.is_none()
             && paid_final.is_none()
             && !super::money::configuration_supported(sw)
@@ -474,17 +474,6 @@ fn super_instance(
     sw_type: InternedId,
 ) -> Option<&mut super::SuperWeaponInstance> {
     sim.super_weapons.get_mut(&owner)?.get_mut(&sw_type)
-}
-
-/// The Super Fire_SW pairs a `PostClick=` type with: the `[SuperWeaponTypes]`
-/// entry at its `PreDependent=` index (`HouseClass+0x258` indexed by
-/// `Type+0xF0`, `0x004FAE6C..0x004FAE7E`).
-fn pre_dependent<'r>(
-    sim: &Simulation,
-    rules: &'r RuleSet,
-    sw: &SuperWeaponType,
-) -> Option<(InternedId, &'r SuperWeaponType)> {
-    super::two_stage::source_for_destination(sim, rules, sw)
 }
 
 /// `HouseClass @ 0x004FAF00` for `house`, given the fired Super's type and

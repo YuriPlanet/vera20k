@@ -38,12 +38,7 @@ pub(crate) fn chrono_warp_selected(targeting: Option<&TargetingMode>, rules: &Ru
         chrono_warp_selection(rules).is_some_and(|warp| warp.eq_ignore_ascii_case(name))
             || rules.super_weapon(name).is_some_and(|warp| {
                 warp.kind == SuperWeaponKind::ChronoWarp
-                    && warp.post_click
-                    && usize::try_from(warp.pre_dependent)
-                        .ok()
-                        .and_then(|index| rules.super_weapon_order.get(index))
-                        .and_then(|source| rules.super_weapon(source))
-                        .is_some_and(|source| source.money_amount != 0 || warp.money_amount != 0)
+                    && crate::sim::superweapon::paid_pair_source(rules, warp).is_some()
             })
     })
 }

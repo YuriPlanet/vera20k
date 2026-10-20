@@ -27,20 +27,6 @@ pub struct PaidSuperWeaponSelection {
     pub sequence: u64,
 }
 
-pub(super) fn source_for_destination<'a>(
-    sim: &Simulation,
-    rules: &'a RuleSet,
-    sw: &SuperWeaponType,
-) -> Option<(InternedId, &'a SuperWeaponType)> {
-    if !sw.post_click {
-        return None;
-    }
-    let name = rules
-        .super_weapon_order
-        .get(usize::try_from(sw.pre_dependent).ok()?)?;
-    Some((sim.interner.get(name)?, rules.super_weapon(name)?))
-}
-
 pub(super) fn destination_for_source(
     sim: &Simulation,
     rules: &RuleSet,
@@ -50,13 +36,11 @@ pub(super) fn destination_for_source(
     if !sw.pre_click || sw.post_click || sw.use_charge_drain {
         return None;
     }
+    let source = sim.interner.resolve(source);
     rules.super_weapon_order.iter().find_map(|name| {
         let destination = rules.super_weapon(name)?;
-        let (pre, _) = source_for_destination(sim, rules, destination)?;
-        (pre == source
-            && !destination.pre_click
-            && !destination.use_charge_drain
-            && (sw.money_amount != 0 || destination.money_amount != 0))
+        let (pre, _) = super::paid_pair_source(rules, destination)?;
+        (pre == source && !destination.pre_click && !destination.use_charge_drain)
             .then(|| sim.interner.get(name))
             .flatten()
     })
@@ -163,6 +147,8 @@ impl Simulation {
     }
 }
 
+/// Whether a paid pair's source still holds its selection: active, not held,
+/// and kept so by the House hold pass ([`super::super_hold`]) as it stands now.
 pub(super) fn source_available(
     sim: &Simulation,
     rules: &RuleSet,
@@ -170,33 +156,31 @@ pub(super) fn source_available(
     source: InternedId,
     sw: &SuperWeaponType,
 ) -> bool {
-    let Some(house) = sim.houses.get(&owner) else {
+    let (Some(house), Some(instance)) = (
+        sim.houses.get(&owner),
+        sim.super_weapons
+            .get(&owner)
+            .and_then(|supers| supers.get(&source)),
+    ) else {
         return false;
     };
-    let Some(instance) = sim
-        .super_weapons
-        .get(&owner)
-        .and_then(|supers| supers.get(&source))
-    else {
+    if !instance.is_active || instance.is_suspended {
         return false;
-    };
-    if house.is_defeated()
-        || !instance.is_active
-        || instance.is_suspended
-        || !super::building_requirements_met(sim, rules, owner, sw)
-    {
-        return false;
-    }
-    if instance.one_time || !instance.can_lose {
-        return true;
     }
     let (provided, online) = super::provider_supers(sim, rules, owner);
-    (sim.session.game_options().super_weapons || !sw.disableable_from_shell)
-        && provided.contains(&source)
-        && (!sw.is_powered
-            || (online.contains(&source)
-                && !sim
-                    .power_states
-                    .get(&owner)
-                    .is_some_and(|power| power.low_power())))
+    let low_power = sim
+        .power_states
+        .get(&owner)
+        .is_some_and(|power| power.low_power());
+    matches!(
+        super::super_hold(
+            instance,
+            sw,
+            house.is_defeated(),
+            sim.session.game_options().super_weapons || !sw.disableable_from_shell,
+            provided.contains(&source),
+            !low_power && online.contains(&source),
+        ),
+        super::SuperHold::Unchanged | super::SuperHold::Suspend(false)
+    )
 }

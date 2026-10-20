@@ -210,9 +210,9 @@ fn shared_team_waypoint_predicate_matches_original_exits_and_dummy_writes() {
         });
         terrain.stamp_dummy_cell_requested_coord(-91, 77);
         sim.install_resolved_terrain_for_new_map(terrain);
-        sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+        sim.set_playfield_bounds_for_test(Some(PlayfieldBounds::from_normalized_local_size(
             64, 0, 0, 64, 64,
-        ));
+        )));
         assert_eq!(
             sim.member_team_is_moving_outside_playfield(99),
             row["result"].as_bool().unwrap(),
@@ -447,10 +447,10 @@ pub(crate) fn reinforcement_world(
     sim.session.set_binary_frame_for_test(1);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+    sim.set_playfield_bounds_for_test(Some(PlayfieldBounds::from_normalized_local_size(
         80, 5, 5, 70, 73,
-    ));
-    sim.playfield_size_height = Some(85);
+    )));
+    sim.set_playfield_size_height_for_test(Some(85));
     let country = sim.interner.intern("Americans");
     let owner = sim.interner.intern("Americans");
     let enemy = sim.interner.intern("ENEMY");

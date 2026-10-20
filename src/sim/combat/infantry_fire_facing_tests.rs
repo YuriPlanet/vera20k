@@ -629,7 +629,7 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
     // FootLoad4DB60D..4DB624 clears that inactive countdown. Match only this
     // native load transition in the live control, preserving the paid Walk,
     // crate multiplier, facing and firing state for full-hash continuation.
-    sim.restore_move_sound_state_after_load(firer);
+    sim.substrate.restore_move_sound_state_after_load(firer);
     assert_eq!(sim.state_hash(), resumed.state_hash());
     let mut refused_frames = 0;
     for _ in 0..100 {

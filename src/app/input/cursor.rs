@@ -653,7 +653,14 @@ pub(super) fn capability_cursor_for_hover(
             return CursorFeedbackKind::NoDeploy;
         }
 
-        return if entity.category() == EntityCategory::Structure {
+        // Aircraft417DCD..417DF4: the Self (4) of an Aircraft carrying no
+        // passengers (+0x114) is 0, the arrow.
+        let empty_aircraft = entity.category() == EntityCategory::Aircraft
+            && entity
+                .passenger_role
+                .cargo()
+                .is_none_or(|cargo| cargo.count() == 0);
+        return if entity.category() == EntityCategory::Structure || empty_aircraft {
             CursorFeedbackKind::Default
         } else {
             CursorFeedbackKind::Invalid
@@ -901,8 +908,14 @@ pub(super) fn capability_cursor_for_hover(
     // (`TechnoClass::What_Action_OnObject` `0x0070000B`, `[0xA8ECC8] == 1` at
     // `0x007000C1`, see `self_click_command`) — so the barred cursor wins.
     // Hovering an own unit that is NOT selected still takes Select, and a
-    // no-selection hover keeps DetermineAction's no-selection Select.
-    if hover_is_selected_own_unit(hover, &selected) {
+    // no-selection hover keeps DetermineAction's no-selection Select. An
+    // Aircraft cursor owner's 0 there becomes its Cell action instead
+    // (`0x00417D7C`), which the object action below answers.
+    if hover_is_selected_own_unit(hover, &selected)
+        && !best_id
+            .and_then(|id| sim.entities().get(id))
+            .is_some_and(|actor| actor.category() == EntityCategory::Aircraft)
+    {
         return CursorFeedbackKind::Invalid;
     }
     match hover.kind {
@@ -924,9 +937,12 @@ pub(super) fn capability_cursor_for_hover(
             if friendly
                 && !best_is_ivan
                 && !best_id.is_some_and(|id| {
-                    sim.entities()
-                        .get(id)
-                        .is_some_and(|actor| actor.category() == EntityCategory::Unit)
+                    super::context_order::object_action_answers_friendly(
+                        sim,
+                        selected,
+                        id,
+                        hover.stable_id,
+                    )
                 })
             {
                 return if hover.kind == HoverTargetKind::FriendlyUnit {
@@ -948,7 +964,7 @@ pub(super) fn capability_cursor_for_hover(
                     AttackAction::None => return CursorFeedbackKind::Default,
                     AttackAction::NoMove => return CursorFeedbackKind::Invalid,
                     AttackAction::Select => return CursorFeedbackKind::FriendlyUnit,
-                    AttackAction::Rally => return CursorFeedbackKind::Move,
+                    AttackAction::Rally | AttackAction::Move => return CursorFeedbackKind::Move,
                     AttackAction::Attack => {}
                 }
             } else if friendly {
@@ -1181,7 +1197,7 @@ fn force_fire_feedback(
         match armed_action(sim, rules?, actor_id, target, true, overlay_registry)? {
             AttackAction::None => None,
             AttackAction::NoMove => Some(CursorFeedbackKind::Invalid),
-            AttackAction::Rally => Some(CursorFeedbackKind::Move),
+            AttackAction::Rally | AttackAction::Move => Some(CursorFeedbackKind::Move),
             AttackAction::Select => Some(CursorFeedbackKind::FriendlyUnit),
             AttackAction::Attack => Some(
                 if attack_cursor_is_in_range(
@@ -3117,14 +3133,11 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 // Clear/Foot speed row before this cursor-only observation.
                 let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(20);
                 terrain.test_set_high_bridge_set_starts(Some(100), Some(200));
-                for y in 9..=11 {
-                    terrain
-                        .cell_mut_for_test(12, y)
-                        .unwrap()
-                        .bridge_facts
-                        .overlay_id = Some(if collapsed { 0xE7 } else { 0xD4 });
-                }
                 sim.install_resolved_terrain_for_new_map(terrain);
+                for y in 9..=11 {
+                    sim.overlay_cell_mut_for_test(12, y).overlay_id =
+                        Some(if collapsed { 0xE7 } else { 0xD4 });
+                }
                 *sim.bridge_state_mut_for_test() =
                     Some(crate::sim::bridge_state::BridgeRuntimeState::default());
                 crate::sim::arena_fixture::supply_native_map(&mut sim);

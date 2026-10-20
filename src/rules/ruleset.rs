@@ -6595,7 +6595,7 @@ impl RuleSet {
 
     /// House ctor4F5E5A copies Country+C0 to its current color. A registered
     /// Country whose entire section was absent retains the ctor's0.
-    pub(crate) fn country_color_scheme(&self, country: &str) -> i32 {
+    pub fn country_color_scheme(&self, country: &str) -> i32 {
         self.country_rules(country)
             .map_or(0, |fields| fields.color_scheme)
     }

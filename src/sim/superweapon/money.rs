@@ -79,9 +79,9 @@ pub(super) fn transact(
         // Affordability proves the positive cost fits a signed wallet, so the
         // checked conversion cannot overflow even for an authored i32::MIN.
         let cost = sw.money_amount.checked_neg().expect("admitted signed cost");
-        crate::sim::credit_income::spend_money(sim, owner, cost);
+        crate::sim::credit_income::spend_money(&mut sim.houses, owner, cost);
     } else if sw.money_amount > 0 {
-        crate::sim::credit_income::add_credits(sim, owner, sw.money_amount);
+        crate::sim::credit_income::add_credits(&mut sim.houses, owner, sw.money_amount);
     }
     true
 }

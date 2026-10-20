@@ -316,7 +316,7 @@ fn pending_house_tech_tree_tail_is_hashed_and_saved() {
         .register(HouseState::new(owner, 2, None, false, 0, 10));
     assert!(sim.houses.get_mut(&owner).unwrap().take_tech_recheck());
     let clean_hash = sim.state_hash();
-    sim.request_house_tech_tree_recheck(owner);
+    sim.houses.request_house_tech_tree_recheck(owner);
     let dirty_hash = sim.state_hash();
     assert_ne!(dirty_hash, clean_hash);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "pending-super-recheck", 0);

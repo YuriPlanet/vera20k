@@ -130,10 +130,11 @@ fn the_empty_cell_and_cells_outside_the_playfield_refuse_but_place_anywhere_does
     assert!(!a.can_place("GAPLUG", (0, 0), None));
     assert!(a.can_place("GAPAVE", (0, 0), None));
     // Narrow the playfield's right edge to `x - y < 2`.
-    a.sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
-        off_104: 139,
-        ..crate::sim::arena_fixture::OPEN_PLAYFIELD
-    });
+    a.sim
+        .set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
+            off_104: 139,
+            ..crate::sim::arena_fixture::OPEN_PLAYFIELD
+        }));
     assert!(a.can_place("GAPLUG", (11, 10), None));
     assert!(!a.can_place("GAPLUG", (12, 10), None));
     assert!(a.can_place("GAPOWR", (10, 10), None));

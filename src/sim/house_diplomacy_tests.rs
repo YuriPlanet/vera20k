@@ -49,7 +49,7 @@ fn sim_with(rules: &RuleSet, houses: &[(&str, &str, bool)]) -> (Simulation, Vec<
 
 /// Each house's allies, by its graph key.
 fn allies(sim: &Simulation, name: &str) -> BTreeSet<String> {
-    sim.house_alliances
+    sim.house_alliances()
         .get(&name.to_ascii_uppercase())
         .cloned()
         .unwrap_or_default()
@@ -119,7 +119,7 @@ fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
     ];
     let (mut sim, ids) = sim_with(&rules, &houses);
     paranoid(&mut sim, &rules);
-    assert!(sim.house_alliances.is_empty());
+    assert!(sim.house_alliances.as_map().is_empty());
     assert!(sim.houses[&ids[1]].grudge_scores().is_empty());
 
     use crate::sim::scenario_bootstrap::{NormalizedSkirmishSlot, populate_launch_houses};
@@ -135,6 +135,7 @@ fn computer_paranoid_needs_allies_allowed_and_no_computer_team() {
         is_human: human,
         observer: false,
         source_human_index: None,
+        handle: None,
         difficulty: crate::sim::house_state::HouseDifficulty::Normal,
     };
     for (human_team, computer_team, paranoid_runs) in [
@@ -234,14 +235,17 @@ fn ally_writes_reach_the_remembered_reveal_viewers() {
     let viewers = |sim: &mut Simulation| {
         let direct = sim.reveal_viewers.direct(
             &sim.fog,
-            &sim.house_alliances,
+            sim.house_alliances.as_map(),
             ids[1],
             &config,
             &sim.interner,
         );
-        let allied =
-            sim.reveal_viewers
-                .allied(&sim.fog, &sim.house_alliances, ids[1], &sim.interner);
+        let allied = sim.reveal_viewers.allied(
+            &sim.fog,
+            sim.house_alliances.as_map(),
+            ids[1],
+            &sim.interner,
+        );
         (direct.to_vec(), allied.to_vec())
     };
     let (alone, with_ally) = (vec![ids[1]], vec![ids[1], ids[2]]);

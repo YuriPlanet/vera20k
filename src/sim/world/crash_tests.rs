@@ -1085,7 +1085,7 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
     // This held-aircraft midpoint follows native takeoff's tracker Add;
     // marking a Jumpjet does not manufacture that retained registration.
     sim.aircraft_tracker_add(1);
-    assert!(sim.set_cell_air_slot((52, 52), Some(1)));
+    assert!(sim.substrate.set_cell_air_slot((52, 52), Some(1)));
     for _ in 0..2 {
         let rider = sim
             .construct_object_limbo_at_height(
@@ -1465,7 +1465,8 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
     for (mission, scans) in [(MissionType::Guard, true), (MissionType::Attack, false)] {
         let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
         let frame = sim.session.binary_frame();
-        sim.mission_assign_exact(1, MissionId::from_known(mission), frame)
+        sim.substrate
+            .mission_assign_exact(1, MissionId::from_known(mission), frame)
             .unwrap();
         // An enemy two cells east, inside `CrashGun`'s range.
         let soviets = sim.interner.intern("Soviets");

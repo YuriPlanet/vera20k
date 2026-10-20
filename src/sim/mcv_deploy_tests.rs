@@ -238,7 +238,7 @@ fn pending_turn_roundtrips_through_save_and_hashes_its_latches() {
     // The turn refreshed Foot+540 despite the empty MoveSound vector.
     // FootLoad4DB60D..4DB624 resets it; align that one load transition too,
     // without reloading the control's deployment/facing/mission authority.
-    sim.restore_move_sound_state_after_load(id);
+    sim.substrate.restore_move_sound_state_after_load(id);
     assert_eq!(sim.state_hash(), restored.state_hash());
     for _ in 0..80 {
         let a = tick(&mut sim, &rules, None);
@@ -382,7 +382,7 @@ fn continuation_result_and_rotation_edge_match_original_blocks() {
         if kind == "initial" {
             finish_initial_attempt(&mut sim, id);
         } else {
-            finish_retry(&mut sim, id, row["result"].as_u64().unwrap() != 0);
+            finish_retry(&mut sim.substrate, id, row["result"].as_u64().unwrap() != 0);
         }
         let e = sim.substrate.entities.get(id).unwrap();
         assert_eq!(

@@ -68,6 +68,7 @@ impl App {
         state.match_state.match_presentation.diplomacy = Default::default();
         state.match_state.match_presentation.sound_dialog = None;
         state.match_state.match_presentation.saved_game_browser = None;
+        state.match_state.network_wait = Default::default();
         // Persist the deterministic diagnostic log before leaving the scenario.
         // Runtime and presentation resources remain retained in the shell.
         crate::app::match_runtime::sim_tick::flush_replay_log(state);
@@ -350,6 +351,10 @@ impl App {
         if next == InGameMenuState::Menu {
             state.match_state.match_presentation.pause_menu_has_saves =
                 !state.persistence.repository.browser_entries().is_empty();
+            crate::app::input::pause_menu::on_open(state);
+        }
+        if next == InGameMenuState::AbortConfirm {
+            crate::app::input::abort::on_open(state);
         }
 
         // Leaving Options: drop the cached `0xBBB` hit-test anchor so the
@@ -358,18 +363,7 @@ impl App {
             state.match_state.match_presentation.in_game_options_anchor = None;
         }
         if next == InGameMenuState::Options {
-            state
-                .match_state
-                .match_presentation
-                .in_game_options
-                .sound_enabled = state.audio.launcher_audio_available;
-            // Reset the transient interaction flags so the drag-gated
-            // value-label quirk resets on every open.
-            state
-                .match_state
-                .match_presentation
-                .in_game_options
-                .on_open();
+            crate::app::input::in_game_options::on_open(state);
         }
 
         // An open modal is the pause (`MatchState::paused`); any transition
@@ -435,7 +429,23 @@ impl App {
         match outcome {
             ModalOutcome::Stay => {}
             ModalOutcome::Enter(next) => Self::enter_in_game_menu_state(state, next),
-            ModalOutcome::LeaveMatch => Self::exit_match_to_shell(state),
+            ModalOutcome::LeaveMatch { destruct } => {
+                if destruct {
+                    Self::queue_local_destruct(state);
+                }
+                Self::exit_match_to_shell(state)
+            }
+            ModalOutcome::Observe => {
+                // 0x0048CAB2: DESTRUCT and the latch clear; no EXIT. The
+                // latch keeps every modal closed until the House is
+                // Defeated, which re-arms it (0x0048C911).
+                Self::queue_local_destruct(state);
+                state.match_state.match_presentation.modal_latch = false;
+                Self::enter_in_game_menu_state(
+                    state,
+                    crate::ui::pause_menu::InGameMenuState::Closed,
+                );
+            }
             ModalOutcome::RestartScenario => {
                 // State machine48CB2E raises8B41C0 and the modal state
                 // returns to 0; the router consumes it on the next pass.
@@ -445,6 +455,26 @@ impl App {
                     crate::ui::pause_menu::InGameMenuState::Closed,
                 );
             }
+        }
+    }
+
+    /// Queue EVENT_DESTRUCT (type 8) for the local House: B6 results 3 and 4
+    /// construct `EventClass(PlayerPtr->ArrayIndex, 8)` (`0x0048CA34`,
+    /// `0x0048CAB2`) and add it to the ring only while it holds fewer than
+    /// 0x80 events; the latch is cleared either way.
+    fn queue_local_destruct(state: &mut AppState) {
+        let Some(owner) = crate::app::input::commands::preferred_local_owner(state) else {
+            log::warn!("Abort DESTRUCT has no local command owner");
+            return;
+        };
+        if crate::app::input::commands::try_schedule_command(
+            state,
+            &owner,
+            crate::sim::command::Command::Destruct,
+        )
+        .is_none()
+        {
+            log::warn!("Abort DESTRUCT event could not be queued for '{owner}'");
         }
     }
 
@@ -486,6 +516,8 @@ impl App {
     /// battle-abort teardown. A repeated drain without another dispatch is a
     /// no-op because the simulation edge is taken.
     pub(super) fn consume_executed_abort_exit(state: &mut AppState, wall_ms: u64) {
+        // Remote EXIT senders run DestroyConnection first (0x0064C9B1).
+        crate::app::match_runtime::network_match::drain_departures(state);
         let local_owner = crate::app::input::commands::preferred_local_owner(state);
         let local_owner_id = local_owner.as_deref().and_then(|owner| {
             state

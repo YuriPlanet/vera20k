@@ -175,10 +175,11 @@ fn retail_concrete_hut_damage_matches_native_both_huts_and_three_states() {
             .flat_map(|y| (86..=88).map(move |x| (x, y)))
             .map(|(x, y)| {
                 let c = sim.resolved_terrain.as_ref().unwrap().cell(x, y).unwrap();
-                json!({"coord":[x,y],"overlay":c.bridge_facts.overlay_id,
+                let live = sim.overlay_grid.as_ref().unwrap().cell(x, y);
+                json!({"coord":[x,y],"overlay":live.overlay_id,
                     "land":c.land_type,"level":c.level,"slope":c.slope_type,
                     "zone_type":c.zone_type,"tile":c.final_tile_index,"subtile":c.final_sub_tile,
-                    "flags":c.bridge_facts.raw_flags,"state":c.bridge_facts.state_byte})
+                    "flags":c.bridge_facts.raw_flags,"state":live.overlay_data})
             })
             .collect();
         assert_eq!(
@@ -272,13 +273,7 @@ fn retail_concrete_collapse_rechecks_an_incoming_drive_head() {
         300
     );
     assert_eq!(
-        sim.resolved_terrain
-            .as_ref()
-            .unwrap()
-            .cell(87, 54)
-            .unwrap()
-            .bridge_facts
-            .overlay_id,
+        sim.overlay_grid.as_ref().unwrap().cell(87, 54).overlay_id,
         Some(220)
     );
     assert!(
@@ -458,12 +453,10 @@ fn retail_force_fire_collapses_concrete_then_engineer_rebuilds_it() {
         }
         let overlay = scene
             .sim()
-            .resolved_terrain
+            .overlay_grid
             .as_ref()
             .unwrap()
             .cell(87, 54)
-            .unwrap()
-            .bridge_facts
             .overlay_id;
         if overlay != prior {
             transitions.push(json!({"completed_logic_frame":logic_frame,"overlay":overlay}));

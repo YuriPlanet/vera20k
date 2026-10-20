@@ -31,11 +31,8 @@ pub struct InGameOptionsState {
     pub sound_enabled: bool,
     /// Transient: control id of the slider currently being dragged, if any.
     pub dragging_slider: Option<u16>,
-    /// Transient per-slider "changed since this open" — gates the label swap from
-    /// the template default to the position CSF text. Native 4E2278 admits only
-    /// a changed-position HSCROLL notification; thumb-down alone leaves it intact.
-    pub game_speed_label_dragged: bool,
-    pub scroll_rate_label_dragged: bool,
+    /// Init hid the GameSpeed row this open (see `control_shown`).
+    pub game_speed_hidden: bool,
 }
 
 impl Default for InGameOptionsState {
@@ -52,20 +49,18 @@ impl Default for InGameOptionsState {
             buttons: Default::default(),
             sound_enabled: true,
             dragging_slider: None,
-            game_speed_label_dragged: false,
-            scroll_rate_label_dragged: false,
+            game_speed_hidden: false,
         }
     }
 }
 
 impl InGameOptionsState {
-    /// Reset the transient interaction flags when the overlay (re)opens — gamemd
-    /// recreates the dialog, so the label-dragged quirk resets each open.
-    pub fn on_open(&mut self) {
+    /// Reset the transient interaction state when the overlay (re)opens; gamemd
+    /// recreates the dialog each open, and init decides the GameSpeed row.
+    pub fn on_open(&mut self, game_speed_hidden: bool) {
         self.buttons = Default::default();
         self.dragging_slider = None;
-        self.game_speed_label_dragged = false;
-        self.scroll_rate_label_dragged = false;
+        self.game_speed_hidden = game_speed_hidden;
     }
 }
 

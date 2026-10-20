@@ -376,7 +376,7 @@ impl Simulation {
         if let Some(refund) = crate::sim::production::techno_refund(self, rules, victim)
             && let Some(owner) = self.substrate.entities.get(building).map(GameEntity::owner)
         {
-            crate::sim::credit_income::add_credits(self, owner, refund);
+            crate::sim::credit_income::add_credits(&mut self.houses, owner, refund);
         }
     }
 

@@ -273,7 +273,9 @@ pub(crate) fn is_high_flying(
     query_flight_predicate(entity, cells.as_ref(), rules_context, true)
 }
 
-pub(crate) fn is_high_flying_in_query(
+/// The existing high-flight dispatch through a caller-owned query identity.
+/// Presentation supplies an isolated query so drawing cannot stamp lockstep state.
+pub fn is_high_flying_in_query(
     entity: &crate::sim::game_entity::GameEntity,
     cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
     rules_context: Option<(
@@ -305,11 +307,9 @@ fn query_flight_predicate(
 }
 
 /// Shared Object virtual+50/+54 (5F6B60/5F6B90), after class overrides.
-pub(crate) fn object_flight_predicate(
-    marked: bool,
-    height: impl FnOnce() -> i32,
-    high: bool,
-) -> bool {
+/// Callers with a read-only terrain snapshot can supply its height without
+/// stamping the simulation's shared fallback Cell (presentation does this).
+pub fn object_flight_predicate(marked: bool, height: impl FnOnce() -> i32, high: bool) -> bool {
     // The original short-circuits before GetHeight; a map query can stamp the
     // shared fallback cell even when its numeric result would be discarded.
     marked && (height() >= crate::util::lepton::HIGH_FLIGHT_THRESHOLD_LEPTONS as i32) == high

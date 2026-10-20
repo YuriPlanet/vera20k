@@ -295,7 +295,7 @@ impl Simulation {
         if !self.substrate.entities.contains(id) {
             return false;
         }
-        self.aircraft_tracker_remove(id);
+        self.substrate.aircraft_tracker_remove(id);
         self.set_object_height(id, 0, Some(rules), overlay_registry, frame_effects);
         let bridge_state_changed =
             self.fire_death_weapon(id, rules, overlay_registry, frame_effects);
@@ -340,7 +340,7 @@ impl Simulation {
             .map_or((false, false), |object| {
                 (object.crashable, object.balloon_hover)
             });
-        self.aircraft_tracker_remove(id);
+        self.substrate.aircraft_tracker_remove(id);
         let bridge_state_changed = if crashable {
             self.set_object_height(id, 0, Some(rules), overlay_registry, frame_effects);
             let bridge_state_changed = if balloon_hover {

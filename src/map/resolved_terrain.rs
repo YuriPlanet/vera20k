@@ -166,14 +166,42 @@ pub enum BridgeDirection {
     Low,
 }
 
+impl BridgeDirection {
+    /// The direction of a bridge overlay class: BRIDGE1/BRIDGEB1 (24/237) run
+    /// EW, BRIDGE2/BRIDGEB2 (25/238) NS, and every other bridge overlay is low.
+    pub fn from_overlay_id(overlay_id: u8) -> Self {
+        match overlay_id {
+            24 | 237 => Self::EastWest,
+            25 | 238 => Self::NorthSouth,
+            _ => Self::Low,
+        }
+    }
+}
+
+/// The deck a bridge overlay identity projects onto its cell. OverlayGrid owns
+/// the identity itself.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct BridgeLayer {
-    pub overlay_id: u8,
-    pub overlay_name: String,
     /// Bridge deck height level (ground level + offset).
     pub deck_level: u8,
     /// Bridge direction — determines height offset and rendering.
     pub direction: BridgeDirection,
+}
+
+impl BridgeLayer {
+    /// A high deck sits four levels above `level` (HighBridgeHeight=4); a low
+    /// deck sits at ground level.
+    pub fn for_overlay(overlay_id: u8, level: u8) -> Self {
+        let direction = BridgeDirection::from_overlay_id(overlay_id);
+        let deck_level = match direction {
+            BridgeDirection::Low => level,
+            BridgeDirection::EastWest | BridgeDirection::NorthSouth => level.saturating_add(4),
+        };
+        Self {
+            deck_level,
+            direction,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

@@ -136,10 +136,12 @@ fn restore_departure(
     }
     match route {
         DepartureRoute::Paradrop => match failure {
-            DepartureFailure::MissingPassenger => sim.clear_radio_contacts_for(passenger_id),
+            DepartureFailure::MissingPassenger => {
+                sim.substrate.clear_radio_contacts_for(passenger_id)
+            }
             DepartureFailure::NotReady | DepartureFailure::Placement => {}
             DepartureFailure::ParachuteAttach | DepartureFailure::ParachuteReveal(_) => {
-                sim.clear_radio_contacts_for(passenger_id);
+                sim.substrate.clear_radio_contacts_for(passenger_id);
                 if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
                     if matches!(failure, DepartureFailure::ParachuteReveal(_)) {
                         passenger.finish_fall();

@@ -130,7 +130,7 @@ impl RocketHost for RocketProcessHost<'_> {
         self.sim.aircraft_tracker_update_cell(self.id, cell);
     }
     fn tracker_remove(&mut self) {
-        self.sim.aircraft_tracker_remove(self.id);
+        self.sim.substrate.aircraft_tracker_remove(self.id);
     }
     fn is_alive(&self) -> bool {
         self.owner().is_object_alive()

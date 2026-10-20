@@ -45,11 +45,13 @@ fn fixture_with_rules(
 
 fn cells(sim: &Simulation) -> Value {
     let grid = sim.resolved_terrain.as_ref().unwrap();
+    let overlays = sim.overlay_grid.as_ref().unwrap();
     Value::Array((12..=20).flat_map(|y| (12..=20).filter_map(move |x| {
         let cell = grid.cell(x, y).unwrap();
         let flags = cell.bridge_facts.raw_flags;
-        let overlay = cell.bridge_facts.overlay_id.map_or(-1, i32::from);
-        let state = cell.bridge_facts.state_byte;
+        let live = overlays.cell(x, y);
+        let overlay = live.overlay_id.map_or(-1, i32::from);
+        let state = live.overlay_data;
         let anchor = cell.bridge_facts.native_anchor.map(|id| grid.native_cell_coord(id));
         (flags != 0 || overlay != -1 || state != 0 || anchor.is_some()).then(||
             json!({"coord":[x,y], "flags":flags, "overlay":overlay, "state":state, "anchor":anchor}))
@@ -93,9 +95,6 @@ fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
                     .as_mut()
                     .unwrap()
                     .place_overlay(16, 16, 7, 0);
-                sim.resolved_terrain.as_mut().unwrap().cells_mut_for_test()[16 * 33 + 16]
-                    .bridge_facts
-                    .overlay_id = Some(7);
             }
             "success" => (),
             other => panic!("unexpected native case {other}"),
@@ -197,6 +196,7 @@ fn live_bridge_constructor_side_cells_restore_deck_without_overlay_sprites() {
         assert_eq!(cells(&sim), original["cells"]);
         let path = crate::sim::pathfinding::PathGrid::from_resolved_terrain_with_bridges(
             sim.resolved_terrain.as_ref().unwrap(),
+            sim.overlay_grid.as_ref(),
         );
         let mut id = 100;
         for row in original["cells"].as_array().unwrap() {
@@ -206,9 +206,13 @@ fn live_bridge_constructor_side_cells_restore_deck_without_overlay_sprites() {
             let x = row["coord"][0].as_u64().unwrap() as u16;
             let y = row["coord"][1].as_u64().unwrap() as u16;
             let terrain = sim.resolved_terrain.as_ref().unwrap().cell(x, y).unwrap();
+            let live = sim.overlay_grid.as_ref().unwrap().cell(x, y);
             assert!(terrain.bridge_facts.has_structural_bridge());
-            assert_eq!(terrain.bridge_facts.overlay_id, None);
-            assert!(crate::sim::bridge_state::cell_render_state(terrain.bridge_facts).is_none());
+            assert_eq!(live.overlay_id, None);
+            assert!(
+                crate::sim::bridge_state::cell_render_state(live, terrain.bridge_facts.raw_flags)
+                    .is_none()
+            );
             assert!(path.cell(x, y).unwrap().bridge_walkable, "{row}");
 
             for (category, mask) in [
@@ -304,6 +308,9 @@ fn constructor_side_admission_matches_original_foot_receiver() {
         for native in input["cells"].as_array().unwrap() {
             let x = native["coord"][0].as_u64().unwrap() as u16;
             let y = native["coord"][1].as_u64().unwrap() as u16;
+            let live = sim.overlay_grid.as_ref().unwrap().cell(x, y);
+            assert_eq!(live.overlay_id.map_or(-1, i32::from), native["overlay"]);
+            assert_eq!(live.overlay_data, native["state"].as_u64().unwrap() as u8);
             let cell = sim
                 .resolved_terrain
                 .as_mut()
@@ -313,14 +320,6 @@ fn constructor_side_admission_matches_original_foot_receiver() {
             let flags = native["bridge_flags"].as_u64().unwrap() as u32;
             assert_eq!(cell.bridge_facts.raw_flags & !0x100, flags & !0x100);
             assert_eq!(cell.level, native["level"].as_u64().unwrap() as u8);
-            assert_eq!(
-                cell.bridge_facts.overlay_id.map_or(-1, i32::from),
-                native["overlay"]
-            );
-            assert_eq!(
-                cell.bridge_facts.state_byte,
-                native["state"].as_u64().unwrap() as u8
-            );
             cell.bridge_facts.raw_flags = flags;
             // Original674000 reads Foot=1.0 for the Clear0/Road1 cells in
             // this corpus; the fixture catalog only recalculates its body.
@@ -362,14 +361,15 @@ fn constructor_side_admission_matches_original_foot_receiver() {
         actor.set_on_bridge(native["on_bridge"].as_bool().unwrap());
         actor.set_in_playfield(native["in_playfield"].as_bool().unwrap());
         sim.substrate.entities.insert(actor);
-        sim.mission_assign_exact(
-            id,
-            crate::sim::mission::MissionId::from_raw(
-                native["current_mission"].as_i64().unwrap() as i32
-            ),
-            sim.session.binary_frame(),
-        )
-        .unwrap();
+        sim.substrate
+            .mission_assign_exact(
+                id,
+                crate::sim::mission::MissionId::from_raw(
+                    native["current_mission"].as_i64().unwrap() as i32,
+                ),
+                sim.session.binary_frame(),
+            )
+            .unwrap();
         assert_eq!(native["queued_mission"], -1);
         assert_eq!(native["speed_type"], 0);
         let query = &row["native_entry_arguments"][0];
@@ -504,12 +504,14 @@ fn live_bridge_constructor_restamp_updates_the_state_byte_axis() {
     let (mut sim, rules, registry) = fixture();
     let render = |sim: &Simulation| {
         crate::sim::bridge_state::cell_render_state(
+            sim.overlay_grid.as_ref().unwrap().cell(16, 16),
             sim.resolved_terrain
                 .as_ref()
                 .unwrap()
                 .cell(16, 16)
                 .unwrap()
-                .bridge_facts,
+                .bridge_facts
+                .raw_flags,
         )
     };
     {
@@ -535,13 +537,7 @@ fn live_bridge_constructor_restamp_updates_the_state_byte_axis() {
     assert_eq!(host.state(selected), 0);
     assert_eq!(render(&sim).map(|(_, axis)| axis), Some(Axis::NS));
     assert_eq!(
-        sim.resolved_terrain
-            .as_ref()
-            .unwrap()
-            .cell(16, 16)
-            .unwrap()
-            .bridge_facts
-            .overlay_id,
+        sim.overlay_grid.as_ref().unwrap().cell(16, 16).overlay_id,
         Some(24)
     );
 }

@@ -188,9 +188,9 @@ pub fn raging(sim: &Simulation) -> bool {
 /// `LightningStorm::Stop @ 0x0053A090` (Steam gamemd3e81a617..08600):
 /// only a raging storm sets TimeToEnd. Countdown, clouds, timers, owner and
 /// lighting stay untouched until Process53A6C0 consumes the request.
-pub(crate) fn request_end(sim: &mut Simulation) {
-    if sim.lightning_storm.active {
-        sim.lightning_storm.time_to_end = true;
+pub(crate) fn request_end(lightning_storm: &mut LightningStorm) {
+    if lightning_storm.active {
+        lightning_storm.time_to_end = true;
     }
 }
 
@@ -294,7 +294,7 @@ pub(crate) fn start(
         let house = sim.houses.order()[index];
         if let Some(owner) = owner
             && crate::map::houses::is_allied_with(
-                &sim.house_alliances,
+                sim.house_alliances.as_map(),
                 sim.interner.resolve(owner),
                 sim.interner.resolve(house),
             )
@@ -705,11 +705,11 @@ pub(super) fn ground_strike(
         .superweapon_rng()
         .next_range_i32_inclusive(DEBRIS_COUNT.0, DEBRIS_COUNT.1);
     for _ in 0..count {
-        let last = sim.metallic_debris.len() as i32 - 1;
+        let last = sim.metallic_debris().len() as i32 - 1;
         let pick = sim.superweapon_rng().next_range_i32_inclusive(0, last);
         let Some(&debris) = usize::try_from(pick)
             .ok()
-            .and_then(|pick| sim.metallic_debris.get(pick))
+            .and_then(|pick| sim.metallic_debris().get(pick))
         else {
             continue;
         };

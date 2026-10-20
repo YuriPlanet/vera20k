@@ -192,9 +192,11 @@ impl ReloadHost for WorldReload<'_> {
             self.effects,
         );
         let now = self.sim.session.binary_frame();
-        let _ =
-            self.sim
-                .mission_assign_exact(contact, MissionId::from_known(MissionType::Guard), now);
+        let _ = self.sim.substrate.mission_assign_exact(
+            contact,
+            MissionId::from_known(MissionType::Guard),
+            now,
+        );
     }
 
     fn queue_guard(&mut self) {

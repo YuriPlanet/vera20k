@@ -566,7 +566,8 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
         let name = input["name"].as_str().unwrap();
         let (mut sim, rules, _smoke) = update_scene(&corpus, input);
         // Original build() calls prepare_update with mission=none before entry.
-        sim.mission_assign_exact(1, MissionId::NONE, sim.session.binary_frame())
+        sim.substrate
+            .mission_assign_exact(1, MissionId::NONE, sim.session.binary_frame())
             .unwrap();
         let owner = sim.interner.get("AI").unwrap();
         let control: [i32; 3] = serde_json::from_value(input["control"].clone()).unwrap();

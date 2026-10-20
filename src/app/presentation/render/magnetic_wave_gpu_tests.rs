@@ -1,4 +1,4 @@
-//! Original Wave3 spans/packed pixels through the retained Air Display body,
+//! Original Wave0/3 spans/packed pixels through the retained Air Display body,
 //! shared SurfaceLines snapshots and real GPU output. Component inputs are
 //! supplied native state; producer/lift admission is tested by its sim owner.
 
@@ -14,7 +14,7 @@ use crate::render::tactical_draw_plan::SpriteEncoding;
 use crate::render::terrain_draw::TerrainDrawRenderer;
 use crate::render::terrain_draw_gpu_tests::{Gpu, camera, encoded, seed_depth_grid};
 use crate::render::wave_geometry::{
-    MagneticClipPath, MagneticPixel, MagneticWaveDraw, magnetic_tables, polygon_spans,
+    WaveClipPath, WaveDraw, WavePixel, WavePolygon, WaveRasterError, polygon_spans, wave_tables,
 };
 use crate::sim::world::display_layers::{DisplayLayer, DisplayLayers};
 use crate::util::sha256::sha256_hex;
@@ -22,6 +22,10 @@ use serde_json::Value;
 
 fn corpus() -> &'static Value {
     crate::test_fixture::json("tools/procedural_drawing_oracle/magnetic_wave.json")
+}
+
+fn sonic_corpus() -> &'static Value {
+    crate::test_fixture::json("tools/procedural_drawing_oracle/sonic_wave.json")
 }
 
 fn integer(value: &Value) -> i32 {
@@ -59,16 +63,20 @@ fn word_hash(words: &[u16]) -> String {
     )
 }
 
-fn draw(value: &Value) -> MagneticWaveDraw {
-    MagneticWaveDraw {
-        polygon: std::array::from_fn(|i| array(&value["polygon"][i])),
+fn draw(value: &Value) -> WaveDraw {
+    WaveDraw {
+        polygon: if value["wave_type"] == 0 {
+            WavePolygon::Sonic(std::array::from_fn(|i| array(&value["polygon"][i])))
+        } else {
+            WavePolygon::Magnetic(std::array::from_fn(|i| array(&value["polygon"][i])))
+        },
         source_point: array(&value["source_point"]),
         source_z: integer(&value["source_z"]),
         phase: integer(&value["phase"]),
         direction: integer(&value["direction"]).try_into().unwrap(),
         clip_path: match value["clip_path"].as_str().unwrap() {
-            "fast" => MagneticClipPath::Fast,
-            "fallback" => MagneticClipPath::Fallback,
+            "fast" => WaveClipPath::Fast,
+            "fallback" => WaveClipPath::Fallback,
             other => panic!("unknown native clip branch {other}"),
         },
     }
@@ -101,55 +109,64 @@ fn expected_words(row: &Value) -> Vec<u16> {
 }
 
 fn rows() -> impl Iterator<Item = &'static Value> {
-    corpus()["raster_rows"].as_array().unwrap().iter()
+    corpus()["raster_rows"].as_array().unwrap().iter().chain(
+        sonic_corpus()["raster_rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["source_domain"] != "out_of_plane"),
+    )
 }
 
 #[test]
 fn original_wave_tables_and_integer_polygon_spans_are_consumed() {
-    let native = &corpus()["tables"];
-    let tables = magnetic_tables();
-    assert_eq!(
-        tables
-            .distance
-            .iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect::<Vec<_>>(),
-        hex(&native["distance"]["hex"]),
-        "whole original75F020 distance table"
-    );
-    assert_eq!(
-        tables
-            .magnetic
-            .iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect::<Vec<_>>(),
-        hex(&native["magnetic"]["hex"]),
-        "whole original75F020 magnetic table"
-    );
-    assert_eq!(
-        (0..1002)
-            .flat_map(|i| tables.magnetic_sine(i).unwrap().to_le_bytes())
-            .collect::<Vec<_>>(),
-        hex(&native["magnetic_window"]["hex"]),
-        "original magnetic +75E8F0 zero coordinate +Sonic initialized read window"
-    );
-    assert_eq!(
-        tables.brightness.to_vec(),
-        native["brightness"]["values"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(integer)
-            .collect::<Vec<_>>()
-    );
+    let tables = wave_tables();
+    for native in [&corpus()["tables"], &sonic_corpus()["tables"]] {
+        assert_eq!(
+            tables
+                .distance
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>(),
+            hex(&native["distance"]["hex"]),
+            "whole original75F020 distance table"
+        );
+        assert_eq!(
+            tables
+                .magnetic
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>(),
+            hex(&native["magnetic"]["hex"]),
+            "whole original75F020 magnetic table"
+        );
+        assert_eq!(
+            (0..1002)
+                .flat_map(|i| tables.magnetic_sine(i).unwrap().to_le_bytes())
+                .collect::<Vec<_>>(),
+            hex(&native["magnetic_window"]["hex"]),
+            "original magnetic +75E8F0 zero coordinate +Sonic initialized read window"
+        );
+        assert_eq!(
+            tables.brightness.to_vec(),
+            native["brightness"]["values"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(integer)
+                .collect::<Vec<_>>()
+        );
+    }
     let mut directions = [false; 8];
+    let mut kinds = [false; 2];
     let mut paths = [false; 2];
     for row in rows() {
         for value in row["draws"].as_array().unwrap() {
             let wave = draw(value);
             directions[wave.direction as usize] = true;
-            paths[usize::from(wave.clip_path == MagneticClipPath::Fallback)] = true;
-            let spans = polygon_spans(&wave.polygon);
+            kinds[usize::from(matches!(wave.polygon, WavePolygon::Sonic(_)))] = true;
+            paths[usize::from(wave.clip_path == WaveClipPath::Fallback)] = true;
+            let spans = polygon_spans(wave.polygon.points());
             let expected = &value["spans"];
             let expected_rows = expected["rows"]
                 .as_array()
@@ -175,6 +192,10 @@ fn original_wave_tables_and_integer_polygon_spans_are_consumed() {
         paths.into_iter().all(|covered| covered),
         "native fast3 and fallback2 clips"
     );
+    assert!(
+        kinds.into_iter().all(|covered| covered),
+        "both native Wave bodies"
+    );
 }
 
 #[test]
@@ -185,8 +206,8 @@ fn original_pixel_linear_aliases_and_initialized_adjacent_window_are_consumed() 
         // Pixel760190 takes relative lookup coordinates independently of its
         // supplied destination pointer. Express those declared relative inputs
         // at that destination for the shared raster leaf; no Z admission here.
-        let wave = MagneticWaveDraw {
-            polygon: [[0; 2]; 4],
+        let wave = WaveDraw {
+            polygon: WavePolygon::Magnetic([[0; 2]; 4]),
             source_point: [
                 point[0] - integer(&input["delta_x"]),
                 point[1] - integer(&input["abs_y"]),
@@ -194,7 +215,7 @@ fn original_pixel_linear_aliases_and_initialized_adjacent_window_are_consumed() 
             source_z: 0,
             phase: integer(&input["phase"]),
             direction: integer(&input["direction"]).try_into().unwrap(),
-            clip_path: MagneticClipPath::Fast,
+            clip_path: WaveClipPath::Fast,
         };
         let pixel = wave
             .pixel_operation(
@@ -217,7 +238,7 @@ fn original_pixel_linear_aliases_and_initialized_adjacent_window_are_consumed() 
 }
 
 #[test]
-fn original_magnetic_traversal_displaced_reads_and_depth_admission_match() {
+fn original_wave_traversal_displaced_reads_and_depth_admission_match() {
     let mut formats = [false; 2];
     for row in rows() {
         let input = &row["input"];
@@ -261,7 +282,7 @@ fn original_magnetic_traversal_displaced_reads_and_depth_admission_match() {
         assert_eq!(
             output,
             expected_words(row),
-            "{name} original7602E0/760190 full plane"
+            "{name} original Sonic/magnetic full plane"
         );
         assert_eq!(
             admitted.len(),
@@ -269,7 +290,7 @@ fn original_magnetic_traversal_displaced_reads_and_depth_admission_match() {
             "{name} native admitted count"
         );
         for ((pixel, source, after), native) in admitted.iter().zip(operations) {
-            let expected = MagneticPixel {
+            let expected = WavePixel {
                 point: array(&native["point"]),
                 source: array(&native["source"]),
                 candidate_z: integer(&native["candidate_z"]).try_into().unwrap(),
@@ -310,8 +331,45 @@ fn original_magnetic_traversal_displaced_reads_and_depth_admission_match() {
 }
 
 #[test]
-#[ignore = "requires GPU; original magnetic words, Air Display order, A/Z and bounded source snapshots"]
-fn magnetic_wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
+fn original_sonic_out_of_plane_sample_is_an_explicit_domain_error() {
+    let mut rejected = 0;
+    for row in sonic_corpus()["raster_rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["source_domain"] == "out_of_plane")
+    {
+        let input = &row["input"];
+        let size = array::<2>(&input["size"]);
+        let pitch = integer(&input["pitch_words"]);
+        let native = row["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|op| {
+                let [x, y] = array::<2>(&op["source"]);
+                x < 0 || x >= size[0] || y < 0 || y >= size[1]
+            })
+            .unwrap();
+        let [x, y] = array::<2>(&native["source"]);
+        let error = draw(&row["draws"][0])
+            .rasterize(
+                array(&input["clip"]),
+                size,
+                pitch,
+                integer(&input["z_origin_y"]),
+                |_| {},
+            )
+            .unwrap_err();
+        assert_eq!(error, WaveRasterError::SourceWord(y * pitch + x));
+        rejected += 1;
+    }
+    assert_eq!(rejected, 1, "the declared original small-surface refusal");
+}
+
+#[test]
+#[ignore = "requires GPU; original Wave0/3 words, Air Display order, A/Z and bounded source snapshots"]
+fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
     let gpu = Gpu::new();
     for row in rows().filter(|row| row["input"]["format"] == "rgb565") {
         let input = &row["input"];
@@ -368,8 +426,7 @@ fn magnetic_wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_a
                             order.object_draw(id, SpriteEncoding::Plain).unwrap(),
                             Vec::new(),
                         );
-                        parent.body_draw =
-                            Some(ObjectBodyDraw::Surface(SurfaceDraw::MagneticWave(wave)));
+                        parent.body_draw = Some(ObjectBodyDraw::Surface(SurfaceDraw::Wave(wave)));
                         parent
                     })
                     .collect::<Vec<_>>();
@@ -392,7 +449,7 @@ fn magnetic_wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_a
                             zoom: 1.,
                         },
                         |_| false,
-                        |_| panic!("Wave3 must never query A"),
+                        |_| panic!("Wave must never query A"),
                     ));
                 }
                 let initial = background

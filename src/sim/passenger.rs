@@ -634,7 +634,7 @@ pub fn can_enter_transport(
     // no one.
     transport_obj.passengers > 0
         && crate::sim::combat::combat_weapon::is_ally_by_object(
-            Some(&sim.house_alliances),
+            Some(sim.house_alliances.as_map()),
             &sim.interner,
             passenger.owner(),
             transport.owner(),
@@ -676,7 +676,7 @@ pub fn can_dock_occupier_garrison(
     );
     if !crate::sim::cell_rect::cell_is_in_playfield_leptons(
         (coord.x, coord.y, coord.z),
-        sim.playfield_bounds,
+        sim.playfield_bounds(),
         sim.resolved_terrain.as_ref(),
     ) {
         return false;
@@ -899,12 +899,12 @@ pub(crate) fn board_passenger(
     // the per-type count; the post-Limbo tail removes the old `+0x2F4`
     // contribution and clears `+0x438`.
     if absorber_entry {
-        sim.set_infantry_absorber_entry(pax_id, true);
+        sim.substrate.set_infantry_absorber_entry(pax_id, true);
     }
     let context = UninitContext::new(Some(rules), registry).with_effects(effects);
     if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
         if absorber_entry {
-            sim.set_infantry_absorber_entry(pax_id, false);
+            sim.substrate.set_infantry_absorber_entry(pax_id, false);
         }
         return false;
     }
@@ -1133,7 +1133,7 @@ fn receive_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_
         .rearm_timer
         .remaining(sim.session.binary_frame() as i32)
         != 0;
-    if sim.temporal_receive_gunner(transport_id, pax_id) {
+    if sim.substrate.temporal_receive_gunner(transport_id, pax_id) {
         if let Some(transport) = sim.substrate.entities.get_mut(transport_id) {
             transport.set_gunner_weapon(7, object);
         }

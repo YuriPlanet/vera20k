@@ -17,6 +17,7 @@ use crate::sim::combat::{
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{Simulation, UninitContext};
 use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits, adjust_for_z_standard};
 use glam::IVec3;
@@ -38,7 +39,7 @@ impl Simulation {
             None,
             rules,
         )?;
-        self.particle_systems_mut().gas_cloud_system = Some(id);
+        self.substrate.particle_systems.gas_cloud_system = Some(id);
         Some(id)
     }
 
@@ -53,7 +54,8 @@ impl Simulation {
         let system = self.initialize_gas_cloud_system(rules)?;
         let particle = Particle::new(kind, coords, IVec3::ZERO, rules.particle_type(kind), self);
         let id = particle.stable_id();
-        self.particle_systems_mut()
+        self.substrate
+            .particle_systems
             .get_mut(system)?
             .particles
             .push(particle);
@@ -83,8 +85,8 @@ fn particle(sim: &Simulation, system: u64, index: usize, id: u64) -> Option<Part
         .cloned()
 }
 
-fn commit_particle(sim: &mut Simulation, system: u64, index: usize, updated: Particle) {
-    if let Some(sys) = sim.particle_systems_mut().get_mut(system) {
+fn commit_particle(substrate: &mut ObjectSubstrate, system: u64, index: usize, updated: Particle) {
+    if let Some(sys) = substrate.particle_systems.get_mut(system) {
         let slot = if sys
             .particles
             .get(index)
@@ -123,7 +125,7 @@ pub(super) fn tick_system(
         } else {
             super::system_ai::tick_particle(&mut p, sim, rules);
         }
-        commit_particle(sim, system, index, p);
+        commit_particle(&mut sim.substrate, system, index, p);
     }
     let Some(sys) = sim.particle_systems().get(system) else {
         return;
@@ -142,14 +144,16 @@ pub(super) fn tick_system(
                 //or CC/D0/D4. The constructor still takes its lifetime draw.
                 child.velocity = p.velocity;
                 [child.drift_x, child.drift_y, child.drift_z] = [p.drift_x, p.drift_y, p.drift_z];
-                sim.particle_systems_mut()
+                sim.substrate
+                    .particle_systems
                     .get_mut(system)
                     .unwrap()
                     .particles
                     .push(child);
             }
             let parent = sim
-                .particle_systems_mut()
+                .substrate
+                .particle_systems
                 .get_mut(system)
                 .and_then(|sys| sys.remove_expired_child(id));
             if let Some(parent) = parent {
@@ -157,7 +161,7 @@ pub(super) fn tick_system(
             }
         } else if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
             move_gas(&mut p, sim, rules);
-            commit_particle(sim, system, index, p);
+            commit_particle(&mut sim.substrate, system, index, p);
         }
     }
 }

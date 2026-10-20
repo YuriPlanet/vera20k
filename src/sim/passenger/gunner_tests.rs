@@ -409,7 +409,8 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
     let bytes = GameSnapshot::save(&sim, 0, 0, "nested repair IFV", 0);
     let mut dangling = GameSnapshot::load(&bytes).unwrap().sim;
     dangling
-        .entities_mut()
+        .substrate
+        .entities
         .get_mut(ifv)
         .unwrap()
         .passenger_role
@@ -1121,7 +1122,7 @@ fn retail_a_refused_move_here_breaks_the_passengers_contact() {
     let ifv = sim.spawn_object("FV", OWNER, 16, 16, 64, rules).unwrap();
     let gi = sim.spawn_object("E1", OWNER, 15, 16, 64, rules).unwrap();
     let enter = crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Enter);
-    sim.mission_assign_exact(gi, enter, 0).unwrap();
+    sim.substrate.mission_assign_exact(gi, enter, 0).unwrap();
     assert_eq!(
         crate::sim::radio::transmit(
             &mut sim,

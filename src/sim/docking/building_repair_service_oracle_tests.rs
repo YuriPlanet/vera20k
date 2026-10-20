@@ -1158,7 +1158,7 @@ fn native_paid_retry_full_release_histories_run_mission_dispatch_every_frame() {
                     .unwrap()
                     .owner();
                 crate::sim::credit_income::add_credits(
-                    &mut scene.sim,
+                    &mut scene.sim.houses,
                     owner,
                     int(&row["input"]["deposit"]),
                 );

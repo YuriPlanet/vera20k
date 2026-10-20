@@ -69,7 +69,7 @@ pub(crate) fn mission_enter(
             if !parked && !nav_is_mover {
                 crate::sim::world::enter_idle_mode(sim, id, rules, registry, effects);
             }
-            let _ = sim.mission_commence_exact(id, now);
+            let _ = sim.substrate.mission_commence_exact(id, now);
         }
         Some(target) => {
             let reply = radio::transmit(

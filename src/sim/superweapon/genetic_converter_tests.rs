@@ -615,7 +615,8 @@ fn the_make_infantry_end_matches_native() {
         let anim = super::super::spawn_super_anim(&mut sim, &rules, "GENDEATH", [x, y, z])
             .expect("the MakeInfantry anim");
         if let Some(owner) = row["owner"].as_u64() {
-            sim.set_anim_owner_house(anim, houses[owner as usize]);
+            sim.substrate
+                .set_anim_owner_house(anim, houses[owner as usize]);
         }
         sim.substrate
             .anims

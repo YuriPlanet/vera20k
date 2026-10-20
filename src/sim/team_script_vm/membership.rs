@@ -269,7 +269,8 @@ impl Simulation {
                 .and_then(|entity| self.object_type(entity.type_ref(), rules))
                 .is_some_and(|object| object.passengers > 0)
         {
-            self.attach_team_member_trigger_tag(team_id, entity_id);
+            self.trigger_runtime
+                .attach_team_member_trigger_tag(team_id, entity_id);
         }
         if centreless {
             self.team_calc_center(team_id, rules, registry);
@@ -316,7 +317,8 @@ impl Simulation {
             .and_then(|entity| self.houses.get(&entity.owner()))
             .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()))
         {
-            self.clear_team_member_trigger_tag(team_id, entity_id);
+            self.trigger_runtime
+                .clear_team_member_trigger_tag(team_id, entity_id);
         }
         let member_type = self
             .substrate

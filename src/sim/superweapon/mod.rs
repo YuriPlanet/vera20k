@@ -64,20 +64,37 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::native_x87::{NativeF32Bits, X87Chop53, X87Ordering};
 
+/// The `[SuperWeaponTypes]` entry at a type's `PreDependent=` index: the
+/// Super Fire_SW pairs a `PostClick=` type with (`HouseClass+0x258` indexed by
+/// `Type+0xF0`, `0x004FAE6C..0x004FAE7E`).
+pub fn pre_dependent<'r>(
+    rules: &'r RuleSet,
+    sw: &SuperWeaponType,
+) -> Option<(&'r str, &'r SuperWeaponType)> {
+    let name = rules
+        .super_weapon_order
+        .get(usize::try_from(sw.pre_dependent).ok()?)?;
+    Some((name.as_str(), rules.super_weapon(name)?))
+}
+
+/// The source of a paid two-stage pair (VERA extension, Ares settlement): a
+/// `PostClick=` type whose [`pre_dependent`] pair carries money on either
+/// side. Stock zero-cost pairs answer `None` and keep the native path.
+pub fn paid_pair_source<'r>(
+    rules: &'r RuleSet,
+    sw: &SuperWeaponType,
+) -> Option<(&'r str, &'r SuperWeaponType)> {
+    if !sw.post_click {
+        return None;
+    }
+    pre_dependent(rules, sw).filter(|(_, source)| source.money_amount != 0 || sw.money_amount != 0)
+}
+
 /// The type whose money/refusal settings final activation uses. PostClick
 /// borrows the source, including a zero source amount; it never adds its fee.
 /// Rule-only presentation and runtime views share this same interpretation.
 pub fn financial_type<'a>(rules: &'a RuleSet, sw: &'a SuperWeaponType) -> &'a SuperWeaponType {
-    if sw.post_click
-        && let Some(source) = usize::try_from(sw.pre_dependent)
-            .ok()
-            .and_then(|index| rules.super_weapon_order.get(index))
-            .and_then(|name| rules.super_weapon(name))
-        && (source.money_amount != 0 || sw.money_amount != 0)
-    {
-        return source;
-    }
-    sw
+    paid_pair_source(rules, sw).map_or(sw, |(_, source)| source)
 }
 
 /// Leptons `SuperClass::Launch` raises an invoke animation above its cell.
@@ -1028,8 +1045,7 @@ pub fn superweapon_views_for_owner(
         let Some(sw_type) = rules.super_weapon(type_id_str) else {
             continue;
         };
-        let paid_source = two_stage::source_for_destination(sim, rules, sw_type)
-            .filter(|(_, source)| source.money_amount != 0 || sw_type.money_amount != 0);
+        let paid_source = paid_pair_source(rules, sw_type);
         let money_type = financial_type(rules, sw_type);
         views.push(SuperWeaponView {
             type_id: inst.type_id,
@@ -1171,7 +1187,7 @@ pub(crate) fn tick_active_superweapon_effects(
         sim.update_lighting();
     }
     let dominator = psychic_dominator::process(sim, rules, overlay_registry, frame_effects);
-    let chrono = sim.process_chrono_screen_effect();
+    let chrono = sim.session.process_chrono_screen_effect();
     sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
     unit_delivery::tick(sim, rules, overlay_registry, frame_effects);
@@ -1325,31 +1341,32 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
             continue;
         };
         let allowed = sim.session.game_options().super_weapons || !sw.disableable_from_shell;
+        let frame = sim.session.binary_frame();
         let changed = {
             let instance = sim
                 .super_weapons
                 .get_mut(&owner)
                 .and_then(|weapons| weapons.get_mut(&type_id))
                 .expect("selected retained Super");
-            if !instance.is_active {
-                false
-            } else if !defeated && (!instance.can_lose || instance.one_time) {
-                //50AF5B..50AF78 bypasses shell/provider/power checks, but a
-                //defeated House still reaches the ordinary Deactivate owner.
-                false
-            } else if defeated || !allowed || !provided.contains(&type_id) {
-                instance.deactivate();
-                true
-            } else if !low_power && online.contains(&type_id) {
-                instance.suspend(false, sw.manual_control, sim.session.binary_frame())
-            } else if sw.is_powered {
-                instance.suspend(true, sw.manual_control, sim.session.binary_frame())
-            } else {
-                false
+            let hold = super_hold(
+                instance,
+                sw,
+                defeated,
+                allowed,
+                provided.contains(&type_id),
+                !low_power && online.contains(&type_id),
+            );
+            match hold {
+                SuperHold::Unchanged => false,
+                SuperHold::Deactivate => {
+                    instance.deactivate();
+                    true
+                }
+                SuperHold::Suspend(on) => instance.suspend(on, sw.manual_control, frame),
             }
         };
         if changed {
-            sim.request_house_tech_tree_recheck(owner);
+            sim.houses.request_house_tech_tree_recheck(owner);
             sim.sound_events
                 .push(SimSoundEvent::SuperWeaponStatusChanged {
                     owner,
@@ -1366,6 +1383,43 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
                 owner,
                 sw_type: selection.destination,
             });
+    }
+}
+
+/// One instance's outcome in [`update_owned_supers`]'s hold pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SuperHold {
+    Unchanged,
+    Deactivate,
+    /// Suspend (`true`) or resume (`false`) the charge.
+    Suspend(bool),
+}
+
+/// The hold pass's decision for one retained instance: `allowed` is the shell
+/// option, `provided` a live provider building, `powered_online` an online
+/// provider while the House is not low on power.
+pub(super) fn super_hold(
+    instance: &SuperWeaponInstance,
+    sw: &SuperWeaponType,
+    defeated: bool,
+    allowed: bool,
+    provided: bool,
+    powered_online: bool,
+) -> SuperHold {
+    if !instance.is_active {
+        SuperHold::Unchanged
+    } else if !defeated && (!instance.can_lose || instance.one_time) {
+        //50AF5B..50AF78 bypasses shell/provider/power checks, but a
+        //defeated House still reaches the ordinary Deactivate owner.
+        SuperHold::Unchanged
+    } else if defeated || !allowed || !provided {
+        SuperHold::Deactivate
+    } else if powered_online {
+        SuperHold::Suspend(false)
+    } else if sw.is_powered {
+        SuperHold::Suspend(true)
+    } else {
+        SuperHold::Unchanged
     }
 }
 

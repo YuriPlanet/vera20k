@@ -208,6 +208,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         )?;
         let applied = self
             .sim
+            .substrate
             .set_terrain_anim_z_adjust_after_construction(id, request.z_adjust);
         debug_assert!(applied);
         Ok(())

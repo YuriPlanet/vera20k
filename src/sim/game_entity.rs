@@ -730,6 +730,12 @@ pub struct GameEntity {
     /// [`HasBeenCaptured`]: crate::sim::crew_survival::HasBeenCaptured
     #[serde(default)]
     pub(crate) has_been_captured: crate::sim::crew_survival::HasBeenCaptured,
+    /// A building's NoSurvivor byte (`BuildingClass+0x6E0`), a
+    /// [`NoSurvivor`] that `crew_survival` owns.
+    ///
+    /// [`NoSurvivor`]: crate::sim::crew_survival::NoSurvivor
+    #[serde(default)]
+    pub(crate) no_survivor: crate::sim::crew_survival::NoSurvivor,
     /// Both ends of the tank-bunker reciprocal link, a [`BunkerLinks`] that
     /// `docking::bunker_link` owns.
     ///
@@ -1586,6 +1592,7 @@ impl GameEntity {
             capture_infantry_type_index: crate::sim::world::CapturedInfantryType::constructed(),
             pending_c4_detonation: Default::default(),
             has_been_captured: Default::default(),
+            no_survivor: Default::default(),
             bunker: Default::default(),
             building_gate: None,
             door: crate::sim::door::DoorClass::at_frame(construction_frame),

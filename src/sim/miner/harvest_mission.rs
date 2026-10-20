@@ -62,7 +62,7 @@ pub(crate) fn mission_harvest(
         &mut snap,
         frame_effects,
     );
-    commit_miner_snapshot(sim, &snap);
+    commit_miner_snapshot(&mut sim.substrate, &snap);
     Some(snap.dispatch_delay)
 }
 

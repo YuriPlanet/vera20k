@@ -1074,7 +1074,7 @@ mod tests {
     #[test]
     fn infantry_leaves_a_tube_at_the_floor_of_its_spot() {
         let (mut sim, rules) = infantry_at_tube_end();
-        sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+        sim.set_playfield_bounds_for_test(Some(crate::sim::arena_fixture::OPEN_PLAYFIELD));
         sim.substrate
             .entities
             .get_mut(1)

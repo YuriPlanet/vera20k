@@ -10,19 +10,6 @@ use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::SIM_ZERO;
 
 impl Simulation {
-    /// `FootClass::Limbo` (`0x004DB260`) on its first Limbo removes a tracked
-    /// Foot (+0x560 not the empty cell) at `0x004DB37C..0x004DB3AA`, before
-    /// `TechnoClass::Limbo`. Mark(REMOVE) itself never touches the tracker.
-    pub(super) fn release_foot_air_tracker_before_limbo(&mut self, id: u64) {
-        if self.substrate.entities.get(id).is_some_and(|entity| {
-            entity.category() != EntityCategory::Structure
-                && !entity.lifecycle.in_limbo()
-                && entity.air_tracker_cell() != (0, 0)
-        }) {
-            self.aircraft_tracker_remove(id);
-        }
-    }
-
     pub(crate) fn finish_fly_takeoff_entry(&mut self, id: u64, rules: Option<&RuleSet>) {
         self.aircraft_tracker_add(id);
         let Some(e) = self.substrate.entities.get_mut(id) else {
@@ -227,7 +214,7 @@ impl Simulation {
             }
         }
         self.set_object_height(id, base, rules, registry, frame_effects);
-        self.aircraft_tracker_remove(id);
+        self.substrate.aircraft_tracker_remove(id);
         let entity = self.substrate.entities.get_mut(id).unwrap();
         let fly = entity
             .locomotor
@@ -515,6 +502,21 @@ impl Simulation {
                 state.clear_destination();
             }
             false
+        }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// `FootClass::Limbo` (`0x004DB260`) on its first Limbo removes a tracked
+    /// Foot (+0x560 not the empty cell) at `0x004DB37C..0x004DB3AA`, before
+    /// `TechnoClass::Limbo`. Mark(REMOVE) itself never touches the tracker.
+    pub(super) fn release_foot_air_tracker_before_limbo(&mut self, id: u64) {
+        if self.entities.get(id).is_some_and(|entity| {
+            entity.category() != EntityCategory::Structure
+                && !entity.lifecycle.in_limbo()
+                && entity.air_tracker_cell() != (0, 0)
+        }) {
+            self.aircraft_tracker_remove(id);
         }
     }
 }

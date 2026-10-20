@@ -578,7 +578,11 @@ fn funds_events_match_original_signed_wallet_predicates() {
             .as_u64()
             .map(|index| houses[index as usize]);
         if let Some(owner) = owner {
-            crate::sim::credit_income::add_credits(&mut sim, owner, integer(&case["balance"]));
+            crate::sim::credit_income::add_credits(
+                &mut sim.houses,
+                owner,
+                integer(&case["balance"]),
+            );
         }
         let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[2], (15, 15));
         install_event_ingress_map(
@@ -674,7 +678,11 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
                 integer(&case["repeat"])
             ),
         );
-        crate::sim::credit_income::add_credits(&mut sim, houses[0], integer(&case["initial"]));
+        crate::sim::credit_income::add_credits(
+            &mut sim.houses,
+            houses[0],
+            integer(&case["initial"]),
+        );
         let tag = sim.trigger_runtime.house_tags[&houses[0]][0];
         let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
         // The two other registered Houses include a second Country0 instance.
@@ -692,10 +700,10 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
                 let amount = integer(&mutation[1]);
                 match mutation[0].as_str().unwrap() {
                     "spend_money" => {
-                        crate::sim::credit_income::spend_money(&mut sim, houses[0], amount)
+                        crate::sim::credit_income::spend_money(&mut sim.houses, houses[0], amount)
                     }
                     "add_credits" => {
-                        crate::sim::credit_income::add_credits(&mut sim, houses[0], amount)
+                        crate::sim::credit_income::add_credits(&mut sim.houses, houses[0], amount)
                     }
                     other => panic!("unknown native wallet operation {other}"),
                 }
@@ -838,7 +846,7 @@ fn funds_event_sov06_retail_cash_taunt_reaches_named_eva_once() {
         (52, 10000)
     );
     for (spend, expected_cues) in [(59999, 0), (1, 1), (0, 1)] {
-        crate::sim::credit_income::spend_money(&mut sim, owner, spend);
+        crate::sim::credit_income::spend_money(&mut sim.houses, owner, spend);
         sim.dispatch_live_tag_event(
             tag,
             TagEventInput {
@@ -2966,9 +2974,11 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
     );
     entity.lifecycle.set_in_limbo_for_test(true);
     sim.substrate.entities.insert(entity);
-    sim.replace_trigger_tag_attachment(TagAttachment::Object(object), Some(tag));
+    sim.trigger_runtime
+        .replace_trigger_tag_attachment(TagAttachment::Object(object), Some(tag));
     let cell = sim.trigger_cell_identity((50, 60));
-    sim.replace_cell_trigger_tag(cell, Some(tag));
+    sim.trigger_runtime
+        .replace_cell_trigger_tag(cell, Some(tag));
     sim.trigger_runtime.logic_tags.push(tag);
     sim.validate_restored_trigger_runtime().unwrap();
     let owner = sim.trigger_runtime.clone();
@@ -3207,15 +3217,18 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
         let author_tag = sim.construct_trigger_tag(author_type);
         // Supplied anchor attachments retain refs2/1 throughout the original
         // control. Zero-ref destruction and deferred drain are excluded here.
-        sim.replace_trigger_tag_attachment(TagAttachment::Object(u64::MAX), Some(author_tag));
-        sim.replace_trigger_tag_attachment(TagAttachment::Object(member), Some(author_tag));
+        sim.trigger_runtime
+            .replace_trigger_tag_attachment(TagAttachment::Object(u64::MAX), Some(author_tag));
+        sim.trigger_runtime
+            .replace_trigger_tag_attachment(TagAttachment::Object(member), Some(author_tag));
         let team_tag = sim
             .trigger_runtime
             .attachments
             .get(&TagAttachment::Team(team))
             .copied();
         if let Some(tag) = team_tag {
-            sim.replace_trigger_tag_attachment(TagAttachment::Object(u64::MAX - 1), Some(tag));
+            sim.trigger_runtime
+                .replace_trigger_tag_attachment(TagAttachment::Object(u64::MAX - 1), Some(tag));
         }
         let state = |sim: &Simulation| {
             let attached = sim
@@ -4061,7 +4074,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                             integer(&args[2]) as i16,
                             integer(&args[3]) as i16,
                         ));
-                        sim.replace_cell_trigger_tag(
+                        sim.trigger_runtime.replace_cell_trigger_tag(
                             cell,
                             Some(identities[integer(&args[1]) as usize]),
                         );
@@ -4133,10 +4146,12 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                     "attach_object" => {
                         let tag = (integer(&args[2]) >= 0)
                             .then(|| identities[integer(&args[2]) as usize]);
-                        returned = Some(i32::from(sim.replace_trigger_tag_attachment(
-                            TagAttachment::Object(objects[integer(&args[1]) as usize]),
-                            tag,
-                        )));
+                        returned = Some(i32::from(
+                            sim.trigger_runtime.replace_trigger_tag_attachment(
+                                TagAttachment::Object(objects[integer(&args[1]) as usize]),
+                                tag,
+                            ),
+                        ));
                     }
                     "dispatch" => {
                         let cell = args.get(3).map_or((0, 0), |cell| {

@@ -775,7 +775,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
         64,
         super::cell_receiver_tests::test_terrain_cell,
     ));
-    sim.playfield_bounds = Some(super::cell_receiver_tests::test_playfield_bounds());
+    sim.set_playfield_bounds_for_test(Some(super::cell_receiver_tests::test_playfield_bounds()));
     let silo = sim
         .spawn_object_at_height("NAMISL", "Russians", 10, 10, 0, 0, &rules)
         .expect("the silo stands");

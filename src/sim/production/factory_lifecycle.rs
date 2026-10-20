@@ -381,7 +381,7 @@ fn refund_abandoned(
         return;
     };
     let refund = sim.cost_of(owner_id, object, rules).wrapping_sub(balance);
-    crate::sim::credit_income::add_credits(sim, owner_id, refund);
+    crate::sim::credit_income::add_credits(&mut sim.houses, owner_id, refund);
 }
 
 /// Native HouseAbandon selects either an indexed type or the wildcard -1

@@ -52,7 +52,7 @@ fn raster_draw(
     size: [u32; 2],
     alpha: &mut impl FnMut([i32; 2]) -> u16,
     emit: &mut impl FnMut(&[([i32; 2], Operation)]),
-) -> Result<(), crate::render::wave_geometry::MagneticRasterError> {
+) -> Result<(), crate::render::wave_geometry::WaveRasterError> {
     use crate::render::surface_line::{antialiased_line, ellipse, rasterize_z_clipped};
     let line = match draw {
         SurfaceDraw::OpaqueRect { rect, word } => {
@@ -73,7 +73,7 @@ fn raster_draw(
             return Ok(());
         }
 
-        SurfaceDraw::MagneticWave(wave) => {
+        SurfaceDraw::Wave(wave) => {
             let logical_size = size.map(|v| (v as f32 / viewport.zoom).ceil() as i32);
             // Native exactness is zoom1. Other zooms expand the same logical
             // pixels and sample the corresponding logical pixel's center.
@@ -91,7 +91,14 @@ fn raster_draw(
                         Operation {
                             z: u32::from(pixel.candidate_z),
                             strength: pixel.brightness,
-                            mode: 7,
+                            mode: if matches!(
+                                wave.polygon,
+                                crate::render::wave_geometry::WavePolygon::Sonic(_)
+                            ) {
+                                9
+                            } else {
+                                7
+                            },
                             source_x: source[0],
                             source_y: source[1],
                             ..Default::default()
@@ -398,7 +405,7 @@ impl SurfaceLineGpu {
                     right = right.max(operation.gate_x.saturating_add(1).max(0) as u32);
                     bottom = bottom.max(operation.gate_y.saturating_add(1).max(0) as u32);
                 }
-                if operation.mode == 7 {
+                if matches!(operation.mode, 7 | 9) {
                     //7601FB reads a displaced old word, which can lie outside
                     //this chunk's output rect. Snapshot its actual address,
                     //not an invented clamped neighbor or stale scratch word.
@@ -558,8 +565,8 @@ impl TerrainDrawRenderer {
             }
         };
         let prepare_draw = |gpu: &mut SurfaceLineGpu, draw: SurfaceDraw, alpha: &mut _| {
-            let magnetic = matches!(draw, SurfaceDraw::MagneticWave(_));
-            if magnetic {
+            let wave = matches!(draw, SurfaceDraw::Wave(_));
+            if wave {
                 // Even adjacent coalesced Surface bodies need the preceding
                 //Wave/object's completed destination, never a frame snapshot.
                 gpu.upload(device, queue, viewport.zoom, size);
@@ -574,9 +581,9 @@ impl TerrainDrawRenderer {
                 gpu.active = first;
                 gpu.work.clear();
                 gpu.written.clear();
-                log::warn!("Wave3 unsupported native raster domain {error:?}: {draw:?}");
+                log::warn!("Wave unsupported native raster domain {error:?}: {draw:?}");
             }
-            if magnetic {
+            if wave {
                 // Native traversal is retained before size-driven chunks.
                 //Self/future-only reads cannot observe an earlier same-Wave
                 //write even when a chunk starts a fresh snapshot.

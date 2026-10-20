@@ -54,6 +54,8 @@ fn original_pause_histories_pin_overflow_rearm_nesting_and_world_branch() {
                     menu_open: false,
                     session_mode: mode,
                     pacer_timing_admits: true,
+                    network_wait: false,
+                    network_dialog_open: false,
                 });
                 events.push(if decision.run_sim {
                     "world_branch"

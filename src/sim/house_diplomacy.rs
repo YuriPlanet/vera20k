@@ -82,6 +82,39 @@ pub(crate) enum HouseAllianceAdmission<'a> {
     Admitted(HouseAllianceMap),
 }
 
+/// The House ally graph (`HouseClass+0x5788` masks, see the module docs).
+/// Only this module writes it: the install, MakeAlly and MakeEnemy, each of
+/// which also forgets the reveal viewers. Serialized and hashed exactly as
+/// the bare map it wraps.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct HouseAlliances(HouseAllianceMap);
+
+impl HouseAlliances {
+    pub(crate) fn as_map(&self) -> &HouseAllianceMap {
+        &self.0
+    }
+
+    fn replace(&mut self, alliances: HouseAllianceMap) {
+        self.0 = alliances;
+    }
+
+    /// Write `owner_key`'s ally bit for `other_key` (normalized house names).
+    fn set_ally_bit(&mut self, owner_key: String, other_key: String, allied: bool) {
+        let allies = self.0.entry(owner_key).or_default();
+        if allied {
+            allies.insert(other_key);
+        } else {
+            allies.remove(&other_key);
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn as_map_mut_for_test(&mut self) -> &mut HouseAllianceMap {
+        &mut self.0
+    }
+}
+
 impl Simulation {
     /// Existing launch diplomacy graph owner: commit its admitted graph, then
     /// rebuild only recipients whose ally bits changed, in House array order.
@@ -120,6 +153,7 @@ impl Simulation {
             .filter(|owner| {
                 let key = normalize_house_name(self.interner.resolve(*owner));
                 self.house_alliances
+                    .as_map()
                     .get(&key)
                     .into_iter()
                     .flatten()
@@ -130,14 +164,14 @@ impl Simulation {
         // bit write: the allied Buildings of each edge it clears leave the
         // ally's map first, and those of each edge it sets open there after.
         let (before, after) = (
-            self.ally_edges(&self.house_alliances),
+            self.ally_edges(self.house_alliances.as_map()),
             self.ally_edges(&alliances),
         );
         let context = crate::sim::world::UninitContext::with_rules(rules);
         for &(owner, viewer) in before.difference(&after) {
             self.release_allied_building_sight(owner, viewer, context);
         }
-        self.house_alliances = alliances;
+        self.house_alliances.replace(alliances);
         self.reveal_viewers.forget();
         for owner in changed {
             self.rebuild_house_spatial_threat(owner, rules);
@@ -241,7 +275,7 @@ impl Simulation {
             .unwrap_or(0);
         update_anger_nodes(
             &mut self.houses,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             &self.interner,
             owner,
             other,
@@ -296,7 +330,7 @@ impl Simulation {
                 };
                 if let Some(target_owner) = self.substrate.entities.get(target).map(|t| t.owner())
                     && is_ally_by_object(
-                        Some(&self.house_alliances),
+                        Some(self.house_alliances.as_map()),
                         &self.interner,
                         owner,
                         target_owner,
@@ -335,24 +369,39 @@ impl Simulation {
         // writes. Each alliance this call breaks (below) takes its Buildings'
         // sight off the ex-ally's map; the re-admission bracket at the end
         // (0x004FA1E3) has nothing to open on a map whose ally bit cleared.
-        if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, other) {
+        if is_ally_by_object(
+            Some(self.house_alliances.as_map()),
+            &self.interner,
+            owner,
+            other,
+        ) {
             let context = crate::sim::world::UninitContext::with_rules(rules);
             self.release_allied_building_sight(owner, other, context);
-            if is_ally_by_object(Some(&self.house_alliances), &self.interner, other, owner) {
+            if is_ally_by_object(
+                Some(self.house_alliances.as_map()),
+                &self.interner,
+                other,
+                owner,
+            ) {
                 self.release_allied_building_sight(other, owner, context);
             }
         }
         // 0x004F9FDD..0x004F9FE2.
         update_anger_nodes(
             &mut self.houses,
-            &self.house_alliances,
+            self.house_alliances.as_map(),
             &self.interner,
             owner,
             other,
             1,
         );
         // 0x004F9FE7..0x004FA01A: only an alliance is broken.
-        if !is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, other) {
+        if !is_ally_by_object(
+            Some(self.house_alliances.as_map()),
+            &self.interner,
+            owner,
+            other,
+        ) {
             return;
         }
         self.set_ally_bit(owner, other, false);
@@ -360,12 +409,17 @@ impl Simulation {
         // 0x004FA067..0x004FA0DF: the other house breaks its side too, then
         // rescans its enemy: native passes it as both house and peer, and a
         // house holds no anger node of its own.
-        if is_ally_by_object(Some(&self.house_alliances), &self.interner, other, owner) {
+        if is_ally_by_object(
+            Some(self.house_alliances.as_map()),
+            &self.interner,
+            other,
+            owner,
+        ) {
             self.set_ally_bit(other, owner, false);
             self.rebuild_house_spatial_threat(other, rules);
             update_anger_nodes(
                 &mut self.houses,
-                &self.house_alliances,
+                self.house_alliances.as_map(),
                 &self.interner,
                 other,
                 other,
@@ -377,7 +431,12 @@ impl Simulation {
     /// `HouseClass::Can_Ally @ 0x00501540`, including its initialization gate.
     fn can_ally(&self, owner: InternedId, other: InternedId, rules: &RuleSet) -> bool {
         // 0x00501548..0x00501579: itself, or an existing ally.
-        if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, other) {
+        if is_ally_by_object(
+            Some(self.house_alliances.as_map()),
+            &self.interner,
+            owner,
+            other,
+        ) {
             return false;
         }
         let (Some(house), Some(_)) = (self.houses.get(&owner), self.houses.get(&other)) else {
@@ -411,7 +470,12 @@ impl Simulation {
                 continue;
             }
             live += 1;
-            if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, peer) {
+            if is_ally_by_object(
+                Some(self.house_alliances.as_map()),
+                &self.interner,
+                owner,
+                peer,
+            ) {
                 friends += 1;
             }
         }
@@ -420,16 +484,10 @@ impl Simulation {
 
     /// Write `owner`'s ally bit for `other`.
     fn set_ally_bit(&mut self, owner: InternedId, other: InternedId, allied: bool) {
+        let owner_key = normalize_house_name(self.interner.resolve(owner));
         let other_key = normalize_house_name(self.interner.resolve(other));
-        let allies = self
-            .house_alliances
-            .entry(normalize_house_name(self.interner.resolve(owner)))
-            .or_default();
-        if allied {
-            allies.insert(other_key);
-        } else {
-            allies.remove(&other_key);
-        }
+        self.house_alliances
+            .set_ally_bit(owner_key, other_key, allied);
         self.reveal_viewers.forget();
     }
 }

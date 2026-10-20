@@ -59,7 +59,8 @@ fn a_closed_gate_asks_its_own_house_about_the_mover() {
     mover.set_category_for_test(EntityCategory::Unit);
     mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     sim.substrate.entities.insert(mover);
-    sim.mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 100)
+    sim.substrate
+        .mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 100)
         .unwrap();
     let mut gate = GameEntity::test_default(91, "GATE", "Russians", 11, 10);
     gate.set_owner_for_test(sim.intern("Russians"));
@@ -274,7 +275,8 @@ fn an_unarmed_train_answers_five_where_an_unarmed_unit_answers_seven() {
             mover.set_category_for_test(EntityCategory::Unit);
             mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
             sim.substrate.entities.insert(mover);
-            sim.mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 100)
+            sim.substrate
+                .mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 100)
                 .unwrap();
             let enemy = sim.intern("Russians");
             if listed {
@@ -345,7 +347,8 @@ fn a_crusher_meets_a_terrain_object_with_its_weapon() {
         unit.set_category_for_test(EntityCategory::Unit);
         unit.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         sim.substrate.entities.insert(unit);
-        sim.mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 100)
+        sim.substrate
+            .mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 100)
             .unwrap();
         sim.terrain_objects
             .cell_index_mut_for_test()
@@ -483,13 +486,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
             cell.final_sub_tile = input["subtile"].as_u64().unwrap_or(0) as u8;
         }
         if let Some(overlay) = input["overlay"].as_u64() {
-            sim.resolved_terrain
-                .as_mut()
-                .unwrap()
-                .cell_mut_for_test(11, 10)
-                .unwrap()
-                .bridge_facts
-                .overlay_id = Some(overlay as u8);
+            sim.overlay_cell_mut_for_test(11, 10).overlay_id = Some(overlay as u8);
         }
         sim.session.set_binary_frame_for_test(100);
         // The legacy corpus name seeds A8E7AC, not A8B238.
@@ -519,12 +516,15 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
         }
         mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         sim.substrate.entities.insert(mover);
-        sim.mission_assign_exact(
-            90,
-            crate::sim::mission::MissionId::from_raw(input["mission"].as_i64().unwrap_or(5) as i32),
-            100,
-        )
-        .unwrap();
+        sim.substrate
+            .mission_assign_exact(
+                90,
+                crate::sim::mission::MissionId::from_raw(
+                    input["mission"].as_i64().unwrap_or(5) as i32
+                ),
+                100,
+            )
+            .unwrap();
         if let Some(queued) = input["queued"].as_i64() {
             use crate::sim::mission::{MissionDispatchTimer, MissionId, state::MissionTestFixture};
             sim.substrate

@@ -25,6 +25,14 @@ const COMMAND_RECORD_PROCESSED_FLAG: u8 = 0x01;
 pub const SELL_WALL_AT_CELL_OPCODE: u8 = 0x17;
 /// Native `EventClass` opcode for leaving the active scenario.
 pub const EXIT_OPCODE: u8 = 0x13;
+/// Native header-only DESTRUCT event: `EventClass::Execute`'s type-8 entry
+/// (`0x004C7BDF`) calls `HouseClass::Flag_To_Die 0x004FC980` on the header
+/// House, ungated.
+pub const DESTRUCT_OPCODE: u8 = 0x08;
+/// EVENT_REMOVEPLAYER: `EventClass(house, 0x23, index)` (`0x004C6720`)
+/// carries the removed House's index as its dword payload. DestroyConnection
+/// queues it for a lost connection mid-match (`0x005DA898`).
+pub const REMOVE_PLAYER_OPCODE: u8 = 0x23;
 /// House-wide Cheer, issued by AllToCheer730F30.
 pub const CHEER_OPCODE: u8 = 0x2d;
 /// Native `EventClass` opcode for a MegaMission order envelope.
@@ -803,6 +811,20 @@ pub enum Command {
         target: Option<crate::sim::combat::TargetKind>,
         destination: Option<crate::sim::combat::TargetKind>,
     },
+    /// EVENT_DESTRUCT for the command House: the in-game abort's Leave and
+    /// Observe results 3/4 (`0x0048CA34`, `0x0048CAB2`) queue it for the
+    /// local House. Appended to preserve existing serialized variant indices.
+    Destruct,
+    /// EVENT_REMOVEPLAYER for the House at registration index `house_index`
+    /// (`EventClass::Execute 0x004C7B73`): Flag_To_Die when it is human.
+    /// Appended to preserve existing serialized variant indices.
+    RemovePlayer { house_index: i32 },
+    /// The MoveFlash a Move click on a Cell spawns there
+    /// (`FootClass::ClickedAction_Cell`, `0x004D7EB5..0x004D8065`). Native
+    /// constructs it at the click, outside the event queue; VERA carries it
+    /// as a command so the anim stays a product of the input stream.
+    /// Appended to preserve existing serialized variant indices.
+    MoveFlash { rx: u16, ry: u16 },
     /// VERA extension: the saved one-use source selection, not native
     /// SPECIAL_PLACE. Appended to preserve existing command discriminants.
     CompletePaidSuperWeapon {

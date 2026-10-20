@@ -123,7 +123,7 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, u64, Option<u64>) {
             .register(HouseState::new(id, 0, Some(id), human, 5000, 10));
     }
     if input["allied"].as_bool().unwrap_or(false) {
-        sim.house_alliances
+        sim.house_alliances_mut_for_test()
             .entry("AMERICANS".into())
             .or_default()
             .insert("RUSSIANS".into());

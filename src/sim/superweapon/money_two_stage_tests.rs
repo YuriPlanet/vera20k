@@ -99,7 +99,7 @@ fn superweapon_money_two_stage_unaffordable_final_is_atomic_and_retryable() {
     let source = ready(&mut sim, &rules, owner, "Sphere", false);
     assert!(fire(&mut sim, &rules, owner, source, (10, 10)));
     let ticket = sim.paid_super_weapon_selection(owner).unwrap();
-    crate::sim::credit_income::spend_money(&mut sim, owner, 1);
+    crate::sim::credit_income::spend_money(&mut sim.houses, owner, 1);
     sim.sound_events.clear();
     let hash = sim.state_hash();
     assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
@@ -109,7 +109,7 @@ fn superweapon_money_two_stage_unaffordable_final_is_atomic_and_retryable() {
     assert!(matches!(sim.sound_events.as_slice(),
         [SimSoundEvent::SuperWeaponInsufficientFunds { owner: actual, sw_type }]
         if *actual == owner && *sw_type == source));
-    crate::sim::credit_income::add_credits(&mut sim, owner, 1);
+    crate::sim::credit_income::add_credits(&mut sim.houses, owner, 1);
     assert!(complete(&mut sim, &rules, owner, ticket, (15, 15)));
     assert_eq!(sim.houses[&owner].economy().credits(), 0);
     assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
@@ -394,7 +394,7 @@ fn superweapon_money_two_stage_retail_tank_warp_uses_existing_payload_once() {
         .find(|sw| sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ChronoSphere)
         .unwrap()
         .money_amount = -500;
-    crate::sim::credit_income::add_credits(&mut sim, owner, 1000);
+    crate::sim::credit_income::add_credits(&mut sim.houses, owner, 1000);
     let tank = sim
         .spawn_object("MTNK", "Americans", 21, 21, 0, &rules)
         .unwrap();
@@ -464,7 +464,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
     assert!(sim.super_weapons[&owner][&source].is_ready);
     assert_eq!(sim.houses[&owner].economy().credits(), 499);
     let mut sim = restore(&sim, &rules);
-    crate::sim::credit_income::add_credits(&mut sim, owner, 1);
+    crate::sim::credit_income::add_credits(&mut sim.houses, owner, 1);
     let new = sim
         .next_paid_super_weapon_selection(&rules, owner, source)
         .unwrap();
@@ -581,7 +581,7 @@ fn superweapon_money_two_stage_views_and_refusal_settings_use_source_not_destina
         .find(|view| view.type_id == destination)
         .unwrap();
     assert!(view.can_fire && view.can_afford);
-    crate::sim::credit_income::spend_money(&mut sim, owner, 1);
+    crate::sim::credit_income::spend_money(&mut sim.houses, owner, 1);
     let view = superweapon::superweapon_views_for_owner(&sim, &rules, &owner)
         .into_iter()
         .find(|view| view.type_id == destination)

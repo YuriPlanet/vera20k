@@ -79,7 +79,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         entity.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
     }
     sim.substrate.entities.insert(entity);
-    sim.substrate.next_stable_object_id = 2;
+    sim.set_next_stable_object_id_for_test(2);
     sim.interner = test_interner();
     if passenger {
         // Retail Clear ground and a playfield holding the aircraft's cell
@@ -87,13 +87,13 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         sim.install_resolved_terrain_for_new_map(
             crate::map::resolved_terrain::test_retail_clear_grid(64, 64),
         );
-        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
             base: 10,
             off_fc: 0,
             off_100: 0,
             off_104: 60,
             off_108: 60,
-        });
+        }));
         let mut infantry = GameEntity::test_default(2, "E1", "Americans", 10, 10);
         infantry.set_owner_for_test(sim.interner.intern("Americans"));
         infantry.set_type_ref_for_test(sim.interner.intern("E1"));
@@ -102,7 +102,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         infantry.set_sub_cell(Some(2));
         infantry.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(1, false);
         sim.substrate.entities.insert(infantry);
-        sim.substrate.next_stable_object_id = 3;
+        sim.set_next_stable_object_id_for_test(3);
     }
     sim.set_logic_order_for_test(vec![1]);
     (sim, rules)
@@ -417,7 +417,7 @@ fn a_strike_fires_before_a_later_unit_in_the_same_pass() {
     tank.attack_target
         .set_for_test(Some(TargetKind::Cell(12, 9)));
     sim.substrate.entities.insert(tank);
-    sim.substrate.next_stable_object_id = 4;
+    sim.set_next_stable_object_id_for_test(4);
     sim.set_logic_order_for_test(vec![1, 3]);
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     let shooters: Vec<u64> = sim

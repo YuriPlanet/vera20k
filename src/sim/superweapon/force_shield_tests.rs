@@ -223,13 +223,13 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
         rules = world_rules;
         let russians = sim.interner.intern("Russians");
         if americans_list_russians {
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .entry("AMERICANS".to_string())
                 .or_default()
                 .insert("RUSSIANS".to_string());
         } else {
             // The Russians' own list does not reach the Americans' buildings.
-            sim.house_alliances
+            sim.house_alliances_mut_for_test()
                 .entry("RUSSIANS".to_string())
                 .or_default()
                 .insert("AMERICANS".to_string());

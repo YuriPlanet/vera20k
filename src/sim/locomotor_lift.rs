@@ -14,7 +14,7 @@
 //!   (`0x007389BF`), pointer expiry of either side (`0x00707B70`,
 //!   `0x00707B97`), the next locomotor shot (`0x004695FD`) and Imbue itself;
 //! - Foot's null destination on a held object (`0x004D9518..0x004D953F`,
-//!   [`Simulation::lifted_null_destination`]);
+//!   [`ObjectSubstrate::lifted_null_destination`](crate::sim::world::ObjectSubstrate::lifted_null_destination));
 //! - the dropped object's impact and sink in Jumpjet State 5
 //!   (`0x0054CC47..0x0054CF37`, [`Simulation::dropped_impact`],
 //!   [`Simulation::dropped_sink`]) and the kill credit the drop leaves
@@ -427,7 +427,9 @@ impl Simulation {
                 {
                     log::debug!("lifted gatherer {target} Stop_Moving: {cause}");
                 }
-                let _ = self.mission_assign_exact(target, MissionId::NONE, now);
+                let _ = self
+                    .substrate
+                    .mission_assign_exact(target, MissionId::NONE, now);
                 let _ = self.mission_queue_exact(
                     target,
                     MissionId::from_known(MissionType::Stop),
@@ -620,31 +622,6 @@ impl Simulation {
         if clear_target {
             let _ = self.assign_target_represented(firer, None, rules, registry, effects);
         }
-    }
-
-    /// Foot `Set_Destination`'s null arm on a lifted object a firer still
-    /// holds (`0x004D9518..0x004D953F`): both links clear and the lift may
-    /// end (`+0x6AE`). The firer's target stays.
-    pub(crate) fn lifted_null_destination(&mut self, id: u64) {
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return;
-        };
-        if !entity.lift.swap_active() {
-            return;
-        }
-        let Some(holder) = entity.lift.source() else {
-            return;
-        };
-        if let Some(holder) = self.substrate.entities.get_mut(holder) {
-            holder.lift.target = None;
-        }
-        let entity = self
-            .substrate
-            .entities
-            .get_mut(id)
-            .expect("same lifted object");
-        entity.lift.source = None;
-        entity.lift.may_end = true;
     }
 
     /// The listener's Magnetron fields in `TechnoClass::PointerExpired`:
@@ -977,6 +954,29 @@ impl Simulation {
             id,
             UninitContext::new(Some(rules), registry).with_effects(effects),
         );
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// Foot `Set_Destination`'s null arm on a lifted object a firer still
+    /// holds (`0x004D9518..0x004D953F`): both links clear and the lift may
+    /// end (`+0x6AE`). The firer's target stays.
+    pub(crate) fn lifted_null_destination(&mut self, id: u64) {
+        let Some(entity) = self.entities.get(id) else {
+            return;
+        };
+        if !entity.lift.swap_active() {
+            return;
+        }
+        let Some(holder) = entity.lift.source() else {
+            return;
+        };
+        if let Some(holder) = self.entities.get_mut(holder) {
+            holder.lift.target = None;
+        }
+        let entity = self.entities.get_mut(id).expect("same lifted object");
+        entity.lift.source = None;
+        entity.lift.may_end = true;
     }
 }
 

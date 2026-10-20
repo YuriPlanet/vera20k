@@ -485,7 +485,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
             .register(crate::sim::house_state::HouseState::new(
                 owner, 0, None, human, 0, 1,
             ));
-        sim.playfield_bounds = Some(bounds);
+        sim.set_playfield_bounds_for_test(Some(bounds));
         if airfield {
             // Find_Docking_Bay walks the house's buildings and its tracked
             // counts, which construction fills.

@@ -951,7 +951,7 @@ mod tests {
         // handles resolve through the Simulation that will execute the order.
         sim.interner = crate::sim::intern::test_interner();
 
-        sim.input_delay_ticks = 0;
+        sim.set_input_delay_ticks(0);
         sim.resolved_terrain = Some(resolved_grid(64, 64));
         sim.substrate.entities.insert(attacker);
         assert!(matches!(

@@ -9,13 +9,6 @@ use crate::app::AppState;
 use crate::audio::events::{GameSoundEvent, SoundSource};
 use crate::sim::world::{SimFireEvent, Simulation};
 
-/// One persistent WaveClass draw resolved from simulation-owned registration state.
-#[derive(Debug, Clone)]
-pub(crate) struct WeaponWaveVisual {
-    pub polygon: [[i32; 2]; 6],
-    pub tint: [f32; 3],
-}
-
 /// The weapon `Report=` cues of a batch of shots, each positioned at its
 /// shot's fire coordinate.
 ///
@@ -35,28 +28,6 @@ fn weapon_report_sounds(sim: &Simulation, events: &[SimFireEvent]) -> Vec<GameSo
             Some(GameSoundEvent::WeaponFired {
                 sound_id: sim.interner().resolve(report_id).to_string(),
                 source: Some(SoundSource::new(screen, cell)),
-            })
-        })
-        .collect()
-}
-
-pub(crate) fn build_weapon_wave_visuals(
-    sim: &Simulation,
-    observer: Option<crate::sim::intern::InternedId>,
-) -> Vec<WeaponWaveVisual> {
-    sim.waves()
-        .iter()
-        .filter_map(|(_, wave)| {
-            let polygon = wave.sonic_draw_polygon([0, 0])?;
-            if !weapon_wave_visible(sim, observer, wave) {
-                return None;
-            }
-            Some(WeaponWaveVisual {
-                polygon,
-                // Sonic samples the destination framebuffer;
-                // they never select a house remap. The current sprite batch
-                // has no framebuffer-distortion input, so it remains neutral.
-                tint: [1.0, 1.0, 1.0],
             })
         })
         .collect()
@@ -88,35 +59,48 @@ fn weapon_wave_visible(
     )
 }
 
-/// Native type3 geometry is owned by WaveClass, including the Unit endpoint
-/// reversal and projected fade. Rendering translates it once and supplies the
+/// Native type0/3 geometry is owned by WaveClass, including projected fade
+/// and the type3 Unit endpoint reversal. Rendering translates it once and supplies the
 /// current packed destination; it never rebuilds a quad from world endpoints.
-pub(crate) fn build_magnetic_wave_draws(
+pub(crate) fn build_weapon_wave_draws(
     sim: &Simulation,
     observer: Option<crate::sim::intern::InternedId>,
     camera: [i32; 2],
-) -> Vec<(u64, crate::render::wave_geometry::MagneticWaveDraw)> {
-    use crate::render::wave_geometry::{MagneticClipPath, MagneticWaveDraw};
+) -> Vec<(u64, crate::render::wave_geometry::WaveDraw)> {
+    use crate::render::wave_geometry::{WaveClipPath, WaveDraw, WavePolygon};
 
     sim.waves()
         .iter()
         .filter_map(|(&id, wave)| {
-            let geometry = wave.magnetic_draw_geometry(camera)?;
+            let (polygon, source_point) = match wave.wave_type() {
+                0 => {
+                    let geometry = wave.sonic_draw_geometry(camera)?;
+                    (WavePolygon::Sonic(geometry.polygon), geometry.source_point)
+                }
+                3 => {
+                    let geometry = wave.magnetic_draw_geometry(camera)?;
+                    (
+                        WavePolygon::Magnetic(geometry.polygon),
+                        geometry.source_point,
+                    )
+                }
+                _ => return None,
+            };
             if !weapon_wave_visible(sim, observer, wave) {
                 return None;
             }
             Some((
                 id,
-                MagneticWaveDraw {
-                    polygon: geometry.polygon,
-                    source_point: geometry.source_point,
+                WaveDraw {
+                    polygon,
+                    source_point,
                     source_z: wave.source().z,
                     phase: wave.lifetime(),
                     direction: u8::try_from(wave.direction_octant()).ok()?,
                     // VERA's existing scene Z is contiguous. Native ring
                     // fallback can differ by one clipping-edge pixel; C32's
                     // production footprints remain inside both margins.
-                    clip_path: MagneticClipPath::Fast,
+                    clip_path: WaveClipPath::Fast,
                 },
             ))
         })

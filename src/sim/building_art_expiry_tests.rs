@@ -237,7 +237,7 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     }
     if case["unmatched"] == true {
         entity.building_art.anim_slots[usize::from(slot)] = None;
-        sim.rebuild_building_anim_slot_indices();
+        sim.substrate.rebuild_building_anim_slot_indices();
     }
     (sim, rules, id, expired)
 }

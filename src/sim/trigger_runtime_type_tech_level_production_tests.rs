@@ -225,14 +225,14 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
     ));
     sim.session.set_map_width_for_test(width);
     sim.session.set_map_height_for_test(height);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
         base: i32::from(width),
         off_fc: number(&bounds[0]),
         off_100: number(&bounds[1]),
         off_104: number(&bounds[2]),
         off_108: number(&bounds[3]),
-    });
-    sim.playfield_size_height = Some(i32::from(height));
+    }));
+    sim.set_playfield_size_height_for_test(Some(i32::from(height)));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.set_input_delay_ticks(0);

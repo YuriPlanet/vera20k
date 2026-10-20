@@ -225,7 +225,7 @@ impl Simulation {
                         .and_then(|entity| self.object_type(entity.type_ref(), rules))
                         .is_some_and(|object| object.passengers > 0);
                 if !carries {
-                    self.team_member_clear_archive_target(member);
+                    self.substrate.team_member_clear_archive_target(member);
                 }
             }
             if (cursor as u32) >= count {
@@ -686,7 +686,7 @@ impl Simulation {
             .is_some_and(|(x, y)| {
                 !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(x), i32::from(y)),
-                    self.playfield_bounds,
+                    self.playfield_bounds(),
                     self.resolved_terrain.as_ref(),
                 )
             })
@@ -979,7 +979,7 @@ impl Simulation {
             {
                 continue;
             }
-            self.team_member_clear_archive_target(member);
+            self.substrate.team_member_clear_archive_target(member);
             self.team_member_queue_mission_id(member, MissionId::from_raw(mission), rules);
             self.team_member_clear_target(member, rules);
             self.team_member_set_destination(member, None, rules, registry, frame_effects);
@@ -1248,7 +1248,7 @@ impl Simulation {
                 self.team_member_set_destination(member, archive, rules, registry, frame_effects);
                 self.team_member_queue_mission(member, MissionType::Move, rules);
                 self.team_member_commence(member, rules);
-                self.team_member_clear_archive_target(member);
+                self.substrate.team_member_clear_archive_target(member);
             } else if (transport && matches!(argument, 2 | 3))
                 || (!transport && matches!(argument, 1 | 3))
             {
@@ -1684,6 +1684,7 @@ impl Simulation {
                 }
             }
         }
+        let playfield_bounds = self.playfield_bounds();
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
         };
@@ -1694,7 +1695,7 @@ impl Simulation {
         if let Some(TeamTarget::Cell { x, y }) = target {
             let in_playfield = crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(x), i32::from(y)),
-                self.playfield_bounds,
+                playfield_bounds,
                 self.resolved_terrain.as_ref(),
             );
             team.leaving_map = !in_playfield;
@@ -2307,7 +2308,7 @@ impl Simulation {
                 location: location_xyz(building, terrain),
                 enemy_owned: Some(building.owner()) == enemy,
                 allied: crate::map::houses::is_allied_with(
-                    &self.house_alliances,
+                    self.house_alliances.as_map(),
                     asker,
                     self.interner.resolve(building.owner()),
                 ),

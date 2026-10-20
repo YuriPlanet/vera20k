@@ -368,7 +368,8 @@ fn supplied_world(
         }
         let foreign_slot = cell(&input["foreign_slot"]);
         assert!(
-            sim.set_cell_air_slot((foreign_slot.0 as i16, foreign_slot.1 as i16), Some(other),)
+            sim.substrate
+                .set_cell_air_slot((foreign_slot.0 as i16, foreign_slot.1 as i16), Some(other),)
         );
         if input["foreign_air_registered"].as_bool().unwrap_or(true) {
             sim.aircraft_tracker_add(other);

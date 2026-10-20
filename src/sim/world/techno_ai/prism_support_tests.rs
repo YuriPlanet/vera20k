@@ -16,7 +16,7 @@
 //! than 1 or 2 at expiry (`mode_0`, `mode_3`) is skipped: every native writer
 //! pairs the mode with its countdown and writes only 1 or 2.
 //! `fire_at_returns_null` is FireAt's refusal, which VERA meets in its own
-//! emission path, where [`Simulation::take_support_bonus`] runs only for a
+//! emission path, where [`ObjectSubstrate::take_support_bonus`](crate::sim::world::ObjectSubstrate::take_support_bonus) runs only for a
 //! launched bullet.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -644,7 +644,7 @@ fn prism_recruitment_matches_the_original() {
 /// Every `bonus` row VERA can hold (module doc): ProcessDelayedFire's
 /// countdown and, at its end, a request for the combat phase's FireAt only
 /// with a target and GetFireError OK, whose bullet takes
-/// [`Simulation::take_support_bonus`] (the row's `bullet_multiplier`) and
+/// [`ObjectSubstrate::take_support_bonus`](crate::sim::world::ObjectSubstrate::take_support_bonus) (the row's `bullet_multiplier`) and
 /// clears the count; otherwise the count stays. The row's GetFireError answer
 /// is made real: RANGE by the target's distance, REARM by the rearm timer,
 /// CANT by a power outage.

@@ -515,7 +515,7 @@ impl Simulation {
             }
             // A live object's SetHeight(0) runs with Marked cleared (Drive
             // `0x004B1A8B`/`0x004B1AA8`, Ship `0x006A10CD`/`0x006A10E7`).
-            let marked = self.replace_foot_marked_byte(id, false);
+            let marked = self.substrate.replace_foot_marked_byte(id, false);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 let on_bridge = entity.on_bridge();
                 entity.position.set_height(
@@ -525,7 +525,7 @@ impl Simulation {
                     self.path_grid.as_deref(),
                 );
             }
-            self.replace_foot_marked_byte(id, marked);
+            self.substrate.replace_foot_marked_byte(id, marked);
             if let Some(facing) = paid_facing
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
@@ -683,7 +683,7 @@ impl Simulation {
         // `0x006A1C1A`/`0x006A1C34`) and the terminal point with its
         // SetHeight(0) (`0x004B20A2`/`0x004B20CA`, Ship
         // `0x006A16E5`/`0x006A170D`).
-        let saved_marked = (!crossing).then(|| self.replace_foot_marked_byte(id, false));
+        let saved_marked = (!crossing).then(|| self.substrate.replace_foot_marked_byte(id, false));
         super::ground_pose::foot_set_location(
             &mut self.substrate.entities,
             id,
@@ -743,7 +743,7 @@ impl Simulation {
             );
         }
         if let Some(marked) = saved_marked {
-            self.replace_foot_marked_byte(id, marked);
+            self.substrate.replace_foot_marked_byte(id, marked);
         }
         if crossing {
             self.foot_mark_put_observed(

@@ -439,6 +439,7 @@ fn area_guard_events_commence_and_in_range_dispatch_match_original_histories() {
                     .unwrap();
                 assert_eq!(
                     f.sim
+                        .substrate
                         .mission_commence_exact(actor, f.sim.session.binary_frame())
                         .unwrap(),
                     boundary["returned_eax"] != 0

@@ -740,7 +740,7 @@ fn comparison_model(state: &AppState) -> Result<ScoreScreenModel> {
 }
 
 /// Every kind-1 static of the page has run its reveal to the end.
-fn reveals_settled(state: &AppState) -> bool {
+pub(super) fn reveals_settled(state: &AppState) -> bool {
     state.frontend.shell_page_title.is_terminal()
         && state.frontend.shell_status_line.is_terminal()
         && state

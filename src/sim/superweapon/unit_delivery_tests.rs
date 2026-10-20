@@ -802,7 +802,7 @@ fn superweapon_money_delivery_settles_once_at_enqueue_and_survives_save_and_prov
             .spawn_object("GAPOWR", "Americans", 8, 8, 0, &rules)
             .unwrap();
         if amount < 0 {
-            crate::sim::credit_income::spend_money(&mut sim, owner, 1);
+            crate::sim::credit_income::spend_money(&mut sim.houses, owner, 1);
             let before = sim.state_hash();
             assert!(!sim.fire_super_weapon(
                 &rules,
@@ -815,7 +815,7 @@ fn superweapon_money_delivery_settles_once_at_enqueue_and_survives_save_and_prov
             ));
             assert_eq!(sim.state_hash(), before);
             assert!(sim.unit_deliveries.pending.is_empty());
-            crate::sim::credit_income::add_credits(&mut sim, owner, 1);
+            crate::sim::credit_income::add_credits(&mut sim.houses, owner, 1);
         }
         assert!(sim.fire_super_weapon(
             &rules,
@@ -840,7 +840,7 @@ fn superweapon_money_delivery_settles_once_at_enqueue_and_survives_save_and_prov
         ));
         assert_eq!(sim.houses[&owner].economy().credits(), settled);
         sim.uninit_with_rules(provider, &rules);
-        crate::sim::credit_income::add_credits(&mut sim, owner, -1);
+        crate::sim::credit_income::add_credits(&mut sim.houses, owner, -1);
         let bytes = crate::sim::snapshot::GameSnapshot::save(
             &sim,
             0,

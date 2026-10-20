@@ -105,6 +105,10 @@ pub(crate) enum WolServiceRequest {
     Chat { line: WolChatLine, to: Vec<String> },
     /// `0x0077E300`: an action line, private to `to` when any.
     Emote { text: Vec<u16>, to: Vec<String> },
+    /// `0x0077E110`: API+0x7C with `[WOnline] LangFilter`.
+    SetLangFilter(i32),
+    /// `0x0077E110`: API+0x68 with AllowFind and AllowPage.
+    SetFindPage { find: i32, page: i32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -265,6 +269,7 @@ impl WolVisit {
                 }
                 // 0x00786390 resets the WOL globals (0x00780110), including
                 // [0xB77AD0] and the selected record.
+                self.api = true;
                 self.last_error = None;
                 self.selected_server = 0;
                 self.requests.push(WolServiceRequest::ListCredentials);
@@ -531,7 +536,10 @@ fn accept_login(state: &mut AppState) {
             .multiplayer_shell_runtime
             .persist_local_preferences();
     }
-    // wolinfoMD.ini is absent from retail: no auto-login query 0x112.
+    // The login flow returned 1: the mode-loop pass (0x0077B402) applies
+    // before the lobby runner. wolinfoMD.ini is absent from retail: no
+    // auto-login query 0x112.
+    super::apply_wol_preferences(state);
     super::open_lobby(state, false);
 }
 
@@ -656,10 +664,13 @@ mod tests {
     #[test]
     fn server_list_needs_both_events_in_either_order() {
         let mut visit = visit();
+        assert!(!visit.api);
         assert_eq!(
             visit.reduce(WolServiceEvent::Api(WolApiStatus::Available)),
             WolStep::Wait("TXT_FETCHING_SERVLIST")
         );
+        // [0xAC116C] stays set for the rest of the visit (0x0077E110's gate).
+        assert!(visit.api);
         assert_eq!(
             visit.take_service_requests(),
             [

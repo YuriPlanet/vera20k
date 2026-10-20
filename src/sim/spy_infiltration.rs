@@ -137,8 +137,8 @@ impl Simulation {
                 credit_income::available_money(self, owner),
                 rules.general.spy_money_steal_percent,
             );
-            credit_income::spend_money(self, owner, amount);
-            credit_income::add_credits(self, infiltrator, amount);
+            credit_income::spend_money(&mut self.houses, owner, amount);
+            credit_income::add_credits(&mut self.houses, infiltrator, amount);
             InfiltrationEffect::Cash
         } else if let Some(factory @ (FactoryType::UnitType | FactoryType::InfantryType)) =
             object.factory_type()

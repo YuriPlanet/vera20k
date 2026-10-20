@@ -175,7 +175,7 @@ pub(super) fn launch(
                 ry: cell.1,
             });
         }
-        sim.request_house_tech_tree_recheck(owner); //common6CDE2F tail
+        sim.houses.request_house_tech_tree_recheck(owner); //common6CDE2F tail
         return launched;
     }
     let Some(index) = rules.super_weapon_index(&sw.id) else {
@@ -196,11 +196,11 @@ pub(super) fn launch(
         .find(|&slot| rules.building_type_at(slot as i32).is_some_and(fires))
         .and_then(|slot| sim.interner.get(&ids[slot]))
     else {
-        sim.request_house_tech_tree_recheck(owner);
+        sim.houses.request_house_tech_tree_recheck(owner);
         return false;
     };
     let Some(silo) = find_building_of_type(sim, owner, silo_type) else {
-        sim.request_house_tech_tree_recheck(owner);
+        sim.houses.request_house_tech_tree_recheck(owner);
         return false;
     };
     crate::sim::world::queue_and_commence(sim, silo, MissionType::Missile, rules);
@@ -218,7 +218,7 @@ pub(super) fn launch(
         rx: cell.0,
         ry: cell.1,
     });
-    sim.request_house_tech_tree_recheck(owner); //Launch common tail6CDE2F
+    sim.houses.request_house_tech_tree_recheck(owner); //Launch common tail6CDE2F
     true
 }
 

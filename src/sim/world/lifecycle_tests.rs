@@ -3622,12 +3622,13 @@ fn occupier_capture_retains_live_non_selling_nav_target() {
     insert_entity(&mut sim, 1, EntityCategory::Infantry);
     insert_entity(&mut sim, 2, EntityCategory::Structure);
     let _ = sim.try_reveal_entity(2, request(9, 11, PlacementEvidence::MarkSucceeded));
-    sim.mission_assign_exact(
-        1,
-        MissionId::from_known(MissionType::Capture),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            1,
+            MissionId::from_known(MissionType::Capture),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
 
     let listener = sim.substrate.entities.get_mut(1).unwrap();
     listener.removal_facts.set_occupier_for_test(true);
@@ -3665,18 +3666,20 @@ fn selling_target_disables_occupier_capture_nav_retention() {
     insert_entity(&mut sim, 1, EntityCategory::Infantry);
     insert_entity(&mut sim, 2, EntityCategory::Structure);
     let _ = sim.try_reveal_entity(2, request(9, 11, PlacementEvidence::MarkSucceeded));
-    sim.mission_assign_exact(
-        1,
-        MissionId::from_known(MissionType::Capture),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
-    sim.mission_assign_exact(
-        2,
-        MissionId::from_known(MissionType::Selling),
-        sim.session.binary_frame(),
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            1,
+            MissionId::from_known(MissionType::Capture),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            2,
+            MissionId::from_known(MissionType::Selling),
+            sim.session.binary_frame(),
+        )
+        .unwrap();
 
     let listener = sim.substrate.entities.get_mut(1).unwrap();
     listener.removal_facts.set_occupier_for_test(true);
@@ -8267,6 +8270,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     );
     let canonical_path = crate::sim::pathfinding::PathGrid::from_resolved_terrain_with_bridges(
         sim.resolved_terrain.as_ref().unwrap(),
+        sim.overlay_grid.as_ref(),
     );
     for rx in 9..=12 {
         assert_eq!(

@@ -815,7 +815,8 @@ impl Simulation {
             target.mind_control.ring_anim = Some(anim_id);
         }
         if building {
-            self.set_anim_z_adjust(anim_id, BUILDING_RING_Z_ADJUST);
+            self.substrate
+                .set_anim_z_adjust(anim_id, BUILDING_RING_Z_ADJUST);
         }
     }
 
@@ -831,7 +832,7 @@ impl Simulation {
         };
         let hidden = entity.disguise.as_ref().is_some_and(|d| d.is_disguised())
             && !self.house_is_human_player(entity.owner());
-        self.set_anim_hidden(ring, hidden);
+        self.substrate.set_anim_hidden(ring, hidden);
     }
 
     /// `CaptureManagerClass::FreeUnit @ 0x00471FF0`: every node of `victim`,
