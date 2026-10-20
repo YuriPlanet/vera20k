@@ -83,9 +83,10 @@ retargeted. A directory missing required retail archives still cannot enter the
 normal game bootstrap. Selecting the MO triplet does not certify that every MO
 definition, asset or gameplay mechanism is supported.
 
-The separate Include/Inherits contribution expands authored directives at the
-selected source boundary. This change uses that same selector; it neither copies
-that traversal nor depends on its unmerged branch.
+Include/Inherits expansion from #2283 runs at the selected source boundary.
+This change uses that same selector without copying its traversal. The CLI
+keeps `ini-expand --source-only` separate from profile-aware queries: an explicit
+expansion target does not require a configured Rules/Art/AI triplet.
 
 The mono reference is my local working tree: configurable file lists in
 `Ra2.Shared/GameConfig.cs`, consumed together by the cached
