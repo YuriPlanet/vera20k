@@ -130,6 +130,13 @@ pub struct MagneticWaveGeometry {
     pub source_point: [i32; 2],
 }
 
+/// Derived type0 polygon and pixel-table origin in the same screen frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SonicWaveGeometry {
+    pub polygon: [[i32; 2]; 6],
+    pub source_point: [i32; 2],
+}
+
 impl WaveEdgeGeometry {
     const fn collapsed(source: ProjectileCoord, target: ProjectileCoord) -> Self {
         Self {
@@ -399,9 +406,9 @@ impl Wave {
         })
     }
 
-    /// Native 761640/762F60 six-point geometry. Sonic's existing outline
-    /// backend consumes this owner instead of repeating world-coordinate math.
-    pub fn sonic_draw_polygon(&self, camera: [i32; 2]) -> Option<[[i32; 2]; 6]> {
+    /// Native761640/762F60 six-point geometry. Pixel75EDF0 reads its retained
+    /// source origin as well; both use this one projection/camera frame.
+    pub fn sonic_draw_geometry(&self, camera: [i32; 2]) -> Option<SonicWaveGeometry> {
         if self.wave_type != 0 {
             return None;
         }
@@ -416,14 +423,17 @@ impl Wave {
         let target = draw_point(self.target, camera);
         let front = load_f64(self.fade_in);
         let back = load_f64(self.fade_out);
-        Some([
-            interpolate_axes(c, a, front),
-            interpolate_axes(source, target, front),
-            interpolate_axes(d, b, front),
-            interpolate_axes(d, b, back),
-            interpolate_axes(source, target, back),
-            interpolate_axes(c, a, back),
-        ])
+        Some(SonicWaveGeometry {
+            polygon: [
+                interpolate_axes(c, a, front),
+                interpolate_axes(source, target, front),
+                interpolate_axes(d, b, front),
+                interpolate_axes(d, b, back),
+                interpolate_axes(source, target, back),
+                interpolate_axes(c, a, back),
+            ],
+            source_point: source,
+        })
     }
 
     /// Constructor tail: lifecycle/geometry runs once, but DamageArea does not.

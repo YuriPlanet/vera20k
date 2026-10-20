@@ -119,9 +119,19 @@ fn last_departure_starts_recharge_without_erasing_target() {
     f.hit(f.boris, f.target);
     let aircraft = f.sim.airstrike_manager(f.boris).unwrap().aircraft.clone();
     f.sim.session.set_binary_frame_for_test(40);
-    f.sim.airstrike_remove_aircraft(f.boris, aircraft[0]);
+    crate::sim::world::Simulation::airstrike_remove_aircraft(
+        &f.sim.session,
+        &mut f.sim.substrate,
+        f.boris,
+        aircraft[0],
+    );
     assert!(f.sim.airstrike_manager(f.boris).unwrap().busy);
-    f.sim.airstrike_remove_aircraft(f.boris, aircraft[1]);
+    crate::sim::world::Simulation::airstrike_remove_aircraft(
+        &f.sim.session,
+        &mut f.sim.substrate,
+        f.boris,
+        aircraft[1],
+    );
     let m = f.sim.airstrike_manager(f.boris).unwrap();
     assert!(!m.busy && !m.active);
     assert_eq!(m.target, Some(f.target));
@@ -185,7 +195,12 @@ fn marker_restoration_uses_last_other_manager_even_after_its_sortie_finished() {
     f.hit(second, f.target);
     let first_planes = f.sim.airstrike_manager(f.boris).unwrap().aircraft.clone();
     for id in first_planes {
-        f.sim.airstrike_remove_aircraft(f.boris, id);
+        crate::sim::world::Simulation::airstrike_remove_aircraft(
+            &f.sim.session,
+            &mut f.sim.substrate,
+            f.boris,
+            id,
+        );
     }
     f.sim
         .airstrike_clear_target(second, Some(&f.rules), FrameEffects::default());
@@ -358,6 +373,7 @@ fn snapshot_preserves_cancelled_sortie_and_rejects_unresolved_manager_references
         );
     }
     f.sim
+        .substrate
         .airstrike_manager_mut(f.boris)
         .unwrap()
         .aircraft
@@ -424,7 +440,12 @@ fn elite_boris_selects_four_rookie_planes_and_the_shorter_recharge() {
     }
     f.sim.session.set_binary_frame_for_test(10);
     for id in aircraft {
-        f.sim.airstrike_remove_aircraft(f.boris, id);
+        crate::sim::world::Simulation::airstrike_remove_aircraft(
+            &f.sim.session,
+            &mut f.sim.substrate,
+            f.boris,
+            id,
+        );
     }
     f.sim.session.set_binary_frame_for_test(59);
     f.hit(f.boris, f.target);
@@ -442,7 +463,12 @@ fn a_different_target_is_admitted_before_same_target_recharge() {
     let planes = f.sim.airstrike_manager(f.boris).unwrap().aircraft.clone();
     f.sim.session.set_binary_frame_for_test(20);
     for id in planes {
-        f.sim.airstrike_remove_aircraft(f.boris, id);
+        crate::sim::world::Simulation::airstrike_remove_aircraft(
+            &f.sim.session,
+            &mut f.sim.substrate,
+            f.boris,
+            id,
+        );
     }
     let other = f
         .sim
@@ -495,7 +521,12 @@ fn designation_coordinates_follow_the_existing_sortie_target_through_departure_a
                 .airstrike_designation_coordinates(id, &f.rules)
                 .is_none()
         );
-        f.sim.airstrike_remove_aircraft(f.boris, id);
+        crate::sim::world::Simulation::airstrike_remove_aircraft(
+            &f.sim.session,
+            &mut f.sim.substrate,
+            f.boris,
+            id,
+        );
     }
     assert!(!f.sim.airstrike_manager(f.boris).unwrap().active);
     assert_eq!(

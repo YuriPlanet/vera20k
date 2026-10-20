@@ -544,7 +544,7 @@ pub(crate) fn toggle_factory_primary(sim: &mut Simulation, rules: &RuleSet, id: 
         }
         sim.production.set_primary_factory(owner, category, id);
         if sim.house_is_human_player(owner) {
-            sim.sound_events.push(SimSoundEvent::HouseEva {
+            sim.sound_events.emit(SimSoundEvent::HouseEva {
                 owner,
                 event: "EVA_PrimaryBuildingSelected",
             });

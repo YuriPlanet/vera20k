@@ -88,9 +88,10 @@ fn target(sim: &mut Simulation, actor: u64, target: u64) {
 
 fn start_mission(sim: &mut Simulation, actor: u64, mission: MissionType) {
     let now = sim.session.binary_frame();
-    sim.mission_assign_exact(actor, MissionId::from_known(mission), now)
+    sim.substrate
+        .mission_assign_exact(actor, MissionId::from_known(mission), now)
         .unwrap();
-    let _ = sim.mission_commence_exact(actor, now);
+    let _ = sim.substrate.mission_commence_exact(actor, now);
 }
 
 fn set_nav_com(sim: &mut Simulation, actor: u64, nav: NavTargetRef) {

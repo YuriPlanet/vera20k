@@ -159,6 +159,39 @@ impl RmgOptions {
             .collect();
         set_ini_values(b"", SECTION, &pairs)
     }
+
+    /// The random-map record's digest, `0x005E84D0`: the 0x140-byte option
+    /// block `0xABE010..0xABE14F` (the 16 integers in field order at
+    /// MapSeed `+0x38..+0x74`, `0x00597760`, then the 0x100-byte description
+    /// at `+0x78`, zeroed for the fold) folded as `crc = ROL1(crc) + dword`,
+    /// printed `%08X` (`0x00817828`).
+    pub fn native_digest(&self) -> String {
+        let fields = [
+            self.theater,
+            self.map_type,
+            self.resources,
+            self.ruggedness,
+            self.time,
+            self.water_amount,
+            self.num_players,
+            self.tiberium,
+            self.tiberium_layout,
+            self.vegetation,
+            self.urban_presence,
+            self.width,
+            self.height,
+            self.accessibility,
+            self.region_size,
+            self.seed,
+        ];
+        const DESCRIPTION_DWORDS: usize = 0x100 / 4;
+        let crc = fields
+            .into_iter()
+            .map(|field| field as u32)
+            .chain(std::iter::repeat_n(0, DESCRIPTION_DWORDS))
+            .fold(0u32, |crc, dword| crc.rotate_left(1).wrapping_add(dword));
+        format!("{crc:08X}")
+    }
 }
 
 #[cfg(test)]
@@ -168,6 +201,31 @@ mod tests {
     fn sed_description(raw: &str) -> SeedDescription {
         let ini = IniFile::from_str(&format!("[RandomMap]\nDescription={raw}\n"));
         read_description(ini.section_or_empty(SECTION), &SeedDescription::default())
+    }
+
+    #[test]
+    fn the_digest_hashes_the_options_and_not_the_description() {
+        let options = RmgOptions {
+            seed: 1234,
+            ..RmgOptions::default()
+        };
+        let digest = options.native_digest();
+        assert_eq!(digest.len(), 8);
+        assert!(
+            digest
+                .chars()
+                .all(|c| c.is_ascii_digit() || c.is_ascii_uppercase())
+        );
+        let described = RmgOptions {
+            description: sed_description("41,"),
+            ..options.clone()
+        };
+        assert_eq!(described.native_digest(), digest);
+        let reseeded = RmgOptions {
+            seed: 1235,
+            ..options.clone()
+        };
+        assert_ne!(reseeded.native_digest(), digest);
     }
 
     #[test]

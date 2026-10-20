@@ -10,21 +10,8 @@ use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::SIM_ZERO;
 
 impl Simulation {
-    /// `FootClass::Limbo` (`0x004DB260`) on its first Limbo removes a tracked
-    /// Foot (+0x560 not the empty cell) at `0x004DB37C..0x004DB3AA`, before
-    /// `TechnoClass::Limbo`. Mark(REMOVE) itself never touches the tracker.
-    pub(super) fn release_foot_air_tracker_before_limbo(&mut self, id: u64) {
-        if self.substrate.entities.get(id).is_some_and(|entity| {
-            entity.category() != EntityCategory::Structure
-                && !entity.lifecycle.in_limbo()
-                && entity.air_tracker_cell() != (0, 0)
-        }) {
-            self.aircraft_tracker_remove(id);
-        }
-    }
-
     pub(crate) fn finish_fly_takeoff_entry(&mut self, id: u64, rules: Option<&RuleSet>) {
-        self.aircraft_tracker_add(id);
+        Self::aircraft_tracker_add(&self.session, &mut self.substrate, id);
         let Some(e) = self.substrate.entities.get_mut(id) else {
             return;
         };
@@ -47,7 +34,7 @@ impl Simulation {
             };
             let sound_id = self.interner.intern(sound);
             self.sound_events
-                .push(super::SimSoundEvent::AircraftPhase { sound_id, world });
+                .emit(super::SimSoundEvent::AircraftPhase { sound_id, world });
         }
     }
 
@@ -193,7 +180,7 @@ impl Simulation {
             {
                 let sound_id = self.interner.intern(&sound);
                 self.sound_events
-                    .push(super::SimSoundEvent::AircraftPhase { sound_id, world });
+                    .emit(super::SimSoundEvent::AircraftPhase { sound_id, world });
             }
         }
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -227,7 +214,7 @@ impl Simulation {
             }
         }
         self.set_object_height(id, base, rules, registry, frame_effects);
-        self.aircraft_tracker_remove(id);
+        self.substrate.aircraft_tracker_remove(id);
         let entity = self.substrate.entities.get_mut(id).unwrap();
         let fly = entity
             .locomotor
@@ -519,6 +506,21 @@ impl Simulation {
     }
 }
 
+impl crate::sim::world::ObjectSubstrate {
+    /// `FootClass::Limbo` (`0x004DB260`) on its first Limbo removes a tracked
+    /// Foot (+0x560 not the empty cell) at `0x004DB37C..0x004DB3AA`, before
+    /// `TechnoClass::Limbo`. Mark(REMOVE) itself never touches the tracker.
+    pub(super) fn release_foot_air_tracker_before_limbo(&mut self, id: u64) {
+        if self.entities.get(id).is_some_and(|entity| {
+            entity.category() != EntityCategory::Structure
+                && !entity.lifecycle.in_limbo()
+                && entity.air_tracker_cell() != (0, 0)
+        }) {
+            self.aircraft_tracker_remove(id);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -605,7 +607,7 @@ mod tests {
             .path_runtime_mut()
             .set_blocked_timer_for_test(crate::sim::timer::CdTimer::from_raw(0, 0));
         if input["air_registered"].as_bool().unwrap_or(true) {
-            sim.aircraft_tracker_add(id);
+            Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, id);
         }
         sim.add_entity_occupancy(id);
         sim.submit_entity_display(id, Some(&rules), None);

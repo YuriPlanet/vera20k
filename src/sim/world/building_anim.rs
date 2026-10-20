@@ -8,12 +8,10 @@ use crate::rules::ruleset::RuleSet;
 /// run. PLACE radio C owns the yard's Production8 animation at43CC4C;
 /// replaying it here would allocate another animation, IDs and RNG at the
 /// frame tail.
-pub(crate) fn finalize(_sim: &mut Simulation) {
-    #[cfg(any(test, feature = "test-support"))]
-    {
-        _sim.bale_events.clear();
-        _sim.bunker_wall_events.clear();
-    }
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn finalize(sim: &mut Simulation) {
+    sim.bale_events.clear();
+    sim.bunker_wall_events.clear();
 }
 
 fn at_or_below_condition_yellow(current: i32, strength: i32, yellow: f64) -> bool {
@@ -98,7 +96,8 @@ pub(crate) fn emit_refinery_smoke(sim: &mut Simulation, rules: &RuleSet, buildin
                 rules,
             ) {
                 // Original4599CD calls6301F0 after each constructor.
-                sim.particle_systems_mut()
+                sim.substrate
+                    .particle_systems
                     .get_mut(system)
                     .unwrap()
                     .override_lifetime(lifetime);
@@ -274,7 +273,7 @@ mod tests {
         entity.set_type_ref_for_test(sim.interner.intern(name));
         entity.set_owner_for_test(sim.interner.intern("Americans"));
         entity.health.set_for_test(100);
-        sim.entities_mut().insert(entity);
+        sim.substrate.entities.insert(entity);
     }
     fn refinery_sim_with_bale() -> Simulation {
         let mut sim = Simulation::new();
@@ -427,7 +426,8 @@ mod tests {
             }
             rules.install_art_data(art);
             let mut sim = refinery_sim_with_bale();
-            sim.entities_mut()
+            sim.substrate
+                .entities
                 .get_mut(41)
                 .unwrap()
                 .health
@@ -459,7 +459,8 @@ mod tests {
     fn missing_damaged_name_smokes_without_constructing_or_changing_flag() {
         let rules = refinery_rules_and_art();
         let mut sim = refinery_sim_with_bale();
-        sim.entities_mut()
+        sim.substrate
+            .entities
             .get_mut(41)
             .unwrap()
             .health

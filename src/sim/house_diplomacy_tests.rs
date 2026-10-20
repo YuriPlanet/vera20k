@@ -251,9 +251,9 @@ fn ally_writes_reach_the_remembered_reveal_viewers() {
     let (alone, with_ally) = (vec![ids[1]], vec![ids[1], ids[2]]);
     sim.reveal_viewers.begin();
     assert_eq!(viewers(&mut sim), (alone.clone(), alone.clone()));
-    sim.make_ally(ids[1], ids[2], &rules, None, FrameEffects::default());
+    sim.make_ally(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
     assert_eq!(viewers(&mut sim), (with_ally.clone(), with_ally));
-    sim.make_enemy(ids[1], ids[2], &rules);
+    sim.make_enemy(ids[1], ids[2], &rules, false);
     assert_eq!(viewers(&mut sim), (alone.clone(), alone));
     sim.reveal_viewers.end();
 }
@@ -281,14 +281,14 @@ fn make_enemy_angers_before_it_breaks_both_sides() {
         &rules,
     );
     let (first, second) = (ids[1], ids[2]);
-    sim.make_enemy(first, second, &rules);
+    sim.make_enemy(first, second, &rules, false);
     assert_eq!(allies(&sim, "Computer1"), set(&[]));
     assert_eq!(allies(&sim, "Computer2"), set(&[]));
     assert_eq!(sim.houses[&first].grudge_scores().get(&second), Some(&1));
     assert_eq!(sim.houses[&first].enemy_house(), None);
     assert!(sim.houses[&second].grudge_scores().is_empty());
 
-    sim.make_enemy(first, second, &rules);
+    sim.make_enemy(first, second, &rules, false);
     assert_eq!(sim.houses[&first].grudge_scores().get(&second), Some(&2));
     assert_eq!(sim.houses[&first].enemy_house(), Some(second));
 }
@@ -335,7 +335,109 @@ fn initial_scope_allies_keep_targets_and_can_ally_without_a_remaining_enemy() {
             .target(),
         Some(TargetKind::Entity(second))
     );
-    sim.with_object_placement_scope(|sim| sim.make_enemy(ids[0], ids[1], &rules));
+    sim.with_object_placement_scope(|sim| sim.make_enemy(ids[0], ids[1], &rules, false));
     assert!(allies(&sim, "Computer1").is_empty());
     assert!(allies(&sim, "Computer2").is_empty());
+}
+
+/// The ALLY event (`EventClass::Execute 0x004C6DEE`) toggles on the sender's
+/// mask with the announcement: MakeAlly sets one side, the reply makes it
+/// mutual, and a second toggle breaks both. Every step is a human line; the
+/// voice follows the local House (`0x004F9E01..0x004F9F35`,
+/// `0x004FA186..0x004FA1D5`).
+#[test]
+fn the_ally_event_toggles_and_announces_for_the_local_house() {
+    use crate::sim::world::{AllianceEva, SimSoundEvent};
+    let rules = rules();
+    let (mut sim, ids) = sim_with(
+        &rules,
+        &[
+            ("A", "Americans", true),
+            ("B", "Russians", true),
+            ("C", "Russians", true),
+        ],
+    );
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+    let announced = |sim: &mut Simulation, local: usize, sender: &str, index: i32| {
+        sim.session.set_current_house_for_test(Some(ids[local]));
+        sim.sound_events.clear_for_test();
+        assert!(sim.apply_command(
+            sender,
+            &crate::sim::command::Command::Ally { house_index: index },
+            Some(&rules),
+        ));
+        sim.sound_events
+            .iter()
+            .filter_map(|event| match event {
+                SimSoundEvent::AllianceChanged {
+                    owner,
+                    other,
+                    formed,
+                    line,
+                    eva,
+                } => Some((*owner, *other, *formed, *line, *eva)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let (a, b) = (ids[0], ids[1]);
+    assert_eq!(
+        announced(&mut sim, 0, "A", 1),
+        [(a, b, true, true, Some(AllianceEva::Requesting))]
+    );
+    assert_eq!(allies(&sim, "A"), set(&["B"]));
+    assert_eq!(allies(&sim, "B"), set(&[]));
+    // C, a third party, hears the mutual alliance as an enemy one.
+    assert_eq!(
+        announced(&mut sim, 2, "B", 0),
+        [(b, a, true, true, Some(AllianceEva::EnemyFormed))]
+    );
+    assert_eq!(allies(&sim, "B"), set(&["A"]));
+    assert_eq!(
+        announced(&mut sim, 1, "A", 1),
+        [(a, b, false, true, Some(AllianceEva::Broken))],
+        "breaking clears both sides"
+    );
+    assert_eq!(allies(&sim, "A"), set(&[]));
+    assert_eq!(allies(&sim, "B"), set(&[]));
+    // Asked by B, A hears the request; a mutual reply is Formed for A.
+    assert_eq!(
+        announced(&mut sim, 0, "B", 0),
+        [(b, a, true, true, Some(AllianceEva::Requested))]
+    );
+    assert_eq!(
+        announced(&mut sim, 0, "A", 1),
+        [(a, b, true, true, Some(AllianceEva::Formed))]
+    );
+}
+
+/// Without the announcement (Paranoid, triggers) a human sender still gets
+/// the line and no voice; a computer sender gets neither.
+#[test]
+fn only_a_human_sender_prints_the_alliance_line() {
+    use crate::sim::world::SimSoundEvent;
+    let rules = rules();
+    let (mut sim, ids) = sim_with(
+        &rules,
+        &[
+            ("Player", "Americans", true),
+            ("Computer1", "Russians", false),
+            ("Computer2", "Russians", false),
+        ],
+    );
+    sim.session.set_current_house_for_test(Some(ids[0]));
+    sim.make_ally(ids[0], ids[1], &rules, None, FrameEffects::default(), false);
+    sim.make_ally(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
+    let lines: Vec<_> = sim
+        .sound_events
+        .iter()
+        .filter_map(|event| match event {
+            SimSoundEvent::AllianceChanged {
+                owner, line, eva, ..
+            } => Some((*owner, *line, *eva)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(lines, [(ids[0], true, None)]);
 }

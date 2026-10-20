@@ -102,7 +102,7 @@ pub(crate) fn create(
     };
     world
         .lifecycle_outputs
-        .push(crate::sim::world::LifecycleOutput::RadiationBeamCreated(
+        .emit(crate::sim::world::LifecycleOutput::RadiationBeamCreated(
             RadiationBeamBirth {
                 frame: world.session.binary_frame() as i32,
                 from,

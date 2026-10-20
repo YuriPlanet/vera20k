@@ -52,7 +52,7 @@ use crate::sim::components::{DriveCoord, Position};
 use crate::sim::intern::InternedId;
 use crate::sim::rng::SimRng;
 use crate::sim::world::FrameEffects;
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::{FrameChannel, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::NativeF64Bits;
 
@@ -194,7 +194,7 @@ fn crate_land_type(sim: &Simulation, cell: (i16, i16)) -> u8 {
 /// the house and the app applies that test. Reveal (`0x0048202D..0x0048203C`)
 /// plays it for everyone.
 fn play_crate_sound(
-    sim: &mut Simulation,
+    sound_events: &mut FrameChannel<SimSoundEvent>,
     sound: Option<&str>,
     heard_by: Option<InternedId>,
     cell: (i16, i16),
@@ -214,7 +214,7 @@ fn play_crate_sound(
         SimFixed::from_num(128),
         SimFixed::from_num(128),
     );
-    sim.sound_events.push(SimSoundEvent::voc_at_for(
+    sound_events.emit(SimSoundEvent::voc_at_for(
         sound.to_owned(),
         heard_by.map(|owner| [owner, owner]),
         &position,
@@ -225,10 +225,13 @@ fn play_crate_sound(
 /// object's owner is the local player; emitted per changed house for the
 /// app's local test. Retail `evamd.ini` defines none of the three names, so
 /// they resolve to silence there as natively.
-fn announce_upgrade(sim: &mut Simulation, owners: &[InternedId], event: &'static str) {
+fn announce_upgrade(
+    sound_events: &mut FrameChannel<SimSoundEvent>,
+    owners: &[InternedId],
+    event: &'static str,
+) {
     for &owner in owners {
-        sim.sound_events
-            .push(SimSoundEvent::HouseEva { owner, event });
+        sound_events.emit(SimSoundEvent::HouseEva { owner, event });
     }
 }
 
@@ -386,7 +389,7 @@ pub(crate) fn pickup_crate(
         {
             return false;
         }
-        sim.mark_crate_pickup_event();
+        sim.trigger_runtime.mark_crate_pickup_event();
     }
     //481AC8/481B3D..481B90 reread Cell data/images;4824A7..4824CE
     //reread the actor's House. A synchronous Tag can change all three.
@@ -469,7 +472,7 @@ pub(crate) fn pickup_crate(
             ) {
                 UnitCrateOutcome::Placed => {
                     play_crate_sound(
-                        sim,
+                        &mut sim.sound_events,
                         general.crate_unit_sound.as_deref(),
                         Some(owner),
                         cell,
@@ -491,17 +494,21 @@ pub(crate) fn pickup_crate(
         }
         match arm {
             POWERUP_MONEY => {
-                let amount = effects::money_crate_amount(sim, selection.solo_money, magnitude);
+                let amount = effects::money_crate_amount(
+                    &mut sim.scenario_rng,
+                    selection.solo_money,
+                    magnitude,
+                );
                 // `0x004824B0..0x004824D4`: in game mode 0 a player-controlled
                 // actor pays `PlayerPtr`; the sim cannot see that house and
                 // pays the actor's owner. Identical whenever the controlled
                 // house is the player's own, the campaign norm.
-                crate::sim::credit_income::add_credits(sim, owner, amount);
+                crate::sim::credit_income::add_credits(&mut sim.houses, owner, amount);
                 // 4824EF..482529 samples retained ESI after amount/credits;
                 // the independent 483307..483334 animation query follows sound.
                 let center = crate_center(sim, cell, receiver);
                 play_crate_sound(
-                    sim,
+                    &mut sim.sound_events,
                     general.crate_money_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -510,7 +517,7 @@ pub(crate) fn pickup_crate(
             }
             POWERUP_HEAL_BASE => {
                 play_crate_sound(
-                    sim,
+                    &mut sim.sound_events,
                     rules.crate_rules.heal_crate_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -525,7 +532,7 @@ pub(crate) fn pickup_crate(
                 // `MapClass::Reveal @ 0x00577D90` for the actor's house.
                 sim.reveal_map_for_owner(owner, rules);
                 play_crate_sound(
-                    sim,
+                    &mut sim.sound_events,
                     general.crate_reveal_sound.as_deref(),
                     None,
                     cell,
@@ -534,15 +541,15 @@ pub(crate) fn pickup_crate(
             }
             POWERUP_ARMOR => {
                 let owners = effects::apply_multiplier_crate(
-                    sim,
+                    &mut sim.substrate,
                     center,
                     radius,
                     magnitude,
                     Multiplier::Armor,
                 );
-                announce_upgrade(sim, &owners, "EVA_UnitArmorUpgraded");
+                announce_upgrade(&mut sim.sound_events, &owners, "EVA_UnitArmorUpgraded");
                 play_crate_sound(
-                    sim,
+                    &mut sim.sound_events,
                     general.crate_armour_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -559,10 +566,10 @@ pub(crate) fn pickup_crate(
                         .filter(|(_, house)| house.player_control())
                         .map(|(&id, _)| id)
                         .collect();
-                    announce_upgrade(sim, &owners, "EVA_UnitSpeedUpgraded");
+                    announce_upgrade(&mut sim.sound_events, &owners, "EVA_UnitSpeedUpgraded");
                 }
                 play_crate_sound(
-                    sim,
+                    &mut sim.sound_events,
                     general.crate_speed_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -571,15 +578,15 @@ pub(crate) fn pickup_crate(
             }
             POWERUP_FIREPOWER => {
                 let owners = effects::apply_multiplier_crate(
-                    sim,
+                    &mut sim.substrate,
                     center,
                     radius,
                     magnitude,
                     Multiplier::Firepower,
                 );
-                announce_upgrade(sim, &owners, "EVA_UnitFirePowerUpgraded");
+                announce_upgrade(&mut sim.sound_events, &owners, "EVA_UnitFirePowerUpgraded");
                 play_crate_sound(
-                    sim,
+                    &mut sim.sound_events,
                     general.crate_fire_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -589,7 +596,7 @@ pub(crate) fn pickup_crate(
             POWERUP_VETERAN => {
                 effects::apply_veteran_crate(sim, rules, center, radius, magnitude);
                 play_crate_sound(
-                    sim,
+                    &mut sim.sound_events,
                     general.crate_promote_sound.as_deref(),
                     Some(owner),
                     cell,

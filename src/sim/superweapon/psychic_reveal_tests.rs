@@ -65,6 +65,7 @@ fn the_launch_matches_native() {
         let sw_type = charge_super(&mut sim, owner, REVEAL);
         let charged = row["charged"] == true;
         sim.super_weapons
+            .map_mut_for_test()
             .get_mut(&owner)
             .unwrap()
             .get_mut(&sw_type)

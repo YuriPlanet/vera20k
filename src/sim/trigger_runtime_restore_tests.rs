@@ -129,7 +129,10 @@ fn live126_recreates_all_four_initial_categories_after_real_cleanup_in_record_or
             .iter()
             .map(|&(kind, at)| spawn(&mut sim, &rules, houses[0], kind, at))
             .collect();
-        sim.retain_initial_house_technos();
+        crate::sim::world::Simulation::retain_initial_house_technos(
+            &sim.substrate,
+            &mut sim.houses,
+        );
         assert_eq!(sim.houses[&houses[0]].initial_techno_record_count(), 4);
         for &id in &ids {
             sim.uninit_with_context(id, UninitContext::new(Some(&rules), Some(&registry)));
@@ -255,7 +258,7 @@ fn restore126_always_constructs_a_new_unit_even_when_the_original_is_present() {
         .unwrap()
         .health
         .set_for_test(7);
-    sim.retain_initial_house_technos();
+    crate::sim::world::Simulation::retain_initial_house_technos(&sim.substrate, &mut sim.houses);
     install(&mut sim, &rules, 0);
     sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
@@ -294,7 +297,7 @@ fn restore130_still_repairs_only_existing_buildings() {
         .unwrap()
         .health
         .set_for_test(7);
-    sim.retain_initial_house_technos();
+    crate::sim::world::Simulation::retain_initial_house_technos(&sim.substrate, &mut sim.houses);
     let live = install(&mut sim, &rules, 0);
     assert!(apply(
         &mut sim,

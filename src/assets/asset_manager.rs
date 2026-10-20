@@ -817,6 +817,33 @@ impl AssetManager {
         &self.ra2_dir
     }
 
+    /// `RawFile` on a relative path under the install directory, such as
+    /// `taunts\tauam01.wav`: Windows opens it whatever the case of each
+    /// component, so each one is matched exactly first, then without regard
+    /// to ASCII case. Read from disk at each call; not part of the startup
+    /// loose catalog, which holds top-level files only.
+    pub fn read_install_file(&self, relative: &str) -> Option<Vec<u8>> {
+        let mut path = self.ra2_dir.clone();
+        for component in relative.split(['\\', '/']).filter(|part| !part.is_empty()) {
+            let exact = path.join(component);
+            path = if exact.exists() {
+                exact
+            } else {
+                std::fs::read_dir(&path)
+                    .ok()?
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.path())
+                    .find(|candidate| {
+                        candidate
+                            .file_name()
+                            .and_then(OsStr::to_str)
+                            .is_some_and(|name| name.eq_ignore_ascii_case(component))
+                    })?
+            };
+        }
+        std::fs::read(&path).ok()
+    }
+
     fn lookup_asset_entry(&self, name: &str) -> Option<(&NamedArchive, i32)> {
         let location = self.lookup_location_for_name(name)?;
         let archive = self.archives.get(location.archive_index)?;
@@ -1474,6 +1501,28 @@ mod tests {
             manager.load_audio_index(),
             Err(AssetError::ParseError { .. })
         ));
+    }
+
+    #[test]
+    fn install_files_resolve_each_component_without_regard_to_case() {
+        let dir = TestDirectory::new("install-subdirectory");
+        std::fs::create_dir(dir.path().join("Taunts")).expect("subdirectory");
+        std::fs::write(dir.path().join("Taunts").join("TAUAM01.WAV"), b"am").expect("file");
+        std::fs::write(dir.path().join("Taunts").join("tauyu01.wav"), b"yu").expect("file");
+        let manager = empty_manager(dir.path());
+        assert_eq!(
+            manager.read_install_file("taunts\\tauam01.wav").as_deref(),
+            Some(&b"am"[..])
+        );
+        assert_eq!(
+            manager.read_install_file("TAUNTS/TAUYU01.WAV").as_deref(),
+            Some(&b"yu"[..])
+        );
+        assert_eq!(manager.read_install_file("taunts\\tauam02.wav"), None);
+        assert!(
+            !manager.contains("taunts\\tauam01.wav"),
+            "the startup loose catalog stays top-level"
+        );
     }
 
     #[test]

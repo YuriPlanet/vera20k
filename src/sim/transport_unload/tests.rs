@@ -908,11 +908,21 @@ fn nighthawk_unloads_only_when_landed() {
     let mut fx = Fixture::new(|_, _| false);
     let shad = fx.spawn("SHAD", 20, 20, 0);
     let pax = fx.board(shad, 2);
-    fx.sim.set_object_height_unmarked(shad, 600);
+    Simulation::set_object_height_unmarked(
+        &mut fx.sim.substrate,
+        &fx.sim.resolved_terrain,
+        shad,
+        600,
+    );
     assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
     assert_eq!(fx.mission(shad), MissionId::from_known(MissionType::Unload));
     for _ in 0..30 {
-        fx.sim.set_object_height_unmarked(shad, 600);
+        Simulation::set_object_height_unmarked(
+            &mut fx.sim.substrate,
+            &fx.sim.resolved_terrain,
+            shad,
+            600,
+        );
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
         fx.sim
             .session
@@ -920,7 +930,12 @@ fn nighthawk_unloads_only_when_landed() {
     }
     assert_eq!(fx.cargo_ids(shad).len(), 2, "airborne: nothing leaves");
 
-    fx.sim.set_object_height_unmarked(shad, 0);
+    Simulation::set_object_height_unmarked(
+        &mut fx.sim.substrate,
+        &fx.sim.resolved_terrain,
+        shad,
+        0,
+    );
     let pitch = |fx: &mut Fixture, angle: SimFixed| {
         fx.sim
             .substrate
@@ -978,7 +993,12 @@ fn nighthawk_ejects_five_passengers_to_scanned_neighbours() {
     let mut fx = Fixture::new(|_, _| false);
     let shad = fx.spawn("SHAD", 20, 20, 0);
     let pax = fx.board(shad, 5);
-    fx.sim.set_object_height_unmarked(shad, 0);
+    Simulation::set_object_height_unmarked(
+        &mut fx.sim.substrate,
+        &fx.sim.resolved_terrain,
+        shad,
+        0,
+    );
     assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
 
     // (id, reveal frame, mission, destination) captured the tick each surfaces.
@@ -1406,7 +1426,12 @@ fn vehicle_passenger_off_the_playfield_exit_lands_on_raised_in_playfield_ground(
 }
 
 fn set_altitude(fx: &mut Fixture, id: u64, altitude: i32) {
-    fx.sim.set_object_height_unmarked(id, altitude);
+    Simulation::set_object_height_unmarked(
+        &mut fx.sim.substrate,
+        &fx.sim.resolved_terrain,
+        id,
+        altitude,
+    );
 }
 
 fn handler_state(fx: &Fixture, id: u64) -> u32 {
@@ -1964,6 +1989,7 @@ fn turning_unload_uses_the_turret_latch_and_native_cadence() {
         fx.board(carrier, 2);
         fx.sim.session.set_binary_frame_for_test(100);
         fx.sim
+            .substrate
             .mission_assign_exact(carrier, MissionId::from_known(MissionType::Unload), 100)
             .unwrap();
         let entity = fx.sim.substrate.entities.get_mut(carrier).unwrap();
@@ -2085,7 +2111,7 @@ fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
     fx.sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     // Foot Load also clears the move-sound countdown, including idle Feet.
     for id in fx.sim.substrate.entities.keys_sorted() {
-        fx.sim.restore_move_sound_state_after_load(id);
+        fx.sim.substrate.restore_move_sound_state_after_load(id);
     }
     assert_eq!(
         restored.state_hash(),

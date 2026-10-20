@@ -3,6 +3,9 @@
 //! deliberately asymmetric native writes. The live byte plane stays on OverlayGrid.
 
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::sim::overlay_grid::OverlayGrid;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 use std::collections::VecDeque;
 
@@ -69,9 +72,14 @@ impl Simulation {
             .then_some((entity.position.rx() as i16, entity.position.ry() as i16))
     }
 
-    fn adjust_foot_neighbors(&mut self, cell: (i16, i16), add: bool) {
-        if let Some(grid) = self.overlay_grid.as_mut() {
-            grid.adjust_foot_neighbor_source(self.resolved_terrain.as_ref(), cell, add);
+    fn adjust_foot_neighbors(
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        overlay_grid: &mut Option<OverlayGrid>,
+        cell: (i16, i16),
+        add: bool,
+    ) {
+        if let Some(grid) = overlay_grid.as_mut() {
+            grid.adjust_foot_neighbor_source(resolved_terrain.as_ref(), cell, add);
         }
     }
 
@@ -100,7 +108,7 @@ impl Simulation {
         let Some(cell) = self.foot_neighbor_position(id) else {
             return false;
         };
-        self.adjust_foot_neighbors(cell, true);
+        Self::adjust_foot_neighbors(&self.resolved_terrain, &mut self.overlay_grid, cell, true);
         let high_flight = self.foot_neighbor_high_flight(id, rules);
         if !high_flight {
             self.substrate
@@ -131,7 +139,7 @@ impl Simulation {
         if old == (0, 0) {
             return;
         }
-        self.adjust_foot_neighbors(old, false);
+        Self::adjust_foot_neighbors(&self.resolved_terrain, &mut self.overlay_grid, old, false);
         let cell = self.foot_neighbor_position(id).unwrap();
         self.substrate
             .entities
@@ -140,7 +148,7 @@ impl Simulation {
             .navigation
             .neighbor_state_mut()
             .cell = cell;
-        self.adjust_foot_neighbors(cell, true);
+        Self::adjust_foot_neighbors(&self.resolved_terrain, &mut self.overlay_grid, cell, true);
     }
 
     /// Foot Limbo4DB298..4DB2E9 decrements even a zero source; the saved cell
@@ -151,7 +159,12 @@ impl Simulation {
         }
         let entity = self.substrate.entities.get(id).unwrap();
         if !entity.lifecycle.in_limbo() {
-            self.adjust_foot_neighbors(entity.navigation.neighbor_state().cell, false);
+            Self::adjust_foot_neighbors(
+                &self.resolved_terrain,
+                &mut self.overlay_grid,
+                entity.navigation.neighbor_state().cell,
+                false,
+            );
         }
     }
 
@@ -176,11 +189,16 @@ impl Simulation {
 
     /// Aircraft DropPayload415E26..415E6E samples the selected Cell's center,
     /// then truncates /256; it does not change Cell+122 in this suffix.
-    pub(crate) fn foot_neighbors_after_payload_drop(&mut self, id: u64, cell: (i16, i16)) {
-        let cell = self.resolved_terrain.as_ref().map_or(cell, |terrain| {
+    pub(crate) fn foot_neighbors_after_payload_drop(
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        cell: (i16, i16),
+    ) {
+        let cell = resolved_terrain.as_ref().map_or(cell, |terrain| {
             terrain.native_cell_coord(terrain.native_cell_identity(cell))
         });
-        if let Some(entity) = self.substrate.entities.get_mut(id) {
+        if let Some(entity) = substrate.entities.get_mut(id) {
             let centre_cell = |n: i16| ((i32::from(n) * 256 + 128) / 256) as i16;
             entity.navigation.neighbor_state_mut().cell =
                 (centre_cell(cell.0), centre_cell(cell.1));
@@ -202,7 +220,7 @@ impl Simulation {
             .neighbor_state()
             .cell;
         if old != (0, 0) {
-            self.adjust_foot_neighbors(old, false);
+            Self::adjust_foot_neighbors(&self.resolved_terrain, &mut self.overlay_grid, old, false);
         }
         self.substrate
             .entities
@@ -211,7 +229,7 @@ impl Simulation {
             .navigation
             .neighbor_state_mut()
             .cell = cell;
-        self.adjust_foot_neighbors(cell, true);
+        Self::adjust_foot_neighbors(&self.resolved_terrain, &mut self.overlay_grid, cell, true);
     }
 }
 

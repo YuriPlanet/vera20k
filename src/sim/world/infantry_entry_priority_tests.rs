@@ -96,7 +96,8 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
         mover.set_in_playfield(true);
         mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
         sim.substrate.entities.insert(mover);
-        sim.mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 0)
+        sim.substrate
+            .mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 0)
             .unwrap();
         if input["occupant"] != "none" {
             let kind = input["occupant_kind"].as_str().unwrap();

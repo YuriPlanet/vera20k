@@ -179,7 +179,8 @@ fn area_guard_default_voice_matches_native_pre_gate_post_gate_and_main_continuat
                 assert_eq!(type_name, "MTNK");
                 EntityCategory::Unit
             };
-            sim.entities_mut()
+            sim.substrate
+                .entities
                 .insert(GameEntity::new_at_frame_zero_for_test(
                     id,
                     0,

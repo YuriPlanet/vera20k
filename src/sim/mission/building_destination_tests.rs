@@ -105,12 +105,13 @@ fn fixture(input: &Value, shape: u8) -> Simulation {
         .set_pending_destination_setter_for_test(true);
     actor.navigation.path_runtime_mut().start_movement(40, 30);
     sim.substrate.entities.insert(actor);
-    sim.mission_assign_exact(
-        1,
-        MissionId::from_raw(input["mission"].as_i64().unwrap_or(5) as i32),
-        70,
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            1,
+            MissionId::from_raw(input["mission"].as_i64().unwrap_or(5) as i32),
+            70,
+        )
+        .unwrap();
     sim
 }
 

@@ -356,7 +356,15 @@ fn power_off_matches_original_execution() {
         sim.substrate.entities.insert(entity);
         let seed = row["seed"].as_u64().unwrap();
         sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
-        assert!(sim.hover_power_off(1), "{name}");
+        assert!(
+            crate::sim::world::Simulation::hover_power_off(
+                &mut sim.scenario_rng,
+                &mut sim.substrate,
+                &sim.resolved_terrain,
+                1
+            ),
+            "{name}"
+        );
 
         let mut expected = row["expected"].clone();
         let draws = expected.as_object_mut().unwrap().remove("draws").unwrap();

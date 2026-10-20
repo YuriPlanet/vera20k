@@ -30,6 +30,8 @@ use crate::sim::combat::fire_error_world::FireSubject;
 use crate::sim::combat::{ScanMission, TargetKind, combat_weapon};
 use crate::sim::mission::MissionType;
 use crate::sim::mission::timer::MissionTimer;
+use crate::sim::rng::SimRng;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 /// Committed mission id of Area Guard (`+0xAC == 0xB`, `0x0070983A`).
@@ -792,9 +794,13 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
                     .sim
                     .threat_scan(rules, registry, self.id, mask, self.scan_coord),
             };
-        self.sim
-            .commit_threat_scan(self.id, outcome)
-            .map(TargetKind::Entity)
+        Simulation::commit_threat_scan(
+            &mut self.sim.scenario_rng,
+            &mut self.sim.substrate,
+            self.id,
+            outcome,
+        )
+        .map(TargetKind::Entity)
     }
 
     fn distributed_fire(&mut self) -> bool {
@@ -867,7 +873,7 @@ impl Simulation {
         scan_coord: Option<[i32; 3]>,
     ) -> Option<u64> {
         let result = self.threat_scan(rules, overlay_registry, id, mask, scan_coord);
-        self.commit_threat_scan(id, result)
+        Self::commit_threat_scan(&mut self.scenario_rng, &mut self.substrate, id, result)
     }
 
     /// `id`'s Greatest_Threat
@@ -905,22 +911,23 @@ impl Simulation {
     /// A scan's writes to its scanner, in the order the adapter commits them,
     /// and its pick.
     fn commit_threat_scan(
-        &mut self,
+        scenario_rng: &mut SimRng,
+        substrate: &mut ObjectSubstrate,
         id: u64,
         mut result: crate::sim::combat::greatest_threat::ThreatScanOutcome,
     ) -> Option<u64> {
         // The computer's disguise detection draws during the scan
         // (Evaluate_Candidate 0x006F851C).
         if let Some(rng) = result.take_scenario_rng() {
-            self.scenario_rng = rng;
+            *scenario_rng = rng;
         }
         if let Some(collected) = result.take_collected()
-            && let Some(entity) = self.substrate.entities.get_mut(id)
+            && let Some(entity) = substrate.entities.get_mut(id)
         {
             entity.replace_distributed_fire_candidates(collected);
         }
         if result.foot_wrapper_entered()
-            && let Some(entity) = self.substrate.entities.get_mut(id)
+            && let Some(entity) = substrate.entities.get_mut(id)
         {
             entity
                 .foot_retarget_after_stop

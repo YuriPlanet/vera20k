@@ -302,6 +302,9 @@ pub struct DiplomacyView {
     pub chat_header: bool,
     /// 0x426 MPGameMode title, set only in LAN/WOL; otherwise `GUI:Blank`.
     pub mode_name: Option<String>,
+    /// 0x730 TauntsOn: shown, never disabled, with the mode's check in
+    /// LAN/WOL; `None` (hidden) otherwise.
+    pub taunts: Option<bool>,
     /// 0x71B: the selected scenario's description (Session+0xEA).
     pub map_name: String,
 }
@@ -340,6 +343,7 @@ impl DiplomacyView {
             .chain(row_controls)
             .chain(headers.map(DiplomacyControl::Header))
             .chain([DiplomacyControl::ModeName, DiplomacyControl::MapName])
+            .chain(self.taunts.map(|_| DiplomacyControl::Taunts))
     }
 }
 
@@ -536,5 +540,12 @@ mod tests {
         assert_eq!(view.control_at(&layout, name2.x, name2.y), None);
         view.rows[1] = Some(row(None));
         assert_eq!(view.control_at(&layout, allies.x, allies.y), None);
+        let taunts = layout.taunts;
+        assert_eq!(view.control_at(&layout, taunts.x, taunts.y), None);
+        view.taunts = Some(false);
+        assert_eq!(
+            view.control_at(&layout, taunts.x, taunts.y),
+            Some(DiplomacyControl::Taunts)
+        );
     }
 }

@@ -55,7 +55,9 @@ use crate::sim::world::FrameEffects;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::house_state::HouseState;
+use crate::sim::houses::Houses;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
@@ -107,7 +109,7 @@ fn building_strategy(
     frame_effects: FrameEffects<'_>,
 ) -> i32 {
     pick_enemy(sim, owner);
-    forget_defeated_enemy(sim, owner);
+    forget_defeated_enemy(&sim.interner, &sim.house_alliances, &mut sim.houses, owner);
     // `0x004FD77C..0x004FD79B`: a signed IQ (`+0x24C`) compare.
     if sim.session.game_mode_nonzero()
         || sim
@@ -211,31 +213,32 @@ fn pick_enemy(sim: &mut Simulation, owner: InternedId) {
 
 /// `0x004FD723..0x004FD772`: a defeated enemy's anger node is cancelled
 /// (the anger rescan runs) and the enemy forgotten.
-fn forget_defeated_enemy(sim: &mut Simulation, owner: InternedId) {
-    let Some(enemy) = sim.houses.get(&owner).and_then(|house| house.enemy_house()) else {
+fn forget_defeated_enemy(
+    interner: &StringInterner,
+    house_alliances: &HouseAlliances,
+    houses: &mut Houses,
+    owner: InternedId,
+) {
+    let Some(enemy) = houses.get(&owner).and_then(|house| house.enemy_house()) else {
         return;
     };
-    if !sim
-        .houses
-        .get(&enemy)
-        .is_some_and(|house| house.is_defeated())
-    {
+    if !houses.get(&enemy).is_some_and(|house| house.is_defeated()) {
         return;
     }
-    let anger = sim.houses[&owner]
+    let anger = houses[&owner]
         .grudge_scores()
         .get(&enemy)
         .copied()
         .unwrap_or(0);
     update_anger_nodes(
-        &mut sim.houses,
-        sim.house_alliances.as_map(),
-        &sim.interner,
+        houses,
+        house_alliances.as_map(),
+        interner,
         owner,
         enemy,
         anger.wrapping_neg(),
     );
-    if let Some(house) = sim.houses.get_mut(&owner) {
+    if let Some(house) = houses.get_mut(&owner) {
         house.forget_enemy();
     }
 }

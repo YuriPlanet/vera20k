@@ -280,14 +280,15 @@ fn captured_house_event_uses_engineer_notification_and_keeps_the_original_raise_
         .spawn_object("ENGINEER", "House1", 17, 16, 0, &rules)
         .unwrap();
     let (tag, live) = install(&mut sim, &rules, 3, 0);
-    sim.mission_assign_exact(
-        engineer,
-        crate::sim::mission::MissionId::from_known(
-            crate::rules::mission_data::MissionType::Capture,
-        ),
-        0,
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            engineer,
+            crate::sim::mission::MissionId::from_known(
+                crate::rules::mission_data::MissionType::Capture,
+            ),
+            0,
+        )
+        .unwrap();
     sim.substrate
         .entities
         .get_mut(engineer)

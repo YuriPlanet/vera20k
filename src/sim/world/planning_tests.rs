@@ -1509,11 +1509,11 @@ fn delete_handoff_uses_first_member_successor_and_invalidates_retained_node() {
     append(&mut sim, &rules, owner, 2, (16, 15));
     append(&mut sim, &rules, owner, 1, (12, 15));
     append(&mut sim, &rules, owner, 1, (20, 15));
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     let delete = sim.encode_plan_node_delete_record(owner, (12, 15)).unwrap();
     apply(&mut sim, &rules, delete);
     assert_eq!(
-        sim.lifecycle_outputs,
+        sim.lifecycle_outputs.as_slice(),
         vec![LifecycleOutput::PlanningNodeDeleted {
             owner,
             node_id: 0,
@@ -1528,11 +1528,11 @@ fn delete_handoff_uses_first_member_successor_and_invalidates_retained_node() {
             .highlighted_node,
         Some(1)
     );
-    sim.lifecycle_outputs.clear();
+    sim.lifecycle_outputs.clear_for_test();
     let delete = sim.encode_plan_node_delete_record(owner, (16, 15)).unwrap();
     apply(&mut sim, &rules, delete);
     assert_eq!(
-        sim.lifecycle_outputs,
+        sim.lifecycle_outputs.as_slice(),
         vec![LifecycleOutput::PlanningNodeDeleted {
             owner,
             node_id: 1,

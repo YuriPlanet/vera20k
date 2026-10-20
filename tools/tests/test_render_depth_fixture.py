@@ -5,11 +5,12 @@ import configparser
 import hashlib
 import json
 import struct
+import tempfile
 import unittest
 from pathlib import Path
 
 from tools.render_depth_fixture import (
-    build_fixture, decode_fixture_lcw, decode_literal_lzo,
+    build_fixture, decode_fixture_lcw, decode_literal_lzo, retain_terrain_template,
 )
 
 
@@ -74,6 +75,30 @@ def decode_iso_cells(section):
 
 
 class RenderDepthFixtureTests(unittest.TestCase):
+    def test_sonic_scene_retains_template_packs_and_keeps_stock_weapon_fields(self):
+        # Transport-only fixture check; actual naval admission is exercised by
+        # the production retail map capture, not this flat input template.
+        template = build_fixture(walls_only=True) + "\n[Terrain]\n123=T01\n[DLPH]\nStrength=1\n"
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'declared.map'
+            source.write_text(template, encoding='latin-1')
+            actual = parse_ini(build_fixture(sonic_wave=source))
+        original = parse_ini(template)
+        for section in ('Map', 'Lighting', 'IsoMapPack5', 'OverlayPack', 'OverlayDataPack', 'Terrain', 'Waypoints'):
+            self.assertEqual(actual[section], original[section])
+        self.assertEqual([row.split(',')[1:5] for row in actual['Units'].values()],
+                         [['DLPH', '256', '106', '118'], ['CARRIER', '256', '108', '118']])
+        self.assertFalse(actual['Infantry'])
+        for section in ('DLPH', 'CARRIER', 'SonicZap', 'Sonic', 'SonicWarhead'):
+            self.assertNotIn(section, actual)
+
+    def test_terrain_template_refuses_missing_or_duplicate_physical_headers(self):
+        mission = build_fixture(walls_only=True)
+        with self.assertRaisesRegex(ValueError, 'Missing physical terrain section IsoMapPack5'):
+            retain_terrain_template(mission, '[Map]\nSize=0,0,80,85\n')
+        with self.assertRaisesRegex(ValueError, 'Duplicate physical terrain section Map'):
+            retain_terrain_template(mission, mission + '\n[Map]\nSize=0,0,80,85\n')
+
     def test_move_voice_controls_keep_stock_actors_and_use_executed_reader_inputs(self):
         native = json.loads((Path(__file__).resolve().parents[1] /
                              'spatial_oracle/move_order_voice.json').read_text())

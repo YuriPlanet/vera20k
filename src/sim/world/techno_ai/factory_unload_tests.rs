@@ -712,6 +712,7 @@ fn retail_factory_unload_leaves_match_original_door_track_and_cadence() {
                 let now = fixture.sim.session.binary_frame();
                 let result = fixture
                     .sim
+                    .substrate
                     .mission_commence_exact(fixture.producer, now)
                     .unwrap();
                 assert_eq!(json!(u8::from(result)), call["returned_eax"]);

@@ -6,6 +6,14 @@
 
 use super::{UnitAtlas, UnitSpriteEntry, UnitSpriteKey};
 
+/// The exact visible body's indexed source and placement in Unit's 256-square
+/// composite. Frame-local sources belong to VxlPoseFrameCache.
+pub(crate) struct UnitShadowPart {
+    pub entry: UnitSpriteEntry,
+    pub point: [i32; 2],
+    pub posed: bool,
+}
+
 impl UnitAtlas {
     /// Fill only on the first supported request. Parts are the exact atlas
     /// entries and anchor offsets used by this Unit's visible body draw.
@@ -15,6 +23,28 @@ impl UnitAtlas {
         queue: &wgpu::Queue,
         key: &UnitSpriteKey,
         parts: impl IntoIterator<Item = (UnitSpriteEntry, [f32; 2])>,
+    ) -> bool {
+        self.prepare_native_shadow_with(queue, key, |body| {
+            let mut any = false;
+            for (part, offset) in parts {
+                any = true;
+                let point = [
+                    128 + part.offset_x as i32 + offset[0] as i32,
+                    128 + part.offset_y as i32 + offset[1] as i32,
+                ];
+                if !self.stamp_shadow_part(body, &part, point) {
+                    return false;
+                }
+            }
+            any
+        })
+    }
+
+    pub(crate) fn prepare_native_shadow_with(
+        &self,
+        queue: &wgpu::Queue,
+        key: &UnitSpriteKey,
+        stamp: impl FnOnce(&mut [u8]) -> bool,
     ) -> bool {
         if self.shadow_masks.borrow().contains_key(key) {
             return true;
@@ -26,48 +56,73 @@ impl UnitAtlas {
         else {
             return false;
         };
-        let Some(template) = self.rendered_cache.iter().find(|s| &s.key == key) else {
+        let Some(sprite) = self.masked_shadow(key, [0, 0], stamp) else {
             return false;
         };
-        let mut parts = parts.into_iter().peekable();
-        if parts.peek().is_none() {
+        self.upload_shadow_pixels(queue, entry, &sprite.palette_indices);
+        self.shadow_masks
+            .borrow_mut()
+            .insert(key.clone(), sprite.palette_indices);
+        true
+    }
+
+    /// Sample an indexed atlas source through its owning cache. Placement is
+    /// supplied by the body's actual draw pieces, including gun pivot offsets.
+    pub(crate) fn stamp_shadow_part(
+        &self,
+        body: &mut [u8],
+        part: &UnitSpriteEntry,
+        point: [i32; 2],
+    ) -> bool {
+        let Some(source) = self.rendered_cache.iter().find(|s| {
+            self.entries.get(&s.key).is_some_and(|e| {
+                e.page == part.page && e.uv_origin == part.uv_origin && e.uv_size == part.uv_size
+            })
+        }) else {
             return false;
-        }
+        };
+        composite_mask_part(body, &source.pixels, source.width, source.height, point);
+        true
+    }
+
+    /// The unmodified template remains authoritative even after a retained
+    /// mask has been uploaded. Positive low flight requests a fresh mask and
+    /// places this result on the existing frame-local pose pages.
+    pub(crate) fn masked_shadow(
+        &self,
+        key: &UnitSpriteKey,
+        body_offset: [i32; 2],
+        stamp: impl FnOnce(&mut [u8]) -> bool,
+    ) -> Option<super::vxl_raster::VxlSprite> {
+        self.entries
+            .get(key)
+            .filter(|e| e.native_draw_bounds.is_some())?;
+        let template = self.rendered_cache.iter().find(|s| &s.key == key)?;
         let mut body = vec![0u8; 65536];
-        for (part, offset) in parts {
-            let Some(source) = self.rendered_cache.iter().find(|s| {
-                self.entries.get(&s.key).is_some_and(|e| {
-                    e.page == part.page
-                        && e.uv_origin == part.uv_origin
-                        && e.uv_size == part.uv_size
-                })
-            }) else {
-                return false;
-            };
-            let x = 128 + source.offset_x as i32 + offset[0] as i32;
-            let y = 128 + source.offset_y as i32 + offset[1] as i32;
-            composite_mask_part(
-                &mut body,
-                &source.pixels,
-                source.width,
-                source.height,
-                [x, y],
-            );
+        if !stamp(&mut body) {
+            return None;
         }
         let mut pixels = template.pixels.clone();
-        if super::vxl_raster::shadow::mask_body(
+        let sample_offset = if body_offset == [0, 0] {
+            [0, 0]
+        } else {
+            super::vxl_raster::shadow::body_sample_offset(template.shadow_center?, body_offset)?
+        };
+        super::vxl_raster::shadow::mask_body(
             &mut pixels,
             template.width,
             [template.offset_x as i32, template.offset_y as i32],
             &body,
-        )
-        .is_none()
-        {
-            return false;
-        }
-        self.upload_shadow_pixels(queue, entry, &pixels);
-        self.shadow_masks.borrow_mut().insert(key.clone(), pixels);
-        true
+            sample_offset,
+        )?;
+        Some(super::vxl_raster::VxlSprite {
+            palette_indices: pixels,
+            depth: Vec::new(),
+            width: template.width,
+            height: template.height,
+            offset_x: template.offset_x,
+            offset_y: template.offset_y,
+        })
     }
 
     fn upload_shadow_pixels(&self, queue: &wgpu::Queue, entry: &UnitSpriteEntry, pixels: &[u8]) {
@@ -90,7 +145,13 @@ impl UnitAtlas {
 
 /// 4914C0 inner indexed copy skips zero source; later parts overwrite only
 /// nonzero pixels. For the shadow query the composed nonzero domain suffices.
-fn composite_mask_part(body: &mut [u8], source: &[u8], width: u32, height: u32, point: [i32; 2]) {
+pub(crate) fn composite_mask_part(
+    body: &mut [u8],
+    source: &[u8],
+    width: u32,
+    height: u32,
+    point: [i32; 2],
+) {
     for y in 0..height {
         let dy = point[1] + y as i32;
         if !(0..256).contains(&dy) {

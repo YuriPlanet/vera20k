@@ -94,6 +94,7 @@ const SKIRMISH: DiplomacyRules = DiplomacyRules {
     quick_coop: false,
     local_inactive: false,
     game_mode_nonzero: true,
+    listeners: [true; 8],
 };
 
 fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
@@ -276,6 +277,35 @@ fn human_rows_enable_allies_until_the_local_player_is_inactive() {
     let row = inactive.rows[2].as_ref().unwrap();
     assert!(!row.allies.unwrap().enabled);
     assert!(!row.chat.unwrap().enabled);
+    // The box shows the chat-mask byte of the row's House, and stays
+    // checked once the local player is out (0x00657F8E..0x00657FCC).
+    let index = fixture.sim.houses().index_of(first_ai).unwrap();
+    let mut listeners = [true; 8];
+    listeners[index] = false;
+    let muted = DiplomacyRules {
+        listeners,
+        ..SKIRMISH
+    };
+    assert!(
+        !rows(&fixture, muted).rows[2]
+            .as_ref()
+            .unwrap()
+            .chat
+            .unwrap()
+            .checked
+    );
+    let muted_inactive = DiplomacyRules {
+        local_inactive: true,
+        ..muted
+    };
+    assert!(
+        rows(&fixture, muted_inactive).rows[2]
+            .as_ref()
+            .unwrap()
+            .chat
+            .unwrap()
+            .checked
+    );
 }
 
 /// Retail layering through the production reader: RULESMD says
@@ -301,6 +331,12 @@ fn retail_allies_allowed_layers_by_mode_and_rows_take_the_playable_countries() {
     assert!(!layered(None).general.allies_allowed);
     assert!(layered(Some("mpbattlemd.ini")).general.allies_allowed);
     assert!(!layered(Some("mpfreeforallmd.ini")).general.allies_allowed);
+    // AllyChangeAllowed: RULESMD yes, kept by Battle; Team Game says no, so
+    // both ALLY producers refuse there (0x00731877, 0x00731989).
+    assert!(layered(None).general.ally_change_allowed);
+    assert!(layered(Some("mpbattlemd.ini")).general.ally_change_allowed);
+    let team = layered(Some("mpteammd.ini"));
+    assert!(team.general.allies_allowed && !team.general.ally_change_allowed);
     let rules = layered(Some("mpbattlemd.ini"));
     for country in [
         "Americans",

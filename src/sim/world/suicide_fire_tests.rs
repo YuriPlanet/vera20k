@@ -255,6 +255,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     .unwrap();
                 scene
                     .sim
+                    .substrate
                     .mission_commence_exact(scene.source, scene.sim.session.binary_frame())
                     .unwrap();
             }

@@ -129,7 +129,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
         ),
         CursorFeedbackKind::Enter
     );
-    let orders = transport_entry_orders(&runtime.simulation, rules, &gis, castle);
+    let orders = garrison_entry_orders(&runtime.simulation, rules, &gis, castle);
     assert_eq!(orders.len(), gis.len());
     for (order, &gi) in orders.iter().zip(&gis) {
         assert_eq!(
@@ -232,7 +232,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
             .spawn_object("E1", &owner_name, 88, 118, 0, &runtime.resources.rules)
             .unwrap();
         let orders =
-            transport_entry_orders(&runtime.simulation, &runtime.resources.rules, &[gi], castle);
+            garrison_entry_orders(&runtime.simulation, &runtime.resources.rules, &[gi], castle);
         assert_eq!(orders.len(), 1, "{control}: initially admitted");
         queue_ordinary_order(runtime, orders.into_iter().next().unwrap());
         for _ in 0..4 {
@@ -346,8 +346,8 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
     }
 }
 
-/// The same retail click producer keeps a carrier on Enter7; migrating
-/// garrison action9 must not change the IFV's admission/Radio route.
+/// A carrier takes the passenger row's Enter (3), the MEGAMISSION Enter
+/// event, not garrison action 9.
 #[test]
 fn retail_gi_ifv_click_keeps_enter() {
     let Some((mut scene, _)) = retail_garrison_scene() else {
@@ -371,11 +371,26 @@ fn retail_gi_ifv_click_keeps_enter() {
                 .spawn_object("FV", &owner_name, rx, ry, 0, rules)
         })
         .expect("a vehicle-admitted cell near the castle");
+    assert!(garrison_entry_orders(&runtime.simulation, rules, &[gi], ifv).is_empty());
     assert_eq!(
-        transport_entry_orders(&runtime.simulation, rules, &[gi], ifv),
-        vec![Command::EnterTransport {
-            passenger_id: gi,
-            transport_id: ifv
-        }]
+        entry_orders(
+            &runtime.simulation,
+            rules,
+            &[gi],
+            &mut vec![gi],
+            &HoverTargetKindWithId {
+                kind: HoverTargetKind::FriendlyUnit,
+                stable_id: ifv,
+            },
+            OrderModifier::Normal,
+            false,
+            None,
+        ),
+        Some(vec![Command::MegaMission {
+            entity_id: gi,
+            mission: crate::sim::mission::MissionType::Enter,
+            target: None,
+            destination: Some(TargetKind::Entity(ifv)),
+        }])
     );
 }

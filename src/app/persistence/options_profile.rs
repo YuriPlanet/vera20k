@@ -118,9 +118,9 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) original_shape: bool,
     /// The Options page's battle sidebar size.
     pub(crate) sidebar: crate::ui::main_menu_dialogs::options::SidebarSize,
-    /// Whether the startup splash and the menu movie use Red Alert 2's art
-    /// instead of Yuri's Revenge's: the Options page's RA2 Loading & Menu Movie.
-    pub(crate) ra2_look: bool,
+    /// Whether shell art uses Yuri's Revenge's original assets. Off by default,
+    /// so new profiles use Red Alert 2's style where the games have variants.
+    pub(crate) yr_original_style: bool,
     /// `[VERA] ShiftQueue=`: whether a Shift-click on a mobile strip queues
     /// [`Self::shift_queue_count`] builds: the Options page's Shift-Click
     /// Batch Queue. Off by default, so Shift + left click queues one copy as
@@ -191,7 +191,7 @@ impl Default for RetailOptionsProfile {
             zoom: crate::ui::main_menu_dialogs::options::Zoom::Auto,
             original_shape: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
-            ra2_look: false,
+            yr_original_style: false,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             wol_test_service: false,
@@ -407,7 +407,7 @@ impl RetailOptionsProfile {
             self.sidebar = crate::ui::main_menu_dialogs::options::SidebarSize::from_ini_value(
                 vera.read_int("Sidebar", self.sidebar.ini_value()),
             );
-            self.ra2_look = vera.read_bool("RA2Look", self.ra2_look);
+            self.yr_original_style = vera.read_bool("YROriginalStyle", self.yr_original_style);
             self.shift_queue = vera.read_bool("ShiftQueue", self.shift_queue);
             // Absent keeps the current value; present-but-nonnumeric answers 0,
             // which the range lifts to 1 rather than a click that queues nothing.
@@ -496,7 +496,10 @@ impl RetailOptionsProfile {
                     format_bool(self.original_shape).to_string(),
                 ),
                 ("Sidebar", self.sidebar.ini_value().to_string()),
-                ("RA2Look", format_bool(self.ra2_look).to_string()),
+                (
+                    "YROriginalStyle",
+                    format_bool(self.yr_original_style).to_string(),
+                ),
                 ("ShiftQueue", format_bool(self.shift_queue).to_string()),
                 ("ShiftQueueCount", self.shift_queue_count.to_string()),
                 (
@@ -534,7 +537,8 @@ impl RetailOptionsProfile {
             .collect();
         let output =
             crate::util::ini_writer::set_ini_byte_values(&output, NETWORK_SECTION, &network);
-        apply_formatted_section(&output, VERA_SECTION, &formatted.vera)
+        let output = apply_formatted_section(&output, VERA_SECTION, &formatted.vera);
+        crate::util::ini_writer::remove_ini_keys(&output, VERA_SECTION, &["RA2Look"])
     }
 
     /// Commit the complete modeled profile with one read and one write.
@@ -1267,7 +1271,7 @@ mod tests {
         assert_eq!(defaults.retained_profile.zoom, Zoom::Auto);
         assert!(!defaults.retained_profile.original_shape);
         assert_eq!(defaults.retained_profile.sidebar, SidebarSize::Normal);
-        assert!(!defaults.retained_profile.ra2_look);
+        assert!(!defaults.retained_profile.yr_original_style);
         // Shift + left click queues one copy, as in gamemd, until it is ticked.
         assert!(!defaults.retained_profile.shift_queue);
         // Internet shows TXT_APIMISSING, as on retail, until it is ticked.
@@ -1279,14 +1283,14 @@ mod tests {
 
         let load = load_snapshot(
             &RetailStartupOptions::default(),
-            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nRA2Look=yes\nShiftQueue=yes\nShiftQueueCount=8\nWolTestService=yes\n",
+            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nShiftQueue=yes\nShiftQueueCount=8\nWolTestService=yes\n",
         );
         assert!(load.retained_profile.full_screen);
         // The first release saved the whole factor.
         assert_eq!(load.retained_profile.zoom, Zoom::Percent(200));
         assert!(load.retained_profile.original_shape);
         assert_eq!(load.retained_profile.sidebar, SidebarSize::Large);
-        assert!(load.retained_profile.ra2_look);
+        assert!(!load.retained_profile.yr_original_style);
         assert!(load.retained_profile.shift_queue);
         assert!(load.retained_profile.wol_test_service);
         assert_eq!(load.retained_profile.shift_queue_count, 8);
@@ -1299,7 +1303,7 @@ mod tests {
             zoom: Zoom::Percent(150),
             original_shape: true,
             sidebar: SidebarSize::ExtraLarge,
-            ra2_look: true,
+            yr_original_style: true,
             shift_queue: true,
             shift_queue_count: 7,
             wol_test_service: true,
@@ -1309,7 +1313,7 @@ mod tests {
             String::from_utf8(profile.transform_ra2md(b"[Video]\r\nScreenWidth=800\r\n")).unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nRA2Look=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\n"
             ),
             "{output}"
         );
@@ -1318,10 +1322,64 @@ mod tests {
         assert_eq!(reread.retained_profile.zoom, Zoom::Percent(150));
         assert!(reread.retained_profile.original_shape);
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
-        assert!(reread.retained_profile.ra2_look);
+        assert!(reread.retained_profile.yr_original_style);
         assert!(reread.retained_profile.shift_queue);
         assert!(reread.retained_profile.wol_test_service);
         assert_eq!(reread.retained_profile.shift_queue_count, 7);
+    }
+
+    #[test]
+    fn yr_original_style_defaults_to_ra2_and_reads_only_its_own_key() {
+        let defaults = load_snapshot(&RetailStartupOptions::default(), b"[VERA]\n");
+        assert!(
+            !defaults.retained_profile.yr_original_style,
+            "unchecked Original Yuri's Revenge Style selects the default RA2 look"
+        );
+
+        for value in ["yes", "no"] {
+            let ignored = load_snapshot(
+                &RetailStartupOptions::default(),
+                format!("[VERA]\nRA2Look={value}\n").as_bytes(),
+            );
+            assert!(
+                !ignored.retained_profile.yr_original_style,
+                "RA2Look={value} must not affect the default"
+            );
+        }
+
+        let explicit_new_key = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[VERA]\nYROriginalStyle=yes\n",
+        );
+        assert!(
+            explicit_new_key.retained_profile.yr_original_style,
+            "the YR-original preference must be read from its own key"
+        );
+    }
+
+    #[test]
+    fn saving_removes_ra2_look_and_preserves_other_profile_bytes() {
+        let profile = RetailOptionsProfile {
+            yr_original_style: true,
+            ..RetailOptionsProfile::default()
+        };
+        let input = b"[VERA]\r\n; retain this comment\r\nFullScreen=yes\r\nRA2Look=no ; remove this whole line\r\nUnknownSetting=keep\r\n[other]\nRA2Look=keep in another section\n[vera]\nra2look=yes\nShiftQueue=yes";
+        let output = String::from_utf8(profile.transform_ra2md(input)).unwrap();
+
+        assert_eq!(output.matches("RA2Look=").count(), 1, "{output}");
+        assert!(!output.contains("ra2look="), "{output}");
+        assert!(
+            output.contains("YROriginalStyle=yes\r\n"),
+            "new preference should be saved: {output}"
+        );
+        assert!(
+            output.contains("; retain this comment\r\nFullScreen=no\r\nUnknownSetting=keep\r\n"),
+            "keep the comment and unknown key while the modeled setting uses the profile: {output}"
+        );
+        assert!(
+            output.contains("[other]\nRA2Look=keep in another section\n"),
+            "only the VERA key should be removed: {output}"
+        );
     }
 
     /// `read_int` answers 0 for a present-but-nonnumeric value and a hand-edited

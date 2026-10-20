@@ -138,7 +138,7 @@ fn spawn_warning(
     let (rx, ry) = sim.houses.get(&owner)?.nuke_target();
     let coord = cell_ground_coord(sim.resolved_terrain.as_ref(), rx, ry);
     let anim = spawn_anim(sim, rules, WARNING_ANIM, coord, true)?;
-    sim.set_anim_owner_house(anim, owner);
+    sim.substrate.set_anim_owner_house(anim, owner);
     Some(anim)
 }
 
@@ -197,7 +197,8 @@ fn launch_missile(
     let bullet_id = sim.allocate_stable_id();
     let native_unique_id = sim.next_native_runtime_id();
     if let Some(warning) = warning {
-        sim.set_anim_attached_bullet(warning, Some(bullet_id));
+        sim.substrate
+            .set_anim_attached_bullet(warning, Some(bullet_id));
     }
     let velocity = crate::sim::projectile::launch::missile_launch_velocity(MISSILE_VELOCITY_SCALE);
     let payload = ProjectilePayload::new(
@@ -225,7 +226,7 @@ fn launch_missile(
     }
     let take_off = rules.general.nuke_take_off.clone();
     if let Some(anim) = spawn_anim(sim, rules, &take_off, origin, false) {
-        sim.set_anim_z_adjust(anim, TAKE_OFF_Z_ADJUST);
+        sim.substrate.set_anim_z_adjust(anim, TAKE_OFF_Z_ADJUST);
     }
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission.set_handler_state(3);

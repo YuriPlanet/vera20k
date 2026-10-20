@@ -87,7 +87,12 @@ fn building(sim: &mut Simulation, id: u64, owner: InternedId, kind: &str, health
     mission(&mut entity, MissionType::Guard as i32, -1);
     sim.substrate.entities.insert(entity);
     sim.append_house_base_building_for_test(id);
-    sim.sample_building_health_for_house_update(id);
+    Simulation::sample_building_health_for_house_update(
+        &mut sim.substrate,
+        &sim.houses,
+        &mut sim.power_states,
+        id,
+    );
 }
 
 fn fixture(radar: bool) -> (Simulation, RuleSet, InternedId) {
@@ -148,9 +153,12 @@ fn fixture(radar: bool) -> (Simulation, RuleSet, InternedId) {
         rules.object("FACTORY"),
         Some(&rules),
     );
-    sim.update_house_tracking(PRODUCER, |tracking, entity| {
-        tracking.increment_factory_count(entity)
-    });
+    Simulation::update_house_tracking(
+        &mut sim.substrate,
+        &mut sim.houses,
+        PRODUCER,
+        |tracking, entity| tracking.increment_factory_count(entity),
+    );
     (sim, rules, owner)
 }
 
@@ -337,10 +345,20 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
             sim.session
                 .set_binary_frame_for_test(int(&native["frame"]) as u32);
             match native["phase"].as_str().unwrap() {
-                "plant_sample" => sim.sample_building_health_for_house_update(PLANT),
+                "plant_sample" => Simulation::sample_building_health_for_house_update(
+                    &mut sim.substrate,
+                    &sim.houses,
+                    &mut sim.power_states,
+                    PLANT,
+                ),
                 "paid_repair" => {
                     if row["prior_power_dirty_at_repair"] == true {
-                        sim.invalidate_house_power(owner, false);
+                        Simulation::invalidate_house_power(
+                            &sim.houses,
+                            &mut sim.power_states,
+                            owner,
+                            false,
+                        );
                     }
                     production::update_repair_and_power(
                         &mut sim,
@@ -389,7 +407,12 @@ fn native_blackout_setter_replaces_shorter_longer_and_zero_durations() {
         // setter; ForceShield/Spy activation and numeric inputs are outside.
         sim.assess_house_derived_state(owner, &rules);
         if input["prior_dirty"] == true {
-            sim.invalidate_house_power(owner, input["prior_radar_dirty"] == true);
+            Simulation::invalidate_house_power(
+                &sim.houses,
+                &mut sim.power_states,
+                owner,
+                input["prior_radar_dirty"] == true,
+            );
         }
         sim.session
             .set_binary_frame_for_test(int(&input["frame"]) as u32);
@@ -428,7 +451,7 @@ fn native_blackout_zero_one_and_two_remaining_with_clean_or_dirty_house() {
         sim.session
             .set_binary_frame_for_test(int(&input["frame"]) as u32);
         if input["prior_dirty"] == true {
-            sim.invalidate_house_power(owner, false);
+            Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, false);
         }
         assert_power(&sim, owner, &row["before"], "blackout prior");
         sim.assess_house_derived_state(owner, &rules);
@@ -505,7 +528,7 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
             sim.session.free_radar(),
             sim.session.binary_frame(),
         );
-        sim.power_states.insert(owner, state);
+        sim.power_states.map_mut_for_test().insert(owner, state);
         assert_eq!(
             crate::sim::radar::has_radar_for_owner(&sim, &rules, "Americans"),
             row["output"]["radar_available"] == 1,
@@ -556,7 +579,7 @@ fn native_local_low_power_advice_guard_and_eight_speed_delay_values() {
         state.set_total_output_for_test(int(&input["power"][0]));
         state.set_total_drain_for_test(int(&input["power"][1]));
         state.set_is_low_power_for_test(state.total_output() < state.total_drain());
-        sim.power_states.insert(owner, state);
+        sim.power_states.map_mut_for_test().insert(owner, state);
         house_eva::update_house_eva(&mut sim, &rules, owner);
         assert_eq!(
             sim.houses[&owner].eva_low_power_guard(),

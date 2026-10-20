@@ -10,9 +10,10 @@ use crate::map::basic::BasicSection;
 
 pub(crate) struct MatchState {
     pub(crate) startup: super::startup::MatchStartup,
-    /// Live session owner: gamemd's `SessionClass` at `0x00A8B238` (mode,
-    /// participants, local participant, host). Written by the launch path
-    /// and the saved-game restore; read by the app loop only.
+    /// Live session owner: gamemd's `SessionClass` at `0x00A8B238` (who
+    /// holds `GameMode`, participants, local participant, host). Written by
+    /// the shell, the launch path and the saved-game restore; read by the app
+    /// loop only. Read `GameMode` through [`Self::session_mode`].
     pub(crate) session: super::session::MatchSession,
     /// The in-match connection wait and its dialog 0xEA
     /// (`Wait_For_Players 0x00648710`).
@@ -101,6 +102,16 @@ impl MatchState {
                 .is_some_and(|radar| radar.movie_pause())
     }
 
+    /// `GameMode` (`0x00A8B238`) from whichever side holds it: the installed
+    /// world's saved ScenarioSession from install until the shell writes it
+    /// again, otherwise the shell (see `MatchSession`).
+    pub(crate) fn session_mode(&self) -> super::session::SessionMode {
+        held_session_mode(
+            &self.session,
+            self.sim_runtime.as_ref().map(|rt| rt.simulation.session()),
+        )
+    }
+
     /// The live scenario's pinned player, including a successfully restored save.
     pub(crate) fn local_player_owner(&self) -> Option<&str> {
         self.sim_runtime
@@ -120,11 +131,48 @@ fn presentation_pause_for_screen(
         && (local_pause || scenario.is_some_and(|session| session.scenario_paused()))
 }
 
+fn held_session_mode(
+    session: &super::session::MatchSession,
+    world: Option<&crate::sim::scenario_session::ScenarioSession>,
+) -> super::session::SessionMode {
+    session.shell_mode().unwrap_or_else(|| {
+        world
+            .expect("only an installed world holds GameMode")
+            .game_mode()
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::presentation_pause_for_screen;
+    use super::{held_session_mode, presentation_pause_for_screen};
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
     use crate::sim::world::Simulation;
     use crate::ui::game_screen::GameScreen;
+
+    #[test]
+    fn game_mode_reads_from_its_one_holder() {
+        let mut session = MatchSession::default();
+        let mut world = Simulation::with_seed(0);
+        world.install_session_mode(SessionMode::Skirmish);
+        // Process start: the shell holds 0 even beside a retained world.
+        assert_eq!(held_session_mode(&session, None), SessionMode::Campaign);
+        assert_eq!(
+            held_session_mode(&session, Some(world.session())),
+            SessionMode::Campaign
+        );
+        session.begin_offline(SessionMode::Skirmish, None);
+        session.hand_mode_to_world(world.session().game_mode());
+        assert_eq!(
+            held_session_mode(&session, Some(world.session())),
+            SessionMode::Skirmish
+        );
+        // A shell write after the match takes it back from the finished world.
+        session.enter_network(NetworkReturnContext::Wol);
+        assert_eq!(
+            held_session_mode(&session, Some(world.session())),
+            SessionMode::Wol
+        );
+    }
 
     #[test]
     fn retained_pause_does_not_leak_into_result_or_shell_audio() {

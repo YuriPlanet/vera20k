@@ -1951,12 +1951,13 @@ mod tests {
             .as_ref()
             .unwrap()
             .stamp_dummy_cell_requested_coord(7, 8);
-        sim.mission_assign_exact(
-            infantry,
-            crate::sim::mission::MissionId::from_known(MissionType::Move),
-            sim.session.binary_frame(),
-        )
-        .unwrap();
+        sim.substrate
+            .mission_assign_exact(
+                infantry,
+                crate::sim::mission::MissionId::from_known(MissionType::Move),
+                sim.session.binary_frame(),
+            )
+            .unwrap();
         assert!(!probe(&mut sim));
         assert_eq!(
             sim.resolved_terrain
@@ -1965,12 +1966,13 @@ mod tests {
                 .dummy_cell_requested_coord(),
             (7, 8)
         );
-        sim.mission_assign_exact(
-            infantry,
-            crate::sim::mission::MissionId::from_known(MissionType::Capture),
-            sim.session.binary_frame(),
-        )
-        .unwrap();
+        sim.substrate
+            .mission_assign_exact(
+                infantry,
+                crate::sim::mission::MissionId::from_known(MissionType::Capture),
+                sim.session.binary_frame(),
+            )
+            .unwrap();
         sim.substrate
             .entities
             .get_mut(infantry)

@@ -988,7 +988,7 @@ fn stock_gapowr_placement_restores_power_and_radar_during_buildup() {
     assert_eq!(outage.total_drain(), 50);
     assert!(outage.is_low_power());
     assert!(
-        !has_active_radar(&sim.power_states, americans),
+        !has_active_radar(sim.power_states.as_map(), americans),
         "stock American radar must be offline during house low power"
     );
 
@@ -1034,7 +1034,7 @@ fn stock_gapowr_placement_restores_power_and_radar_during_buildup() {
     assert_eq!(recovered.total_drain(), 50);
     assert!(!recovered.is_low_power());
     assert!(
-        has_active_radar(&sim.power_states, americans),
+        has_active_radar(sim.power_states.as_map(), americans),
         "existing stock American radar should recover while GAPOWR is building up"
     );
 }
@@ -3760,7 +3760,7 @@ fn stock_yuri_cloning_vat_duplicates_a_successfully_placed_infantry() {
     );
     let mut low_power = crate::sim::power_system::PowerState::default();
     low_power.set_is_low_power_for_test(true);
-    sim.power_states.insert(owner, low_power);
+    sim.power_states.map_mut_for_test().insert(owner, low_power);
 
     assert!(super::dispatch_production_changes_for_tests(
         &mut sim,

@@ -240,7 +240,13 @@ impl crate::sim::world::Simulation {
                 self.track_apply_occupation(id, super::track_process::TrackFamily::Ship, put);
             }
             Some(crate::rules::locomotor_type::LocomotorKind::Hover) => {
-                self.hover_mark_all_occupation_bits(id, put);
+                Self::hover_mark_all_occupation_bits(
+                    &mut self.substrate,
+                    &self.path_grid,
+                    &self.resolved_terrain,
+                    id,
+                    put,
+                );
             }
             Some(
                 crate::rules::locomotor_type::LocomotorKind::Fly
@@ -248,7 +254,12 @@ impl crate::sim::world::Simulation {
             ) => {}
             _ if !put => {
                 self.release_walk_occupation_before_foot_limbo(id);
-                self.release_teleport_occupation_before_foot_limbo(id);
+                Self::release_teleport_occupation_before_foot_limbo(
+                    &mut self.substrate,
+                    &self.path_grid,
+                    &self.resolved_terrain,
+                    id,
+                );
                 self.release_jumpjet_occupation_before_foot_limbo(id);
             }
             Some(kind) => {

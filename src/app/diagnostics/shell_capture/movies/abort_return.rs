@@ -103,6 +103,7 @@ impl AbortReturnInput {
                 location: winit::keyboard::KeyLocation::Standard,
                 state: winit::event::ElementState::Pressed,
                 repeat: false,
+                text: None,
             },
             false,
         );
@@ -148,6 +149,7 @@ impl AbortReturnInput {
                         location: winit::keyboard::KeyLocation::Standard,
                         state: ElementState::Released,
                         repeat: false,
+                        text: None,
                     },
                     paused_at_event,
                 );

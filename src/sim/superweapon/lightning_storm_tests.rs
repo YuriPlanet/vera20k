@@ -187,7 +187,9 @@ fn fixture_world(
         let mut state = HouseState::new(id, 0, None, Some(index) == player, 0, 10);
         state.set_is_defeated_for_test(flag(&house[1]));
         sim.houses.register(state);
-        sim.power_states.insert(id, PowerState::settled_for_test());
+        sim.power_states
+            .map_mut_for_test()
+            .insert(id, PowerState::settled_for_test());
         let bits = int(&house[0]);
         let allies = sim.house_alliances_mut_for_test().entry(name).or_default();
         for other in (0..31).filter(|other| bits & (1 << other) != 0) {
@@ -1435,7 +1437,7 @@ fn retail_storm_strikes_through_production_frames() {
     let mut warnings = Vec::new();
     let mut frames = 0;
     while !lightning_storm::raging(&sim) {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
         frames += 1;
         if sim
@@ -1466,7 +1468,7 @@ fn retail_storm_strikes_through_production_frames() {
 
     let mut strikes = 0;
     while lightning_storm::raging(&sim) {
-        sim.sound_events.clear();
+        sim.sound_events.clear_for_test();
         step(&mut sim, &rules);
         frames += 1;
         strikes += sim

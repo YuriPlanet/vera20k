@@ -110,7 +110,7 @@ fn assert_state(wave: &Wave, native: &Value, alive: bool) {
                 .polygon
                 .to_vec()
         } else {
-            wave.sonic_draw_polygon(camera).unwrap().to_vec()
+            wave.sonic_draw_geometry(camera).unwrap().polygon.to_vec()
         };
         let expected = native["polygon"]
             .as_array()

@@ -939,7 +939,10 @@ fn missile_impact_kills_through_the_shared_death_pipeline() {
             logic_eligible: true,
         },
     );
-    sim.rocket_move_to(
+    Simulation::rocket_move_to(
+        &sim.interner,
+        &sim.session,
+        &mut sim.substrate,
         child_id,
         crate::sim::components::DriveCoord::cell(20, 20, 0),
         &rules,
@@ -2566,7 +2569,7 @@ CurleyShuffle=yes
         {
             manager.set_target(Some(TargetKind::Entity(target)));
         }
-        sim.fire_events.clear();
+        sim.fire_events.clear_for_test();
         sim.advance_tick(&[], Some(&rules), None, None, 67);
         let frame = sim.session.binary_frame();
         for event in sim

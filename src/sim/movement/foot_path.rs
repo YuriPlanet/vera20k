@@ -30,7 +30,10 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
 use crate::sim::pathfinding::CODE2_CHAIN_MAX_HOPS;
 use crate::sim::pathfinding::zone_map::{ZoneGrid, ZoneQueryCell};
+use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::SimSoundEvent;
 use crate::sim::world::Simulation;
 use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::direction_tables::dir_from_facing16;
@@ -370,15 +373,19 @@ impl Simulation {
     /// 750920 receives Rules ScoldSound, centered pan0x2000, volume1 and0.
     /// Clearing is caller-owned: Drive4B3AC9/Ship6A3118 can recurse before
     /// their later clear. Evidence: tools/spatial_oracle/foot_scold_latch.
-    pub(crate) fn play_foot_path_scold(&mut self, id: u64, rules: &RuleSet) {
-        let Some(actor) = self.substrate.entities.get(id) else {
+    pub(crate) fn play_foot_path_scold(
+        substrate: &ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        id: u64,
+        rules: &RuleSet,
+    ) {
+        let Some(actor) = substrate.entities.get(id) else {
             return;
         };
         if actor.navigation.path_runtime().scold_latch_raw() != 0
             && let Some(sound_id) = rules.general.scold_sound.clone()
         {
-            self.sound_events
-                .push(crate::sim::world::SimSoundEvent::VocCentered { sound_id });
+            sound_events.emit(crate::sim::world::SimSoundEvent::VocCentered { sound_id });
         }
     }
 
@@ -397,11 +404,14 @@ impl Simulation {
         // calls the owner's vt+0x548 and returns. So does the admission
         // retry's recursion, whose +640 the retry just expired, unless it is
         // the Foot's first request in a frame the batch answered.
-        if self.defer_path_search(
+        if Self::defer_path_search(
+            &mut self.path_batch,
+            &self.resolved_terrain,
+            &self.overlay_grid,
             request.entity_id,
             super::path_batch::WaitingRequest::NoQueue,
         ) {
-            self.walk_owner_clear_doing(request.entity_id)?;
+            self.substrate.walk_owner_clear_doing(request.entity_id)?;
             return Ok(FootPathOutcome::Returned);
         }
         self.run_walk_path_request(request, rules, registry, frame_effects)

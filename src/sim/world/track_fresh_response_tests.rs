@@ -165,7 +165,8 @@ fn unit(
     let id = sim
         .spawn_object(kind, "Americans", 10, 10, 0, &rules)
         .unwrap_or_else(|| panic!("spawn {kind}: {input}"));
-    sim.mission_assign_exact(id, MissionId::from_known(MissionType::Move), 100)
+    sim.substrate
+        .mission_assign_exact(id, MissionId::from_known(MissionType::Move), 100)
         .unwrap();
     if let Some(clear) = input["clear_speed"].as_f64() {
         // The oracle writes the Clear row of every SpeedType; after the spawn,

@@ -347,7 +347,14 @@ impl Simulation {
             ),
         };
         let on_bridge = entity.on_bridge();
-        self.object_raw_receiver_at(id, location, false);
+        Self::object_raw_receiver_at(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
+            id,
+            location,
+            false,
+        );
         let (rx, ry) = ((x / 256) as u16, (y / 256) as u16);
         let building = self
             .substrate
@@ -375,7 +382,14 @@ impl Simulation {
         {
             return false;
         }
-        self.object_raw_receiver_at(id, location, true);
+        Self::object_raw_receiver_at(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
+            id,
+            location,
+            true,
+        );
         true
     }
 
@@ -441,7 +455,7 @@ impl Simulation {
             );
         }
         let now = self.session.binary_frame();
-        let _ = self.mission_commence_exact(id, now);
+        let _ = self.substrate.mission_commence_exact(id, now);
         let entity = self
             .substrate
             .entities
@@ -566,7 +580,11 @@ impl Simulation {
             return None;
         }
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
-        let body = self.pick_death_anim(bodies).to_string();
+        let body = crate::sim::combat::destruction_effects::pick_death_anim(
+            &mut self.scenario_rng,
+            bodies,
+        )
+        .to_string();
         let body = self.interner.intern(&body);
         self.admit_death_anim(
             rules,

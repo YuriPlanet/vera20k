@@ -138,12 +138,12 @@ fn funds_event_runs_from_house_rung_after_a_spend() {
          [Actions]\nFUNDS=1,28,0,7,0,0,0,0,A\n\
          [Tags]\nFUNDS_TAG=0,Funds,FUNDS\n",
     );
-    crate::sim::credit_income::add_credits(&mut sim, houses[0], 70000);
+    crate::sim::credit_income::add_credits(&mut sim.houses, houses[0], 70000);
     sim.session.set_binary_frame_for_test(0);
     for frame in 0..=8 {
         assert_eq!(sim.session.binary_frame(), frame);
         if frame == 7 {
-            crate::sim::credit_income::spend_money(&mut sim, houses[0], 60000);
+            crate::sim::credit_income::spend_money(&mut sim.houses, houses[0], 60000);
         }
         ordinary_master_frame(&mut sim, Some(&rules), Some(&overlay), false);
         // Native House4F8F87 -> Tag/RegisterEvent -> HasOccurred52:
@@ -420,7 +420,8 @@ fn delete_tag_returns_safely_through_its_active_dispatcher() {
             let other_type = sim.trigger_runtime.definitions.tag_type("OTHER").unwrap();
             let other = sim.shared_trigger_tag(other_type);
             let cell = sim.trigger_cell_identity((15, 15));
-            sim.replace_cell_trigger_tag(cell, Some(active));
+            sim.trigger_runtime
+                .replace_cell_trigger_tag(cell, Some(active));
             assert_eq!(sim.trigger_runtime.tag(active).unwrap().refs, 1);
             assert!(sim.dispatch_live_tag_event(
                 active,
@@ -478,7 +479,8 @@ fn retail_sov01_boris_tag_delete_is_immediate_and_releases_attachments() {
         .unwrap();
     let unrelated = sim.construct_trigger_tag(unrelated_type);
     let cell = sim.trigger_cell_identity((50, 60));
-    sim.replace_cell_trigger_tag(cell, Some(first));
+    sim.trigger_runtime
+        .replace_cell_trigger_tag(cell, Some(first));
     let linked = sim.trigger_runtime.tag(first).unwrap().triggers.clone();
     assert!(sim.apply_live_trigger_action(
         &action,

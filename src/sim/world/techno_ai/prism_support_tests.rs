@@ -16,7 +16,7 @@
 //! than 1 or 2 at expiry (`mode_0`, `mode_3`) is skipped: every native writer
 //! pairs the mode with its countdown and writes only 1 or 2.
 //! `fire_at_returns_null` is FireAt's refusal, which VERA meets in its own
-//! emission path, where [`Simulation::take_support_bonus`] runs only for a
+//! emission path, where [`ObjectSubstrate::take_support_bonus`](crate::sim::world::ObjectSubstrate::take_support_bonus) runs only for a
 //! launched bullet.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -208,7 +208,7 @@ impl Fixture {
             .spawn_object("SHED", "Russians", 15, 12, 0, &rules)
             .unwrap();
         // No power state: every tower is operational until `unpower`.
-        sim.power_states.clear();
+        sim.power_states.map_mut_for_test().clear();
         sim.session.set_binary_frame_for_test(FRAME as u32);
         for &id in &spawned {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -361,7 +361,10 @@ impl Fixture {
         let mut power_state = crate::sim::power_system::PowerState::default();
         power_state.set_total_output_for_test(0);
         power_state.set_total_drain_for_test(75);
-        self.sim.power_states.insert(self.owner, power_state);
+        self.sim
+            .power_states
+            .map_mut_for_test()
+            .insert(self.owner, power_state);
     }
 
     /// `state` after the call: count, delayed-fire mode and countdown, rearm
@@ -644,7 +647,7 @@ fn prism_recruitment_matches_the_original() {
 /// Every `bonus` row VERA can hold (module doc): ProcessDelayedFire's
 /// countdown and, at its end, a request for the combat phase's FireAt only
 /// with a target and GetFireError OK, whose bullet takes
-/// [`Simulation::take_support_bonus`] (the row's `bullet_multiplier`) and
+/// [`ObjectSubstrate::take_support_bonus`](crate::sim::world::ObjectSubstrate::take_support_bonus) (the row's `bullet_multiplier`) and
 /// clears the count; otherwise the count stays. The row's GetFireError answer
 /// is made real: RANGE by the target's distance, REARM by the rearm timer,
 /// CANT by a power outage.
@@ -911,7 +914,7 @@ fn prism_cadence_matches_the_original() {
                 let native_events = native["events"].as_array().unwrap();
                 let native_event = |kind: &str| native_events.iter().find(|event| event[0] == kind);
 
-                ready_commence(&mut fixture.sim, id, true);
+                ready_commence(&fixture.sim.session, &mut fixture.sim.substrate, id, true);
                 let entity = fixture.sim.substrate.entities.get(id).unwrap();
                 let timer_before = entity.mission.dispatch_timer();
                 let mission_before = entity.mission.current();
@@ -969,7 +972,7 @@ fn prism_cadence_matches_the_original() {
                 recruits += usize::from(recruit.is_some());
                 arms += usize::from(arm);
 
-                ready_commence(&mut fixture.sim, id, false);
+                ready_commence(&fixture.sim.session, &mut fixture.sim.substrate, id, false);
                 let beaming = pending_after[&id].is_some_and(|pending| {
                     pending.remaining_ticks() <= 1
                         && matches!(pending.fire(), DelayedFire::SupportBeam { .. })

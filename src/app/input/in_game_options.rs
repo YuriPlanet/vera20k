@@ -85,7 +85,7 @@ pub(crate) fn in_game_options_hit(
 /// [`game_speed_hidden`] decides.
 pub(crate) fn on_open(state: &mut AppState) {
     let game_speed_hidden = game_speed_hidden(
-        state.match_state.session.mode(),
+        state.match_state.session_mode(),
         state
             .match_state
             .sim_runtime

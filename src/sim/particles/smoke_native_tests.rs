@@ -231,7 +231,7 @@ fn install_system(
             rules,
         )
         .unwrap();
-    let mut system = sim.particle_systems_mut().take_for_tick(id).unwrap();
+    let mut system = sim.substrate.particle_systems.take_for_tick(id).unwrap();
     system.native_unique_id = before["native_id"].as_i64().unwrap() as i32;
     system.spawn_timer = bits(&before["accumulator_bits"]);
     system.lifetime = before["lifetime"].as_i64().unwrap() as i32;
@@ -247,7 +247,7 @@ fn install_system(
         .max()
         .unwrap() as u32;
     sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(cursor));
-    sim.particle_systems_mut().reinsert_after_tick(system);
+    sim.substrate.particle_systems.reinsert_after_tick(system);
     if let Some(owner) = owner {
         sim.substrate
             .entities

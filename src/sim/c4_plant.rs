@@ -323,7 +323,9 @@ impl Simulation {
             ..Default::default()
         };
         let rof = crate::sim::combat::world_fire::snapshot_get_rof(
-            self,
+            &mut self.scenario_rng,
+            &self.substrate,
+            &self.houses,
             rules,
             &snap,
             obj,

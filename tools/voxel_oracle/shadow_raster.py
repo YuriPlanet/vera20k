@@ -21,7 +21,7 @@ def pack(*values):
 
 
 def render_shadow_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix, body_pixels=None,
-                         *, considered_aircraft=False, shadow_index=0):
+                         *, considered_aircraft=False, shadow_index=0, body_offset=(0, 0)):
     """Original selected-section core, optionally reading a supplied BSurface.
 
     Without an HVA it makes VoxelAnimClass::DrawIt's call (0x00749CBE..
@@ -164,7 +164,7 @@ def render_shadow_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix, body_pixe
         view_product = BASE + 0x900
         invoke(0x5af980, ecx=view_product, edx=0x887430, args=(SECTION,))
     invoke(0x753f90, ecx=VXL, edx=shadow_index,
-           args=(0, view_product, INTERMEDIATE, 0x887420, mask_surface, 0, 0),
+           args=(0, view_product, INTERMEDIATE, 0x887420, mask_surface, *body_offset),
            required=(0x7564b0, 0x5afb80))
     quad_before = bytes(u.mem_read(0xb3ff78, 0x48))
     assert read32(0xb2fb70) == 1

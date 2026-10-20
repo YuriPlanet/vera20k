@@ -70,12 +70,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     });
     let capacity = session.network_setup_capacity()?.clamp(0, 8) as usize;
     let observer_row = session.network_observer_row().map(usize::from);
-    let visible_limit =
-        if observer_row == Some(0) && (capacity as i32) < session.network_row_limit() {
-            capacity + 1
-        } else {
-            capacity
-        };
+    let row_limit = session.network_row_limit()?;
+    let visible_limit = if observer_row == Some(0) && (capacity as i32) < row_limit {
+        capacity + 1
+    } else {
+        capacity
+    };
     let cooperative = mode.class.uses_cooperative_setup();
     let coop = cooperative
         .then(|| {

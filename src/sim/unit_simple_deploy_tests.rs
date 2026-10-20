@@ -66,12 +66,13 @@ fn native_fixture(input: &Value, before: &Value) -> (Simulation, RuleSet, u64) {
     let (mut sim, mut rules, id) = fixture(input);
     sim.session.set_binary_frame_for_test(200);
     sim.session.set_tick_for_test(200);
-    sim.mission_assign_exact(
-        id,
-        MissionId::from_raw(before["mission"].as_i64().unwrap() as i32),
-        200,
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            id,
+            MissionId::from_raw(before["mission"].as_i64().unwrap() as i32),
+            200,
+        )
+        .unwrap();
     if before["anim_present"].as_bool().unwrap() {
         // Construct the supplied existing attachment through the production
         // owner while its physical ART range is valid. These setup RNG draws
@@ -331,7 +332,8 @@ fn synchronized_deploy_obeys_native_event9_actor_guards() {
                 } else {
                     MissionType::Selling
                 };
-                sim.mission_assign_exact(id, MissionId::from_known(mission), 0)
+                sim.substrate
+                    .mission_assign_exact(id, MissionId::from_known(mission), 0)
                     .unwrap();
             }
             "zero_health_crashing" => {
@@ -624,7 +626,7 @@ fn compare_snapshot_continuation(mut sim: Simulation, rules: &RuleSet, id: u64, 
     let loaded_sound = loaded.substrate.entities.get(id).unwrap().move_sound;
     assert!(!loaded_sound.is_active());
     assert_eq!(loaded_sound.countdown(), 0);
-    sim.restore_move_sound_state_after_load(id);
+    sim.substrate.restore_move_sound_state_after_load(id);
     assert_eq!(
         loaded.substrate.entities.get(id).unwrap().deploy_anim(),
         attachment

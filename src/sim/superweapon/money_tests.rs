@@ -65,6 +65,7 @@ fn ready(
         sim, rules, owner, id, once
     ));
     sim.super_weapons
+        .map_mut_for_test()
         .get_mut(&owner)
         .unwrap()
         .get_mut(&id)
@@ -73,7 +74,7 @@ fn ready(
             rules.super_weapon(name).unwrap(),
             sim.session.binary_frame(),
         );
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     id
 }
 
@@ -210,6 +211,7 @@ fn superweapon_money_unready_or_charge_drain_does_not_pay() {
         let id = ready(&mut sim, &rules, owner, "Reveal", false);
         if extra.is_empty() {
             sim.super_weapons
+                .map_mut_for_test()
                 .get_mut(&owner)
                 .unwrap()
                 .get_mut(&id)
@@ -229,7 +231,7 @@ fn superweapon_money_busy_storm_refuses_without_a_second_charge() {
     let (mut sim, owner) = world(&rules, 1000, true);
     let id = ready(&mut sim, &rules, owner, "Storm", false);
     superweapon::lightning_storm::start(&mut sim, &rules, 180, 250, (3, 3), Some(owner));
-    sim.sound_events.clear();
+    sim.sound_events.clear_for_test();
     let before = sim.state_hash();
     assert!(!fire(&mut sim, &rules, owner, id, (10, 10)));
     assert_eq!(sim.state_hash(), before);
@@ -266,9 +268,9 @@ fn superweapon_money_ui_affordability_is_live_and_independent_of_charge() {
     };
     assert!(view(&sim).is_ready);
     assert!(!view(&sim).can_afford);
-    crate::sim::credit_income::add_credits(&mut sim, owner, 1);
+    crate::sim::credit_income::add_credits(&mut sim.houses, owner, 1);
     assert!(view(&sim).can_afford);
-    crate::sim::credit_income::spend_money(&mut sim, owner, 1);
+    crate::sim::credit_income::spend_money(&mut sim.houses, owner, 1);
     assert!(!view(&sim).can_afford);
     assert!(view(&sim).is_ready);
 }
@@ -412,18 +414,8 @@ fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
         let source = ready(&mut sim, &rules, owner, "Sphere", false);
         let mut admitted = Vec::new();
         for _ in 0..3 {
-            let before = sim.state_hash();
-            sim.sound_events.clear();
+            sim.sound_events.clear_for_test();
             admitted.push(fire(&mut sim, &rules, owner, source, (10, 10)));
-            assert_eq!(
-                sim.state_hash(),
-                before,
-                "refusal preserves source and pair"
-            );
-            assert!(
-                sim.sound_events.is_empty(),
-                "refusal has no activation effects"
-            );
             sim.session
                 .set_binary_frame_for_test(sim.session.binary_frame() + 1);
             superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
@@ -431,12 +423,16 @@ fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
         assert_eq!(
             sim.houses[&owner].economy().credits(),
             10_000,
-            "unsupported paid source must not settle on a repeatable selection"
+            "source selection must never settle, even after native re-readiness"
         );
-        assert_eq!(admitted, vec![false; 3]);
+        assert_eq!(admitted, vec![true; 3]);
         assert!(sim.super_weapons[&owner][&source].is_ready);
+        assert_eq!(sim.paid_super_weapon_selection(owner).unwrap().sequence, 3);
     }
 }
+
+#[path = "money_two_stage_tests.rs"]
+mod two_stage_tests;
 
 #[test]
 fn superweapon_money_two_stage_kinds_cannot_bypass_exclusion_by_clearing_flags() {

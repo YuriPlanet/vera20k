@@ -67,7 +67,7 @@ pub(super) fn approach(
     match target {
         None => {
             sim.assign_aircraft_destination(id, None, rules, frame_effects);
-            super::queue_mission(sim, id, MissionType::Retreat);
+            super::queue_mission(&mut sim.substrate, id, MissionType::Retreat);
         }
         Some(target) if super::nav_com_absent(sim, id) => {
             sim.assign_aircraft_destination(id, Some(target.into()), rules, frame_effects);
@@ -79,7 +79,7 @@ pub(super) fn approach(
         }
     }
     if distance <= OVERFLY_DISTANCE {
-        super::queue_mission(sim, id, MissionType::SpyplaneOverfly);
+        super::queue_mission(&mut sim.substrate, id, MissionType::SpyplaneOverfly);
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.mission_leaf.set_aircraft_action_latch(true);
         }
@@ -162,6 +162,6 @@ fn snapshot(sim: &mut Simulation, id: u64, rules: &RuleSet, sound: bool) {
         && let Some(plane) = sim.substrate.entities.get(id)
     {
         let event = SimSoundEvent::voc_at(camera, &plane.position);
-        sim.sound_events.push(event);
+        sim.sound_events.emit(event);
     }
 }

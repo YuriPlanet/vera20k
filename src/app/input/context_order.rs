@@ -879,12 +879,13 @@ fn command_actor_id(command: &Command) -> Option<u64> {
 /// Capability batches may remove handled actors, but must not reorder their
 /// single-object events, including each prepared factory rally. Legacy aggregate
 /// commands cannot be placed at one actor's index and keep dispatcher order.
-/// This index derives from input selection.
+/// This index derives from input selection. A MoveFlash belongs to the first
+/// receiver and stays ahead of its order ([`push_move_flash`]).
 fn restore_selection_dispatch_order(queued: &mut [CommandEnvelope], selected: &[u64]) {
-    if queued
-        .iter()
-        .any(|envelope| command_actor_id(&envelope.payload).is_none())
-    {
+    if queued.iter().any(|envelope| {
+        command_actor_id(&envelope.payload).is_none()
+            && !matches!(envelope.payload, Command::MoveFlash { .. })
+    }) {
         return;
     }
     let positions: std::collections::HashMap<_, _> = selected
@@ -892,10 +893,14 @@ fn restore_selection_dispatch_order(queued: &mut [CommandEnvelope], selected: &[
         .enumerate()
         .map(|(index, &id)| (id, index))
         .collect();
-    queued.sort_by_key(|envelope| {
-        command_actor_id(&envelope.payload)
-            .and_then(|id| positions.get(&id).copied())
-            .unwrap_or(usize::MAX)
+    queued.sort_by_key(|envelope| match envelope.payload {
+        Command::MoveFlash { .. } => (0, false),
+        _ => (
+            command_actor_id(&envelope.payload)
+                .and_then(|id| positions.get(&id).copied())
+                .unwrap_or(usize::MAX),
+            true,
+        ),
     });
 }
 
@@ -1861,38 +1866,6 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 .is_some_and(|entity| entity.category() == EntityCategory::Structure)
         });
 
-        let only_miners_selected = mobile_count > 0 && selected_miner_ids.len() == mobile_count;
-        let clicked_friendly_refinery_id = context_actions_enabled
-            .then(|| {
-                hover.as_ref().and_then(|target| {
-                    if target.kind != HoverTargetKind::FriendlyStructure {
-                        return None;
-                    }
-                    let rules = Some(&resources.rules)?;
-                    sim.entities().get(target.stable_id).and_then(|e| {
-                        rules
-                            .is_refinery_type(sim.interner().resolve(e.type_ref()))
-                            .then_some(target.stable_id)
-                    })
-                })
-            })
-            .flatten();
-        // Each miner's own What_Action over the refinery
-        // (`Selection__DispatchMultiUnitOrder` object loop): Enter only when
-        // the refinery's CAN_LOAD admits it (`0x0074017E`). A busy, unpowered
-        // or selling refinery leaves Select, and the click selects.
-        let entering_miners: Vec<u64> = clicked_friendly_refinery_id.map_or_else(Vec::new, |id| {
-            selected_miner_ids
-                .iter()
-                .copied()
-                .filter(|&miner| {
-                    sim.unit_building_click_action(miner, id, &resources.rules)
-                        == Some(crate::sim::world::BuildingClickAction::Enter)
-                })
-                .collect()
-        });
-        let clicked_friendly_refinery = !entering_miners.is_empty();
-
         // Check if the clicked cell holds tiberium (ore/gems). The Unit
         // harvest arms run only over a Cell the viewer has mapped
         // (`0x007405DB..0x007405E6`); over shroud a miner moves. They are
@@ -1943,21 +1916,7 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             rally_announce |= announce;
         }
 
-        if clicked_friendly_refinery && only_miners_selected {
-            for stable_id in entering_miners {
-                queued.push(CommandEnvelope::new(
-                    owner_id,
-                    execute_tick,
-                    Command::MinerReturn {
-                        entity_id: stable_id,
-                        target_refinery_id: clicked_friendly_refinery_id,
-                    },
-                ));
-            }
-            // The manual return order commits mission Enter, so its ack is the
-            // VoiceEnter slot (e.g. CMIN ChronoMinerReturn) — resolved from the
-            // command itself by `order_voice_key`.
-        } else if clicked_ore && !selected_miner_ids.is_empty() {
+        if clicked_ore && !selected_miner_ids.is_empty() {
             // Direct miners to harvest the clicked ore cell.
             for &stable_id in &selected_miner_ids {
                 queued.push(CommandEnvelope::new(
@@ -1977,6 +1936,18 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             // same 4DE1D0 cell receiver as an ordinary Move click.
             for &stable_id in &selected_units {
                 if !selected_miner_ids.contains(&stable_id) {
+                    push_move_flash(
+                        &mut queued,
+                        sim,
+                        &resources.rules,
+                        Some(&resources.overlay_registry),
+                        owner_id,
+                        execute_tick,
+                        &current_objects,
+                        stable_id,
+                        (target_rx, target_ry),
+                        shift_click,
+                    );
                     let Some(goal) = crate::app::input::commands::ordinary_cell_move_goal(
                         sim,
                         &resources.rules,
@@ -2045,20 +2016,25 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 }
             }
 
-            // Alt answers Move first (`0x007001E9`), in the Ctrl+Shift+Alt
-            // chord too.
-            if context_actions_enabled
-                && !force_move
+            // The passenger rows take Alt's Move too, and Ctrl's tail for an
+            // unarmed receiver; the objects they leave take the force-move or
+            // the forced click below.
+            let mut consumed_entry_action = false;
+            if (context_actions_enabled || force_move || force_fire)
                 && let Some(target) = hover.as_ref()
-                && let Some(orders) = grinder_orders(
+                && let Some(orders) = entry_orders(
                     sim,
                     &resources.rules,
+                    &current_objects,
                     &mut selected_units,
                     target,
+                    modifier,
+                    force_move_key,
                     Some(&resources.overlay_registry),
                 )
             {
                 consumed_building_action = true;
+                consumed_entry_action = true;
                 queued.extend(
                     orders
                         .into_iter()
@@ -2070,12 +2046,8 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             }
 
             if context_actions_enabled && let Some(target) = hover.as_ref() {
-                let orders = transport_entry_orders(
-                    sim,
-                    &resources.rules,
-                    &selected_units,
-                    target.stable_id,
-                );
+                let orders =
+                    garrison_entry_orders(sim, &resources.rules, &selected_units, target.stable_id);
                 if !orders.is_empty() {
                     queued.extend(
                         orders
@@ -2108,83 +2080,6 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                         ));
                     }
                     return finish_order(state, queued, speaker_id);
-                }
-            }
-
-            // Service depot: damaged own vehicles clicking an own UnitRepair
-            // building drive to the depot and auto-repair. Ordered before the
-            // friendly-fallthrough so the click isn't consumed as re-selection.
-            if context_actions_enabled {
-                let depot_target = hover.as_ref().and_then(|target| {
-                    if !matches!(target.kind, HoverTargetKind::FriendlyStructure) {
-                        return None;
-                    }
-                    let rules = Some(&resources.rules)?;
-                    let building = sim.entities().get(target.stable_id)?;
-                    let obj = sim.interner().object_type(building.type_ref(), rules)?;
-                    obj.unit_repair.then_some(target.stable_id)
-                });
-                if let Some(depot_id) = depot_target {
-                    let repair_ids: Vec<u64> = selected_units
-                        .iter()
-                        .copied()
-                        .filter(|&sid| {
-                            sim.entities().get(sid).is_some_and(|e| {
-                                e.category() == EntityCategory::Unit
-                                    && sim
-                                        .interner()
-                                        .object_type(e.type_ref(), &resources.rules)
-                                        .is_some_and(|obj| e.health.current() < obj.strength)
-                                    && !e.is_deployed()
-                            })
-                        })
-                        .collect();
-                    if !repair_ids.is_empty() {
-                        for unit_id in repair_ids {
-                            queued.push(CommandEnvelope::new(
-                                owner_id,
-                                execute_tick,
-                                Command::RepairAtDepot {
-                                    entity_id: unit_id,
-                                    depot_id,
-                                },
-                            ));
-                        }
-                        return finish_order(state, queued, speaker_id);
-                    }
-                }
-            }
-
-            // Tank bunker: an own bunkerable vehicle clicking an own EMPTY tank
-            // bunker installs into it. The bunker holds one unit, so only the
-            // first eligible vehicle is sent. Occupied bunkers are ejected via
-            // the self-click path below.
-            if context_actions_enabled {
-                let bunker_target = hover.as_ref().and_then(|target| {
-                    if !matches!(target.kind, HoverTargetKind::FriendlyStructure) {
-                        return None;
-                    }
-                    let building = sim.entities().get(target.stable_id)?;
-                    (building.bunker_runtime.is_some() && building.bunker.occupant().is_none())
-                        .then_some(target.stable_id)
-                });
-                if let Some(bunker_id) = bunker_target {
-                    let unit_id = selected_units.iter().copied().find(|&sid| {
-                        sim.entities().get(sid).is_some_and(|e| !e.is_deployed())
-                            && Some(&resources.rules).is_some_and(|rules| {
-                                crate::sim::docking::bunker_link::can_auto_deploy_here(
-                                    sim, sid, rules,
-                                )
-                            })
-                    });
-                    if let Some(unit_id) = unit_id {
-                        queued.push(CommandEnvelope::new(
-                            owner_id,
-                            execute_tick,
-                            Command::EnterBunker { unit_id, bunker_id },
-                        ));
-                        return finish_order(state, queued, speaker_id);
-                    }
                 }
             }
 
@@ -2274,8 +2169,9 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             // nothing under the cursor is a target, and the object receiver
             // 4D74E0 orders the object or a Cell near it
             // ([`Simulation::object_move_click`]). Rungs that answer first
-            // (Self, handled above) or rewrite it are not asked here (#605):
-            // the class rungs noted above, and Foot's shroud rung
+            // (Self) or rewrite it (the passenger rows, [`entry_orders`]) are
+            // handled above. Others are not asked here (#605): the class
+            // rungs noted above, and Foot's shroud rung
             // (`0x004DDF45..0x004DDF82`), which only GameMode 0 reaches. An
             // enemy the player cannot see is no object to click, as for the
             // cursor: the Cell under it takes the click.
@@ -2311,10 +2207,15 @@ pub(crate) fn try_queue_context_order_at_screen_point(
             // Attack5. The ordinary MTNK fall-through below takes Move; other
             // class/shroud combinations remain part of the shared-cell audit.
             if let Some(target_id) = attack_target {
-                if matches!(
-                    modifier,
-                    OrderModifier::Normal | OrderModifier::AttackMove | OrderModifier::ForceFire
-                ) {
+                // Entries already dispatched the release.
+                if !consumed_entry_action
+                    && matches!(
+                        modifier,
+                        OrderModifier::Normal
+                            | OrderModifier::AttackMove
+                            | OrderModifier::ForceFire
+                    )
+                {
                     // A selected building is a receiver as well: when it
                     // owns the cursor, its own answer decides the release.
                     match object_click_release(
@@ -2354,6 +2255,18 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 } else if force_fire && !cell_is_shrouded {
                     // Unarmed Cell-click fall-through resolves the original
                     // clicked Cell before committing its Move event.
+                    push_move_flash(
+                        &mut queued,
+                        sim,
+                        &resources.rules,
+                        Some(&resources.overlay_registry),
+                        owner_id,
+                        execute_tick,
+                        &current_objects,
+                        stable_id,
+                        (target_rx, target_ry),
+                        shift_click,
+                    );
                     let Some(goal) = crate::app::input::commands::ordinary_cell_move_goal(
                         sim,
                         &resources.rules,
@@ -2381,6 +2294,20 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 } else {
                     match order_mode {
                         OrderMode::Move | OrderMode::AttackMove => {
+                            if force_move_target.is_none() {
+                                push_move_flash(
+                                    &mut queued,
+                                    sim,
+                                    &resources.rules,
+                                    Some(&resources.overlay_registry),
+                                    owner_id,
+                                    execute_tick,
+                                    &current_objects,
+                                    stable_id,
+                                    (target_rx, target_ry),
+                                    shift_click,
+                                );
+                            }
                             let destination = match force_move_target {
                                 Some(target_id) => {
                                     crate::app::input::commands::object_move_destination(
@@ -2419,7 +2346,12 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 };
                 queued.push(CommandEnvelope::new(owner_id, execute_tick, payload));
             }
-            if !queued.is_empty() {
+            // A MoveFlash alone is no order: Resolve_Move_Order_Cell can
+            // still refuse every receiver after it.
+            if queued
+                .iter()
+                .any(|envelope| !matches!(envelope.payload, Command::MoveFlash { .. }))
+            {
                 consumed_order_mode = true;
             }
         }
@@ -2438,6 +2370,47 @@ pub(crate) fn try_queue_context_order_at_screen_point(
         );
     }
     finish_order(state, queued, speaker_id) || consumed_attack_action
+}
+
+/// `FootClass::ClickedAction_Cell`'s MoveFlash (`0x004D7EB5..0x004D8065`)
+/// for one receiver of a Cell click: only the selection's first object asks
+/// ([`crate::sim::world::Simulation::cell_click_flashes_move`]), and its
+/// flash is queued before its own order, as native constructs it before the
+/// receiver's destination resolves. Planning Mode clicks reach the same
+/// receiver loop (`0x004ABF94`), so they flash too; a plan's execution clears
+/// the latch around its own ClickedAction (`0x004DC96F..0x004DC984`).
+#[allow(clippy::too_many_arguments)]
+fn push_move_flash(
+    queued: &mut Vec<CommandEnvelope>,
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    owner_id: InternedId,
+    execute_tick: u64,
+    current_objects: &[u64],
+    receiver: u64,
+    cell: (u16, u16),
+    shift: bool,
+) {
+    if current_objects.first() != Some(&receiver) {
+        return;
+    }
+    let flashes = sim
+        .cell_click_flashes_move(owner_id, receiver, cell, shift, rules, registry)
+        .unwrap_or_else(|cause| {
+            log::warn!("MoveFlash click input: {cause}");
+            false
+        });
+    if flashes {
+        queued.push(CommandEnvelope::new(
+            owner_id,
+            execute_tick,
+            Command::MoveFlash {
+                rx: cell.0,
+                ry: cell.1,
+            },
+        ));
+    }
 }
 
 /// The data capability shared by self-click, self-hover and the deploy key.
@@ -2592,98 +2565,185 @@ fn self_action(
     })
 }
 
-/// Object entry orders use the same admission owner as the hover cursor.
+/// Garrison orders use the same admission owner as the hover cursor.
 /// Infantry What_Action51E668..51E6B1 answers action9 for an admitted
 /// garrison; Foot ClickedAction4D7716..4D773A sends Capture8 with NULL
 /// Target and the building as Destination. Actual arrival belongs to the
 /// existing Capture/PerCell owners, as for computer occupiers (#1400).
-fn transport_entry_orders(
+/// Passenger carriers take [`entry_orders`].
+fn garrison_entry_orders(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     selected: &[u64],
-    transport_id: u64,
+    building_id: u64,
 ) -> Vec<Command> {
     let garrison = sim
         .entities()
-        .get(transport_id)
+        .get(building_id)
         .filter(|target| target.category() == EntityCategory::Structure)
         .and_then(|target| sim.interner().object_type(target.type_ref(), rules))
         .is_some_and(|object| object.can_be_occupied);
+    if !garrison {
+        return Vec::new();
+    }
     selected
         .iter()
         .copied()
-        .filter(|&id| crate::sim::passenger::can_enter_transport(sim, rules, id, transport_id))
-        .map(|passenger_id| {
-            if garrison {
-                Command::CaptureBuilding {
-                    engineer_id: passenger_id,
-                    target_building_id: transport_id,
-                }
-            } else {
-                Command::EnterTransport {
-                    passenger_id,
-                    transport_id,
-                }
-            }
+        .filter(|&id| crate::sim::passenger::can_enter_transport(sim, rules, id, building_id))
+        .map(|engineer_id| Command::CaptureBuilding {
+            engineer_id,
+            target_building_id: building_id,
         })
         .collect()
 }
 
-/// [`Simulation::grinder_click_action`] for an object whose base action over
-/// the Grinder is Select ([`attack_action`]), which both class rows need
-/// (action 7: Unit `0x00740122`, Infantry `0x0051F0AF`). An armed player's
-/// object over another house's Grinder (0, `0x0070056C`), an Ivan granted
-/// Attack (IvanBomb, `0x0051EB24`) and a selected or warped-out Grinder take
-/// other rows.
+/// [`Simulation::entry_click_action`] under the base action the modifier and
+/// [`attack_action`] give:
+/// - Shift's ToggleSelect (8) returns first (`0x0051E453`), and Ctrl+Alt's
+///   GuardArea (0x1A) skips every entry row;
+/// - Alt answers Move (1) first (`0x007001E9`), in the Ctrl+Shift+Alt chord
+///   too, which only the passenger rows take. A player's deployed `Deployer=`
+///   infantryman (Doing 27..30) answers NoMove (2) for it before them
+///   (`0x0051EB81..0x0051EBD7`);
+/// - otherwise [`attack_action`], forced under Ctrl: Select (7) takes every
+///   row, and Attack (5) none. Every other answer takes only the passenger
+///   rows: an armed player's object over another house's object (0,
+///   `0x0070056C`) or a selected one. Ctrl leaves the attack rung to the
+///   tail for an actor neither armed nor `Infiltrate=`
+///   (`0x00700444..0x00700474`), so an Engineer's Ctrl over a carrier still
+///   asks it.
 ///
-/// [`Simulation::grinder_click_action`]: crate::sim::world::Simulation::grinder_click_action
-pub(super) fn grinder_action(
+/// [`Simulation::entry_click_action`]: crate::sim::world::Simulation::entry_click_action
+pub(super) fn entry_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     actor_id: u64,
     target_id: u64,
+    modifier: OrderModifier,
+    force_move_key: bool,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-) -> Option<crate::sim::world::BuildingClickAction> {
-    let action = sim.grinder_click_action(actor_id, target_id, rules)?;
-    (attack_action(
-        sim,
-        rules,
-        actor_id,
-        &TargetKind::Entity(target_id),
-        false,
-        overlay_registry,
-    ) == AttackAction::Select)
-        .then_some(action)
+) -> Option<crate::sim::world::EntryClickAction> {
+    use crate::sim::world::EntryBaseAction;
+    let base = match modifier {
+        OrderModifier::Shift | OrderModifier::GuardArea => return None,
+        OrderModifier::ForceMove => EntryBaseAction::Other,
+        OrderModifier::AttackMove if force_move_key => EntryBaseAction::Other,
+        OrderModifier::Normal | OrderModifier::AttackMove | OrderModifier::ForceFire => {
+            match attack_action(
+                sim,
+                rules,
+                actor_id,
+                &TargetKind::Entity(target_id),
+                modifier == OrderModifier::ForceFire,
+                overlay_registry,
+            ) {
+                AttackAction::Select => EntryBaseAction::Select,
+                AttackAction::Attack => return None,
+                _ => EntryBaseAction::Other,
+            }
+        }
+    };
+    let alt = modifier == OrderModifier::ForceMove
+        || (modifier == OrderModifier::AttackMove && force_move_key);
+    if alt
+        && sim.entities().get(actor_id).is_some_and(|actor| {
+            actor.category() == EntityCategory::Infantry
+                && sim.house_is_human_player(actor.owner())
+                && actor.infantry_deploy_doing()
+                && sim
+                    .interner()
+                    .object_type(actor.type_ref(), rules)
+                    .is_some_and(|object| object.deployer)
+        })
+    {
+        return None;
+    }
+    sim.entry_click_action(actor_id, target_id, base, rules)
 }
 
-/// The selected objects whose Select over a friendly `Grinding=` building is
-/// Grind or NoEnter ([`grinder_action`]) leave `selected`. Foot ClickedAction
-/// (`0x004D774F`) sends a controllable (vt+0xA0) one mission Eaten with NULL
-/// Target and the building as Destination; NoEnter has no case and orders
-/// nothing. None when no selected object takes it.
-fn grinder_orders(
+/// The selected objects whose action over a friendly object is Enter, Grind
+/// or NoEnter ([`entry_action`]) leave `selected`, each on its own
+/// What_Action as `Selection__DispatchMultiUnitOrder`'s object loop
+/// (`0x004AE829..0x004AE85A`) asks it. Foot ClickedAction (`0x004D74E0`)
+/// sends a controllable (vt+0xA0) one mission Enter (case 3) or Eaten (case
+/// 0xB) with NULL Target and the object as Destination; NoEnter has no case
+/// and orders nothing. Without Alt the loop runs only when the action of the
+/// object that owns the cursor ([`cursor_owner`] of `current_objects`) is an
+/// order: one of these, or its [`attack_action`] when the [`left_release`]
+/// of that dispatches. For its Select, or a 0 over an object the player may
+/// select, BandBox_LeftUp selects the object instead (`0x004AB9B0` ->
+/// `0x004ABE18`) and never reaches the dispatcher. A selected carrier that
+/// owns the cursor over itself answers NoMove (its rung skips itself at
+/// `0x00740312`, and `0x007403EB` turns the 0 into NoMove), so the passengers
+/// selected with it still enter. Alt's Move is an order, so the loop always
+/// runs, and the objects it leaves take the force-move. None when no
+/// selected object takes an entry action.
+fn entry_orders(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
+    current_objects: &[u64],
     selected: &mut Vec<u64>,
     hover: &HoverTargetKindWithId,
+    modifier: OrderModifier,
+    force_move_key: bool,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<Vec<Command>> {
-    if hover.kind != HoverTargetKind::FriendlyStructure {
+    if !matches!(
+        hover.kind,
+        HoverTargetKind::FriendlyStructure | HoverTargetKind::FriendlyUnit
+    ) {
         return None;
+    }
+    let action = |id| {
+        entry_action(
+            sim,
+            rules,
+            id,
+            hover.stable_id,
+            modifier,
+            force_move_key,
+            overlay_registry,
+        )
+    };
+    let force_move = modifier == OrderModifier::ForceMove
+        || (modifier == OrderModifier::AttackMove && force_move_key);
+    if !force_move {
+        let owner = cursor_owner(sim, rules, current_objects, hover.stable_id)?;
+        if action(owner).is_none()
+            && left_release(
+                sim,
+                rules,
+                attack_action(
+                    sim,
+                    rules,
+                    owner,
+                    &TargetKind::Entity(hover.stable_id),
+                    modifier == OrderModifier::ForceFire,
+                    overlay_registry,
+                )
+                .into(),
+                Some(hover.stable_id),
+            ) != LeftRelease::Dispatch
+        {
+            return None;
+        }
     }
     let mut consumed = false;
     let mut orders = Vec::new();
     selected.retain(|&id| {
-        let Some(action) = grinder_action(sim, rules, id, hover.stable_id, overlay_registry) else {
+        let Some(action) = action(id) else {
             return true;
         };
         consumed = true;
-        if action == crate::sim::world::BuildingClickAction::Grind
-            && sim.techno_player_controllable(id, rules)
-        {
+        let mission = match action {
+            crate::sim::world::EntryClickAction::Enter => crate::sim::mission::MissionType::Enter,
+            crate::sim::world::EntryClickAction::Grind => crate::sim::mission::MissionType::Eaten,
+            crate::sim::world::EntryClickAction::NoEnter => return false,
+        };
+        if sim.techno_player_controllable(id, rules) {
             orders.push(Command::MegaMission {
                 entity_id: id,
-                mission: crate::sim::mission::MissionType::Eaten,
+                mission,
                 target: None,
                 destination: Some(TargetKind::Entity(hover.stable_id)),
             });
@@ -6062,6 +6122,10 @@ mod tests {
 mod selection_dispatch_tests;
 
 #[cfg(test)]
+#[path = "context_order_move_flash_tests.rs"]
+mod move_flash_tests;
+
+#[cfg(test)]
 #[path = "context_order_retail_bridge_tests.rs"]
 mod retail_bridge_tests;
 
@@ -6074,8 +6138,8 @@ mod retail_engineer_tests;
 mod retail_garrison_tests;
 
 #[cfg(test)]
-#[path = "context_order_retail_grinder_tests.rs"]
-mod retail_grinder_tests;
+#[path = "context_order_retail_entry_tests.rs"]
+mod retail_entry_tests;
 
 #[cfg(test)]
 #[path = "context_order_retail_ifv_repair_tests.rs"]

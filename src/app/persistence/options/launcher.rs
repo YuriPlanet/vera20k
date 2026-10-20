@@ -19,8 +19,8 @@ use crate::ui::main_menu_dialogs::options::{
 /// `0x0055FDB0..0x0056047A`. Trackbar set-position rejects an out-of-range
 /// request and leaves the fresh position at zero; it does not clamp. VERA's
 /// Full Screen box starts unticked; the opener sets it from the window. Its
-/// Original 4:3 Shape and RA2 Loading & Menu Movie boxes and Sidebar list show
-/// the retained choices.
+/// Original 4:3 Shape and Original Yuri's Revenge Style boxes and Sidebar list
+/// show the retained choices.
 pub(crate) fn launcher_values_from_profile(
     profile: &RetailOptionsProfile,
 ) -> LauncherOptionsValues {
@@ -33,7 +33,7 @@ pub(crate) fn launcher_values_from_profile(
         show_hidden: profile.show_hidden,
         full_screen: false,
         original_shape: profile.original_shape,
-        ra2_look: profile.ra2_look,
+        yr_original_style: profile.yr_original_style,
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
         sidebar: profile.sidebar,
@@ -70,7 +70,7 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_sidebar(&mut self, size: SidebarSize);
     fn set_full_screen(&mut self, full_screen: bool);
     fn store_original_shape(&mut self, original_shape: bool);
-    fn store_ra2_look(&mut self, ra2_look: bool);
+    fn store_yr_original_style(&mut self, yr_original_style: bool);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
 }
@@ -92,7 +92,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::OriginalShapeChanged(original_shape) => {
             operations.store_original_shape(original_shape);
         }
-        LauncherOptionsEvent::Ra2LookChanged(ra2_look) => operations.store_ra2_look(ra2_look),
+        LauncherOptionsEvent::YrOriginalStyleChanged(yr_original_style) => {
+            operations.store_yr_original_style(yr_original_style)
+        }
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
         }
@@ -277,7 +279,7 @@ mod tests {
             tooltips: false,
             unit_action_lines: false,
             show_hidden: true,
-            ra2_look: true,
+            yr_original_style: true,
             shift_queue: true,
             wol_test_service: true,
             ..RetailOptionsProfile::default()
@@ -285,7 +287,7 @@ mod tests {
         assert!(!booleans.tooltips);
         assert!(!booleans.target_lines);
         assert!(booleans.show_hidden);
-        assert!(booleans.ra2_look);
+        assert!(booleans.yr_original_style);
         assert!(booleans.shift_queue);
         assert!(booleans.wol_test_service);
     }

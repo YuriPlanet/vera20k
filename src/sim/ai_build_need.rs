@@ -65,6 +65,7 @@ use crate::sim::ai_unit_choice::UnitChoiceKind;
 use crate::sim::base_plan::{BasePlanNode, unpack_base_plan_cell};
 use crate::sim::credit_income::available_money;
 use crate::sim::house_state::HouseState;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::production::{SellOrder, can_sell_building, sell_back, techno_refund};
@@ -407,7 +408,7 @@ fn sell_node(
             return;
         };
         if gate {
-            remove_node(sim, owner, index, sale);
+            remove_node(&mut sim.houses, owner, index, sale);
         }
         sale.refunds = sale.refunds.wrapping_add(refund);
         return;
@@ -421,12 +422,12 @@ fn sell_node(
         // Original 0x4FDFC7 passes 0, as the Event SELL caller does.
         sim.sell_wall_at_cell(&house, x, y, false, rules, overlays, effects);
     }
-    remove_node(sim, owner, index, sale);
+    remove_node(&mut sim.houses, owner, index, sale);
 }
 
 /// The ordered removal of node `index`.
-fn remove_node(sim: &mut Simulation, owner: InternedId, index: usize, sale: &mut Sale) {
-    let Some(house) = sim.houses.get_mut(&owner) else {
+fn remove_node(houses: &mut Houses, owner: InternedId, index: usize, sale: &mut Sale) {
+    let Some(house) = houses.get_mut(&owner) else {
         return;
     };
     let node = house.base_plan().nodes().get(index).copied();

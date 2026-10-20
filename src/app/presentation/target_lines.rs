@@ -541,20 +541,11 @@ fn action_line_endpoints(
     cells: Option<&NativeCellQuery<'_>>,
 ) -> Option<SelectedActionLine> {
     let project = |x, y, z| crate::util::lepton::absolute_leptons_to_screen(x, y, z).into();
-    if let Some(attack) = entity.attack_target.target() {
-        let rules = rules?;
-        let start = crate::sim::combat::fire_coord::turret_pivot_coordinate(sim, rules, entity)?;
-        let end = crate::sim::combat::aim_coord::led_target_coordinate(
-            sim,
-            rules,
-            entity.stable_id(),
-            Some(attack),
-        );
+    if entity.attack_target.target().is_some() {
+        let [start, end] = attack_line_points(entity, sim, rules?)?;
         return Some(SelectedActionLine {
-            // Foot4DC0C6/4DC0DF: +300 pivot and70BCB0's own TarCom+58.
-            // FireAt shares the latter query; no presentation copy of lead.
-            start: project(start.x, start.y, start.z),
-            end: project(end.x, end.y, end.z),
+            start,
+            end,
             kind: SelectedLineKind::Attack,
         });
     }
@@ -593,6 +584,27 @@ fn action_line_endpoints(
     })
 }
 
+/// With a Target (+2B4), the +300 pivot (argument 0) to 70BCB0's lead
+/// coordinate, projected: Foot4DC0C6/4DC0DF and the target laser's
+/// Techno6FF983/6FF9A4. FireAt shares the lead query; no presentation copy.
+fn attack_line_points(
+    entity: &GameEntity,
+    sim: &Simulation,
+    rules: &RuleSet,
+) -> Option<[ScreenPoint; 2]> {
+    let attack = entity.attack_target.target()?;
+    let start = crate::sim::combat::fire_coord::turret_pivot_coordinate(sim, rules, entity)?;
+    let end = crate::sim::combat::aim_coord::led_target_coordinate(
+        sim,
+        rules,
+        entity.stable_id(),
+        Some(attack),
+    );
+    Some(
+        [start, end].map(|p| crate::util::lepton::absolute_leptons_to_screen(p.x, p.y, p.z).into()),
+    )
+}
+
 fn rally_tint_for_owner(
     owner: &str,
     house_color_map: &HouseColorMap,
@@ -610,15 +622,113 @@ fn rally_tint_for_owner(
 /// surface color; the action line does not sample A or use cell lighting.
 fn action_line_color(palette: &crate::assets::pal_file::Palette, index: u8) -> [f32; 3] {
     use crate::render::native_surface_format::{ACTIVE_RETAIL_RGB565_PRESENTATION, RGB565};
+    let [r, g, b] = RGB565.unpack_rgb8(action_line_word(palette, index));
+    let rgba = ACTIVE_RETAIL_RGB565_PRESENTATION.quantize_rgba8([r, g, b, 255]);
+    [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.)
+}
+
+/// The packed surface word of Palette87F6C4's entry `index` (its 16-bit
+/// table at +174, `+0x10` for index 8).
+fn action_line_word(palette: &crate::assets::pal_file::Palette, index: u8) -> u16 {
     let color = palette.color(index);
-    let word = crate::render::palette_light::PaletteLight::plain(53, 1000).rgb565(
+    crate::render::palette_light::PaletteLight::plain(53, 1000).rgb565(
         [color.r, color.g, color.b],
         index,
         127,
+    )
+}
+
+/// The target laser's dash, static pattern 84310C.
+const TARGET_LASER_PATTERN: [u8; 16] = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0];
+
+/// `UnitClass::Draw_It`'s last call (`0x0073D415..0x0073D43A`): while the
+/// firer's +3BC timer runs, Techno6FF960 draws its target laser in the Unit's
+/// own Display slot, after its body. A human player's successful FireAt
+/// starts that 15-frame timer (`0x006FF48D..0x006FF4C9`) on the frame and
+/// path that store +120 (`0x006FF743`), so it runs while `frame - LastFireFrame
+/// < 15`. Only Units draw it; any class may start it. 6FF960 needs a Target
+/// (+2B4). The frame is A8ED84 at the draw, `sim`'s committed frame: Main_Tick
+/// renders (`0x0055DBBE`) before its logic (`0x0055DC9E`) and increment
+/// (`0x0055DE81`), so the first draw after a shot sees elapsed 1 and the
+/// laser shows for 14 frames.
+///
+/// Residual: IsHumanPlayer is read now, not at the shot, so an owner change
+/// within the 15 frames after a shot shows or hides the rest of that laser.
+pub(crate) fn target_laser_draws<'a>(
+    entity: &GameEntity,
+    sim: &Simulation,
+    rules: &RuleSet,
+    palette: impl FnOnce() -> Option<&'a crate::assets::pal_file::Palette>,
+    view: crate::render::surface_line::SurfaceLineViewport,
+) -> Vec<crate::render::surface_line::SurfaceDraw> {
+    let frame = sim.session().binary_frame();
+    target_laser_draws_at(entity, sim, rules, palette, view, frame)
+}
+
+/// [`target_laser_draws`] at native frame `frame`.
+fn target_laser_draws_at<'a>(
+    entity: &GameEntity,
+    sim: &Simulation,
+    rules: &RuleSet,
+    palette: impl FnOnce() -> Option<&'a crate::assets::pal_file::Palette>,
+    view: crate::render::surface_line::SurfaceLineViewport,
+    frame: u32,
+) -> Vec<crate::render::surface_line::SurfaceDraw> {
+    use crate::render::surface_line::SurfaceDraw;
+    let mut draws = Vec::new();
+    if entity.category() != EntityCategory::Unit
+        || !rules
+            .object(sim.interner().resolve(entity.type_ref()))
+            .is_some_and(|object| object.target_laser)
+        || (frame as i32).wrapping_sub(entity.last_fire_frame.frame() as i32) >= 15
+        || !sim.house_is_human_player(entity.owner())
+    {
+        return draws;
+    }
+    let (Some(points), Some(palette)) = (attack_line_points(entity, sim, rules), palette()) else {
+        return draws;
+    };
+    // 6D2140 then +886FA4 on y, as Foot4DC060 projects its endpoints.
+    let [start, end] = points.map(|p| {
+        [
+            p.x as i32 - view.camera[0],
+            p.y as i32 - view.camera[1] + view.clip[1],
+        ]
+    });
+    emit_target_laser(
+        start,
+        end,
+        action_line_word(palette, 8),
+        frame,
+        view.clip,
+        |rect, word| draws.push(SurfaceDraw::OpaqueRect { rect, word }),
     );
-    let [r, g, b] = RGB565.unpack_rgb8(word);
-    let rgba = ACTIVE_RETAIL_RGB565_PRESENTATION.quantize_rgba8([r, g, b, 255]);
-    [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.)
+    draws
+}
+
+/// Techno6FF960 after its projection: the clipped 3x3 FillRect (vt+14) boxes
+/// at both endpoints, then, when 7BC2B0 clips the line in, XSurface7BA8C0's
+/// dashed walk (DSurface vt+48) over pattern 84310C at phase
+/// `(frame * 7) % 16`, all in Palette87F6C4 index 8. Opaque stores with no
+/// A or Z; no RNG draw, timer write or detach call.
+fn emit_target_laser(
+    start: [i32; 2],
+    end: [i32; 2],
+    word: u16,
+    frame: u32,
+    clip: [i32; 4],
+    mut draw: impl FnMut([i32; 4], u16),
+) {
+    use crate::render::surface_line::{clip_line, patterned_line};
+    endpoint_boxes([start, end], clip, |rect| draw(rect, word));
+    let (mut start, mut end) = (start, end);
+    if !clip_line(&mut start, &mut end, clip) {
+        return;
+    }
+    let phase = (frame as i32).wrapping_mul(7) % 16;
+    patterned_line(start, end, &TARGET_LASER_PATTERN, phase, |point| {
+        draw([point[0], point[1], 1, 1], word)
+    });
 }
 
 /// Ordinary7049C0(source,target,color,0,0): two clipped3x3 fills followed
@@ -854,6 +964,10 @@ mod rally_tests;
 #[cfg(test)]
 #[path = "action_line_tests.rs"]
 mod action_tests;
+
+#[cfg(test)]
+#[path = "target_laser_tests.rs"]
+mod target_laser_tests;
 
 #[cfg(test)]
 #[path = "psychic_line_tests.rs"]

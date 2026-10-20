@@ -1068,12 +1068,13 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
         10,
         10,
     );
-    sim.mission_assign_exact(
-        id,
-        MissionId::from_raw(input["mission"].as_i64().unwrap_or(5) as i32),
-        input["mission_start"].as_i64().unwrap_or(0) as u32,
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            id,
+            MissionId::from_raw(input["mission"].as_i64().unwrap_or(5) as i32),
+            input["mission_start"].as_i64().unwrap_or(0) as u32,
+        )
+        .unwrap();
     let actor = sim.substrate.entities.get_mut(id).unwrap();
     actor
         .health

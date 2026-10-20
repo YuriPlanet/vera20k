@@ -138,7 +138,9 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{FactoryType, ObjectType};
 use crate::rules::ruleset::{HouseCostFactors, RuleSet};
 use crate::sim::game_entity::GameEntity;
+use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 /// The type facts the counters test, fixed when the Techno is constructed
@@ -877,26 +879,15 @@ impl HouseTracking {
 }
 
 impl Simulation {
-    /// Native Infantry::PerCellProcess sets `+0x439` immediately before the
-    /// absorber's Limbo (`0x0051A2ED..0x0051A316`). This only suppresses a
-    /// subsequent Add_Tracking total increment; it does not affect `+0x5528`.
-    pub(crate) fn set_infantry_absorber_entry(&mut self, stable_id: u64, absorbed: bool) {
-        if let Some(entity) = self
-            .substrate
-            .entities
-            .get_mut(stable_id)
-            .filter(|entity| entity.category() == EntityCategory::Infantry)
-        {
-            entity.house_tracking_latches_mut().set_absorbed(absorbed);
-        }
-    }
-
     /// After the absorber's Limbo, native `0x0051A327..0x0051A348` removes
     /// the once-counted infantry total and clears `+0x438`; per-type tracking
     /// remains intact while the passenger is hidden in the building.
-    pub(crate) fn account_infantry_absorber_entry(&mut self, stable_id: u64) {
-        let Some(owner) = self
-            .substrate
+    pub(crate) fn account_infantry_absorber_entry(
+        substrate: &mut ObjectSubstrate,
+        houses: &mut Houses,
+        stable_id: u64,
+    ) {
+        let Some(owner) = substrate
             .entities
             .get(stable_id)
             .filter(|entity| entity.category() == EntityCategory::Infantry)
@@ -905,8 +896,8 @@ impl Simulation {
             return;
         };
         let (Some(entity), Some(house)) = (
-            self.substrate.entities.get_mut(stable_id),
-            self.houses.get_mut(&owner),
+            substrate.entities.get_mut(stable_id),
+            houses.get_mut(&owner),
         ) else {
             return;
         };
@@ -918,9 +909,12 @@ impl Simulation {
     /// Native writers: Building Mission_Unload `0x0044DBEA..0x0044DC02`,
     /// SpawnSurvivors `0x00442F6D..0x00442FA1`, and Mission_Selling
     /// `0x0044A510..0x0044A548`. The per-type counter never changes here.
-    pub(crate) fn restore_absorbed_infantry_tracking(&mut self, stable_id: u64) {
-        let Some(owner) = self
-            .substrate
+    pub(crate) fn restore_absorbed_infantry_tracking(
+        substrate: &mut ObjectSubstrate,
+        houses: &mut Houses,
+        stable_id: u64,
+    ) {
+        let Some(owner) = substrate
             .entities
             .get(stable_id)
             .filter(|entity| entity.category() == EntityCategory::Infantry)
@@ -929,12 +923,27 @@ impl Simulation {
             return;
         };
         let (Some(entity), Some(house)) = (
-            self.substrate.entities.get_mut(stable_id),
-            self.houses.get_mut(&owner),
+            substrate.entities.get_mut(stable_id),
+            houses.get_mut(&owner),
         ) else {
             return;
         };
         house.tracking_mut().restore_absorbed_infantry(entity);
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// Native Infantry::PerCellProcess sets `+0x439` immediately before the
+    /// absorber's Limbo (`0x0051A2ED..0x0051A316`). This only suppresses a
+    /// subsequent Add_Tracking total increment; it does not affect `+0x5528`.
+    pub(crate) fn set_infantry_absorber_entry(&mut self, stable_id: u64, absorbed: bool) {
+        if let Some(entity) = self
+            .entities
+            .get_mut(stable_id)
+            .filter(|entity| entity.category() == EntityCategory::Infantry)
+        {
+            entity.house_tracking_latches_mut().set_absorbed(absorbed);
+        }
     }
 }
 

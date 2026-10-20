@@ -136,7 +136,7 @@ fn authored_waypoint_explosions_detonate_the_selected_weapon_at_the_waypoint() {
 
         // 6E24EA Flash48A620(damage, WH, coord, 0, 0).
         assert_eq!(
-            sim.combat_light_requests,
+            sim.combat_light_requests.as_slice(),
             [CombatLightRequest::Impact {
                 target_id: None,
                 damage: weapon.damage,

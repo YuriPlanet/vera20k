@@ -9,6 +9,7 @@ use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::sim::components::DriveCoord;
 use crate::sim::pathfinding::PathGrid;
+use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{FrameEffects, Simulation};
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::{
@@ -850,7 +851,7 @@ impl Simulation {
         if marked {
             self.unmark_entity_remove(id, context);
         }
-        self.set_object_height_unmarked(id, height);
+        Self::set_object_height_unmarked(&mut self.substrate, &self.resolved_terrain, id, height);
         if marked {
             self.mark_entity_put(id, context);
         }
@@ -864,13 +865,18 @@ impl Simulation {
     /// `SetHeight(GetHeight() + n)` round-trips without a map too.
     ///
     /// [`current_fly_height`]: super::air_movement::current_fly_height
-    pub(crate) fn set_object_height_unmarked(&mut self, id: u64, height: i32) {
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
+    pub(crate) fn set_object_height_unmarked(
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        height: i32,
+    ) {
+        let Some(entity) = substrate.entities.get_mut(id) else {
             return;
         };
         let on_bridge = entity.on_bridge();
         entity
             .position
-            .set_height(on_bridge, height, self.resolved_terrain.as_ref(), None);
+            .set_height(on_bridge, height, resolved_terrain.as_ref(), None);
     }
 }

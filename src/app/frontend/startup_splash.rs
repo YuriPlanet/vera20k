@@ -17,6 +17,9 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::gpu::GpuContext;
 use crate::render::shell_surface_present::ShellSurfacePresenter;
+use crate::render::shell_ui_style_assets::{
+    ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver,
+};
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
 
 use super::shell_layout::window_takes_fitted_shell;
@@ -54,18 +57,21 @@ const YR_SPLASH: SplashArt = SplashArt {
     large: "GLSLMD.SHP",
 };
 
-/// VERA's RA2 Loading & Menu Movie option: the unsuffixed Red Alert 2
-/// originals in `ra2.mix -> local.mix`, the same single-frame 640x480 and
-/// 800x600 shapes with a matching palette, chosen by the same width rule. The
-/// text over them still comes from the Yuri's Revenge string table.
+/// Default Red Alert 2 splash art: the unsuffixed originals in
+/// `ra2.mix -> local.mix`, the same single-frame 640x480 and 800x600 shapes
+/// with a matching palette, chosen by the same width rule.
 const RA2_SPLASH: SplashArt = SplashArt {
     palette: "GLS.PAL",
     small: "GLSS.SHP",
     large: "GLSL.SHP",
 };
 
-const fn splash_art(ra2_look: bool) -> SplashArt {
-    if ra2_look { RA2_SPLASH } else { YR_SPLASH }
+const fn splash_art(yr_original_style: bool) -> SplashArt {
+    if yr_original_style {
+        YR_SPLASH
+    } else {
+        RA2_SPLASH
+    }
 }
 const MINIMUM_VISIBLE_TIME: Duration = Duration::from_millis(5000);
 const TEXT_COLOR: [u8; 4] = [255, 255, 255, 255];
@@ -125,7 +131,7 @@ impl StartupSplashPresentation {
         font: &FntFile,
         client_width: u32,
         client_height: u32,
-        ra2_look: bool,
+        yr_original_style: bool,
     ) -> Result<Self> {
         anyhow::ensure!(
             client_width > 0 && client_height > 0,
@@ -139,7 +145,7 @@ impl StartupSplashPresentation {
             font,
             width as usize,
             height as usize,
-            splash_art(ra2_look),
+            yr_original_style,
         )?;
         let texture = batch.create_texture(gpu, &rgba, width, height);
         let instance = SpriteInstance {
@@ -264,20 +270,30 @@ fn compose_startup_splash(
     font: &FntFile,
     client_width: usize,
     client_height: usize,
-    art: SplashArt,
+    yr_original_style: bool,
 ) -> Result<Vec<u8>> {
+    let art = splash_art(yr_original_style);
+    let resolver = ShellUiAssetResolver::new(assets, yr_original_style);
     let mut canvas = vec![0u8; client_width * client_height * 4];
     for pixel in canvas.as_chunks_mut::<4>().0 {
         pixel[3] = 255;
     }
 
-    if let (Some(palette_bytes), Some(shp_load)) = (
-        assets.get_ref(art.palette),
-        assets.load_file_from_mix(art.shape_for_width(client_width as u32)),
-    ) {
+    let shape_name = art.shape_for_width(client_width as u32);
+    let palette_pair = ShellUiAssetPair::new(
+        ShellUiAssetLocator::archive(art.palette, "ra2.mix -> local.mix"),
+        ShellUiAssetLocator::active(art.palette),
+    );
+    let shape_pair = ShellUiAssetPair::new(
+        ShellUiAssetLocator::archive(shape_name, "ra2.mix -> local.mix"),
+        ShellUiAssetLocator::active(shape_name),
+    );
+    let palette_result = resolver.resolve(palette_pair);
+    let shape_result = resolver.resolve(shape_pair);
+    if let (Ok(palette_asset), Ok(shape_asset)) = (&palette_result, &shape_result) {
         match (
-            Palette::from_bytes(palette_bytes),
-            ShpFile::from_bytes(&shp_load.bytes),
+            Palette::from_bytes(palette_asset.bytes),
+            ShpFile::from_bytes(shape_asset.bytes),
         ) {
             (Ok(palette), Ok(shp)) => {
                 if let Some(frame) = shp.frames.first() {
@@ -307,11 +323,16 @@ fn compose_startup_splash(
             ),
         }
     } else {
-        log::warn!(
-            "Retail startup splash art unavailable (palette={}, shp={}); drawing text over black",
-            art.palette,
-            art.shape_for_width(client_width as u32)
-        );
+        if let Err(err) = palette_result {
+            log::warn!(
+                "Retail startup splash palette {} unavailable: {err:#}",
+                art.palette
+            );
+        }
+        if let Err(err) = shape_result {
+            log::warn!("Retail startup splash shape {shape_name} unavailable: {err:#}");
+        }
+        log::warn!("Drawing startup splash text over black without its art");
     }
 
     let copyright = csf_text(csf, COPYRIGHT_KEY, COPYRIGHT_FALLBACK);
@@ -469,18 +490,33 @@ mod tests {
         height: usize,
     ) {
         let shape_name = art.shape_for_width(width as u32);
-        let palette =
-            Palette::from_bytes(assets.get_ref(art.palette).expect("retail splash palette"))
-                .expect("parse retail splash palette");
-        let loaded = assets
-            .load_file_from_mix(shape_name)
-            .expect("retail splash shape");
-        let shape = ShpFile::from_bytes(&loaded.bytes).expect("parse retail splash shape");
+        let yr_original_style = art.palette == YR_SPLASH.palette;
+        let resolver = ShellUiAssetResolver::new(assets, yr_original_style);
+        let palette = Palette::from_bytes(
+            resolver
+                .resolve(ShellUiAssetPair::new(
+                    ShellUiAssetLocator::archive(art.palette, "ra2.mix -> local.mix"),
+                    ShellUiAssetLocator::active(art.palette),
+                ))
+                .expect("retail splash palette")
+                .bytes,
+        )
+        .expect("parse retail splash palette");
+        let shape = ShpFile::from_bytes(
+            resolver
+                .resolve(ShellUiAssetPair::new(
+                    ShellUiAssetLocator::archive(shape_name, "ra2.mix -> local.mix"),
+                    ShellUiAssetLocator::active(shape_name),
+                ))
+                .expect("retail splash shape")
+                .bytes,
+        )
+        .expect("parse retail splash shape");
         let frame = shape.frames.first().expect("splash frame 0");
         let frame_rgba = shape
             .frame_to_rgba(0, &palette)
             .expect("decode retail splash frame 0");
-        let composed = compose_startup_splash(assets, None, font, width, height, art)
+        let composed = compose_startup_splash(assets, None, font, width, height, yr_original_style)
             .expect("compose production startup splash");
 
         let origin_x = centered_offset(width as i32, shape.width as i32) + frame.frame_x as i32;
@@ -517,16 +553,16 @@ mod tests {
 
     #[test]
     fn exact_640_selects_small_every_other_width_selects_large() {
-        for ra2_look in [false, true] {
-            let art = splash_art(ra2_look);
+        for yr_original_style in [false, true] {
+            let art = splash_art(yr_original_style);
             assert_eq!(art.shape_for_width(640), art.small);
             assert_eq!(art.shape_for_width(639), art.large);
             assert_eq!(art.shape_for_width(800), art.large);
             assert_eq!(art.shape_for_width(1920), art.large);
         }
-        // The RA2 Loading & Menu Movie option swaps in the unsuffixed Red Alert 2 art.
-        assert_eq!(splash_art(false).large, "GLSLMD.SHP");
-        assert_eq!(splash_art(true).large, "GLSL.SHP");
+        // The unchecked default uses RA2's unsuffixed artwork; the option selects YR.
+        assert_eq!(splash_art(false).large, "GLSL.SHP");
+        assert_eq!(splash_art(true).large, "GLSLMD.SHP");
     }
 
     #[test]
@@ -596,12 +632,12 @@ mod tests {
             .expect("parse retail GAME.FNT");
 
         compare_composed_splash_to_retail_shape(&assets, &font, YR_SPLASH, 800, 600);
-        // The RA2 Loading & Menu Movie option draws its unsuffixed originals the same way.
+        // The unchecked default draws RA2's unsuffixed originals the same way.
         compare_composed_splash_to_retail_shape(&assets, &font, RA2_SPLASH, 800, 600);
 
-        let small_art_available = assets.load_file_from_mix(YR_SPLASH.small).is_some();
+        let small_art_available = assets.get_ref(YR_SPLASH.small).is_some();
         if !small_art_available {
-            let composed = compose_startup_splash(&assets, None, &font, 640, 480, YR_SPLASH)
+            let composed = compose_startup_splash(&assets, None, &font, 640, 480, true)
                 .expect("compose missing-small-art splash");
             let center = (240 * 640 + 320) * 4;
             assert_eq!(&composed[center..center + 4], &[0, 0, 0, 255]);

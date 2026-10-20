@@ -99,7 +99,8 @@ fn unit(
             11 => MissionType::AreaGuard,
             _ => panic!("unmapped mission {m}"),
         });
-    sim.mission_assign_exact(id, MissionId::from_known(mission), 100)
+    sim.substrate
+        .mission_assign_exact(id, MissionId::from_known(mission), 100)
         .unwrap();
     let e = sim.substrate.entities.get_mut(id).unwrap();
     e.navigation

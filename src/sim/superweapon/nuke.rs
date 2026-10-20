@@ -95,7 +95,7 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
         sim.session.lighting(),
     ));
     let cell = |leptons: i32| (leptons / 256) as i16 as u16;
-    sim.sound_events.push(SimSoundEvent::RadarEvent {
+    sim.sound_events.emit(SimSoundEvent::RadarEvent {
         radar: RadarEventRequest::new(
             RadarEventType::ImpactSilent,
             cell(location.x),
@@ -168,14 +168,14 @@ pub(super) fn launch(
             Some(owner),
         );
         if launched {
-            sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+            sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
                 owner,
                 sw_type: sw_type_id,
                 rx: cell.0,
                 ry: cell.1,
             });
         }
-        sim.request_house_tech_tree_recheck(owner); //common6CDE2F tail
+        sim.houses.request_house_tech_tree_recheck(owner); //common6CDE2F tail
         return launched;
     }
     let Some(index) = rules.super_weapon_index(&sw.id) else {
@@ -196,11 +196,11 @@ pub(super) fn launch(
         .find(|&slot| rules.building_type_at(slot as i32).is_some_and(fires))
         .and_then(|slot| sim.interner.get(&ids[slot]))
     else {
-        sim.request_house_tech_tree_recheck(owner);
+        sim.houses.request_house_tech_tree_recheck(owner);
         return false;
     };
     let Some(silo) = find_building_of_type(sim, owner, silo_type) else {
-        sim.request_house_tech_tree_recheck(owner);
+        sim.houses.request_house_tech_tree_recheck(owner);
         return false;
     };
     crate::sim::world::queue_and_commence(sim, silo, MissionType::Missile, rules);
@@ -212,13 +212,13 @@ pub(super) fn launch(
             .mission_leaf
             .set_building_firing_super_weapon(sw.kind.native_index());
     }
-    sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type: sw_type_id,
         rx: cell.0,
         ry: cell.1,
     });
-    sim.request_house_tech_tree_recheck(owner); //Launch common tail6CDE2F
+    sim.houses.request_house_tech_tree_recheck(owner); //Launch common tail6CDE2F
     true
 }
 

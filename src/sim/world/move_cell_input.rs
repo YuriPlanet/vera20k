@@ -493,6 +493,36 @@ impl Simulation {
         )
     }
 
+    /// Whether a Move click on `clicked` spawns the MoveFlash for receiver
+    /// `id`: ClickedAction_Cell re-asks its What_Action (`0x004D7DA6`,
+    /// [`Self::cell_move_action`]) and only Move (and 0x3E, which no Cell
+    /// What_Action answers) reaches the flash (`0x004D7EB5`). The selection's
+    /// first receiver alone asks: `Selection__DispatchMultiUnitOrder` clears
+    /// the latch `0x00822CF2` after each receiver (`0x004AE8CF`, `0x004AE935`,
+    /// `0x004AE98A`) and sets it again after the loop.
+    pub fn cell_click_flashes_move(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        clicked: (u16, u16),
+        shift: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> Result<bool, String> {
+        let action = self.cell_move_action(
+            viewer,
+            id,
+            clicked,
+            CellActionQuery {
+                mouse_over: false,
+                shift,
+            },
+            rules,
+            registry,
+        )?;
+        Ok(action == MoveAction::Move)
+    }
+
     /// The class rungs of a Foot's What_Action over an object that turn the
     /// Techno action `action` into another Move action; each ClickedAction
     /// wrapper's re-ask (`0x007388A1`, `0x0051F1A1`) answers them too:

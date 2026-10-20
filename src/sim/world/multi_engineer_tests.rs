@@ -34,7 +34,8 @@ fn enter(sim: &mut Simulation, rules: &RuleSet, building: u64) -> bool {
     let engineer = sim
         .spawn_object("ENGINEER", "Russians", 13, 10, 0, rules)
         .expect("ENGINEER spawns");
-    sim.mission_assign_exact(engineer, MissionId::from_known(MissionType::Capture), 0)
+    sim.substrate
+        .mission_assign_exact(engineer, MissionId::from_known(MissionType::Capture), 0)
         .unwrap();
     sim.substrate
         .entities
@@ -121,7 +122,8 @@ fn multi_engineers_damage_selling_and_uncapturable_buildings_too() {
     };
     let rules = &retail.rules;
     let (mut sim, plant) = scene(rules, ScenarioGameMode::Skirmish, true);
-    sim.mission_assign_exact(plant, MissionId::from_known(MissionType::Selling), 0)
+    sim.substrate
+        .mission_assign_exact(plant, MissionId::from_known(MissionType::Selling), 0)
         .unwrap();
     assert!(!enter(&mut sim, rules, plant));
     assert_eq!(health_and_owner(&sim, plant), (422, "Americans"));

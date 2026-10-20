@@ -462,7 +462,8 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
             // Original62FE90 does not read the removal-control argument.
             // Broadcast integration (both controls) also has lifecycle tests.
             assert!(
-                sim.particle_systems_mut()
+                sim.substrate
+                    .particle_systems
                     .pointer_expired(id, roles[input["expired"].as_str().unwrap()])
             );
             assert_eq!(
@@ -833,7 +834,8 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
     assert!(sim.display_layers().layer_of(child_id).is_some());
     let queues = sim.substrate.pending_delete.object_ids().to_vec();
     assert!(
-        sim.particle_systems_mut()
+        sim.substrate
+            .particle_systems
             .pointer_expired(system_id, child_id)
     );
     assert_eq!(
@@ -966,7 +968,9 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
         );
         let ((rof, rearm), draws) = crate::sim::rng::trace_draws(|| {
             let rof = fireat_get_rof(
-                &mut sim,
+                &mut sim.scenario_rng,
+                &sim.substrate,
+                &sim.houses,
                 rules,
                 &snap,
                 object,
@@ -974,8 +978,17 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
                 Some(&weapon),
                 int(&row["input"]["queried_burst"]),
             );
-            let tail_rof =
-                fireat_get_rof(&mut sim, rules, &snap, object, &weapon, Some(&weapon), 1);
+            let tail_rof = fireat_get_rof(
+                &mut sim.scenario_rng,
+                &sim.substrate,
+                &sim.houses,
+                rules,
+                &snap,
+                object,
+                &weapon,
+                Some(&weapon),
+                1,
+            );
             let rearm = fireat_rearm_frames(tail_rof, row["input"]["berserk"].as_bool().unwrap());
             let actor = sim.substrate.entities.get_mut(owner).unwrap();
             actor.rearm_after_fire(int(&row["input"]["frame"]), rearm);

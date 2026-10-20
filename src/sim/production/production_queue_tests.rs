@@ -1315,7 +1315,12 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
         if control["input"]["equal_sample_control"] == true {
             // Same isolated health-sampling rung as the native equality control;
             // a held product receives no normal AI turn.
-            sim.sample_building_health_for_house_update(object);
+            Simulation::sample_building_health_for_house_update(
+                &mut sim.substrate,
+                &sim.houses,
+                &mut sim.power_states,
+                object,
+            );
         }
         let observer = if control["input"]["targeted_observer_control"] == true {
             // Explicit callback prior, not player acquisition of a limbo target.
@@ -1360,6 +1365,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
         state["power_dirty"] = json!(before["house"]["dirty"][0] == 1);
         state["radar_dirty"] = json!(before["house"]["dirty"][1] == 1);
         sim.power_states
+            .map_mut_for_test()
             .insert(owner, serde_json::from_value(state).unwrap());
         // The native reader fixture also has an admitted plant and MTNK. Adopt
         // its declared pre-cancel full cursors; their construction is outside

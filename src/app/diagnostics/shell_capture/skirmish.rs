@@ -138,10 +138,10 @@ pub(super) enum RandomMapTarget {
 }
 
 /// Create Random Map on `0x6B` and Cancel on `0x105` at 800x600.
-const CREATE_RANDOM_MAP_POINT: (i32, i32) = (720, 262);
+pub(super) const CREATE_RANDOM_MAP_POINT: (i32, i32) = (720, 262);
 const RANDOM_MAP_CANCEL_POINT: (i32, i32) = (720, 556);
-const RANDOM_MAP_USE_MAP_POINT: (i32, i32) = (720, 220);
-const RANDOM_MAP_GENERATE_POINT: (i32, i32) = (432, 430);
+pub(super) const RANDOM_MAP_USE_MAP_POINT: (i32, i32) = (720, 220);
+pub(super) const RANDOM_MAP_GENERATE_POINT: (i32, i32) = (432, 430);
 /// Terrain Type's arrow, and Map Size's face below its open list, at 800x600
 /// (the retail helper's `ej-list-open.png` click and `ej-list-off.png` point).
 const RANDOM_MAP_TERRAIN_ARROW_POINT: (i32, i32) = (484, 79);
@@ -1716,6 +1716,7 @@ pub(super) fn press_diplomacy_tab(state: &mut AppState) -> Result<()> {
                 location: winit::keyboard::KeyLocation::Standard,
                 state: edge,
                 repeat: false,
+                text: None,
             },
             paused_at_event,
         );

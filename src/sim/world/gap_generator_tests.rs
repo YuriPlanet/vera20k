@@ -193,7 +193,11 @@ fn gap_operational_original_gate_and_native_order_corpus() {
                 ai_counter: 0,
                 dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
             });
-        let power = sim.power_states.entry(owner).or_default();
+        let power = sim
+            .power_states
+            .map_mut_for_test()
+            .entry(owner)
+            .or_default();
         power.set_total_output_for_test(v["output"].as_i64().unwrap() as i32);
         power.set_total_drain_for_test(v["drain"].as_i64().unwrap() as i32);
         power.set_is_low_power_for_test(!power.has_full_power());

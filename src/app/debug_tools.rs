@@ -120,7 +120,7 @@ pub(crate) fn service(state: &mut crate::app::AppState) {
         && state.frontend.screen == crate::ui::game_screen::GameScreen::InGame
         && state.match_state.scenario_exit.is_none()
         && state.match_state.scenario_outcome.is_none();
-    let context = context(state.match_state.session.mode(), active);
+    let context = context(state.match_state.session_mode(), active);
     let allowed = if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
         runtime.simulation.set_debug_session_context(context);
         let logging = runtime.simulation.debug_event_logging();

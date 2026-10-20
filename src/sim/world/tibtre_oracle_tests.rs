@@ -91,7 +91,12 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
         }
     }
     construct_terrain_objects(&mut s.sim, &trees, &s.rules, false);
-    seed_terrain_spawner_animation(&mut s.sim, &s.rules);
+    seed_terrain_spawner_animation(
+        &s.sim.interner,
+        &mut s.sim.terrain_objects,
+        &s.sim.session,
+        &s.rules,
+    );
     let type_ref = s.sim.interner.get("TIBTRE01").unwrap();
     for &at in &coords {
         let mut animation = TerrainAnimationState::new(

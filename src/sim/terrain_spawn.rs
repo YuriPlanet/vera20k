@@ -27,6 +27,8 @@ use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::ore_growth::OreGrowthState;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::terrain_object::{TerrainObjectState, mark_terrain_raw_occupation};
 use crate::sim::tiberium::{
     NewTiberiumAdmission, PlaceTiberiumContext, TiberiumPlacement, TiberiumPlacementObjectContext,
@@ -593,13 +595,14 @@ fn construct_terrain_objects_inner(
 ///
 /// Returns the number of animated live terrain objects indexed.
 pub fn seed_terrain_spawner_animation(
-    sim: &mut crate::sim::world::Simulation,
+    interner: &StringInterner,
+    terrain_objects: &mut TerrainObjectStore,
+    session: &ScenarioSession,
     rules: &crate::rules::ruleset::RuleSet,
 ) -> usize {
-    sim.terrain_objects.clear_animations();
+    terrain_objects.clear_animations();
 
-    let candidates: Vec<(u64, (u16, u16), InternedId)> = sim
-        .terrain_objects
+    let candidates: Vec<(u64, (u16, u16), InternedId)> = terrain_objects
         .objects()
         .values()
         .filter(|terrain| terrain.is_live())
@@ -610,10 +613,10 @@ pub fn seed_terrain_spawner_animation(
     for (stable_id, cell, type_ref) in candidates {
         // Two entries can name the same cell; only the object the cell index
         // points at owns that cell's spawner.
-        if sim.terrain_objects.cell_index().get(&cell) != Some(&stable_id) {
+        if terrain_objects.cell_index().get(&cell) != Some(&stable_id) {
             continue;
         }
-        let name = sim.interner.resolve(type_ref).to_string();
+        let name = interner.resolve(type_ref).to_string();
         let Some(t) = rules.terrain_object_type_case_insensitive(&name) else {
             continue;
         };
@@ -621,14 +624,14 @@ pub fn seed_terrain_spawner_animation(
             continue;
         }
         let frame_count = rules.terrain_spawner_frame_count(&name).unwrap_or(0);
-        sim.terrain_objects.seed_animation(
+        terrain_objects.seed_animation(
             cell,
             TerrainAnimationState::new(
                 type_ref,
                 t.animation_probability,
                 t.animation_rate,
                 frame_count,
-                sim.session.binary_frame(),
+                session.binary_frame(),
             ),
         );
         seeded += 1;
@@ -648,7 +651,7 @@ pub fn seed_terrain_animations(
     snow_theater: bool,
 ) -> usize {
     construct_terrain_objects(sim, terrain_objects, rules, snow_theater);
-    seed_terrain_spawner_animation(sim, rules)
+    seed_terrain_spawner_animation(&sim.interner, &mut sim.terrain_objects, &sim.session, rules)
 }
 
 #[cfg(test)]

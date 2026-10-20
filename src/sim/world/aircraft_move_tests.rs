@@ -402,8 +402,13 @@ impl move_mission::MoveHost for RowHost<'_> {
     }
 
     fn epilogue(&mut self) -> i32 {
-        self.sim
-            .mission_rate_epilogue_for(self.rules, OWNER, MissionType::Move)
+        Simulation::mission_rate_epilogue_for(
+            &mut self.sim.scenario_rng,
+            &self.sim.substrate,
+            self.rules,
+            OWNER,
+            MissionType::Move,
+        )
     }
 }
 

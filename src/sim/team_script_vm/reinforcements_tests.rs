@@ -283,7 +283,12 @@ fn flash_team_type_matches_original_member_writes_across_houses() {
             sim.main_rng.native_state_hex(),
             sim.mapgen_rng.native_state_hex(),
         ];
-        sim.flash_teams_of_type(types[0], int(&row["read"]["value"]));
+        Simulation::flash_teams_of_type(
+            &mut sim.substrate,
+            &sim.team_script_vm,
+            types[0],
+            int(&row["read"]["value"]),
+        );
         let actual: Vec<_> = (0..input["initial"].as_array().unwrap().len())
             .map(|member| {
                 sim.entities()

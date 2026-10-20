@@ -242,6 +242,7 @@ pub(crate) fn build_unit_instances(
         .sim_runtime
         .as_ref()
         .and_then(|rt| rt.view().resolved_terrain());
+    let light_cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
     state
         .match_state
         .match_presentation
@@ -249,6 +250,8 @@ pub(crate) fn build_unit_instances(
         .borrow_mut()
         .retain(|id| sim.entities().contains(id));
 
+    let surface_view = crate::app::presentation::render::tactical_surface_line_viewport(state);
+    let laser_palette = std::cell::OnceCell::new();
     let encounter_order = super::helpers::tactical_entity_encounter_order(sim);
     for stable_id in encounter_order {
         let Some(entity) = sim.entities().get(stable_id) else {
@@ -339,7 +342,12 @@ pub(crate) fn build_unit_instances(
         let interp_z = pos.z();
         let draw_state = draw_decision.state;
         let extra_light = state.rules().map_or(0, |rules| {
-            crate::app::presentation::lighting::body_extra_light(entity, rules, sim, terrain)
+            crate::app::presentation::lighting::body_extra_light(
+                entity,
+                rules,
+                sim,
+                light_cells.as_ref(),
+            )
         });
         let tint = vxl_body_tint(
             state.match_state.match_presentation.lighting.grid(),
@@ -593,6 +601,19 @@ pub(crate) fn build_unit_instances(
             }
         }
 
+        emit_jumpjet_unit_shadow(
+            state,
+            atlas,
+            entity,
+            type_str,
+            anim_frame,
+            [center_x, center_y],
+            no_shadow,
+            draw_state,
+            band,
+            &mut pieces,
+        );
+
         // OREGATH is an SHP sprite from sprite_atlas, but remains an owned piece
         // of its harvester's Ground slot so atlas identity cannot re-sort it.
         if let Some(frame) = harvest_overlay_frame(state.rules(), sim, entity, display_binary_frame)
@@ -620,7 +641,29 @@ pub(crate) fn build_unit_instances(
                 crate::render::tactical_draw_plan::SpriteEncoding::Voxel,
             );
             if let Some(parent) = parent {
-                objects.push(PlannedObjectInstance::object(parent, pieces));
+                let mut planned = PlannedObjectInstance::object(parent, pieces);
+                if let Some(rules) = state.rules() {
+                    planned.tail_draws = crate::app::presentation::target_lines::target_laser_draws(
+                        entity,
+                        sim,
+                        rules,
+                        || {
+                            laser_palette
+                                .get_or_init(|| {
+                                    state
+                                        .process_assets
+                                        .manager()
+                                        .and_then(|assets| assets.get_ref("palette.pal"))
+                                        .and_then(|bytes| {
+                                            crate::assets::pal_file::Palette::from_bytes(bytes).ok()
+                                        })
+                                })
+                                .as_ref()
+                        },
+                        surface_view,
+                    );
+                }
+                objects.push(planned);
             }
         }
     }
@@ -872,8 +915,8 @@ fn ground_pose(
 }
 
 /// One posed body drawn on this frame's pose page. It joins its display
-/// layer in emission order like an atlas body; aircraft cast no VERA shadow
-/// (recorded on the draw passes).
+/// layer in emission order like an atlas body. The concrete Unit and Aircraft
+/// callers emit their shadow separately in native order.
 fn emit_pose_sprite(
     state: &AppState,
     pieces: &mut Vec<ObjectPieceInstance>,
@@ -1142,8 +1185,15 @@ fn unit_shadow_admitted(
 ) -> bool {
     entity.category() == EntityCategory::Unit
         && !entity.sinking.is_active()
-        && band == EntityDrawBand::Ground
+        && (band == EntityDrawBand::Ground || has_jumpjet_unit_shadow(entity))
         && techno_shadow_admitted(entity, no_shadow)
+}
+
+fn has_jumpjet_unit_shadow(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    entity.category() == EntityCategory::Unit
+        && entity.locomotor.as_ref().is_some_and(|l| {
+            l.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
+        })
 }
 
 fn techno_shadow_admitted(entity: &crate::sim::game_entity::GameEntity, no_shadow: bool) -> bool {
@@ -1182,7 +1232,7 @@ fn emit_unit_shadow_sprite(
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
     // Original Unit73C1D2 also skips its shadow suffix while sinking +3CD.
-    if !unit_shadow_admitted(entity, no_shadow, band) {
+    if !unit_shadow_admitted(entity, no_shadow, band) || has_jumpjet_unit_shadow(entity) {
         return;
     }
     let key = UnitSpriteKey {
@@ -1200,6 +1250,7 @@ fn emit_unit_shadow_sprite(
     };
     emit_shadow_stencil(
         entry,
+        UnitTextureSource::Stable(entry.page),
         [center_x, center_y],
         depth,
         voxel_adjust,
@@ -1212,6 +1263,7 @@ fn emit_unit_shadow_sprite(
 /// body mask, so its immutable atlas entry also serves pitched/rolled bodies.
 fn emit_shadow_stencil(
     entry: UnitSpriteEntry,
+    source: UnitTextureSource,
     anchor: [f32; 2],
     depth: f32,
     voxel_adjust: f32,
@@ -1235,7 +1287,137 @@ fn emit_shadow_stencil(
         z_gradient: VOXEL_Z_GRADIENT,
         ..Default::default()
     };
-    push_unit_sprite(UnitTextureSource::Stable(entry.page), sprite, pieces);
+    push_unit_sprite(source, sprite, pieces);
+}
+
+/// The original Unit suffix follows stable, split-gun and posed bodies alike.
+/// Its composed mask reads those exact pieces; a high-flight stencil is
+/// unmasked, and positive low flight uses the existing frame-local pages.
+fn emit_jumpjet_unit_shadow(
+    state: &AppState,
+    atlas: &crate::render::unit_atlas::UnitAtlas,
+    entity: &crate::sim::game_entity::GameEntity,
+    type_id: &str,
+    frame: u32,
+    body_anchor: [f32; 2],
+    no_shadow: bool,
+    draw_state: DrawState,
+    band: EntityDrawBand,
+    pieces: &mut Vec<ObjectPieceInstance>,
+) {
+    use crate::render::unit_shadow::{UnitShadowContext, UnitShadowMask};
+    if !has_jumpjet_unit_shadow(entity)
+        || !unit_shadow_admitted(entity, no_shadow, band)
+        || pieces.is_empty()
+    {
+        return;
+    }
+    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        return;
+    };
+    let view = runtime.view();
+    let Some(terrain) = view.resolved_terrain() else {
+        return;
+    };
+    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    let Some(mut pose) = crate::render::unit_shadow::pose(
+        UnitShadowContext {
+            xyz: [
+                xy[0],
+                xy[1],
+                crate::sim::movement::ground_pose::object_world_z_leptons(entity, Some(terrain)),
+            ],
+            on_bridge: entity.on_bridge(),
+            marked: entity.lifecycle.cell_marked(),
+            primary_facing: entity.body_facing_current(view.session().binary_frame()),
+        },
+        |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
+    ) else {
+        return;
+    };
+    pose.anchor[1] -= f32::from(entity.ion_blast_lift_pixels());
+    let key = UnitSpriteKey {
+        type_id: type_id.to_owned(),
+        turret_index: 0,
+        facing: pose.facing,
+        layer: VxlLayer::Shadow,
+        frame: if pose.mask == UnitShadowMask::Retained {
+            frame | crate::render::unit_atlas::GROUNDED_SHADOW_FRAME_FLAG
+        } else {
+            frame
+        },
+        slope_type: pose.slope,
+        barrel_pitch: 0,
+    };
+    let Some(entry) = atlas
+        .get(&key)
+        .filter(|e| e.native_draw_bounds.is_some())
+        .copied()
+    else {
+        return;
+    };
+    let (entry, source) = if pose.mask == UnitShadowMask::None {
+        (entry, UnitTextureSource::Stable(entry.page))
+    } else {
+        let parts: Vec<_> = pieces
+            .iter()
+            .filter_map(|piece| {
+                let (page, posed) = match piece.target {
+                    ObjectTexture::UnitAtlasPage(page) => (page, false),
+                    ObjectTexture::UnitPosePage(page) => (page, true),
+                    _ => return None,
+                };
+                let sprite = &piece.instance;
+                Some(crate::render::unit_atlas::UnitShadowPart {
+                    entry: UnitSpriteEntry {
+                        uv_origin: sprite.uv_origin,
+                        uv_size: sprite.uv_size,
+                        pixel_size: sprite.size,
+                        offset_x: 0.,
+                        offset_y: 0.,
+                        native_draw_bounds: None,
+                        page,
+                    },
+                    point: [
+                        128 + (sprite.position[0] - body_anchor[0]) as i32,
+                        128 + (sprite.position[1] - body_anchor[1]) as i32,
+                    ],
+                    posed,
+                })
+            })
+            .collect();
+        let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
+        if pose.mask == UnitShadowMask::Retained {
+            if !atlas.prepare_native_shadow_with(&state.renderer.gpu.queue, &key, |body| {
+                cache.stamp_shadow_parts(atlas, &parts, body)
+            }) {
+                return;
+            }
+            (entry, UnitTextureSource::Stable(entry.page))
+        } else {
+            let Some(entry) = cache.render_unit_shadow(atlas, &key, pose.mask_offset, &parts)
+            else {
+                return;
+            };
+            (entry, UnitTextureSource::Pose(entry.page))
+        }
+    };
+    let depth = body_sort_depth(
+        state,
+        entity,
+        pose.anchor[1] + entry.offset_y + entry.pixel_size[1],
+        entity.position.z(),
+    );
+    let z_adjust = super::foot_depth::unit_z_adjust(state, entity, true, None);
+    emit_shadow_stencil(
+        entry,
+        source,
+        pose.anchor,
+        depth,
+        z_adjust as f32,
+        draw_state,
+        pieces,
+    );
 }
 
 fn aircraft_shadow_pose(
@@ -1311,6 +1493,7 @@ fn emit_aircraft_shadow_sprite(
     let z_adjust = super::foot_depth::unit_z_adjust(state, entity, false, Some(pose.world_z));
     emit_shadow_stencil(
         entry,
+        UnitTextureSource::Stable(entry.page),
         pose.anchor,
         depth,
         z_adjust as f32,
@@ -1991,6 +2174,37 @@ mod tests {
     }
 
     #[test]
+    fn jumpjet_unit_shadow_admission_matches_original_gates_across_bands() {
+        let fixture = crate::test_fixture::json("tools/voxel_oracle/unit_shadow.json");
+        for row in fixture["callers"].as_array().unwrap() {
+            let mut entity = GameEntity::test_default(1, "ZEP", "Russians", 10, 10);
+            entity.set_category_for_test(EntityCategory::Unit);
+            entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Jumpjet));
+            let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
+            cloak.set_state_for_test(row["input"]["cloak"].as_i64().unwrap_or(0) as i32);
+            entity.cloak = Some(cloak);
+            if row["input"]["sinking"].as_bool().unwrap_or(false) {
+                continue;
+            }
+            for band in [
+                EntityDrawBand::Ground,
+                EntityDrawBand::Air,
+                EntityDrawBand::Top,
+            ] {
+                assert_eq!(
+                    unit_shadow_admitted(
+                        &entity,
+                        row["input"]["no_shadow"].as_bool().unwrap_or(false),
+                        band
+                    ),
+                    row["draw_admitted"].as_bool().unwrap(),
+                    "{row}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn vehicle_shadow_active_locomotor_selects_native_or_legacy_companion() {
         let mut entity = GameEntity::test_default(1, "GENERATED", "Americans", 0, 0);
         entity.set_category_for_test(EntityCategory::Unit);
@@ -2303,10 +2517,7 @@ mod tests {
             display_binary_frame_for_committed_session(restored.session().binary_frame());
         assert_eq!(display_binary_frame, 50);
         assert_eq!(
-            locomotor_render_slope_state(
-                restored.entities().get(1).unwrap(),
-                display_binary_frame,
-            ),
+            locomotor_render_slope_state(restored.entities().get(1).unwrap(), display_binary_frame,),
             Some(UnitRenderSlopeState::Transition {
                 from_slope: 4,
                 to_slope: 9,
@@ -2367,5 +2578,4 @@ mod tests {
         assert_eq!(no_spawn_alt_type_id("V3", false, Some(&in_flight)), None);
         assert_eq!(no_spawn_alt_type_id("V3", true, None), None);
     }
-
 }

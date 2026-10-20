@@ -63,7 +63,15 @@ enum PoseTiltKey {
         slope_blend: Option<crate::map::voxel_pose::VxlSlopeBlend>,
         turret_offset: i32,
     },
+    /// Sources are immutable atlas bodies or append-only pose-page regions.
+    /// begin_frame clears this identity before either source can be reused.
+    Shadow {
+        body_offset: [i32; 2],
+        parts: Vec<ShadowPartKey>,
+    },
 }
+
+type ShadowPartKey = (bool, usize, [u32; 2], [u32; 2], [i32; 2]);
 
 impl From<PoseTilt> for PoseTiltKey {
     fn from(tilt: PoseTilt) -> Self {
@@ -96,6 +104,96 @@ struct MatrixPoseKey {
 }
 
 impl VxlPoseFrameCache {
+    /// Read only the visible body's frame-local pixels through their owner.
+    /// Stable atlas pieces use the same native composite copy owner.
+    pub(crate) fn stamp_shadow_parts(
+        &self,
+        atlas: &crate::render::unit_atlas::UnitAtlas,
+        parts: &[crate::render::unit_atlas::UnitShadowPart],
+        body: &mut [u8],
+    ) -> bool {
+        if parts.is_empty() {
+            return false;
+        }
+        for part in parts {
+            if !part.posed {
+                if !atlas.stamp_shadow_part(body, &part.entry, part.point) {
+                    return false;
+                }
+                continue;
+            }
+            let Some(page) = self.pages.get(part.entry.page) else {
+                return false;
+            };
+            let [x, y] = part
+                .entry
+                .uv_origin
+                .map(|v| (v * PAGE_SIZE as f32).round() as u32);
+            let [width, height] = part.entry.pixel_size.map(|v| v as u32);
+            if x + width > PAGE_SIZE || y + height > PAGE_SIZE {
+                return false;
+            }
+            let pixels: Vec<_> = (y..y + height)
+                .flat_map(|row| {
+                    let start = (row * PAGE_SIZE + x) as usize;
+                    page.pixels[start..start + width as usize].iter().copied()
+                })
+                .collect();
+            crate::render::unit_atlas::composite_mask_part(
+                body, &pixels, width, height, part.point,
+            );
+        }
+        true
+    }
+
+    /// Unit73C472's uncached low-flight shadow uses this frame's body mask.
+    /// Storage and upload follow the same owner as the visible posed body.
+    pub(crate) fn render_unit_shadow(
+        &mut self,
+        atlas: &crate::render::unit_atlas::UnitAtlas,
+        key: &UnitSpriteKey,
+        body_offset: [i32; 2],
+        parts: &[crate::render::unit_atlas::UnitShadowPart],
+    ) -> Option<UnitSpriteEntry> {
+        let pose_key = PoseTiltKey::Shadow {
+            body_offset,
+            parts: parts
+                .iter()
+                .map(|p| {
+                    (
+                        p.posed,
+                        p.entry.page,
+                        p.entry.uv_origin.map(f32::to_bits),
+                        p.entry.pixel_size.map(f32::to_bits),
+                        p.point,
+                    )
+                })
+                .collect(),
+        };
+        if let Some(entry) = self
+            .unit_poses
+            .get(key)
+            .and_then(|poses| poses.get(&pose_key))
+        {
+            return Some(*entry);
+        }
+        let sprite = atlas.masked_shadow(key, body_offset, |body| {
+            self.stamp_shadow_parts(atlas, parts, body)
+        })?;
+        let bounds = Some([
+            sprite.offset_x as i32,
+            sprite.offset_y as i32,
+            sprite.width as i32,
+            sprite.height as i32,
+        ]);
+        let entry = self.place(&sprite, bounds)?;
+        self.unit_poses
+            .entry(key.clone())
+            .or_default()
+            .insert(pose_key, entry);
+        Some(entry)
+    }
+
     /// Invalidate all frame-local entries while retaining parsed models and
     /// page allocations. No live instance survives this presentation boundary.
     pub fn begin_frame(&mut self) {

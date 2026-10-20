@@ -255,7 +255,7 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
         .sim
         .spawn_object("MTNK", "Russians", 10, 20, 0, &s.scene.rules)
         .expect("killer");
-    s.scene.sim.sound_events.clear();
+    s.scene.sim.sound_events.clear_for_test();
     let master = s.master;
     kill(&mut s, master, Some(killer));
 

@@ -163,29 +163,13 @@ impl Simulation {
             {
                 return Some(cached);
             }
-            self.set_aircraft_dock(id, None);
+            self.substrate.set_aircraft_dock(id, None);
         }
         let dock = crate::sim::miner::miner_system::find_docking_bay(
             self, rules, id, false, false, effects,
         );
-        self.set_aircraft_dock(id, dock);
+        self.substrate.set_aircraft_dock(id, dock);
         dock
-    }
-
-    /// Aircraft `+0x6CC`'s writers ([`TechnoAmmo::set_dock`]): Mission_Enter
-    /// (`0x00419CE5`, `0x00419D57`), Find_Docking_Bay (`0x0041BBFF`,
-    /// `0x0041BC1C`) and the factory exit (`0x0044404D`).
-    ///
-    /// [`TechnoAmmo::set_dock`]: crate::sim::ammo::TechnoAmmo::set_dock
-    pub(crate) fn set_aircraft_dock(&mut self, id: u64, dock: Option<u64>) {
-        if let Some(ammo) = self
-            .substrate
-            .entities
-            .get_mut(id)
-            .and_then(|entity| entity.ammo_mut())
-        {
-            ammo.set_dock(dock);
-        }
     }
 
     /// `MapClass::Find_Nearby_Passable_Cell @ 0x0056DC20` as `0x0041A160`
@@ -219,6 +203,23 @@ impl Simulation {
         )
         .filter(|cell| *cell != (0, 0))
         .map(|(x, y)| (x as i16, y as i16))
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// Aircraft `+0x6CC`'s writers ([`TechnoAmmo::set_dock`]): Mission_Enter
+    /// (`0x00419CE5`, `0x00419D57`), Find_Docking_Bay (`0x0041BBFF`,
+    /// `0x0041BC1C`) and the factory exit (`0x0044404D`).
+    ///
+    /// [`TechnoAmmo::set_dock`]: crate::sim::ammo::TechnoAmmo::set_dock
+    pub(crate) fn set_aircraft_dock(&mut self, id: u64, dock: Option<u64>) {
+        if let Some(ammo) = self
+            .entities
+            .get_mut(id)
+            .and_then(|entity| entity.ammo_mut())
+        {
+            ammo.set_dock(dock);
+        }
     }
 }
 

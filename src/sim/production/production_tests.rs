@@ -567,11 +567,19 @@ pub(super) fn spawn_structure(
     sim.append_house_base_building_for_test(sid);
     // Its house counts it as tracked and on the map, as CanBuild's
     // prerequisites read them.
-    sim.update_house_tracking(sid, crate::sim::house_tracking::HouseTracking::add_tracking);
-    sim.house_added_to_game(sid);
-    sim.update_house_tracking(sid, |tracking, entity| {
-        tracking.increment_factory_count(entity)
-    });
+    Simulation::update_house_tracking(
+        &mut sim.substrate,
+        &mut sim.houses,
+        sid,
+        crate::sim::house_tracking::HouseTracking::add_tracking,
+    );
+    Simulation::house_added_to_game(&sim.substrate, &mut sim.houses, sid);
+    Simulation::update_house_tracking(
+        &mut sim.substrate,
+        &mut sim.houses,
+        sid,
+        |tracking, entity| tracking.increment_factory_count(entity),
+    );
     if sim.next_stable_object_id() <= sid {
         sim.set_next_stable_object_id_for_test(sid + 1);
     }
@@ -748,12 +756,13 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
 
         spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 20, 20);
         stamp_type_foundation(&mut sim, &rules, 1);
-        sim.mission_assign_exact(
-            1,
-            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
-            7,
-        )
-        .unwrap();
+        sim.substrate
+            .mission_assign_exact(
+                1,
+                crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
+                7,
+            )
+            .unwrap();
         sim.substrate
             .entities
             .get_mut(1)
@@ -1069,12 +1078,13 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
     stamp_type_foundation(&mut sim, &rules, 2);
     super::initialize_factory_primary(&mut sim, 1, &rules);
     super::initialize_factory_primary(&mut sim, 2, &rules);
-    sim.mission_assign_exact(
-        1,
-        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
-        7,
-    )
-    .unwrap();
+    sim.substrate
+        .mission_assign_exact(
+            1,
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
+            7,
+        )
+        .unwrap();
     let selected_mission = sim.substrate.entities.get(1).unwrap().mission;
     let other_mission = sim.substrate.entities.get(2).unwrap().mission;
     let mut blocker =

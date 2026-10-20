@@ -2027,6 +2027,27 @@ fn evaluate_candidate(
         return None;
     }
 
+    // `0x006F7D55..0x006F7D82`: a `LandTargeting=2` scanner (`+0x604`; on
+    // retail only the Boomer) refuses a candidate low enough to count as on
+    // the floor (vt+0x50, [`is_low_flying`]) whose Cell (vt+0x1BC) is not
+    // Water (`+0xEC`); Beach counts as land. An explicit order, retaliation
+    // (`ShouldRetaliate @ 0x007087C0`, which asks no candidate gate) or another
+    // team member's quarry can still send it at land.
+    //
+    // [`is_low_flying`]: crate::sim::movement::air_movement::is_low_flying
+    if ctx.attacker_obj.land_targeting == 2
+        && let crate::sim::combat::combat_weapon::TargetFacts::Techno { cell_land_type, .. } =
+            &candidate_facts
+        && crate::sim::movement::air_movement::is_low_flying(
+            candidate,
+            ctx.terrain,
+            Some((ctx.rules, ctx.interner)),
+        )
+        && *cell_land_type != crate::rules::terrain_rules::LandType::Water.as_index()
+    {
+        return None;
+    }
+
     // G6 — `InLimbo`/`Health == 0`. Actual retained Cell lists and separate
     // airborne registrations are not filtered or reconstructed from these
     // facts; eligibility belongs to this receiver.
@@ -2827,6 +2848,10 @@ mod mask_oracle_tests;
 #[cfg(test)]
 #[path = "greatest_threat_scenario_gate_tests.rs"]
 mod scenario_gate_tests;
+
+#[cfg(test)]
+#[path = "greatest_threat_land_targeting_tests.rs"]
+mod land_targeting_tests;
 
 #[cfg(test)]
 #[path = "greatest_threat_disguise_tests.rs"]

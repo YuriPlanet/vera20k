@@ -12,8 +12,11 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::animation::{Animation, SequenceKind};
 use crate::sim::combat::Health;
 use crate::sim::game_entity::{GameEntity, TechnoConstructorInit};
+use crate::sim::houses::Houses;
+use crate::sim::intern::StringInterner;
 use crate::sim::miner::{Miner, MinerConfig, miner_kind_for_object};
 use crate::sim::movement::locomotor::LocomotorState;
+use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::vision::MAX_SIGHT_RANGE;
 use crate::sim::world::Simulation;
 
@@ -53,7 +56,8 @@ impl Simulation {
         let stable_id = self.allocate_stable_id();
         let owner_iid = self.interner.intern(owner);
         let type_iid = self.interner.intern(type_id);
-        let techno_ctor_random_word = self.resolve_techno_constructor_word(init, None)?;
+        let techno_ctor_random_word =
+            super::resolve_techno_constructor_word(&mut self.scenario_rng, init, None)?;
         let native_unique_id = self.next_native_runtime_id();
 
         let mut ge = GameEntity::new_at_frame_from_constructor_word(
@@ -74,12 +78,22 @@ impl Simulation {
             techno_ctor_random_word,
         );
 
-        self.install_techno_components(&mut ge, Some(obj), Some(rules), ComponentOrigin::Runtime);
+        Self::install_techno_components(
+            &mut self.interner,
+            &self.session,
+            &self.houses,
+            &mut ge,
+            Some(obj),
+            Some(rules),
+            ComponentOrigin::Runtime,
+        );
         Ok(Some(ge))
     }
 
     pub(super) fn install_techno_components(
-        &mut self,
+        interner: &mut StringInterner,
+        session: &ScenarioSession,
+        houses: &Houses,
         ge: &mut GameEntity,
         obj: Option<&ObjectType>,
         rules: Option<&RuleSet>,
@@ -92,7 +106,7 @@ impl Simulation {
         // not manufacture either discovery-history byte. The launch-owned
         // current house is distinct from the notification/viewer binding.
         ge.discovery
-            .classify_owner(self.session.current_house() == Some(ge.owner()));
+            .classify_owner(session.current_house() == Some(ge.owner()));
 
         stamp_scoring_flags(ge, obj, rules);
         if let Some(object) = obj {
@@ -117,7 +131,7 @@ impl Simulation {
                 // Aircraft413FD2..414015 supplies ROT to BOTH controllers;
                 // Unlimbo414310 -> Foot4D7170 -> Techno6F6DAA snaps Primary;
                 // Aircraft414417 snaps Secondary. Both timers retain this frame.
-                let frame = self.session.binary_frame();
+                let frame = session.binary_frame();
                 ge.body_facing.snap(initial, frame);
                 secondary.snap(initial, frame);
             }
@@ -167,7 +181,7 @@ impl Simulation {
         ge.removal_facts.stamp_occupier(obj.occupier);
         if category == EntityCategory::Structure && obj.gate {
             ge.building_gate = Some(crate::sim::game_entity::BuildingGateRuntime::at_frame(
-                self.session.binary_frame(),
+                session.binary_frame(),
             ));
         }
         if category == EntityCategory::Structure && obj.bunker {
@@ -180,7 +194,7 @@ impl Simulation {
         {
             ge.bind_building_construction_control(rules.buildup_control(&obj.id));
             if matches!(origin, ComponentOrigin::Authored { .. }) {
-                ge.initialize_building_idle_body(self.session.binary_frame() as i32);
+                ge.initialize_building_idle_body(session.binary_frame() as i32);
             }
         }
         ge.ai_sell_repair.construct(
@@ -190,7 +204,7 @@ impl Simulation {
         if should_construct_locomotor(category, obj) {
             ge.locomotor = Some(LocomotorState::from_object_type(
                 obj,
-                self.session.binary_frame(),
+                session.binary_frame(),
             ));
             if matches!(origin, ComponentOrigin::Runtime)
                 && ge.locomotor.as_ref().is_some_and(|locomotor| {
@@ -222,7 +236,7 @@ impl Simulation {
                 ge.veterancy.rank(),
             )
         {
-            ge.parasite.allocate_class(self.session.binary_frame());
+            ge.parasite.allocate_class(session.binary_frame());
         }
         install_authored_bridge(ge, origin);
 
@@ -254,8 +268,8 @@ impl Simulation {
             ge.spawn_manager = crate::sim::spawn_manager::init_spawn_manager(
                 obj,
                 rules,
-                &mut self.interner,
-                self.session.binary_frame(),
+                interner,
+                session.binary_frame(),
             );
             // 0x006F41FE..0x006F4271: a CanDisguise=/PermaDisguise= type (stock
             // SPY) starts disguised as its owner, wearing the Rules disguise
@@ -265,7 +279,7 @@ impl Simulation {
             // slot +0x24 can); only retail [SPY], an Infantry, sets the keys.
             if obj.can_disguise
                 && obj.perma_disguise
-                && let Some(side) = self.houses.get(&ge.owner()).map(|h| h.side_index())
+                && let Some(side) = houses.get(&ge.owner()).map(|h| h.side_index())
             {
                 let worn = rules.general.infantry_disguises[match side {
                     0 => 0,
@@ -273,9 +287,9 @@ impl Simulation {
                     _ => 2,
                 }]
                 .as_deref()
-                .map(|name| self.interner.intern(name));
+                .map(|name| interner.intern(name));
                 let owner = ge.owner();
-                let frame = self.session.binary_frame();
+                let frame = session.binary_frame();
                 ge.disguise
                     .get_or_insert_with(|| crate::sim::cloak_disguise::DisguiseRuntime::new(frame))
                     .wear_from_construction(worn, owner);
@@ -292,7 +306,7 @@ impl Simulation {
         // Aircraft read neither. The countries' `VeteranInfantry=` and
         // `VeteranUnits=` lists before them (`0x00517CE8`, `0x0074682B`) are
         // dormant: no retail country sets one.
-        let house = self.houses.get(&ge.owner());
+        let house = houses.get(&ge.owner());
         let veteran = obj.trainable
             && house.is_some_and(|house| match category {
                 EntityCategory::Infantry => house.veteran_infantry(),

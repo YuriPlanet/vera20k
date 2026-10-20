@@ -1518,7 +1518,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     }
 
     fn restart_kamikaze(&mut self) {
-        self.sim.kamikaze_restart_after_push();
+        Simulation::kamikaze_restart_after_push(&self.sim.session, &mut self.sim.kamikaze);
     }
 
     fn kamikaze_remove(&mut self, child: u64) {
