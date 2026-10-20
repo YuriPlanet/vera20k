@@ -152,6 +152,9 @@ impl StartupSplashPresentation {
                 image::ImageFormat::Png,
             )
             .context("decode built-in WERHD startup loading image")?
+            // The approved 1448x1086 source has a 2-3px cyan edge. Remove
+            // it before resampling, keeping the inner picture exactly 4:3.
+            .crop_imm(4, 3, 1440, 1080)
             .resize_exact(width, height, image::imageops::FilterType::Lanczos3)
             .into_rgba8();
             let mut rgba = image.into_raw();

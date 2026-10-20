@@ -10,6 +10,8 @@ reuse of the web project's startup image and menu video.
   helmet rings. The title is 王二火大, above it 全平台即时战略 / 合家欢游戏;
   the lower-right wordmark is 尤里的复仇 / YOULIDEFUCHOU.COM. SHA-256:
   `57fac5c77a9ccc8b8962d390141fe164fe9393d9f7c48a38e92d8e52b7901358`.
+  iOS takes the inner `(4,3,1440,1080)` rectangle before scaling: this removes
+  the generated 2-3px cyan outer edge while preserving the 4:3 composition.
 - `werhd-menu-logo.png`: the approved silver winged crest extracted with
   image_gen as a transparent PNG for the menu overlay. It retains both gold
   subtitle lines and the red/gold 王二火大 title. SHA-256:
