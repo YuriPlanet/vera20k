@@ -3111,9 +3111,14 @@ pub(crate) fn estimated_damage_on(
         warhead: warhead.map(|warhead| damage::estimate::EstimateWarhead {
             cell_spread: warhead.cell_spread_f64,
             percent_at_max: warhead.percent_at_max_f64,
-            verses: &warhead.verses_f64,
+            armor_multiplier: warhead
+                .interaction(
+                    target_obj.map_or(crate::rules::armor::ArmorId::NONE, |object| {
+                        object.armor_id()
+                    }),
+                )
+                .multiplier(),
         }),
-        armor: damage::ArmorClass(target_obj.map_or(0, |object| armor_index(&object.armor) as u8)),
         scenario_no_damage: sim.session.no_damage(),
         max_damage: rules.combat_damage.max_damage,
     })

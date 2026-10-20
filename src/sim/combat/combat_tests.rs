@@ -7887,13 +7887,15 @@ fn rad_damage_fires_on_application_delay_boundary_only() {
             .unwrap()
     };
     let rules = radiation_rules();
-    for (index, verse) in rules
-        .warhead("RadSite")
-        .unwrap()
-        .verses_f64
-        .iter()
-        .enumerate()
-    {
+    for index in 0..11 {
+        let verse = f64::from_bits(
+            rules
+                .warhead("RadSite")
+                .unwrap()
+                .interaction(crate::rules::armor::ArmorId::from_index(index))
+                .multiplier()
+                .bits(),
+        );
         assert_eq!(
             format!("{:016x}", verse.to_bits()),
             native_row(16, 5)["verses_bits"][index],

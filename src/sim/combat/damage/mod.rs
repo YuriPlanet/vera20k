@@ -27,11 +27,6 @@ pub(crate) mod gates;
 pub(crate) mod kernel;
 pub(crate) mod receive;
 
-/// 0..=10 armor class index (none..special_2). Newtype over u8 to stop
-/// raw-int confusion with Verses/percent values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ArmorClass(pub u8);
-
 /// `TechnoClass::ReceiveDamage @ 0x00701900`'s defence divisors for one
 /// target, gathered by the caller (`0x00701939..0x007019E3`, see
 /// [`receive::defence_divides`]).
@@ -101,7 +96,6 @@ pub(crate) struct ImmunityInputs {
 /// Caller-built target view — decouples the service from GameEntity.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TargetDamageView {
-    pub armor: ArmorClass,
     pub current_hp: i32,
     /// ObjectType `Immune=` entry gate in ObjectClass::ReceiveDamage.
     pub object_immune: bool,

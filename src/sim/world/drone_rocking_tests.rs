@@ -52,7 +52,12 @@ impl DroneScene {
         assert!(parasite.parasite);
         assert_eq!(parasite.paralyzes, 0);
         assert_eq!(
-            parasite.verses_f64[crate::sim::combat::armor_index(&tank_type.armor)],
+            f64::from_bits(
+                parasite
+                    .interaction(tank_type.armor_id())
+                    .multiplier()
+                    .bits()
+            ),
             1.0
         );
         let jump = rules.weapon("DroneJump").unwrap();

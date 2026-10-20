@@ -194,7 +194,7 @@ impl<'a> FireSubject<'a> {
             .projectile
             .as_deref()
             .and_then(|id| self.rules.projectile(id));
-        let armor = target_obj.map(|target| super::armor_index(&target.armor));
+        let armor = target_obj.map(ObjectType::armor_id);
         WeaponFacts {
             damage: weapon.damage,
             ambient_damage: weapon.ambient_damage,
@@ -220,11 +220,11 @@ impl<'a> FireSubject<'a> {
                 is_locomotor: warhead.is_locomotor,
                 psychedelic: warhead.psychedelic,
                 bomb_disarm: warhead.bomb_disarm,
-                verses_zero: armor.is_some_and(|armor| {
-                    warhead
-                        .verses_f64
-                        .get(armor)
-                        .is_some_and(|verses| *verses == 0.0 || verses.is_nan())
+                armor_rejects_fire: armor.is_some_and(|armor| {
+                    // Ares 3.0 hook100542A0 admits ForceFire OR nonzero
+                    // multiplier; this is the shared GetFireError gate, not
+                    // a new Ctrl-only input rule.
+                    !warhead.interaction(armor).can_fire()
                 }),
             }),
             // A weapon naming no projectile section reads the reader's

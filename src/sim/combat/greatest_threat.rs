@@ -86,7 +86,6 @@
 
 use std::ops::ControlFlow;
 
-use super::armor_index;
 use super::combat_targeting::AttackerSnapshot;
 use super::combat_weapon::{
     AttackerFacts, SelectedWeapon, attacker_facts, controlled_transport_house, get_weapon,
@@ -170,11 +169,6 @@ impl RetargetAfterStop {
     }
 }
 
-/// `TechnoClass::Evaluate_Candidate @ 0x006F7D1F`'s Verses floor, `DAT_007F4E38`
-/// — a `float` `0.02` widened to double, so the comparison is against
-/// `0.019999999552965164` and an authored `Verses=2%` (exactly `0.02` as a
-/// double) is *above* it and passes.
-pub(crate) const VERSES_FLOOR: f64 = 0.02f32 as f64;
 /// The five weights of `TechnoClass::Calculate_Threat_Score @ 0x0070CD10`, in
 /// the order the native body loads them.
 #[derive(Debug, Clone, Copy)]
@@ -451,8 +445,12 @@ fn threat_score(
         entities,
         interner,
     ) {
-        let verses =
-            load_threat_double(selected.warhead.verses_f64[armor_index(&scorer_type.armor)]);
+        let verses = ScoreX87::load_f64(
+            selected
+                .warhead
+                .interaction(scorer_type.armor_id())
+                .multiplier(),
+        );
         let mut term = ScoreX87::mul(coeff_b, verses);
         if candidate
             .attack_target
@@ -475,8 +473,12 @@ fn threat_score(
     // A: the scorer's selected weapon against the candidate, retained for the
     // native range term below.
     if let Some(selected) = scorer_weapon {
-        let verses =
-            load_threat_double(selected.warhead.verses_f64[armor_index(&candidate_type.armor)]);
+        let verses = ScoreX87::load_f64(
+            selected
+                .warhead
+                .interaction(candidate_type.armor_id())
+                .multiplier(),
+        );
         score = spill_threat_double(ScoreX87::add(ScoreX87::mul(coeff_a, verses), score));
     }
 
@@ -2045,7 +2047,9 @@ fn evaluate_candidate(
     // G4 `0x006F7D19..0x006F7D4F`: a scanner with no weapon in the selected
     // slot skips the floor test (`test ebp,ebp ; je 0x6f7d55 @ 0x006F7D1B`).
     if let Some(selected) = &selected
-        && selected.warhead.verses_f64[armor_index(&candidate_obj.armor)] <= VERSES_FLOOR
+        // Ares10054270 replaces only the native numeric floor; a missing
+        // selected weapon still skips this gate as in the original caller.
+        && !selected.warhead.interaction(candidate_obj.armor_id()).can_passively_acquire()
     {
         return None;
     }

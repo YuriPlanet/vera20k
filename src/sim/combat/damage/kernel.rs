@@ -4,7 +4,6 @@
 //! Native binary32 spills, PC53/chop operations and low32 `ftol` conversions
 //! remain ordered here for ordinary damage, Psychedelic and Terrain callers.
 
-use super::ArmorClass;
 use crate::util::native_x87::{
     MaskedX87Chop53 as X87, MaskedX87Ordering, MaskedX87Value, NativeF32Bits, NativeF64Bits,
 };
@@ -44,12 +43,14 @@ fn decoded_f32(value: f64) -> MaskedX87Value {
 /// The caller owns null-warhead admission because this API takes decoded fields.
 /// Infinity/NaN values follow masked x87 value semantics; status flags, traps and
 /// the rest of the FPU environment are outside this numeric receiver contract.
+/// The caller resolves the target's armor once through the rules owner. Ares3.0
+/// hook489235 ->10054230 changes that record source to the extension table;
+/// the falloff, negative-input bypass and final cap stay in this same kernel.
 pub(crate) fn apply_warhead_damage(
     damage: i32,
     cell_spread: f64,
     percent_at_max: f64,
-    verses_f64: &[f64; 11],
-    armor: ArmorClass,
+    armor_multiplier: NativeF64Bits,
     distance_leptons: i32,
     scenario_no_damage: bool,
     max_damage: i32,
@@ -97,9 +98,7 @@ pub(crate) fn apply_warhead_damage(
     // 489227..249: signed floor0, binary64 verse multiply, ftol low EAX.
     let scaled = X87::ftol_i32_low_masked(X87::mul(
         X87::load_i32(falloff.max(0)),
-        X87::load_f64(NativeF64Bits::from_bits(
-            verses_f64[armor.0 as usize].to_bits(),
-        )),
+        X87::load_f64(armor_multiplier),
     ));
 
     // 489249..26C: signed cap only, after possible negative verse result.
