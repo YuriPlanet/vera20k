@@ -488,10 +488,7 @@ impl crate::sim::world::ObjectSubstrate {
             // Native Techno6F2EB0..6F2EC2 initializes these inline fields to zero.
             // Rust stores them sparsely until a producer first writes them;
             // an ordinary admitted ship has no crash-created component yet.
-            entity
-                .rocking
-                .get_or_insert_with(Default::default)
-                .set_angle_sideways(angle);
+            entity.rocking_mut().set_angle_sideways(angle);
         }
     }
 }

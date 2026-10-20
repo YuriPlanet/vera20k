@@ -393,10 +393,7 @@ impl Simulation {
         // crusher (vtable `+0x45C`, argument 0; no stock crusher cloaks),
         // and crushing a Unit tilts a level crusher forwards.
         if crushed_unit && let Some(crusher) = self.substrate.entities.get_mut(id) {
-            crusher
-                .rocking
-                .get_or_insert_with(Default::default)
-                .tilt_after_unit_crush();
+            crusher.rocking_mut().tilt_after_unit_crush();
         }
         // 0x0073B08F tests only IsAlive (`+0x90`) before the Foot body.
         if self.per_cell_owner_alive(id) {
@@ -466,10 +463,7 @@ impl Simulation {
         }
         self.apply_wall_damage(target, -1, registry);
         if let Some(actor) = self.substrate.entities.get_mut(id) {
-            actor
-                .rocking
-                .get_or_insert_with(Default::default)
-                .recoil_after_overlay_crush();
+            actor.rocking_mut().recoil_after_overlay_crush();
             //73B067 clears Foot+6B5 after the damage call, even when the
             //Cell refuses a non-Wall overlay. TiltsWhenCrushes is not a gate.
             actor.foot_speed.clear_crush_slowdown();

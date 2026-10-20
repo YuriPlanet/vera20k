@@ -857,12 +857,9 @@ impl Simulation {
                     entity.foot_speed.arm_crush_slowdown();
                 }
                 if tilt {
-                    entity
-                        .rocking
-                        .get_or_insert_with(Default::default)
-                        .set_vel_forwards_native(
-                            crate::util::native_x87::NativeF32Bits::from_bits(0xbd4c_cccd),
-                        );
+                    entity.rocking_mut().set_vel_forwards_native(
+                        crate::util::native_x87::NativeF32Bits::from_bits(0xbd4c_cccd),
+                    );
                 }
             }
         }

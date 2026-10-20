@@ -239,14 +239,14 @@ impl Simulation {
         else {
             return false;
         };
-        self.bridge_state = Some(
+        let bridges =
             crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain_with_map_size(
                 terrain,
                 destroyable,
                 bridge_strength,
                 (bounds.base, size_height),
-            ),
-        );
+            );
+        self.install_bridge_runtime(bridges);
         true
     }
 }

@@ -742,7 +742,7 @@ impl LanCapture {
             },
         )
     }
-    fn isolated_root(state: &AppState) -> Result<PathBuf> {
+    pub(super) fn isolated_root(state: &AppState) -> Result<PathBuf> {
         let assets = state
             .process_assets
             .manager()

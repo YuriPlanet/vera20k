@@ -93,7 +93,7 @@ fn apply_effects(state: &mut AppState, effects: Vec<NetworkOptionsEffect>) {
                     && let Err(error) = state
                         .persistence
                         .options_profile
-                        .commit_network_options(&config.paths.ra2_dir)
+                        .commit_network_options(config.paths.settings_dir())
                 {
                     log::warn!("Could not save network options: {error}");
                 }

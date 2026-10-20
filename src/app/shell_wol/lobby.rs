@@ -682,6 +682,15 @@ pub(crate) fn commit_create(state: &mut AppState, observe: bool) {
 /// runs before it (GameMode options, the host node, `[0x8316A4]`) belongs
 /// to the setup owner that creates C2 ([`App::open_host_setup`]).
 fn send_create(state: &mut AppState, channel: WolChannel, key: String, observe: bool) {
+    // 0x00789F55..0x00789FB4: with registry Options bit 1 clear (VERA reads
+    // no registry), the nickname's persona Country and Color become the
+    // MultiPlayer picks the host node then takes (0x0069B700/0x0069B720).
+    let nickname = nickname(state);
+    let persona = super::persona::load(state, &nickname);
+    state
+        .frontend
+        .multiplayer_shell_runtime
+        .set_side_and_color(persona.country, persona.color);
     if let Some(lobby) = lobby_mut(state) {
         lobby.step = Step::Creating { observe };
     }

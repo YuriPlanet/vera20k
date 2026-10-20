@@ -245,6 +245,38 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
     }
 }
 
+/// Reduce a startup error to text the status card can draw.
+///
+/// The card's in-repo face carries ASCII only, while `std::io::Error` is
+/// localized: on a Chinese Windows the detail line would otherwise be a row of
+/// boxes. Dropping the inaccessible characters keeps the error code and the
+/// asset-manager context, and the log still holds the full original message.
+fn display_error(error: &str) -> String {
+    let mut ascii = String::with_capacity(error.len());
+    let mut pending_space = false;
+    for ch in error.chars() {
+        if ch.is_ascii() {
+            if ch.is_whitespace() {
+                pending_space = true;
+                continue;
+            }
+            if pending_space && !ascii.is_empty() {
+                ascii.push(' ');
+            }
+            pending_space = false;
+            ascii.push(ch);
+        } else {
+            // The run becomes a word boundary rather than a hole.
+            pending_space = true;
+        }
+    }
+    if ascii.trim().chars().count() < 12 {
+        "could not open the game files (see the log for the exact error)".to_owned()
+    } else {
+        ascii
+    }
+}
+
 impl App {
     /// Shared pre-dialog Session read: D7 at55FD31, Skirmish at52E11E,
     /// and LAN (including failed IPX admission) at52E37D. Preferences stay
@@ -723,13 +755,36 @@ impl App {
             .as_ref()
             .map(|config| config.paths.ra2_dir.display().to_string())
             .unwrap_or_else(|| "No game installation configured".to_owned());
+        // No archives at all means the installation is missing or wrong; some
+        // archives but no menu artwork means the install is incomplete. Say
+        // which, so the player is not sent looking for files that are present.
+        let title = if state.process_assets.manager().is_some() {
+            "Unable to load the game menu"
+        } else {
+            "Game files not found"
+        };
+        // The card's in-repo face carries ASCII only, so a non-ASCII install
+        // path draws as boxes. Point the player at the log, which holds the
+        // exact path in UTF-8.
+        let path_note = if asset_root.is_ascii() {
+            String::new()
+        } else {
+            "\n(characters this screen cannot draw are shown as boxes; the log has the exact path)"
+                .to_owned()
+        };
+        let details = display_error(&error);
         crate::app::frontend::status_screen::render(
             state,
             encoder,
             view,
-            "Unable to load the game menu",
+            title,
             &format!(
-                "{error}\n\nGame files: {asset_root}\n\nSet [paths] ra2_dir in config.toml to your Yuri's Revenge installation, then restart. Full details are in logs/ra2.log."
+                "VERA20K needs Red Alert 2: Yuri's Revenge to run.\n\n\
+1. Copy vera20k.exe into your Red Alert 2: Yuri's Revenge folder and start it there.\n\n\
+2. Or set [paths] ra2_dir in config.toml, either in the folder you start it from or beside vera20k.exe.\n\n\
+Game files: {asset_root}{path_note}\n\
+Log: logs/ra2.log\n\n\
+Details: {details}"
             ),
             crate::app::frontend::status_screen::Buttons::QUIT,
         );
@@ -1333,6 +1388,12 @@ impl App {
             ShellExitThen::WolSoundOptionsBack => {
                 crate::app::shell_wol::options::commit_sound_back(state)
             }
+            ShellExitThen::WolAutoLoginClose(answer) => {
+                crate::app::shell_wol::persona::commit_auto_login(state, answer)
+            }
+            ShellExitThen::WolLocaleClose(locale) => {
+                crate::app::shell_wol::persona::commit_locale(state, locale)
+            }
         }
     }
 
@@ -1556,5 +1617,42 @@ impl App {
         {
             crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         }
+    }
+}
+
+#[cfg(test)]
+mod status_error_tests {
+    use super::display_error;
+
+    #[test]
+    fn localized_os_text_is_dropped_and_the_code_kept() {
+        // A zh-CN host reports ERROR_PATH_NOT_FOUND as the localized sentence
+        // "the system cannot find the path specified"; the card cannot draw it.
+        let text = display_error(
+            "Could not load the game archives: IO error reading asset file: \
+\u{7cfb}\u{7edf}\u{627e}\u{4e0d}\u{5230}\u{6307}\u{5b9a}\u{7684}\u{8def}\u{5f84}\u{3002} (os error 3)",
+        );
+        assert!(text.is_ascii(), "{text}");
+        assert!(text.contains("os error 3"), "{text}");
+        assert!(text.contains("game archives"), "{text}");
+    }
+
+    #[test]
+    fn ascii_errors_pass_through() {
+        let text =
+            display_error("Required game-menu artwork SDBTNANM.SHP is missing or unreadable");
+        assert_eq!(
+            text,
+            "Required game-menu artwork SDBTNANM.SHP is missing or unreadable"
+        );
+    }
+
+    #[test]
+    fn an_error_with_nothing_drawable_becomes_a_generic_line() {
+        let text = display_error(
+            "\u{7cfb}\u{7edf}\u{627e}\u{4e0d}\u{5230}\u{6307}\u{5b9a}\u{7684}\u{8def}\u{5f84}\u{3002}",
+        );
+        assert!(text.is_ascii(), "{text}");
+        assert!(text.contains("see the log"), "{text}");
     }
 }

@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::persistence::wol_profile::{WOLINFO_INI, WolInfoFile};
 use crate::app::shell_network_setup::{
     self as setup, NetworkSetupEvent, NetworkSetupRequest, WolStartUser,
 };
@@ -21,7 +22,7 @@ use crate::ui::wol_lobby::{
     self as lobby_ui, CHANNEL_KEYED, GAME_CHANNEL, GAME_LIMIT_800, LOBBY_KEY, MEMBER_OPERATOR,
     MEMBER_VOICE, WolChannel, WolMember,
 };
-use crate::ui::wol_login::{BACK, LOGIN};
+use crate::ui::wol_login::{BACK, LOGIN, WolCredential};
 use crate::ui::wol_options::WolPreferences;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,6 +123,26 @@ pub enum WolTarget {
     SoundOptions,
     /// `0xD6` Back: `0x2BC` settled again.
     SoundOptionsBack,
+    /// A login with `[Ask] AutoLogin` unanswered: `0x112` settled.
+    AutoLoginQuery,
+    /// `0x112` Don't Ask, then No: `[Ask] AutoLogin=no`, `0x113` settled.
+    AutoLoginDeclined,
+    /// AutoLogin names a stored account: the connect to the persona's
+    /// server without `0x10F`, then `0x113` settled.
+    AutoLoginSilent,
+    /// The same connect rejected: the box, OK, then `0x10F` settled with
+    /// AutoLogin cleared.
+    AutoLoginFailed,
+    /// LastValid prefills `0x10F`'s nickname.
+    LoginLastValid,
+    /// LastValid's persona fills `0x10E`'s profile.
+    WelcomeProfile,
+    /// Neither the server nor the persona knows the locale: `0xFE` settled.
+    LocaleQuery,
+    /// A `0xFE` row and OK: SetLocale, the persona saved, `0x113` settled.
+    LocaleChosen,
+    /// The persona's Country and Color: Create, then C2 settled with them.
+    PersonaPicks,
 }
 
 impl WolTarget {
@@ -137,7 +158,46 @@ impl WolTarget {
                 | Self::ServerListFailure
                 | Self::LoginRejected
                 | Self::LoginRejectedReturn
+                | Self::AutoLoginFailed
+                | Self::LoginLastValid
+                | Self::WelcomeProfile
         )
+    }
+
+    /// AutoLogin names the stored account: no `0x10F`.
+    fn auto_login(self) -> bool {
+        matches!(self, Self::AutoLoginSilent | Self::AutoLoginFailed)
+    }
+
+    /// The controlled table and the persona have no locale: `0xFE` asks.
+    fn locale_unknown(self) -> bool {
+        matches!(self, Self::LocaleQuery | Self::LocaleChosen)
+    }
+
+    /// `[Ask] AutoLogin` unanswered: `0x112` follows the login.
+    fn asks_auto_login(self) -> bool {
+        matches!(self, Self::AutoLoginQuery | Self::AutoLoginDeclined)
+    }
+
+    /// The isolated root's `wolinfoMD.ini` before Internet. The other
+    /// targets' user has answered `0x112` and has the server's locale.
+    fn wolinfo(self) -> String {
+        const ANSWERED: &str = "[Ask]\nAutoLogin=no\n";
+        const LOCALE: &str = "Locale=2\nLocaleVerified=yes\n";
+        match self {
+            Self::AutoLoginQuery | Self::AutoLoginDeclined => format!("[tester]\n{LOCALE}"),
+            Self::AutoLoginSilent | Self::AutoLoginFailed => format!(
+                "[DefaultPersona]\nAutoLogin={NICKNAME}\n{ANSWERED}[tester]\nServer=Westwood\n{LOCALE}"
+            ),
+            Self::LoginLastValid | Self::WelcomeProfile => format!(
+                "[DefaultPersona]\nLastValid={NICKNAME}\n{ANSWERED}[tester]\n{LOCALE}\
+                 Rank=17\nPoints=1234\nWins=21\nLosses=9\nDisconnects=1\n\
+                 UpdateTime=12:34\nUpdateDate=10/19/26\n"
+            ),
+            Self::LocaleQuery | Self::LocaleChosen => ANSWERED.into(),
+            Self::PersonaPicks => format!("{ANSWERED}[tester]\n{LOCALE}Country=3\nColor=2\n"),
+            _ => format!("{ANSWERED}[tester]\n{LOCALE}"),
+        }
     }
 
     /// The production test service answers instead of the capture.
@@ -247,6 +307,15 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-0x2bc-ok", WolTarget::OptionsOk),
     ("wol-0xd6-sound-options", WolTarget::SoundOptions),
     ("wol-0xd6-back", WolTarget::SoundOptionsBack),
+    ("wol-0x112-query", WolTarget::AutoLoginQuery),
+    ("wol-0x112-no-dont-ask", WolTarget::AutoLoginDeclined),
+    ("wol-autologin-skips-0x10f", WolTarget::AutoLoginSilent),
+    ("wol-autologin-failure-0x10f", WolTarget::AutoLoginFailed),
+    ("wol-0x10f-lastvalid", WolTarget::LoginLastValid),
+    ("wol-0x10e-profile", WolTarget::WelcomeProfile),
+    ("wol-0xfe-locale", WolTarget::LocaleQuery),
+    ("wol-0xfe-ok", WolTarget::LocaleChosen),
+    ("wol-c2-persona-picks", WolTarget::PersonaPicks),
 ];
 
 /// The controlled guest of the C2 targets, the host of the C9 targets.
@@ -308,6 +377,12 @@ enum WolPhase {
     SoundOpening,
     /// `0xD6` Back pressed: waiting for `0x2BC`.
     SoundReturn,
+    /// The silent connect rejected: its box.
+    AutoLoginBox,
+    /// `0x112` or `0xFE` opening.
+    PersonaPage,
+    /// `0x112` or `0xFE` closed: the login continues.
+    PersonaClosing,
     Settle(u32),
 }
 
@@ -321,6 +396,8 @@ pub(super) struct WolCapture {
     exit_consumed: bool,
     /// RA2MD.INI and the live WOL preferences when Options was pressed.
     options_before: Option<(Option<Vec<u8>>, WolPreferences)>,
+    /// The locale `0xFE` OK sent, ahead of the runner's requests.
+    chosen_locale: Option<i32>,
 }
 
 impl WolCapture {
@@ -333,6 +410,7 @@ impl WolCapture {
             abort_input: None,
             exit_consumed: false,
             options_before: None,
+            chosen_locale: None,
         }
     }
 
@@ -394,6 +472,7 @@ impl WolCapture {
                 // The Options box, read when Internet opens the visit; the
                 // capture never writes the profile out.
                 state.persistence.options_profile.wol_test_service = self.target.test_service();
+                write_wolinfo(state, self.target)?;
                 App::leave_shell_dialog(
                     state,
                     crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
@@ -407,6 +486,30 @@ impl WolCapture {
                 if rendered == PresentedShell::WolWelcome
                     && Self::page_settled(state, ShellSlideKind::WolWelcome) =>
             {
+                if self.target == WolTarget::WelcomeProfile {
+                    let texts = &state
+                        .frontend
+                        .wol
+                        .as_ref()
+                        .context("WOL visit")?
+                        .welcome_texts;
+                    let text = |id: u16| {
+                        texts
+                            .iter()
+                            .find(|(text_id, _)| *text_id == id)
+                            .map(|(_, text)| text.as_str())
+                    };
+                    ensure!(
+                        text(0x06EF).is_some_and(|heading| heading.contains(NICKNAME))
+                            && [0x06F4, 0x06F5, 0x06F0, 0x06F1, 0x0701].map(text)
+                                == [Some("17"), Some("1234"), Some("21"), Some("9"), Some("1")]
+                            && text(0x0797).is_some_and(|line| line.contains("10/19/26")),
+                        "LastValid's persona did not fill 0x10E: {texts:?}"
+                    );
+                    self.event(frame, json!({"0x10E profile": texts}));
+                    self.hover_settle(state);
+                    return Ok(());
+                }
                 if self.target.test_service() {
                     let rect = App::wol_welcome_layout(state)
                         .page
@@ -482,6 +585,49 @@ impl WolCapture {
                         self.event(frame, "controlled server list failure");
                         self.phase = WolPhase::MainReturn;
                     }
+                    target if target.auto_login() => {
+                        service_event(
+                            state,
+                            WolServiceEvent::Credentials(vec![WolCredential {
+                                slot: 1,
+                                nickname: NICKNAME.into(),
+                                password: PASSWORD.into(),
+                            }]),
+                        );
+                        service_event(state, WolServiceEvent::NetStatus(0x0004_012F));
+                        service_event(state, WolServiceEvent::ServerList(Ok(server_list())));
+                        let requests = self.requests(state, frame)?;
+                        ensure!(
+                            state
+                                .frontend
+                                .wol
+                                .as_ref()
+                                .is_some_and(|visit| visit.login().is_none())
+                                && requests
+                                    == [WolServiceRequest::Connect {
+                                        server: server_list().servers[1].clone(),
+                                        nickname: NICKNAME.into(),
+                                        password: PASSWORD.into(),
+                                        changed: false,
+                                    }],
+                            "AutoLogin did not connect the stored account to the persona's server: {requests:?}"
+                        );
+                        self.event(frame, "AutoLogin: stored account, persona server Westwood");
+                        if target == WolTarget::AutoLoginSilent {
+                            service_event(
+                                state,
+                                WolServiceEvent::Login(Ok(WolLoginAccepted {
+                                    motd: "Controlled message of the day".into(),
+                                })),
+                            );
+                            self.event(frame, "controlled login accepted");
+                            self.after_login(state, frame)?;
+                        } else {
+                            service_event(state, WolServiceEvent::Login(Err(BAD_PASSWORD)));
+                            self.event(frame, "controlled login rejected 0x80040065");
+                            self.phase = WolPhase::AutoLoginBox;
+                        }
+                    }
                     _ => {
                         service_event(state, WolServiceEvent::Credentials(Vec::new()));
                         service_event(state, WolServiceEvent::NetStatus(0x0004_012F));
@@ -546,6 +692,24 @@ impl WolCapture {
                         self.settle();
                         return Ok(());
                     }
+                    WolTarget::LoginLastValid | WolTarget::AutoLoginFailed => {
+                        let login = state
+                            .frontend
+                            .wol
+                            .as_ref()
+                            .and_then(|visit| visit.login())
+                            .context("0x10F")?;
+                        ensure!(
+                            login.nickname.display_text() == NICKNAME
+                                && info_file(state)?.auto_login().is_empty(),
+                            "0x10F did not take the persona nickname with AutoLogin cleared"
+                        );
+                        self.event(frame, "0x10F settled with the persona nickname");
+                        MoviesCapture::restore_neutral_pointer(state);
+                        App::handle_wol_mouse_move(state);
+                        self.settle();
+                        return Ok(());
+                    }
                     WolTarget::LoginBack => {
                         login_click(state, button(&layout, BACK)?);
                         self.event(frame, "0x10F Back");
@@ -603,7 +767,7 @@ impl WolCapture {
                         })),
                     );
                     self.event(frame, "controlled login accepted");
-                    self.phase = WolPhase::Lobby;
+                    self.after_login(state, frame)?;
                 } else {
                     service_event(state, WolServiceEvent::Login(Err(BAD_PASSWORD)));
                     self.event(frame, "controlled login rejected 0x80040065");
@@ -663,6 +827,53 @@ impl WolCapture {
                 ensure!(state.frontend.wol.is_none(), "the WOL visit survived");
                 self.event(frame, "new 0xE2 settled");
                 self.settle();
+            }
+            WolPhase::AutoLoginBox => {
+                let expected = App::csf_label(state, "TXT_BADPASS", "TXT_BADPASS");
+                ensure!(
+                    state
+                        .frontend
+                        .wol
+                        .as_ref()
+                        .and_then(|visit| visit.message())
+                        .is_some_and(|message| message.body == expected),
+                    "the silent connect's failure box did not show TXT_BADPASS"
+                );
+                let ok = crate::ui::shell::modal::body_ok_layout(
+                    state.renderer.gpu.config.width as i32,
+                    state.renderer.gpu.config.height as i32,
+                )
+                .ok;
+                welcome_click(state, ok);
+                self.event(frame, "0xD0 OK");
+                self.phase = WolPhase::Login;
+            }
+            WolPhase::PersonaPage
+                if (rendered == PresentedShell::WolAutoLoginQuery
+                    && Self::page_settled(state, ShellSlideKind::WolAutoLoginQuery))
+                    || (rendered == PresentedShell::WolLocale
+                        && Self::page_settled(state, ShellSlideKind::WolLocale)) =>
+            {
+                self.persona_page(state, frame)?;
+            }
+            WolPhase::PersonaClosing if state.frontend.shell_exit.is_none() => {
+                let file = info_file(state)?;
+                if let Some(locale) = self.chosen_locale {
+                    let persona =
+                        file.load_persona(NICKNAME, &|key| App::csf_label(state, key, key));
+                    ensure!(
+                        (persona.locale, persona.locale_verified) == (locale, false),
+                        "0xFE OK did not save the persona's locale: {persona:?}"
+                    );
+                } else {
+                    ensure!(
+                        !file.ask_auto_login(),
+                        "Don't Ask and No did not write [Ask] AutoLogin=no"
+                    );
+                }
+                self.event(frame, "persona page closed; wolinfoMD.ini written");
+                self.phase = WolPhase::Lobby;
+                self.lobby_entry(state, frame)?;
             }
             WolPhase::Lobby => self.lobby_entry(state, frame)?,
             WolPhase::Leaving => {
@@ -1048,6 +1259,23 @@ impl WolCapture {
     fn setup_settled(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::ui::multiplayer_setup as setup_ui;
         match self.target {
+            WolTarget::PersonaPicks => {
+                let slot = state
+                    .match_state
+                    .session
+                    .network_setup()
+                    .context("C2 setup")?
+                    .local_slot()
+                    .clone();
+                ensure!(
+                    slot.country == crate::skirmish_launch::LaunchCountry::from_country_index(3)
+                        && !slot.country_random
+                        && slot.color_index == 2
+                        && !slot.color_random,
+                    "the host row did not take the persona's Country 3 and Color 2: {slot:?}"
+                );
+                self.event(frame, "C2 host row: persona Country 3, Color 2");
+            }
             WolTarget::SetupBack => {
                 setup_button(state, setup_ui::BACK)?;
                 self.event(frame, "C2 Back");
@@ -1357,7 +1585,20 @@ impl WolCapture {
     fn lobby_entry(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         // The mode-loop pass (0x0077B402) applies the preferences first;
         // after a match the entry apply (0x0077B31D) already has WOLAPI.
-        let requests = self.requests(state, frame)?;
+        let mut requests = self.requests(state, frame)?;
+        if let Some(locale) = self.chosen_locale {
+            let sent = [
+                WolServiceRequest::SetLocale(locale),
+                WolServiceRequest::RequestLocales {
+                    names: vec![NICKNAME.into()],
+                },
+            ];
+            ensure!(
+                requests.starts_with(&sent),
+                "0xFE OK did not send the locale: {requests:?}"
+            );
+            requests.drain(..sent.len());
+        }
         let [apply @ .., list] = requests.as_slice() else {
             bail!("the runner sent nothing");
         };
@@ -1729,10 +1970,7 @@ impl WolCapture {
                 );
                 service_event(
                     state,
-                    WolServiceEvent::UserLocale {
-                        name: "Echo".into(),
-                        locale: 2,
-                    },
+                    WolServiceEvent::UserLocales(Ok(vec![("Echo".into(), 2)])),
                 );
                 // Player rows: Hotel, Echo, Foxtrot, the user.
                 let lobby = Self::lobby(state)?;
@@ -1912,7 +2150,10 @@ impl WolCapture {
             target
                 if matches!(
                     target,
-                    WolTarget::CreatePopup | WolTarget::CreateAccepted | WolTarget::SetupBack
+                    WolTarget::CreatePopup
+                        | WolTarget::CreateAccepted
+                        | WolTarget::SetupBack
+                        | WolTarget::PersonaPicks
                 ) || target.guest_joined() =>
             {
                 lobby_button(state, &layout, lobby_ui::CREATE)?;
@@ -2186,6 +2427,89 @@ impl WolCapture {
         Ok(())
     }
 
+    /// `0x007864C0`'s continuation after an accepted login: the locale
+    /// request answered (2, or unknown for the locale targets), then
+    /// `0xFE`, `0x112` or the runner.
+    fn after_login(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let requests = self.requests(state, frame)?;
+        ensure!(
+            requests
+                == [WolServiceRequest::RequestLocales {
+                    names: vec![NICKNAME.into()],
+                }],
+            "the login did not request the user's locale: {requests:?}"
+        );
+        let locale = if self.target.locale_unknown() { 0 } else { 2 };
+        service_event(
+            state,
+            WolServiceEvent::UserLocales(Ok(vec![(NICKNAME.into(), locale)])),
+        );
+        self.event(frame, format!("controlled locale {locale}"));
+        self.phase = if self.target.locale_unknown() {
+            let requests = self.requests(state, frame)?;
+            ensure!(
+                requests == [WolServiceRequest::LocaleCount],
+                "0xFE did not ask for the locale count: {requests:?}"
+            );
+            service_event(state, WolServiceEvent::LocaleCount(38));
+            WolPhase::PersonaPage
+        } else if self.target.asks_auto_login() {
+            WolPhase::PersonaPage
+        } else {
+            WolPhase::Lobby
+        };
+        Ok(())
+    }
+
+    /// `0x112` or `0xFE` settled: drive the target's answer.
+    fn persona_page(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::WolPage;
+        use crate::ui::wol_persona::{ACCEPT, DECLINE};
+        let layout = crate::app::shell_wol::persona::layout(state).context("persona layout")?;
+        match self.target {
+            WolTarget::AutoLoginQuery | WolTarget::LocaleQuery => {
+                self.event(frame, "persona page settled");
+                self.hover_settle(state);
+            }
+            WolTarget::AutoLoginDeclined => {
+                welcome_click(
+                    state,
+                    crate::ui::skirmish_shell::checkbox_icon_rect(
+                        layout.control,
+                        layout.page.scale,
+                    ),
+                );
+                welcome_click(state, layout.page.button_rect(DECLINE).context("0x112 No")?);
+                ensure!(
+                    state.frontend.shell_exit.is_some(),
+                    "Don't Ask and No did not close 0x112"
+                );
+                self.event(frame, "0x112 Don't Ask, No");
+                self.phase = WolPhase::PersonaClosing;
+            }
+            WolTarget::LocaleChosen => {
+                let Some(WolPage::Locale(page)) =
+                    state.frontend.wol.as_ref().map(|visit| &visit.page)
+                else {
+                    bail!("0xFE is not open");
+                };
+                let geometry = crate::app::shell_wol::persona::list_geometry(&layout, page);
+                let locale = page.rows.get(2).context("0xFE rows")?.locale;
+                welcome_click(state, geometry.row(2));
+                welcome_click(state, layout.page.button_rect(ACCEPT).context("0xFE OK")?);
+                ensure!(
+                    state.frontend.shell_exit.is_some(),
+                    "a row and OK did not close 0xFE"
+                );
+                self.event(frame, json!({"0xFE OK": locale}));
+                self.chosen_locale = Some(locale);
+                self.phase = WolPhase::PersonaClosing;
+            }
+            target => bail!("{target:?} has no persona page"),
+        }
+        Ok(())
+    }
+
     fn hover_settle(&mut self, state: &mut AppState) {
         MoviesCapture::restore_neutral_pointer(state);
         App::handle_wol_mouse_move(state);
@@ -2281,6 +2605,9 @@ impl WolCapture {
             "shell_route": format!("{:?}", state.frontend.shell_route),
             "mode": visit.and_then(|visit| visit.mode()).map(|mode| mode.native()),
             "authenticated": visit.is_some_and(|visit| visit.authenticated()),
+            "wolinfo": state.platform.game_config.as_ref().and_then(|config| {
+                std::fs::read_to_string(config.paths.settings_dir().join(WOLINFO_INI)).ok()
+            }),
             "login": visit.and_then(|visit| visit.login()).map(|login| json!({
                 "nickname": login.nickname.display_text(),
                 "password_units": login.password.units.len(),
@@ -2398,7 +2725,7 @@ fn ra2md_path(state: &AppState) -> Result<std::path::PathBuf> {
         .as_ref()
         .context("capture game config")?
         .paths
-        .ra2_dir
+        .settings_dir()
         .join("RA2MD.INI"))
 }
 
@@ -2445,6 +2772,31 @@ fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
 }
 
 /// Three IRC records; the preferred-server draw left record 1 selected.
+/// `wolinfoMD.ini` beside the isolated RA2MD.INI.
+fn info_file(state: &AppState) -> Result<WolInfoFile> {
+    let config = state
+        .platform
+        .game_config
+        .as_ref()
+        .context("capture game config")?;
+    Ok(WolInfoFile::in_directory(config.paths.settings_dir()))
+}
+
+/// The target's persona file, only in the marked isolated root.
+fn write_wolinfo(state: &AppState, target: WolTarget) -> Result<()> {
+    let root = super::lan::LanCapture::isolated_root(state)?;
+    let config = state
+        .platform
+        .game_config
+        .as_ref()
+        .context("capture game config")?;
+    ensure!(
+        std::fs::canonicalize(config.paths.settings_dir())? == root,
+        "wolinfoMD.ini belongs to the isolated root only"
+    );
+    std::fs::write(root.join(WOLINFO_INI), target.wolinfo()).context("write wolinfoMD.ini")
+}
+
 fn server_list() -> WolServerList {
     WolServerList {
         servers: ["Pacific", "Westwood", "Europe"]

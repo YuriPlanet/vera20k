@@ -7,9 +7,10 @@
 //! and answers through [`service_event`]; production answers synchronously
 //! from [`WolProvider::Unavailable`]. No request ever manufactures success.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::{WolBoxThen, WolPage, WolVisit};
+use crate::app::persistence::wol_profile::WolPersona;
 use crate::app::{App, AppState};
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{WolChannel, WolMember};
@@ -37,6 +38,25 @@ pub(crate) enum WolProvider {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WolServer {
     pub(crate) name: String,
+}
+
+impl WolServer {
+    /// The text after the first ':' (`strchr` at `0x00787220`/`0x0078756E`);
+    /// none without a ':' or with nothing after it.
+    fn display_name(&self) -> Option<&str> {
+        self.name
+            .split_once(':')
+            .map(|(_, rest)| rest)
+            .filter(|rest| !rest.is_empty())
+    }
+
+    /// `0x0078686E..0x007868B5`: the name with everything through the
+    /// first ':' removed, as the persona stores it.
+    fn persona_server(&self) -> &str {
+        self.name
+            .split_once(':')
+            .map_or(&self.name, |(_, rest)| rest)
+    }
 }
 
 /// The server sink's IRC records in their native order and the record its
@@ -83,12 +103,23 @@ pub(crate) enum WolServiceRequest {
     },
     /// Forget Account: API+0x94(slot, "", "", 1).
     ForgetCredential { slot: u32 },
-    /// Remember after a login: `0x00789500(nickname, password, changed)`.
+    /// Remember after a login: `0x00789500(nickname, password, changed,
+    /// locale)`, which stores the account (API+0x94) and the slot's locale
+    /// (API+0xC8, `0x00789610..0x0078961E`).
     StoreCredential {
         nickname: String,
         password: String,
         changed: bool,
+        locale: i32,
     },
+    /// API+0xBC: the locales of these users (the connect asks for its own,
+    /// `0x00786A01..0x00786A48`).
+    RequestLocales { names: Vec<String> },
+    /// API+0xB8: this user's locale.
+    SetLocale(i32),
+    /// API+0xD0: how many locales the service knows (`0xFE`'s init,
+    /// `0x00796C9C`).
+    LocaleCount,
     /// `0x0077F120`: API+0x18 for channel type `kind` (0 chat lobbies,
     /// `0x29` games) with `flags`.
     ListChannels { kind: u32, flags: u32 },
@@ -169,12 +200,11 @@ pub(crate) enum WolServiceEvent {
         name: String,
         rank: i32,
     },
-    /// A user's locale (`CChatEventSink+0x84`/`+0x8C`, the table
-    /// `0xB76530`).
-    UserLocale {
-        name: String,
-        locale: i32,
-    },
+    /// `CChatEventSink+0x84` (`0x007AB8E0`): the users' locales for the
+    /// table `0xB76530`, or a failed result (only logged).
+    UserLocales(Result<Vec<(String, i32)>, u32>),
+    /// API+0xD0's answer: the locale count `0xFE` lists.
+    LocaleCount(i32),
     /// The kick sink `0x007AB670`: `user` (flagged
     /// [`crate::ui::wol_lobby::MEMBER_LOCAL`] for this user) was kicked out
     /// of `channel` by `by`.
@@ -207,7 +237,38 @@ pub(super) enum Awaiting {
         ready: bool,
         list: Option<WolServerList>,
     },
-    Connect,
+    /// `0x007864C0`'s wait: 100 ms polls with a 30 000 ms budget
+    /// (`0x007865A4..0x007865CC`); running out fails silently.
+    Connect {
+        deadline: Instant,
+    },
+    /// The locale wait after the connect (`0x00786A4E..0x00786AB8`): event
+    /// 14 or the same 30 s end it, and neither fails the login.
+    Locale {
+        deadline: Instant,
+    },
+}
+
+/// The connect and locale waits' silent limit (`MOV EDI,0x7530`).
+const WAIT_LIMIT: Duration = Duration::from_millis(30_000);
+
+/// The login flow `0x00787010` between the connect it starts and its
+/// return.
+#[derive(Debug, Clone)]
+pub(super) struct LoginFlow {
+    /// The silent connect with `[DefaultPersona] AutoLogin`
+    /// (`0x0078710B..0x00787336`): a success returns at once, without
+    /// Remember or `0x112`; a failure goes on to `0x10F`.
+    pub(super) auto: bool,
+    /// The record the connect uses; modes 4 and 5 save its name as the
+    /// persona's Server (`0x0078686E..0x007868F9`).
+    pub(super) server: WolServer,
+    /// The locale of the persona the dialog path loaded before the connect
+    /// (`0x007874E2`): Remember passes it (`0x00787637..0x00787660`).
+    pub(super) remember_locale: i32,
+    /// The persona the connect's continuation loaded (`0x00786821`), held
+    /// through the locale step.
+    pub(super) persona: Option<WolPersona>,
 }
 
 /// A step the app takes after the reducer.
@@ -226,8 +287,16 @@ pub(super) enum WolStep {
     Leave(i32),
     /// The login flow returned 0.
     Welcome,
+    /// Both server-list events arrived: the flow goes on past `0x00797640`.
+    ServersReady,
+    /// A box closed and `0x10F` opens.
     OpenLogin,
+    /// Event 2: the connect's continuation runs.
     Accepted,
+    /// The silent auto-login connect failed (`0x00787350`).
+    AutoLoginFailed,
+    /// The locale wait ended.
+    LocaleDecided,
 }
 
 /// `0x007A5290`: the CSF text a login result leaves in `[0xB77AD0]`.
@@ -259,6 +328,14 @@ fn server_status_fails(status: u32) -> bool {
 }
 
 impl WolVisit {
+    /// `0x00787010`'s entry: the last login result `[0xB77DF8]` is zeroed
+    /// (`0x0078701E`) before the WOLAPI object is created.
+    fn begin_login(&mut self) {
+        self.last_login_result = None;
+        self.awaiting = Awaiting::Api;
+        self.requests.push(WolServiceRequest::EnsureApi);
+    }
+
     /// `0x00786EF0` over `[0xB77AD0]`: an empty text shows nothing
     /// (`0x005E2CD0` returns on length 0); either way the flow returns 0.
     fn failed_login_box(&self) -> WolStep {
@@ -272,19 +349,65 @@ impl WolVisit {
         }
     }
 
-    /// The record `0x00787010` connects to (`0x0078753D..0x007875F8`):
-    /// with no preferred-server profile, `[0xB76468]` when it is a valid
-    /// record 1..count-1, else record 1 when there are two or more.
-    pub(super) fn connect_server(&self) -> Option<WolServer> {
-        let count = self.servers.len();
-        let index = if (1..count).contains(&self.selected_server) {
-            self.selected_server
-        } else if count > 1 {
-            1
-        } else {
+    /// The record whose display name is the persona's Server, from record 1
+    /// (`0x00787202..0x00787246`, `0x00787557..0x0078759B`; `0x007B4710` is
+    /// an exact `strcmp`).
+    fn preferred_server(&self, persona_server: &str) -> Option<usize> {
+        if persona_server.is_empty() {
             return None;
-        };
-        self.servers.get(index).cloned()
+        }
+        (1..self.servers.len())
+            .find(|&index| self.servers[index].display_name() == Some(persona_server))
+    }
+
+    /// The dialog path's record (`0x0078752D..0x007875F8`): the persona's
+    /// server when listed, else `[0xB76468]`; an index past the list
+    /// becomes -1, and -1 falls back to record 1 when there are two or more.
+    /// Index 0, and a one-record list, connect to nothing.
+    pub(super) fn dialog_server(&mut self, persona_server: &str) -> Option<WolServer> {
+        let count = self.servers.len() as i32;
+        if let Some(index) = self.preferred_server(persona_server) {
+            self.selected_server = index as i32;
+        }
+        if self.selected_server >= count {
+            self.selected_server = -1;
+        }
+        if self.selected_server == -1 {
+            if count <= 1 {
+                return None;
+            }
+            self.selected_server = 1;
+        }
+        if self.selected_server < 1 || self.selected_server >= count {
+            return None;
+        }
+        self.servers.get(self.selected_server as usize).cloned()
+    }
+
+    /// The silent path's index: the record matching the persona's server.
+    /// Without one, modes 1-3 keep `[0xB76468]` (`0x007871D1..0x0078725D`);
+    /// the other modes keep it only when the persona has no server, and an
+    /// unlisted one gives -1, no connect and no box (`0x00787262..0x007872F4`).
+    fn auto_login_server(&self, persona_server: &str) -> i32 {
+        match self.preferred_server(persona_server) {
+            Some(index) => index as i32,
+            None if persona_server.is_empty()
+                || matches!(self.mode.map(WolMode::native), Some(1..=3)) =>
+            {
+                self.selected_server
+            }
+            None => -1,
+        }
+    }
+
+    /// A connect failed (an error result, the Disconnect button or the
+    /// silent limit): the dialog path shows `[0xB77AD0]` and returns 0;
+    /// the silent path goes on to `0x10F`.
+    fn connect_failed(&mut self) -> WolStep {
+        match self.flow.take() {
+            Some(flow) if flow.auto => WolStep::AutoLoginFailed,
+            _ => self.failed_login_box(),
+        }
     }
 
     /// Reduce one service event. Events nothing waits for are stale and do
@@ -353,7 +476,7 @@ impl WolVisit {
                 WolStep::Leave(-2)
             }
             (Awaiting::Servers { .. }, WolServiceEvent::Interrupted) => WolStep::Leave(-1),
-            (Awaiting::Connect, WolServiceEvent::Login(Ok(accepted))) => {
+            (Awaiting::Connect { .. }, WolServiceEvent::Login(Ok(accepted))) => {
                 self.motd = Some(accepted.motd);
                 self.authenticated = true;
                 // The connect clears [0xB77DC0] (0x007867E6) and the login
@@ -362,12 +485,12 @@ impl WolVisit {
                 self.disconnected = false;
                 WolStep::Accepted
             }
-            (Awaiting::Connect, WolServiceEvent::Login(Err(code))) => {
+            (Awaiting::Connect { .. }, WolServiceEvent::Login(Err(code))) => {
                 // The login sink sets [0xB77DC0] (0x007A52A0).
                 self.connected = false;
                 self.last_login_result = Some(code);
                 self.last_error = Some(login_error_key(code));
-                self.failed_login_box()
+                self.connect_failed()
             }
             (awaiting, event) => {
                 log::debug!("stale WOL service event {event:?}");
@@ -381,8 +504,8 @@ impl WolVisit {
         match (ready, list) {
             (true, Some(list)) => {
                 self.servers = list.servers;
-                self.selected_server = list.selected;
-                WolStep::OpenLogin
+                self.selected_server = list.selected as i32;
+                WolStep::ServersReady
             }
             (ready, list) => {
                 self.awaiting = Awaiting::Servers { ready, list };
@@ -397,9 +520,9 @@ impl WolVisit {
             // 0x00797640 returns 1: the login flow returns -2.
             Awaiting::Servers { .. } => WolStep::Leave(-2),
             // 0x007864C0 fails silently; 0x00786EF0 shows [0xB77AD0].
-            Awaiting::Connect => {
+            Awaiting::Connect { .. } => {
                 self.requests.push(WolServiceRequest::CancelWait);
-                self.failed_login_box()
+                self.connect_failed()
             }
             other => {
                 self.awaiting = other;
@@ -429,14 +552,12 @@ fn answer_unavailable(state: &mut AppState) {
     }
 }
 
-/// `0x00787010` (and `0x00799D30` for My Information) start by creating the
-/// WOLAPI object.
+/// The login flow `0x00787010` starts by creating the WOLAPI object.
 pub(super) fn begin_flow(state: &mut AppState) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    visit.awaiting = Awaiting::Api;
-    visit.requests.push(WolServiceRequest::EnsureApi);
+    visit.begin_login();
     answer_unavailable(state);
 }
 
@@ -448,24 +569,126 @@ pub(super) fn request(state: &mut AppState, request: WolServiceRequest) {
     answer_unavailable(state);
 }
 
-/// Start the connect after `0x10F` closed with Login.
-pub(super) fn begin_connect(state: &mut AppState) {
+/// `0x007864C0` with `server`: the nickname and password go into the
+/// record (+0xE4/+0xEE) and the connect waits behind `0xC4`.
+fn connect(state: &mut AppState, server: WolServer, auto: bool, remember_locale: i32) -> WolStep {
     let globals = state.frontend.wol_account.clone();
+    let visit = state.frontend.wol.as_mut().expect("WOL visit");
+    visit.requests.push(WolServiceRequest::Connect {
+        server: server.clone(),
+        nickname: globals.nickname,
+        password: globals.password,
+        changed: globals.changed,
+    });
+    visit.awaiting = Awaiting::Connect {
+        deadline: Instant::now() + WAIT_LIMIT,
+    };
+    visit.flow = Some(LoginFlow {
+        auto,
+        server,
+        remember_locale,
+        persona: None,
+    });
+    WolStep::Wait("TXT_CONNECTING_SERVER")
+}
+
+/// `0x00787010` past the server list (`0x007870F5..0x00787359`): with
+/// `[DefaultPersona] AutoLogin` naming a stored account, connect silently.
+fn after_server_list(state: &mut AppState) {
+    let auto_name = super::persona::info_file(state)
+        .map(|file| file.auto_login())
+        .unwrap_or_default();
+    if !auto_name.is_empty() {
+        // 0x00787125..0x00787191: the password clears, then slots 1..32 are
+        // searched with _stricmp.
+        let stored = state
+            .frontend
+            .wol
+            .as_ref()
+            .and_then(|visit| crate::ui::wol_login::lookup(&visit.credentials, &auto_name))
+            .cloned();
+        let globals = &mut state.frontend.wol_account;
+        globals.password.clear();
+        match stored {
+            None => globals.nickname.clear(),
+            Some(stored) => {
+                globals.nickname = stored.nickname;
+                globals.password = stored.password;
+                globals.changed = false;
+                let persona = super::persona::load(state, &auto_name);
+                let visit = state.frontend.wol.as_mut().expect("WOL visit");
+                let index = visit.auto_login_server(&persona.server);
+                if index != -1 {
+                    visit.selected_server = index;
+                    let server = usize::try_from(index)
+                        .ok()
+                        .filter(|index| *index >= 1)
+                        .and_then(|index| visit.servers.get(index).cloned());
+                    let step = match server {
+                        Some(server) => connect(state, server, true, 0),
+                        // 0x00787350: out of range, the box and its flag.
+                        None => WolStep::AutoLoginFailed,
+                    };
+                    apply(state, step);
+                    return;
+                }
+            }
+        }
+    }
+    prepare_login_dialog(state);
+    super::login::open(state);
+}
+
+/// `0x00787362..0x007873AC`: an empty nickname takes LastValid, then
+/// AutoLogin is cleared whatever happened, which creates the file.
+fn prepare_login_dialog(state: &mut AppState) {
+    let Some(file) = super::persona::info_file(state) else {
+        return;
+    };
+    if state.frontend.wol_account.nickname.is_empty() {
+        state.frontend.wol_account.nickname = file.last_valid();
+    }
+    file.set_auto_login("");
+}
+
+/// The silent connect failed: `0x00786EF0` shows `[0xB77AD0]` and its flag
+/// is set only for the Yes/No results, which return 0; otherwise `0x10F`
+/// opens after the LastValid and AutoLogin steps.
+fn auto_login_failed(state: &mut AppState) {
+    prepare_login_dialog(state);
+    let visit = state.frontend.wol.as_mut().expect("WOL visit");
+    let step = match visit.last_error {
+        Some(key) => {
+            let yes_no = visit.last_login_result.is_some_and(login_error_asks);
+            WolStep::Message {
+                key,
+                yes_no,
+                then: if yes_no {
+                    WolBoxThen::Welcome
+                } else {
+                    WolBoxThen::Login
+                },
+            }
+        }
+        None => WolStep::OpenLogin,
+    };
+    apply(state, step);
+}
+
+/// Start the connect after `0x10F` closed with Login (`0x007874E2..`):
+/// the persona's preferred server picks the record.
+pub(super) fn begin_connect(state: &mut AppState) {
+    let nickname = state.frontend.wol_account.nickname.clone();
+    let persona = super::persona::load(state, &nickname);
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    let step = match visit.connect_server() {
-        Some(server) => {
-            visit.requests.push(WolServiceRequest::Connect {
-                server,
-                nickname: globals.nickname,
-                password: globals.password,
-                changed: globals.changed,
-            });
-            visit.awaiting = Awaiting::Connect;
-            WolStep::Wait("TXT_CONNECTING_SERVER")
+    let step = match visit.dialog_server(&persona.server) {
+        Some(server) => connect(state, server, false, persona.locale),
+        None => {
+            visit.flow = None;
+            visit.failed_login_box()
         }
-        None => visit.failed_login_box(),
     };
     apply(state, step);
     answer_unavailable(state);
@@ -517,9 +740,21 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             visit.ladder_ranks.insert(name.to_ascii_lowercase(), rank);
             return;
         }
-        WolServiceEvent::UserLocale { name, locale } => {
-            let visit = state.frontend.wol.as_mut().expect("checked");
-            visit.locales.insert(name.to_ascii_lowercase(), locale);
+        WolServiceEvent::UserLocales(result) => {
+            // Event 14 ends the locale wait (0x00786AB2).
+            if super::persona::user_locales(state, result) {
+                let visit = state.frontend.wol.as_mut().expect("checked");
+                if matches!(visit.awaiting, Awaiting::Locale { .. }) {
+                    visit.awaiting = Awaiting::Nothing;
+                    apply(state, WolStep::LocaleDecided);
+                    answer_unavailable(state);
+                }
+            }
+            state.platform.window.request_redraw();
+            return;
+        }
+        WolServiceEvent::LocaleCount(count) => {
+            super::persona::locale_count(state, count);
             return;
         }
         event @ (WolServiceEvent::Channels { .. }
@@ -602,43 +837,179 @@ fn apply(state: &mut AppState, step: WolStep) {
             App::return_from_wol(state);
         }
         WolStep::Welcome => App::reopen_wol_welcome(state),
+        WolStep::ServersReady => after_server_list(state),
         WolStep::OpenLogin => super::login::open(state),
-        WolStep::Accepted => accept_login(state),
+        WolStep::Accepted => connect_succeeded(state),
+        WolStep::AutoLoginFailed => auto_login_failed(state),
+        WolStep::LocaleDecided => locale_decided(state),
     }
 }
 
-/// `0x007864C0`'s success continuation and the rest of `0x00787010`.
-fn accept_login(state: &mut AppState) {
-    // ReadMultiPlayerSettings, then the nickname becomes the session handle
-    // [0xA8B380] and WriteMultiPlayerSettings 0x006990A0 saves it.
+/// `0x007864C0`'s success continuation (`0x00786795..0x00786A48`), up to
+/// the locale wait.
+fn connect_succeeded(state: &mut AppState) {
+    // 0xC4 closes. API+0xD4(0x10010) has no service request.
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.page = WolPage::Backdrop { wait: None };
+    }
+    // ReadMultiPlayerSettings 0x006980C0.
     App::prepare_multiplayer_settings(
         state,
         crate::app::shell_main_menu::MultiplayerSettingsContext::Shell,
     );
-    let globals = state.frontend.wol_account.clone();
-    let runtime = &mut state.frontend.multiplayer_shell_runtime;
-    runtime.set_handle(&globals.nickname);
-    runtime.persist_local_preferences();
-    // Remember with registry bit 1 clear: 0x00789500 stores the account and
-    // the settings are written again (0x00787614..0x0078763E).
-    if globals.remember {
-        request(
-            state,
-            WolServiceRequest::StoreCredential {
-                nickname: globals.nickname,
-                password: globals.password,
-                changed: globals.changed,
-            },
-        );
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .persist_local_preferences();
+    let nickname = state.frontend.wol_account.nickname.clone();
+    let mut persona = super::persona::load(state, &nickname);
+    let visit = state.frontend.wol.as_ref().expect("WOL visit");
+    let server = visit.flow.as_ref().map(|flow| flow.server.clone());
+    // Modes 4 and 5 keep the connected server as the persona's (and save
+    // it, the first write of a named section).
+    if let Some(server) = server
+        && matches!(visit.mode.map(WolMode::native), Some(4 | 5))
+    {
+        persona.set_server(server.persona_server());
+        super::persona::save(state, &mut persona, &nickname);
     }
-    // wolinfoMD.ini is absent from retail: no auto-login query 0x112.
-    // A re-login on runner entry (0x007879B6) continues that runner;
-    // otherwise the login flow returned 1 to WOL_Main, whose mode-loop pass
-    // applies before the runner.
+    // The nickname becomes the session handle [0xA8B380], the persona's
+    // Country and Color the MultiPlayer picks, and WriteMultiPlayerSettings
+    // 0x006990A0 saves them.
+    let runtime = &mut state.frontend.multiplayer_shell_runtime;
+    runtime.set_handle(&nickname);
+    runtime.set_side_and_color(persona.country, persona.color);
+    runtime.persist_local_preferences();
+    if let Some(file) = super::persona::info_file(state) {
+        file.set_last_valid(&nickname);
+    }
+    // 0x00786964..0x007869E3: the ladder requests need the ladder service
+    // ([0xAC1170]); none is modelled, so none is sent.
+    let visit = state.frontend.wol.as_mut().expect("WOL visit");
+    visit.requests.push(WolServiceRequest::RequestLocales {
+        names: vec![nickname],
+    });
+    visit.awaiting = Awaiting::Locale {
+        deadline: Instant::now() + WAIT_LIMIT,
+    };
+    if let Some(flow) = visit.flow.as_mut() {
+        flow.persona = Some(persona);
+    }
+    state.platform.window.request_redraw();
+}
+
+/// `0x00786B87..0x00786D7D`: the table's locale for this user (zero counts
+/// as unknown) against the persona's decides what is sent; with neither,
+/// `0xFE` asks.
+fn locale_decided(state: &mut AppState) {
+    let nickname = state.frontend.wol_account.nickname.clone();
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    let known = visit
+        .locales
+        .get(&nickname.to_ascii_lowercase())
+        .copied()
+        .filter(|locale| *locale != 0);
+    let Some(flow) = visit.flow.as_mut() else {
+        return;
+    };
+    let mut persona = flow.persona.take().unwrap_or_default();
+    match known {
+        Some(locale) if persona.locale == locale => {}
+        Some(locale) => {
+            if persona.locale == 0 {
+                persona.set_locale(locale, 2);
+                super::persona::save(state, &mut persona, &nickname);
+            }
+            send_locale(state, persona.locale);
+        }
+        None if persona.locale != 0 => send_locale(state, persona.locale),
+        None => {
+            flow.persona = Some(persona);
+            super::persona::open_locale_page(state);
+            return;
+        }
+    }
+    connect_returned(state);
+}
+
+/// `0xFE` closed with `locale` (0 for Cancel; a negative result counts as
+/// 0, `0x00786C10`): the persona takes it with priority 3 and is saved, and
+/// a nonzero one is sent (`0x00786CEF..0x00786D5E`).
+pub(super) fn locale_chosen(state: &mut AppState, locale: i32) {
+    let nickname = state.frontend.wol_account.nickname.clone();
+    let mut persona = state
+        .frontend
+        .wol
+        .as_mut()
+        .and_then(|visit| visit.flow.as_mut())
+        .and_then(|flow| flow.persona.take())
+        .unwrap_or_default();
+    persona.set_locale(locale, 3);
+    super::persona::save(state, &mut persona, &nickname);
+    if locale != 0 {
+        send_locale(state, locale);
+    }
+    connect_returned(state);
+}
+
+/// API+0xB8, the locale request again, and the table entry: `0x007AE1F0`
+/// removes it and only a removed one is inserted again (`0x007ACBE0`).
+fn send_locale(state: &mut AppState, locale: i32) {
+    let nickname = state.frontend.wol_account.nickname.clone();
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    let key = nickname.to_ascii_lowercase();
+    visit.requests.push(WolServiceRequest::SetLocale(locale));
+    visit.requests.push(WolServiceRequest::RequestLocales {
+        names: vec![nickname],
+    });
+    if visit.locales.remove(&key).is_some() {
+        visit.locales.insert(key, locale);
+    }
+}
+
+/// `0x007864C0` returned 1: the silent path returns at once (`0x0078733A`);
+/// the dialog path stores a remembered account and asks `0x112`
+/// (`0x00787619..0x007876E4`).
+fn connect_returned(state: &mut AppState) {
+    let Some(flow) = state
+        .frontend
+        .wol
+        .as_mut()
+        .and_then(|visit| visit.flow.take())
+    else {
+        return;
+    };
+    if !flow.auto {
+        // Remember with registry bit 1 clear: 0x00789500 stores the account
+        // and the settings are written again (0x00787621..0x0078766A).
+        let globals = state.frontend.wol_account.clone();
+        if globals.remember {
+            request(
+                state,
+                WolServiceRequest::StoreCredential {
+                    nickname: globals.nickname,
+                    password: globals.password,
+                    changed: globals.changed,
+                    locale: flow.remember_locale,
+                },
+            );
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .persist_local_preferences();
+        }
+        if super::persona::info_file(state).is_some_and(|file| file.ask_auto_login()) {
+            super::persona::open_auto_login_query(state);
+            return;
+        }
+    }
+    finish_login(state);
+}
+
+/// The login flow returned 1. A re-login on runner entry (`0x007879B6`)
+/// continues that runner; otherwise `WOL_Main`'s mode-loop pass applies
+/// before the runner.
+pub(super) fn finish_login(state: &mut AppState) {
     match state
         .frontend
         .wol
@@ -679,6 +1050,7 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
             match then {
                 WolBoxThen::Leave(result) => WolStep::Leave(result),
                 WolBoxThen::Welcome => WolStep::Welcome,
+                WolBoxThen::Login => WolStep::OpenLogin,
             }
         }
         (None, WAIT_DISCONNECT) if backdrop => visit.disconnect(),
@@ -694,17 +1066,44 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
     state.platform.window.request_redraw();
 }
 
-/// The wait box's reveal timer; returns its deadline while it runs.
-pub(super) fn poll_wait(state: &mut AppState) -> Option<Instant> {
+/// The connect and locale waits' silent limit; returns its deadline while
+/// one runs.
+fn poll_deadline(state: &mut AppState) -> Option<Instant> {
     let visit = state.frontend.wol.as_mut()?;
-    let WolPage::Backdrop { wait: Some(wait) } = &mut visit.page else {
-        return None;
+    let deadline = match visit.awaiting {
+        Awaiting::Connect { deadline } | Awaiting::Locale { deadline } => deadline,
+        _ => return None,
     };
-    if wait.poll(Instant::now()) {
-        state.platform.window.request_redraw();
-        return None;
+    if Instant::now() < deadline {
+        return Some(deadline);
     }
-    (!wait.shown).then(|| wait.reveal_at())
+    let step = match std::mem::take(&mut visit.awaiting) {
+        // 0x007866E4: no box from the wait itself.
+        Awaiting::Connect { .. } => visit.connect_failed(),
+        _ => WolStep::LocaleDecided,
+    };
+    apply(state, step);
+    answer_unavailable(state);
+    state.platform.window.request_redraw();
+    None
+}
+
+/// The wait box's reveal timer and the waits' limits; returns the earliest
+/// deadline while one runs.
+pub(super) fn poll_wait(state: &mut AppState) -> Option<Instant> {
+    let limit = poll_deadline(state);
+    let reveal = (|| {
+        let visit = state.frontend.wol.as_mut()?;
+        let WolPage::Backdrop { wait: Some(wait) } = &mut visit.page else {
+            return None;
+        };
+        if wait.poll(Instant::now()) {
+            state.platform.window.request_redraw();
+            return None;
+        }
+        (!wait.shown).then(|| wait.reveal_at())
+    })();
+    [limit, reveal].into_iter().flatten().min()
 }
 
 #[cfg(test)]
@@ -799,9 +1198,9 @@ mod tests {
         );
         assert_eq!(
             visit.reduce(WolServiceEvent::NetStatus(SERVER_STATUS_READY)),
-            WolStep::OpenLogin
+            WolStep::ServersReady
         );
-        assert_eq!(visit.connect_server().unwrap().name, "irc:Server2");
+        assert_eq!(visit.dialog_server("").unwrap().name, "irc:Server2");
 
         let mut visit = visit_waiting_servers();
         assert_eq!(
@@ -810,10 +1209,11 @@ mod tests {
         );
         assert_eq!(
             visit.reduce(WolServiceEvent::ServerList(Ok(servers(2, 0)))),
-            WolStep::OpenLogin
+            WolStep::ServersReady
         );
-        // Record 0 is never the connect target; record 1 is the fallback.
-        assert_eq!(visit.connect_server().unwrap().name, "irc:Server1");
+        // Record 0 is never the connect target (0x007875ED): the dialog path
+        // fails rather than falling back.
+        assert_eq!(visit.dialog_server(""), None);
     }
 
     fn visit_waiting_servers() -> WolVisit {
@@ -859,7 +1259,7 @@ mod tests {
         let mut visit = visit_waiting_servers();
         visit.reduce(WolServiceEvent::ServerList(Ok(servers(1, 0))));
         visit.reduce(WolServiceEvent::NetStatus(SERVER_STATUS_READY));
-        assert_eq!(visit.connect_server(), None);
+        assert_eq!(visit.dialog_server(""), None);
         // [0xB77AD0] is empty after 0x00780110: no box, the welcome again.
         assert_eq!(visit.failed_login_box(), WolStep::Welcome);
     }
@@ -867,7 +1267,9 @@ mod tests {
     #[test]
     fn login_results_lead_to_the_lobby_or_a_box_then_the_welcome() {
         let mut visit = visit_waiting_servers();
-        visit.awaiting = Awaiting::Connect;
+        visit.awaiting = Awaiting::Connect {
+            deadline: Instant::now() + WAIT_LIMIT,
+        };
         assert_eq!(
             visit.reduce(WolServiceEvent::Login(Err(0x8004_0065))),
             WolStep::Message {
@@ -877,7 +1279,9 @@ mod tests {
             }
         );
         assert!(!visit.authenticated);
-        visit.awaiting = Awaiting::Connect;
+        visit.awaiting = Awaiting::Connect {
+            deadline: Instant::now() + WAIT_LIMIT,
+        };
         assert_eq!(
             visit.reduce(WolServiceEvent::Login(Err(0x8004_0076))),
             WolStep::Message {
@@ -886,9 +1290,13 @@ mod tests {
                 then: WolBoxThen::Welcome
             }
         );
-        visit.awaiting = Awaiting::Connect;
+        visit.awaiting = Awaiting::Connect {
+            deadline: Instant::now() + WAIT_LIMIT,
+        };
         assert_eq!(visit.disconnect(), visit.failed_login_box());
-        visit.awaiting = Awaiting::Connect;
+        visit.awaiting = Awaiting::Connect {
+            deadline: Instant::now() + WAIT_LIMIT,
+        };
         assert_eq!(
             visit.reduce(WolServiceEvent::Login(Ok(WolLoginAccepted {
                 motd: "Welcome".into()
@@ -901,6 +1309,95 @@ mod tests {
         assert_eq!(
             visit.reduce(WolServiceEvent::Login(Err(0x8004_0065))),
             WolStep::Stay
+        );
+    }
+
+    #[test]
+    fn the_dialog_path_prefers_the_persona_server_then_falls_back() {
+        let mut visit = visit_waiting_servers();
+        visit.reduce(WolServiceEvent::ServerList(Ok(servers(4, 2))));
+        visit.reduce(WolServiceEvent::NetStatus(SERVER_STATUS_READY));
+        // The persona's server matches the text after the first ':'.
+        assert_eq!(visit.dialog_server("Server3").unwrap().name, "irc:Server3");
+        assert_eq!(visit.selected_server, 3);
+        // Record 0 is never matched; an unlisted name keeps [0xB76468].
+        assert_eq!(visit.dialog_server("Server0").unwrap().name, "irc:Server3");
+        // An index past the list becomes -1, which falls back to record 1.
+        visit.selected_server = 9;
+        assert_eq!(visit.dialog_server("").unwrap().name, "irc:Server1");
+        assert_eq!(visit.selected_server, 1);
+    }
+
+    #[test]
+    fn the_silent_path_skips_an_unlisted_persona_server() {
+        let mut visit = visit_waiting_servers();
+        visit.reduce(WolServiceEvent::ServerList(Ok(servers(3, 1))));
+        visit.reduce(WolServiceEvent::NetStatus(SERVER_STATUS_READY));
+        assert_eq!(visit.auto_login_server(""), 1);
+        assert_eq!(visit.auto_login_server("Server2"), 2);
+        assert_eq!(visit.auto_login_server("Nowhere"), -1);
+        // Quick Match and Quick Co-op keep [0xB76468] instead.
+        visit.mode = Some(WolMode::QuickMatch);
+        assert_eq!(visit.auto_login_server("Nowhere"), 1);
+        assert_eq!(visit.auto_login_server("Server2"), 2);
+        let display = WolServer {
+            name: "irc:USA East:6667".into(),
+        };
+        assert_eq!(display.display_name(), Some("USA East:6667"));
+        assert_eq!(display.persona_server(), "USA East:6667");
+        let bare = WolServer {
+            name: "Bare".into(),
+        };
+        assert_eq!((bare.display_name(), bare.persona_server()), (None, "Bare"));
+    }
+
+    #[test]
+    fn a_failed_silent_connect_goes_on_to_the_login_dialog() {
+        let mut visit = visit_waiting_servers();
+        visit.flow = Some(LoginFlow {
+            auto: true,
+            server: WolServer {
+                name: "irc:Server1".into(),
+            },
+            remember_locale: 0,
+            persona: None,
+        });
+        visit.awaiting = Awaiting::Connect {
+            deadline: Instant::now() + WAIT_LIMIT,
+        };
+        assert_eq!(
+            visit.reduce(WolServiceEvent::Login(Err(0x8004_0065))),
+            WolStep::AutoLoginFailed
+        );
+        assert!(visit.flow.is_none());
+        // The dialog path shows the box and returns to the welcome.
+        visit.awaiting = Awaiting::Connect {
+            deadline: Instant::now() + WAIT_LIMIT,
+        };
+        assert_eq!(
+            visit.reduce(WolServiceEvent::Login(Err(0x8004_0065))),
+            WolStep::Message {
+                key: "TXT_BADPASS",
+                yes_no: false,
+                then: WolBoxThen::Welcome
+            }
+        );
+    }
+
+    #[test]
+    fn a_new_login_flow_forgets_the_last_result() {
+        let mut visit = visit_waiting_servers();
+        visit.last_error = Some("TXT_BADPASS");
+        visit.last_login_result = Some(0x8004_0072);
+        visit.begin_login();
+        // A timeout leaves no new result: the box is OK-only.
+        assert_eq!(
+            visit.failed_login_box(),
+            WolStep::Message {
+                key: "TXT_BADPASS",
+                yes_no: false,
+                then: WolBoxThen::Welcome
+            }
         );
     }
 

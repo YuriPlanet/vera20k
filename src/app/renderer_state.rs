@@ -32,8 +32,13 @@ pub(crate) struct RendererState {
     pub(crate) in_game_shell_surface: Option<crate::render::scaled_copy::ScaledSurface>,
     /// Immutable one-pixel fill shared by the asset-independent status cards.
     pub(super) status_screen_fill: crate::render::batch::BatchTexture,
+    /// The status cards' button glow: #CE0000 core fading to black.
+    pub(crate) status_card_glow: crate::render::batch::BatchTexture,
     /// GAME.FNT bitmap font (falls back to the built-in 5x7 face).
     pub(crate) bit_font: BitFont,
+    /// The status cards' own vector face, baked per size on demand. Independent
+    /// of the installation, so the error card renders without one.
+    pub(crate) status_font: crate::render::status_font::StatusFaceCache,
     /// InitGame52C1EF..52C302's immutable GRFXTXT.SHP/PAL result surface.
     pub(crate) outcome_banner_art:
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,

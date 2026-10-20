@@ -134,7 +134,7 @@ pub(crate) fn commit_close(state: &mut AppState, staged: Option<WolPreferences>)
         let profile = &mut state.persistence.options_profile;
         profile.wol_preferences = staged;
         if let Some(config) = state.platform.game_config.as_ref()
-            && let Err(error) = profile.commit_wol_preferences(&config.paths.ra2_dir)
+            && let Err(error) = profile.commit_wol_preferences(config.paths.settings_dir())
         {
             log::warn!("Could not save the WOL options: {error}");
         }

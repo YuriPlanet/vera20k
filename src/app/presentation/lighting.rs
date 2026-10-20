@@ -475,9 +475,17 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(crate) struct MatchLighting {
     grid: CellLightGrid,
     config: LightingConfig,
+    /// Replica of the simulation's building light sources
+    /// (`LightingSources::buildings`) as last applied to `grid`. The frame's
+    /// lighting events update it in native order ([`Self::apply_events`]);
+    /// [`Self::install`] and [`Self::refresh`] re-derive it from the simulation
+    /// and relight only what differs.
     buildings: BTreeMap<u64, PointLight>,
+    /// Replica of the simulation's radiation light sites, kept like `buildings`.
     radiation: BTreeMap<(u16, u16), PointLight>,
     profile: CellRelightProfile,
+    /// Replica of the scenario lighting state (`ScenarioSession::lighting`) as
+    /// last applied, kept like `buildings`.
     scenario: Option<ScenarioLightingState>,
     detail_level: u32,
 }

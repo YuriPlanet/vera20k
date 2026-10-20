@@ -672,7 +672,10 @@ where
     // UnitClass virtual Unlimbo sees ore, walls, and structural bridges.
     // This live grid then accumulates Cell+122 history, so finalization keeps
     // it and uses its own overlay_grid argument only when none is installed.
-    sim.overlay_grid = overlay_grid.cloned();
+    // The staged owner has no grid before this point.
+    if let Some(grid) = overlay_grid {
+        sim.install_overlay_grid_for_load(grid.clone());
+    }
     // Wire the cliff/slope coefficients from [General] into the live World config;
     // it otherwise holds compiled vanilla defaults and never sees a modded INI.
     if let Some(rules) = rules {
@@ -689,7 +692,7 @@ where
     let bridge_strength = rules
         .map(|rules| rules.bridge_rules.strength)
         .unwrap_or(1000);
-    sim.bridge_state = Some(
+    sim.install_bridge_runtime(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain_with_map_size(
             resolved_terrain,
             bridge_destroyable,
@@ -731,7 +734,7 @@ where
     }
     if let (Some(rules), Some(overlay_registry)) = (rules, authored_overlay_registry) {
         // The live grid is read through a temporary view and handed back.
-        let live_grid = sim.overlay_grid.take();
+        let live_grid = sim.take_overlay_grid_for_load();
         let stats = initialize_native_tiberium_queues(
             sim,
             &map_data.basic,
@@ -741,7 +744,9 @@ where
             live_grid.as_ref(),
             (map_data.header.width as u16, map_data.header.height as u16),
         );
-        sim.overlay_grid = live_grid;
+        if let Some(grid) = live_grid {
+            sim.install_overlay_grid_for_load(grid);
+        }
         if let Some(stats) = stats {
             log::info!(
                 "Initialized authored native tiberium queues before Technos: {} growth, {} spread",
@@ -781,19 +786,23 @@ where
         // Authored materialization runs the same line-marker owner below at
         // its final InitCellAttributes sweep. The eager/generated route has
         // already installed its final live grid here.
-        let mut terrain = sim.resolved_terrain.take().expect("populated map cells");
         let shape = crate::map::authored_overlay::NativeOverlayMapShape::new(
             map_data.header.width as i32,
             map_data.header.height as i32,
         );
-        sim.initialize_cell_trigger_lines(
-            &mut terrain,
+        let bounds = crate::sim::scenario_bootstrap::NativeStartBounds::from_session(
+            sim,
+            sim.resolved_terrain.as_ref().expect("populated map cells"),
+        );
+        let terrain = sim.resolved_terrain.as_mut().expect("populated map cells");
+        sim.trigger_runtime.initialize_cell_trigger_lines(
+            bounds,
+            terrain,
             shape
                 .recalc_cells()
                 .into_iter()
                 .map(|(x, y)| (i32::from(x), i32::from(y))),
         );
-        sim.resolved_terrain = Some(terrain);
     }
     sim.classify_map_triggers(rules);
     Ok(())
@@ -818,8 +827,8 @@ pub fn initialize_native_tiberium_queues(
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     native_rect: (u16, u16),
 ) -> Option<crate::sim::ore_growth::NativeTiberiumRebuildStats> {
-    sim.ore_growth_config =
-        crate::sim::ore_growth::OreGrowthConfig::resolve(basic, special_flags, &sim.session);
+    sim.ore_growth_config
+        .reload_for_scenario(basic, special_flags, &sim.session);
     let (width, height) = overlay_grid
         .map(|grid| (grid.width(), grid.height()))
         .or_else(|| {
@@ -828,7 +837,7 @@ pub fn initialize_native_tiberium_queues(
                 .map(|terrain| (terrain.width(), terrain.height()))
         })
         .unwrap_or((0, 0));
-    sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(width, height);
+    sim.ore_growth_state.reset_for_cell_array(width, height);
     // `CellClass+0xE4 FirstObject != 0` at this point: terrain objects plus
     // every ground-list Techno already constructed (none on an authored load,
     // the generator's own Technos on a generated one).
@@ -987,12 +996,10 @@ where
     }
 
     let mut terrain = sim
-        .resolved_terrain
-        .take()
+        .take_resolved_terrain_for_load()
         .expect("authored object population keeps the live terrain installed");
     let mut overlay_grid = sim
-        .overlay_grid
-        .take()
+        .take_overlay_grid_for_load()
         .expect("authored object population keeps the live overlay installed");
 
     // SmudgeClass constructors consume identity before Unlimbo/placement can
@@ -1004,7 +1011,7 @@ where
             let _native_unique_id = sim.next_native_load_id()?;
         }
     }
-    sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::from_map_entries(
+    sim.install_smudge_grid(crate::sim::smudge_grid::SmudgeGrid::from_map_entries(
         &map_data.smudges,
         &rules.smudge_types,
         &terrain,
@@ -1012,7 +1019,6 @@ where
         terrain.width(),
         terrain.height(),
     ));
-    Simulation::flush_smudge_dirty(&mut sim.smudge_grid, &mut sim.dirty_cells);
 
     let removed = sim.scalar_delete_load_terrain_anims();
     if removed > 0 {
@@ -1027,7 +1033,9 @@ where
     //568CDB..568DCA reads each retained CellTag before its Recalc. This
     //read-only definition decision spends no RNG/native IDs and only ORs
     //line bits that neither tiberium valuation nor Recalc changes.
-    sim.initialize_cell_trigger_lines(
+    let bounds = crate::sim::scenario_bootstrap::NativeStartBounds::from_session(sim, &terrain);
+    sim.trigger_runtime.initialize_cell_trigger_lines(
+        bounds,
         &mut terrain,
         shape
             .recalc_cells()
@@ -1085,8 +1093,8 @@ where
     let final_terrain = terrain.clone();
     let final_overlay = overlay_grid.clone();
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.overlay_grid = Some(overlay_grid);
-    sim.bridge_state = Some(bridge_state);
+    sim.install_overlay_grid_for_load(overlay_grid);
+    sim.install_bridge_runtime(bridge_state);
     Ok(AuthoredScenarioLoadOutput {
         resolved_terrain: final_terrain,
         overlay_grid: final_overlay,
@@ -1137,7 +1145,7 @@ pub fn finalize_constructed_scenario(
     // those events; never replace their retained history with that older copy.
     // Every production caller installs the live grid first, so the argument
     // is only the fallback for callers that never populated one.
-    let mut overlay_grid = sim.overlay_grid.take().unwrap_or(overlay_grid);
+    let mut overlay_grid = sim.take_overlay_grid_for_load().unwrap_or(overlay_grid);
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count
     // is rules-owned; presentation atlases retain only body-frame ranges.
@@ -1176,7 +1184,7 @@ pub fn finalize_constructed_scenario(
             })
             .collect();
         overlay_grid.reconstruct_map_wall_owners(rt, overlay_registry, &buildings);
-        sim.overlay_grid = Some(overlay_grid);
+        sim.install_overlay_grid_for_load(overlay_grid);
         log::info!(
             "Overlay grid initialized: {}x{}, {} entries",
             grid_width,
@@ -1193,15 +1201,15 @@ pub fn finalize_constructed_scenario(
     {
         let grid_width = rt.width();
         let grid_height = rt.height();
-        sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::from_map_entries(
+        let smudges = crate::sim::smudge_grid::SmudgeGrid::from_map_entries(
             &map_data.smudges,
             &rules.smudge_types,
             rt,
             overlay,
             grid_width,
             grid_height,
-        ));
-        Simulation::flush_smudge_dirty(&mut sim.smudge_grid, &mut sim.dirty_cells);
+        );
+        sim.install_smudge_grid(smudges);
         log::info!(
             "Smudge grid initialized: {}x{}, {} entries",
             grid_width,

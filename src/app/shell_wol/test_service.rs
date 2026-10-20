@@ -159,8 +159,33 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
             let local = nickname(state);
             WolServiceEvent::Created(Ok(vec![member(&local, MEMBER_OPERATOR)]))
         }
+        // The locale it holds for each name: the stand-ins' own, and for
+        // anyone else what the table last received (0 at first, so a new
+        // persona is asked with 0xFE).
+        WolServiceRequest::RequestLocales { names } => {
+            let locales = names
+                .into_iter()
+                .map(|name| {
+                    let locale = stand_in_locale(&name)
+                        .or_else(|| {
+                            state
+                                .frontend
+                                .wol
+                                .as_ref()
+                                .and_then(|visit| visit.locales.get(&name.to_ascii_lowercase()))
+                                .copied()
+                        })
+                        .unwrap_or(0);
+                    (name, locale)
+                })
+                .collect();
+            WolServiceEvent::UserLocales(Ok(locales))
+        }
+        // Every WOL:Locale00..37 the retail CSF holds.
+        WolServiceRequest::LocaleCount => WolServiceEvent::LocaleCount(38),
         // Nothing to cancel, remember, forget or deliver: nobody is online.
-        WolServiceRequest::LeaveChannel
+        WolServiceRequest::SetLocale(_)
+        | WolServiceRequest::LeaveChannel
         | WolServiceRequest::CancelWait
         | WolServiceRequest::ForgetCredential { .. }
         | WolServiceRequest::StoreCredential { .. }
@@ -187,10 +212,7 @@ fn lobby_greeting(state: &mut AppState) {
             name: "Tanya".into(),
             rank: 1,
         },
-        WolServiceEvent::UserLocale {
-            name: "Tanya".into(),
-            locale: 2,
-        },
+        WolServiceEvent::UserLocales(Ok(vec![("Tanya".into(), 2)])),
         line(
             member("Tanya", MEMBER_OPERATOR),
             "Welcome to the VERA20k test lobby.",
@@ -199,6 +221,11 @@ fn lobby_greeting(state: &mut AppState) {
     ] {
         service_event(state, event);
     }
+}
+
+/// Tanya's locale (United States); the other stand-ins have none.
+fn stand_in_locale(name: &str) -> Option<i32> {
+    name.eq_ignore_ascii_case("Tanya").then_some(2)
 }
 
 /// A locate finds a stand-in in the first chat lobby; anyone else is not

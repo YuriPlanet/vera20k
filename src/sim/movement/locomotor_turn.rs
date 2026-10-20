@@ -35,7 +35,7 @@ pub(crate) fn locomotor_do_turn(entity: &mut GameEntity, desired: u16, frame: u3
             walk_do_turn(entity, desired, frame);
         }
         LocomotorKind::Fly => {
-            super::air_movement::ensure_fly_secondary_facing(entity);
+            entity.ensure_fly_secondary_facing();
             entity
                 .barrel_facing
                 .as_mut()

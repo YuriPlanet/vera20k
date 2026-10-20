@@ -317,12 +317,11 @@ pub(super) fn commit_receiver_health(
             && !ty.perma_disguise
         {
             let category = target.category();
-            target
-                .disguise
-                .get_or_insert_with(|| {
-                    crate::sim::cloak_disguise::DisguiseRuntime::new(binary_frame)
-                })
-                .receive_damage_reveal(binary_frame, final_packet, category);
+            target.disguise_mut(binary_frame).receive_damage_reveal(
+                binary_frame,
+                final_packet,
+                category,
+            );
         }
         //Object5's early return skips Techno70202E's independent HP override.
         entered_techno_death |=

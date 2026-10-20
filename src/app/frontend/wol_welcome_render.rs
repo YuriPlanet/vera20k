@@ -57,6 +57,8 @@ pub(crate) fn presented_wol_page(state: &AppState) -> PresentedShell {
         Some(WolPage::Lobby) => PresentedShell::WolLobby,
         Some(WolPage::Options(page)) if page.sound.is_some() => PresentedShell::WolSoundOptions,
         Some(WolPage::Options(_)) => PresentedShell::WolOptions,
+        Some(WolPage::AutoLoginQuery(_)) => PresentedShell::WolAutoLoginQuery,
+        Some(WolPage::Locale(_)) => PresentedShell::WolLocale,
         _ => PresentedShell::WolWelcome,
     }
 }
@@ -68,6 +70,8 @@ enum Painted {
     Lobby(crate::ui::wol_lobby::WolLobbyLayout),
     Options(crate::ui::wol_options::WolOptionsLayout),
     SoundOptions(crate::ui::shell::sound::ShellSoundLayout),
+    /// `0x112` or `0xFE`.
+    Persona(crate::ui::wol_persona::WolPersonaLayout),
     /// A dialog has closed: the empty backdrop, under a box or the wait box.
     Backdrop,
 }
@@ -80,6 +84,10 @@ impl Painted {
             Self::Lobby(_) => Some(ShellSlideKind::WolLobby),
             Self::Options(_) => Some(ShellSlideKind::WolOptions),
             Self::SoundOptions(_) => Some(ShellSlideKind::WolSoundOptions),
+            Self::Persona(layout) if layout.dialog == crate::ui::wol_persona::LOCALE_DIALOG => {
+                Some(ShellSlideKind::WolLocale)
+            }
+            Self::Persona(_) => Some(ShellSlideKind::WolAutoLoginQuery),
             Self::Backdrop => None,
         }
     }
@@ -91,6 +99,9 @@ impl Painted {
             Self::Lobby(_) => Some(WOL_LOBBY_TITLE_KEY),
             Self::Options(_) => Some(crate::ui::wol_options::PAGE.title_key),
             Self::SoundOptions(_) => Some(crate::ui::shell::sound::SHELL_SOUND_PAGE.title_key),
+            Self::Persona(layout) => {
+                Some(crate::ui::wol_persona::WolPersonaLayout::spec(layout.dialog).title_key)
+            }
             Self::Backdrop => None,
         }
     }
@@ -141,6 +152,18 @@ pub(crate) fn render_wol_page(
                 Painted::Options(crate::app::shell_wol::options::layout(state))
             }
         }
+        WolPage::AutoLoginQuery(_) | WolPage::Locale(_) => {
+            if matches!(
+                state.frontend.wol.as_ref().map(|visit| &visit.page),
+                Some(WolPage::AutoLoginQuery(_))
+            ) {
+                crate::app::shell_wol::persona::open_art(state);
+            }
+            match crate::app::shell_wol::persona::layout(state) {
+                Some(layout) => Painted::Persona(layout),
+                None => Painted::Backdrop,
+            }
+        }
         WolPage::Backdrop { .. } | WolPage::Message { .. } => Painted::Backdrop,
     };
     // The right panel's geometry is the family's on every WOL page.
@@ -149,6 +172,7 @@ pub(crate) fn render_wol_page(
         Painted::Lobby(layout) => &layout.page,
         Painted::Options(layout) => &layout.page,
         Painted::SoundOptions(layout) => &layout.page,
+        Painted::Persona(layout) => &layout.page,
         _ => &welcome.page,
     };
     let page = page.clone();
@@ -191,6 +215,10 @@ pub(crate) fn render_wol_page(
                 layout.status_help,
             ),
             Painted::SoundOptions(layout) => (None, layout.status_help),
+            Painted::Persona(layout) => (
+                crate::app::shell_wol::persona::status_key(state),
+                layout.status_help,
+            ),
             Painted::Login(layout) => (
                 state
                     .frontend
@@ -230,7 +258,11 @@ pub(crate) fn render_wol_page(
         Painted::Lobby(_) => state.frontend.wol_lobby_art.as_ref(),
         Painted::Options(_) => state.frontend.wol_options_art.as_ref(),
         Painted::SoundOptions(_) => state.frontend.wol_sound_options_art.as_ref(),
-        Painted::Backdrop => None,
+        Painted::Persona(layout) if layout.dialog == crate::ui::wol_persona::AUTO_LOGIN_DIALOG => {
+            state.frontend.wol_auto_login_art.as_ref()
+        }
+        // 0xFE loads no art of its own.
+        Painted::Persona(_) | Painted::Backdrop => None,
     };
     let mut sprites = Vec::new();
     // The dialog's own background exists only at 800 wide; elsewhere, and
@@ -282,8 +314,12 @@ pub(crate) fn render_wol_page(
                 push_entry_scaled(&mut icon_sprites, *entry, x, y, scale, CHILD_DEPTH);
             }
         }
+        let filled = &state.frontend.wol.as_ref().expect("checked").welcome_texts;
         for (text, rect) in &layout.texts {
-            let caption = resolve_csf(state, text.key);
+            let caption = match filled.iter().find(|(id, _)| Some(*id) == text.id) {
+                Some((_, value)) => value.as_str().into(),
+                None => resolve_csf(state, text.key),
+            };
             if caption.is_empty() {
                 continue;
             }
@@ -324,6 +360,21 @@ pub(crate) fn render_wol_page(
                 state, dialog, layout,
             )
         }),
+        (Painted::Persona(layout), true, _) => {
+            match &state.frontend.wol.as_ref().expect("checked").page {
+                WolPage::AutoLoginQuery(query) => Some(
+                    crate::app::frontend::skirmish_shell_render::paint_wol_auto_login_children(
+                        state, query, layout,
+                    ),
+                ),
+                WolPage::Locale(page) => Some(
+                    crate::app::frontend::skirmish_shell_render::paint_wol_locale_children(
+                        state, page, layout,
+                    ),
+                ),
+                _ => None,
+            }
+        }
         _ => None,
     };
     let lobby = state.frontend.wol.as_ref().and_then(|visit| visit.lobby());
@@ -429,6 +480,37 @@ pub(crate) fn render_wol_page(
                         )
                     })
                     .collect();
+            }
+            None
+        }
+        (Painted::Persona(layout), None) => {
+            spec = Some(crate::ui::wol_persona::WolPersonaLayout::spec(
+                layout.dialog,
+            ));
+            match &state.frontend.wol.as_ref().expect("checked").page {
+                WolPage::AutoLoginQuery(query) => {
+                    painted_buttons = layout
+                        .page
+                        .buttons
+                        .iter()
+                        .map(|button| (*button, query.buttons.is_pressed(button.id), true))
+                        .collect();
+                }
+                WolPage::Locale(page) => {
+                    painted_buttons = layout
+                        .page
+                        .buttons
+                        .iter()
+                        .map(|button| {
+                            (
+                                *button,
+                                page.buttons.is_pressed(button.id),
+                                page.button_enabled(button.id),
+                            )
+                        })
+                        .collect();
+                }
+                _ => {}
             }
             None
         }

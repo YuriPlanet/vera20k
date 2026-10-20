@@ -290,9 +290,7 @@ impl Simulation {
                 .map(|name| interner.intern(name));
                 let owner = ge.owner();
                 let frame = session.binary_frame();
-                ge.disguise
-                    .get_or_insert_with(|| crate::sim::cloak_disguise::DisguiseRuntime::new(frame))
-                    .wear_from_construction(worn, owner);
+                ge.disguise_mut(frame).wear_from_construction(worn, owner);
             }
         }
         // After the managers, InitFromType makes the object veteran

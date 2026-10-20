@@ -118,7 +118,10 @@ impl Default for WolAccountGlobals {
 }
 
 /// `strcmpi` over the stored slots 1..32: the first nonempty match.
-fn lookup<'a>(credentials: &'a [WolCredential], nickname: &str) -> Option<&'a WolCredential> {
+pub(crate) fn lookup<'a>(
+    credentials: &'a [WolCredential],
+    nickname: &str,
+) -> Option<&'a WolCredential> {
     credentials.iter().find(|credential| {
         LOOKUP_SLOTS.contains(&credential.slot)
             && !credential.nickname.is_empty()

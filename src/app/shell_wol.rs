@@ -15,6 +15,7 @@
 pub(crate) mod lobby;
 mod login;
 pub(crate) mod options;
+pub(crate) mod persona;
 mod service;
 mod test_service;
 
@@ -30,6 +31,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<std::time::Instant> {
     [
         service::poll_wait(state),
         login::poll_scroll_repeat(state),
+        persona::poll_scroll_repeat(state),
         lobby::poll(state),
         test_service::poll(state),
     ]
@@ -114,6 +116,10 @@ pub(crate) enum WolPage {
     /// WOL Options `0x2BC` (and its Sound Options `0xD6`) over the hidden
     /// lobby.
     Options(Box<options::WolOptionsPage>),
+    /// The auto-login query `0x112` after a dialog login.
+    AutoLoginQuery(Box<crate::ui::wol_persona::WolAutoLoginQuery>),
+    /// The locale page `0xFE` during the connect.
+    Locale(Box<crate::ui::wol_persona::WolLocalePage>),
 }
 
 /// What follows a WOL message box.
@@ -123,6 +129,9 @@ pub(crate) enum WolBoxThen {
     Leave(i32),
     /// The login flow returned 0: the welcome runs again.
     Welcome,
+    /// The silent auto-login connect failed without a Yes/No result: the
+    /// flow goes on to `0x10F`.
+    Login,
 }
 
 /// One visit to Westwood Online, from Internet until `WOL_Main` returns.
@@ -142,10 +151,15 @@ pub(crate) struct WolVisit {
     /// The status help the welcome's last hit test wrote.
     pub(crate) status_help: Option<&'static str>,
     /// Server records of the last list (`0xB778D8` count, `0xF8` records)
-    /// and the selected record `[0xB76468]`.
+    /// and the selected record `[0xB76468]` (-1 for none).
     servers: Vec<WolServer>,
-    selected_server: usize,
+    selected_server: i32,
     awaiting: service::Awaiting,
+    /// The login flow between its connect and its return.
+    flow: Option<service::LoginFlow>,
+    /// `0x10E`'s persona heading and stats (`0x007989AA`), by control id;
+    /// empty without a nickname.
+    pub(crate) welcome_texts: Vec<(u16, String)>,
     provider: WolProvider,
     requests: Vec<WolServiceRequest>,
     /// The WOLAPI credential store as the service last reported it.
@@ -199,6 +213,8 @@ impl WolVisit {
             servers: Vec::new(),
             selected_server: 0,
             awaiting: service::Awaiting::Nothing,
+            flow: None,
+            welcome_texts: Vec::new(),
             provider: WolProvider::Unavailable,
             requests: Vec::new(),
             credentials: Vec::new(),
@@ -320,6 +336,7 @@ pub(crate) fn open_lobby(state: &mut AppState, postmatch: bool) {
 /// mode-loop apply (`0x0077B402`) and the lobby runner with postmatch set
 /// (`0x0077B44B`) follow.
 pub(crate) fn reenter_after_match(state: &mut AppState) {
+    persona::enter_wol_main(state);
     read_wol_settings(state);
     let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
@@ -342,6 +359,7 @@ impl App {
         // The message boxes paint from the skirmish chrome atlas.
         let _ = Self::ensure_skirmish_shell_chrome(state);
         Self::ensure_wol_welcome_art(state);
+        persona::enter_wol_main(state);
         read_wol_settings(state);
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         let lobby_music = state.frontend.wol_preferences.lobby_music != 0;
@@ -351,6 +369,7 @@ impl App {
             visit.provider = WolProvider::TestService;
         }
         state.frontend.wol = Some(visit);
+        persona::fill_welcome(state);
         // The first mode-loop pass (0x0077B402) applies again.
         apply_wol_preferences(state);
         state.frontend.shell_route = ShellRoute::Wol;
@@ -485,6 +504,10 @@ impl App {
             options::cursor_moved(state);
             return;
         }
+        if persona::page_open(state) {
+            persona::cursor_moved(state);
+            return;
+        }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
             lobby::cursor_moved(state);
             return;
@@ -520,6 +543,10 @@ impl App {
             options::mouse(state, true);
             return;
         }
+        if persona::page_open(state) {
+            persona::mouse(state, true);
+            return;
+        }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
             lobby::mouse(state, true);
             return;
@@ -550,6 +577,10 @@ impl App {
     pub(super) fn handle_wol_mouse_up(state: &mut AppState) {
         if Self::wol_page_is_options(state) {
             options::mouse(state, false);
+            return;
+        }
+        if persona::page_open(state) {
+            persona::mouse(state, false);
             return;
         }
         if Self::wol_page_is_lobby(state) && Self::wol_box_feed(state).is_none() {
@@ -636,7 +667,9 @@ impl App {
         visit.mode = None;
         visit.status_help = None;
         visit.relogin = None;
+        visit.flow = None;
         visit.page = WolPage::Welcome;
+        persona::fill_welcome(state);
         // The mode-loop pass (0x0077B402) before the welcome runs.
         apply_wol_preferences(state);
         state.frontend.wol_login_art = None;
@@ -662,6 +695,7 @@ impl App {
         state.frontend.wol_lobby_art = None;
         state.frontend.wol_options_art = None;
         state.frontend.wol_sound_options_art = None;
+        state.frontend.wol_auto_login_art = None;
         state.frontend.shell_route = ShellRoute::MainMenu;
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
