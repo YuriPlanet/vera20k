@@ -195,6 +195,10 @@ pub struct GameEntity {
     /// [`BodyFrameCounter`]: crate::sim::animation::BodyFrameCounter
     #[serde(default)]
     pub body_frame_counter: crate::sim::animation::BodyFrameCounter,
+    /// UnitClass+6C0, owned by sim::animation. FireAt seeds it even when
+    /// LimboLaunch has removed this Unit from Logic; Unlimbo preserves it.
+    #[serde(default)]
+    pub unit_firing_counter: crate::sim::animation::UnitFiringCounter,
     /// The owning house (`TechnoClass+0x21C`), interned.
     /// `TechnoClass::ChangeOwner @ 0x007014A0` moves it; here only the store's
     /// owner-change path does ([`Self::set_owner_from_store`]).
@@ -1458,6 +1462,7 @@ impl GameEntity {
             suppress_deploy_voice: Default::default(),
             barrel_elevation: crate::sim::movement::FacingClass::new(0, BARREL_ELEVATION_ROT),
             body_frame_counter: Default::default(),
+            unit_firing_counter: Default::default(),
             owner,
             health,
             estimated_health: crate::sim::estimated_health::EstimatedHealth::from_raw(

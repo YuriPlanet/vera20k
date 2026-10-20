@@ -1685,6 +1685,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         entity.barrel_elevation().hash(hasher);
     }
     entity.body_frame_counter.get().hash(hasher);
+    if entity.unit_firing_counter.get() != -1 {
+        b"unit-firing-counter-v1".hash(hasher);
+        entity.unit_firing_counter.hash(hasher);
+    }
     if !entity.tesla_charge.is_default() {
         b"building-tesla-charge-v1".hash(hasher);
         entity.tesla_charge.hash(hasher);

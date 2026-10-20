@@ -1823,18 +1823,26 @@ pub(super) fn emit_admitted_fire(
         effects,
     );
     // UnitClass::Fire741340 wraps the base FireAt6FDD50 (7413CE).
-    // Only its non-null return/current retained BulletType.Scalable reaches
-    // InitScalable46B280 at741439. This existing class-FireAt owner serves
+    // Its non-null return seeds the Unit firing counter at741421, after the
+    // base tail (including LimboLaunch). Scalable then reaches46B280 at741439.
+    // This existing class-FireAt owner serves
     // UnitTarget and direct mission calls; constructors/shrapnel/other
     // classes never pass this Unit-only postprocessing boundary.
-    if snap.category == EntityCategory::Unit
-        && let Some(kind) = world
+    if snap.category == EntityCategory::Unit {
+        let frames = rules
+            .unit_shp_read_state(world.interner.resolve(snap.type_id))
+            .map_or(0, |layout| layout.firing_frames());
+        if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
+            crate::sim::animation::commit_unit_firing_counter(entity, frames);
+        }
+        if let Some(kind) = world
             .projectiles
             .get(bullet_id)
             .and_then(|bullet| bullet.payload.projectile_type())
             .and_then(|type_id| rules.projectile(world.interner.resolve(type_id)))
-    {
-        world.projectiles.init_scalable(bullet_id, kind);
+        {
+            world.projectiles.init_scalable(bullet_id, kind);
+        }
     }
     Some(bullet_id)
 }

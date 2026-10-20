@@ -728,6 +728,13 @@ fn techno_ai_shell(
             return;
         }
     }
+    // Unit7363C9..7363DE precedes Hunt/Ready/Foot AI, after the existing
+    // Tube, death and Temporal entry gates. Limboed Units have no Logic visit.
+    if category == EntityCategory::Unit
+        && let Some(entity) = sim.substrate.entities.get_mut(id)
+    {
+        crate::sim::animation::tick_unit_firing_counter(entity);
+    }
     // Unit736465/736473 and Infantry51BC1C/51BC51 run Ready/Commence
     // before Foot -> Techno AI. Commence clears+C4; Techno6FA646..655 then
     // increments it and dispatches. Native Anytown mission_order first visit

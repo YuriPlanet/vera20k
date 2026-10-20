@@ -59,6 +59,10 @@ impl Default for UnitShpReadState {
 }
 
 impl UnitShpReadState {
+    pub(crate) const fn firing_frames(&self) -> i8 {
+        self.firing_frames
+    }
+
     pub(crate) fn read_pass(&mut self, art: &IniSection, has_turret: bool) {
         // Original7477F1/74780F store AL, with each signed byte as its
         // ReadInteger default. These are not nonnegative u16 frame counts.
@@ -264,12 +268,10 @@ pub(crate) fn build_shp_vehicle_sequences(
                 frame_count: firing_frames,
                 facings,
                 facing_multiplier: firing_frames,
-                // TODO(parity): the native firing counter advances one image per
-                // two counter steps and is seeded counting down from
-                // `FiringFrames * 2 - 1`. Reproducing that needs the fire-seeding
-                // path, which lives outside this module, so the walk rate stands
-                // in until then.
-                frame_delay: 1,
+                // Unit741421/7363C9's retained countdown owns Unit drawing,
+                // one image per two steps. Aircraft's separate metadata-only
+                // projection retains its previous unverified cadence.
+                frame_delay: if retained.is_some() { 2 } else { 1 },
                 normalized: false,
                 completion_facing: None,
                 loop_mode: LoopMode::TransitionTo(SequenceKind::Stand),

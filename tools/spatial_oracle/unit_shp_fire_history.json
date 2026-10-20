@@ -1,0 +1,2463 @@
+{
+  "calls": [
+    {
+      "counter": -1,
+      "event": "UnitFireAtTarget",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "drone",
+      "rng_request_count": 0
+    },
+    {
+      "counter": -1,
+      "event": "UnitFire",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "drone",
+      "result": "bullet",
+      "rng_request_count": 0
+    },
+    {
+      "counter": -1,
+      "event": "TechnoFire",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "drone",
+      "rng_request_count": 0
+    },
+    {
+      "counter": -1,
+      "event": "BulletCtor",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "bullet",
+      "rng_request_count": 0
+    },
+    {
+      "counter": -1,
+      "event": "ObjectLimbo",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "bullet",
+      "rng_request_count": 0
+    },
+    {
+      "counter": -1,
+      "event": "BulletFire",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "bullet",
+      "rng_request_count": 0
+    },
+    {
+      "counter": -1,
+      "event": "ObjectLimbo",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "drone",
+      "rng_request_count": 1
+    },
+    {
+      "counter": -1,
+      "event": "AnnounceExpired",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "drone",
+      "rng_request_count": 1
+    },
+    {
+      "counter": -1,
+      "event": "ObjectLimbo",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": -1,
+      "event": "AnnounceExpired",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": -1,
+      "event": "BulletCtor",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": -1,
+      "event": "BulletFire",
+      "frame": 0,
+      "phase": "ordinary_per_frame_fire_visit",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "BulletAI",
+      "frame": 1,
+      "phase": "bullet_frame_1",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "BulletAI",
+      "frame": 2,
+      "phase": "bullet_frame_2",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "BulletAI",
+      "frame": 3,
+      "phase": "bullet_frame_3",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "BulletAI",
+      "frame": 4,
+      "phase": "bullet_frame_4",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "BulletAI",
+      "frame": 5,
+      "phase": "bullet_frame_5",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "BulletAI",
+      "frame": 6,
+      "phase": "bullet_frame_6",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "BulletAI",
+      "frame": 7,
+      "phase": "bullet_frame_7",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "BulletAI",
+      "frame": 8,
+      "phase": "bullet_frame_8",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "BulletAI",
+      "frame": 9,
+      "phase": "bullet_frame_9",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "BulletAI",
+      "frame": 10,
+      "phase": "bullet_frame_10",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "BulletAI",
+      "frame": 11,
+      "phase": "bullet_frame_11",
+      "receiver": "bullet",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "AttachTo",
+      "frame": 11,
+      "phase": "bullet_frame_11",
+      "receiver": "parasite",
+      "rng_request_count": 1
+    },
+    {
+      "counter": 7,
+      "event": "AnnounceExpired",
+      "frame": 11,
+      "phase": "bullet_frame_11",
+      "receiver": "bullet",
+      "rng_request_count": 3
+    },
+    {
+      "counter": 7,
+      "event": "ObjectLimbo",
+      "frame": 11,
+      "phase": "bullet_frame_11",
+      "receiver": "bullet",
+      "rng_request_count": 3
+    },
+    {
+      "counter": 7,
+      "event": "AnnounceExpired",
+      "frame": 11,
+      "phase": "bullet_frame_11",
+      "receiver": "bullet",
+      "rng_request_count": 3
+    },
+    {
+      "counter": 7,
+      "event": "ParasiteAI",
+      "frame": 12,
+      "phase": "host_parasite_frame_12",
+      "receiver": "parasite",
+      "rng_request_count": 3
+    },
+    {
+      "counter": 7,
+      "event": "ParasiteAI",
+      "frame": 13,
+      "phase": "host_parasite_frame_13",
+      "receiver": "parasite",
+      "rng_request_count": 4
+    },
+    {
+      "counter": 7,
+      "event": "ParasiteAI",
+      "frame": 14,
+      "phase": "host_parasite_frame_14",
+      "receiver": "parasite",
+      "rng_request_count": 4
+    },
+    {
+      "counter": 7,
+      "event": "ExitUnit",
+      "frame": 14,
+      "phase": "whole_exit_unit",
+      "receiver": "parasite",
+      "rng_request_count": 4
+    },
+    {
+      "counter": 7,
+      "event": "UnitAI",
+      "frame": 15,
+      "phase": "whole_unit_ai_frame_15",
+      "receiver": "drone",
+      "rng_request_count": 4
+    },
+    {
+      "counter": 6,
+      "event": "UnitFireAtTarget",
+      "frame": 15,
+      "phase": "whole_unit_ai_frame_15",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 6,
+      "event": "UnitAI",
+      "frame": 16,
+      "phase": "whole_unit_ai_frame_16",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 5,
+      "event": "UnitFireAtTarget",
+      "frame": 16,
+      "phase": "whole_unit_ai_frame_16",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 5,
+      "event": "UnitAI",
+      "frame": 17,
+      "phase": "whole_unit_ai_frame_17",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 4,
+      "event": "UnitFireAtTarget",
+      "frame": 17,
+      "phase": "whole_unit_ai_frame_17",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 4,
+      "event": "UnitAI",
+      "frame": 18,
+      "phase": "whole_unit_ai_frame_18",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 3,
+      "event": "UnitFireAtTarget",
+      "frame": 18,
+      "phase": "whole_unit_ai_frame_18",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 3,
+      "event": "UnitAI",
+      "frame": 19,
+      "phase": "whole_unit_ai_frame_19",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 2,
+      "event": "UnitFireAtTarget",
+      "frame": 19,
+      "phase": "whole_unit_ai_frame_19",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 2,
+      "event": "UnitAI",
+      "frame": 20,
+      "phase": "whole_unit_ai_frame_20",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 1,
+      "event": "UnitFireAtTarget",
+      "frame": 20,
+      "phase": "whole_unit_ai_frame_20",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 1,
+      "event": "UnitAI",
+      "frame": 21,
+      "phase": "whole_unit_ai_frame_21",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 0,
+      "event": "UnitFireAtTarget",
+      "frame": 21,
+      "phase": "whole_unit_ai_frame_21",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": 0,
+      "event": "UnitAI",
+      "frame": 22,
+      "phase": "whole_unit_ai_frame_22",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": -1,
+      "event": "UnitFireAtTarget",
+      "frame": 22,
+      "phase": "whole_unit_ai_frame_22",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": -1,
+      "event": "UnitAI",
+      "frame": 23,
+      "phase": "whole_unit_ai_frame_23",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": -1,
+      "event": "UnitFireAtTarget",
+      "frame": 23,
+      "phase": "whole_unit_ai_frame_23",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": -1,
+      "event": "UnitAI",
+      "frame": 24,
+      "phase": "whole_unit_ai_frame_24",
+      "receiver": "drone",
+      "rng_request_count": 5
+    },
+    {
+      "counter": -1,
+      "event": "UnitFireAtTarget",
+      "frame": 24,
+      "phase": "whole_unit_ai_frame_24",
+      "receiver": "drone",
+      "rng_request_count": 5
+    }
+  ],
+  "history": {
+    "after_fire": {
+      "alive": 1,
+      "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+      "counter": 7,
+      "health": 100,
+      "host_has_eater": false,
+      "host_paralysis": [
+        0,
+        0,
+        0
+      ],
+      "limbo": 1,
+      "logic_member": false,
+      "manager_has_host": false,
+      "manager_timer_2c": [
+        0,
+        -1,
+        0
+      ],
+      "manager_timer_38": [
+        0,
+        -1,
+        0
+      ],
+      "position": [
+        2176,
+        2176,
+        0
+      ],
+      "rearm_timer": [
+        0,
+        0,
+        61
+      ],
+      "source_paralysis": [
+        0,
+        0,
+        0
+      ],
+      "target_is_host": true,
+      "target_is_null": false
+    },
+    "attached": [
+      {
+        "frame": 12,
+        "host_health": 250,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": true,
+          "host_paralysis": [
+            12,
+            2176,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": true,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "frame": 13,
+        "host_health": 250,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": true,
+          "host_paralysis": [
+            12,
+            2176,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": true,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "frame": 14,
+        "host_health": 250,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": true,
+          "host_paralysis": [
+            12,
+            2176,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": true,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      }
+    ],
+    "constructor": {
+      "alive": 1,
+      "body_facing_fields_hex": "008000000080000000000000666d6f000000000000280000",
+      "counter": -1,
+      "health": 100,
+      "host_has_eater": false,
+      "host_paralysis": [
+        0,
+        0,
+        0
+      ],
+      "limbo": 0,
+      "logic_member": true,
+      "manager_has_host": false,
+      "manager_timer_2c": [
+        0,
+        -1,
+        0
+      ],
+      "manager_timer_38": [
+        0,
+        -1,
+        0
+      ],
+      "position": [
+        2176,
+        2176,
+        0
+      ],
+      "rearm_timer": [
+        0,
+        0,
+        0
+      ],
+      "source_paralysis": [
+        0,
+        0,
+        0
+      ],
+      "target_is_host": false,
+      "target_is_null": true
+    },
+    "flight": [
+      {
+        "bullet_alive": 1,
+        "frame": 1,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            0,
+            -1,
+            0
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "bullet_alive": 1,
+        "frame": 2,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            0,
+            -1,
+            0
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "bullet_alive": 1,
+        "frame": 3,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            0,
+            -1,
+            0
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "bullet_alive": 1,
+        "frame": 4,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            0,
+            -1,
+            0
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "bullet_alive": 1,
+        "frame": 5,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            0,
+            -1,
+            0
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "bullet_alive": 1,
+        "frame": 6,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            0,
+            -1,
+            0
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "bullet_alive": 1,
+        "frame": 7,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            0,
+            -1,
+            0
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "bullet_alive": 1,
+        "frame": 8,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            0,
+            -1,
+            0
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "bullet_alive": 1,
+        "frame": 9,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            0,
+            -1,
+            0
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "bullet_alive": 1,
+        "frame": 10,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            0,
+            -1,
+            0
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      },
+      {
+        "bullet_alive": 0,
+        "frame": 11,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "ff3f0000ff3f000000000000800800000000000000280000",
+          "counter": 7,
+          "health": 100,
+          "host_has_eater": true,
+          "host_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "limbo": 1,
+          "logic_member": false,
+          "manager_has_host": true,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            11,
+            -441,
+            0
+          ],
+          "position": [
+            2176,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            0,
+            0,
+            0
+          ],
+          "target_is_host": true,
+          "target_is_null": false
+        }
+      }
+    ],
+    "recovery": [
+      {
+        "body_frame": 71,
+        "frame": 15,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "00400000004000000e000000666d6f000000000000280000",
+          "counter": 6,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            14,
+            2176,
+            0
+          ],
+          "limbo": 0,
+          "logic_member": true,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2688,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            14,
+            2176,
+            180
+          ],
+          "target_is_host": false,
+          "target_is_null": true
+        }
+      },
+      {
+        "body_frame": 70,
+        "frame": 16,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "00400000004000000e000000666d6f000000000000280000",
+          "counter": 5,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            14,
+            2176,
+            0
+          ],
+          "limbo": 0,
+          "logic_member": true,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2688,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            14,
+            2176,
+            180
+          ],
+          "target_is_host": false,
+          "target_is_null": true
+        }
+      },
+      {
+        "body_frame": 70,
+        "frame": 17,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "00400000004000000e000000666d6f000000000000280000",
+          "counter": 4,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            14,
+            2176,
+            0
+          ],
+          "limbo": 0,
+          "logic_member": true,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2688,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            14,
+            2176,
+            180
+          ],
+          "target_is_host": false,
+          "target_is_null": true
+        }
+      },
+      {
+        "body_frame": 69,
+        "frame": 18,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "00400000004000000e000000666d6f000000000000280000",
+          "counter": 3,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            14,
+            2176,
+            0
+          ],
+          "limbo": 0,
+          "logic_member": true,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2688,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            14,
+            2176,
+            180
+          ],
+          "target_is_host": false,
+          "target_is_null": true
+        }
+      },
+      {
+        "body_frame": 69,
+        "frame": 19,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "00400000004000000e000000666d6f000000000000280000",
+          "counter": 2,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            14,
+            2176,
+            0
+          ],
+          "limbo": 0,
+          "logic_member": true,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2688,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            14,
+            2176,
+            180
+          ],
+          "target_is_host": false,
+          "target_is_null": true
+        }
+      },
+      {
+        "body_frame": 68,
+        "frame": 20,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "00400000004000000e000000666d6f000000000000280000",
+          "counter": 1,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            14,
+            2176,
+            0
+          ],
+          "limbo": 0,
+          "logic_member": true,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2688,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            14,
+            2176,
+            180
+          ],
+          "target_is_host": false,
+          "target_is_null": true
+        }
+      },
+      {
+        "body_frame": 68,
+        "frame": 21,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "00400000004000000e000000666d6f000000000000280000",
+          "counter": 0,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            14,
+            2176,
+            0
+          ],
+          "limbo": 0,
+          "logic_member": true,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2688,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            14,
+            2176,
+            180
+          ],
+          "target_is_host": false,
+          "target_is_null": true
+        }
+      },
+      {
+        "body_frame": 51,
+        "frame": 22,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "00400000004000000e000000666d6f000000000000280000",
+          "counter": -1,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            14,
+            2176,
+            0
+          ],
+          "limbo": 0,
+          "logic_member": true,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2688,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            14,
+            2176,
+            180
+          ],
+          "target_is_host": false,
+          "target_is_null": true
+        }
+      },
+      {
+        "body_frame": 51,
+        "frame": 23,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "00400000004000000e000000666d6f000000000000280000",
+          "counter": -1,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            14,
+            2176,
+            0
+          ],
+          "limbo": 0,
+          "logic_member": true,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2688,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            14,
+            2176,
+            180
+          ],
+          "target_is_host": false,
+          "target_is_null": true
+        }
+      },
+      {
+        "body_frame": 51,
+        "frame": 24,
+        "source": {
+          "alive": 1,
+          "body_facing_fields_hex": "00400000004000000e000000666d6f000000000000280000",
+          "counter": -1,
+          "health": 100,
+          "host_has_eater": false,
+          "host_paralysis": [
+            14,
+            2176,
+            0
+          ],
+          "limbo": 0,
+          "logic_member": true,
+          "manager_has_host": false,
+          "manager_timer_2c": [
+            0,
+            -1,
+            0
+          ],
+          "manager_timer_38": [
+            12,
+            2176,
+            60
+          ],
+          "position": [
+            2688,
+            2176,
+            0
+          ],
+          "rearm_timer": [
+            0,
+            0,
+            61
+          ],
+          "source_paralysis": [
+            14,
+            2176,
+            180
+          ],
+          "target_is_host": false,
+          "target_is_null": true
+        }
+      }
+    ],
+    "release": {
+      "body_frame": 71,
+      "frame": 14,
+      "source": {
+        "alive": 1,
+        "body_facing_fields_hex": "00400000004000000e000000666d6f000000000000280000",
+        "counter": 7,
+        "health": 100,
+        "host_has_eater": false,
+        "host_paralysis": [
+          14,
+          2176,
+          0
+        ],
+        "limbo": 0,
+        "logic_member": true,
+        "manager_has_host": false,
+        "manager_timer_2c": [
+          0,
+          -1,
+          0
+        ],
+        "manager_timer_38": [
+          12,
+          2176,
+          60
+        ],
+        "position": [
+          2688,
+          2176,
+          0
+        ],
+        "rearm_timer": [
+          0,
+          0,
+          61
+        ],
+        "source_paralysis": [
+          14,
+          2176,
+          180
+        ],
+        "target_is_host": false,
+        "target_is_null": true
+      }
+    }
+  },
+  "input": {
+    "assets": {
+      "ARTMD.INI": {
+        "bytes": 336535,
+        "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+      },
+      "DRON.SHP": {
+        "bytes": 42576,
+        "sha256": "c5d2a3a0b58c664bd5d8cbf033f865588224e6888552c83ec4b44f2b32dd2e94"
+      },
+      "DRONP.SHP": {
+        "bytes": 17448,
+        "sha256": "ce9a848c52f36abe8f873c6c3efe421373c0cde3f304090a03c3188ecadff161"
+      },
+      "GTNK.HVA": {
+        "bytes": 88,
+        "sha256": "4a15fc9c2633667812465c4b08f28cab5d595ae4f80eddbb77d1a9f9ed0480a4"
+      },
+      "GTNK.VXL": {
+        "bytes": 29258,
+        "sha256": "88b326908acb5c2a98860d8f65169e8745ae858c5cbfe98e0bb2f283f49a3b81"
+      },
+      "VOXELS.VPL": {
+        "bytes": 8976,
+        "sha256": "2d75fff8a6872ffe98308c7009858a9e904696e1529bc649181a44993979081c"
+      }
+    },
+    "context": {
+      "actor_admissions": [
+        {
+          "alive": 1,
+          "health": 100,
+          "land_after": 0,
+          "limbo": 0,
+          "location": [
+            2176,
+            2176,
+            0
+          ],
+          "native_id": 4,
+          "owner_alliances": 1,
+          "owner_native_id": 0,
+          "owner_slot": 0,
+          "primary_current_raw": 32768,
+          "primary_facing_hex": "008000000080000000000000666d6f0000000000",
+          "secondary_current_raw": 32768,
+          "secondary_facing_hex": "00800000008000000000000040c5472800000000",
+          "tile_after": 0,
+          "tile_before": 0,
+          "type": "DRON",
+          "unlimbo_al": 1,
+          "unlimbo_facing_input": 128
+        },
+        {
+          "alive": 1,
+          "health": 300,
+          "land_after": 0,
+          "limbo": 0,
+          "location": [
+            2432,
+            2176,
+            0
+          ],
+          "native_id": 5,
+          "owner_alliances": 2,
+          "owner_native_id": 0,
+          "owner_slot": 1,
+          "primary_current_raw": 32768,
+          "primary_facing_hex": "008000000080000000000000666d6f0000000000",
+          "secondary_current_raw": 32768,
+          "secondary_facing_hex": "00800000008000000000000030d7472800000000",
+          "tile_after": 0,
+          "tile_before": 0,
+          "type": "MTNK",
+          "unlimbo_al": 1,
+          "unlimbo_facing_input": 128
+        }
+      ],
+      "attach_entry": [
+        {
+          "alive": 1,
+          "health": 100,
+          "limbo": 0,
+          "location": [
+            2176,
+            2176,
+            0
+          ],
+          "native_id": 4,
+          "owner_alliances": 1,
+          "owner_native_id": 0,
+          "owner_slot": 0,
+          "primary_current_raw": 32768,
+          "primary_facing_hex": "008000000080000000000000666d6f0000000000",
+          "secondary_current_raw": 32768,
+          "secondary_facing_hex": "00800000008000000000000040c5472800000000"
+        },
+        {
+          "alive": 1,
+          "health": 300,
+          "limbo": 0,
+          "location": [
+            2432,
+            2176,
+            0
+          ],
+          "native_id": 5,
+          "owner_alliances": 2,
+          "owner_native_id": 0,
+          "owner_slot": 1,
+          "primary_current_raw": 32768,
+          "primary_facing_hex": "008000000080000000000000666d6f0000000000",
+          "secondary_current_raw": 32768,
+          "secondary_facing_hex": "00800000008000000000000030d7472800000000"
+        }
+      ],
+      "can_infect_al": null,
+      "entry_boundary": "original constructors and Unlimbo; before FireAt, Limbo and AttachTo",
+      "frame": 0,
+      "game_speed": 3,
+      "grapple_entry": [
+        {
+          "alive": 1,
+          "health": 100,
+          "limbo": 0,
+          "location": [
+            2176,
+            2176,
+            0
+          ],
+          "native_id": 4,
+          "owner_alliances": 1,
+          "owner_native_id": 0,
+          "owner_slot": 0,
+          "primary_current_raw": 32768,
+          "primary_facing_hex": "008000000080000000000000666d6f0000000000",
+          "secondary_current_raw": 32768,
+          "secondary_facing_hex": "00800000008000000000000040c5472800000000"
+        },
+        {
+          "alive": 1,
+          "health": 300,
+          "limbo": 0,
+          "location": [
+            2432,
+            2176,
+            0
+          ],
+          "native_id": 5,
+          "owner_alliances": 2,
+          "owner_native_id": 0,
+          "owner_slot": 1,
+          "primary_current_raw": 32768,
+          "primary_facing_hex": "008000000080000000000000666d6f0000000000",
+          "secondary_current_raw": 32768,
+          "secondary_facing_hex": "00800000008000000000000030d7472800000000"
+        }
+      ],
+      "lighting": {
+        "cells": [
+          {
+            "cell": [
+              8,
+              8
+            ],
+            "fields_104": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "ground_z_adjust": 0,
+            "level": 0
+          },
+          {
+            "cell": [
+              9,
+              8
+            ],
+            "fields_104": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "ground_z_adjust": 0,
+            "level": 0
+          }
+        ],
+        "effect_globals": {
+          "00A9FAB4": 0,
+          "00A9FABC": 0,
+          "00A9FAC0": 0
+        },
+        "normal_profile": {
+          "ambient_percent": 0,
+          "blue_percent": 0,
+          "green_percent": 0,
+          "ground_units": 0,
+          "level_units": 0,
+          "red_percent": 0
+        },
+        "scenario_fields": {
+          "3528": 0,
+          "352C": 0,
+          "3530": 0,
+          "3534": 0,
+          "3538": 0,
+          "353C": 0,
+          "3540": 0,
+          "3544": 0
+        }
+      },
+      "manager_native_id": -1,
+      "manager_timers_before_attach": {
+        "timer_2c": {
+          "duration": 0,
+          "opaque": 4294967295,
+          "start": 0
+        },
+        "timer_38": {
+          "duration": 0,
+          "opaque": 4294967295,
+          "start": 0
+        }
+      },
+      "manager_timers_grapple_entry": {
+        "timer_2c": {
+          "duration": 0,
+          "opaque": 4294967295,
+          "start": 0
+        },
+        "timer_38": {
+          "duration": 0,
+          "opaque": 4294967295,
+          "start": 0
+        }
+      },
+      "model_input": {
+        "files": {
+          "GTNK.HVA": {
+            "bytes": 88,
+            "sha256": "4a15fc9c2633667812465c4b08f28cab5d595ae4f80eddbb77d1a9f9ed0480a4"
+          },
+          "GTNK.VXL": {
+            "bytes": 29258,
+            "sha256": "88b326908acb5c2a98860d8f65169e8745ae858c5cbfe98e0bb2f283f49a3b81"
+          },
+          "VOXELS.VPL": {
+            "bytes": 8976,
+            "sha256": "2d75fff8a6872ffe98308c7009858a9e904696e1529bc649181a44993979081c"
+          }
+        },
+        "first_section_size": [
+          41,
+          30,
+          12
+        ],
+        "half_size_bits": [
+          "402f000000000000",
+          "4034800000000000"
+        ],
+        "is_voxel": true,
+        "joined_is_voxel_al": 1,
+        "model_header_hex": "000000000100000001000000b06e00000000012010000120c000012000000000"
+      },
+      "native_cursor": 5,
+      "seed": 1,
+      "sound_names": [],
+      "source_limbo_al": null,
+      "spark_type_inputs": {
+        "particle": {
+          "behavior": 3,
+          "color_list": [
+            [
+              255,
+              255,
+              255
+            ],
+            [
+              200,
+              200,
+              80
+            ],
+            [
+              200,
+              10,
+              10
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "color_speed_bits": "00000000d7a3c03f",
+          "logic": false,
+          "max_ec": 500,
+          "min_z_velocity": 40,
+          "start_color1": [
+            0,
+            0,
+            0
+          ],
+          "start_color2": [
+            0,
+            0,
+            0
+          ],
+          "x_velocity": 10,
+          "y_velocity": 10,
+          "z_velocity_range": 15
+        },
+        "system": {
+          "behavior": 3,
+          "holds_what": 0,
+          "lifetime": -1,
+          "light_size": 15,
+          "logic": true,
+          "one_frame_light": false,
+          "particle_cap": 6,
+          "spark_spawn_frames": 1,
+          "spawn_direction_bits": [
+            0,
+            0,
+            0
+          ],
+          "spawn_spark_percentage_bits": "000000000000f03f"
+        }
+      },
+      "type_inputs": [
+        {
+          "name": "DRON",
+          "primary_flh": [
+            0,
+            0,
+            30
+          ],
+          "strength": 100,
+          "weight_bits": "3fe0000000000000"
+        },
+        {
+          "name": "MTNK",
+          "primary_flh": [
+            150,
+            0,
+            100
+          ],
+          "strength": 300,
+          "weight_bits": "3ff0000000000000"
+        }
+      ],
+      "water": {
+        "projection_bounds": [
+          7,
+          7,
+          10,
+          9
+        ],
+        "recalc_entry": "0047D2B0",
+        "selected_tmp": [
+          {
+            "ctor_args": [
+              0,
+              -65,
+              0,
+              675792176,
+              0
+            ],
+            "data": "0x2847bde0",
+            "file": "Clear01.tem",
+            "head": "0x2847b9e0",
+            "original_ctor": "0x005447C0",
+            "original_defaults_hex": "ffffffffffffffffffffffff0000000000000000ffffffff00000000bf00000000000100010000000100000000000000010000000000000000000000",
+            "raw_bytes": 1872,
+            "raw_sha256": "d90df76d78fd9a3e23834c5a728cef666dbdf65b212dd3a66c29b456cbd51ed2",
+            "relocated_sha256": "dc48bbbc5d630e7343b7cc6713fc8944d440d5d2e349f72c9e697ae012a4ef2b",
+            "tile": 0,
+            "vtable": "0x7ecc48"
+          }
+        ],
+        "theater_count": 838,
+        "theater_sha256": "bf656852ad19636068f2dde6f9ddd1440ecf0e13e6e4de6cd7fb179a3592549d",
+        "tile": 0
+      },
+      "weapon_input": {
+        "damage": 50,
+        "name": "DroneJump",
+        "paralyzes": 0,
+        "rof": 60,
+        "warhead": "Parasite"
+      }
+    },
+    "fire_error": 0,
+    "layers": [
+      {
+        "file": "RULESMD.INI",
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      {
+        "absent": true,
+        "file": "LANGRULE.INI"
+      },
+      {
+        "file": "MPBattleMD.ini",
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+      },
+      {
+        "file": "Hills.map",
+        "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+      }
+    ],
+    "layout": {
+      "facings": 8,
+      "firing_frames": 4,
+      "start_firing_frame": 56,
+      "sync": [
+        -1,
+        -1
+      ],
+      "walk_frames": 6
+    },
+    "release": "direct original ExitUnit after three host ParasiteAI visits",
+    "weapon_slot": 0
+  },
+  "rng": {
+    "requests": [
+      {
+        "caller": "0x6fd0b5",
+        "high": 2,
+        "kind": "ranged",
+        "low": 0,
+        "raw_draws": [
+          3879883985
+        ],
+        "result": 1,
+        "stream": "scenario"
+      },
+      {
+        "caller": "0x46905c",
+        "high": 512,
+        "kind": "ranged",
+        "low": 256,
+        "raw_draws": [
+          615944872
+        ],
+        "result": 424,
+        "stream": "scenario"
+      },
+      {
+        "caller": "0x49f444",
+        "kind": "raw",
+        "raw_draws": [
+          594350709
+        ],
+        "result": 594350709,
+        "stream": "scenario"
+      },
+      {
+        "caller": "0x62a184",
+        "high": 1,
+        "kind": "ranged",
+        "low": 0,
+        "raw_draws": [
+          1828753889
+        ],
+        "result": 1,
+        "stream": "scenario"
+      },
+      {
+        "caller": "0x4d705e",
+        "high": 5,
+        "kind": "ranged",
+        "low": 1,
+        "raw_draws": [
+          1900114041
+        ],
+        "result": 2,
+        "stream": "scenario"
+      }
+    ],
+    "states": {
+      "after_attachment": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+        "scenario": "00000000070000006e000000d56eb778ae745d2731b963dad2baebacd15442e7a892b62475126d236082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "after_fire": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+        "scenario": "00000000050000006c000000d56eb778ae745d2731b963dad2baebacd15442e70d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "after_parasite_visits": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+        "scenario": "00000000080000006f000000d56eb778ae745d2731b963dad2baebacd15442e7a892b62475126d23e191006d72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "after_recovery": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+        "scenario": "000000000900000070000000d56eb778ae745d2731b963dad2baebacd15442e7a892b62475126d23e191006d79704171d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "after_release": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+        "scenario": "00000000080000006f000000d56eb778ae745d2731b963dad2baebacd15442e7a892b62475126d23e191006d72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      },
+      "before_target_assignment": {
+        "main": "000000000000000067000000a3e05ff40c5ad77ecec800a7eb790b9f5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f",
+        "mapgen": "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+        "scenario": "00000000040000006b000000d56eb778ae745d2731b963dad2baebac5c8b0fee0d3685b2ddd1ed006082d89b72818160d7b76c9c98f5b7208f38efa0c802176adb4a36d45816e7770a4dc4eabac8f65a96d703997d7b360f7515a4c86ca8456ccf027d2879786b6f73bc417eafb6f2af73164b4db09aad4dee9d836a4f1c4afce19e74afe3c323dad722ea507ffafb3881a6d1f397a0991987159ce519b49be43fb11eb418e2f65d99ccf16f901ac2a98d50429a41a735a92f981fdd1856b33729ece5d416160adfce5764f866b7ef9e7a6e9ef4322031f8a750d5577052bbc9207a8db9cec1c5d1e10960d904e7aa8deeba693b68ed83ae16de888de41e0d760055509003338716672bdc66813845ce6c5c8be21ceaa6770aae2e19c77945b09546205fe1ad5b1325bdcb173f3a843a209384a30c9f4a305160464379698e32b5e94b52c79a2370dfb1874e0ff909f4a682ddbd9a210ec09cabdd18db3174de0cf094c0f942f3a8d81e15ca6abebb3c0ec0406614ac1d34e5843da54b0d0e936153fbff9b1f6ca4f9318e4934ebe825d891871c2246c4e4af43f1aa1c6c4f0810455e6cb1d16df2768ee88ca22e8a59ff71637d39c3e0338ddf4d09a5a43396a8c380238113d8f60bf1c011dd03a18a5d45e808b858479197c8133d470f39a3cc624f7a57cbadb1c6b65c20cdbe0fbb158f3e6a7fc5ffb9f377670d68ca20a3ba6f07e10c5bd96fd9ba22177c773ebf87d332ecb060f4e8f2ab02417e97f9ba796af76adef1301d88d0d50ca67b9b615143273f4c67d7eb2d1dc47d6ace3faa3e968f9a50ca31fcd002dd7ffd7dd306a188cfb4d1b261d625cea3250b48c07697b86c1e5f483e11a735309db75df82990e54b6654769a403936aa8629ec9656e82d2887388bd8dab3ee649d818d04b5970d81d6e381375c7bc0fdd0d52aa88ba55622029575515ad84f1c863009459e3cda7162c664e367eb2b727fe34dd6589e6a66765a64f30a012043a8faadbc7322dd95f1c55d7003e0ae48fc40dbcee04ede511a495a0bc34e11efd12658d09882c83fa45056348a5ec366bb9087a9beac72ddc1e5d0b107e480a97ec75cb1a2ed8c7f0e4ef8f053b90d71f7a6db630a2c5805e3715d2292238df5231ad947b32127025484e26c73f5897c1b813522700237afe1566c44b50cef3d18de00f9498245898f7b04a0ce56a05fadb13978c2f12fe925d915051fa863172e01f504b3b4a6ac7a60f9dc9b959004bf9e62cd26e545adfd04a2e57b5834aaf752fd4e5f088860f06c5a0f7aa7668a56df831660fd14efd22632c3eceb2bd57c53c4f1627fc175625489957c1bb284d20a6b51b4f6c42fe10396e07c84e17ea9934f7d415ede0e54f5468dc0e798788c809a8501f7b1bb167bc0fb5a66cb4f0da3eb8689191e626f"
+      }
+    }
+  },
+  "writes": [
+    {
+      "field": "rearm_timer",
+      "frame": 0,
+      "offset": 0,
+      "pc": "006FF2B2",
+      "phase": "ordinary_per_frame_fire_visit",
+      "rng_request_count": 1,
+      "size": 4,
+      "value": 0
+    },
+    {
+      "field": "rearm_timer",
+      "frame": 0,
+      "offset": 4,
+      "pc": "006FF2B8",
+      "phase": "ordinary_per_frame_fire_visit",
+      "rng_request_count": 1,
+      "size": 4,
+      "value": 0
+    },
+    {
+      "field": "rearm_timer",
+      "frame": 0,
+      "offset": 8,
+      "pc": "006FF2BB",
+      "phase": "ordinary_per_frame_fire_visit",
+      "rng_request_count": 1,
+      "size": 4,
+      "value": 61
+    },
+    {
+      "field": "firing_counter",
+      "frame": 0,
+      "offset": 0,
+      "pc": "00741421",
+      "phase": "ordinary_per_frame_fire_visit",
+      "rng_request_count": 1,
+      "size": 4,
+      "value": 7
+    },
+    {
+      "field": "manager_timer_38",
+      "frame": 11,
+      "offset": 0,
+      "pc": "0062A9E6",
+      "phase": "bullet_frame_11",
+      "rng_request_count": 1,
+      "size": 4,
+      "value": 11
+    },
+    {
+      "field": "manager_timer_38",
+      "frame": 11,
+      "offset": 4,
+      "pc": "0062A9ED",
+      "phase": "bullet_frame_11",
+      "rng_request_count": 1,
+      "size": 4,
+      "value": 4294966855
+    },
+    {
+      "field": "manager_timer_38",
+      "frame": 11,
+      "offset": 8,
+      "pc": "0062A9F0",
+      "phase": "bullet_frame_11",
+      "rng_request_count": 1,
+      "size": 4,
+      "value": 0
+    },
+    {
+      "field": "manager_timer_38",
+      "frame": 12,
+      "offset": 0,
+      "pc": "0062A080",
+      "phase": "host_parasite_frame_12",
+      "rng_request_count": 3,
+      "size": 4,
+      "value": 12
+    },
+    {
+      "field": "manager_timer_38",
+      "frame": 12,
+      "offset": 4,
+      "pc": "0062A087",
+      "phase": "host_parasite_frame_12",
+      "rng_request_count": 3,
+      "size": 4,
+      "value": 2176
+    },
+    {
+      "field": "manager_timer_38",
+      "frame": 12,
+      "offset": 8,
+      "pc": "0062A08A",
+      "phase": "host_parasite_frame_12",
+      "rng_request_count": 3,
+      "size": 4,
+      "value": 60
+    },
+    {
+      "field": "host_paralysis",
+      "frame": 12,
+      "offset": 0,
+      "pc": "0062A09E",
+      "phase": "host_parasite_frame_12",
+      "rng_request_count": 3,
+      "size": 4,
+      "value": 12
+    },
+    {
+      "field": "host_paralysis",
+      "frame": 12,
+      "offset": 4,
+      "pc": "0062A0A4",
+      "phase": "host_parasite_frame_12",
+      "rng_request_count": 3,
+      "size": 4,
+      "value": 2176
+    },
+    {
+      "field": "host_paralysis",
+      "frame": 12,
+      "offset": 8,
+      "pc": "0062A0A7",
+      "phase": "host_parasite_frame_12",
+      "rng_request_count": 3,
+      "size": 4,
+      "value": 0
+    },
+    {
+      "field": "source_paralysis",
+      "frame": 14,
+      "offset": 0,
+      "pc": "0062A7D1",
+      "phase": "whole_exit_unit",
+      "rng_request_count": 4,
+      "size": 4,
+      "value": 14
+    },
+    {
+      "field": "source_paralysis",
+      "frame": 14,
+      "offset": 4,
+      "pc": "0062A7DA",
+      "phase": "whole_exit_unit",
+      "rng_request_count": 4,
+      "size": 4,
+      "value": 2176
+    },
+    {
+      "field": "source_paralysis",
+      "frame": 14,
+      "offset": 8,
+      "pc": "0062A7DD",
+      "phase": "whole_exit_unit",
+      "rng_request_count": 4,
+      "size": 4,
+      "value": 180
+    },
+    {
+      "field": "host_paralysis",
+      "frame": 14,
+      "offset": 0,
+      "pc": "0062A87D",
+      "phase": "whole_exit_unit",
+      "rng_request_count": 4,
+      "size": 4,
+      "value": 14
+    },
+    {
+      "field": "host_paralysis",
+      "frame": 14,
+      "offset": 4,
+      "pc": "0062A883",
+      "phase": "whole_exit_unit",
+      "rng_request_count": 4,
+      "size": 4,
+      "value": 2176
+    },
+    {
+      "field": "host_paralysis",
+      "frame": 14,
+      "offset": 8,
+      "pc": "0062A886",
+      "phase": "whole_exit_unit",
+      "rng_request_count": 4,
+      "size": 4,
+      "value": 0
+    },
+    {
+      "field": "firing_counter",
+      "frame": 15,
+      "offset": 0,
+      "pc": "007363D8",
+      "phase": "whole_unit_ai_frame_15",
+      "rng_request_count": 4,
+      "size": 4,
+      "value": 6
+    },
+    {
+      "field": "firing_counter",
+      "frame": 16,
+      "offset": 0,
+      "pc": "007363D8",
+      "phase": "whole_unit_ai_frame_16",
+      "rng_request_count": 5,
+      "size": 4,
+      "value": 5
+    },
+    {
+      "field": "firing_counter",
+      "frame": 17,
+      "offset": 0,
+      "pc": "007363D8",
+      "phase": "whole_unit_ai_frame_17",
+      "rng_request_count": 5,
+      "size": 4,
+      "value": 4
+    },
+    {
+      "field": "firing_counter",
+      "frame": 18,
+      "offset": 0,
+      "pc": "007363D8",
+      "phase": "whole_unit_ai_frame_18",
+      "rng_request_count": 5,
+      "size": 4,
+      "value": 3
+    },
+    {
+      "field": "firing_counter",
+      "frame": 19,
+      "offset": 0,
+      "pc": "007363D8",
+      "phase": "whole_unit_ai_frame_19",
+      "rng_request_count": 5,
+      "size": 4,
+      "value": 2
+    },
+    {
+      "field": "firing_counter",
+      "frame": 20,
+      "offset": 0,
+      "pc": "007363D8",
+      "phase": "whole_unit_ai_frame_20",
+      "rng_request_count": 5,
+      "size": 4,
+      "value": 1
+    },
+    {
+      "field": "firing_counter",
+      "frame": 21,
+      "offset": 0,
+      "pc": "007363D8",
+      "phase": "whole_unit_ai_frame_21",
+      "rng_request_count": 5,
+      "size": 4,
+      "value": 0
+    },
+    {
+      "field": "firing_counter",
+      "frame": 22,
+      "offset": 0,
+      "pc": "007363D8",
+      "phase": "whole_unit_ai_frame_22",
+      "rng_request_count": 5,
+      "size": 4,
+      "value": 4294967295
+    },
+    {
+      "field": "firing_counter",
+      "frame": 23,
+      "offset": 0,
+      "pc": "007363D8",
+      "phase": "whole_unit_ai_frame_23",
+      "rng_request_count": 5,
+      "size": 4,
+      "value": 4294967295
+    },
+    {
+      "field": "firing_counter",
+      "frame": 24,
+      "offset": 0,
+      "pc": "007363D8",
+      "phase": "whole_unit_ai_frame_24",
+      "rng_request_count": 5,
+      "size": 4,
+      "value": 4294967295
+    }
+  ]
+}

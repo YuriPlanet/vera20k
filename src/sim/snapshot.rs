@@ -1195,7 +1195,9 @@ use crate::util::save_codec;
 // the merged-INI float light projection, so v444 cannot use this schema.
 // 445 -> 446: the House array saves its registration order beside the House
 // states; the session no longer carries a separate copy of that order.
-const SNAPSHOT_VERSION: u32 = 446;
+// 446 -> 447: GameEntity retains UnitClass's signed firing counter across
+// LimboLaunch/parasite release. Its positional entity payload grows by a dword.
+const SNAPSHOT_VERSION: u32 = 447;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -6387,6 +6389,13 @@ mod tests {
             .set_for_test(u32::MAX);
         let populated_counter_hash = sim.state_hash();
         assert_ne!(populated_counter_hash, zero_counter_hash);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .unit_firing_counter
+            .set_for_test(7);
+        assert_ne!(sim.state_hash(), populated_counter_hash);
 
         let ship_head = DriveCoord::cell(6, 5, 0);
         let entity = sim.substrate.entities.get_mut(1).expect("SHP unit");
@@ -6419,6 +6428,15 @@ mod tests {
                 .body_frame_counter
                 .get(),
             u32::MAX
+        );
+        assert_eq!(
+            restored
+                .entities()
+                .get(1)
+                .unwrap()
+                .unit_firing_counter
+                .get(),
+            7
         );
         let restored_ship = restored
             .substrate

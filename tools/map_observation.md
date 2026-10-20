@@ -638,6 +638,20 @@ absence of a submission alone cannot establish the exact rejected value.
 
 The [movement-voice profile](map_observation.move-voice.example.json) selects
 one full-health stock MTNK and issues an ordinary command click on clear ground.
+
+The [Terror Drone firing profile](map_observation.drone-fire.example.json)
+orders a retail DRON to jump a sleeping enemy tank, then a local tank to fire
+SonicZap at the host. Generate its scene with
+`python tools/render_depth_fixture.py /absolute/drone-fire.map --drone-fire`.
+Optional `--terrain-template /absolute/extracted/Hills.map` retains that physical
+map's terrain packs, scenery, lighting and waypoints; the template must admit
+the fixed scene around `(48,48)`. Set the profile's selected map to the result.
+DRON, DroneJump and its ART keep their retail fields. The fixture explicitly
+overrides MTNK's primary to SonicZap and SonicZap's damage to4 so a normal shot
+can exercise the production parasite-release receiver while both actors survive.
+`observe_disguise` retains the existing read-only SHP-frame projection. Exact
+release/idle steps must be inspected from the run; the profile does not prescribe
+a successful hit or native timing and is not an original scene/pixel comparison.
 Generate its map with:
 
 ```sh
