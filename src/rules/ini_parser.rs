@@ -26,6 +26,11 @@ use crate::rules::error::RulesError;
 #[path = "ini_value.rs"]
 pub mod ini_value;
 
+/// Opt-in file directives, expanded at source selection, never by raw parsing
+/// or deserialization. No directive means the physical INI is left unchanged.
+#[path = "ini_directives.rs"]
+pub mod directives;
+
 use self::ini_value::strtrim_ascii;
 
 const READ_LINE_PAYLOAD: usize = 511;

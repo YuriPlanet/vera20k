@@ -237,19 +237,15 @@ impl ThemeRuntime {
         if self.catalog_loaded {
             return;
         }
-        if let Some(bytes) = assets.get_ref(THEME_INI_NAME)
-            && let Ok(ini) = IniFile::from_bytes(bytes)
-        {
-            self.entries = catalog_from_ini(&ini);
+        if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, THEME_INI_NAME) {
+            self.entries = catalog_from_ini(&selected.ini);
         }
         scan_catalog_availability(&mut self.entries, assets);
 
         // Read RA2 independently: merging INIs would let its INTRO, SCORE,
         // LOADING and CREDITS sections replace the YR lifecycle themes.
-        if let Some(bytes) = assets.get_ref(RA2_THEME_INI_NAME)
-            && let Ok(ini) = IniFile::from_bytes(bytes)
-        {
-            let mut ra2_entries = catalog_from_ini(&ini);
+        if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, RA2_THEME_INI_NAME) {
+            let mut ra2_entries = catalog_from_ini(&selected.ini);
             scan_catalog_availability(&mut ra2_entries, assets);
             for entry in ra2_entries {
                 if entry.normal

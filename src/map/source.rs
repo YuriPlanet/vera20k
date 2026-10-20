@@ -144,6 +144,45 @@ fn decode_metadata(input: MapInput<'_>) -> Result<LoadedMapIni> {
     })
 }
 
+fn expand_map_ini(
+    ini: IniFile,
+    source: &LoadedMapSource,
+    assets: &AssetManager,
+) -> Result<IniFile> {
+    let name = match source {
+        LoadedMapSource::Loose { path, .. } => path.to_string_lossy().into_owned(),
+        LoadedMapSource::Mix { logical_name, .. } => logical_name.clone(),
+        _ => "<map>".to_owned(),
+    };
+    let (expanded, _) = crate::rules::retail_sources::expand_ini_with_assets(
+        assets,
+        ini,
+        &name,
+        Default::default(),
+    )
+    .map_err(anyhow::Error::msg)?;
+    Ok(expanded.ini)
+}
+
+fn decode_map_with_assets(input: MapInput<'_>, assets: &AssetManager) -> Result<LoadedMap> {
+    let ini = if matches!(input.source, LoadedMapSource::Loose { .. }) {
+        map_file::ini_from_file_bytes(input.bytes.into_owned())?
+    } else {
+        IniFile::from_bytes(&input.bytes)?
+    };
+    let ini = expand_map_ini(ini, &input.source, assets)?;
+    Ok(LoadedMap {
+        map: MapFile::from_ini(ini)?,
+        source: input.source,
+    })
+}
+
+fn decode_metadata_with_assets(input: MapInput<'_>, assets: &AssetManager) -> Result<LoadedMapIni> {
+    let mut loaded = decode_metadata(input)?;
+    loaded.ini = expand_map_ini(loaded.ini, &loaded.source, assets)?;
+    Ok(loaded)
+}
+
 /// Both gameplay and shell metadata use this one loose-before-MIX resolution
 /// policy. Preserve the existing fallback on a failed loose parse.
 fn load_map_input_with_assets<T>(
@@ -183,7 +222,9 @@ pub fn load_map_by_name_or_path_with_assets(
     map_name: &str,
     assets: &AssetManager,
 ) -> Result<LoadedMap> {
-    load_map_input_with_assets(ra2_dir, map_name, assets, decode_map)
+    load_map_input_with_assets(ra2_dir, map_name, assets, |input| {
+        decode_map_with_assets(input, assets)
+    })
 }
 
 pub fn load_map_ini_by_name_or_path_with_assets(
@@ -191,7 +232,9 @@ pub fn load_map_ini_by_name_or_path_with_assets(
     map_name: &str,
     assets: &AssetManager,
 ) -> Result<LoadedMapIni> {
-    load_map_input_with_assets(ra2_dir, map_name, assets, decode_metadata)
+    load_map_input_with_assets(ra2_dir, map_name, assets, |input| {
+        decode_metadata_with_assets(input, assets)
+    })
 }
 
 pub fn asset_map_candidates(map_name: &str) -> Vec<String> {
@@ -347,6 +390,55 @@ mod tests {
     // its parsed or normalized representation.
     const SOURCE_TEST_MAP_SHA256: &str =
         "889a91e6c8652968c930f40cfe998f2c0f4152d3f4b10b6af1a8c8e9a7c6e814";
+
+    #[test]
+    fn ini_directives_map_gameplay_and_metadata_share_expanded_rules() {
+        let dir = TestDirectory::new("map-ini-directives");
+        let root = [
+            SOURCE_TEST_MAP,
+            b"[#include]\n0=rules-extra.ini\n[Unit]\n$Inherits=Base\nOwn=map\n",
+        ]
+        .concat();
+        dir.write("Arena.map", &root);
+        dir.write(
+            "rules-extra.ini",
+            b"[Basic]\nName=Included name\n[Base]\nStrength=250\nOwn=parent\n",
+        );
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let loaded =
+            load_map_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
+        let metadata =
+            load_map_ini_by_name_or_path_with_assets(dir.path(), "Arena.map", &assets).unwrap();
+        assert_eq!(loaded.map.ini.content_hash(), metadata.ini.content_hash());
+        assert_eq!(
+            loaded
+                .map
+                .ini
+                .section_or_empty("Unit")
+                .read_int("Strength", 0),
+            250
+        );
+        assert_eq!(
+            loaded
+                .map
+                .ini
+                .section_or_empty("Unit")
+                .read_name("Own", 128),
+            Some("map")
+        );
+        assert_eq!(
+            loaded
+                .map
+                .ini
+                .section_or_empty("Basic")
+                .read_name("Name", 128),
+            Some("Included name")
+        );
+        assert_eq!(
+            serde_json::to_value(&loaded.source).unwrap(),
+            serde_json::to_value(&metadata.source).unwrap()
+        );
+    }
 
     #[test]
     fn loose_map_source_retains_consumed_bytes_after_file_changes() {

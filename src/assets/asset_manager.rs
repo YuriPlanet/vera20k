@@ -301,19 +301,26 @@ const KNOWN_NESTED_MIX_NAMES: &[&str] = &[
 ];
 
 impl AssetManager {
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn from_loose_root_for_test(ra2_dir: &Path) -> Self {
-        let mut manager = Self {
+    /// Read-only INI tooling without a complete retail installation. No game
+    /// archives are implicitly registered; the probe may explicitly use the
+    /// existing load_all_disk_mixes widening. Not a gameplay constructor.
+    pub fn from_ini_probe_root(ra2_dir: &Path) -> Result<Self, AssetError> {
+        Ok(Self {
             archives: Vec::new(),
             archive_catalog: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
-            loose_files: Self::open_loose_root(ra2_dir).expect("open loose test root"),
+            loose_files: Self::open_loose_root(ra2_dir)?,
             audio_pair: SelectedAudioPair::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
-        };
+        })
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_loose_root_for_test(ra2_dir: &Path) -> Self {
+        let mut manager = Self::from_ini_probe_root(ra2_dir).expect("open loose test root");
         manager.select_audio_pair();
         manager
     }
